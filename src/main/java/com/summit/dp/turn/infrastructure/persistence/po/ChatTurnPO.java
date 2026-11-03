@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.summit.dp.shared.persistence.handler.LargeTextTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.ibatis.type.JdbcType;
 
 import java.time.Instant;
 
@@ -54,6 +56,10 @@ public class ChatTurnPO {
     @TableField("model_provider")
     private String modelProvider;
 
+    /** 本轮思考强度档位快照；null = 该轮早于本字段落库。 */
+    @TableField("reasoning_effort")
+    private String reasoningEffort;
+
     @TableField("input_token_count")
     private Long inputTokenCount;
 
@@ -76,7 +82,7 @@ public class ChatTurnPO {
     private Instant completedAt;
 
     /** 面向用户的失败原因；仅 status=FAILED 时渲染。 */
-    @TableField("error_reason")
+    @TableField(value = "error_reason", jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String errorReason;
 
     /** 命令受理身份：发送/重发入口的 commandId；同 ID 重试据此幂等。 */

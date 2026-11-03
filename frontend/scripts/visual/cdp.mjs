@@ -10,7 +10,7 @@
  * 建议 {@code npx playwright install chromium} 或直接指向系统 Chrome。</p>
  */
 
-import { spawn, spawnSync } from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';

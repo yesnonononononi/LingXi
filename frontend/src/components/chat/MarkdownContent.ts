@@ -1,28 +1,110 @@
-import { defineComponent, h } from 'vue';
-import type { PropType, VNodeChild } from 'vue';
-import type { MarkdownDocument } from '../../utils/markdown';
+import type {PropType, VNodeChild} from 'vue';
+import {computed, createVNode, defineComponent, h, onBeforeUnmount, ref, Text, watch} from 'vue';
+import type {MarkdownDocument} from '../../utils/markdown';
+import {TEXT_ARRIVAL_DURATION, ProgressiveFadeState} from '../../utils/progressiveFade';
 import MermaidBlock from './MermaidBlock.vue';
+import MessageImage from './MessageImage.vue';
 
 export default defineComponent({
   props: {
     document: { type: Object as PropType<MarkdownDocument>, required: true },
     isDark: Boolean,
+    streaming: Boolean,
+    revealInitial: Boolean,
   },
   setup(props) {
-    return () => {
-      // 只把净化后的 HTML 转成节点，Vue 才能在流式追加时保留已有图表实例和 SVG。
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const reducedMotion = ref(motion.matches);
+    const onMotionChange = () => { reducedMotion.value = motion.matches; };
+    motion.addEventListener('change', onMotionChange);
+    const reveal = new ProgressiveFadeState();
+    const revision = ref(0);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const parsed = computed(() => {
       const template = document.createElement('template');
       template.innerHTML = props.document.html;
-      const toNode = (node: Node, key: string): VNodeChild => {
-        if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-        if (!(node instanceof Element)) return null;
+      const offsets = new Map<Node, number>();
+      let text = '';
+      const collect = (node: Node): void => {
+        if (node instanceof Element && node.matches('.block-toolbar, [data-mermaid-index]')) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const value = node.textContent || '';
+          // 块间排版空白不是模型文字，否则段落换标签也会触发动画。
+          if (!value.trim() && !(node.parentElement?.closest('p, li, code, pre, th, td, h1, h2, h3, h4, h5, h6'))) return;
+          offsets.set(node, text.length);
+          text += value;
+        } else node.childNodes.forEach(collect);
+      };
+      collect(template.content);
+      return { template, offsets, text };
+    });
+    const scheduleCleanup = (): void => {
+      clearTimeout(timer);
+      if (!reveal.ranges.length) return;
+      const deadline = Math.min(...reveal.ranges.map(range => range.started + TEXT_ARRIVAL_DURATION));
+      timer = setTimeout(() => {
+        reveal.expire(performance.now());
+        revision.value++;
+        scheduleCleanup();
+      }, Math.max(1, deadline - performance.now()));
+    };
+    watch([parsed, () => props.streaming, reducedMotion], () => {
+      reveal.update(parsed.value.text, props.streaming && !reducedMotion.value, performance.now(), props.revealInitial);
+      revision.value++;
+      scheduleCleanup();
+    }, { immediate: true, flush: 'sync' });
+    onBeforeUnmount(() => {
+      clearTimeout(timer);
+      reveal.clear();
+      motion.removeEventListener('change', onMotionChange);
+    });
+    return () => {
+      void revision.value;
+      // 只把净化后的 HTML 转成节点，Vue 才能在流式追加时保留已有图表实例和 SVG。
+      const { template, offsets } = parsed.value;
+      const toNodes = (node: Node, key: string): VNodeChild[] => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent || '';
+          const offset = offsets.get(node);
+          const plain = (value: string, start: number) => createVNode(Text, { key: `${key}-plain-${start}` }, value);
+          if (offset === undefined || !reveal.ranges.length) return [plain(text, 0)];
+          const children: VNodeChild[] = [];
+          let cursor = 0;
+          for (const range of reveal.ranges) {
+            const start = Math.max(0, range.start - offset);
+            const end = Math.min(text.length, range.end - offset);
+            if (end <= start) continue;
+            if (start > cursor || !children.length) children.push(plain(text.slice(cursor, start), cursor));
+            children.push(h('span', {
+              key: `reveal-${range.id}-${offset + start}`,
+              class: 'codex-text-arrival',
+              onVnodeMounted(vnode) {
+                // 高亮或 Markdown 改变父节点时，从原来的进度接续，不能重新淡入。
+                const element = vnode.el as HTMLElement;
+                for (const animation of element.getAnimations()) {
+                  animation.currentTime = Math.min(TEXT_ARRIVAL_DURATION, performance.now() - range.started);
+                }
+              },
+            }, text.slice(start, end)));
+            cursor = end;
+          }
+          if (cursor < text.length) children.push(plain(text.slice(cursor), cursor));
+          return children;
+        }
+        if (!(node instanceof Element)) return [];
         const index = node.getAttribute('data-mermaid-index');
         const diagram = index === null ? undefined : props.document.diagrams[Number(index)];
-        if (diagram) return h(MermaidBlock, { key: `mermaid-${index}`, ...diagram, isDark: props.isDark });
+        if (diagram) return [h(MermaidBlock, { key: `mermaid-${index}`, ...diagram, isDark: props.isDark })];
+        if (node.localName === 'img' && node.getAttribute('src')) {
+          return [h(MessageImage, {
+            key, src: node.getAttribute('src')!, alt: node.getAttribute('alt') || undefined,
+            title: node.getAttribute('title') || undefined, isDark: props.isDark, linked: !!node.closest('a'),
+          })];
+        }
         const attributes = Object.fromEntries([...node.attributes].map(attr => [attr.name, attr.value]));
-        return h(node.localName, { ...attributes, key }, [...node.childNodes].map((child, i) => toNode(child, `${key}-${i}`)));
+        return [h(node.localName, { ...attributes, key }, [...node.childNodes].flatMap((child, i) => toNodes(child, `${key}-${i}`)))];
       };
-      return [...template.content.childNodes].map((node, index) => toNode(node, String(index)));
+      return [...template.content.childNodes].flatMap((node, index) => toNodes(node, String(index)));
     };
   },
 });

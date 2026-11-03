@@ -1,8 +1,13 @@
-import { computed, onScopeDispose, ref, watch, type Ref } from 'vue';
-import { BackgroundTaskAPI } from '../../services/backgroundTask';
-import { isBackgroundTask, isTaskActive, type BackgroundTask, type BackgroundTaskChanged } from '../../types/backgroundTask';
-import { isOk } from '../../utils/api';
-import { t } from '../../i18n';
+import {computed, onScopeDispose, ref, type Ref, watch} from 'vue';
+import {BackgroundTaskAPI} from '../../services/backgroundTask';
+import {
+    type BackgroundTask,
+    type BackgroundTaskChanged,
+    isBackgroundTask,
+    isTaskActive
+} from '../../types/backgroundTask';
+import {isOk} from '../../utils/api';
+import {t} from '../../i18n';
 
 type TaskAPI = typeof BackgroundTaskAPI;
 

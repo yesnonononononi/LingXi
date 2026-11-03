@@ -3,9 +3,9 @@ package com.summit.dp.workflow.infrastructure.tools.terminal.backend;
 import com.summit.core.runtime.CommandHandler;
 import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.task.application.vo.TaskVO;
-import com.summit.dp.task.application.service.TaskRuntimeService;
 import com.summit.dp.task.application.service.TaskDeletionPolicy;
+import com.summit.dp.task.application.service.TaskRuntimeService;
+import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
@@ -15,10 +15,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+
 import java.io.IOException;
-import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 

@@ -1,12 +1,11 @@
 package com.summit.dp.session;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
-import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
@@ -14,10 +13,14 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
+import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,16 +28,9 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 块视图推送编排的回归守卫：路由用根会话、归属用自身会话，版本号来自轮次。
@@ -69,7 +65,7 @@ class TurnViewBroadcasterTest {
             turnViewService, chatTurnRepository, sessionRepository, sseEventPublisher, executionIdentity);
 
     private ChatTurn runningTurn() {
-        ChatTurn turn = ChatTurn.accept(TURN_ID, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(TURN_ID, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         turn.markRunning(java.time.Instant.now());
         return turn;
     }
@@ -86,6 +82,35 @@ class TurnViewBroadcasterTest {
                 .type(SessionMessageType.AI).text(payload).build();
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(row));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of());
+    }
+
+    @Test
+    void delegatedIdentityTravelsWithHistorySnapshotsAndFilteredBlocks() throws Exception {
+        stubAiRound();
+        Long parentTurnId = 9007199254740993L;
+        ChatTurn delegated = ChatTurn.accept(TURN_ID, SESSION_ID, parentTurnId,
+                TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
+        when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(delegated));
+        when(executionIdentity.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+
+        TurnViewVO history = turnViewService.assembleTurnView(null, delegated, 1L).orElseThrow();
+        assertEquals(parentTurnId, history.parentTurnId());
+        ObjectMapper mapper = new JsonConfig().objectMapper();
+        assertEquals(parentTurnId.toString(), mapper.readTree(mapper.writeValueAsString(history))
+                .get("parentTurnId").textValue(), "父轮次 ID 必须按字符串下发，避免精度丢失");
+        assertEquals(parentTurnId, mapper.readValue(mapper.writeValueAsString(history), TurnViewVO.class).parentTurnId());
+        assertNull(turnViewService.assembleTurnView(null, runningTurn(), 1L).orElseThrow().parentTurnId());
+
+        broadcaster.broadcastSnapshot(TURN_ID);
+        broadcaster.broadcastBlockUpsert(TURN_ID, "call-1");
+        ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
+        verify(sseEventPublisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), any(), payload.capture());
+        assertEquals(3, ((BlockEventType.BlockEventPayload) payload.getAllValues().get(0)).view().blocks().size());
+        assertEquals(1, ((BlockEventType.BlockEventPayload) payload.getAllValues().get(1)).view().blocks().size());
+        for (Object value : payload.getAllValues()) {
+            BlockEventType.BlockEventPayload event = (BlockEventType.BlockEventPayload) value;
+            assertEquals(parentTurnId, event.view().parentTurnId(), "首帧与过滤后的增量必须携带相同委派身份");
+        }
     }
 
     @Test
@@ -120,7 +145,7 @@ class TurnViewBroadcasterTest {
     void fullSnapshotWithoutBlocksStillPublishesStatus() {
         // 用户刚提问、模型尚未产出：本轮还没有任何 AI 行，块列表为空。
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of());
-        ChatTurn accepted = ChatTurn.accept(TURN_ID, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn accepted = ChatTurn.accept(TURN_ID, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(accepted));
         when(sessionRepository.findById(SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(SESSION_ID).rootSessionId(0L).build()));

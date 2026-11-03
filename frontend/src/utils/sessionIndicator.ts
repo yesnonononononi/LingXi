@@ -1,4 +1,4 @@
-import type { ChatSession } from '../types/chat';
+import type {ChatSession} from '../types/chat';
 
 export type SessionIndicator = 'WAITING' | 'COMPLETED' | 'FAILED' | 'RUNNING';
 

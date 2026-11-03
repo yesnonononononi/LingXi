@@ -2,19 +2,17 @@ package com.summit.dp.session;
 
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.shared.exception.ClientException;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.infrastructure.harness.transcript.DatabaseConversationTranscriptSink;
+import com.summit.dp.workflow.infrastructure.harness.transcript.GeneratedImagePersistence;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.*;
 
 /**
  * 落库入口的归属与身份解析。
@@ -28,7 +26,7 @@ class DatabaseConversationTranscriptSinkMetadataTest {
 
     private final ConversationTranscriptService transcript = mock(ConversationTranscriptService.class);
     private final ExecutionLocator identity = mock(ExecutionLocator.class);
-    private final DatabaseConversationTranscriptSink sink = new DatabaseConversationTranscriptSink(transcript, identity);
+    private final DatabaseConversationTranscriptSink sink = new DatabaseConversationTranscriptSink(transcript, identity, mock(GeneratedImagePersistence.class));
 
     /**
      * 5 参入口（框架唯一实际调用点）把身份原样交给下游。

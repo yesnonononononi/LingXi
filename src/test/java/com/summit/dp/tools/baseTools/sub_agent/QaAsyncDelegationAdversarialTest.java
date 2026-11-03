@@ -1,12 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
@@ -18,18 +11,23 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
@@ -40,29 +38,14 @@ import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 交付总监独立验证（QA 严过关）—— 协作式受理结果与异步提交被拒路径的<b>对抗性</b>用例。
@@ -168,7 +151,7 @@ class QaAsyncDelegationAdversarialTest {
     void asyncResultIsExactStructuredJsonWithoutBody() throws Exception {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
         // 子代理若真被执行，正文会带哨兵；协作式不得把这份正文漏出去。
         Execution sentinelExecution = completedWithSentinel();
         when(subAgent.execute(any(AgentRequest.class))).thenReturn(sentinelExecution);
@@ -208,7 +191,7 @@ class QaAsyncDelegationAdversarialTest {
     void rejectedSubmissionFailsClosedWithoutSideEffects() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
 
         // 真提交器 + 拒绝执行的线程池：走真实 submit() 逻辑。
         AsyncDelegationSubmitter rejecting = new AsyncDelegationSubmitter(subAgent, registry,
@@ -222,7 +205,7 @@ class QaAsyncDelegationAdversarialTest {
         assertNotNull(result);
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
         // 提交失败 → 撤销待启动登记；异步体从未运行 → 不建会话行 / 不落账 / 不建执行。
-        verify(registry).revokeChild(eq(ROOT_SESSION_ID), anyLong());
+        verify(registry).revokeChild(eq(ROOT_SESSION_ID), anyLong(), any());
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
         verify(subAgent, never()).execute(any(AgentRequest.class));

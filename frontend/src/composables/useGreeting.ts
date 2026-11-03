@@ -1,7 +1,7 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { PersonalizationAPI } from '../services/personalization';
-import { isOk } from '../utils/api';
-import { t } from '../i18n';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {PersonalizationAPI} from '../services/personalization';
+import {isOk} from '../utils/api';
+import {t} from '../i18n';
 
 /** 时段：早上（5–11）、下午（12–17）、其余（18–4）算夜深。 */
 export type GreetingBand = 'morning' | 'afternoon' | 'lateNight';

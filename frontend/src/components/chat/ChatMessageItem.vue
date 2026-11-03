@@ -95,12 +95,14 @@
         </button>
         <CollapseTransition>
           <div v-show="wholeProcessExpanded" class="mt-1 space-y-2.5" data-testid="whole-process-content">
-            <template v-for="part in processViews.parts"
+            <template v-for="(part, partIndex) in processViews.parts"
               :key="part.kind === 'text' ? part.part.id : part.segment.id">
               <div v-if="part.kind === 'text'" class="w-full select-text" data-testid="process-text">
-                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.part.message.text" :is-dark="isDark" :process-text="true" />
+                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.part.message.text" :is-dark="isDark" :process-text="true"
+                  :streaming="!!props.message.isThinking && !props.message.isSuspended && !props.message.isComplete" />
               </div>
-              <ChatProcessSegment v-else :visible="wholeProcessExpanded" :view="part" :message="props.message" :turn="props.turn"
+              <ChatProcessSegment v-else :visible="wholeProcessExpanded" :view="part" :sweep="part.sweep"
+                :await-model="partIndex === awaitModelSegmentIndex" :message="props.message" :turn="props.turn"
                 :sub-sessions="props.subSessions" :session-id="props.sessionId" :is-dark="isDark"
                 @select-sub-session="emit('selectSubSession', $event)" />
             </template>
@@ -158,6 +160,9 @@
       </div>
 
       <!-- 底部工具与状态栏 (对应右图：复制、赞、踩、重试、用量、耗时、时间) - 仅在会话生成结束时展示 -->
+      <div v-if="inputNotice && isGroupTail !== false" role="status"
+           class="whitespace-pre-wrap text-xs text-zinc-500 dark:text-zinc-400">{{ inputNotice }}</div>
+
       <!-- 出现时机契约：活跃期只跟随后端终结/开始事件（isMessageCompleted）；非活跃期按 turnId 回答组 -->
       <!-- 收敛为组尾一次（isGroupTail !== false），避免同一轮次「本地气泡 + 对账行」并存时双工具条 -->
       <div v-if="isMessageCompleted && isGroupTail !== false" class="flex flex-wrap items-center gap-4 pt-1 text-xs text-zinc-400 select-none">
@@ -172,28 +177,29 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, inject } from 'vue';
-import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
-import type { ChatMessageBodySlotProps, ChatMessageActionsSlotProps } from '../../types/chatMessageSlots';
-import type { ChatMessage, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn } from '../../types/chat';
-import { toPromptCardData } from '../../utils/toolCallCard';
-import { buildProcessTimeline } from '../../utils/processTimeline';
-import { buildProcessSegments } from '../../utils/processSegments';
-import { deriveProcessSummaries, deriveProcessViews } from '../../utils/processViewModel';
-import { formatProcessStatus } from '../../utils/processHeadline';
-import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
-import { formatDurationOrPlaceholder } from '../../utils/format';
-import { resolveTokenUsage } from '../../utils/tokenUsage';
+import {computed, inject, ref} from 'vue';
+import type {ChatMessageActionsSlotProps, ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
+import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
+import type {ChatMessage, ChatTurn, ProcessTimelineItem, SubSessionVO, ToolCallTrace} from '../../types/chat';
+import {toPromptCardData} from '../../utils/toolCallCard';
+import {buildProcessTimeline} from '../../utils/processTimeline';
+import {buildProcessSegments} from '../../utils/processSegments';
+import {deriveProcessSummaries, deriveProcessViews} from '../../utils/processViewModel';
+import {formatProcessStatus} from '../../utils/processHeadline';
+import {isActiveTurnStatus, isFailedTurnStatus, isTerminalTurnStatus, turnStatusLabel} from '../../utils/turnStatus';
+import {formatDurationOrPlaceholder} from '../../utils/format';
+import {resolveTokenUsage} from '../../utils/tokenUsage';
+import {resolveAwaitModelResponse} from '../../utils/awaitModelResponse';
 import MessageActionsBar from './MessageActionsBar.vue';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import MessageBodyDefault from './MessageBodyDefault.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import InteractionCards from './InteractionCards.vue';
-import type { PromptCardEntry } from '../../utils/promptCardGroups';
+import type {PromptCardEntry} from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
 
@@ -237,8 +243,9 @@ const compactingTitle = computed(() => props.message.contextUsage?.tokenCount
     max: props.message.contextUsage.maxTokens || 0
   })
   : t('chat.message.compressing'));
-// 委派身份由后端父轮次声明，不能从任务文本或会话位置猜测。
-const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);
+// 快照先于摘要到达时也必须使用后端父轮次，避免任务正文短暂套上用户气泡样式。
+const isDelegatedTask = computed(() => props.message.role === 'user'
+  && !!(props.message.parentTurnId ?? props.turn?.parentTurnId));
 
 /**
  * 宿主注册的插槽渲染器（三级解析的中间层：父级 `$slots` > 宿主注入 > 内置默认）。
@@ -316,6 +323,8 @@ const cardItems = computed<PromptCardEntry[]>(() =>
  * 它不依赖 `isThinking` / `turn` 是否及时到位，因此不存在同样的真空。</p>
  */
 const isTurnRunning = computed(() => {
+  // 轮次终态已落定，历史工具残留与迟到的流状态都不能继续隐藏底栏。
+  if (isTerminalTurnStatus(String(props.turn?.status ?? '').toUpperCase())) return false;
   if (props.message.isThinking || props.message.isExploring) return true;
   if (props.message.isComplete === false) return true;
   if (props.isSending && props.isLastAssistant) return true;
@@ -355,8 +364,60 @@ const isMessageCompleted = computed(() => {
   if (isTerminalTurn.value) {
     return true;
   }
-  // 7. 其余必须真有内容或工具，否则底栏没有可挂的语义
-  return !!(props.message.content || props.message.toolCalls?.length);
+  // 7. 纯图片同样是有效回复，不能因正文为空而隐藏底栏。
+  return !!(props.message.content || props.message.responseImageUrls?.length || props.message.toolCalls?.length);
+});
+
+/**
+ * 「正在等待模型响应」占位是否出现（具名 computed，供后续复用与回归用例覆盖）。
+ *
+ * <p><b>窗口语义</b>：工具已经跑完、下一轮模型的首个 token 还没到。这一段里过程区只剩一条
+ * 折叠标题、正文为空、`bodyVisible` 为假，界面上原本没有任何状态提示，用户会以为卡死。</p>
+ *
+ * <p>判据本身收敛在 {@link resolveAwaitModelResponse} 里（纯函数，可逐条单测），
+ * 这里只负责把组件既有的派生值喂进去：`isTurnRunning` / `processIsOngoing` / `hasPendingTool`
+ * 全部复用既有体系，不另起一套「轮次是否还在跑」的判定。</p>
+ */
+const awaitModelResponse = computed(() => resolveAwaitModelResponse({
+  isThinking: props.message.isThinking,
+  content: props.message.content,
+  processPartCount: processParts.value.length,
+  isTurnRunning: isTurnRunning.value,
+  processIsOngoing: processIsOngoing.value,
+  hasPendingTool: hasPendingTool(props.message.toolCalls),
+  isComplete: props.message.isComplete,
+  failed: props.message.failed,
+  cancelled: props.message.cancelled,
+  isSuspended: props.message.isSuspended,
+  hasModelRetry: !!props.message.modelRetry
+}));
+
+/**
+ * 空窗占位落在哪一段：判据为真时返回该段在 `processViews.parts` 里的下标，为假时返回 -1。
+ *
+ * <p>三条约束缺一不可，都是「这一行到底是什么」的问题：</p>
+ * <ol>
+ *   <li><b>只取最后一段</b> —— 空窗说的是「刚跑完的那段之后」，只有最新一段代表此刻；</li>
+ *   <li><b>该段仍在增长（mode === live）</b> —— 已被后续文本收尾的旧段展示的是整段概览，
+ *       拿等待文案盖掉它是丢信息，而不是「那一行原地变成占位」；</li>
+ *   <li><b>段内没有任何在跑的步骤</b> —— 思考 token 还在流、工具还在调时，模型正在产出，
+ *       此刻的真实状态是「在动」而不是「在等」，替换成等待文案就是误报。</li>
+ * </ol>
+ *
+ * <p>这三条只决定「替换哪一行」，判据本身仍是 `resolveAwaitModelResponse` 的 7 条守卫，
+ * 一条都没动。</p>
+ */
+const awaitModelSegmentIndex = computed(() => {
+  if (!awaitModelResponse.value) return -1;
+  const parts = processViews.value.parts;
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (!part || part.kind !== 'segment') continue;
+    const isGrowing = part.mode === 'live';
+    const idle = part.summary.runningCount === 0 && part.summary.pendingCount === 0;
+    return isGrowing && idle ? index : -1;
+  }
+  return -1;
 });
 
 /** 本条消息所属回答组的轮次信息（权威来源）；null = 无轮次，不伪造统计。 */
@@ -385,6 +446,12 @@ const displayDuration = computed(() => {
 
 const tokenUsage = computed(() => resolveTokenUsage(execSummary.value, props.message));
 /** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
+// 主动暂停没有完成工具条，保留输入的提示须单独显示。
+const inputNotice = computed(() => {
+  const reason = execSummary.value?.errorReason || '';
+  const marker = reason.indexOf('待处理输入已保留：');
+  return marker < 0 ? '' : reason.slice(marker);
+});
 const execStatusMeta = computed(() => {
   const e = execSummary.value;
   if (!e) return null;
@@ -394,7 +461,7 @@ const execStatusMeta = computed(() => {
     text: turnStatusLabel(e.status),
     running,
     failed,
-    errorReason: failed ? (e.errorReason || '').trim() : ''
+    errorReason: failed ? (e.errorReason || '').split('待处理输入已保留：')[0].trim() : ''
   };
 });
 
@@ -420,7 +487,8 @@ const copyContent = () => {
 const bodyIsThinking = computed(() => !!props.message.isThinking && !props.message.isExploring);
 
 /** 正文是否出现：把原 v-if 的行内条件收敛成单一事实来源（语义等价，纯搬家）。 */
-const bodyVisible = computed(() => !!props.message.content || (bodyIsThinking.value && processParts.value.length === 0));
+const bodyVisible = computed(() => !!props.message.content || !!props.message.responseImageUrls?.length
+  || (bodyIsThinking.value && processParts.value.length === 0));
 
 /**
  * 正文插槽 props：只暴露渲染正文必需的 3 项。

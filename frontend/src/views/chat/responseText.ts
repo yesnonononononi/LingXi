@@ -1,6 +1,6 @@
-import type { ChatMessage } from '../../types/chat';
-import type { AgentEvent } from '../../types/Event';
-import { applyTextPlacement, getTurnState, renderTurnState, writeResponseText } from './turnRenderState';
+import type {ChatMessage} from '../../types/chat';
+import type {AgentEvent} from '../../types/Event';
+import {applyTextPlacement, getTurnState, renderTurnState, writeResponseText} from './turnRenderState';
 
 /** 全文也从零偏移写入，重复的完成通知不会再次追加。 */
 export function consumeResponseText(bubble: ChatMessage, event: AgentEvent): boolean {

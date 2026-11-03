@@ -1,26 +1,24 @@
 package com.summit.dp.session.application.service.impl;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import cn.hutool.core.util.IdUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.execution.domain.model.ExecutionStatus;
+import com.summit.dp.agent.domain.model.Agent;
+import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.application.command.SessionCommand;
-import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.application.service.SessionAggregateService;
+import com.summit.dp.session.application.service.SessionMessageQueryService;
+import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.CursorResult;
-import com.summit.dp.shared.vo.SessionMessagePageVO;
-import com.summit.dp.shared.vo.SessionMessageVO;
-import com.summit.dp.shared.vo.SessionTreeVO;
-import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.shared.vo.WorkspaceVO;
+import com.summit.dp.shared.vo.*;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
@@ -29,22 +27,12 @@ import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.workspace.application.service.WorkspaceService;
-import com.summit.dp.agent.domain.model.Agent;
-import com.summit.dp.agent.domain.repository.AgentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**

@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { PageResult, WorkspaceVO, WorkspaceRequest } from '../types/chat';
+import type {Result} from './types';
+import type {PageResult, WorkspaceRequest, WorkspaceVO} from '../types/chat';
 
 /** 4. 工作空间 API (对应后端 WorkspaceController) */
 export class WorkspaceAPI {

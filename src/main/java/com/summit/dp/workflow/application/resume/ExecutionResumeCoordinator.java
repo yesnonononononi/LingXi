@@ -1,20 +1,21 @@
 package com.summit.dp.workflow.application.resume;
 
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
-
-import com.summit.dp.execution.application.service.ResumeDisposition;
-
+import org.springframework.beans.factory.annotation.Autowired;
+import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,7 +24,6 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -75,18 +75,11 @@ public class ExecutionResumeCoordinator {
     private final ObjectProvider<ExecutionActivity> activity;
 
     /** 派发线程：与请求线程、loop 线程都分开，恢复失败不会拖垮受理响应。 */
+    @Autowired
+    private ObjectProvider<InputWakeupService> inputWakeups;
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     /** 同执行已在派发中的标记；只防「同一瞬间重复唤醒」，真正的单飞靠 claim 条件更新。 */
     private final Map<String, AtomicBoolean> dispatching = new ConcurrentHashMap<>();
-    /**
-     * 保留唤醒：键为根执行 id。
-     *
-     * <p>唤醒在「根仍持有控制槽位」时到达（子执行终结 / 邮件投递 / 输入驱动挂起）时，不能丢弃 ——
-     * 根随后在其检查点挂起，若这里不保留，之后将再无事件唤醒它。保留的唤醒在控制槽位释放后由
-     * {@link #flushPendingWake(long)} 重放（若此刻根又活跃，重放的 {@code accept} 会再次保留）。</p>
-     */
-    private final Set<Long> pendingWakes = ConcurrentHashMap.newKeySet();
-
     public ExecutionResumeCoordinator(ExecutionResumeTaskRepository taskRepository,
                                       com.summit.dp.execution.domain.repository.ExecutionRepository executions,
                                       SuspendedExecutionResumer resumer,
@@ -108,12 +101,6 @@ public class ExecutionResumeCoordinator {
      * 「决策已落库但恢复请求没落库」的窗口。真正派发排在事务提交之后 ——
      * 它走独立线程，不会读到未提交的槽位状态。</p>
      *
-     * <p><b>「活跃时保留唤醒」必须早于代际判定</b>：首轮执行的恢复代际为 0（从未转入 SUSPENDED），
-     * 若先判代际会把它当成「无恢复边界」丢弃 —— 而子执行终结 / 邮件到达恰恰常发生在首轮，
-     * 丢弃后根一旦挂起就再无事件唤醒。故这里把 {@code isActive} 分支提到代际判定之前，
-     * 活跃时登记保留唤醒（{@link #pendingWakes}），待根挂起释放控制槽位后由
-     * {@link #flushPendingWake(long)} 重放。</p>
-     *
      * @param executionId 执行 ID；0 表示没有可用执行（如命令卡片未挂执行）
      * @return 本次决策的恢复处置结论，供回执直接下发
      */
@@ -130,8 +117,7 @@ public class ExecutionResumeCoordinator {
             return ResumeDisposition.WAITING_OTHER_TOOLS;
         }
         if (isActive(executionId)) {
-            // 已有 loop 持有控制槽位：本次唤醒不丢弃，登记为保留唤醒，待其挂起释放后重放。
-            pendingWakes.add(executionId);
+            // 活跃循环自己检查输入，退出后再按事实复查。
             return ResumeDisposition.RUNNING;
         }
         long generation = executions.findResumeGeneration(executionId);
@@ -144,24 +130,6 @@ public class ExecutionResumeCoordinator {
         // 请求先随决策事务提交，派发动作排到提交之后；无事务同步时立即执行（单测与直调路径）。
         frameworkExecutions.getObject().afterCommit(() -> dispatch(executionId));
         return ResumeDisposition.QUEUED;
-    }
-
-    /**
-     * 重放先前保留的唤醒。
-     *
-     * <p>调用点是「执行进入 SUSPENDED 且控制槽位已释放」之后（见 {@code LocalExecutionRepository}
-     * 的挂起通知链）。此刻重走 {@link #accept(long)}：若已可恢复则正常入队派发；若此刻又变活跃，
-     * {@code accept} 会再次登记保留。无保留唤醒时是 no-op。</p>
-     */
-    public void flushPendingWake(long executionId) {
-        if (pendingWakes.remove(executionId)) {
-            accept(executionId);
-        }
-    }
-
-    /** 终态清理保留唤醒，防止唤醒悬挂在一个已终结、再也不会挂起的执行上。 */
-    public void clearPendingWake(long executionId) {
-        pendingWakes.remove(executionId);
     }
 
     /**
@@ -188,6 +156,7 @@ public class ExecutionResumeCoordinator {
                             continue;
                         }
                         runOnce(executionId, task);
+                        if (inputWakeups != null) inputWakeups.getObject().resumeIfInputPending(executionId);
                     }
                 } catch (RuntimeException error) {
                     log.error("恢复请求派发失败: executionId={}, error={}", executionId, error.toString());
@@ -256,8 +225,6 @@ public class ExecutionResumeCoordinator {
         }
         if (isActive(executionId)) {
             // 已有 loop 持有控制槽位：让位。竞争失败不是执行失败，绝不改判。
-            // 本次恢复意图不丢弃——登记保留唤醒，待该运行自行挂起释放控制槽位后重放。
-            pendingWakes.add(executionId);
             markSuperseded(task, "执行已有运行持有控制槽位，恢复请求作废");
             return;
         }
@@ -296,6 +263,7 @@ public class ExecutionResumeCoordinator {
     private void handleStartupFailure(long executionId, ExecutionResumeTask task, Exception error) {
         Execution latest = readCheckpoint(executionId);
         boolean takenOver = latest == null
+                || Boolean.TRUE.equals(InputAutomationPolicy.attributes(latest).get(InputAutomationPolicy.USER_PAUSED))
                 || ExecutionStateCodec.isTerminalState(latest.getExecutionState())
                 || latest.getExecutionState() != ExecutionState.SUSPENDED
                 || executions.findResumeGeneration(executionId) != task.getGeneration()
@@ -387,7 +355,7 @@ public class ExecutionResumeCoordinator {
     private Integer readStatus(long executionId) {
         return executions.findSummariesByIds(List.of(executionId)).stream()
                 .findFirst()
-                .map(execution -> execution.getStatus())
+                .map(com.summit.dp.execution.domain.model.Execution::getStatus)
                 .orElse(null);
     }
 

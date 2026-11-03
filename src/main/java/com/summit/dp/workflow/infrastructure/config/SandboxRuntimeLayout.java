@@ -2,11 +2,7 @@ package com.summit.dp.workflow.infrastructure.config;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /** 组件布局由后端掌握，安装位置变化不需要启动器逐项配置。 */
 public record SandboxRuntimeLayout(Path directory, boolean windows) {

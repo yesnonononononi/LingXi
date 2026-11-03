@@ -8,10 +8,10 @@
  * <p>遵守 C2：不碰流式渲染链路，数据只从 `tc.query` / `tc.result` 与 `props.subSessions` 解析。
  * 子会话「运行态 → 展示态」的映射复用 {@link toSubItemStatus}，本模块不重写它。</p>
  */
-import type { SubItemStatus, SubSessionVO, ToolCallTrace } from '../types/chat';
-import { toSubItemStatus } from './subSessionStatus';
-import { toObject } from './json';
-import { t } from '../i18n';
+import type {SubItemStatus, SubSessionVO, ToolCallTrace} from '../types/chat';
+import {toSubItemStatus} from './subSessionStatus';
+import {toObject} from './json';
+import {t} from '../i18n';
 
 /** 协作式工具结果里 `runtimeMode` 的固定取值（与后端 AsyncDelegationResultRenderer 对齐）。 */
 const RUNTIME_MODE_ASYNC = 'ASYNC';

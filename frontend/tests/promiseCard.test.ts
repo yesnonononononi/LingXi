@@ -1,11 +1,19 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage, ToolCallVO } from '../src/types/chat';
-import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { toPromptCardData, resolveCardKind, isApprovableCard, isCardToolName, canDecideCard, buildCardSummary, upsertPromptCard } from '../src/utils/toolCallCard';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { AgentToolName } from '../src/utils/toolNames';
+import type {ChatMessage, ToolCallVO} from '../src/types/chat';
+import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import {
+    buildCardSummary,
+    canDecideCard,
+    isApprovableCard,
+    isCardToolName,
+    resolveCardKind,
+    toPromptCardData,
+    upsertPromptCard
+} from '../src/utils/toolCallCard';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {AgentToolName} from '../src/utils/toolNames';
 
 /** 等待 reducer 内部 fire-and-forget 的建卡 promise 落定。 */
 const flushAsync = () => new Promise<void>(resolve => setTimeout(resolve, 0));

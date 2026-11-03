@@ -1,36 +1,28 @@
 package com.summit.dp.shared.utils;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-
-import com.summit.dp.tools.application.service.ToolListProcessor;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.personalization.domain.model.Personalization;
-import com.summit.dp.personalization.domain.model.ReplyStyle;
-import com.summit.dp.shared.local.LocalInstance;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.application.chat.ChatImageResolver;
-
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.ModelConfig;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workflow.application.chat.ChatCommand;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.dp.personalization.domain.model.Personalization;
+import com.summit.dp.personalization.domain.model.ReplyStyle;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.shared.local.LocalInstance;
+import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.shared.vo.SessionVO;
+import com.summit.dp.shared.vo.WorkspaceVO;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
+import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
-import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
-import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.shared.vo.WorkspaceVO;
+import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.dp.shared.vo.SessionVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,18 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 执行身份在 prepare 阶段固化、并由 commitUserMessage 一次落库（2026-09-30 改造）。
@@ -125,7 +108,7 @@ class RequestPreparerExecutionIdentityTest {
                 .builder().id(SESSION_ID).rootSessionId(0L).historyRevision(3L).build()));
         when(modelService.resolveRuntimeConfig(eq(MODEL_ID), any())).thenReturn(new RuntimeModel(ModelConfig.builder()
                 .baseUrl("https://example.invalid").apiKey("secret-key")
-                .modelName("deepseek-chat").provider("deepseek").build(), false));
+                .modelName("deepseek-chat").provider("deepseek").reasoningEffort("high").build(), false));
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(mcpService.currentConfig()).thenReturn(null);
         when(workspaceConverter.toSpec(any(com.summit.dp.shared.vo.WorkspaceVO.class),
@@ -188,7 +171,7 @@ class RequestPreparerExecutionIdentityTest {
         long turnId = 9001L;
         // 受理入口内部统一走带命令身份的重载（无命令身份时传 null/null），
         // 桩与断言都要落在同一层，否则桩挂在一个没人调的方法上。
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any(), any(), any()))
+        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(turnId);
 
         Long acceptedTurnId = preparer.commitUserMessage(context);
@@ -205,8 +188,9 @@ class RequestPreparerExecutionIdentityTest {
         verify(chatTurnService, never()).findByExecutionId(any());
 
         // 模型快照不进执行行（execution 不再保存业务事实），而是落到轮次上：
-        // 下面 acceptTurn 的断言才是模型名的落点，二者口径必须一致。
-        verify(chatTurnService).acceptTurn(SESSION_ID, SESSION_ID, null, executionId, "deepseek-chat", "deepseek", null, null);
+        // 下面 acceptTurn 的断言才是「模型 + 思考档」的落点，二者口径必须一致。
+        verify(chatTurnService).acceptTurn(SESSION_ID, SESSION_ID, null, executionId,
+                TurnModelSnapshot.of("deepseek-chat", "deepseek", "high"), null, null);
         // 消息归属是**轮次 ID**，不是执行 ID —— 框架执行 ID 不进入消息归属。
         verify(transcriptService).appendUser(SESSION_ID, SESSION_ID, turnId, context.pendingUserMessage());
     }

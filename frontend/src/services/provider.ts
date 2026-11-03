@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { ProviderConfigVO, ProviderConfigPayload } from '../types/chat';
+import type {Result} from './types';
+import type {ProviderConfigPayload, ProviderConfigVO} from '../types/chat';
 
 /**
  * 提供商配置预设 API（对应后端 ProviderConfigController）。

@@ -3,9 +3,9 @@ package com.summit.dp.workflow.infrastructure.harness.transcript;
 import com.summit.core.conversation.api.ConversationTranscriptSink;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.ToolMessageEntity;
-import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.ExecutionEventMetadata;
+import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -20,6 +20,7 @@ import java.util.Map;
 public class DatabaseConversationTranscriptSink implements ConversationTranscriptSink {
     private final ConversationTranscriptService transcriptService;
     private final ExecutionLocator executionLocator;
+    private final GeneratedImagePersistence imagePersistence;
 
     @Override
     public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages) {
@@ -33,6 +34,7 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
                             String responseId, Map<String, Object> eventMetaData) {
         // 会话归属与投递根身份必须分开，子执行不能投进自身桶。
         long sessionId = resolveSessionId(executionId, eventMetaData);
+        imagePersistence.persist(sessionId, aiMessage);
         Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(eventMetaData);
         transcriptService.appendRound(sessionId, rootSessionId,
                 ExecutionEventMetadata.turnId(eventMetaData),

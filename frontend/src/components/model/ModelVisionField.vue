@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useId } from 'vue';
-import { useI18n } from '../../i18n';
+import {useId} from 'vue';
+import {useI18n} from '../../i18n';
 
 defineProps<{ modelValue: boolean; isDark: boolean }>();
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>();

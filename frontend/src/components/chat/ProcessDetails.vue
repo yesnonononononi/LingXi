@@ -9,12 +9,12 @@
  * <p>拆分契约：renderer 的根元素就是原来那一层元素、class 逐字复制，故 `data-testid` 与 DOM
  * 嵌套层级与拆分前等价（由 `tests/processDetailsSplit.test.cjs` 断言）。</p>
  */
-import { computed } from 'vue';
-import type { ChatMessage, SubSessionVO } from '../../types/chat';
-import type { ImageProcessItem } from '../../utils/readImageTools';
-import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
-import type { ProcessRendererSpec, RendererContext, ThinkingScrollApi } from './process/processRenderers';
-import { resolveRenderer } from './process/processRenderers';
+import {computed} from 'vue';
+import type {ChatMessage, SubSessionVO} from '../../types/chat';
+import type {ImageProcessItem} from '../../utils/readImageTools';
+import {useStreamStickyScroll} from '../../composables/useStreamStickyScroll';
+import type {ProcessRendererSpec, RendererContext, ThinkingScrollApi} from './process/processRenderers';
+import {resolveRenderer} from './process/processRenderers';
 
 const props = defineProps<{
   items: ImageProcessItem[];

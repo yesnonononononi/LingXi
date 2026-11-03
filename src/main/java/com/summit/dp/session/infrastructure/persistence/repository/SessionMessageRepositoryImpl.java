@@ -9,18 +9,14 @@ import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
-import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
-import com.summit.dp.session.infrastructure.persistence.po.SessionPO;import lombok.RequiredArgsConstructor;
-
+import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @Repository
 @RequiredArgsConstructor
@@ -144,19 +140,13 @@ public class SessionMessageRepositoryImpl
         }
     }
 
-    /**
-     * 确认会话行存在（原 {@code SELECT ... FOR UPDATE}）。
-     *
-     * <p><b>为什么不再是锁定读</b>：SQLite 没有行锁，会话追加的并发裁决改由
-     * {@code uk_session_response_id} 唯一索引承担。这里保留「存在性校验」这一半语义：
-     * 会话在落库期间必然存在，不存在则是真实调用错误，不能被静默吞掉。</p>
-     */
+    /** 追加前锁定会话行，同一会话的幂等判断与写入必须串行提交。 */
     @Override
     public void lockSessionForAppend(Long sessionId) {
         if (sessionId == null) return;
         SessionPO locked = sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
                 .select(SessionPO::getId)
-                .eq(SessionPO::getId, sessionId));
+                .eq(SessionPO::getId, sessionId).last("FOR UPDATE"));
         if (locked == null) {
             throw new IllegalStateException("落库前锁定会话失败: sessionId=" + sessionId + " 不存在");
         }

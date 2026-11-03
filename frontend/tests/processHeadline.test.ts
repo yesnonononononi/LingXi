@@ -7,13 +7,13 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextTick } from 'vue';
-import { setPreference } from '../src/i18n';
-import { formatProcessHeadline, formatProcessStatus } from '../src/utils/processHeadline';
-import { summarizeProcess } from '../src/utils/processSegments';
-import type { ProcessSummary } from '../src/utils/processSegments';
-import type { ProcessTimelineItem, ToolCallTrace } from '../src/types/chat';
-import { AgentToolName } from '../src/utils/toolNames';
+import {nextTick} from 'vue';
+import {setPreference} from '../src/i18n';
+import {formatProcessHeadline, formatProcessStatus} from '../src/utils/processHeadline';
+import type {ProcessSummary} from '../src/utils/processSegments';
+import {summarizeProcess} from '../src/utils/processSegments';
+import type {ProcessTimelineItem, ToolCallTrace} from '../src/types/chat';
+import {AgentToolName} from '../src/utils/toolNames';
 
 const summary = (patch: Partial<ProcessSummary> = {}): ProcessSummary => ({
   toolNames: [], targets: [], pendingCount: 0, runningCount: 0, unknownCount: 0, latest: undefined, ...patch,

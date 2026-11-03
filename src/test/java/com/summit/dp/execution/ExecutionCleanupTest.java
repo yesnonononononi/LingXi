@@ -1,14 +1,9 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
@@ -21,10 +16,8 @@ import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
 import com.summit.dp.execution.application.service.ExecutionCleanupService.CleanupResult;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
-import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
-import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
@@ -34,6 +27,8 @@ import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.persistence.po.TaskPO;
@@ -65,24 +60,21 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.Instant;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** 使用真实 Mapper 验证清理边界、并发重查与独立回收事务。 */
 @SpringJUnitConfig(ExecutionCleanupTest.Config.class)
@@ -570,11 +562,11 @@ class ExecutionCleanupTest {
     @Configuration
     @EnableTransactionManagement
     static class Config {
-        @Bean(destroyMethod = "shutdown") SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("ExecutionCleanupTest");
+        @Bean(destroyMethod = "shutdown") H2TestDatabase database() {
+            return H2TestDatabase.create("ExecutionCleanupTest");
         }
 
-        @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
+        @Bean PlatformTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
@@ -582,7 +574,7 @@ class ExecutionCleanupTest {
             return ExecutionRepositoryTestFactory.tempDataDir();
         }
 
-        @Bean SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
+        @Bean SqlSessionTemplate sql(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -591,7 +583,7 @@ class ExecutionCleanupTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return SqliteTestDatabase.sqlSession(factory.getObject());
+            return H2TestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean ExecutionRepository repository(SqlSessionTemplate sql) {

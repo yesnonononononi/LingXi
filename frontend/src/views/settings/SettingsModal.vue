@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type CSSProperties } from 'vue';
+import {computed, type CSSProperties, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import LxModal from '../../components/common/LxModal.vue';
-import { normalizeSettingsTab } from '../../utils/enum';
-import type { SettingsTabKey } from '../../utils/enum';
+import type {SettingsTabKey} from '../../utils/enum';
+import {normalizeSettingsTab} from '../../utils/enum';
 import GeneralTab from './tabs/GeneralTab.vue';
 import PersonalizationTab from './tabs/PersonalizationTab.vue';
-import { usePersonalizationCopy } from './tabs/personalizationCopy';
+import {usePersonalizationCopy} from './tabs/personalizationCopy';
 import ModelsTab from './tabs/ModelsTab.vue';
 import CompactionTab from './tabs/CompactionTab.vue';
 import AgentsTab from './tabs/AgentsTab.vue';
@@ -13,11 +13,11 @@ import TeamsTab from './tabs/TeamsTab.vue';
 import McpTab from './tabs/McpTab.vue';
 import DataTab from './tabs/DataTab.vue';
 import SecurityTab from './tabs/SecurityTab.vue';
-import { useSecurityCopy } from './tabs/securityCopy';
+import {useSecurityCopy} from './tabs/securityCopy';
 import TermsTab from './tabs/TermsTab.vue';
 import AboutTab from './tabs/AboutTab.vue';
-import { useTheme } from '../../composables/useTheme';
-import { useI18n } from '../../i18n';
+import {useTheme} from '../../composables/useTheme';
+import {useI18n} from '../../i18n';
 
 const props = withDefaults(defineProps<{
   isDark?: boolean;

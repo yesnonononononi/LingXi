@@ -1,40 +1,25 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
-
+import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.shared.support.InputTestSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.Message;
-import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.InterceptorResult;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.core.runtime.loop.LoopResult;
+import com.summit.core.runtime.loop.*;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
@@ -43,8 +28,16 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
@@ -66,17 +59,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 独立验证（QA）：委派生命周期的六类交错场景 + 泄漏/残留检查。
@@ -84,7 +70,7 @@ import static org.mockito.Mockito.when;
  * <p>与 {@code QaDelegationLifecycleInterleavingTest} 的关系：那条用「每轮结束事故事件 + 顺序调用」
  * 覆盖正向路径；本类刻意换一组观察点 —— 待启动/挂起态的门控、两种相对顺序、<b>worker 运行期间
  * 第二次唤醒不得丢失</b>（用 latch 卡住首轮 resume 而非事后轮询）、失败/取消的结束事实，
- * 以及注册表条目与保留唤醒的真实回收。所有时序观察一律用 latch / 计数自旋，<b>不用 sleep</b>。</p>
+ * 以及注册表条目与待处理输入的真实回收。所有时序观察一律用 latch / 计数自旋，<b>不用 sleep</b>。</p>
  */
 class QaIndependentDelegationLifecycleTest {
 
@@ -114,6 +100,8 @@ class QaIndependentDelegationLifecycleTest {
     private SessionExecutionRegistry registry;
     private ExecutionResumeCoordinator coordinator;
     private SubExecutionLifecycle lifecycle;
+    private InputWakeupService wakeups;
+    private final AtomicBoolean pendingInput = new AtomicBoolean();
     private SubAgentWaitInterceptor waitInterceptor;
 
     @BeforeEach
@@ -123,18 +111,24 @@ class QaIndependentDelegationLifecycleTest {
                 new SuspendedExecutionResumer(toolCallRepository, sessionAttributeRestorer,
                         modelContextService, provider(executionControl)),
                 executionControl, provider(frameworkExecutions), provider(activity));
-        lifecycle = new SubExecutionLifecycle(registry, coordinator, executionIdentity, mock(SubAgentCompleteNotifier.class));
-        waitInterceptor = new SubAgentWaitInterceptor(registry, emailService, coordinator);
+        wakeups = InputTestSupport.wakeup(coordinator, frameworkExecutions, activity, registry, emailService);
+        SubAgentCompleteNotifier notifier = mock(SubAgentCompleteNotifier.class);
+        doAnswer(call -> { pendingInput.set(true); return null; }).when(notifier).notifyCommander(any());
+        doAnswer(call -> { pendingInput.set(true); return null; }).when(notifier).notifyAbandoned(anyLong(), anyLong());
+        lifecycle = new SubExecutionLifecycle(registry, wakeups, executionIdentity, notifier);
+        waitInterceptor = new SubAgentWaitInterceptor(InputTestSupport.collaboration(registry, emailService));
 
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID + 1)).thenReturn(ROOT_SESSION_ID);
         when(activity.isActive(any())).thenAnswer(invocation -> rootActive.get());
         when(executionControl.resume(any())).thenAnswer(invocation -> {
+            pendingInput.set(false);
             resumeCount.incrementAndGet();
             return invocation.getArgument(0);
         });
         when(executionControl.fail(any(), any())).thenReturn(() -> { });
-        when(emailService.hasPending(anyLong(), anyLong())).thenReturn(false);
+        when(emailService.pendingItems(anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
+                ? List.of(EmailMessageVO.builder().id(1L).senderId(8L).content("待处理交付").build()) : List.of());
 
         when(executions.findResumeGeneration(ROOT_EXECUTION_ID)).thenReturn(GENERATION);
         when(frameworkExecutions.findById(String.valueOf(ROOT_EXECUTION_ID)))
@@ -156,6 +150,7 @@ class QaIndependentDelegationLifecycleTest {
 
     @AfterEach
     void shutdown() {
+        wakeups.close();
         coordinator.close();
     }
 
@@ -167,14 +162,14 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("① 待启动子执行（已受理未开跑）→ 根驻留不收尾；revokeChild 撤销后恢复「无未结束子」")
     void pendingStartKeepsRootResidentUntilRevoked() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
-        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID));
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
+        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), null));
 
         InterceptorResult resident = waitInterceptor.onBeforeComplete(rootLoopContext());
         assertFalse(resident.next(), "已受理但尚未开跑的子执行也算未结束，根不得提前完成");
         assertEquals(LoopResult.Status.SUSPENDED, resident.loopResult().status());
 
-        registry.revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        registry.revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "撤销后应恢复为无未结束子");
         assertEquals(0, resumeCount.get());
     }
@@ -205,11 +200,12 @@ class QaIndependentDelegationLifecycleTest {
         when(sessionRepository.findById(ROOT_SESSION_ID)).thenReturn(Optional.empty());
         when(subSessionResolver.resolve(ROOT_SESSION_ID, childAgent)).thenReturn(SubSessionTarget.fresh("660"));
         when(requestFactory.build(any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(mock(AgentRequest.class));
+                .thenReturn(AgentRequest.builder().executionId("901").build());
 
         // 提交失败：线程池拒绝之类。
         doThrow(new RuntimeException("pool rejected")).when(submitter).submit(any());
         SessionExecutionRegistry failingRegistry = new SessionExecutionRegistry();
+        failingRegistry.restoreExecution(ROOT_SESSION_ID, ROOT_SESSION_ID, "900");
         CallSubAgentTool failingTool = new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
                 subSessionResolver, failingRegistry, sessionRepository, submitter, renderer);
 
@@ -222,6 +218,7 @@ class QaIndependentDelegationLifecycleTest {
         doNothing().when(submitter).submit(any());
         when(renderer.render(any(), any(), any())).thenReturn(ToolExecuteResult.success("accepted"));
         SessionExecutionRegistry okRegistry = new SessionExecutionRegistry();
+        okRegistry.restoreExecution(ROOT_SESSION_ID, ROOT_SESSION_ID, "900");
         CallSubAgentTool okTool = new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
                 subSessionResolver, okRegistry, sessionRepository, submitter, renderer);
 
@@ -234,14 +231,14 @@ class QaIndependentDelegationLifecycleTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("②A 子先终结（根活跃）→ 保留唤醒；根随后挂起 → 重放恰好一次恢复")
-    void finishWhileRootActiveRetainsWakeThenSuspendReplays() {
+    @DisplayName("②A 子先终结（根活跃）→ 待处理输入；根随后挂起 → 重放恰好一次恢复")
+    void activeInputIsFoundByReleaseRecheck() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
 
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
-        assertEquals(0, resumeCount.get(), "根仍活跃时不得派发，只保留唤醒");
+        assertEquals(0, resumeCount.get(), "根仍活跃时不得派发，只待处理输入");
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
 
         suspendRoot();
@@ -252,11 +249,11 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("②B 根先挂起 → 子随后终结 → 结束事实直接唤醒，恰好一次恢复")
     void suspendBeforeFinishWakesRootDirectly() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
 
         suspendRoot();
-        assertEquals(0, resumeCount.get(), "无保留唤醒时挂起不触发恢复");
+        assertEquals(0, resumeCount.get(), "无待处理输入时挂起不触发恢复");
 
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
         awaitResumeCount(1);
@@ -289,7 +286,7 @@ class QaIndependentDelegationLifecycleTest {
         when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(first, second);
         liveTasks.set(List.of(first));
 
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
         await(firstResumeEntered);
@@ -313,10 +310,9 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("④ 子执行挂起等审批 → 仍算未结束、根驻留；审批后终结 → 唤醒根")
     void childWaitingApprovalKeepsRootThenWakesOnFinish() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
 
-        lifecycle.onSuspended(childExecution(CHILD_SESSION_ID));
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍算未结束");
 
         assertFalse(waitInterceptor.onBeforeComplete(rootLoopContext()).next(),
@@ -335,10 +331,10 @@ class QaIndependentDelegationLifecycleTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("⑥ 子执行失败时根仍活跃：保留唤醒，根挂起后立即恢复，其他队员继续运行")
-    void failedChildRetainsWakeUntilActiveCommanderSuspends() {
+    @DisplayName("⑥ 子执行失败时根仍活跃：待处理输入，根挂起后立即恢复，其他队员继续运行")
+    void failedChildResultIsCheckedAfterActiveCommanderReleases() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
         delegateRunningChild(CHILD_SESSION_ID + 1);
 
@@ -358,31 +354,31 @@ class QaIndependentDelegationLifecycleTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("泄漏：根终态必须清掉保留唤醒（否则会唤醒一个再也不会挂起的执行）")
-    void rootTerminalClearsRetainedWake() {
+    @DisplayName("空输入通知在控制槽位释放后不会重放成恢复")
+    void notificationWithoutInputDoesNotReplayAfterRelease() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         coordinator.accept(ROOT_EXECUTION_ID);
         assertEquals(0, resumeCount.get(), "根活跃时唤醒被保留");
 
         lifecycle.onFinished(rootExecution());
         rootActive.set(false);
-        coordinator.flushPendingWake(ROOT_EXECUTION_ID);
+        wakeups.resumeIfInputPending(ROOT_EXECUTION_ID).join();
 
-        assertEquals(0, resumeCount.get(), "保留唤醒已被清理，flush 必须是 no-op");
+        assertEquals(0, resumeCount.get(), "没有输入就不会因旧通知再次恢复");
     }
 
     @Test
     @DisplayName("回收：注册表条目仅当「根已收尾且子已清空」时才从 roots 移除，早一格都不能删")
     void registryEntryReclaimedOnlyWhenRootAndChildrenGone() throws Exception {
-        registry.beginRoot(ROOT_SESSION_ID);
-        registry.bindRunningChild(ROOT_SESSION_ID, CHILD_SESSION_ID, Thread.currentThread());
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
+        registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), null);
 
-        registry.finishRoot(ROOT_SESSION_ID);
+        registry.finishRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         assertTrue(rootsOf(registry).containsKey(ROOT_SESSION_ID),
                 "根收尾但子仍在跑时，条目不得被 removeIfFinished 误删");
 
-        registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         assertFalse(rootsOf(registry).containsKey(ROOT_SESSION_ID),
                 "根已收尾且子已清空后，条目必须被回收");
     }
@@ -393,12 +389,13 @@ class QaIndependentDelegationLifecycleTest {
 
     private void suspendRoot() {
         rootActive.set(false);
-        lifecycle.onSuspended(rootExecution());
+
+        wakeups.resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     private void delegateRunningChild(long childSessionId) {
-        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId);
-        registry.bindRunningChild(ROOT_SESSION_ID, childSessionId, Thread.currentThread());
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
     }
 
     private LoopContext rootLoopContext() {
@@ -421,7 +418,7 @@ class QaIndependentDelegationLifecycleTest {
     }
 
     private static Execution childExecution(long childSessionId) {
-        return Execution.builder().id("1234")
+        return Execution.builder().id(String.valueOf(childSessionId))
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, String.valueOf(childSessionId),
@@ -437,7 +434,8 @@ class QaIndependentDelegationLifecycleTest {
                 .executionState(ExecutionState.SUSPENDED)
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
-                                ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)))
+                                ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID),
+                                ExecutionAttributes.AGENT_ID, String.valueOf(ROOT_AGENT_ID)))
                                 .build())
                         .build())
                 .build();

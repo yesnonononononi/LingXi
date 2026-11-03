@@ -80,6 +80,7 @@ export interface ThinkingBlock extends BlockBase {
 
 /** 正文块（对应后端 {@code TextBlock}）。 */
 export interface TextBlock extends BlockBase {
+  imageUrls?: string[];
   type: 'TEXT';
   /** 正文；字段名同 {@link ThinkingBlock.text}，必须与后端 {@code text} 对齐 */
   text: string;
@@ -136,6 +137,8 @@ export interface TurnViewVO {
   /** 该轮的用户提问；旧数据可能为 null */
   userMessage?: string | null;
   userMessageId?: string | null;
+  /** 委派身份随正文到达，不依赖另一次历史查询。 */
+  parentTurnId?: string | null;
   userImageUrls?: string[];
   resumeSupplements?: { messageId: string; text: string; createdAt?: string | null }[];
   /** 块列表（已按 order 升序）；增量事件时只含变化的那一块 */

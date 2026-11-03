@@ -70,6 +70,9 @@ window.parseDocument = renderMarkdownDocument;
       if (mutation === 'queue' && id.replaceAll('\\', '/').endsWith('/src/utils/mermaid.ts')) {
         return source.replace('const task = queue.then(', 'const task = Promise.resolve().then(');
       }
+      if (mutation === 'participants' && id.replaceAll('\\', '/').endsWith('/src/utils/mermaid.ts')) {
+        return source.replace('normalizeSequenceParticipants(source)', 'source');
+      }
       if (mutation === 'background' && id.replaceAll('\\', '/').endsWith('/src/style.css')) {
         return source + '\nhtml.light .markdown-body .mermaid-block { background: #181d28; }';
       }
@@ -129,6 +132,107 @@ window.parseDocument = renderMarkdownDocument;
   assert.equal(await evaluate('document.querySelectorAll("#actual blockquote .mermaid-block, #actual li .mermaid-block").length'), 2);
   assert.equal(await evaluate('new Set([...document.querySelectorAll("#actual .mermaid-diagram svg")].map(node => node.id)).size'), 3);
   await fs.writeFile(path.join(output, 'light.png'), (await window.webContents.capturePage()).toPNG());
+
+  const storageOverview = `graph TD
+    A["workbuddy.db (270KB)<br/>Drizzle ORM<br/>sessions/workspaces/usage"] -->|"cwd → slug<br/>sessionId"| B
+    B["projects/&lt;cwd-slug&gt;/&lt;sessionId&gt;.jsonl<br/>293.92MB / 101 个<br/>真身"] --> C
+    B --> D[".meta.json<br/>acpConnectionId"]
+    B --> E[".file-rollback.ndjson<br/>v/requestId/commitSeq"]
+    E --> F["file-history/&lt;uuid&gt;<br/>&lt;hash&gt;@v1..vN<br/>3912 文件 / 47MB"]
+    B --> G["blobs/xx/&lt;sha256&gt;.png<br/>197 张 / 20MB"]
+    E --> H["changes-index / artifact-index<br/>changes-detail"]
+    A --> I["edge-sync-mapping-v4.db<br/>云端 ID ↔ 本地 ID"]`;
+  await setContent(fence(storageOverview));
+  await waitFor('document.querySelector("#actual .mermaid-diagram svg") || document.querySelector("#actual [role=status]")?.textContent.includes("渲染失败")', '存储全景图未结束渲染');
+  assert.equal(await evaluate('document.querySelectorAll("#actual .mermaid-diagram svg").length'), 1, '截图中的存储全景图必须正常成图');
+
+  const reservedParticipant = `sequenceDiagram
+    participant Child as 子执行
+    participant Life as SubExecutionLifecycle
+    participant Coord as ExecutionResumeCoordinator
+    participant Repo as LocalExecutionRepository
+    participant Loop as 根 loop
+
+    Child->>Life: onFinished(子)
+    Life->>Coord: accept(rootId)
+    Coord->>Repo: isActive(rootId)?
+    Repo-->>Coord: true（根正持有槽位）
+    Coord->>Coord: pendingWakes.add(rootId) → 返回 RUNNING
+    Note over Coord: 欠账：不派发、不落库、不抢锁
+    Loop->>Repo: unregister(signal)（根挂起）
+    Repo->>Repo: active.remove → 槽位释放
+    Repo->>Life: afterCommit → notifySuspended
+    Life->>Coord: flushPendingWake(rootId)
+    Coord->>Coord: remove(rootId)==true（认领）
+    Coord->>Coord: accept(rootId)（此时 isActive=false）
+    Coord->>Repo: enqueue → afterCommit → dispatch
+    Coord->>Loop: resume 拉起新 loop
+`;
+  // 正对照证明原图确实触发词法冲突，避免测试样本失去缺陷特征后假绿。
+  const parseError = await evaluate(`window.library().then(async ({ default: mermaid }) => {
+    try { await mermaid.parse(${JSON.stringify(reservedParticipant)}); return ''; }
+    catch (error) { return error.message; }
+  })`);
+  assert.match(parseError, /got 'loop'/);
+  await setContent(fence(reservedParticipant));
+  await waitFor('document.querySelector("#actual .mermaid-diagram svg") || document.querySelector("#actual [role=status]")?.textContent.includes("渲染失败")', '关键字参与者未结束渲染');
+  assert.equal(await evaluate('document.querySelectorAll("#actual .mermaid-diagram svg").length'), 1, '截图中的 Loop 参与者必须正常成图');
+  assert.match(await evaluate('document.querySelector("#actual svg").textContent'), /根 loop/);
+  assert.match(await evaluate('document.querySelector("#actual svg").textContent'), /resume 拉起新 loop/);
+  await evaluate('document.querySelector("#actual .copy-code-btn").click()');
+  assert.equal(await evaluate('window.copiedText'), reservedParticipant + '\n', '渲染修正不能改写复制的原始源码');
+  await fs.writeFile(path.join(output, 'reserved-participant.png'), (await window.webContents.capturePage()).toPNG());
+
+  await evaluate('(async () => { window.normalizeSequence = (await import("/src/utils/mermaidSequence.ts")).normalizeSequenceParticipants; })()');
+  const keywordSource = `sequenceDiagram
+accDescr {
+participant Loop
+Loop->>End: 可访问性说明里的示例不改写
+}
+participant Loop
+actor End as 结束
+participant lxParticipant0 as 已有参与者
+%% Loop 和 End 是原始 ID
+%% Loop->>End: 注释里的示例不改写
+loop Loop 与 End 的循环说明
+  Loop-->>+End: Loop: end#59; 说明保留
+  Note over Loop, End: Loop 与 End 的注释
+  Note right of Loop: 右侧注释
+  End-->>-Loop: 回应
+end
+activate Loop
+deactivate Loop
+link Loop: 文档 @ https://example.com/Loop
+destroy End
+`;
+  const normalized = await evaluate(`window.normalizeSequence(${JSON.stringify(keywordSource)})`);
+  assert.match(normalized, /participant lxParticipant0_ as Loop/);
+  assert.match(normalized, /accDescr \{\nparticipant Loop\nLoop->>End: 可访问性说明里的示例不改写\n\}/);
+  assert.match(normalized, /actor lxParticipant1 as 结束/);
+  assert.match(normalized, /participant lxParticipant0 as 已有参与者/);
+  assert.match(normalized, /%% Loop 和 End 是原始 ID/);
+  assert.match(normalized, /%% Loop->>End: 注释里的示例不改写/);
+  assert.match(normalized, /loop Loop 与 End 的循环说明/);
+  assert.match(normalized, /lxParticipant0_-->>\+lxParticipant1: Loop: end#59; 说明保留/);
+  assert.match(normalized, /Note over lxParticipant0_, lxParticipant1: Loop 与 End 的注释/);
+  assert.match(normalized, /Note right of lxParticipant0_: 右侧注释/);
+  assert.match(normalized, /lxParticipant1-->>-lxParticipant0_: 回应/);
+  assert.match(normalized, /activate lxParticipant0_\ndeactivate lxParticipant0_/);
+  assert.match(normalized, /link lxParticipant0_: 文档 @ https:\/\/example.com\/Loop/);
+  assert.match(normalized, /destroy lxParticipant1/);
+  assert.equal(await evaluate(`window.normalizeSequence(${JSON.stringify(normalized)})`), normalized, '重复处理必须保持稳定');
+  const ordinary = 'sequenceDiagram\nparticipant RootLoop as 根 loop\nRootLoop->>Repo: Loop\n';
+  const flowchart = 'flowchart LR\nLoop[根循环] --> End[结束]\n';
+  for (const unchanged of [ordinary, flowchart]) {
+    assert.equal(await evaluate(`window.normalizeSequence(${JSON.stringify(unchanged)})`), unchanged);
+  }
+  const configured = '---\r\ntitle: Loop\r\n---\r\n%% 配置头后仍需修正参与者\r\n' + keywordSource.replaceAll('\n', '\r\n');
+  const configuredNormalized = await evaluate(`window.normalizeSequence(${JSON.stringify(configured)})`);
+  assert.ok(configuredNormalized.startsWith('---\r\ntitle: Loop\r\n---\r\n%% 配置头后仍需修正参与者\r\n'));
+  assert.match(configuredNormalized, /participant lxParticipant0_ as Loop\r\n/);
+  await setContent(fence(keywordSource));
+  await waitFor('document.querySelector("#actual .mermaid-diagram svg") || document.querySelector("#actual [role=status]")?.textContent.includes("渲染失败")', '循环与参与者关键字冲突未结束渲染');
+  assert.equal(await evaluate('document.querySelectorAll("#actual .mermaid-diagram svg").length'), 1, '修正 ID 后，循环、注释和激活仍须通过真实渲染');
 
   await setContent(fence('这不是有效的图表') + '\n\n' + first);
   await waitFor('document.querySelector("#actual [role=status]")?.textContent.includes("渲染失败") && document.querySelector("#actual .mermaid-diagram svg")', '错误图表阻断了后续图表');

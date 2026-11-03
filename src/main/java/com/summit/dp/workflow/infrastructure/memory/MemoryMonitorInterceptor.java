@@ -3,10 +3,10 @@ package com.summit.dp.workflow.infrastructure.memory;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
+import com.summit.core.runtime.loop.AgenticLoopListener;
 import com.summit.core.runtime.loop.InterceptorResult;
+import com.summit.core.runtime.loop.InterceptorType;
 import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopInterceptor;
-import com.summit.core.workspace.WorkspaceSpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -18,21 +18,15 @@ import java.util.Set;
 /** 每次调用前检查真实文件，续轮与恢复共用同一个入口。 */
 @Component
 @RequiredArgsConstructor
-public class MemoryMonitorInterceptor implements LoopInterceptor {
+public class MemoryMonitorInterceptor {
     private final MemoryMonitor monitor;
 
-    @Override
-    public int order() { return -825; }
-
     // 消息同步失败必须上抛，避免旧提醒已删除而新提醒未进入检查点。
-    @Override
-    public boolean catchErr() { return false; }
-
-    @Override
+    @AgenticLoopListener(value = InterceptorType.BEFORE_INVOKE, name = "memoryMonitorInterceptor",
+            order = -825)
     public InterceptorResult onBeforeModelInvoke(LoopContext context) {
         Execution execution = context.getLoopMessages().getExecution();
-        WorkspaceSpec workspace = execution.getAgentRequest().getWorkspaceSpec();
-        List<SystemMessageEntity> reminders = monitor.checkMemoryLimits(workspace == null ? null : workspace.workDir());
+        List<SystemMessageEntity> reminders = monitor.checkMemoryLimits();
         Set<String> pending = new LinkedHashSet<>();
         reminders.forEach(reminder -> pending.add(reminder.text()));
         List<Message> retained = new ArrayList<>();

@@ -7,6 +7,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.checklist.application.ChecklistCommand;
@@ -32,9 +33,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class ChecklistReminderRecoveryTest {
     private static final long SESSION = 6301L;
@@ -47,7 +46,7 @@ class ChecklistReminderRecoveryTest {
     void start() {
         fixture = ChecklistTestDatabase.start("reminder-recovery");
         service = fixture.service();
-        reminder = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery());
+        reminder = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
         created = service.create(ChecklistCommand.create(SESSION, null, "恢复", List.of("一步", "两步")));
     }
 
@@ -160,7 +159,7 @@ class ChecklistReminderRecoveryTest {
         doReturn(false).when(rejected).claimReminder(any(Checklist.class), anyLong());
         ChecklistService rejectedService = fixture.serviceWithRepository(rejected);
         ChecklistReminderInterceptor rejectedReminder = new ChecklistReminderInterceptor(rejectedService,
-                new ChecklistContextInjector(rejectedService), new ChecklistReminderDelivery());
+                new ChecklistContextInjector(rejectedService), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
 
         assertThrows(ClientException.class, () -> rejectedReminder.onBeforeComplete(context(execution("1001"))));
         assertFalse(reloaded().isRemindStatus());

@@ -1,5 +1,5 @@
-import { ref, watch, type ComputedRef, type Ref } from 'vue';
-import type { ChatSession, WorkspaceVO } from '../../types/chat';
+import {type ComputedRef, ref, type Ref, watch} from 'vue';
+import type {ChatSession, WorkspaceVO} from '../../types/chat';
 
 /**
  * 侧边栏工作空间展开态：`expandedWorkspaces`（折叠/展开）与 `fullyExpandedWorkspaces`

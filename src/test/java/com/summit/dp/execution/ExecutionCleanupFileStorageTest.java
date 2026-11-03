@@ -1,7 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,34 +13,32 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
-import com.summit.dp.shared.support.SqliteTestDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /** 大快照在真实文件库上的回收：每条快照单独提交，引用保护与回滚开销都要成立。 */
 class ExecutionCleanupFileStorageTest {
     @Test
     @Timeout(60)
     void cleanupKeepsReferencedHistoryAndCommitsPerExecution() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("cleanup-file");
+        H2TestDatabase database = H2TestDatabase.create("cleanup-file");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
         try {
             MybatisConfiguration configuration = new MybatisConfiguration();
@@ -54,7 +50,7 @@ class ExecutionCleanupFileStorageTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
+            SqlSessionTemplate sql = H2TestDatabase.sqlSession(factory.getObject());
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);

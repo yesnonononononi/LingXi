@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { t } from '../../i18n';
+import {t} from '../../i18n';
+
 withDefaults(defineProps<{ status?: string; canResume: boolean; resuming: boolean;
   hasUnresolved: boolean; error: string; supplementDraft?: string; supplementOpen?: boolean }>(),
   { supplementDraft: '', supplementOpen: false });

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, onUnmounted, shallowRef, watch } from 'vue';
-import { t } from '../../i18n';
-import { loader, VueMonacoEditor } from '@guolao/vue-monaco-editor';
+import {computed, onUnmounted, shallowRef, watch} from 'vue';
+import {t} from '../../i18n';
+import {loader, VueMonacoEditor} from '@guolao/vue-monaco-editor';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/features/register.all.js';
 import 'monaco-editor/basic-languages/monaco.contribution.js';
 import 'monaco-editor/languages/features/json/register.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker&inline';
 import JsonWorker from 'monaco-editor/language/json/json.worker.js?worker&inline';
-import type { FilePreviewTab } from '../../types/filePreview';
+import type {FilePreviewTab} from '../../types/filePreview';
 
 // 本地模块和内嵌 Worker 让 file:// 桌面窗口无需访问 CDN。
 self.MonacoEnvironment = {

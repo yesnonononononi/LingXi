@@ -1,6 +1,5 @@
 package com.summit.dp.execution.application.port;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Set;
@@ -99,17 +98,7 @@ public interface ExecutionCheckpointStore {
      */
     CopyResult copyTo(String targetDataDir);
 
-    /**
-     * 在「排除检查点写入」的窗口内执行一次搬迁动作。
-     *
-     * <p><b>为什么必须同一个窗口</b>：数据目录是一个集合（SQLite 库文件 + {@code checkpoints} 目录）。
-     * 若先做库快照再复制文件，中间提交的保存会把库快照引用的旧文件删掉；
-     * 反过来先复制文件再做库快照，快照可能引用一个没被复制的新文件。两种顺序都会得到
-     * 「库里指向不存在的正文」。因此库快照与目录复制必须在同一段静止窗口里完成。</p>
-     *
-     * @param migrationStep 搬迁动作（库快照 + 目录复制）
-     * @throws IllegalStateException 等不到静默窗口（仍有检查点写入）
-     */
+    /** 库与检查点正文属于同一备份集合，必须在排除检查点写入的窗口里复制。 */
     void withWriteQuiesced(Runnable migrationStep);
 
     /**

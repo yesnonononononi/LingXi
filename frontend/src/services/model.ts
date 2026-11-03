@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { PageResult, ModelConfigVO, ModelConfigPayload, ProviderModelGroupVO } from '../types/chat';
+import type {Result} from './types';
+import type {ModelConfigPayload, ModelConfigVO, PageResult, ProviderModelGroupVO} from '../types/chat';
 
 /** 2. 模型配置 API (对应后端 ModelController) */
 export class ModelAPI {

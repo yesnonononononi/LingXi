@@ -4,10 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import lombok.RequiredArgsConstructor;
@@ -181,6 +181,7 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
                 .status(turn.getStatus() == null ? null : turn.getStatus().name())
                 .modelName(turn.getModelName())
                 .modelProvider(turn.getModelProvider())
+                .reasoningEffort(turn.getReasoningEffort())
                 .inputTokenCount(turn.getInputTokenCount())
                 .outputTokenCount(turn.getOutputTokenCount())
                 .totalTokenCount(turn.getTotalTokenCount())
@@ -206,6 +207,7 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
                 .status(ChatTurnStatus.of(po.getStatus()))
                 .modelName(po.getModelName())
                 .modelProvider(po.getModelProvider())
+                .reasoningEffort(po.getReasoningEffort())
                 .inputTokenCount(po.getInputTokenCount())
                 .outputTokenCount(po.getOutputTokenCount())
                 .totalTokenCount(po.getTotalTokenCount())

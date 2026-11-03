@@ -1,12 +1,19 @@
 /** 历史与块事件只转换输入，展示统一由轮次状态生成。 */
 
-import type { BlockStatus, ToolBlock, TurnViewVO } from '../../types/block';
-import { parseVersion } from '../../types/block';
-import type { ChatMessage, ToolCallTrace } from '../../types/chat';
-import { resolveToolCategory } from '../../utils/toolMeta';
-import { toObject } from '../../utils/json';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { applyTextPlacement, applyTurnStatus, getTurnState, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import type {BlockStatus, ToolBlock, TurnViewVO} from '../../types/block';
+import {parseVersion} from '../../types/block';
+import type {ChatMessage, ToolCallTrace} from '../../types/chat';
+import {resolveToolCategory} from '../../utils/toolMeta';
+import {toObject} from '../../utils/json';
+import {parseToolDiff} from '../../utils/toolDiff';
+import {
+    applyTextPlacement,
+    applyTurnStatus,
+    getTurnState,
+    renderTurnState,
+    writeResponseText,
+    writeToolTrace
+} from './turnRenderState';
 
 
 /** 思考 / 文本块的状态取值（后端 {@code BlockStatus} 的响应生命周期两态）。 */
@@ -112,6 +119,7 @@ export function buildUserMessageFromTurnView(
   return {
     id: `user-${view.sessionId}-turn-${view.turnId}`,
     serverMessageId: view.userMessageId,
+    parentTurnId: view.parentTurnId,
     role: 'user',
     content: text ?? '',
     imageUrls: view.userImageUrls ? [...view.userImageUrls] : [],
@@ -131,6 +139,7 @@ export function upsertTurnViewIntoMessages(
 
   const existingUser = messages.find(message => message.role === 'user' && !message.isResumeSupplement && message.turnId === view.turnId);
   if (existingUser && view.userMessageId != null) existingUser.serverMessageId = view.userMessageId;
+  if (existingUser && view.parentTurnId !== undefined) existingUser.parentTurnId = view.parentTurnId;
   if (existingUser && view.userImageUrls !== undefined) existingUser.imageUrls = [...view.userImageUrls];
 
   // 原气泡只补齐状态，避免替换对象导致 DOM 重建。
@@ -204,6 +213,7 @@ export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): vo
     buffer.responseId = block.responseId ?? buffer.responseId;
     buffer.complete ||= block.status === RESPONSE_COMPLETE && block.text.length >= buffer.text.length;
     if (block.type === 'TEXT') {
+      buffer.imageUrls = block.imageUrls ?? [];
       applyTextPlacement(bubble, block.blockId, block.isBody);
     }
   }

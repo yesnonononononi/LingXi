@@ -1,18 +1,15 @@
 package com.summit.dp.toolcall;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
-import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
+import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.application.service.impl.ToolCallRegistrarImpl;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
@@ -20,8 +17,8 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,13 +45,13 @@ import static org.mockito.Mockito.when;
  */
 class ToolCallPersistenceTest {
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ToolCallRepositoryImpl repository;
     private TransactionTemplate transactions;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ToolCallPersistenceTest");
+        database = H2TestDatabase.create("ToolCallPersistenceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -64,7 +61,7 @@ class ToolCallPersistenceTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         repository = new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class),
                 new ObjectMapper(), buildCardAvailabilityPolicy());
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));

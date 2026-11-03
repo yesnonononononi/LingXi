@@ -9,8 +9,8 @@ import {
   Settings02Icon,
   TextFontIcon
 } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
-import { computed, onMounted, onUnmounted, ref, watch, type Component, type CSSProperties } from 'vue';
+import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
+import {type Component, computed, type CSSProperties, onMounted, onUnmounted, ref, watch} from 'vue';
 
 export interface BranchedMenuChild {
   value: string;

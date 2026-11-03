@@ -1,5 +1,6 @@
-import { computed } from 'vue';
-import { useI18n } from '../../../i18n';
+import {computed} from 'vue';
+import {useI18n} from '../../../i18n';
+
 const messages = {
   'zh-CN': {
     scope: '保护范围与限制', fileLimits: '读取、写入、删除统一允许或禁止。普通目录可跨项目访问；卷根及运行资源上层的单个文件保守只读。应用配置与运行资源固定保护；MCP 暂不在本轮隐私隔离范围内。', access: '访问（读 / 写 / 删除）', fileActive: '新建执行生效；运行中的任务保留原策略。', terminalActive: '命令规则保存后用于后续调用，批准后执行也会重新检查禁止规则。未命中时沿用通用设置的命令权限。', mcpScope: 'MCP 第一版沿用宿主连接，尚不受文件隐私拒绝约束。',

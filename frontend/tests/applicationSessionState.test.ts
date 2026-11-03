@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSSRApp, ref, nextTick, effectScope } from 'vue';
-import { createPinia, setActivePinia } from 'pinia';
-import { createServer } from 'vite';
-import { renderToString } from '@vue/server-renderer';
-import { resolveSessionIndicator } from '../src/utils/sessionIndicator';
-import { ApplicationEventStream } from '../src/services/applicationEventStream';
-import type { ChatSession, SessionVO } from '../src/types/chat';
+import {createSSRApp, effectScope, nextTick, ref} from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import {createServer} from 'vite';
+import {renderToString} from '@vue/server-renderer';
+import {resolveSessionIndicator} from '../src/utils/sessionIndicator';
+import {ApplicationEventStream} from '../src/services/applicationEventStream';
+import type {ChatSession, SessionVO} from '../src/types/chat';
 
 const metadata = (version: number | string, isRead = false): SessionVO => ({
   id: '2107364703088017408', rootSessionId: '0', name: '后台会话', version: String(version), isRead,

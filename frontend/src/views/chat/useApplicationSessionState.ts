@@ -1,9 +1,9 @@
-import { onScopeDispose, watch, type Ref } from 'vue';
-import { useApplicationSessionStore } from '../../stores/applicationSessionStore';
-import { SessionAPI } from '../../services/session';
-import { isOk } from '../../utils/api';
-import type { ChatSession, SessionVO } from '../../types/chat';
-import { parseTimestampOr } from '../../utils/time';
+import {onScopeDispose, type Ref, watch} from 'vue';
+import {useApplicationSessionStore} from '../../stores/applicationSessionStore';
+import {SessionAPI} from '../../services/session';
+import {isOk} from '../../utils/api';
+import type {ChatSession, SessionVO} from '../../types/chat';
+import {parseTimestampOr} from '../../utils/time';
 
 export function applySessionState(session: ChatSession, state: SessionVO): void {
   if (session.version !== undefined && BigInt(session.version) > BigInt(state.version)) return;

@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { UserConfigVO } from '../types/chat';
+import type {Result} from './types';
+import type {UserConfigVO} from '../types/chat';
 
 /** 4.5 通用配置 API (对应后端 UserConfigController) */
 export class UserConfigAPI {

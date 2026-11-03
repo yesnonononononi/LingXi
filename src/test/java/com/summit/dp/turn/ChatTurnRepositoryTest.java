@@ -1,18 +1,17 @@
 package com.summit.dp.turn;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.summit.dp.turn.domain.model.ChatTurn;
-import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
@@ -21,26 +20,16 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.ArrayList;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.concurrent.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * chat_turn 持久化：往返、唯一键、以及**崩溃收尸的状态安全边界**。
@@ -53,13 +42,13 @@ class ChatTurnRepositoryTest {
     private static final long SESSION_ID = 500L;
     private static final long EXECUTION_ID = 9001L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ChatTurnMapper mapper;
     private ChatTurnRepositoryImpl repository;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ChatTurnRepositoryTest");
+        database = H2TestDatabase.create("ChatTurnRepositoryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
 
         MyBatisTypeHandlers.registerAll(configuration);
@@ -69,7 +58,7 @@ class ChatTurnRepositoryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
+        mapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
         repository = new ChatTurnRepositoryImpl(mapper);
     }
 
@@ -79,7 +68,7 @@ class ChatTurnRepositoryTest {
     }
 
     private ChatTurn save(long turnId, ChatTurnStatus status, Long executionId) {
-        ChatTurn turn = ChatTurn.accept(turnId, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(turnId, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         turn.attachExecution(executionId);
         if (status == ChatTurnStatus.RUNNING || status == ChatTurnStatus.WAITING) {
             turn.markRunning(Instant.now());
@@ -98,7 +87,7 @@ class ChatTurnRepositoryTest {
     @DisplayName("往返完整：状态、模型快照、用量、时间都不丢；未知用量读回仍是 null 而不是 0")
     void roundTripKeepsEveryField() {
         Instant startedAt = Instant.now().minus(20, ChronoUnit.SECONDS);
-        ChatTurn turn = ChatTurn.accept(7001L, SESSION_ID, 6001L, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(7001L, SESSION_ID, 6001L, TurnModelSnapshot.of("deepseek-chat", "deepseek", "xhigh"));
         turn.attachExecution(EXECUTION_ID);
         turn.markRunning(startedAt);
         turn.markCompleted(100L, 50L, 150L, Instant.now());
@@ -112,6 +101,7 @@ class ChatTurnRepositoryTest {
         assertEquals(ChatTurnStatus.COMPLETED, loaded.getStatus());
         assertEquals("deepseek-chat", loaded.getModelName());
         assertEquals("deepseek", loaded.getModelProvider());
+        assertEquals("xhigh", loaded.getReasoningEffort(), "思考档必须往返：审计只认轮次行上的这一份");
         assertEquals(100L, loaded.getInputTokenCount());
         assertEquals(150L, loaded.getTotalTokenCount());
         assertNotNull(loaded.getStartedAt());
@@ -127,7 +117,7 @@ class ChatTurnRepositoryTest {
 
     @Test
     void usageViewKeepsNumericDetailsAndUnknownValues() throws Exception {
-        ChatTurn turn = ChatTurn.accept(7090L, SESSION_ID, null, "model", "provider");
+        ChatTurn turn = ChatTurn.accept(7090L, SESSION_ID, null, TurnModelSnapshot.of("model", "provider", null));
         turn.refreshUsage(100L, 50L, 150L, 70L, 0L);
         ChatTurnVO view = new ChatTurnConverter().toVO(turn, Instant.now());
         ObjectMapper json = new ObjectMapper().findAndRegisterModules();
@@ -135,7 +125,7 @@ class ChatTurnRepositoryTest {
         assertEquals(0L, json.readTree(json.writeValueAsString(view)).get("reasoningTokens").longValue());
         assertTrue(json.readTree(json.writeValueAsString(view)).get("reasoningTokens").isNumber());
         ChatTurnVO unknown = new ChatTurnConverter().toVO(
-                ChatTurn.accept(7099L, SESSION_ID, null, "model", "provider"), Instant.now());
+                ChatTurn.accept(7099L, SESSION_ID, null, TurnModelSnapshot.of("model", "provider", null)), Instant.now());
         assertNull(unknown.getCacheTokens());
         assertNull(unknown.getReasoningTokens());
     }
@@ -306,7 +296,7 @@ class ChatTurnRepositoryTest {
     }
 
     private ChatTurn save(long turnId, ChatTurnStatus status, Long executionId, long sessionId) {
-        ChatTurn turn = ChatTurn.accept(turnId, sessionId, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(turnId, sessionId, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         turn.attachExecution(executionId);
         if (status == ChatTurnStatus.RUNNING || status == ChatTurnStatus.WAITING
                 || status == ChatTurnStatus.COMPLETED || status == ChatTurnStatus.FAILED

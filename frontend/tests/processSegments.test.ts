@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage, ProcessTimelineItem, ToolCallTrace } from '../src/types/chat';
-import { AgentToolName } from '../src/utils/toolNames';
-import { buildProcessTimeline } from '../src/utils/processTimeline';
-import { buildProcessSegments, resolveProcessSegmentMode, summarizeProcess } from '../src/utils/processSegments';
-import type { ProcessSegmentModeFacts } from '../src/utils/processSegments';
+import type {ChatMessage, ProcessTimelineItem, ToolCallTrace} from '../src/types/chat';
+import {AgentToolName} from '../src/utils/toolNames';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
+import type {ProcessSegmentModeFacts} from '../src/utils/processSegments';
+import {buildProcessSegments, resolveProcessSegmentMode, summarizeProcess} from '../src/utils/processSegments';
 
 function tool(id: string, toolName: string, order: number, extra: Partial<ToolCallTrace> = {}): ProcessTimelineItem {
   return { id, type: 'tool', order, tool: { id, toolName, order, status: 'success', ...extra } };

@@ -8,7 +8,7 @@
  * <p>它只认毫秒（框架契约 {@code TimeUnit.MILLISECONDS}），不做其它单位换算：
  * 多一个单位维度就多一份「后端换单位、前端静默算错」的机会。</p>
  */
-import { t } from '../../i18n';
+import {t} from '../../i18n';
 
 /**
  * 低于该阈值不展示等待时长。

@@ -27,11 +27,20 @@ window.setDark = value => theme.setTheme(value ? 'dark' : 'light');
 const key = ref(0);
 let scenario = 'deleted';
 let selected = '9';
+let imageSelected = null;
+let imageLimit = 3;
 window.writes = [];
-UserConfigAPI.current = async () => ({ code: 1, data: { compactModelId: selected } });
-UserConfigAPI.updateCurrent = async payload => { window.writes.push(payload); selected = payload.compactModelId; return { code: 1 }; };
+UserConfigAPI.current = async () => ({ code: 1, data: { compactModelId: selected, imageModelId:imageSelected, imageGenerationMaxCalls:imageLimit } });
+UserConfigAPI.updateCurrent = async payload => {
+  window.writes.push(payload);
+  if ('compactModelId' in payload) selected = payload.compactModelId;
+  if ('imageModelId' in payload) imageSelected = payload.imageModelId;
+  if ('imageGenerationMaxCalls' in payload) imageLimit = payload.imageGenerationMaxCalls;
+  return { code: 1 };
+};
 ModelAPI.catalog = async () => ({ code: 1, data: scenario === 'deleted' ? [] : [{ providerName: '测试提供商', models: [
-  { id: '9', modelName: 'summary', baseUrl: 'https://compact.invalid/v1', credentialConfigured: scenario !== 'no-key' }
+  { id: '9', modelName: 'summary', baseUrl: 'https://compact.invalid/v1', credentialConfigured: scenario !== 'no-key' },
+  { id: '21', modelName: 'image-model', provider:'default-image-model', credentialConfigured:true }
 ] }] });
 CompactionSettingsAPI.params = async () => {
   if (scenario === 'params-error') throw new Error('HTTP 500');
@@ -79,6 +88,16 @@ createApp(App).use(createPinia()).mount('#app');`);
 
   await evaluate("window.showScenario('ready')");
   assert.match(await evaluate('document.querySelector("[data-testid=compaction-advanced-card]").textContent'), /4096/);
+  assert.match(await evaluate('document.querySelector("h4").textContent'), /其它模型配置/);
+  await evaluate('document.querySelector("[data-testid=image-model-select]").click();window.flush()');
+  await evaluate('document.querySelector(\'[role=option][data-value="21"]\').click();window.flush()');
+  assert.deepEqual(await evaluate('window.writes'),[{imageModelId:'21'}]);
+  await evaluate('(async()=>{const input=document.querySelector("[data-testid=image-generation-limit]");input.value="2";input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));await window.flush()})()');
+  assert.deepEqual(await evaluate('window.writes[1]'),{imageGenerationMaxCalls:2});
+  await evaluate('(async()=>{const input=document.querySelector("[data-testid=image-generation-limit]");input.value="21";input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));await window.flush()})()');
+  assert.equal(await evaluate('window.writes.length'),2);
+  assert.match(await evaluate('document.querySelector("[data-testid=image-model-card]").textContent'),/0~20/);
+  await evaluate('(async()=>{const input=document.querySelector("[data-testid=image-generation-limit]");input.value="2";input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));await window.flush()})()');
   for (const dark of [false, true]) {
     await evaluate(`window.setDark(${dark}); window.flush()`);
     assert.equal(await evaluate('document.documentElement.dataset.theme'), dark ? 'dark' : 'light');
@@ -87,6 +106,6 @@ createApp(App).use(createPinia()).mount('#app');`);
   }
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
   clearTimeout(deadline);
-  console.log('PASS 压缩设置组件：失效模型可取消、无模型不可启用、参数异常局部展示、完整表单浅深截图');
+  console.log('PASS 其它模型配置：压缩设置、生图模型选择、调用限额保存与校验、浅深主题');
   app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); app.exit(1); });

@@ -1,13 +1,13 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { AgentEvent } from '../src/types/Event';
-import type { ChatMessage } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { consumeToolEvent } from '../src/views/chat/toolStream';
-import { applyTextPlacement, getTurnState } from '../src/views/chat/turnRenderState';
-import { AgentToolName } from '../src/utils/toolNames';
+import type {AgentEvent} from '../src/types/Event';
+import type {ChatMessage} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {consumeToolEvent} from '../src/views/chat/toolStream';
+import {applyTextPlacement, getTurnState} from '../src/views/chat/turnRenderState';
+import {AgentToolName} from '../src/utils/toolNames';
 
 /**
  * QA2 独立验证：前端只按后端 {@code isBody} 分流，且方向单一（false → true 可升级，true → false 不可降级）。

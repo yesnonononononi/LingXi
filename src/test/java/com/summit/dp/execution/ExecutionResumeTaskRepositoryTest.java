@@ -1,9 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
@@ -12,6 +8,8 @@ import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,19 +25,10 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 恢复请求表（{@code execution_resume_task}）的持久化回归。
@@ -56,13 +45,13 @@ class ExecutionResumeTaskRepositoryTest {
 
     private static final long EXECUTION_ID = 1000L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionResumeTaskRepository repository;
     private ExecutionResumeTaskMapper taskMapper;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionResumeTaskRepositoryTest");
+        database = H2TestDatabase.create("ExecutionResumeTaskRepositoryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -72,7 +61,7 @@ class ExecutionResumeTaskRepositoryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         taskMapper = session.getMapper(ExecutionResumeTaskMapper.class);
         repository = new ExecutionResumeTaskRepositoryImpl(taskMapper);
     }

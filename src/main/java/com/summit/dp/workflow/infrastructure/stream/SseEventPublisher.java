@@ -1,19 +1,14 @@
 package com.summit.dp.workflow.infrastructure.stream;
 
 import com.summit.core.conversation.event.AgentEvent;
-import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * SSE 事件传输：按根会话归档活跃连接，业务事件定向推送给该根会话的全部流。

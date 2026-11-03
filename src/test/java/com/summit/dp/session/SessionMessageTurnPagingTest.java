@@ -10,28 +10,16 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.model.CursorResult;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 历史分页单位从「消息行」改为「完整轮次」的回归守卫。
@@ -57,7 +45,7 @@ class SessionMessageTurnPagingTest {
             mock(SessionContextRepository.class));
 
     private static ChatTurn turn(long id) {
-        ChatTurn turn = ChatTurn.accept(id, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(id, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         return turn;
     }
 

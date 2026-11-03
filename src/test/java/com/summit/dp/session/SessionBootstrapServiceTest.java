@@ -7,11 +7,7 @@ import com.summit.dp.session.application.service.SessionBootstrapService;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.vo.SessionBootstrapVO;
-import com.summit.dp.shared.vo.SessionMessagePageVO;
-import com.summit.dp.shared.vo.SessionTreeVO;
-import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.shared.vo.ToolCallVO;
+import com.summit.dp.shared.vo.*;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -21,6 +17,7 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,16 +27,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * bootstrap 装配（§8.2）：信封字段、未决卡片的批量闸门、进行中轮次、执行身份化状态，以及
@@ -166,7 +157,7 @@ class SessionBootstrapServiceTest {
     @DisplayName("进行中轮次：一次批量取，转为视图下发")
     void activeTurnsAreBatched() {
         when(toolCallRepository.listByConversationId(any())).thenReturn(List.of());
-        ChatTurn active = ChatTurn.accept(TURN_ID, ROOT_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn active = ChatTurn.accept(TURN_ID, ROOT_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         when(chatTurnService.findActiveBySessionIds(any())).thenReturn(List.of(active));
         when(executionQueryService.activeBySession(any())).thenReturn(List.of());
 

@@ -1,29 +1,27 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
-
-import com.summit.core.conf.ModelConfig;
 import com.summit.core.agent.AgentRequest;
-import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.conf.ModelConfig;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,16 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 缺陷B 的确定性回归守卫：为子执行解析 {@link WorkspaceSpec} 时，
@@ -50,6 +41,7 @@ import static org.mockito.Mockito.when;
  * 而不是抛 {@code IllegalStateException}。
  */
 class SubAgentWorkspaceResolutionTest {
+    private AgentRequest lastRequest;
 
     private final WorkspaceService workspaceService = mock(WorkspaceService.class);
     private final ModelService modelService = mock(ModelService.class);
@@ -57,7 +49,9 @@ class SubAgentWorkspaceResolutionTest {
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""),
+            new BusinessSystemPromptBuilder("", workspace -> workspace == null ? "" : "wiki=" + workspace.workDir()),
+            ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
 
     @BeforeEach
     void stubModel() {
@@ -83,12 +77,14 @@ class SubAgentWorkspaceResolutionTest {
 
         assertSame(spec, resolved);
         verify(workspaceService).findByDir("/t05_ws");
+        assertEquals(1L, ExecutionAttributes.readLong(lastRequest.runtimeParametersOrDefault().getAttributes(), ExecutionAttributes.WORKSPACE_ID));
         verify(workspaceService).findById(1L);
     }
 
     @Test
     void registeredWorkDirWinsWithoutParentFallback() {
         WorkspaceSpec spec = mock(WorkspaceSpec.class);
+        when(spec.workDir()).thenReturn("/host/dir");
         WorkspaceVO matched = WorkspaceVO.builder().id(9L).name("local-ws")
                 .hostDir("/host/dir").workDir("/host/dir").build();
         Workspace parent = mock(Workspace.class);
@@ -101,6 +97,8 @@ class SubAgentWorkspaceResolutionTest {
 
         assertSame(spec, resolved);
         verify(workspaceService).findByDir("/host/dir");
+        assertEquals(9L, ExecutionAttributes.readLong(lastRequest.runtimeParametersOrDefault().getAttributes(), ExecutionAttributes.WORKSPACE_ID));
+        assertTrue(lastRequest.getSystemPrompt().contains("wiki=/host/dir"));
         verify(workspaceService, never()).findById(any());
     }
 
@@ -167,6 +165,7 @@ class SubAgentWorkspaceResolutionTest {
 
         AgentRequest request = factory.build(argument, member, TeamVO.builder().id(3L).commanderAgentId(5L)
                 .agents(List.of(member)).build(), toolExecution, workDir, "1234", parentWorkspaceId, List.of());
+        lastRequest = request;
         assertEquals(accessMode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
         return request.getWorkspaceSpec();
     }

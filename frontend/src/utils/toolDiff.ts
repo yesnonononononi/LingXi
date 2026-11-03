@@ -50,9 +50,9 @@
  * ============================================================================
  */
 
-import { isEditFileTool, TOOL_CATEGORY } from './toolMeta';
-import { parseJsonSafe } from './json';
-import type { FileEditRecord } from '../types/chat';
+import {isEditFileTool, TOOL_CATEGORY} from './toolMeta';
+import {parseJsonSafe} from './json';
+import type {FileEditRecord} from '../types/chat';
 
 export interface ToolDiffStat {
   plusLines: number | null;

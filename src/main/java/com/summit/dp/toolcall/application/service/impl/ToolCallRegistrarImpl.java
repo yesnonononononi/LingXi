@@ -1,6 +1,7 @@
 package com.summit.dp.toolcall.application.service.impl;
 
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
@@ -16,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Objects;
-import com.summit.dp.shared.exception.ClientException;
 
 /** 登记时只建立准备槽位；重复登记不得覆盖已开放或已处理的互动。 */
 @Slf4j

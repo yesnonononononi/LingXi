@@ -1,44 +1,35 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-
-import com.summit.dp.session.domain.repo.MessageRepository;
-
-import com.summit.dp.execution.ExecutionRepositoryTestFactory;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import java.time.Instant;
-import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.core.agent.ExecutionState;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
 import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.runtime.loop.DefaultExecutionController;
 import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
 import jakarta.annotation.PreDestroy;
@@ -57,19 +48,9 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 受理后执行失败的收尾契约（会话级单流改造 v1）。
@@ -156,6 +137,24 @@ class PreparedChatExecutorTest {
     }
 
     @Test
+    void completedRootIsRecheckedAfterContextAndRunQualificationAreReleased() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(realChainExecutor, "inputWakeups",
+                new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class));
+        Execution completed = execution(ExecutionState.COMPLETED);
+        RuntimeContext context = context(completed);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
+        when(orchestrator.execute(context, completed)).thenReturn(completed);
+        doAnswer(call -> {
+            assertFalse(registry.isRootRunning(ROOT_SESSION_ID));
+            verify(modelContextService).replace(ROOT_SESSION_ID, completed.getMessages());
+            return null;
+        }).when(wakeups).resumeIfInputPending(Long.parseLong(EXECUTION_ID));
+        realChainExecutor.run(context);
+        verify(wakeups).resumeIfInputPending(Long.parseLong(EXECUTION_ID));
+    }
+
+    @Test
     @DisplayName("启动失败：轮次先收成 FAILED 并写原因，之后才发布 EXECUTION_FAILED（只发一次）")
     void failedRunClosesTurnBeforePublishingTerminalEvent() {
         Execution execution = execution(ExecutionState.CREATED);
@@ -180,7 +179,7 @@ class PreparedChatExecutorTest {
         assertEquals(EXECUTION_ID, event.getValue().path("executionId").asText(), "归属用已固化的 executionId");
 
         // 运行资格必须释放，否则会话被锁死，用户再也发不出下一条。
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     /**
@@ -236,7 +235,7 @@ class PreparedChatExecutorTest {
         ArgumentCaptor<RuntimeException> cause = ArgumentCaptor.forClass(RuntimeException.class);
         verify(frameworkFail).fail(eq(execution), cause.capture());
         assertEquals("线程池已满", cause.getValue().getMessage());
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -249,7 +248,7 @@ class PreparedChatExecutorTest {
         assertThrows(IllegalStateException.class, () -> guardedExecutor.run(context(execution)));
 
         verify(frameworkFail, never()).fail(any(Execution.class), any());
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -270,7 +269,7 @@ class PreparedChatExecutorTest {
     void missingExecutionStillReleasesRunToken() {
         assertThrows(IllegalStateException.class, () -> guardedExecutor.run(context(null)));
 
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
         verify(frameworkFail, never()).fail(any(Execution.class), any());
     }
 

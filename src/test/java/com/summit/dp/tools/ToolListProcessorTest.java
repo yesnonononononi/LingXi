@@ -12,9 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -23,15 +21,42 @@ class ToolListProcessorTest {
     private final ToolListProcessor processor = new ToolListProcessor(catalog);
 
     @Test
+    void imageGenerationIsGlobalButStillRespectsReadOnlyAccess() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_FILE));
+        assertTrue(processor.process(null, ToolProcessingContext.builder().imageGeneration(true)
+                .accessMode(AgentAccessMode.IN_WORKSPACE).build()).contains(ToolCatalog.GENERATE_IMAGE));
+        assertFalse(processor.process(null, ToolProcessingContext.builder().imageGeneration(true)
+                .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build()).contains(ToolCatalog.GENERATE_IMAGE));
+        assertFalse(processor.process(List.of(ToolCatalog.GENERATE_IMAGE), root()).contains(ToolCatalog.GENERATE_IMAGE));
+    }
+
+    @Test
     void onlyTheDefaultAgentReceivesTheDefaultTools() {
         ToolProcessingContext context = ToolProcessingContext.builder().defaultAgent(true).accessMode(AgentAccessMode.IN_WORKSPACE).build();
         List<String> tools = processor.process(null, context);
         assertTrue(tools.contains(ToolCatalog.READ_FILE));
+        assertTrue(tools.contains(ToolCatalog.LOAD_MEMORY));
         assertTrue(tools.contains(ToolCatalog.REQUIRE_CHOICE));
         assertTrue(tools.contains(ToolCatalog.MANAGE_COMMAND));
         assertFalse(tools.contains(ToolCatalog.READ_IMAGE));
         assertFalse(tools.contains(ToolCatalog.CALL_SUB_AGENT));
         assertEquals(List.of(), processor.process(null, root()));
+    }
+
+    @Test
+    void readOnlyDefaultAgentsKeepTheMemoryReader() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.LOAD_MEMORY));
+        ToolProcessingContext context = ToolProcessingContext.builder().defaultAgent(true)
+                .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build();
+        assertTrue(processor.process(null, context).contains(ToolCatalog.LOAD_MEMORY));
+    }
+
+    @Test
+    void projectAgentsReceiveBothWikiToolsIncludingInReadOnlyMode() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI));
+        ToolProcessingContext context = ToolProcessingContext.builder().projectMemory(true)
+                .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build();
+        assertEquals(List.of(ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI), processor.process(null, context));
     }
 
     @Test

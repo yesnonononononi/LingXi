@@ -1,26 +1,26 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, inject } from 'vue';
-import type { ChatSession, WorkspaceVO } from '../../types/chat';
+import {computed, inject, onBeforeUnmount, onMounted, ref} from 'vue';
+import type {ChatSession, WorkspaceVO} from '../../types/chat';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
-import { SIDEBAR_SLOTS_KEY } from '../../types/sidebarSlots';
 import type {
   SidebarFooterSlotProps,
   SidebarGroupNode,
   SidebarTreeActions,
   SidebarTreeSlotProps
 } from '../../types/sidebarSlots';
+import {SIDEBAR_SLOTS_KEY} from '../../types/sidebarSlots';
+import type {SidebarWorkspaceTreeInternalProps} from './SidebarWorkspaceTree.vue';
 import SidebarWorkspaceTree from './SidebarWorkspaceTree.vue';
-import type { SidebarWorkspaceTreeInternalProps } from './SidebarWorkspaceTree.vue';
 import SidebarFooterBar from './SidebarFooterBar.vue';
 
 
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
-import { useSessionGrouping } from '../../composables/sidebar/useSessionGrouping';
-import { useSessionVisibility, SESSION_VISIBLE_LIMIT } from '../../composables/sidebar/useSessionVisibility';
-import { useWorkspaceExpansion } from '../../composables/sidebar/useWorkspaceExpansion';
-import { useSidebarActions } from '../../composables/sidebar/useSidebarActions';
+import {useSessionGrouping} from '../../composables/sidebar/useSessionGrouping';
+import {SESSION_VISIBLE_LIMIT, useSessionVisibility} from '../../composables/sidebar/useSessionVisibility';
+import {useWorkspaceExpansion} from '../../composables/sidebar/useWorkspaceExpansion';
+import {useSidebarActions} from '../../composables/sidebar/useSidebarActions';
 
 
 const props = defineProps<{

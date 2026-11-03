@@ -15,11 +15,11 @@
  *   node scripts/build-backend-runtime.mjs --offline      # maven 加 -o
  */
 
-import { spawnSync } from 'child_process';
+import {spawnSync} from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { buildBackend } from './build-backend.mjs';
+import {fileURLToPath} from 'url';
+import {buildBackend} from './build-backend.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, '..');

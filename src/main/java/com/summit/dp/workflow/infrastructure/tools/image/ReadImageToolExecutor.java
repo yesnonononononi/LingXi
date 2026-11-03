@@ -10,23 +10,20 @@ import com.summit.core.anno.type.Value;
 import com.summit.core.anno.type.ValueType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
-import com.summit.core.tool.ConcurrentPolicy;
-import com.summit.core.tool.ToolExecuteResult;
-import com.summit.core.tool.ToolExecution;
-import com.summit.core.tool.ToolExecutor;
-import com.summit.core.tool.ToolResultType;
+import com.summit.core.tool.*;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadImageRequest;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
+import org.springframework.stereotype.Component;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.NonNull;
-import org.springframework.stereotype.Component;
 
 /**
  * {@code read_image}：把工作区里的一张图规整、落盘，并把图像元数据交给注入拦截器。

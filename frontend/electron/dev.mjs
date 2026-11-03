@@ -1,7 +1,7 @@
-import { spawn } from 'child_process';
+import {spawn} from 'child_process';
 import http from 'http';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import {fileURLToPath} from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';

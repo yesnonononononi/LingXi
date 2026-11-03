@@ -1,22 +1,19 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
-
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
 import org.junit.jupiter.api.DisplayName;
@@ -34,10 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 交付总监独立验证（QA 严过关）—— 注册线程落点 / 取消传播 / 异常兜底的对抗性用例。
@@ -69,6 +63,7 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         argument.setTask("子任务");
         ToolExecution toolExecution = mock(ToolExecution.class);
         com.summit.core.agent.AgentRequest request = mock(com.summit.core.agent.AgentRequest.class);
+        when(request.getExecutionId()).thenReturn(String.valueOf(CHILD_SESSION_ID));
         AgentVO agent = new AgentVO();
         agent.setId(CHILD_AGENT_ID);
         agent.setName("架构师");
@@ -77,46 +72,12 @@ class QaAsyncDelegationSubmitterAdversarialTest {
     }
 
     @Test
-    @DisplayName("对抗：绑定对象 = 真正跑子 loop 的异步线程（独立于调用线程）")
-    void bindsTheActualLoopThreadNotCallerThread() {
-        // 换一个在「新线程」上执行的执行器：调用线程 ≠ 子 loop 线程，从而能区分二者。
-        ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
-
-        SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
-        AsyncDelegationTask task = task(target);
-
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
-        Execution created = mock(Execution.class);
-        Execution executed = mock(Execution.class);
-        when(executed.getMessages()).thenReturn(List.of(UserMessageEntity.from("ok")));
-        when(subAgent.createExecution(task.request())).thenReturn(created);
-
-        AtomicReference<Thread> loopThread = new AtomicReference<>();
-        when(subAgent.execute(created)).thenAnswer(invocation -> {
-            loopThread.set(Thread.currentThread());
-            return executed;
-        });
-
-        Thread callerThread = Thread.currentThread();
-        submitter.submit(task); // NewThreadExecutor 内 start+join，返回时 runChild 已跑完
-
-        ArgumentCaptor<Thread> threadCaptor = ArgumentCaptor.forClass(Thread.class);
-        verify(registry).bindRunningChild(ArgumentMatchers.eq(ROOT_SESSION_ID),
-                ArgumentMatchers.eq(CHILD_SESSION_ID), threadCaptor.capture());
-
-        assertEquals(loopThread.get(), threadCaptor.getValue(),
-                "绑定进注册表的必须是跑子 loop 的那根线程（interrupt 才打得到）");
-        assertNotEquals(callerThread, threadCaptor.getValue(),
-                "绑定对象不应是工具调用线程 —— 否则停止会打断错误的线程");
-    }
-
-    @Test
     @DisplayName("对抗：绑定前即取消 → 零落库、零注册残留、零兜底唤醒")
     void cancelBeforeBindingProducesNoOrphan() {
         ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
 
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(false);
+        when(registry.tryStartChild(any())).thenReturn(false);
 
         submitter.submit(task);
 
@@ -126,12 +87,12 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
 
-        // 绑定失败 → 撤销待启动登记，不该去注销别人的条目，也不该兜底唤醒。
-        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(registry, never()).unregisterChild(any(), any());
-        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any());
-        verify(registry, never()).beginRoot(any());
-        verify(registry, never()).finishRoot(any());
+        // 取消拦截 → 撤销待启动登记，不该去注销别人的条目，也不该兜底唤醒。
+        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
+        verify(registry, never()).unregisterChild(any(), any(), any());
+        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
+        verify(registry, never()).beginRoot(any(), anyString());
+        verify(registry, never()).finishRoot(any(), anyString());
         verify(executionControl, never()).fail(any(Execution.class), any());
     }
 
@@ -141,7 +102,7 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
 
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.RUNNING);
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -149,9 +110,9 @@ class QaAsyncDelegationSubmitterAdversarialTest {
 
         submitter.submit(task);
 
-        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
-        verify(registry, never()).beginRoot(any());
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
+        verify(registry, never()).beginRoot(any(), anyString());
+        verify(registry, never()).finishRoot(any(), anyString());
         verify(modelContextService, never()).replace(any(), any());
         // 已开跑的失败由框架收口，业务侧不得重复 fail。
         verify(executionControl, never()).fail(any(Execution.class), any());

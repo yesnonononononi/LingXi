@@ -1,23 +1,20 @@
 package com.summit.dp.task;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +25,6 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,44 +36,33 @@ class BackgroundTaskCompletionTransactionTest {
     @Autowired private TaskRepository repository;
     @Autowired private TaskMapper mapper;
     @Autowired private BackgroundTaskCompletion completion;
-    @Autowired private ExecutionResumeCoordinator coordinator;
+    @Autowired private InputWakeupService coordinator;
 
     @BeforeEach void resetState() {
         mapper.delete(null);
         reset(coordinator);
     }
 
-    @Test void completionAndWakeRequestShareOneTransactionAndDispatchOccursAfterCommit() {
+    @Test void completionIsCommittedBeforeTheInputCheck() {
         Task task = task(100L);
         repository.save(task);
-        task.finish(TaskStatus.FAILED, "failed", 7, false);
-        AtomicBoolean dispatched = new AtomicBoolean();
-        when(coordinator.accept(100L)).thenAnswer(invocation -> {
-            assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+        task.finish(TaskStatus.FAILED, "failure", 7, false);
+        doAnswer(invocation -> {
             assertEquals(TaskStatus.FAILED, repository.findById(1L).orElseThrow().getStatus());
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() { dispatched.set(true); }
-            });
-            assertFalse(dispatched.get());
-            return ResumeDisposition.QUEUED;
-        });
+            return null;
+        }).when(coordinator).resumeIfInputPending(100L);
         completion.save(task);
-        assertTrue(dispatched.get());
         assertEquals(7, repository.findById(1L).orElseThrow().getExitCode());
-        verify(coordinator).accept(100L);
+        verify(coordinator).resumeIfInputPending(100L);
     }
 
-    @Test void wakeRequestFailureRollsBackTerminalStateSoWorkerCanRetryIt() {
+    @Test void failedPostCommitCheckDoesNotEraseTheAlreadyCommittedResult() {
         Task task = task(100L);
         repository.save(task);
         task.finish(TaskStatus.SUCCESS, "done", 0, false);
-        when(coordinator.accept(100L)).thenThrow(new ClientException("保存恢复请求失败"));
+        doThrow(new ClientException("输入检查不可用")).when(coordinator).resumeIfInputPending(100L);
         assertThrows(ClientException.class, () -> completion.save(task));
-        assertEquals(TaskStatus.PENDING, repository.findById(1L).orElseThrow().getStatus());
-        reset(coordinator);
-        completion.save(task);
         assertEquals(TaskStatus.SUCCESS, repository.findById(1L).orElseThrow().getStatus());
-        verify(coordinator).accept(100L);
     }
 
     @Test void legacyTasksAndIntermediateStatesDoNotInventWakeRecipients() {
@@ -88,7 +73,7 @@ class BackgroundTaskCompletionTransactionTest {
         Task running = Task.builder().id(2L).sessionId(10L).turnId(20L).executionId(100L).command("running").build();
         repository.save(running);
         completion.save(running);
-        verify(coordinator, never()).accept(anyLong());
+        verify(coordinator, never()).resumeIfInputPending(anyLong());
     }
 
     private static Task task(Long executionId) {
@@ -98,13 +83,13 @@ class BackgroundTaskCompletionTransactionTest {
     @Configuration
     @EnableTransactionManagement
     static class Config {
-        @Bean(destroyMethod = "shutdown") SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("BackgroundTaskCompletionTransactionTest");
+        @Bean(destroyMethod = "shutdown") H2TestDatabase database() {
+            return H2TestDatabase.create("BackgroundTaskCompletionTransactionTest");
         }
-        @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
+        @Bean PlatformTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
-        @Bean TaskMapper taskMapper(SqliteTestDatabase database) throws Exception {
+        @Bean TaskMapper taskMapper(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -112,11 +97,11 @@ class BackgroundTaskCompletionTransactionTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setConfiguration(configuration);
             factory.setDataSource(database);
-            return SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(TaskMapper.class);
+            return H2TestDatabase.sqlSession(factory.getObject()).getMapper(TaskMapper.class);
         }
         @Bean TaskRepository repository(TaskMapper mapper) { return new TaskRepositoryImpl(mapper); }
-        @Bean ExecutionResumeCoordinator coordinator() { return mock(ExecutionResumeCoordinator.class); }
-        @Bean BackgroundTaskCompletion completion(TaskRepository repository, ExecutionResumeCoordinator coordinator) {
+        @Bean InputWakeupService coordinator() { return mock(InputWakeupService.class); }
+        @Bean BackgroundTaskCompletion completion(TaskRepository repository, InputWakeupService coordinator) {
             return new BackgroundTaskCompletion(repository, coordinator);
         }
     }

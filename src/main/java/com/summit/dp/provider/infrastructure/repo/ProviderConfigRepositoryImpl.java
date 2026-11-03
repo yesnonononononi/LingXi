@@ -1,11 +1,10 @@
 package com.summit.dp.provider.infrastructure.repo;
 
+import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.provider.domain.model.ProviderConfig;
 import com.summit.dp.provider.domain.repo.ProviderConfigRepository;
 import com.summit.dp.provider.infrastructure.persistence.mapper.ProviderConfigMapper;
 import com.summit.dp.provider.infrastructure.persistence.po.ProviderConfigPO;
-import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 

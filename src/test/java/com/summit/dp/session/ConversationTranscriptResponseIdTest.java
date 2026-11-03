@@ -22,21 +22,9 @@ import org.springframework.dao.DuplicateKeyException;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 响应身份的落库语义：身份参与幂等判定，且只挂在 AI 行。
@@ -92,7 +80,7 @@ class ConversationTranscriptResponseIdTest {
         assertEquals(responseId, ai.getResponseId());
         // 身份是框架给的，业务侧不得再生成/占用序列
         assertTrue(ai.getId() != null);
-        verify(messages, never()).findByResponseId(anyLong(), any());
+        verify(messages).findByResponseId(SESSION_ID, responseId);
     }
 
     /**
@@ -107,7 +95,7 @@ class ConversationTranscriptResponseIdTest {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
         doThrow(new DuplicateKeyException("uk_session_response_id"))
                 .when(messages).appendAll(anyLong(), any(), any());
-        when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.of(
+        when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.empty(), Optional.of(
                 SessionMessage.builder().id(1L).sessionId(SESSION_ID).responseId(RESPONSE_ID)
                         .turnId(TURN_ID).type(SessionMessageType.AI)
                         .text(json.writeValueAsString(ai)).build()));
@@ -118,18 +106,14 @@ class ConversationTranscriptResponseIdTest {
         verify(messages, times(1)).appendAll(anyLong(), any(), any());
     }
 
-    /**
-     * 写入必须先于「会话存在性校验」：SQLite 单写者下事务里先读后升写抢不到锁，
-     * 所以落库是事务的第一条语句，会话校验放在写入之后。
-     */
     @Test
-    void appendIsTheFirstPersistenceActionAndSessionCheckFollows() {
+    void sessionLockPrecedesIdempotencyReadAndAppend() {
         service.appendRound(SESSION_ID, null, TURN_ID,
                 AiMessageEntity.builder().text("answer").build(), List.of(), RESPONSE_ID);
-
         InOrder order = inOrder(messages);
-        order.verify(messages).appendAll(eq(SESSION_ID), any(), any());
         order.verify(messages).lockSessionForAppend(SESSION_ID);
+        order.verify(messages).findByResponseId(SESSION_ID, RESPONSE_ID);
+        order.verify(messages).appendAll(eq(SESSION_ID), any(), any());
     }
 
     /**
@@ -143,7 +127,7 @@ class ConversationTranscriptResponseIdTest {
         AiMessageEntity stored = AiMessageEntity.builder().text("第一次的输出").build();
         doThrow(new DuplicateKeyException("uk_session_response_id"))
                 .when(messages).appendAll(anyLong(), any(), any());
-        when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.of(
+        when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.empty(), Optional.of(
                 SessionMessage.builder().id(1L).sessionId(SESSION_ID).responseId(RESPONSE_ID)
                         .turnId(TURN_ID).type(SessionMessageType.AI)
                         .text(json.writeValueAsString(stored)).build()));
@@ -165,7 +149,7 @@ class ConversationTranscriptResponseIdTest {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
         doThrow(new DuplicateKeyException("uk_session_response_id"))
                 .when(messages).appendAll(anyLong(), any(), any());
-        when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.of(
+        when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.empty(), Optional.of(
                 SessionMessage.builder().id(1L).sessionId(SESSION_ID).responseId(RESPONSE_ID)
                         .turnId(TURN_ID + 1).type(SessionMessageType.AI)
                         .text(json.writeValueAsString(ai)).build()));

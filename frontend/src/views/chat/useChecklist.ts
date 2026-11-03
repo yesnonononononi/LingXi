@@ -1,10 +1,10 @@
-import { onScopeDispose, ref, watch, type Ref } from 'vue';
-import { ChecklistAPI } from '../../services/checklist';
-import { isChecklistSnapshot, type ChecklistSnapshot } from '../../types/checklist';
-import type { AgentEvent } from '../../types/Event';
-import { AgentToolName } from '../../utils/toolNames';
-import { isOk } from '../../utils/api';
-import { t } from '../../i18n';
+import {onScopeDispose, ref, type Ref, watch} from 'vue';
+import {ChecklistAPI} from '../../services/checklist';
+import {type ChecklistSnapshot, isChecklistSnapshot} from '../../types/checklist';
+import type {AgentEvent} from '../../types/Event';
+import {AgentToolName} from '../../utils/toolNames';
+import {isOk} from '../../utils/api';
+import {t} from '../../i18n';
 
 const checklistTools = new Set<string>([AgentToolName.CreateChecklist, AgentToolName.UpdateChecklistStep,
   AgentToolName.ModifyChecklist, AgentToolName.DeleteChecklist]);

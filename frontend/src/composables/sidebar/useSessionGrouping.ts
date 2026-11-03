@@ -1,5 +1,5 @@
-import { computed, type ComputedRef, type Ref } from 'vue';
-import type { ChatSession, WorkspaceVO } from '../../types/chat';
+import {computed, type ComputedRef, type Ref} from 'vue';
+import type {ChatSession, WorkspaceVO} from '../../types/chat';
 
 /**
  * 侧边栏会话分组逻辑（纯计算，不依赖 emit / 生命周期）。

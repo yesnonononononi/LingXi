@@ -1,6 +1,7 @@
 package com.summit.dp.user_configs.infrastructure.config;
 
 import com.summit.ddd.infrastructure.repository.json.JsonListCodec;
+import com.summit.dp.shared.storage.H2Storage;
 import com.summit.dp.user_configs.infrastructure.persistence.po.UserConfigPO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
@@ -28,18 +29,18 @@ import java.util.Map;
 public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor, Ordered {
 
     private static final String CONFIG_PATH_KEY = "lingxi.config.user-configs.path";
+    /** 设置行数据目录键：优先级最高。 */
     private static final String DATA_DIR_KEY = "lingxi.data.dir";
 
     private static final String DEFAULT_CONFIG_PATH = "${user.home}/.lingxi/config/user-configs.json";
     private static final String DEFAULT_DATA_DIR = "${user.home}/.lingxi/data";
 
-    /** SQLite 库文件主名；只有它存在才说明这个目录里躺着真数据。 */
-    private static final String DATABASE_FILE = "lingxi.sqlite";
-
     @Override
     public int getOrder() {
         // 必须晚于 application.yaml 的加载（ConfigData 那一步），否则读不到 lingxi.* 的缺省值。
-        return Ordered.LOWEST_PRECEDENCE;
+        // 但必须早于 StorageStartupGuardPostProcessor（LOWEST_PRECEDENCE）：
+        // 引擎要拿这里解析出的目录判数据形态，目录后解析就会判错目录。
+        return Ordered.LOWEST_PRECEDENCE - 100;
     }
 
     @Override
@@ -99,17 +100,11 @@ public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor,
         }
     }
 
-    /**
-     * 生效目录里没有库文件时告警。
-     *
-     * <p>改目录时业务侧会先把库文件搬过去，所以正常情况下不该出现这个警告；
-     * 出现通常意味着搬迁没成功或路径被手工改错了 —— 这时用户看到的是「数据全没了」，
-     * 日志里必须先留下线索。</p>
-     */
     private void warnWhenNoDatabase(String dataDir) {
-        Path directory = Path.of(dataDir);
-        if (!Files.exists(directory.resolve(DATABASE_FILE))) {
-            log.warn("设置的数据目录里没有库文件，应用将以空库启动: dir={}", dataDir);
+        Path databaseFile = Path.of(dataDir).resolve(H2Storage.DATABASE_FILE_NAME);
+        if (!Files.exists(databaseFile)) {
+            log.warn("设置的数据目录缺少 H2 库，启动守卫将继续检查迁移状态: dir={}, expected={}",
+                    dataDir, databaseFile.getFileName());
         }
     }
 }

@@ -5,8 +5,8 @@
  * <p>两个 SVG 路径之间做线性插值，由 {@link isSending} 驱动自动来回切换。
  * 纯视觉组件，不感知业务——「什么时候该变成停止」由调用方决定。</p>
  */
-import { ref, watch, onBeforeUnmount } from 'vue';
-import { animate, motionValue, useReducedMotion, type AnimationPlaybackControls } from 'motion-v';
+import {onBeforeUnmount, ref, watch} from 'vue';
+import {animate, type AnimationPlaybackControls, motionValue, useReducedMotion} from 'motion-v';
 
 /** 上箭头轮廓坐标（viewBox 24x24，成对 x,y）。 */
 const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];

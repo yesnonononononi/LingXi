@@ -1,34 +1,28 @@
 package com.summit.dp.session;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.ddd.application.vo.Result;
-import com.summit.dp.model.application.vo.ModelConfigVO;
-
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.core.conf.ModelConfig;
 import com.summit.core.agent.AgentRequest;
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.core.conf.ModelConfig;
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-import com.summit.dp.workflow.application.chat.ChatImageResolver;
-import com.summit.dp.user_configs.application.vo.SettingsView;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
@@ -38,15 +32,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 团队绑定的会话级回落回归：team_id 是会话属性（不再随聊天请求下发），

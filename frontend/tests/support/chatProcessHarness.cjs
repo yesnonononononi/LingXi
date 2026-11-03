@@ -118,7 +118,9 @@ function resolveVueStub(resolved, request, options) {
  * 编译并求值一个真实模块（`.ts` / `.vue`）。
  *
  * @param {string} filename 绝对路径
- * @param {{ realPlanCards?: boolean, extraStubs?: RegExp[], compileId?: string }} [options]
+ * @param {{ realPlanCards?: boolean, extraStubs?: RegExp[], restrictToRealPrefixes?: boolean,
+ *   moduleStubs?: Array<{test: RegExp, exports: object}>, compileId?: string }} [options]
+ *   `moduleStubs` 用于替换任意模块（如 services/*）：命中即返回给定导出，避免测试触网。
  * @returns {object} 模块导出
  */
 function loadModule(filename, options = {}) {
@@ -126,6 +128,8 @@ function loadModule(filename, options = {}) {
     realPlanCards: options.realPlanCards === true,
     extraStubs: options.extraStubs ?? [],
     restrictToRealPrefixes: options.restrictToRealPrefixes === true,
+    moduleStubs: options.moduleStubs ?? [],
+    sourceOverrides: options.sourceOverrides ?? [],
     compileId: options.compileId ?? 'chat-process-harness',
   };
   const cache = new Map();
@@ -138,6 +142,9 @@ function loadModule(filename, options = {}) {
     module.paths = Module._nodeModulePaths(path.dirname(file));
     module.require = request => requestModule(file, request);
     let source = fs.readFileSync(file, 'utf8');
+    // 变异注入：命中覆写的文件用给定源码求值（不落盘、不改工作区）。
+    const override = settings.sourceOverrides.find(rule => rule.test.test(file));
+    if (override) source = override.source;
     // `import.meta` 在 CJS 下是语法错误：Node 会把该模块回退成 ESM 执行，随后报
     // 「exports is not defined」。测试环境里换成等价的静态对象，保持 CJS 执行语义。
     source = source.replace(/\bimport\.meta\b/g, '({ env: {}, url: "" })');
@@ -164,6 +171,12 @@ function loadModule(filename, options = {}) {
    * 解析一个 `require` 请求：浏览器依赖、服务层与 `.vue` 走桩/目录规则，其余按相对路径真实加载。
    */
   function requestModule(fromFile, request) {
+    // 0. 调用方显式替换的模块（如 services/*）：命中即返回桩，测试不触网。
+    for (const stub of settings.moduleStubs) {
+      if (stub.test.test(request) || stub.test.test(path.resolve(path.dirname(fromFile), request))) {
+        return stub.exports;
+      }
+    }
     if (request === 'vue') {
       return {
         ...require('vue'),
@@ -219,8 +232,29 @@ function element(tag, text = '') {
     scrollTop: 0,
     scrollHeight: 100,
     clientHeight: 100,
-    addEventListener() {},
-    removeEventListener() {},
+    /**
+     * 记录真实注册的事件处理器（`v-model` 走指令自带的 addEventListener，不经过 patchProp）。
+     *
+     * <p>历史实现是空实现，导致「模拟用户输入」在 Electron-free 套件里无法驱动 v-model ——
+     * 于是「用户敲一个字符」这类缺陷只能靠源码断言间接覆盖。记录后可直接派发。</p>
+     */
+    listeners: {},
+    addEventListener(type, handler) {
+      (this.listeners[type] ??= []).push(handler);
+    },
+    removeEventListener(type, handler) {
+      const list = this.listeners[type];
+      if (!list) return;
+      const index = list.indexOf(handler);
+      if (index >= 0) list.splice(index, 1);
+    },
+    /** `v-model` 的 beforeUpdate 会读 `el.getRootNode().activeElement` 判断是否聚焦。 */
+    getRootNode() {
+      return { activeElement: null };
+    },
+    focus() {},
+    blur() {},
+    setSelectionRange() {},
     scrollTo({ top }) { this.scrollTop = Math.max(0, top - this.clientHeight); },
   };
 }
@@ -285,7 +319,9 @@ function mountComponent(t, componentDefinition, props, options = {}) {
   const root = element('root');
   const app = renderer.createApp(componentDefinition, props);
   app.provide(previewKey, undefined);
-  app.mount(root);
+  // `app.mount` 返回根组件的 public 实例代理：需要调用 `defineExpose` 暴露的命令（如
+  // `setInputText`）时从这里取，挂在根节点上是为了不改变本函数的返回形状（既有调用方都只吃节点）。
+  root.__vm = app.mount(root);
   t.after(async () => {
     await require('vue').nextTick();
     app.unmount();

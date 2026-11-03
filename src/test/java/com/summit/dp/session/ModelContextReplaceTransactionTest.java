@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -21,7 +22,7 @@ import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
@@ -48,53 +49,24 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
-/**
- * 复核 R6：会话上下文替换的「读摘要 → 写正文」在真实事务并发下会收到
- * {@code SQLITE_BUSY_SNAPSHOT}，必须整笔换新事务重试。
- *
- * <p><b>被守的缺陷</b>（真实事故证据：
- * {@code docs/qa/first-oom-desktop-pet-replay-2026-10-31.md} 的
- * 「新发现：上下文事务并发冲突，仍需修复」）：
- * {@code CannotAcquireLockException: SQLITE_BUSY_SNAPSHOT} at
- * {@code ModelContextService.replace(ModelContextService.java:55)}。</p>
- *
- * <p><b>为什么原实现必然失败</b>：SQLite 的事务在第一次读时固定快照。B 在自己的事务里
- * {@code findSummary} 之后，A 提交了写入，B 再写就立刻 {@code SQLITE_BUSY_SNAPSHOT}；
- * 在同一个已过期的读事务里重试 UPDATE（或 INSERT）永远不会成功，必须整笔丢弃、
- * 用全新事务重新读一遍。{@code busy_timeout} 对「读锁升写锁」不生效，扩容堆也不行。</p>
- *
- * <p><b>装配为什么必须走 Spring</b>：{@link ModelContextService} 的事务管理器是容器注入的字段，
- * {@code new} 出来的实例没有事务基础设施 —— 「new 服务并发通过」不能代表生产路径。
- * 这里用真实的 {@link DataSourceTransactionManager} bean + 真实 SQLite 文件库（WAL，
- * 与生产同参数）；只有「读摘要」这一处被 spy 拦住，用来插入确定性屏障。</p>
- */
+
 @SpringJUnitConfig(ModelContextReplaceTransactionTest.Config.class)
 class ModelContextReplaceTransactionTest {
 
-    /** 会话 A：主线程在被守会话读到旧快照之后提交它。 */
+
     private static final long SESSION_A = 700L;
-    /** 会话 B：先在旧快照上读摘要，随后写入，必须靠整笔重试成功。 */
+
     private static final long SESSION_B = 701L;
-    /** 会话 C：与检查点保存混合并发时被替换上下文的一方。 */
+
     private static final long SESSION_C = 702L;
-    /** 与上下文替换混合并发的执行。 */
+
     private static final long EXECUTION_ID = 9300000000000001L;
 
     @Autowired private ModelContextService service;
@@ -110,15 +82,10 @@ class ModelContextReplaceTransactionTest {
         executions.delete(null);
     }
 
-    /**
-     * 两个会话并发替换上下文：B 读到旧快照、A 先提交、B 再写 —— 两笔都必须提交成功。
-     *
-     * <p>去掉重试（把 {@code TransactionRetryTemplate.DEFAULT_MAX_ATTEMPTS} 改成 1）时，
-     * B 会抛 {@code CannotAcquireLockException: SQLITE_BUSY_SNAPSHOT}，用例直接变红。</p>
-     */
+
     @Test
     @Timeout(120)
-    void concurrentReplacesOnTwoSessionsBothCommitThroughRetry() throws Exception {
+    void independentSessionsCommitWithoutSnapshotConflict() throws Exception {
         service.replace(SESSION_A, messages("A 初始上下文"));
         service.replace(SESSION_B, messages("B 初始上下文"));
         assertEquals(1L, contexts.selectById(SESSION_A).getVersion());
@@ -127,8 +94,7 @@ class ModelContextReplaceTransactionTest {
         CountDownLatch bHasReadStaleSnapshot = new CountDownLatch(1);
         CountDownLatch aHasCommitted = new CountDownLatch(1);
         AtomicInteger bSummaryReads = new AtomicInteger();
-        // 只在 B 的「第一次」摘要读取上做文章：真实方法先执行（快照就此定型），再卡住等 A 提交，
-        // 之后 B 在同一事务里写必然撞 SQLITE_BUSY_SNAPSHOT。重试走第二次读取（不再卡住）。
+
         doAnswer((Answer<Object>) invocation -> {
             Object result = invocation.callRealMethod();
             if (Long.valueOf(SESSION_B).equals(invocation.<Long>getArgument(0))
@@ -146,26 +112,21 @@ class ModelContextReplaceTransactionTest {
                 return null;
             });
             assertTrue(bHasReadStaleSnapshot.await(30, TimeUnit.SECONDS), "B 必须先在旧快照上读到摘要");
-            // A 在 B 占着旧快照时提交：这正是事故现场里 B 必然收到 BUSY_SNAPSHOT 的交错。
+
             service.replace(SESSION_A, messages("A 最后一次写入"));
             aHasCommitted.countDown();
             writerB.get(60, TimeUnit.SECONDS);
         }
 
-        assertEquals(2, bSummaryReads.get(),
-                "B 的第二次读取必须来自重试开出的新事务（去掉重试这里只会读到 1 次）");
+        assertEquals(1, bSummaryReads.get(), "H2 不同记录的写入不应触发快照冲突重试");
         assertEquals(2L, contexts.selectById(SESSION_A).getVersion(), "A 的版本必须前进到 2");
         assertEquals(2L, contexts.selectById(SESSION_B).getVersion(), "B 的版本必须前进到 2");
-        // 内容必须是「最后一次写入」——重试成功后落库的不能是旧入参或半截结果。
+
         assertContextContent(SESSION_A, "A 最后一次写入");
         assertContextContent(SESSION_B, "B 最后一次写入");
     }
 
-    /**
-     * 上下文替换与执行检查点保存混合并发：一方先读到旧快照，另一方提交后再写。
-     *
-     * <p>两个入口用的是同一个共享重试工具，所以这里同时守住「另一个入口不会以别的时序再复发」。</p>
-     */
+
     @Test
     @Timeout(120)
     void contextReplaceAndCheckpointSaveInterleaveAndBothCommit() throws Exception {
@@ -176,7 +137,7 @@ class ModelContextReplaceTransactionTest {
         CountDownLatch saveHasReadStaleSnapshot = new CountDownLatch(1);
         CountDownLatch replaceHasCommitted = new CountDownLatch(1);
         AtomicInteger saveSummaryReads = new AtomicInteger();
-        // 保存线程读到旧快照后卡住，等上下文替换提交完再写 —— 保存必须靠整笔重试成功。
+
         doAnswer((Answer<Object>) invocation -> {
             Object result = invocation.callRealMethod();
             if ("checkpoint-saver".equals(Thread.currentThread().getName())
@@ -199,7 +160,7 @@ class ModelContextReplaceTransactionTest {
             saver.get(60, TimeUnit.SECONDS);
         }
 
-        assertEquals(2, saveSummaryReads.get(), "保存的第二次读取必须来自重试开出的新事务");
+        assertEquals(1, saveSummaryReads.get(), "H2 不同记录的写入不应触发快照冲突重试");
         assertEquals(2L, contexts.selectById(SESSION_C).getVersion(), "上下文版本必须前进到 2");
         assertContextContent(SESSION_C, "C 最后一次写入");
         assertEquals(2L, executions.selectById(EXECUTION_ID).getVersion(), "检查点版本必须前进到 2");
@@ -207,10 +168,10 @@ class ModelContextReplaceTransactionTest {
         assertNotNull(runtime.findById(Long.toString(EXECUTION_ID)).orElse(null), "保存后必须还能按引用读出正文");
     }
 
-    /** 首次写入（库里还没有该会话的行）同样走整笔重试：INSERT 也会撞快照冲突。 */
+
     @Test
     @Timeout(120)
-    void firstWriteInsertPathAlsoRetriesOnStaleSnapshot() throws Exception {
+    void independentFirstWritesCommitWithoutSnapshotConflict() throws Exception {
         CountDownLatch insertHasReadStaleSnapshot = new CountDownLatch(1);
         CountDownLatch otherSessionCommitted = new CountDownLatch(1);
         AtomicInteger summaryReads = new AtomicInteger();
@@ -230,26 +191,21 @@ class ModelContextReplaceTransactionTest {
                 return null;
             });
             assertTrue(insertHasReadStaleSnapshot.await(30, TimeUnit.SECONDS), "首写必须先读到空的摘要行");
-            // 另一会话在 B 的读快照之后提交，使 B 的快照过期。
+
             service.replace(SESSION_A, messages("A 首写"));
             otherSessionCommitted.countDown();
             firstWrite.get(60, TimeUnit.SECONDS);
         }
 
-        assertEquals(2, summaryReads.get(), "首写路径也必须整笔重试（去掉重试这里只会读到 1 次）");
+        assertEquals(1, summaryReads.get(), "H2 不同记录的写入不应触发快照冲突重试");
         SessionContextPO row = contexts.selectById(SESSION_B);
         assertNotNull(row, "重试成功后必须落库一行");
-        // create 从 0 起、changeContent 自增 1：与 DDL 的 DEFAULT 1 语义对齐。
+
         assertEquals(1L, row.getVersion(), "首写落库的版本必须是 1");
         assertContextContent(SESSION_B, "B 首写");
     }
 
-    /**
-     * 断言某会话的上下文确实只剩最后一次写入的那一份。
-     *
-     * <p>消息对象来自框架、没有值语义，因此比对「落库正文」而不是比 {@code List<Message>} 相等：
-     * 断言要看的是「写入结果是哪一份」，而不是 Java 对象身份。</p>
-     */
+
     private void assertContextContent(long sessionId, String expectedText) {
         List<Message> restored = service.find(sessionId).orElseThrow();
         assertEquals(1, restored.size(), "上下文只应剩最后一次写入的那一条: sessionId=" + sessionId);
@@ -315,18 +271,21 @@ class ModelContextReplaceTransactionTest {
         }
     }
 
-    /** 与生产一致的装配：真实文件库 + 真实事务管理器 bean + 被 spy 的仓储（仅插入屏障）。 */
+
     @Configuration
     static class Config {
+        @Bean
+        SessionExecutionRegistry executionRegistry() { return new SessionExecutionRegistry(); }
+
 
         @Bean(destroyMethod = "shutdown")
-        SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("ModelContextReplaceTransactionTest");
+        H2TestDatabase database() {
+            return H2TestDatabase.create("ModelContextReplaceTransactionTest");
         }
 
-        /** 生产 bean：Spring 装配的 {@link DataSourceTransactionManager}。 */
+
         @Bean
-        PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
+        PlatformTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
@@ -336,8 +295,8 @@ class ModelContextReplaceTransactionTest {
         }
 
         @Bean
-        SqlSessionTemplate sql(SqliteTestDatabase database) {
-            return SqliteTestDatabase.sqlSession(
+        SqlSessionTemplate sql(H2TestDatabase database) {
+            return H2TestDatabase.sqlSession(
                     database.sessionFactory(SessionContextMapper.class, ExecutionMapper.class));
         }
 
@@ -353,13 +312,13 @@ class ModelContextReplaceTransactionTest {
 
         @Bean
         SessionContextRepository sessionContextRepository(SessionContextMapper sessionContextMapper) {
-            // spy 只为在「读到旧快照之后」插入确定性屏障，不改任何行为。
+
             return spy(new SessionContextRepositoryImpl(sessionContextMapper));
         }
 
         @Bean
         ModelContextService modelContextService(ObjectMapper objectMapper, SessionContextRepository repository) {
-            // 事务管理器由 Spring 注入到字段：这走的才是生产事务路径。
+
             return new ModelContextService(objectMapper, repository);
         }
 
@@ -375,7 +334,7 @@ class ModelContextReplaceTransactionTest {
 
         @Bean
         ExecutionRepository executionRepository(ExecutionMapper executionMapper) {
-            // 同样只为插入屏障：保存路径的行为完全真实。
+
             return spy(new ExecutionRepositoryImpl(executionMapper));
         }
 
@@ -387,7 +346,7 @@ class ModelContextReplaceTransactionTest {
         @Bean
         LocalExecutionRepository runtime(ExecutionCheckpointService checkpointService, ObjectMapper objectMapper,
                                         LocalFileCheckpointStore checkpointStore) {
-            // 事务管理器同样由 Spring 注入字段，与生产一致。
+
             return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore,
                     provider(mock(ToolCallReadinessService.class)),
                     provider(mock(ToolCallService.class)),

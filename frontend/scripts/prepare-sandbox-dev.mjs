@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 /** 开发资源与旧目录并存，避免准备 SDK 时清空 Node、Git 等本机工具。 */
 export function prepareDevelopmentRuntime(frontendRoot) {

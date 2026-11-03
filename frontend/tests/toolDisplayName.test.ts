@@ -8,10 +8,17 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextTick } from 'vue';
-import { resolveToolCategory, resolveToolMeta, toolCategoryLabel, TOOL_CATEGORY, UNKNOWN_TOOL_LABEL, unwrapToolResultEnvelope } from '../src/utils/toolMeta';
-import { AgentToolName } from '../src/utils/toolNames';
-import { setPreference } from '../src/i18n';
+import {nextTick} from 'vue';
+import {
+    resolveToolCategory,
+    resolveToolMeta,
+    TOOL_CATEGORY,
+    toolCategoryLabel,
+    UNKNOWN_TOOL_LABEL,
+    unwrapToolResultEnvelope
+} from '../src/utils/toolMeta';
+import {AgentToolName} from '../src/utils/toolNames';
+import {setPreference} from '../src/i18n';
 
 // 展示名随语言变化：本文件锁定中文口径，先把语言钉死为 zh-CN（不依赖运行环境 navigator）。
 setPreference('zh-CN');

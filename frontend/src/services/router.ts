@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router';
-import type { RouteRecordRaw } from 'vue-router';
-import { isElectron } from '../utils/platform';
+import type {RouteRecordRaw} from 'vue-router';
+import {createRouter, createWebHashHistory, createWebHistory} from 'vue-router';
+import {isElectron} from '../utils/platform';
 
 // 本地单实例（HC-1）：无账号体系，路由即页面，无守卫。
 const routes: Array<RouteRecordRaw> = [

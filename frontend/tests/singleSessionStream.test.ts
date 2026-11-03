@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPinia, setActivePinia } from 'pinia';
-import { ref, computed, effectScope } from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import {computed, effectScope, ref} from 'vue';
 import axios from 'axios';
-import { SessionEventStream } from '../src/views/chat/sessionEventStream';
-import { useChatSending } from '../src/views/chat/useChatSending';
-import { useChatHistory } from '../src/views/chat/useChatHistory';
-import { aggregateRecordsByIdentity } from '../src/utils/session';
-import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import type { AgentEvent } from '../src/types/Event';
-import type { Block, TurnViewVO } from '../src/types/block';
-import type { ChatMessage, ChatSession } from '../src/types/chat';
+import {SessionEventStream} from '../src/views/chat/sessionEventStream';
+import {useChatSending} from '../src/views/chat/useChatSending';
+import {useChatHistory} from '../src/views/chat/useChatHistory';
+import {aggregateRecordsByIdentity} from '../src/utils/session';
+import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import type {AgentEvent} from '../src/types/Event';
+import type {Block, TurnViewVO} from '../src/types/block';
+import type {ChatMessage, ChatSession} from '../src/types/chat';
 
 /**
  * 「单一会话级流」形态的回归守卫。

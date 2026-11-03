@@ -9,7 +9,7 @@
  * 渲染进程里，通知窗口另起一份 i18n 实例必然与其漂移。</p>
  */
 import './notification.css';
-import { normalizeSoundId, playNotificationSound } from './sound';
+import {normalizeSoundId, playNotificationSound} from './sound';
 
 /** 通知类别：决定图标与配色。 */
 type NotifyKind = 'completed' | 'failed' | 'cancelled' | 'suspended';

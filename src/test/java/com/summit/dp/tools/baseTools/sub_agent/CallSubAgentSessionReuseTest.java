@@ -1,12 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -15,24 +8,29 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
-import com.summit.dp.workspace.application.service.WorkspaceService;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
+import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -42,18 +40,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 编排层集成守卫：验证 {@link CallSubAgentTool} 解析子会话（复用 / 派生）并组装请求后的<b>提交载荷</b>。
@@ -131,7 +121,7 @@ class CallSubAgentSessionReuseTest {
                 TeamVO.builder().id(TEAM_ID).commanderAgentId(5L).agents(List.of(childAgent())).build()));
         when(sessionRepository.findById(ROOT_SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(ROOT_SESSION_ID).build()));
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
     }
 
     private AsyncDelegationTask captureSubmittedTask() {
@@ -155,6 +145,7 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
+        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
         assertTrue(task.target().reused(), "命中已有子会话必须标记复用");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "复用同一子会话 id");
 
@@ -174,6 +165,7 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
+        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
         assertFalse(task.target().reused(), "未命中必须标记首派");
         assertNotNull(task.numericSubSessionId());
         assertNotEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "未命中时必须派生新 id");
@@ -194,6 +186,7 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
+        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
         assertTrue(task.target().reused(), "上下文缺失也必须复用同一子会话，不得另派生");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId());
     }
@@ -204,7 +197,7 @@ class CallSubAgentSessionReuseTest {
         when(sessionRepository.findById(ROOT_SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(ROOT_SESSION_ID).build()));
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(false);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(false);
 
         ToolExecuteResult result = tool.execute(toolExecution());
 

@@ -1,17 +1,11 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type {
-  AgentBatchModelRequest,
-  AgentVO,
-  ChatAcceptance,
-  CreateAgentRequest,
-  PageResult,
-} from '../types/chat';
-import { toPositiveInt, isOk } from '../utils/api';
-import { toServerSessionId } from '../utils/ids';
-import { getApiBaseUrl } from '../utils/apiConfig';
-import { t } from '../i18n';
-import type { ChatCommand } from './dto/chat_command';
+import type {Result} from './types';
+import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, CreateAgentRequest, PageResult,} from '../types/chat';
+import {isOk, toPositiveInt} from '../utils/api';
+import {toServerSessionId} from '../utils/ids';
+import {getApiBaseUrl} from '../utils/apiConfig';
+import {t} from '../i18n';
+import type {ChatCommand} from './dto/chat_command';
 
 const appendFormValue = (form: FormData, key: string, value: string | number | boolean | null | undefined) => {
   if (value !== null && value !== undefined) form.append(key, String(value));

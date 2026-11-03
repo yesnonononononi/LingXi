@@ -1,14 +1,14 @@
-import { computed, onMounted, ref } from 'vue';
-import { useUserConfigStore } from '../../../stores/userConfigStore';
-import { SandboxAPI } from '../../../services/sandbox';
+import {computed, onMounted, ref} from 'vue';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
+import {SandboxAPI} from '../../../services/sandbox';
 import type {
-  AgentAccessMode,
-  CommandApprovalPolicyType,
-  SandboxServiceStatus,
-  WorkspaceEnvType,
+    AgentAccessMode,
+    CommandApprovalPolicyType,
+    SandboxServiceStatus,
+    WorkspaceEnvType,
 } from '../../../types/chat';
-import { isOk } from '../../../utils/api';
-import { useI18n } from '../../../i18n';
+import {isOk} from '../../../utils/api';
+import {useI18n} from '../../../i18n';
 
 /** 沙箱开关的三态：NONE 是「后端未设置」，不能渲染成「已关闭」——那是另一种事实。 */
 export type SandboxState = 'ON' | 'OFF' | 'UNSET';

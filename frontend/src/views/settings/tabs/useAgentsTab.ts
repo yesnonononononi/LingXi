@@ -1,10 +1,11 @@
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
-import { AgentAPI, ToolAPI, ModelAPI } from '../../../services/api';
-import type { AgentVO, ToolVO, ModelConfigVO } from '../../../types/chat';
-import type { SelectOption } from '../../../types/ui';
-import { isOk } from '../../../utils/api';
-import { useConfirm } from '../../../composables/useConfirm';
-import { useI18n } from '../../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {AgentAPI, ModelAPI, ToolAPI} from '../../../services/api';
+import type {AgentVO, ModelConfigVO, ToolVO} from '../../../types/chat';
+import type {SelectOption} from '../../../types/ui';
+import {isOk} from '../../../utils/api';
+import {isImageModel} from '../../../utils/modelCapabilities';
+import {useConfirm} from '../../../composables/useConfirm';
+import {useI18n} from '../../../i18n';
 
 /** 头像长度上限，与后端 `Agent.AVATAR_MAX_LENGTH` 一致 */
 const AGENT_AVATAR_MAX_LENGTH = 255;
@@ -145,7 +146,7 @@ export function useAgentsTab() {
       // 聚合接口一次带出「提供商 → 模型」：同名模型来自不同提供商时，下拉里能分清来源。
       const res = await ModelAPI.catalog();
       if (isOk(res.code)) {
-        modelsList.value = (res.data ?? []).flatMap(group => group.models ?? []);
+        modelsList.value = (res.data ?? []).flatMap(group => group.models ?? []).filter(model => !isImageModel(model));
       }
     } catch (e) {
       console.error('加载模型列表失败:', e);

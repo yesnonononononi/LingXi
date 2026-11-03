@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 /**
  * 按 `vendor/runtime.lock.json` 的固定版本准备随包沙箱运行资源。

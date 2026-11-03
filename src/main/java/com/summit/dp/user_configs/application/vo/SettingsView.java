@@ -1,8 +1,9 @@
 package com.summit.dp.user_configs.application.vo;
 
+import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.domain.model.UserConfig;
 
 /**
  * 单例本地设置的只读投影（{@code user_configs} 单例行）。
@@ -33,7 +34,9 @@ public record SettingsView(
         /* 团队规模上限的生效值（已由设置行/yaml 缺省解析过）；不会为 null。 */
         Integer teamSize,
         /* 专用压缩模型（关联 model_config.id）；null 表示沿用对话模型做摘要。 */
-        Long compactModelId
+        Long compactModelId,
+        Long imageModelId,
+        Integer imageGenerationMaxCalls
 ) {
     /**
      * 兼容既有调用：未配置专用压缩模型（沿用对话模型做摘要）。
@@ -47,5 +50,13 @@ public record SettingsView(
                         Integer teamSize) {
         this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
                 reasoningEffort, skillDir, teamSize, null);
+    }
+
+    public SettingsView(WorkspaceType workspaceType, AgentAccessMode accessMode,
+                        CommandApprovalPolicy commandApprovalPolicy, Integer planMaxReminders, Long modelId,
+                        Long agentId, Integer maxTokens, String reasoningEffort, String skillDir,
+                        Integer teamSize, Long compactModelId) {
+        this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
+                reasoningEffort, skillDir, teamSize, compactModelId, null, UserConfig.DEFAULT_IMAGE_GENERATION_MAX_CALLS);
     }
 }

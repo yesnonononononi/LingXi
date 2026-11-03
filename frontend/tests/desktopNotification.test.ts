@@ -1,15 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  NotificationGate,
-  GLOBAL_COOLDOWN_MS,
-  SESSION_COOLDOWN_MS,
-} from '../src/composables/useDesktopNotification';
-import {
-  normalizePayload,
-  TITLE_MAX,
-  BODY_MAX,
-} from '../electron/notification-window.cjs';
+import {GLOBAL_COOLDOWN_MS, NotificationGate, SESSION_COOLDOWN_MS,} from '../src/composables/useDesktopNotification';
+import {BODY_MAX, normalizePayload, TITLE_MAX,} from '../electron/notification-window.cjs';
 
 /* ---------------------------------------------------------------- 请求归一化 */
 

@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveCacheHitRate, resolveTokenUsage, resolveTotalTokens, resolveUncachedInputTokens } from '../src/utils/tokenUsage';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import type { ChatMessage, ChatTurn } from '../src/types/chat';
-import { createServer } from 'vite';
-import { createSSRApp } from 'vue';
-import { renderToString } from '@vue/server-renderer';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { parse as parseSfc } from '@vue/compiler-sfc';
+import {
+    resolveCacheHitRate,
+    resolveTokenUsage,
+    resolveTotalTokens,
+    resolveUncachedInputTokens
+} from '../src/utils/tokenUsage';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import type {ChatMessage, ChatTurn} from '../src/types/chat';
+import {createServer} from 'vite';
+import {createSSRApp} from 'vue';
+import {renderToString} from '@vue/server-renderer';
+import {fileURLToPath} from 'node:url';
+import {readFileSync} from 'node:fs';
+import {parse as parseSfc} from '@vue/compiler-sfc';
 import postcss from 'postcss';
 
 const message: ChatMessage = {
@@ -119,6 +124,36 @@ test('实际消息组件同时展示历史和实时明细，仅在组尾展示',
     assert.ok(!history.includes('70 token'));
     const head = await renderToString(createSSRApp(component, { ...props, isGroupTail: false }));
     assert.ok(!head.includes('Round usage'));
+    const { buildBubbleFromTurnView } = await server.ssrLoadModule('/src/views/chat/blockProjection.ts');
+    const { AgentToolName } = await server.ssrLoadModule('/src/utils/toolNames.ts');
+    for (const status of ['COMPLETED', 'FAILED', 'CANCELLED'] as const) {
+      for (const toolStatus of ['STARTED', 'PROMISED'] as const) {
+        const bubble = buildBubbleFromTurnView({
+          sessionId: 'session-1', turnId: 'turn-1', status, viewVersion: '30',
+          blocks: [
+            { blockId: 'body', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: true, text: '回答内容' },
+            { blockId: 'tool:stale', type: 'TOOL', order: 2, status: toolStatus,
+              toolCallId: 'stale', toolName: AgentToolName.ReadFile, arguments: '{}' },
+          ],
+        });
+        assert.equal(bubble.toolCalls[0].status, toolStatus === 'STARTED' ? 'calling' : 'pending');
+        const terminal = await renderToString(createSSRApp(component, {
+          ...props, message: bubble, turn: { ...turn, status },
+        }));
+        assert.ok(terminal.includes('Round usage'), `${status}/${toolStatus} 残留工具不能隐藏底栏`);
+        assert.ok(terminal.includes('80 token'), '必须使用已保存的轮次用量');
+        const active = await renderToString(createSSRApp(component, {
+          ...props, message: bubble, turn: { ...turn, status: 'RUNNING' },
+        }));
+        assert.ok(!active.includes('Round usage'), '未决工具仍须阻止运行中的轮次提前展示底栏');
+      }
+    }
+    const staleStream = await renderToString(createSSRApp(component, {
+      ...props, turn: { ...turn, status: 'COMPLETED' },
+      message: { ...props.message, isComplete: false, isThinking: true, isExploring: true },
+      isLastAssistant: true, isSending: true,
+    }));
+    assert.ok(staleStream.includes('Round usage'), '迟到的流标记不能覆盖已确认的轮次终态');
     i18n.useI18n().locale.value = 'zh-CN';
     const chinese = await renderToString(createSSRApp(component, props));
     for (const text of ['本轮用量', '提供方 / 模型', '缓存命中', '未缓存输入', '缓存读取', '70.0%', '其中推理 20 token']) {

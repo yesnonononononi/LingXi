@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useAgentsTab } from './useAgentsTab';
+import {computed} from 'vue';
+import {useAgentsTab} from './useAgentsTab';
 import DropUpSelect from '../../../components/common/DropUpSelect.vue';
-import { resolveToolFullName } from '../../../utils/toolDisplayNames';
-import { useTheme } from '../../../composables/useTheme';
-import { useI18n } from '../../../i18n';
-import { isImageAvatar } from '../../../utils/avatar';
+import {resolveToolFullName} from '../../../utils/toolDisplayNames';
+import {useTheme} from '../../../composables/useTheme';
+import {useI18n} from '../../../i18n';
+import {isImageAvatar} from '../../../utils/avatar';
 
 const props = defineProps<{
   isDark?: boolean;

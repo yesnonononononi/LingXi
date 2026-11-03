@@ -10,5 +10,5 @@ import java.nio.file.Path;
 @Builder
 public record ToolProcessingContext(Long agentId, Long teamId, boolean defaultAgent, boolean member, boolean vision,
                                     AgentAccessMode accessMode, boolean requirePlan,
-                                    McpConfig mcpConfig, Path skillRoot) {
+                                    McpConfig mcpConfig, Path skillRoot, boolean projectMemory, boolean imageGeneration) {
 }

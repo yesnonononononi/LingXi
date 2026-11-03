@@ -23,12 +23,12 @@
  *
  * 用法见 `node scripts/test-runner.mjs --help`。
  */
-import { spawn } from 'node:child_process';
+import {spawn} from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 const CURRENT_FILE_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = path.dirname(CURRENT_FILE_PATH);
@@ -61,7 +61,7 @@ const TAIL_LINE_LIMIT = 40;
  * 用途：启动时做「成员集合 + 顺序」自证——`all` 场景必须与它完全等价，
  * 任何人不小心改了分组都会在这里被拦下（退出码 3），而不是悄悄少跑一个文件。
  */
-const LEGACY_TEST_ALL = 'npx tsx --test tests/applicationSessionState.test.ts tests/processViewModel.test.ts tests/toolRowUi.test.ts tests/processSegments.test.ts tests/processHeadline.test.ts tests/turnProjection.test.ts tests/processTimeline.test.ts tests/executionCleanup.test.ts tests/modelRetry.test.ts tests/subSessionLiveRetry.test.ts tests/subSessionContextUsage.test.ts tests/subSessionTaskProgress.test.ts tests/choiceNavigation.test.ts && npx tsx --test tests/agentSelectionPersistence.test.ts tests/backgroundTasks.test.ts tests/checklist.test.ts tests/blockEventWiring.test.ts tests/blockProjection.test.ts tests/blockTransmissionContract.test.ts tests/cancelledEmptyTurn.test.ts tests/cardReadinessAndSessionStream.test.ts tests/chatExecutionControls.test.ts tests/chatImages.test.ts tests/chatInputFocusContract.test.ts tests/chatLiveRenderFixes.test.ts tests/crossPageTurn.test.ts tests/desktopNotification.test.ts tests/suspensionNotification.test.ts tests/failedTurnBubble.test.ts tests/frontendRenderFix.test.ts tests/i18n.test.ts tests/mcpConnect.test.ts tests/mcpConnectComponent.test.ts tests/modelIdPrecision.test.ts tests/modelProviderCredential.test.ts tests/notificationSound.test.ts tests/personalization.test.ts tests/planCardLoading.test.ts tests/promiseCard.test.ts tests/promptCardGroups.test.ts tests/promptCardSinglePath.test.ts tests/promptOptimization.test.ts tests/qaAsyncSubSessionStatusAdversarial.test.ts tests/qaIndependentVerification.test.ts tests/qaIsBodyIndependent.test.ts tests/readImageTools.test.ts tests/reasoningEffort.test.ts tests/compactionSettings.test.ts tests/responseTextStreaming.test.ts tests/sessionLoadDiagnosis.test.ts tests/sidebarBehavior.test.ts tests/singleSessionStream.test.ts tests/skillCommand.test.ts tests/sseParse.test.ts tests/streamAnimationGuard.test.ts tests/streamRendering.test.ts tests/subSessionHistoryReuse.test.ts tests/textTypeLocale.test.ts tests/themeTokens.test.ts tests/fontScale.test.ts tests/tokenUsage.test.ts tests/toolDisplayName.test.ts tests/toolDisplayNames.test.ts tests/toolSettingsDisplay.test.ts tests/unsentUserBubble.test.ts && node --test tests/mermaid.test.cjs tests/developmentIsolation.test.cjs tests/backendRuntimeMaven.test.cjs tests/backendSandbox.test.cjs tests/chatAsyncDelegationStatus.test.cjs tests/chatModelSourceIndicator.test.cjs tests/chatProcessCollapse.test.cjs tests/chatScrollResize.test.cjs tests/choiceCardQuestionNewline.test.cjs tests/collapseTransitionClip.test.cjs tests/loadingSweep.test.cjs tests/statusIndicator.test.cjs tests/electronPackaging.test.cjs tests/filePreview.native.test.cjs tests/footerStatusWidth.test.cjs tests/chatColumnWidth.test.cjs tests/frameworkDependencies.test.cjs tests/qaAsyncDelegationAdversarial.test.cjs tests/qaDelegationCompatRemoval.test.cjs tests/sandboxRuntime.test.cjs tests/sandboxRuntimeFetch.test.cjs tests/processDetailsSplit.test.cjs tests/slingButton.test.cjs tests/updateRuntimeContract.test.cjs tests/updateSecurity.test.cjs tests/updateSignatureContract.test.cjs tests/chatBackground.test.cjs tests/visualExpectInventory.test.cjs tests/backgroundSlots.test.cjs && npx electron tests/chatMessageSlots.smoke.cjs && npx electron tests/backgroundImage.smoke.cjs && npx electron tests/chatInputSlots.smoke.cjs && npx electron tests/sidebarSlots.smoke.cjs && npx electron tests/processSegments.smoke.cjs && npx electron tests/chatExecutionControls.smoke.cjs && npx electron tests/sessionRecovery.smoke.cjs && npx electron tests/subSessionContextUsage.smoke.cjs && npx electron tests/subSessionTaskProgress.smoke.cjs && npx electron tests/suspensionNotification.smoke.cjs && npx electron tests/planPreview.smoke.cjs && npx electron tests/taskProgress.smoke.cjs && npx electron tests/choiceQuestionGroup.smoke.cjs && npx electron tests/commandApprovalGroup.smoke.cjs && npx electron tests/compactionSettings.smoke.cjs && npx electron tests/settingsBackground.smoke.cjs';
+const LEGACY_TEST_ALL = 'npx tsx --test tests/applicationSessionState.test.ts tests/processViewModel.test.ts tests/toolRowUi.test.ts tests/processSegments.test.ts tests/processHeadline.test.ts tests/turnProjection.test.ts tests/processTimeline.test.ts tests/executionCleanup.test.ts tests/modelRetry.test.ts tests/subSessionLiveRetry.test.ts tests/subSessionContextUsage.test.ts tests/subSessionTaskProgress.test.ts tests/choiceNavigation.test.ts && npx tsx --test tests/agentSelectionPersistence.test.ts tests/backgroundTasks.test.ts tests/checklist.test.ts tests/blockEventWiring.test.ts tests/blockProjection.test.ts tests/blockTransmissionContract.test.ts tests/cancelledEmptyTurn.test.ts tests/cardReadinessAndSessionStream.test.ts tests/chatExecutionControls.test.ts tests/chatImages.test.ts tests/chatInputFocusContract.test.ts tests/chatLiveRenderFixes.test.ts tests/crossPageTurn.test.ts tests/desktopNotification.test.ts tests/suspensionNotification.test.ts tests/failedTurnBubble.test.ts tests/frontendRenderFix.test.ts tests/i18n.test.ts tests/mcpConnect.test.ts tests/mcpConnectComponent.test.ts tests/modelIdPrecision.test.ts tests/modelProviderCredential.test.ts tests/notificationSound.test.ts tests/personalization.test.ts tests/planCardLoading.test.ts tests/promiseCard.test.ts tests/promptCardGroups.test.ts tests/promptCardSinglePath.test.ts tests/promptOptimization.test.ts tests/qaAsyncSubSessionStatusAdversarial.test.ts tests/qaIndependentVerification.test.ts tests/qaIsBodyIndependent.test.ts tests/readImageTools.test.ts tests/reasoningEffort.test.ts tests/compactionSettings.test.ts tests/responseTextStreaming.test.ts tests/sessionLoadDiagnosis.test.ts tests/sidebarBehavior.test.ts tests/singleSessionStream.test.ts tests/skillCommand.test.ts tests/sseParse.test.ts tests/streamAnimationGuard.test.ts tests/progressiveFade.test.ts tests/thinkingTextScheduler.test.ts tests/streamRendering.test.ts tests/subSessionHistoryReuse.test.ts tests/textTypeLocale.test.ts tests/themeTokens.test.ts tests/fontScale.test.ts tests/tokenUsage.test.ts tests/toolDisplayName.test.ts tests/toolDisplayNames.test.ts tests/toolSettingsDisplay.test.ts tests/unsentUserBubble.test.ts && node --test tests/progressiveFade.test.cjs tests/thinkingText.test.cjs tests/mermaid.test.cjs tests/developmentIsolation.test.cjs tests/backendRuntimeMaven.test.cjs tests/backendSandbox.test.cjs tests/chatAsyncDelegationStatus.test.cjs tests/chatModelSourceIndicator.test.cjs tests/chatProcessCollapse.test.cjs tests/chatScrollResize.test.cjs tests/choiceCardQuestionNewline.test.cjs tests/collapseTransitionClip.test.cjs tests/loadingSweep.test.cjs tests/statusIndicator.test.cjs tests/electronPackaging.test.cjs tests/filePreview.native.test.cjs tests/footerStatusWidth.test.cjs tests/chatColumnWidth.test.cjs tests/frameworkDependencies.test.cjs tests/qaAsyncDelegationAdversarial.test.cjs tests/qaDelegationCompatRemoval.test.cjs tests/sandboxRuntime.test.cjs tests/sandboxRuntimeFetch.test.cjs tests/processDetailsSplit.test.cjs tests/slingButton.test.cjs tests/updateRuntimeContract.test.cjs tests/updateSecurity.test.cjs tests/updateSignatureContract.test.cjs tests/chatBackground.test.cjs tests/visualExpectInventory.test.cjs tests/backgroundSlots.test.cjs && npx electron tests/chatMessageSlots.smoke.cjs && npx electron tests/backgroundImage.smoke.cjs && npx electron tests/chatInputSlots.smoke.cjs && npx electron tests/sidebarSlots.smoke.cjs && npx electron tests/processSegments.smoke.cjs && npx electron tests/chatExecutionControls.smoke.cjs && npx electron tests/sessionRecovery.smoke.cjs && npx electron tests/subSessionContextUsage.smoke.cjs && npx electron tests/subSessionTaskProgress.smoke.cjs && npx electron tests/suspensionNotification.smoke.cjs && npx electron tests/planPreview.smoke.cjs && npx electron tests/taskProgress.smoke.cjs && npx electron tests/choiceQuestionGroup.smoke.cjs && npx electron tests/commandApprovalGroup.smoke.cjs && npx electron tests/compactionSettings.smoke.cjs && npx electron tests/settingsBackground.smoke.cjs && npx electron tests/messageImages.smoke.cjs';
 
 /** 旧链的第一段 tsx 批次（13 个文件）。 */
 const TSX_SEGMENT_ONE = [
@@ -124,6 +124,8 @@ const TSX_SEGMENT_TWO = [
   'tests/skillCommand.test.ts',
   'tests/sseParse.test.ts',
   'tests/streamAnimationGuard.test.ts',
+  'tests/progressiveFade.test.ts',
+  'tests/thinkingTextScheduler.test.ts',
   'tests/streamRendering.test.ts',
   'tests/subSessionHistoryReuse.test.ts',
   'tests/textTypeLocale.test.ts',
@@ -138,6 +140,8 @@ const TSX_SEGMENT_TWO = [
 
 /** 旧链的 node 批次（29 个 .test.cjs）。 */
 const NODE_SEGMENT = [
+  'tests/progressiveFade.test.cjs',
+  'tests/thinkingText.test.cjs',
   'tests/mermaid.test.cjs',
   'tests/developmentIsolation.test.cjs',
   'tests/backendRuntimeMaven.test.cjs',
@@ -187,6 +191,7 @@ const SMOKE_SEGMENT = [
   'commandApprovalGroup',
   'compactionSettings',
   'settingsBackground',
+  'messageImages',
 ];
 
 /**
@@ -217,6 +222,7 @@ const SCENES = {
       { kind: KIND_TSX, files: ['tests/sidebarBehavior.test.ts'] },
       { kind: KIND_NODE, files: ['tests/chatBackground.test.cjs', 'tests/backgroundSlots.test.cjs'] },
       { kind: KIND_SMOKE, files: [toSmokeTestPath('chatMessageSlots')] },
+      { kind: KIND_SMOKE, files: [toSmokeTestPath('messageImages')] },
       { kind: KIND_SMOKE, files: [toSmokeTestPath('backgroundImage')] },
       { kind: KIND_SMOKE, files: [toSmokeTestPath('chatInputSlots')] },
       { kind: KIND_SMOKE, files: [toSmokeTestPath('sidebarSlots')] },
@@ -338,6 +344,8 @@ const SCENES = {
           'tests/skillCommand.test.ts',
           'tests/sseParse.test.ts',
           'tests/streamAnimationGuard.test.ts',
+          'tests/progressiveFade.test.ts',
+          'tests/thinkingTextScheduler.test.ts',
           'tests/streamRendering.test.ts',
           'tests/textTypeLocale.test.ts',
           'tests/themeTokens.test.ts',
@@ -351,6 +359,8 @@ const SCENES = {
       {
         kind: KIND_NODE,
         files: [
+          'tests/progressiveFade.test.cjs',
+          'tests/thinkingText.test.cjs',
           'tests/mermaid.test.cjs',
           'tests/developmentIsolation.test.cjs',
           'tests/backendRuntimeMaven.test.cjs',

@@ -7,49 +7,34 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.application.chat.ChatCommand;
-import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-import com.summit.dp.workflow.application.chat.ResendTargetResolver;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.chat.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import org.junit.jupiter.api.DisplayName;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 聊天入口的顺序与失败收口契约。
@@ -90,7 +75,7 @@ class ChatAdmissionOrderTest {
             chatTurnService,
             mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
             // 本测试只盯「单飞校验先于用户消息落库」这一段顺序，重发链路用不到。
-            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class)
+            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class)
     );
 
     @BeforeEach
@@ -137,14 +122,14 @@ class ChatAdmissionOrderTest {
     void rejectedRequestLeavesNoUserMessage() {
         RuntimeContext context = context();
         when(requestPreparer.prepare(any(ChatCommand.class))).thenReturn(context);
-        doThrow(new ClientException("会话正在执行中")).when(registry).beginRoot(anyLong());
+        doThrow(new ClientException("会话正在执行中")).when(registry).beginRoot(anyLong(), anyString());
 
         assertThrows(ClientException.class, () -> chatService.chat(command()));
 
         // 关键：拒绝发生在受理**之前**，历史里不会多出一条没有回复的提问，也不会留下创建中的执行行。
         verify(requestPreparer, never()).commitUserMessage(any());
         verify(orchestrator, never()).createExecution(any());
-        verify(registry, never()).finishRoot(anyLong());
+        verify(registry, never()).finishRoot(anyLong(), anyString());
     }
 
     @Test
@@ -156,11 +141,11 @@ class ChatAdmissionOrderTest {
         chatService.chat(command());
 
         InOrder order = inOrder(registry, requestPreparer, orchestrator);
-        order.verify(registry).beginRoot(ROOT_SESSION_ID);
+        order.verify(registry).beginRoot(ROOT_SESSION_ID, EXECUTION_ID);
         order.verify(requestPreparer).commitUserMessage(context);
         order.verify(orchestrator).createExecution(any(RuntimeContext.class));
         order.verify(orchestrator).execute(any(RuntimeContext.class), any(Execution.class));
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -195,7 +180,7 @@ class ChatAdmissionOrderTest {
 
         assertThrows(IllegalStateException.class, () -> chatService.chat(command()));
 
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
         verify(orchestrator, never()).execute(any(), any());
     }
 
@@ -210,7 +195,7 @@ class ChatAdmissionOrderTest {
         assertThrows(IllegalStateException.class, () -> chatService.chat(command()));
 
         verify(requestPreparer).commitUserMessage(context);
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -247,7 +232,7 @@ class ChatAdmissionOrderTest {
                 () -> chatService.chat(command()));
 
         assertEquals("model missing", thrown.getMessage(), "对外抛出的必须仍是原始失败原因");
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -263,7 +248,7 @@ class ChatAdmissionOrderTest {
         assertThrows(IllegalStateException.class, () -> chatService.chat(command()));
 
         verify(executionControl, never()).fail(any(Execution.class), any());
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test

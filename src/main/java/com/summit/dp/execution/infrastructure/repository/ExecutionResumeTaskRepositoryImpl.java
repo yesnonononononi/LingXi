@@ -128,8 +128,7 @@ public class ExecutionResumeTaskRepositoryImpl
      */
     @Override
     public ExecutionResumeTask enqueue(long executionId, long generation, Instant now) {
-        // 先插后查：SQLite 单写者下「先读后升写」在竞争时抢不到锁（升写不等 busy_timeout），
-        // 而 (executionId, generation) 上的唯一键本来就能裁决并发，插入是更短的临界区。
+        // 先插入再回查，以唯一约束裁决同一恢复代际的重复领取。
         ExecutionResumeTaskPO row = new ExecutionResumeTaskPO();
         row.setExecutionId(executionId);
         row.setGeneration(generation);

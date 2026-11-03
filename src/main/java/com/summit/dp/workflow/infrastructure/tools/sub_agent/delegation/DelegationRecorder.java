@@ -3,15 +3,16 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SensitiveDataSpec;
-import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionEventMetadata;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
+import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -60,8 +61,8 @@ public class DelegationRecorder {
         ModelConfig model = modelSpec == null ? null : runtimeConfigurations.resolveModel(modelSpec.getId(), modelSpec.getVersion());
         long childTurnId = chatTurnService.acceptTurn(numericSubSessionId, rootSessionId, parentTurnId,
                 ExecutionIdentity.numericOrNull(request.getExecutionId()),
-                model == null ? null : model.getModelName(),
-                model == null ? null : model.getProvider());
+                model == null ? TurnModelSnapshot.of(null, null, null)
+                        : TurnModelSnapshot.of(model.getModelName(), model.getProvider(), model.getReasoningEffort()));
         request.runtimeParametersOrDefault().setEventMetaData(
                 childExecutionMetadata(agent, rootSessionId, toolExecution.getEventMetaData(),
                         numericSubSessionId, childTurnId, parentTurnId));

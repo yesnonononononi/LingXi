@@ -4,9 +4,9 @@
  * <p>与 {@link ../composables/useTheme.ts} 同风格：模块级单例 ref + localStorage 持久化，
  * 所有页面共享同一份语言状态。切换语言时，任何读取 {@link t} / {@link locale} 的渲染都会自动重算。</p>
  */
-import { ref, watch } from 'vue';
-import { messages } from './messages';
-import type { MessageDict } from './messages';
+import {ref, watch} from 'vue';
+import type {MessageDict} from './messages';
+import {messages} from './messages';
 
 /** 受支持的具体语言。 */
 export type Locale = 'zh-CN' | 'en-US';

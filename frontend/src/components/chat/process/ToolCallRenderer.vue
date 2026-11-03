@@ -8,11 +8,17 @@
  * <p>纯逻辑（meta / diff / 状态灯 / 可展开判定 / diff 文本块）全部来自 `utils/toolRowUi.ts`，
  * 这里只做「绑定 + 本地折叠状态」。</p>
  */
-import { computed, inject, ref } from 'vue';
-import type { ImageProcessItem } from '../../../utils/readImageTools';
-import type { ChatMessage } from '../../../types/chat';
-import { TOOL_CATEGORY, isEditFileTool, isReadFileTool, unwrapToolResultEnvelope, shouldShowToolArguments } from '../../../utils/toolMeta';
-import { resolveToolRenderName } from '../../../utils/toolDisplayNames';
+import {computed, inject, ref} from 'vue';
+import type {ImageProcessItem} from '../../../utils/readImageTools';
+import type {ChatMessage} from '../../../types/chat';
+import {
+  isEditFileTool,
+  isReadFileTool,
+  shouldShowToolArguments,
+  TOOL_CATEGORY,
+  unwrapToolResultEnvelope
+} from '../../../utils/toolMeta';
+import {resolveToolRenderName} from '../../../utils/toolDisplayNames';
 import {
   buildEditDiffChunks,
   canExpandToolRow,
@@ -23,9 +29,9 @@ import {
   toolRowHeaderClass,
   toolStatusDotClass,
 } from '../../../utils/toolRowUi';
-import { useCopyFeedback } from '../../../composables/useCopyFeedback';
-import { FILE_PREVIEW_KEY } from '../../../types/filePreview';
-import { t } from '../../../i18n';
+import {useCopyFeedback} from '../../../composables/useCopyFeedback';
+import {FILE_PREVIEW_KEY} from '../../../types/filePreview';
+import {t} from '../../../i18n';
 import CollapseTransition from '../../common/CollapseTransition.vue';
 
 const props = defineProps<{

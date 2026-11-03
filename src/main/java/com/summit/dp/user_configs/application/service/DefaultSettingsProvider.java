@@ -1,13 +1,13 @@
 package com.summit.dp.user_configs.application.service;
 
-import com.summit.dp.user_configs.domain.model.UserConfig;
-import com.summit.dp.user_configs.domain.model.ReasoningEffort;
-import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
+import com.summit.dp.shared.local.LocalInstance;
+import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.vo.SettingsView;
-import com.summit.dp.shared.local.LocalInstance;
-import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.domain.model.ReasoningEffort;
+import com.summit.dp.user_configs.domain.model.UserConfig;
+import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -72,7 +72,7 @@ public class DefaultSettingsProvider implements SettingsProvider {
                 effort == null ? null : effort.getValue(),
                 effectiveSkillDir(config.getSkillDir()),
                 config.getTeamSize() == null ? defaultTeamSize : config.getTeamSize(),
-                config.getCompactModelId());
+                config.getCompactModelId(), config.getImageModelId(), config.resolveImageGenerationMaxCalls());
     }
 
     /** 与 {@link UserConfig#defaultConfig()} 同源的缺省值；仅在设置行不存在时使用。 */

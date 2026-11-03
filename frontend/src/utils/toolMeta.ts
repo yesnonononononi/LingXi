@@ -1,8 +1,8 @@
 /** 工具展示严格按后端固定工具名称及参数字段解析，不接受兼容名或分类推断。 */
 
-import { toObject } from './json';
-import { AgentToolName } from './toolNames';
-import { t } from '../i18n';
+import {toObject} from './json';
+import {AgentToolName} from './toolNames';
+import {t} from '../i18n';
 
 /**
  * 工具分类（稳定判别码）。**不是展示文案** —— 界面展示一律经 {@link toolCategoryLabel}
@@ -33,10 +33,13 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.ManageCommand]: TOOL_CATEGORY.COMMAND,
   // 读取
   [AgentToolName.ReadFile]: TOOL_CATEGORY.READ,
+  [AgentToolName.LoadMemory]: TOOL_CATEGORY.READ,
+  [AgentToolName.SearchWiki]: TOOL_CATEGORY.READ,
   [AgentToolName.ReadImage]: TOOL_CATEGORY.READ,
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
   [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
+  [AgentToolName.GenerateImage]: TOOL_CATEGORY.WRITE,
   // 选择 / 人工确认
   [AgentToolName.RequireChoice]: TOOL_CATEGORY.CHOICE,
   // 计划书
@@ -210,6 +213,7 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
       break;
 
     case AgentToolName.ReadImage:
+    case AgentToolName.GenerateImage:
     case AgentToolName.EditFile:
       target = field('path');
       description = target;

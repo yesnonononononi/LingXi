@@ -3,28 +3,13 @@ package com.summit.dp.execution.infrastructure.checkpoint;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.nio.channels.FileChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -84,7 +69,7 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
      * <p>显式 {@code @Autowired}：类里还有一个「指定静默窗口」的构造器供测试使用，
      * 不标出来 Spring 会在两个构造器之间选不出来。</p>
      */
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public LocalFileCheckpointStore(@Value("${lingxi.data.dir}") String dataDir, ObjectMapper mapper) {
         this(dataDir, mapper, DEFAULT_COPY_QUIET_WINDOW_SECONDS);
     }
@@ -553,8 +538,8 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             this.temp = temp;
             this.target = target;
             try {
-                this.stream = new BufferedOutputStream(Files.newOutputStream(temp,
-                        StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
+                // 取消后的最终检查点仍须完整写入，不能让中断标记关闭文件通道。
+                this.stream = new BufferedOutputStream(new FileOutputStream(temp.toFile()));
             } catch (IOException e) {
                 release();
                 throw new UncheckedIOException("打开检查点临时文件失败: executionId=" + executionId, e);
@@ -578,9 +563,9 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             }
             try {
                 stream.flush();
-                // 先落盘再发布：断电后不会出现「数据库指向了内容不完整的文件」。
-                try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
-                    channel.force(true);
+                // Jackson 可能已关闭写入流；重新打开且不截断，保留取消标记也能完成落盘。
+                try (FileOutputStream durable = new FileOutputStream(temp.toFile(), true)) {
+                    durable.getFD().sync();
                 }
                 stream.close();
                 stream = OutputStream.nullOutputStream();

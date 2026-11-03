@@ -2,8 +2,8 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ConcurrentPolicy;
+import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.checklist.domain.model.ChecklistRules;
 import com.summit.dp.tools.application.port.ToolCatalog;
@@ -16,9 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 /**

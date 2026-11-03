@@ -21,8 +21,13 @@
 export const AgentToolName = {
   /** 读文件（可带 startLine / endLine 行范围） */
   ReadFile: 'read_file',
+  /** 项目记忆 wiki */
+  LoadMemory: 'load_memory',
+  /** 搜索项目 wiki */
+  SearchWiki: 'search_wiki',
   /** 读取工作区图片 */
   ReadImage: 'read_image',
+  GenerateImage: 'generate_image',
   /** 编辑文件（结果携带 plusLines / minusLines） */
   EditFile: 'edit_file',
   /** 终端命令 */

@@ -1,10 +1,12 @@
 package com.summit.dp.sandbox_security.application;
 
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -26,9 +28,15 @@ public final class TerminalSecurityPolicy {
     private final SecurityRuleService rules;
     public TerminalSecurityPolicy(SecurityRuleService rules) { this.rules = rules; }
     public SecurityDecision evaluate(String command) {
+        return evaluate(command, CommandApprovalPolicy.DEFAULT);
+    }
+
+    public SecurityDecision evaluate(String command, CommandApprovalPolicy mode) {
         if (command == null || command.isBlank()) return null;
         SecurityDecision first = null;
         for (SecurityRule rule : rules.rules(SecurityCategory.TERMINAL)) {
+            // 完全放行不叠加产品预设，自定义禁止仍是用户明确设置的边界。
+            if (mode == CommandApprovalPolicy.FULL_ACCESS && rule.preset() != null) continue;
             if (!rule.enabled() || !matches(rule, command)) continue;
             SecurityDecision decision = new SecurityDecision(rule.action(), rule.pattern(),
                     rule.matchType(), rule.preset());

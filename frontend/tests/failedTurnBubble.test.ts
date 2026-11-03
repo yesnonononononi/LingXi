@@ -19,15 +19,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
-import {
-  synthesizeFailedTurnBubbles,
-} from '../src/utils/session';
-import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { t } from '../src/i18n';
-import type { ChatMessage, ChatTurn } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
+import {synthesizeFailedTurnBubbles,} from '../src/utils/session';
+import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import {t} from '../src/i18n';
+import type {ChatMessage, ChatTurn} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
 
 const SESSION_ID = '777000111222333444';
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));

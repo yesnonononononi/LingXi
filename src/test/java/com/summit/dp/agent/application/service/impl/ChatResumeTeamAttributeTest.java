@@ -1,11 +1,5 @@
 package com.summit.dp.agent.application.service.impl;
 
-import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
-
-import com.summit.dp.workflow.application.chat.ResendTargetResolver;
-
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -13,35 +7,30 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.application.chat.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 恢复链路的会话属性回归：{@code resume} 不经过 {@code RequestPreparer}，必须自己把会话行上的
@@ -79,7 +68,20 @@ class ChatResumeTeamAttributeTest {
                 chatTurnService,
                 mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
                 // 本测试只盯 resume 的属性补齐，重发链路用不到。
-                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));
+                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
+    }
+
+    @Test
+    void manualResumePersistsClearedPauseIntentBeforeControlRegistration() {
+        Execution execution = execution(Map.of(InputAutomationPolicy.USER_PAUSED, true,
+                InputAutomationPolicy.AUTO_ROUNDS, InputAutomationPolicy.MAX_AUTO_ROUNDS));
+        stubResume(execution, Session.builder().id(SESSION_ID).rootSessionId(Session.ROOT_SESSION_ID).name("团队会话").build());
+        service().resume(SESSION_ID);
+        InOrder order = inOrder(executionRepository, executionControl);
+        order.verify(executionRepository).save(execution);
+        order.verify(executionControl).resume(execution);
+        assertFalse(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.USER_PAUSED));
+        assertFalse(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.AUTO_ROUNDS));
     }
 
     @Test

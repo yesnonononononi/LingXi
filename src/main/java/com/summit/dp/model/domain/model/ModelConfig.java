@@ -1,10 +1,10 @@
 package com.summit.dp.model.domain.model;
 
 
+import com.summit.dp.shared.exception.ClientException;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import com.summit.dp.shared.exception.ClientException;
 
 @AllArgsConstructor
 @Getter
@@ -47,6 +47,11 @@ public class ModelConfig {
 
     public void changeVision(boolean vision) {
         this.vision = vision;
+    }
+
+    /** 调用协议显式保存，不能依赖模型名称猜测。 */
+    public void changeProvider(String provider) {
+        this.provider = provider == null || provider.isBlank() ? null : provider.trim();
     }
 
     public void changeUseProvider(boolean useProvider) {

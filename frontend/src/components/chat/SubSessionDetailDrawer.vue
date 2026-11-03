@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import SessionConnectionNotice from './SessionConnectionNotice.vue';
-import type { StreamHealthState } from '../../views/chat/sessionEventStream';
-import { ref, watch, computed } from 'vue';
-import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
-import { chatApi } from '../../services/chat';
-import { formatClockTime } from '../../utils/format';
-import { absorbSubSessionHistory } from '../../views/chat/subSessionHistory';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { shouldShowToolArguments, unwrapToolResultEnvelope } from '../../utils/toolMeta';
-import { resolveToolRenderName } from '../../utils/toolDisplayNames';
-import { toSubItemStatus } from '../../utils/subSessionStatus';
-import { subItemStatusDotClass, subItemStatusLabel } from '../../utils/asyncDelegation';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import type {StreamHealthState} from '../../views/chat/sessionEventStream';
+import {computed, ref, watch} from 'vue';
+import type {ChatMessage, SubSessionVO, ToolCallTrace} from '../../types/chat';
+import {chatApi} from '../../services/chat';
+import {formatClockTime} from '../../utils/format';
+import {absorbSubSessionHistory} from '../../views/chat/subSessionHistory';
+import {parseToolDiff} from '../../utils/toolDiff';
+import {shouldShowToolArguments, unwrapToolResultEnvelope} from '../../utils/toolMeta';
+import {resolveToolRenderName} from '../../utils/toolDisplayNames';
+import {toSubItemStatus} from '../../utils/subSessionStatus';
+import {subItemStatusDotClass, subItemStatusLabel} from '../../utils/asyncDelegation';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import SessionContextUsage from './SessionContextUsage.vue';
 import GradientText from '../common/GradientText.vue';
-import { useTheme } from '../../composables/useTheme';
-import { useChatScroll } from '../../views/chat/useChatScroll';
-import { useI18n } from '../../i18n';
+import {useTheme} from '../../composables/useTheme';
+import {useChatScroll} from '../../views/chat/useChatScroll';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -355,6 +355,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     :content="step.content"
                     :is-dark="isDark"
                     :thinking-text="true"
+                    :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended && step.status === 'running'"
                   />
                 </div>
               </div>
@@ -423,7 +424,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-zinc-200 text-zinc-900')
                 ]"
               >
-                <MarkdownRenderer :content="msg.content" :is-dark="isDark" />
+                <MarkdownRenderer :content="msg.content" :is-dark="isDark"
+                  :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended" />
               </div>
             </div>
           </template>

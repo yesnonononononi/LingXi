@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useTeamsTab, TEAM_SIZE_MIN, TEAM_SIZE_MAX } from './useTeamsTab';
-import { useTheme } from '../../../composables/useTheme';
-import { useI18n } from '../../../i18n';
-import { isImageAvatar, avatarOptionPrefix } from '../../../utils/avatar';
+import {computed} from 'vue';
+import {TEAM_SIZE_MAX, TEAM_SIZE_MIN, useTeamsTab} from './useTeamsTab';
+import {useTheme} from '../../../composables/useTheme';
+import {useI18n} from '../../../i18n';
+import {avatarOptionPrefix, isImageAvatar} from '../../../utils/avatar';
 
 const props = defineProps<{
   isDark?: boolean;

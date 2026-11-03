@@ -3,15 +3,10 @@ package com.summit.dp.workflow.infrastructure.tools.file.edit;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
-import com.summit.core.anno.type.ObjectValue;
-import com.summit.core.anno.type.StringValue;
-import com.summit.core.anno.type.ToolProperty;
-import com.summit.core.anno.type.Value;
-import com.summit.core.anno.type.ValueType;
+import com.summit.core.anno.type.*;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
-import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
@@ -19,16 +14,17 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
 import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
+import org.springframework.stereotype.Component;
+
 import java.io.Serializable;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.NonNull;
-import org.springframework.stereotype.Component;
 
 /** 必须先写文件再登记；摘要随工具结束事件发布，不能另发第二份编辑事件。 */
 @Slf4j

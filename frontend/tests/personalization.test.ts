@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRenderer, defineComponent, nextTick } from 'vue';
-import { PersonalizationAPI } from '../src/services/personalization';
-import type { PersonalizationVO } from '../src/services/personalization';
-import { usePersonalizationTab } from '../src/views/settings/tabs/usePersonalizationTab';
-import { normalizeSettingsTab } from '../src/utils/enum';
+import {createRenderer, defineComponent, nextTick} from 'vue';
+import type {PersonalizationVO} from '../src/services/personalization';
+import {PersonalizationAPI} from '../src/services/personalization';
+import {usePersonalizationTab} from '../src/views/settings/tabs/usePersonalizationTab';
+import {normalizeSettingsTab} from '../src/utils/enum';
 
 const initial: PersonalizationVO = { id: '9007199254740993', title: '', commonAgentName: '', replyStyle: 'DEFAULT', customInstruction: '' };
 const styles = [{ value: 'DEFAULT', label: '默认' }, { value: 'DIRECT', label: '直言不讳' }];

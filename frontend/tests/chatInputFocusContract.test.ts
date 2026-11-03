@@ -18,9 +18,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import Module, { createRequire } from 'node:module';
-import { parse, compileScript } from '@vue/compiler-sfc';
+import {fileURLToPath} from 'node:url';
+import Module, {createRequire} from 'node:module';
+import {compileScript, parse} from '@vue/compiler-sfc';
 import ts from 'typescript';
 
 const requireFromHere = createRequire(import.meta.url);

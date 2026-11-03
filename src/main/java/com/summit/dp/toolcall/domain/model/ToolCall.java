@@ -3,11 +3,13 @@ package com.summit.dp.toolcall.domain.model;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.ToString;
 
 import java.time.Instant;
 
 /** 工具状态与结论的权威对象；准备完成只允许推进一次，终态不回退。 */
 @Getter
+@ToString
 @Builder(toBuilder = true)
 @AllArgsConstructor
 public class ToolCall {

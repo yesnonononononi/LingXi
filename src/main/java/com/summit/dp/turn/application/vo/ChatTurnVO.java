@@ -43,6 +43,9 @@ public class ChatTurnVO {
     /** 模型提供方快照。 */
     private String modelProvider;
 
+    /** 本轮思考强度档位快照（none/low/medium/high/xhigh/max）；null 表示该轮未记录。 */
+    private String reasoningEffort;
+
     /** 本轮已采集输入 token；null = 未知。 */
     @JsonSerialize(using = PlainLongSerializer.class)
     private Long inputTokens;

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { renderMarkdownDocument } from '../../utils/markdown';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {computed, watch} from 'vue';
+import {renderMarkdownDocument} from '../../utils/markdown';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {useTheme} from '../../composables/useTheme';
+import {useThinkingText} from '../../composables/useThinkingText';
+import {t} from '../../i18n';
 import GradientText from '../common/GradientText.vue';
 import MarkdownContent from './MarkdownContent';
 
@@ -12,6 +13,8 @@ const props = withDefaults(
     content?: string;
     isDark?: boolean;
     isThinking?: boolean;
+    /** 过程文字只需要显现动画，不应复用正文的空内容占位。 */
+    streaming?: boolean;
     /** 过程文本需要独立样式，避免影响最终正文。 */
     processText?: boolean;
     /** 思考内容独立弱化，正文与过程叙述保持各自样式。 */
@@ -21,15 +24,24 @@ const props = withDefaults(
     content: '',
     isDark: undefined,
     isThinking: false,
+    streaming: undefined,
     processText: false,
     thinkingText: false
   }
 );
+const emit = defineEmits<{ 'content-rendered': [] }>();
 
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
+// 初次挂载时已有内容属于快照；只有从空正文开始接收的首批文字需要显现。
+const revealInitial = !props.content;
+const streaming = computed(() => props.streaming ?? props.isThinking);
+const displayedContent = useThinkingText(() => props.content || '', () => props.thinkingText && streaming.value);
+watch(displayedContent, () => {
+  if (props.thinkingText) emit('content-rendered');
+}, { flush: 'post' });
 
-const markdownDocument = computed(() => renderMarkdownDocument(props.content || '', props.isThinking));
+const markdownDocument = computed(() => renderMarkdownDocument(displayedContent.value, streaming.value));
 const renderedHtml = computed(() => markdownDocument.value.html);
 
 // 普通代码块由 Markdown 生成，事件委托可以复用同一套复制反馈。
@@ -41,7 +53,15 @@ const handleContainerClick = async (event: MouseEvent) => {
   if (!btn) return;
 
   event.stopPropagation();
-  const encoded = btn.getAttribute('data-code');
+  let encoded = btn.getAttribute('data-code');
+  if (props.thinkingText && displayedContent.value !== props.content) {
+    // 复制必须取已收到的完整代码，不能把显示游标当成消息真值。
+    const container = event.currentTarget as HTMLElement;
+    const index = [...container.querySelectorAll('.copy-code-btn[data-code]')].indexOf(btn);
+    const template = document.createElement('template');
+    template.innerHTML = renderMarkdownDocument(props.content || '', streaming.value).html;
+    encoded = template.content.querySelectorAll('.copy-code-btn[data-code]')[index]?.getAttribute('data-code') ?? encoded;
+  }
   if (!encoded) return;
 
   const rawCode = decodeURIComponent(encoded);
@@ -73,7 +93,7 @@ const handleContainerClick = async (event: MouseEvent) => {
       class="markdown-body"
       :class="{ 'markdown-body--process': props.processText, 'markdown-body--thinking': props.thinkingText }"
     >
-      <MarkdownContent :document="markdownDocument" :is-dark="isDark" />
+      <MarkdownContent :document="markdownDocument" :is-dark="isDark" :streaming="streaming" :reveal-initial="revealInitial" />
     </div>
     
     <!-- 空正文时用文字提示工作状态，避免光条难以辨认。 -->

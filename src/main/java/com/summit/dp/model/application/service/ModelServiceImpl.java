@@ -1,6 +1,7 @@
 package com.summit.dp.model.application.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.summit.core.conf.ReasoningEffortPlan;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.command.ModelConfigCommand;
@@ -12,18 +13,14 @@ import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
 import com.summit.dp.provider.application.service.ProviderConfigService;
 import com.summit.dp.provider.application.vo.ProviderConfigVO;
-import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.harness.springbootautoconfigure.properties.agent.AgentChatProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -50,6 +47,7 @@ public class ModelServiceImpl implements ModelService {
         modelConfig.changeBaseUrl(command.baseUrl());
         modelConfig.changeApiKey(apiKey);
         modelConfig.changeVision(command.vision());
+        modelConfig.changeProvider(command.provider());
         modelConfig.changeProviderConfigId(providerConfigId);
         modelConfig.changeUseProvider(useProvider);
         modelConfigRepository.save(modelConfig);
@@ -78,6 +76,7 @@ public class ModelServiceImpl implements ModelService {
         if (command.baseUrl() != null) modelConfig.changeBaseUrl(command.baseUrl());
         if (useProvider || command.apiKey() != null) modelConfig.changeApiKey(apiKey);
         if (command.vision() != null) modelConfig.changeVision(command.vision());
+        if (command.provider() != null) modelConfig.changeProvider(command.provider());
         if (command.providerConfigId() != null) modelConfig.changeProviderConfigId(providerConfigId);
         if (command.useProvider() != null) modelConfig.changeUseProvider(command.useProvider());
         modelConfigRepository.updateById(modelConfig);
@@ -237,7 +236,7 @@ public class ModelServiceImpl implements ModelService {
     private String providerApiKey(Long providerConfigId) {
         throwIf(providerConfigId == null || providerConfigId <= 0, "使用提供方密钥时必须指定提供方");
         return providerConfigService.findApiKey(providerConfigId)
-                .filter(key -> key != null && !key.isBlank())
+                .filter(key -> !key.isBlank())
                 .orElseThrow(() -> new ClientException("提供方未配置 API Key: " + providerConfigId));
     }
 
@@ -258,6 +257,9 @@ public class ModelServiceImpl implements ModelService {
                 .vision(modelConfig.isVision())
                 .useProvider(modelConfig.isUseProvider())
                 .credentialConfigured(configured)
+                // 档位能力由框架的 ReasoningEffortPlan 裁决：Anthropic 上 xhigh/minimal 与更弱的档同义，
+                // 列出来就是承诺一个不存在的区别。前端按这份集合渲染滑杆。
+                .reasoningEfforts(ReasoningEffortPlan.distinct(modelConfig.getProvider(), modelConfig.getModelName()))
                 .build();
     }
 

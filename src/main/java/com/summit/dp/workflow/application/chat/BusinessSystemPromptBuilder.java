@@ -6,6 +6,8 @@ import com.summit.dp.personalization.domain.model.ReplyStyle;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
+import com.summit.core.workspace.WorkspaceSpec;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -20,9 +22,17 @@ import java.util.stream.Stream;
 public class BusinessSystemPromptBuilder {
 
     private final String globalPrompt;
+    private final ProjectMemoryPrompt projectMemoryPrompt;
 
-    public BusinessSystemPromptBuilder(@Value("${lingxi.system-prompt:}") String globalPrompt) {
+    public BusinessSystemPromptBuilder(String globalPrompt) {
+        this(globalPrompt, workspace -> "");
+    }
+
+    @Autowired
+    public BusinessSystemPromptBuilder(@Value("${lingxi.system-prompt:}") String globalPrompt,
+                                       ProjectMemoryPrompt projectMemoryPrompt) {
         this.globalPrompt = globalPrompt == null ? "" : globalPrompt.trim();
+        this.projectMemoryPrompt = projectMemoryPrompt;
     }
 
     /** 空段不产生分隔符，未配置偏好时保持原有提示词。 */
@@ -32,8 +42,13 @@ public class BusinessSystemPromptBuilder {
 
     /** 偏好置于默认规则与团队职责之间，最终内容随本次请求定稿。 */
     public String buildRootPrompt(String agentPrompt, PersonalizationVO personalization) {
+        return buildRootPrompt(agentPrompt, personalization, null);
+    }
+
+    public String buildRootPrompt(String agentPrompt, PersonalizationVO personalization, WorkspaceSpec workspace) {
         return String.join("\n\n", Stream.of(globalPrompt, customPrompt(personalization),
-                Objects.toString(agentPrompt, "").trim()).filter(section -> !section.isEmpty()).toList());
+                Objects.toString(agentPrompt, "").trim(), projectMemoryPrompt.load(workspace))
+                .filter(section -> !section.isEmpty()).toList());
     }
 
     public String customPrompt(PersonalizationVO personalization) {
@@ -62,6 +77,10 @@ public class BusinessSystemPromptBuilder {
 
     /** 子委派沿用成员职责与主理人上下文，不额外继承根执行的全局规则。 */
     public String buildMemberPrompt(AgentVO agent, TeamVO team, String callerPrompt) {
+        return buildMemberPrompt(agent, team, callerPrompt, null);
+    }
+
+    public String buildMemberPrompt(AgentVO agent, TeamVO team, String callerPrompt, WorkspaceSpec workspace) {
         String rolePrompt = TeamPromptComposer.memberPrompt(
                 agent.getPrompt(),
                 team == null ? null : team.getAgents(),
@@ -69,11 +88,13 @@ public class BusinessSystemPromptBuilder {
                 team == null ? null : team.getCommanderAgentId(),
                 team == null ? null : team.getDescription()
         );
-        return String.format("""
+        String prompt = String.format("""
                 %s
 
                 # Commander 提供的任务上下文
                 %s
                 """, rolePrompt, Objects.toString(callerPrompt, "").trim());
+        String memoryPrompt = projectMemoryPrompt.load(workspace);
+        return memoryPrompt.isEmpty() ? prompt : prompt + "\n" + memoryPrompt;
     }
 }

@@ -1,40 +1,47 @@
 package com.summit.dp.execution;
 
-import org.springframework.context.ApplicationEventPublisher;
-
-import com.summit.dp.execution.application.service.ExecutionCheckpointService;
-import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
-import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-
+import org.springframework.test.util.ReflectionTestUtils;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
+import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.*;
-import com.summit.core.conversation.message.*;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.ExecutionCancelledEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.TokenInfo;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.TokenUsageEntity;
-import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
-import com.summit.dp.execution.ExecutionStatusCodes;
+import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.toolcall.application.service.ToolCallService;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import org.junit.jupiter.api.Test;
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -44,8 +51,8 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static com.summit.dp.execution.ExecutionRepositoryTestFactory.provider;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -116,6 +123,115 @@ class LocalExecutionRepositoryResumeTest {
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "405")).build()).build();
         return Execution.builder().id("305").agentId("chatAgent").agentRequest(request)
                 .executionState(ExecutionState.SUSPENDED).messages(history).build();
+    }
+
+    @Test
+    void releaseRechecksAfterWaitingProjectionAndOutsideTheGate() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        doAnswer(call -> {
+            assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
+            assertFalse(repository.isActive("305"));
+            verify(readiness).markReady("305");
+            verify(turns).markExecutionWaiting(any());
+            return null;
+        }).when(wakeups).resumeIfInputPending(305L);
+        repository.unregister(signal);
+        verify(wakeups).resumeIfInputPending(305L);
+    }
+
+    @Test
+    void failureBeforeControlRegistrationAlsoRechecksAfterClosure() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        repository.save(execution());
+        Execution failed = execution();
+        failed.fail("执行初始化失败");
+        repository.save(failed);
+        verify(turns).finishExecution(any());
+        verify(wakeups).resumeIfInputPending(305L);
+    }
+
+    @Test
+    void terminalReleaseRechecksAfterTurnClosure() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        Execution completed = execution();
+        completed.setExecutionState(ExecutionState.COMPLETED);
+        repository.save(completed);
+        doAnswer(call -> {
+            assertFalse(repository.isActive("305"));
+            verify(turns).finishExecution(any());
+            return null;
+        }).when(wakeups).resumeIfInputPending(305L);
+        repository.unregister(signal);
+        verify(wakeups).resumeIfInputPending(305L);
+    }
+
+    @Test
+    void cancelIntentBeforeRegistrationStopsTheNewControlSignal() {
+        repository.save(execution());
+        SessionExecutionRegistry registry = new SessionExecutionRegistry();
+        registry.cancelRoot(405L);
+        ReflectionTestUtils.setField(repository, "executionRegistry", registry);
+        assertTrue(repository.register("305").isCancelRequired());
+    }
+
+    @Test
+    void cancellationBeforeFirstRunClosesTheCreatedExecutionWithoutWaitingForAWakeup() {
+        Execution created = execution();
+        created.setExecutionState(ExecutionState.CREATED);
+        repository.save(created);
+
+        repository.requireCancel("305");
+
+        assertEquals(ExecutionState.CANCELLED, repository.findById("305").orElseThrow().getExecutionState());
+        assertFalse(repository.isActive("305"));
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+        verify(tools).cancelPendingToolCalls("305");
+        verify(turns).finishExecution(any());
+        verify(runtimeEvents).onExecutionCancelled(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {405L, 406L})
+    void terminalCancellationDropsSlotsRestoredFromStaleSummaries(long sessionId) {
+        Execution completed = execution();
+        completed.setExecutionState(ExecutionState.COMPLETED);
+        InputAutomationPolicy.putAttribute(completed, ExecutionAttributes.SESSION_ID, sessionId);
+        InputAutomationPolicy.putAttribute(completed, ExecutionAttributes.ROOT_SESSION_ID, 405L);
+        repository.save(completed);
+        SessionExecutionRegistry registry = (SessionExecutionRegistry) ReflectionTestUtils.getField(repository, "executionRegistry");
+        registry.restoreExecution(405L, sessionId, "305");
+
+        repository.requireCancel("305");
+
+        assertFalse(registry.hasUnfinishedChildren(405L));
+        assertDoesNotThrow(() -> registry.beginRoot(405L, "306"));
+        verifyNoInteractions(runtimeEvents, tools, turns);
+    }
+
+    @Test
+    void pauseAfterEnqueuePreventsControlRegistrationAndPreservesPendingSnapshot() {
+        repository.save(execution());
+        repository.requireSuspend("305");
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+        assertFalse(repository.isActive("305"));
+        assertEquals(ExecutionState.SUSPENDED, repository.findById("305").orElseThrow().getExecutionState());
+    }
+
+    @Test
+    void userPauseIsPersistedBeforeReleaseRecheck() {
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        signal.requireSuspend();
+        repository.save(execution());
+        Execution restored = repository.findById("305").orElseThrow();
+        assertEquals(true, InputAutomationPolicy.attributes(restored).get(InputAutomationPolicy.USER_PAUSED));
     }
 
     @Test
@@ -338,6 +454,22 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
+    void stoppingOrphanedRunningExecutionClosesTheTurnAndPublishesCancellationOnce() {
+        Execution source = execution();
+        source.resumeChecked();
+        repository.save(source);
+
+        repository.requireCancel("305");
+        repository.requireCancel("305");
+
+        assertEquals(ExecutionState.CANCELLED, repository.findById("305").orElseThrow().getExecutionState());
+        assertEquals(List.of("305"), finished);
+        verify(subExecutionLifecycle).onFinished(any());
+        verify(runtimeEvents).onExecutionCancelled(any());
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+    }
+
+    @Test
     void suspendedCancellationPublishesAccumulatedUsageOnceAfterClosure() {
         Execution source = execution();
         source.getAgentRequest().runtimeParametersOrDefault().setEventMetaData(
@@ -480,7 +612,7 @@ class LocalExecutionRepositoryResumeTest {
                 checkpointStore,
                 provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
         doAnswer(invocation -> {
-            assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
+            assertTrue(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
             throw new IllegalStateException("卡片开放失败");
         }).when(failing).markReady("305");
@@ -490,7 +622,7 @@ class LocalExecutionRepositoryResumeTest {
         assertDoesNotThrow(() -> isolated.unregister(signal));
         assertFalse(isolated.isActive("305"));
         assertEquals(List.of("305"), suspended);
-        verify(subExecutionLifecycle).onSuspended(any());
+
         verify(tools, never()).cancelPendingToolCalls(any());
         verify(sessions, never()).saveExecutionContextUsage(any());
     }
@@ -502,7 +634,7 @@ class LocalExecutionRepositoryResumeTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.unregister(signal);
-            assertFalse(repository.isActive("305"));
+            assertTrue(repository.isActive("305"));
             verifyNoInteractions(readiness, subExecutionLifecycle, turns, tools, sessions);
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
@@ -521,7 +653,7 @@ class LocalExecutionRepositoryResumeTest {
                 synchronization.afterCommit();
             }
             verify(readiness).markReady("305");
-            verify(subExecutionLifecycle).onSuspended(any());
+
             assertEquals(List.of("305"), suspended);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();

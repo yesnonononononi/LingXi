@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProcessTimeline, resolveSubAgentToolCalls } from '../src/utils/processTimeline';
-import { AgentToolName } from '../src/utils/toolNames';
-import type { ChatMessage } from '../src/types/chat';
+import {buildProcessTimeline, resolveSubAgentToolCalls} from '../src/utils/processTimeline';
+import {AgentToolName} from '../src/utils/toolNames';
+import type {ChatMessage} from '../src/types/chat';
 
 test('UI 投影保持跨响应顺序，协同成员合并，互动卡片独立排在过程之后', () => {
   const message: ChatMessage = {

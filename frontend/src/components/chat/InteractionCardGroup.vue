@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue';
-import type { GroupedPromptCardEntry, PromptCardEntry } from '../../utils/promptCardGroups';
-import { groupChoiceQuestions, isPendingCardEntry } from '../../utils/promptCardGroups';
-import type { PromptCardData, ToolCallTrace } from '../../types/chat';
-import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
-import { resolveCardStatusLabel } from '../../utils/toolCallCard';
-import { t } from '../../i18n';
+import {computed, ref, useId, watch} from 'vue';
+import type {GroupedPromptCardEntry, PromptCardEntry} from '../../utils/promptCardGroups';
+import {groupChoiceQuestions, isPendingCardEntry} from '../../utils/promptCardGroups';
+import type {PromptCardData, ToolCallTrace} from '../../types/chat';
+import {cardDotClass, cardKindIconPath, resolveCardTone} from '../../utils/cardUi';
+import {resolveCardStatusLabel} from '../../utils/toolCallCard';
+import {t} from '../../i18n';
 import PromptCard from './PromptCard.vue';
 import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
-import { AgentToolName } from '../../utils/toolNames';
+import {AgentToolName} from '../../utils/toolNames';
 
 const props = defineProps<{ kind: PromptCardData['kind']; entries: PromptCardEntry[]; toolCalls?: ToolCallTrace[]; sessionId?: string | number; isDark?: boolean }>();
 const GROUP_LABELS = {

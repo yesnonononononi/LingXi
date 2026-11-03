@@ -11,17 +11,17 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setPreference } from '../src/i18n';
-import { buildProcessSegments } from '../src/utils/processSegments';
-import type { ProcessPart, ProcessSummary } from '../src/utils/processSegments';
-import type { ProcessTimelineItem } from '../src/types/chat';
+import {setPreference} from '../src/i18n';
+import type {ProcessPart, ProcessSummary} from '../src/utils/processSegments';
+import {buildProcessSegments} from '../src/utils/processSegments';
+import type {ProcessTimelineItem} from '../src/types/chat';
 import {
-  deriveProcessSummaries,
-  deriveProcessViews,
-  mergeSummaries,
-  EMPTY_PROCESS_SUMMARY,
+    deriveProcessSummaries,
+    deriveProcessViews,
+    EMPTY_PROCESS_SUMMARY,
+    mergeSummaries,
 } from '../src/utils/processViewModel';
-import { AgentToolName } from '../src/utils/toolNames';
+import {AgentToolName} from '../src/utils/toolNames';
 
 setPreference('zh-CN');
 

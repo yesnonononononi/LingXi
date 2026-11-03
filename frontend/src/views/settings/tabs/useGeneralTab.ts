@@ -1,24 +1,24 @@
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useTheme, THEME_STORAGE_KEY } from '../../../composables/useTheme';
-import { useUserConfigStore } from '../../../stores/userConfigStore';
-import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
-import { FONT_SCALE_PRESETS, normalizeFontScale } from '../../../utils/enum';
-import type { FontScalePreset } from '../../../utils/enum';
-import { useI18n } from '../../../i18n';
-import type { LocalePreference } from '../../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {THEME_STORAGE_KEY, useTheme} from '../../../composables/useTheme';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
+import {getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl} from '../../../utils/apiConfig';
+import type {FontScalePreset} from '../../../utils/enum';
+import {FONT_SCALE_PRESETS, normalizeFontScale} from '../../../utils/enum';
+import type {LocalePreference} from '../../../i18n';
+import {useI18n} from '../../../i18n';
 import {
-  playNotificationSound,
-  readSoundPreference,
-  writeSoundPreference,
-  DEFAULT_SOUND_ID,
-  type SoundId,
+    DEFAULT_SOUND_ID,
+    playNotificationSound,
+    readSoundPreference,
+    type SoundId,
+    writeSoundPreference,
 } from '../../../notification/sound';
 import {
-  useBackgroundPreference,
-  DEFAULT_BACKGROUND_SCRIM,
-  MAX_BACKGROUND_SCRIM,
-  MIN_BACKGROUND_SCRIM,
-  type BackgroundFit,
+    type BackgroundFit,
+    DEFAULT_BACKGROUND_SCRIM,
+    MAX_BACKGROUND_SCRIM,
+    MIN_BACKGROUND_SCRIM,
+    useBackgroundPreference,
 } from '../../../composables/useBackgroundPreference';
 
 /** 主页背景填充方式选项；顺序即设置页里的展示顺序。 */

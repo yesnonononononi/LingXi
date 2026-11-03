@@ -3,10 +3,11 @@ package com.summit.dp.agent.application.service.impl;
 import com.summit.dp.agent.application.command.AgentBatchModelCommand;
 import com.summit.dp.agent.application.command.AgentCommand;
 import com.summit.dp.agent.domain.model.Agent;
-import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.dp.model.domain.ModelNoFoundException;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -120,6 +121,7 @@ public class AgentValidator {
         try {
             ModelConfigVO model = modelService.findById(modelId).getData();
             if (model == null) return "指定的模型不存在: " + modelId;
+            if (DefaultModelProviderNames.DEFAULT_IMAGE.equals(model.getProvider())) return "智能体基座请选择文本模型；生图模型请在其它模型配置中选择";
         } catch (ModelNoFoundException e) {
             return "指定的模型不存在: " + modelId;
         }

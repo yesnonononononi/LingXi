@@ -1,21 +1,9 @@
 package com.summit.dp.checklist.application.service.impl;
 
 import cn.hutool.core.util.IdUtil;
-import com.summit.dp.checklist.application.ChecklistCommand;
-import com.summit.dp.checklist.application.ChecklistService;
-import com.summit.dp.checklist.application.ChecklistReminderContext;
-import com.summit.dp.checklist.application.ChecklistReminderOwnership;
-import com.summit.dp.checklist.application.ChecklistVO;
-import com.summit.dp.checklist.application.ReminderDecision;
-import com.summit.dp.checklist.domain.model.Checklist;
-import com.summit.dp.checklist.domain.model.ChecklistModification;
-import com.summit.dp.checklist.domain.model.ChecklistMutation;
-import com.summit.dp.checklist.domain.model.ChecklistRules;
-import com.summit.dp.checklist.domain.model.ChecklistStatus;
-import com.summit.dp.checklist.domain.model.ChecklistStep;
-import com.summit.dp.checklist.domain.model.ChecklistStepStatus;
+import com.summit.dp.checklist.application.*;
+import com.summit.dp.checklist.domain.model.*;
 import com.summit.dp.checklist.domain.repository.ChecklistRepository;
-import com.summit.dp.checklist.infrastructure.persistence.ChecklistWriteMonitor;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,12 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 /** 所有写入先锁父行，步骤推进与提醒收口必须在同一聚合事务中裁决。 */
 @Slf4j
@@ -45,7 +28,6 @@ public class ChecklistServiceImpl implements ChecklistService {
     public ChecklistVO create(ChecklistCommand command) {
         throwIf(command == null, "清单参数不能为空");
         long sessionId = requireSessionId(command.getSessionId());
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
         List<String> contents = ChecklistRules.normalizeStepContents(command.getSteps());
 
         // 先查一次只是为了给出可读文案；并发下的唯一性由派生列唯一索引裁决，不靠这次查询。
@@ -82,9 +64,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         throwIf(command.isContinueNextStep() && !next.isTerminal(),
                 "只有上报 COMPLETED、FAILED 或 SKIPPED 结果时才能继续下一步");
 
-        // 读聚合 → 按业务规则判断（步骤推进）→ 写回，这段逻辑无法压成单条条件更新，
-        // 只能靠进程内写监视器串行化：抢到锁后才发第一条语句，读到的必然是已提交的新状态。
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
+        // 必须先锁父行再读取步骤，避免基于并发更新前的进度裁决。
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next, command.isContinueNextStep());
         persist(checklist, mutation);
@@ -97,8 +77,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         throwIf(command == null, "清单参数不能为空");
         long sessionId = requireSessionId(command.getSessionId());
 
-        // 同 updateStep：读聚合后按规则改写，必须与其它清单写入方共用同一把进程内写监视器。
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
+        // 与步骤推进共用父行锁，结构变更必须读取最新聚合。
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistModification modification = new ChecklistModification(
                 command.getNewTitle(),
@@ -118,8 +97,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         long sessionId = requireSessionId(command.getSessionId());
         throwIf(command.getChecklistId() == null, "删除清单需要提供 checklistId");
 
-        // 软删除同样是「读聚合 → 判断 → 写回」，与其它写入路径共用写监视器。
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
+        // 软删除与步骤推进共用父行锁。
         Checklist checklist = repository.findByIdForUpdate(command.getChecklistId())
                 .orElseThrow(() -> new ClientException("清单 " + command.getChecklistId() + " 不存在"));
         checklist.requireSession(sessionId);
@@ -175,9 +153,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         long sessionId = requireSessionId(context.sessionId());
         Long executionId = context.executionId();
         throwIf(executionId == null || executionId <= 0L, "清单提醒缺少有效执行标识");
-        // 与步骤推进共用同一把清单写监视器：必须等对方事务提交后才允许判断是否需要另一轮，
-        // 否则会基于过期进度得出「还需要提醒」的错误结论。
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
+        // 先取得父行锁，提醒判断必须看到步骤推进提交后的状态。
         Optional<Checklist> found = repository.findActiveBySessionIdForUpdate(sessionId);
         if (found.isEmpty()) {
             return ReminderDecision.noActiveChecklist();

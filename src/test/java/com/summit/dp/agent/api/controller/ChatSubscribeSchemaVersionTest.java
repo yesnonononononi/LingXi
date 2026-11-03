@@ -1,16 +1,13 @@
 package com.summit.dp.agent.api.controller;
 
 import com.summit.dp.workflow.api.controller.ChatController;
-
 import com.summit.dp.workflow.application.chat.ChatService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * {@code /a/completion/{sessionId}/events} 的订阅行为。

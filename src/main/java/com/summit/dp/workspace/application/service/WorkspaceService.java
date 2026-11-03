@@ -2,8 +2,8 @@ package com.summit.dp.workspace.application.service;
 
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workspace.application.command.WorkspaceCommand;
 import com.summit.dp.shared.vo.WorkspaceVO;
+import com.summit.dp.workspace.application.command.WorkspaceCommand;
 import com.summit.dp.workspace.domain.model.Workspace;
 
 public interface WorkspaceService {

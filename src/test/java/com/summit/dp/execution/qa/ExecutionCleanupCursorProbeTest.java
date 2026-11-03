@@ -8,7 +8,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import org.junit.jupiter.api.Test;
@@ -19,9 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 复核 R4 的独立后端探针：只剩孤儿文件时清理入口照样能跑，且跨调用能把文件扫干净。
@@ -38,10 +36,10 @@ class ExecutionCleanupCursorProbeTest {
     @Test
     @Timeout(240)
     void orphanOnlyDirectoriesAreReclaimedAcrossTwoRunsWithoutAnyReclaimableRow() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("qa-cursor-probe");
+        H2TestDatabase database = H2TestDatabase.create("qa-cursor-probe");
         Path dataDir = Files.createTempDirectory("lingxi-qa-cursor-");
         try {
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();
@@ -89,10 +87,10 @@ class ExecutionCleanupCursorProbeTest {
     @Test
     @Timeout(120)
     void protectedCheckpointDirectoryKeepsFilesNeedScanTrueEvenWithNothingToReclaim() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("qa-cursor-protected");
+        H2TestDatabase database = H2TestDatabase.create("qa-cursor-protected");
         Path dataDir = Files.createTempDirectory("lingxi-qa-protected-");
         try {
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();

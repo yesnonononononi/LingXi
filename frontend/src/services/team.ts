@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { PageResult, TeamVO, CreateTeamRequest, UpdateTeamRequest } from '../types/chat';
+import type {Result} from './types';
+import type {CreateTeamRequest, PageResult, TeamVO, UpdateTeamRequest} from '../types/chat';
 
 /** Team 团队 API (对应后端 TeamController) */
 export class TeamAPI {

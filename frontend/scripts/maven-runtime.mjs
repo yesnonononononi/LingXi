@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import {spawnSync} from 'node:child_process';
 
 export function resolveMaven(repoRoot) {
   const isWin = process.platform === 'win32';

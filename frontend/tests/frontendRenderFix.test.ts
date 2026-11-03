@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage, ChatSession, ChatTurn } from '../src/types/chat';
-import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
-import { buildMessageTurnMap, mergeTurns } from '../src/utils/session';
-import { formatDurationOrPlaceholder } from '../src/utils/format';
+import type {ChatMessage, ChatSession, ChatTurn} from '../src/types/chat';
+import {StreamSessionRouter} from '../src/views/chat/streamSessionRouter';
+import {buildMessageTurnMap, mergeTurns} from '../src/utils/session';
+import {formatDurationOrPlaceholder} from '../src/utils/format';
 
 /**
  * 缺陷 2：同一会话发第二条消息时，用户气泡不立即渲染，要等 AI 完成才随结果一起出现。

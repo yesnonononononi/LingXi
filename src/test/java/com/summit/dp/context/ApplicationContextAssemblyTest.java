@@ -7,24 +7,24 @@ import com.summit.core.anno.Tool;
 import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
+import com.summit.runtime.loop.LoopInterceptorFactory;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
+import com.summit.dp.workflow.infrastructure.tools.memory.MemoryWikiLoader;
+import com.summit.dp.workflow.infrastructure.tools.memory.MemoryWikiManager;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,11 +32,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mockingDetails;
 
 /**
@@ -65,12 +66,12 @@ import static org.mockito.Mockito.mockingDetails;
 class ApplicationContextAssemblyTest {
 
     /** 库建在系统临时目录：不打开实例正在用的库，也不在工作区留文件。 */
-    private static final String DATABASE_URL = SqliteTestDatabase.newDatasourceUrl("ctx-verify");
+    private static final String DATABASE_URL = H2TestDatabase.newDatasourceUrl("ctx-verify");
 
     @org.springframework.test.context.DynamicPropertySource
     static void datasource(org.springframework.test.context.DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> DATABASE_URL);
-        registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
+        registry.add("spring.datasource.driver-class-name", () -> "org.h2.Driver");
     }
 
     @Autowired
@@ -78,6 +79,15 @@ class ApplicationContextAssemblyTest {
 
     @Autowired
     private ApplicationContext context;
+
+    @Test
+    void memoryReaderUsesTheManagedExecutorAndIndependentPrototypeIndexes() {
+        ToolDefinition<?> definition = context.getBean(ToolRegistry.class).getTool(ToolCatalog.LOAD_MEMORY);
+        assertNotNull(definition);
+        assertSame(context.getBean(MemoryWikiLoader.class), definition.executor());
+        assertTrue(context.getBean(ToolCatalog.class).readOnlyNames().contains(ToolCatalog.LOAD_MEMORY));
+        assertNotSame(context.getBean(MemoryWikiManager.class), context.getBean(MemoryWikiManager.class));
+    }
 
     @Test
     void realMcpInfrastructureLoadsWithoutTheFrameworkGlobalSwitch() {
@@ -118,19 +128,22 @@ class ApplicationContextAssemblyTest {
         Map<String, LoopInterceptor> interceptors = context.getBeansOfType(LoopInterceptor.class);
         assertTrue(interceptors.containsKey("subAgentWaitInterceptor"),
                 "SubAgentWaitInterceptor 必须出现在 LoopInterceptor 集合里，实际=" + interceptors.keySet());
-        assertTrue(interceptors.containsKey("agenticLoopInterceptor"),
+        assertTrue(interceptors.containsKey("emailLoopInterceptor"),
                 "取信拦截器应同时在列（对照），实际=" + interceptors.keySet());
 
-        // 处理器由框架自动装配；反射读取其内部排序后的列表，决定性证明「收集到了」而非仅「bean 存在」。
+        // 确认处理器与启动扫描共用工厂，注解注册才会进入实际执行链。
         LoopInterceptorProcessor processor = context.getBean(LoopInterceptorProcessor.class);
-        @SuppressWarnings("unchecked")
-        List<LoopInterceptor> collected =
-                (List<LoopInterceptor>) ReflectionTestUtils.getField(processor, "interceptors");
-        assertNotNull(collected, "处理器内部拦列表不可为空");
+        LoopInterceptorFactory factory = context.getBean(LoopInterceptorFactory.class);
+        assertSame(factory, ReflectionTestUtils.getField(processor, "loopInterceptorFactory"));
+        List<LoopInterceptor> collected = factory.getInterceptors();
         assertTrue(collected.stream().anyMatch(i -> i instanceof SubAgentWaitInterceptor),
                 "SubAgentWaitInterceptor 必须被 DefaultLoopInterceptorProcessor 收集，实际=" + collected);
         assertTrue(collected.stream().anyMatch(i -> i instanceof BackgroundTaskLoopInterceptor),
                 "后台终端通知拦截器必须进入实际执行链");
+        LoopInterceptor memory = factory.get().get("memoryMonitorInterceptor");
+        assertNotNull(memory, "记忆容量提醒必须由注解扫描注册到共享工厂");
+        assertEquals(-825, memory.order());
+        assertFalse(memory.catchErr());
     }
 
     @Test
@@ -156,13 +169,13 @@ class ApplicationContextAssemblyTest {
         });
 
         assertTrue(names.containsAll(List.of("execute_command", "manage_command", "read_file", "edit_file",
-                        "read_image", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
+                        "read_image", "load_memory", "search_wiki", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
                         "send_mail_to_agent", "create_plan",
                         "create_checklist", "get_current_checklist", "get_checklist", "update_checklist_step", "modify_checklist", "delete_checklist")),
                 "门禁必须覆盖全部基础工具，实际=" + names);
-        assertEquals(16, definitions.values().stream()
+        assertEquals(18, definitions.values().stream()
                 .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class)).count(),
-                "注解声明工具的固定数量：十件旧工具 + 六件执行清单工具");
+                "注解声明工具的固定数量：十件旧工具 + 六件执行清单工具 + 两件项目记忆工具");
         assertEquals(5, context.getBeansOfType(ToolDefinition.class).size(),
                 "只有配置驱动的网页检索与四个框架内核工具保留定义 Bean");
         definitions.values().stream()

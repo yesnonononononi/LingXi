@@ -9,12 +9,12 @@
  * <p>`+ 添加自定义模型` 用的是本地哨兵值，专门路由到 `onOpenModelEditor`，不会带着哨兵值
  * 去调 `onUpdateModel`（否则后端会收到一个不存在的 model id）。</p>
  */
-import { computed } from 'vue';
+import {computed} from 'vue';
 import DropUpSelect from '../common/DropUpSelect.vue';
 import ProviderIcon from '../model/ProviderIcon.vue';
-import type { SelectOption } from '../../types/ui';
-import { t } from '../../i18n';
-import type { ChatInputModelSelectorSlotProps } from '../../types/chatInputSlots';
+import type {SelectOption} from '../../types/ui';
+import {t} from '../../i18n';
+import type {ChatInputModelSelectorSlotProps} from '../../types/chatInputSlots';
 
 defineOptions({ inheritAttrs: false });
 

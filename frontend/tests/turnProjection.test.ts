@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { AgentToolName } from '../src/utils/toolNames';
-import { buildProcessTimeline } from '../src/utils/processTimeline';
-import { summarizeProcess } from '../src/utils/processSegments';
-import { effect, reactive, stop } from 'vue';
+import type {ChatMessage} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import {AgentToolName} from '../src/utils/toolNames';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
+import {summarizeProcess} from '../src/utils/processSegments';
+import {effect, reactive, stop} from 'vue';
 
 function view(turnVersion: string, toolVersion: string, output: string): TurnViewVO {
   return { sessionId: '7', turnId: '900', viewVersion: turnVersion, status: 'COMPLETED',

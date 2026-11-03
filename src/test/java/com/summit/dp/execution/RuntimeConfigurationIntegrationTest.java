@@ -1,9 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,33 +8,37 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.McpTransport;
+import com.summit.core.conf.ModelBehavior;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SensitiveDataSpec;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.mcp.ScopeMcpProvider;
-import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.model.ModelProvider;
 import com.summit.core.model.ModelProviderRegistry;
+import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.model.chat.ChatModel;
-import com.summit.runtime.compact.RequestCompactModelResolver;
 import com.summit.core.runtime.RuntimeFactory;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.execution.infrastructure.persistence.mapper.RuntimeConfigRevisionMapper;
 import com.summit.dp.execution.infrastructure.repository.RuntimeConfigRevisionRepositoryImpl;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
+import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
-import com.summit.core.tool.ToolExecution;
-import com.summit.dp.shared.config.SqliteSchemaInitializer;
+import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.shared.config.H2SchemaInitializer;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -50,30 +50,21 @@ import com.summit.dp.workflow.infrastructure.harness.RuntimeConfigurationProvide
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
 import com.summit.runtime.agent.ChatAgent;
+import com.summit.runtime.compact.RequestCompactModelResolver;
 import com.summit.runtime.workspace.DefaultWorkspaceResolver;
 import com.summit.runtime.workspace.LocalWorkspaceProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -81,15 +72,54 @@ import static org.mockito.Mockito.*;
 
 class RuntimeConfigurationIntegrationTest {
     private final ObjectMapper json = new JsonConfig().objectMapper();
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private RuntimeConfigRevisionMapper rows;
     private RuntimeConfigRevisionRepositoryImpl repository;
     private DataSourceTransactionManager transactionManager;
     private RuntimeConfigurationService configurations;
 
+    @Test
+    void concurrentRevisionAllocationRetriesEvenInsideWrittenOuterTransactions() throws Exception {
+        RuntimeConfigRevisionRepositoryImpl competing = spy(repository);
+        CyclicBarrier firstRevisions = new CyclicBarrier(2);
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer(invocation -> {
+            int revision = (Integer) invocation.callRealMethod();
+            if (reads.incrementAndGet() <= 2) firstRevisions.await(10, TimeUnit.SECONDS);
+            return revision;
+        }).when(competing).latestRevision("MODEL", 31L);
+        RuntimeConfigurationService nested = new RuntimeConfigurationService(competing, json, transactionManager);
+        SessionMapper sessions = H2TestDatabase.sqlSession(database.sessionFactory(SessionMapper.class))
+                .getMapper(SessionMapper.class);
+        TransactionTemplate outer = new TransactionTemplate(transactionManager);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<SensitiveDataSpec> first = pool.submit(() -> outer.execute(status -> {
+                sessions.insert(SessionPO.builder().id(710L).name("甲事务").build());
+                SensitiveDataSpec spec = nested.freezeModel(31L, model("nested-first"));
+                status.setRollbackOnly();
+                return spec;
+            }));
+            Future<SensitiveDataSpec> second = pool.submit(() -> outer.execute(status -> {
+                sessions.insert(SessionPO.builder().id(711L).name("乙事务").build());
+                SensitiveDataSpec spec = nested.freezeModel(31L, model("nested-second"));
+                status.setRollbackOnly();
+                return spec;
+            }));
+            SensitiveDataSpec left = first.get(20, TimeUnit.SECONDS);
+            SensitiveDataSpec right = second.get(20, TimeUnit.SECONDS);
+            assertEquals(Set.of(1, 2), Set.of(left.getVersion(), right.getVersion()));
+            assertEquals("nested-first", nested.resolveModel(left.getId(), left.getVersion()).getApiKey());
+            assertEquals("nested-second", nested.resolveModel(right.getId(), right.getVersion()).getApiKey());
+        }
+        assertTrue(reads.get() >= 3, "版本号真实竞争后必须重新查询并分配");
+        assertNull(sessions.selectById(710L));
+        assertNull(sessions.selectById(711L));
+        assertEquals(2L, rows.selectCount(null), "外层回滚不能撤销已独立提交的配置版本");
+    }
+
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("RuntimeConfigurationIntegrationTest");
+        database = H2TestDatabase.create("RuntimeConfigurationIntegrationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
@@ -97,7 +127,7 @@ class RuntimeConfigurationIntegrationTest {
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        rows = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
+        rows = H2TestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
         repository = new RuntimeConfigRevisionRepositoryImpl(rows);
         transactionManager = new DataSourceTransactionManager(database);
         configurations = new RuntimeConfigurationService(repository, json, transactionManager);
@@ -130,8 +160,10 @@ class RuntimeConfigurationIntegrationTest {
                 }
             });
         }
-        RequestCompactModelResolver resolver = new RequestCompactModelResolver(null, configurations::resolveModel,
-                providers, request -> { throw new AssertionError("不能使用应用级压缩模型"); });
+        RequestCompactModelResolver resolver = new RequestCompactModelResolver(null,
+                ModelBehavior.of(ModelConfig.builder().maxTokens(32768).reasoningEffort("none").build()),
+                configurations::resolveModel, providers,
+                request -> { throw new AssertionError("不能使用应用级压缩模型"); });
         resolver.resolve(AgentRequest.builder().modelConfigSpec(first).build());
         resolver.resolve(AgentRequest.builder().modelConfigSpec(second).build());
         assertEquals("main-model-secret", selected.getFirst().getApiKey());
@@ -292,14 +324,14 @@ class RuntimeConfigurationIntegrationTest {
         AgentRequest request = AgentRequest.builder().executionId("101").modelConfigSpec(pinned).build();
         new DelegationRecorder(turns, transcript, configurations).record(201L,
                 ToolExecution.builder().eventMetaData(Map.of()).build(), request, 202L, "202", null, "任务");
-        verify(turns).acceptTurn(202L, 201L, null, 101L, "model", "test");
+        verify(turns).acceptTurn(202L, 201L, null, 101L, TurnModelSnapshot.of("model", "test", null));
     }
 
     @Test
     void repeatedBootstrapKeepsTheVersionStoreAndPinnedRevisions() throws Exception {
-        SqliteTestDatabase legacy = SqliteTestDatabase.create("RuntimeConfigurationIntegrationTest");
+        H2TestDatabase legacy = H2TestDatabase.create("RuntimeConfigurationIntegrationTest");
         try {
-            SqliteSchemaInitializer initializer = new SqliteSchemaInitializer();
+            H2SchemaInitializer initializer = new H2SchemaInitializer();
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -307,7 +339,7 @@ class RuntimeConfigurationIntegrationTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(legacy);
             factory.setConfiguration(configuration);
-            RuntimeConfigRevisionMapper revisions = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
+            RuntimeConfigRevisionMapper revisions = H2TestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
             RuntimeConfigurationService service = new RuntimeConfigurationService(new RuntimeConfigRevisionRepositoryImpl(revisions),
                     json, new DataSourceTransactionManager(legacy));
             SensitiveDataSpec pinned = service.freezeModel(31L, model("preserved"));

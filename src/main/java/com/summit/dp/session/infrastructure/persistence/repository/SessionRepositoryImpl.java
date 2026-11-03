@@ -1,26 +1,26 @@
 package com.summit.dp.session.infrastructure.persistence.repository;
 
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.summit.dp.shared.exception.ClientException;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
-import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.exception.SessionNoFoundException;
+import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
+import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Collection;
 
 @Repository
 @RequiredArgsConstructor
@@ -37,17 +37,12 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
 
     @Override
     public Optional<Session> lockById(Long sessionId) {
-        // SQLite 无行锁：退化为普通读，「状态改写不能覆盖别人」由 update 的 version 条件裁决。
+        // 先锁会话行，后续状态投影才能基于最新提交。
         return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
-                .eq(SessionPO::getId, sessionId))).map(this::toModel);
+                .eq(SessionPO::getId, sessionId).last("FOR UPDATE"))).map(this::toModel);
     }
 
-    /**
-     * 条件置已读：单语句完成「未读 → 已读」，并用版本条件拒绝覆盖别人的新状态。
-     *
-     * <p>SQLite 单写者下事务里「先读后升写」不会排队等锁，所以这里把写入放在唯一一条语句里：
-     * 调用方不必先读，也就没有「读快照过期再升写失败」的窗口。</p>
-     */
+    /** 状态通过版本条件更新，避免旧读取覆盖新提交。 */
     @Override
     public boolean markReadIfUnread(Long sessionId, Long expectedVersion) {
         if (sessionId == null) {

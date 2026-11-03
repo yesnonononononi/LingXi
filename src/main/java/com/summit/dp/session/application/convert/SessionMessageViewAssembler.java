@@ -4,12 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.shared.vo.SessionMessageVO;
+import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import java.util.List;
 
 /**
  * 会话消息视图装配器（纯转换）：{@link SessionMessage} → {@link SessionMessageVO}，只做纯内存解析。
@@ -58,6 +59,8 @@ public class SessionMessageViewAssembler {
                     builder.text(stored.getText());
                 } else {
                     builder.text(message.text())
+                            .imageUrls(message.getImages() == null ? List.of() : message.getImages().stream()
+                                    .map(image -> image.getUrl().toString()).toList())
                             .thinking(message.getThinking())
                             .toolCalls(toolCallConverter.toModelToolCalls(message.getToolCalls()));
                 }

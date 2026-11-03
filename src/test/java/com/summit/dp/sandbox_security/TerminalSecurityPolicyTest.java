@@ -5,22 +5,26 @@ import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
+import com.summit.core.runtime.workspace.WorkspaceCommands;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.sandbox_security.application.SecurityRulePresets;
 import com.summit.dp.sandbox_security.application.SecurityRuleService;
 import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;
+
 import java.util.List;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -111,6 +115,24 @@ class TerminalSecurityPolicyTest {
         assertEquals(SecurityAction.DENY, policy.evaluate("wsl --status").action());
         assertEquals(SecurityAction.DENY, policy.evaluate("git status & wsl --status").action());
         assertEquals(SecurityAction.DENY, policy.evaluate("cmd /c wsl --status").action());
+    }
+    @Test void fullAccessIgnoresPresetsButRetainsCustomDenials() {
+        when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(SecurityRulePresets.defaults(SecurityCategory.TERMINAL));
+        assertNull(policy.evaluate("wsl --status", CommandApprovalPolicy.FULL_ACCESS));
+        assertNull(policy.evaluate("reg query HKCU", CommandApprovalPolicy.FULL_ACCESS));
+        when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(rule("reg query", "PREFIX", SecurityAction.DENY)));
+        assertEquals(SecurityAction.DENY, policy.evaluate("reg query HKCU", CommandApprovalPolicy.FULL_ACCESS).action());
+    }
+    @Test void approvedWslInFullAccessReachesTheMockBridgeDespiteOldPresets() throws Exception {
+        when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(SecurityRulePresets.defaults(SecurityCategory.TERMINAL));
+        ToolExecution call = call("wsl --status");
+        call.setAttributes(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.FULL_ACCESS));
+        WorkspaceCommands commands = mock(WorkspaceCommands.class);
+        when(call.getWorkspace().bridge().commands()).thenReturn(commands);
+        when(commands.execute(anyString(), any(), any(), any(), anyLong(), any(), anyLong()))
+                .thenReturn(new WorkspaceCommands.CommandResult(0, "mocked", false, false));
+        assertTrue(new CommandToolDefinitionExecutor(mapper, policy).execute(call).isSuccess());
+        verify(commands).execute(eq("wsl --status"), any(), any(), any(), anyLong(), any(), anyLong());
     }
     private ToolExecution call(String command) throws Exception {
         Workspace workspace = mock(Workspace.class);

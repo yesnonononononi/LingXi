@@ -1,9 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,16 +16,18 @@ import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
-import com.summit.dp.session.domain.model.SessionMessage;
-import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.TurnViewService;
+import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -56,18 +54,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.*;
+import java.util.concurrent.*;
 
 import static com.summit.dp.execution.ExecutionRepositoryTestFactory.provider;
 import static org.junit.jupiter.api.Assertions.*;
@@ -83,7 +71,7 @@ class ResumeSupplementTest {
     private final ChatTurnService turns = mock(ChatTurnService.class);
     private final SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
     private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private SessionMessageRepositoryImpl messages;
     private ExecutionResumeTaskRepositoryImpl tasks;
     private LocalExecutionRepository executions;
@@ -92,7 +80,7 @@ class ResumeSupplementTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ResumeSupplementTest");
+        database = H2TestDatabase.create("ResumeSupplementTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(SessionMapper.class);
@@ -103,7 +91,7 @@ class ResumeSupplementTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
         SessionMapper sessions = template.getMapper(SessionMapper.class);
         sessions.insert(SessionPO.builder().id(SESSION_ID).name("补充测试").build());
         messages = new SessionMessageRepositoryImpl(template.getMapper(SessionMessageMapper.class), sessions);

@@ -1,26 +1,24 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
-
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
-import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,29 +30,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.AbstractExecutorService;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 恢复协调器（{@code ExecutionResumeCoordinator}）的 worker 纪律回归。
@@ -252,6 +235,18 @@ class ExecutionResumeCoordinatorTest {
     // ------------------------------------------------------------------
 
     @Test
+    void pauseArrivingAfterDispatchIsYieldedInsteadOfReclassifiedAsFailure() {
+        stubStatus(ExecutionState.SUSPENDED);
+        Execution paused = execution(ExecutionState.SUSPENDED);
+        InputAutomationPolicy.putAttribute(paused, InputAutomationPolicy.USER_PAUSED, true);
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID))).thenReturn(Optional.of(paused));
+        doThrow(new IllegalStateException("执行已由用户暂停")).when(executionControl).resume(any(Execution.class));
+        coordinator.dispatch(EXECUTION_ID);
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state());
+        verify(executionControl, never()).fail(any(), any());
+    }
+
+    @Test
     @DisplayName("loop 已跑完、仅回写异常：执行已终态，请求作废且不收口")
     void completedLoopWithWriteBackFailureMustNotBeReclassifiedAsStartupFailure() {
         stubStatus(ExecutionState.SUSPENDED);
@@ -439,8 +434,8 @@ class ExecutionResumeCoordinatorTest {
     }
 
     @Test
-    @DisplayName("accept：执行仍活跃时登记保留唤醒、不落请求；挂起后 flushPendingWake 重放并恢复")
-    void acceptWhileActiveRetainsWakeUntilSuspend() {
+    @DisplayName("活跃请求不落任务；控制槽位释放后显式复查才受理恢复")
+    void activeRequestNeedsAnExplicitRecheckAfterRelease() {
         stubStatus(ExecutionState.SUSPENDED);
         when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(true);
         when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(task.get());
@@ -460,26 +455,11 @@ class ExecutionResumeCoordinatorTest {
 
         // 根随后挂起、控制槽位释放：重放保留唤醒 → 入队 + 派发 + 恢复。
         when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(false);
-        coordinator.flushPendingWake(EXECUTION_ID);
+        coordinator.accept(EXECUTION_ID);
 
         assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten().state());
         verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any());
         verify(executionControl).resume(any(Execution.class));
-    }
-
-    @Test
-    @DisplayName("clearPendingWake：丢弃保留唤醒，之后 flush 是 no-op")
-    void clearPendingWakeDropsRetainedWake() {
-        stubStatus(ExecutionState.SUSPENDED);
-        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(true);
-        assertEquals(ResumeDisposition.RUNNING, coordinator.accept(EXECUTION_ID));
-
-        coordinator.clearPendingWake(EXECUTION_ID);
-        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(false);
-        coordinator.flushPendingWake(EXECUTION_ID);
-
-        verify(tasks, never()).enqueue(anyLong(), anyLong(), any());
-        verify(executionControl, never()).resume(any(Execution.class));
     }
 
     @Test

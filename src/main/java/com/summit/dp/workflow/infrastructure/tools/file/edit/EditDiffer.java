@@ -3,8 +3,8 @@ package com.summit.dp.workflow.infrastructure.tools.file.edit;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.patch.Patch;
-import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
+import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Files;

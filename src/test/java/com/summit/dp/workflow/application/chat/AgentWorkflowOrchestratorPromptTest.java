@@ -1,9 +1,5 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
@@ -11,6 +7,7 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.personalization.domain.model.Personalization;
@@ -24,6 +21,7 @@ import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
@@ -42,13 +40,8 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class AgentWorkflowOrchestratorPromptTest {
 
@@ -86,6 +79,7 @@ class AgentWorkflowOrchestratorPromptTest {
         assertEquals(input, request.getMessages().getLast().text());
         assertEquals(1L, request.getMessages().stream().filter(message -> input.equals(message.text())).count());
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
+                ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                 ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
                 ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                 ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST), request.getToolList());

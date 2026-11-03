@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SkillAPI } from '../src/services/skill';
-import { useSkillMenu } from '../src/composables/useSkillMenu';
+import {SkillAPI} from '../src/services/skill';
+import {useSkillMenu} from '../src/composables/useSkillMenu';
 import http from '../src/services/interceptor';
-import { t } from '../src/i18n';
-import type { Result } from '../src/services/types';
-import type { SkillVO } from '../src/types/chat';
+import {t} from '../src/i18n';
+import type {Result} from '../src/services/types';
+import type {SkillVO} from '../src/types/chat';
 
 /** 后续技能项名称唯一，保证断言能定位到具体条目 */
 function ok(skills: SkillVO[]): Result<SkillVO[]> {

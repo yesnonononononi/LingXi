@@ -1,14 +1,40 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { setActivePinia, createPinia } from 'pinia';
-import { UserConfigAPI } from '../src/services/userConfig';
-import { ModelAPI } from '../src/services/model';
-import { CompactionSettingsAPI } from '../src/services/compaction';
-import { useCompactionTab } from '../src/views/settings/tabs/useCompactionTab';
-import { t as translate } from '../src/i18n';
-import { messages } from '../src/i18n/messages';
+import {createPinia, setActivePinia} from 'pinia';
+import {UserConfigAPI} from '../src/services/userConfig';
+import {ModelAPI} from '../src/services/model';
+import {CompactionSettingsAPI} from '../src/services/compaction';
+import {useCompactionTab} from '../src/views/settings/tabs/useCompactionTab';
+import {t as translate} from '../src/i18n';
+import {messages} from '../src/i18n/messages';
 
 test.beforeEach(() => setActivePinia(createPinia()));
+
+test('其它模型配置分别筛选文本和图片模型，持久化生图模型与执行限额', async (t) => {
+  const writes: unknown[] = [];
+  t.mock.method(UserConfigAPI, 'current', async () => ({code:1,data:{compactModelId:null,imageModelId:'21',imageGenerationMaxCalls:3}}));
+  t.mock.method(ModelAPI, 'catalog', async () => ({code:1,data:[{providerName:'Models',models:[
+    {id:11,modelName:'text',credentialConfigured:true},
+    {id:21,modelName:'image',provider:'default-image-model',credentialConfigured:true},
+    {id:22,modelName:'missing-key-image',provider:'default-image-model',credentialConfigured:false},
+  ]}]}));
+  t.mock.method(CompactionSettingsAPI,'params',async()=>({code:1,data:{modelThreshold:0.8}}));
+  t.mock.method(UserConfigAPI,'updateCurrent',async(payload:unknown)=>{writes.push(payload);return {code:1};});
+  const state=useCompactionTab();
+  await state.load();
+  assert.deepEqual(state.options.value.map(option=>option.value),['11']);
+  assert.deepEqual(state.imageOptions.value.map(option=>option.value),['','21']);
+  assert.equal(state.imageSelectedId.value,'21');
+  await state.chooseImage('');
+  assert.deepEqual(writes,[{imageModelId:null}]);
+  state.imageLimitDraft.value='2';
+  await state.saveImageLimit();
+  assert.deepEqual(writes[1],{imageGenerationMaxCalls:2});
+  state.imageLimitDraft.value='21';
+  await state.saveImageLimit();
+  assert.equal(writes.length,2);
+  assert.ok(state.imageSaveError.value);
+});
 
 /** 一个「有密钥」+ 一个「没密钥」的模型：后者不得出现在压缩模型下拉里。 */
 const catalog = {

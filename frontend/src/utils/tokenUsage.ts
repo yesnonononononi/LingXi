@@ -1,5 +1,5 @@
-import type { TokenInfo } from '../types/Event';
-import type { ChatMessage, ChatTurn } from '../types/chat';
+import type {TokenInfo} from '../types/Event';
+import type {ChatMessage, ChatTurn} from '../types/chat';
 
 /** 轮次存在时以其为准，避免把另一份气泡统计混进权威摘要。 */
 export function resolveTokenUsage(turn: ChatTurn | null | undefined, message: ChatMessage): TokenInfo | null {

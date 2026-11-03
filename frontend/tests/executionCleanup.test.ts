@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { compileScript, parse } from '@vue/compiler-sfc';
+import {existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync} from 'node:fs';
+import {dirname, resolve} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {compileScript, parse} from '@vue/compiler-sfc';
 import ts from 'typescript';
-import { createRenderer, defineComponent, nextTick } from 'vue';
-import { createPinia } from 'pinia';
-import { ExecutionCleanupAPI } from '../src/services/executionCleanup';
-import type { ExecutionCleanupResult } from '../src/services/executionCleanup';
-import type { Result } from '../src/services/types';
+import {createRenderer, defineComponent, nextTick} from 'vue';
+import {createPinia} from 'pinia';
+import type {ExecutionCleanupResult} from '../src/services/executionCleanup';
+import {ExecutionCleanupAPI} from '../src/services/executionCleanup';
+import type {Result} from '../src/services/types';
 import http from '../src/services/interceptor';
-import { useExecutionCleanup } from '../src/views/settings/tabs/useExecutionCleanup';
-import { setPreference, t as translate } from '../src/i18n';
-import { useUserConfigStore } from '../src/stores/userConfigStore';
+import {useExecutionCleanup} from '../src/views/settings/tabs/useExecutionCleanup';
+import {setPreference, t as translate} from '../src/i18n';
+import {useUserConfigStore} from '../src/stores/userConfigStore';
 
 interface Element {
   tag: string;

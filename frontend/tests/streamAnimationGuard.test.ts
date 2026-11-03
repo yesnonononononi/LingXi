@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const streamCssPath = path.resolve(__dirname, '../src/styles/stream-animation.css');
@@ -25,22 +25,21 @@ function walkVueFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-test('1. stream-animation.css 绝不能在流式 Markdown 的尾部元素挂载模糊或位移动画（防止表格与长文本闪烁与模糊）', () => {
+test('1. 流式 Markdown 不再挂载尾部容器动画或打字光标', () => {
   const cssContent = fs.readFileSync(streamCssPath, 'utf8');
+  const detectsContainerAnimation = (source: string) => /\.markdown-stream-flow\.is-streaming\s+\.markdown-body\s*>\s*\*:last-child\s*\{[^}]*animation/i.test(source);
+  assert.ok(detectsContainerAnimation('.markdown-stream-flow.is-streaming .markdown-body > *:last-child { animation: broken 1s; }'));
 
   // 严禁匹配 .markdown-stream-flow.is-streaming .markdown-body > *:last-child 附带 animation
   assert.equal(
-    /\.markdown-stream-flow\.is-streaming\s+\.markdown-body\s*>\s*\*:last-child\s*\{[^}]*animation/i.test(cssContent),
+    detectsContainerAnimation(cssContent),
     false,
     '流式 markdown 容器下的 *:last-child 绝不能挂载动画，否则高频 innerHTML 刷新会导致整块内容永久陷入模糊与闪烁'
   );
 
-  // 确保流式打字光标存在且附着在末尾段落/列表/标题之后
-  assert.match(
-    cssContent,
-    /\.markdown-stream-flow\.is-streaming\s+\.markdown-body\s*>\s*p:last-child::after/,
-    '必须通过 ::after 伪元素内联跟进流式打字光标'
-  );
+  const detectsCursor = (source: string) => /\.markdown-stream-flow[^{}]*::after\s*\{/.test(source);
+  assert.ok(detectsCursor('.markdown-stream-flow.is-streaming .markdown-body > p:last-child::after { content: "▋"; }'));
+  assert.equal(detectsCursor(cssContent), false, '流式文字不能叠加闪烁光标');
 });
 
 test('2. MarkdownRenderer.vue 仅在尚未产出正文时显示思考占位提示，正文出现后不得再有额外占位元素（避免孤立空行或与末尾文本重叠）', () => {
@@ -96,7 +95,7 @@ test('2. MarkdownRenderer.vue 仅在尚未产出正文时显示思考占位提�
   assert.doesNotMatch(
     vueContent,
     /class="[^"]*\btyping-cursor\b/,
-    'typing-cursor 类已废弃，正文尾声由 stream-animation.css 的 p:last-child::after 接管'
+    'typing-cursor 类已废弃，正文只用新增文字的淡入尾迹'
   );
 });
 

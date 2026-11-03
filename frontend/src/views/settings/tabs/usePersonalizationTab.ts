@@ -1,9 +1,9 @@
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { PersonalizationAPI } from '../../../services/personalization';
-import type { PersonalizationDraft, PersonalizationVO, ReplyStyleOption } from '../../../services/personalization';
-import { extractErrorMessage } from '../../../utils/error';
-import { setGreetingUserName } from '../../../composables/useGreeting';
-import { usePersonalizationCopy } from './personalizationCopy';
+import {computed, onBeforeUnmount, onMounted, reactive, ref} from 'vue';
+import type {PersonalizationDraft, PersonalizationVO, ReplyStyleOption} from '../../../services/personalization';
+import {PersonalizationAPI} from '../../../services/personalization';
+import {extractErrorMessage} from '../../../utils/error';
+import {setGreetingUserName} from '../../../composables/useGreeting';
+import {usePersonalizationCopy} from './personalizationCopy';
 
 export function usePersonalizationTab() {
   const copy = usePersonalizationCopy();

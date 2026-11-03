@@ -5,7 +5,7 @@ import com.summit.core.agent.Execution;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import org.junit.jupiter.api.Test;
@@ -36,10 +36,10 @@ class CheckpointFileRetentionTest {
     @Test
     @Timeout(120)
     void repeatedSavesKeepExactlyOneCommittedFile() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("checkpoint-retention");
+        H2TestDatabase database = H2TestDatabase.create("checkpoint-retention");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
         try {
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();

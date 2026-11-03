@@ -1,15 +1,16 @@
 package com.summit.dp.workspace;
 
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SandboxPolicyFactoryTest {

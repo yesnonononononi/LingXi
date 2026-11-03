@@ -5,11 +5,7 @@ import com.summit.dp.model.Infrastructure.config.CompactionProperties;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.CompactionParamsVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * 设置接口：承载与「实例设置」相关的显式动作。

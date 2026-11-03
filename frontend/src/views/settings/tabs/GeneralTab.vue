@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useGeneralTab } from './useGeneralTab';
-import { useTheme } from '../../../composables/useTheme';
-import { useI18n } from '../../../i18n';
+import {useGeneralTab} from './useGeneralTab';
+import {useTheme} from '../../../composables/useTheme';
+import {useI18n} from '../../../i18n';
 import SpecularButton from '../../../components/common/SpecularButton.vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 

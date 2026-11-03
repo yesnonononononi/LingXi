@@ -73,6 +73,12 @@ public interface EmailService {
      */
     Result<List<EmailMessageVO>> consumePending(Long workflowExecutionId, Long recipientAgentId);
 
+    /** 判断与注入统一读取本批待处理项，不在查询中消费。 */
+    List<EmailMessageVO> pendingItems(Long workflowExecutionId, Long recipientAgentId);
+
+    /** 只确认本批查询结果，期间新到的消息留给下一轮。 */
+    void consumePendingItems(List<EmailMessageVO> items);
+
     /**
      * 是否还有未处理的协作输入（只读，<b>不消费</b>）。
      *

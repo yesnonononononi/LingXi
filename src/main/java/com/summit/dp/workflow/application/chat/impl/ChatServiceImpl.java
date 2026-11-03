@@ -1,43 +1,33 @@
 package com.summit.dp.workflow.application.chat.impl;
 
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workflow.application.chat.ChatCommand;
-import com.summit.dp.workflow.application.chat.ChatService;
-import com.summit.dp.workflow.application.chat.ResendTargetResolver;
-import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
-import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.ConversationRollbackService;
-import com.summit.dp.workflow.application.chat.ConversationRollbackService.ResendAdmission;
+import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.execution.application.service.ExecutionQueryService;
-import com.summit.dp.execution.domain.model.ExecutionStatus;
-import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.shared.exception.ClientException;
-
-import java.util.List;
-
+import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.chat.ConversationRollbackService.ResendAdmission;
+import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.time.Instant;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.List;
 
 /**
  * 会话聊天编排：负责"会话 → 工作空间（运行环境）"的解析与续接。
@@ -69,6 +59,7 @@ public class ChatServiceImpl implements ChatService {
     private final ResendTargetResolver resendTargetResolver;
     /** 重发回滚：把被改写的那条提问及其之后的整段历史从库里作废。 */
     private final ConversationRollbackService conversationRollbackService;
+    private final SessionExecutionStopper executionStopper;
 
     @Override
     public Result<String> chat(ChatCommand command) {
@@ -76,7 +67,7 @@ public class ChatServiceImpl implements ChatService {
         ensureRootExecutionIdle(context.executionContext().rootSessionId());
         // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
         // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
-        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
+        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
         return Result.success(executePrepared(context).getMessages().toString());
     }
 
@@ -111,7 +102,7 @@ public class ChatServiceImpl implements ChatService {
     public Result<ChatAcceptanceVO> acceptCommand(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
         ensureRootExecutionIdle(context.executionContext().rootSessionId());
-        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
+        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
         return Result.success(commitAndSubmit(context));
     }
 
@@ -134,7 +125,7 @@ public class ChatServiceImpl implements ChatService {
 
         ensureRootExecutionIdle(rootSessionId);
 
-        sessionExecutionRegistry.beginRoot(rootSessionId);
+        sessionExecutionRegistry.beginRoot(rootSessionId, context.executionContext().executionId());
 
         ResendAdmission admitted;
         try {
@@ -143,7 +134,7 @@ public class ChatServiceImpl implements ChatService {
             admitted = conversationRollbackService.rollbackAndAdmit(context, target);
         } catch (RuntimeException e) {
             // 回滚没成功就绝不能往下跑：否则新一轮会接在一段本该消失的历史之上。
-            sessionExecutionRegistry.finishRoot(rootSessionId);
+            sessionExecutionRegistry.finishRoot(rootSessionId, context.executionContext().executionId());
             throw e;
         }
 
@@ -182,12 +173,11 @@ public class ChatServiceImpl implements ChatService {
      */
     private RuntimeContext commitUserMessage(RuntimeContext context) {
         try {
-            // 受理事务开始前先把运行配置冻结（独立提交）：单写者 SQLite 下「受理已写库后再另开
-            // 写连接分配配置版本」必然抢锁失败，见方案「业务 SQL、锁与事务适配」一.6。
+            // 运行配置先独立冻结，受理事务再引用该版本，避免恢复引用未提交的配置。
             requestPreparer.freezeRuntimeConfigurations(context);
             return chatExecutor.admit(context);
         } catch (RuntimeException commitFailure) {
-            sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId());
+            sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
             throw commitFailure;
         }
     }
@@ -210,21 +200,8 @@ public class ChatServiceImpl implements ChatService {
                 ? selected.getRootSessionId()
                 : sessionId;
 
-        Set<Long> ids = new LinkedHashSet<>();
-        ids.add(rootSessionId);
-        sessionRepository.findSessionTree(rootSessionId).stream()
-                .map(Session::getId)
-                .forEach(ids::add);
-
-        List<SessionExecutionRegistry.ChildExecution> liveChildren = sessionExecutionRegistry.cancelRoot(rootSessionId);
-        liveChildren.stream().map(SessionExecutionRegistry.ChildExecution::sessionId).forEach(ids::add);
-        ids.stream().flatMap(id -> executionLocator.activeExecutionIds(id).stream())
-                .forEach(this::requestCancel);
-
-        liveChildren.forEach(child -> {
-            Thread thread = child.thread();
-            if (thread != null && thread != Thread.currentThread()) thread.interrupt();
-        });
+        executionStopper.stop(rootSessionId);
+        log.info("请求停止会话树: sessionId={}, rootSessionId={}", sessionId, rootSessionId);
 
         // 不关流：会话流是会话级资源，生命周期跟页面挂载 / 卸载走。停止只取消执行 ——
         // 一旦在这里断开，前端下一次发送前就必须重新挂载，否则那段时间的事件无处可去。
@@ -234,8 +211,6 @@ public class ChatServiceImpl implements ChatService {
     public void suspend(Long sessionId) {
         throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
         for (String executionId : executionLocator.activeExecutionIds(sessionId)) {
-            Execution snapshot = executionRepository.findById(executionId).orElse(null);
-            if (snapshot != null && snapshot.getExecutionState() == ExecutionState.SUSPENDED) continue;
             try {
                 executionControl.suspend(executionId);
             } catch (IllegalStateException error) {
@@ -247,36 +222,29 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public synchronized Result<String> resume(Long sessionId) {
-        String id = executionLocator.latestSuspendedExecutionId(sessionId);
-        if (id == null) {
-            throw new ClientException("该会话没有可恢复的执行");
-        }
+        // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
+        synchronized (ExecutionCoordination.monitor("session:" + sessionId)) {
+            String id = executionLocator.latestSuspendedExecutionId(sessionId);
+            throwIf(id == null, "该会话没有可恢复的执行");
 
-        // 未决卡片（pending PROMISE）优先：必须先经 /tool-call/decide 处理，再恢复。
-        throwIf(!toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(id)).isEmpty(), "请先处理待审批事项");
+            Execution execution;
+            synchronized (ExecutionCoordination.monitor(id)) {
+                throwIf(!toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(id)).isEmpty(), "请先处理待审批事项");
+                execution = executionRepository.findById(id).orElseThrow(ClientException::new);
+                throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行不可以恢复");
+                sessionAttributeRestorer.restore(execution, sessionId);
+                // 清除意图须先提交，控制槽位登记才允许这次主动恢复通过。
+                InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.USER_PAUSED, null);
+                InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.AUTO_ROUNDS, null);
+                executionRepository.save(execution);
+            }
 
-        // 用 resume(Execution) 把实例直接交给 loop；resume(String) 是副本，禁用。
-        Execution execution = executionRepository.findById(id)
-                .orElseThrow(() -> new ClientException("执行不存在: " + id));
+            // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
+            Execution resumed = executionControl.resume(execution);
 
-        throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行不可以恢复");
+            modelContextService.replace(sessionId, resumed.getMessages());
 
-        // 恢复不经过 RequestPreparer，会话级业务属性不会被重新下发，必须先补齐再交给 loop。
-        sessionAttributeRestorer.restore(execution, sessionId);
-
-        // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
-        Execution resumed = executionControl.resume(execution);
-
-        modelContextService.replace(sessionId, resumed.getMessages());
-
-        return Result.success(resumed.getMessages().toString());
-    }
-
-    private void requestCancel(String executionId) {
-        try {
-            executionControl.cancel(executionId);
-        } catch (IllegalStateException ignored) {
-            // 会话树里既有历史执行，也有当前活跃的执行，取消时命中已终结的执行属正常情况。
+            return Result.success(resumed.getMessages().toString());
         }
     }
 

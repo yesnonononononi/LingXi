@@ -1,11 +1,13 @@
 package com.summit.dp.workflow.infrastructure.tools.checklist;
 
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
+import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.checklist.application.ChecklistCommand;
@@ -28,9 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -53,7 +53,7 @@ class ChecklistReminderInterceptorTest {
     void setUp() {
         fixture = ChecklistTestDatabase.start("checklist-reminder");
         service = fixture.service();
-        interceptor = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery());
+        interceptor = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
     }
 
     @AfterEach
@@ -154,10 +154,8 @@ class ChecklistReminderInterceptorTest {
     @DisplayName("顺序语义：必须晚于后台任务等待，且异常不得被吞")
     void orderStaysAfterTheBackgroundTaskWaitAndErrorsPropagate() {
         ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(
-                mock(ChecklistService.class), mock(ChecklistContextInjector.class), new ChecklistReminderDelivery());
-        BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(
-                mock(TaskRepository.class), mock(BackgroundTaskNotifications.class),
-                mock(ExecutionResumeCoordinator.class));
+                mock(ChecklistService.class), mock(ChecklistContextInjector.class), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
+        BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(mock(TaskRepository.class), mock(BackgroundTaskNotifications.class)), mock(BackgroundTaskNotifications.class));
 
         assertEquals(-650, background.order(), "后台任务等待的顺序是前提，改动它就该重审本用例");
         assertEquals(-600, reminder.order());

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import {computed} from 'vue';
 
 /**
  * 卡片主 / 次操作按钮的统一实现。

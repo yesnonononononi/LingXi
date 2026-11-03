@@ -55,7 +55,7 @@ class PreparedChatExecutorLinkageTest {
             execution.failChecked(failure.getMessage());
             return (Runnable) () -> failurePublished.set(true);
         });
-        registry.beginRoot(10L);
+        registry.beginRoot(10L, "12");
     }
 
     @AfterEach
@@ -72,7 +72,7 @@ class PreparedChatExecutorLinkageTest {
         assertTrue(failurePublished.get());
         verify(control).fail(execution, failure);
         verifyNoInteractions(modelContext);
-        assertDoesNotThrow(() -> registry.beginRoot(10L));
+        assertDoesNotThrow(() -> registry.beginRoot(10L, "13"));
     }
 
     @Test
@@ -82,7 +82,7 @@ class PreparedChatExecutorLinkageTest {
             invocation.callRealMethod();
             finished.countDown();
             return null;
-        }).when(registry).finishRoot(10L);
+        }).when(registry).finishRoot(10L, "12");
 
         executor.submitAsync(context);
 
@@ -91,6 +91,6 @@ class PreparedChatExecutorLinkageTest {
         assertTrue(failurePublished.get(), "受理后失败必须通知界面");
         verify(control).fail(eq(execution), argThat(failure -> failure.getCause() == linkage));
         verifyNoInteractions(modelContext);
-        assertDoesNotThrow(() -> registry.beginRoot(10L));
+        assertDoesNotThrow(() -> registry.beginRoot(10L, "13"));
     }
 }

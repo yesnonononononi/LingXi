@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
 import LxModal from './LxModal.vue'
-import { useConfirm } from '../../composables/useConfirm'
-import { t } from '../../i18n'
+import {useConfirm} from '../../composables/useConfirm'
+import {t} from '../../i18n'
 
 const { state, handleConfirm, handleCancel } = useConfirm()
 const cancelButton = ref<HTMLButtonElement | null>(null)

@@ -1,5 +1,5 @@
-import { ref, nextTick, watch, onBeforeUnmount } from 'vue';
-import type { Ref } from 'vue';
+import type {Ref} from 'vue';
+import {nextTick, onBeforeUnmount, ref, watch} from 'vue';
 
 const AUTO_SCROLL_THRESHOLD = 96; // px，距底部小于此值视为在底部
 

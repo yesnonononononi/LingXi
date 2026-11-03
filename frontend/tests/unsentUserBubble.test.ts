@@ -12,9 +12,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import type { ChatMessage } from '../src/types/chat';
+import {fileURLToPath} from 'node:url';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import type {ChatMessage} from '../src/types/chat';
 
 /** tsx 以 ESM 运行本文件：__dirname 不存在，锚定测试文件所在目录。 */
 const HERE = path.dirname(fileURLToPath(import.meta.url));

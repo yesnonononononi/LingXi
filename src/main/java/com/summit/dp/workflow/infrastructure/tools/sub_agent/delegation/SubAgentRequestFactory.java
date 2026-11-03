@@ -2,43 +2,40 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
-import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.tools.application.service.ToolProcessingContext;
-import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * 把一次委派组装成子执行可用的 {@link AgentRequest}。
@@ -87,7 +84,8 @@ public class SubAgentRequestFactory {
 
         AgentAccessMode accessMode = AgentAccessMode.from(toolExecution == null ? null : toolExecution.getAttributes());
 
-        WorkspaceSpec workspaceSpec = resolveWorkspaceSpec(workDir, parentWorkspace, parentWorkspaceId, accessMode);
+        ResolvedWorkspace resolvedWorkspace = resolveWorkspace(workDir, parentWorkspace, parentWorkspaceId, accessMode);
+        WorkspaceSpec workspaceSpec = resolvedWorkspace.spec();
 
         if (parentWorkspace != null && workspaceSpec == null) {
             throw new IllegalStateException("子执行缺少工作区配置，无法恢复工作目录: " + workDir);
@@ -111,13 +109,16 @@ public class SubAgentRequestFactory {
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()
-                        .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel))
+                        .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel, resolvedWorkspace.id()))
                         .build())
-                .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt()))
+                .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt(), workspaceSpec))
                 .toolList(toolListProcessor.process(subAgent.getToolList(), ToolProcessingContext.builder()
                         .member(true).agentId(subAgent.getId())
+                        .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
+                                && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))
                         .teamId(ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID))
-                        .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot).build()))
+                        .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot)
+                        .projectMemory(workspaceSpec != null).build()))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
                 .build();
@@ -153,11 +154,12 @@ public class SubAgentRequestFactory {
      * 真正的守卫是工具加工层把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
      */
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId,
-                                               RuntimeModel childModel) {
+                                               RuntimeModel childModel, Long workspaceId) {
         Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
 
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
         attributes.put(ExecutionAttributes.MODEL_VISION, childModel.vision());
+        if (workspaceId != null) attributes.put(ExecutionAttributes.WORKSPACE_ID, workspaceId.toString());
 
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
 
@@ -183,7 +185,7 @@ public class SubAgentRequestFactory {
      *
      * 优先匹配登记目录，未匹配时沿用父工作空间；访问档位继承父请求快照，避免委派时放宽权限。
      */
-    private WorkspaceSpec resolveWorkspaceSpec(String workDir,
+    private ResolvedWorkspace resolveWorkspace(String workDir,
                                                Workspace parentWorkspace,
                                                Long parentWorkspaceId,
                                                AgentAccessMode accessMode
@@ -195,15 +197,18 @@ public class SubAgentRequestFactory {
         if (workDir != null && !workDir.isBlank()) {
             WorkspaceVO workspace = workspaceService.findByDir(workDir).getData();
             if (workspace != null) {
-                return workspaceConverter.toSpec(workspace, type, accessMode);
+                return new ResolvedWorkspace(workspace.id(), workspaceConverter.toSpec(workspace, type, accessMode));
             }
         }
         if (parentWorkspace == null || parentWorkspaceId == null) {
-            return null;
+            return new ResolvedWorkspace(null, null);
         }
         WorkspaceVO parent = workspaceService.findById(parentWorkspaceId).getData();
-        return parent == null ? null : workspaceConverter.toSpec(parent, type, accessMode);
+        return parent == null ? new ResolvedWorkspace(null, null)
+                : new ResolvedWorkspace(parent.id(), workspaceConverter.toSpec(parent, type, accessMode));
     }
+
+    private record ResolvedWorkspace(Long id, WorkspaceSpec spec) { }
 
     /** 子模型不继承父配置；预设不可用时保留成员名与业务原因，方便定位。 */
     private RuntimeModel resolveChildModel(AgentVO subAgent) {
@@ -213,7 +218,11 @@ public class SubAgentRequestFactory {
         }
         SettingsView settings = settingsProvider.current().orElse(null);
         try {
-            return modelService.resolveRuntimeConfig(childModelId, settings);
+            RuntimeModel model = modelService.resolveRuntimeConfig(childModelId, settings);
+            if (DefaultModelProviderNames.DEFAULT_IMAGE.equals(model.config().getProvider())) {
+                throw new ClientException("子 Agent 基座必须使用文本模型，图片生成请通过生图工具调用");
+            }
+            return model;
         } catch (ClientException e) {
             throw new ClientException("子 Agent「" + subAgent.getName()
                     + "」绑定的模型不可用，请检查预设是否已被删除或连接配置是否完整: " + e.getMessage());

@@ -1,10 +1,7 @@
 package com.summit.dp.task;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
 import com.baomidou.mybatisplus.annotation.DbType;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
@@ -22,8 +19,8 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
-import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
+import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -34,11 +31,13 @@ import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.task.api.controller.BackgroundTaskController;
 import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.application.vo.TaskVO;
-import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.model.Task;
+import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.persistence.po.TaskPO;
@@ -46,31 +45,30 @@ import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.*;
 import com.summit.runtime.workspace.LocalWorkspace;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -78,46 +76,39 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
-import org.apache.ibatis.session.SqlSessionFactory;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BackgroundCommandTest {
     @TempDir Path temporary;
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private TaskMapper mapper;
     private TaskRepository repository;
     private BackendProcessManager manager;
     private BackendProcesser submitter;
     private final List<String> changedStatuses = new CopyOnWriteArrayList<>();
     private Workspace workspace;
-    private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
+    private final InputWakeupService coordinator = mock(InputWakeupService.class);
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @BeforeEach void setup() throws Exception {
-        database = SqliteTestDatabase.create("BackgroundCommandTest");
+        database = H2TestDatabase.create("BackgroundCommandTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(TaskMapper.class);
         MybatisPlusInterceptor plugins = new MybatisPlusInterceptor();
-        plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
+        plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database); factory.setConfiguration(configuration); factory.setPlugins(plugins);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(TaskMapper.class);
+        mapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(TaskMapper.class);
         repository = new TaskRepositoryImpl(mapper);
         BackgroundTaskBroadcaster broadcaster = mock(BackgroundTaskBroadcaster.class);
         doAnswer(invocation -> {
@@ -168,11 +159,11 @@ class BackgroundCommandTest {
         assertEquals(1, manager.listTasks(10L).size()); assertTrue(manager.listTasks(99L).isEmpty());
         await(() -> changedStatuses.contains("FAILED"));
         assertEquals(List.of("PENDING", "RUNNING", "FAILED"), changedStatuses);
-        verify(coordinator).accept(1L);
+        verify(coordinator).resumeIfInputPending(1L);
         Execution execution = Execution.builder().id("1").messages(new ArrayList<Message>())
                 .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build()).build();
-        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(repository, new BackgroundTaskNotifications(), coordinator);
+        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(repository, new BackgroundTaskNotifications()), new BackgroundTaskNotifications());
         notifications.onBeforeModelInvoke(new LoopContext(LoopMessages.builder().execution(execution).build(),
                 new ExecutionControlSignal("1"), 0, execution.getMessages()::addAll));
         assertEquals(1, execution.getMessages().size());
@@ -267,7 +258,7 @@ class BackgroundCommandTest {
             if (task.getStatus().isTerminal() && failures.getAndIncrement() == 0) throw new IllegalStateException("db unavailable");
             return invocation.callRealMethod();
         }).when(flaky).updateById(any(Task.class));
-        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
+        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(InputWakeupService.class)), mock(TaskDeletionPolicy.class));
         CommandHandler handle = mock(CommandHandler.class);
         when(handle.await()).thenReturn(new CommandResult(7, "actual failure", false, false));
         Task task = Task.builder().id(103L).sessionId(10L).turnId(20L).command("completed").build(); repository.save(task);
@@ -286,7 +277,7 @@ class BackgroundCommandTest {
         ToolExecuteResult deniedRead = manage.execute(call(manage, Map.of("action", "read", "taskId", "104"), 10));
         assertFalse(deniedRead.isSuccess());
         TerminalSecurityPolicy security = mock(TerminalSecurityPolicy.class);
-        when(security.evaluate(anyString())).thenReturn(new SecurityDecision(SecurityAction.DENY, "policy", "PROGRAM", null));
+        when(security.evaluate(anyString(), any())).thenReturn(new SecurityDecision(SecurityAction.DENY, "policy", "PROGRAM", null));
         BackendProcesser forbidden = mock(BackendProcesser.class);
         CommandToolDefinitionExecutor executor = new CommandToolDefinitionExecutor(json, security, forbidden);
         assertFalse(executor.execute(call(executor, Map.of("command", "echo test", "background", true), 10)).isSuccess());
@@ -361,7 +352,7 @@ class BackgroundCommandTest {
 
     @Test void completionWorkerDoesNotWriteAgainAfterStopAlreadyPersistedTheFinalResult() throws Exception {
         TaskRepository tracked = spy(repository);
-        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
+        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(InputWakeupService.class)), mock(TaskDeletionPolicy.class));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Thread> worker = new AtomicReference<>();

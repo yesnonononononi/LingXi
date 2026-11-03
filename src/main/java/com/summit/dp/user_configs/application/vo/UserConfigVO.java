@@ -40,6 +40,9 @@ public class UserConfigVO {
     /** 专用压缩模型（关联 model_config.id）；空表示沿用对话模型做摘要。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long compactModelId;
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long imageModelId;
+    private Integer imageGenerationMaxCalls;
     /**
      * 数据目录变更是否待重启生效。
      *

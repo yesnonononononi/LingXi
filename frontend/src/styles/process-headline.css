@@ -1,0 +1,39 @@
+.lx-process-headline {
+  --lx-await-model-delay: 800ms;
+  display: grid;
+}
+
+.lx-process-summary,
+.lx-process-waiting {
+  grid-area: 1 / 1;
+}
+
+/* 隐藏同时作用于读屏，不能只把尚未成立的等待提示变透明。 */
+.lx-process-waiting {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.lx-awaiting-model > .lx-process-summary {
+  animation: lx-process-summary-yield 0s var(--lx-await-model-delay) forwards;
+}
+
+.lx-awaiting-model > .lx-process-waiting {
+  animation: lx-process-waiting-enter 120ms var(--lx-await-model-delay) forwards;
+}
+
+@keyframes lx-process-summary-yield {
+  to { visibility: hidden; }
+}
+
+@keyframes lx-process-waiting-enter {
+  from { visibility: visible; opacity: 0; }
+  to { visibility: visible; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 保留短空窗过滤，只去掉淡入运动。 */
+  .lx-awaiting-model > .lx-process-waiting {
+    animation-duration: 0s;
+  }
+}

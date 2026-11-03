@@ -1,8 +1,8 @@
-import { onScopeDispose, ref, watch, type Ref } from 'vue';
-import { PromptOptimizationAPI } from '../services/promptOptimization';
-import { useConfirm } from './useConfirm';
-import { isOk } from '../utils/api';
-import { t } from '../i18n';
+import {onScopeDispose, ref, type Ref, watch} from 'vue';
+import {PromptOptimizationAPI} from '../services/promptOptimization';
+import {useConfirm} from './useConfirm';
+import {isOk} from '../utils/api';
+import {t} from '../i18n';
 
 export const OPTIMIZE_PROMPT_COMMAND = '/optimize-prompt';
 
@@ -24,7 +24,9 @@ export function usePromptOptimization(input: Ref<string>, getModelId: () => stri
   const optimize = async () => {
     if (isOptimizing.value || disposed) return;
     if (isPromptOptimizationCommand(input.value)) {
-      input.value = input.value.slice(OPTIMIZE_PROMPT_COMMAND.length).replace(/^\s+/, '');
+      // 剥前缀必须走 replaceInput：组件传入的是「程序写入通道」（writeInputText）。
+      // 直接写 ref 会绕过那条通道，剩余文本以 / 开头时会被当成用户打字而弹出快捷指令菜单。
+      replaceInput(input.value.slice(OPTIMIZE_PROMPT_COMMAND.length).replace(/^\s+/, ''));
     }
     const original = input.value;
     if (!original.trim()) {

@@ -1,9 +1,9 @@
-import { computed, ref, watch, type ComputedRef } from 'vue';
-import type { AgentEvent } from '../../types/Event';
-import type { ChatSession } from '../../types/chat';
-import type { NotifyOutcome } from '../../composables/useDesktopNotification';
-import { canDecideCard, toPromptCardData } from '../../utils/toolCallCard';
-import { resolveRootSessionId } from '../../utils/session';
+import {computed, type ComputedRef, ref, watch} from 'vue';
+import type {AgentEvent} from '../../types/Event';
+import type {ChatSession} from '../../types/chat';
+import type {NotifyOutcome} from '../../composables/useDesktopNotification';
+import {canDecideCard, toPromptCardData} from '../../utils/toolCallCard';
+import {resolveRootSessionId} from '../../utils/session';
 
 interface Options {
   session: ComputedRef<ChatSession | null | undefined>;

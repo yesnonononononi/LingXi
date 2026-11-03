@@ -16,6 +16,8 @@ import java.time.Instant;
 @Getter
 @Builder
 public class UserConfig {
+    public static final int DEFAULT_IMAGE_GENERATION_MAX_CALLS = 3;
+    public static final int MAX_IMAGE_GENERATION_CALLS = 20;
 
 
     public record WorkSpaceConfig(WorkspaceType type) {
@@ -135,6 +137,10 @@ public class UserConfig {
      * 会带上独立的 compactModel，上下文压缩不再借用对话模型。</p>
      */
     private Long compactModelId;
+    /** 生图工具使用的独立模型；空表示未启用。 */
+    private Long imageModelId;
+    /** 每次执行的生图工具调用上限，失败调用也占用次数。 */
+    private Integer imageGenerationMaxCalls;
 
     /**
      * 最大团队规模
@@ -234,6 +240,22 @@ public class UserConfig {
     public void changeCompactModel(Long compactModelId) {
         this.compactModelId = compactModelId;
         update();
+    }
+
+    public void changeImageModel(Long imageModelId) {
+        this.imageModelId = imageModelId;
+        update();
+    }
+
+    public void changeImageGenerationMaxCalls(Integer count) {
+        throwIf(count == null || count < 0 || count > MAX_IMAGE_GENERATION_CALLS,
+                "每次执行的生图次数必须在 0~" + MAX_IMAGE_GENERATION_CALLS + " 之间");
+        this.imageGenerationMaxCalls = count;
+        update();
+    }
+
+    public int resolveImageGenerationMaxCalls() {
+        return imageGenerationMaxCalls == null ? DEFAULT_IMAGE_GENERATION_MAX_CALLS : imageGenerationMaxCalls;
     }
 
     public void changeMaxTokens(Integer maxTokens) {

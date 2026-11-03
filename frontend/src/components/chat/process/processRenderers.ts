@@ -7,10 +7,10 @@
  * <p>`resolveRenderer` 永远返回一个 renderer —— 未命中落到 `unknown` 兜底，禁止返回 `undefined`
  * （原模板的 v-else-if 链末端没有 else，未知项会静默白屏）。</p>
  */
-import type { Component } from 'vue';
-import type { ImageProcessItem } from '../../../utils/readImageTools';
-import type { ChatMessage } from '../../../types/chat';
-import type { StreamStickyScroll } from '../../../composables/useStreamStickyScroll';
+import type {Component} from 'vue';
+import type {ImageProcessItem} from '../../../utils/readImageTools';
+import type {ChatMessage} from '../../../types/chat';
+import type {StreamStickyScroll} from '../../../composables/useStreamStickyScroll';
 import ThoughtStepRenderer from './ThoughtStepRenderer.vue';
 import SubAgentMembersRenderer from './SubAgentMembersRenderer.vue';
 import ReadImageGroupRenderer from './ReadImageGroupRenderer.vue';

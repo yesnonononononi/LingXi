@@ -1,9 +1,5 @@
 package com.summit.dp.tools.baseTools.file.edit;
 
-import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
-
-import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.LocalWorkspaceBridge;
@@ -11,24 +7,18 @@ import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
 import com.summit.core.tool.ToolDefinition;
-import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecuteResult;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileHasher;
-import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestorer;
+import com.summit.core.tool.ToolExecution;
+import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
+import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * edit_file 的编辑摘要必须随返回值 toolMetaData 广播（key = fileEdit），替代旧 FileEditEvent：

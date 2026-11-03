@@ -6,20 +6,20 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setPreference } from '../src/i18n';
-import type { ToolCallTrace } from '../src/types/chat';
-import { AgentToolName } from '../src/utils/toolNames';
-import { TOOL_CATEGORY } from '../src/utils/toolMeta';
+import {setPreference} from '../src/i18n';
+import type {ToolCallTrace} from '../src/types/chat';
+import {AgentToolName} from '../src/utils/toolNames';
+import {TOOL_CATEGORY} from '../src/utils/toolMeta';
 import {
-  buildEditDiffChunks,
-  canExpandToolRow,
-  cleanDisplayPath,
-  formatThoughtTitle,
-  isToolInProgress,
-  resolveToolRowDiff,
-  resolveToolRowMeta,
-  toolRowHeaderClass,
-  toolStatusDotClass,
+    buildEditDiffChunks,
+    canExpandToolRow,
+    cleanDisplayPath,
+    formatThoughtTitle,
+    isToolInProgress,
+    resolveToolRowDiff,
+    resolveToolRowMeta,
+    toolRowHeaderClass,
+    toolStatusDotClass,
 } from '../src/utils/toolRowUi';
 
 setPreference('zh-CN');

@@ -1,6 +1,6 @@
-import type { Component, InjectionKey } from 'vue';
-import type { ChatMessage, ChatTurn } from './chat';
-import type { TokenInfo } from './Event';
+import type {Component, InjectionKey} from 'vue';
+import type {ChatMessage, ChatTurn} from './chat';
+import type {TokenInfo} from './Event';
 
 /** 执行状态摘要（`execStatusMeta` 的对外投影，行 1295–1306）。null = 无轮次摘要。 */
 export interface ChatMessageExecStatusMeta {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import TextType from '../common/TextType.vue';
-import { t } from '../../i18n';
-import { useGreeting } from '../../composables/useGreeting';
+import {t} from '../../i18n';
+import {useGreeting} from '../../composables/useGreeting';
 
 withDefaults(
   defineProps<{

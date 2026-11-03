@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import LxModal from '../common/LxModal.vue';
-import type { AgentVO, ModelConfig, ToolVO } from '../../types/chat';
-import { TeamAPI } from '../../services/team';
-import { AgentAPI } from '../../services/agent';
-import { ToolAPI } from '../../services/tool';
-import { resolveToolFullName } from '../../utils/toolDisplayNames';
-import { isOk } from '../../utils/api';
-import { toUserFacingError } from '../../utils/error';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import type {AgentVO, ModelConfig, ToolVO} from '../../types/chat';
+import {TeamAPI} from '../../services/team';
+import {AgentAPI} from '../../services/agent';
+import {ToolAPI} from '../../services/tool';
+import {resolveToolFullName} from '../../utils/toolDisplayNames';
+import {isOk} from '../../utils/api';
+import {toUserFacingError} from '../../utils/error';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;

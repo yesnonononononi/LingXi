@@ -8,8 +8,8 @@
  * <p>样式与 <T> 工具行占位的「无输出」分支保持一致：只占一行灰字，不参与任何布局计算，
  * 因此现有 `innerText` 断言与几何断言都不受影响。</p>
  */
-import type { ImageProcessItem } from '../../../utils/readImageTools';
-import { t } from '../../../i18n';
+import type {ImageProcessItem} from '../../../utils/readImageTools';
+import {t} from '../../../i18n';
 
 defineProps<{
   item: ImageProcessItem;

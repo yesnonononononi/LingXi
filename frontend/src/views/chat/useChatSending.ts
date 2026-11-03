@@ -1,12 +1,12 @@
-import { ref, computed, type ComputedRef } from 'vue';
-import { AgentAPI, isAbortError } from '../../services/agent';
-import type { ChatAcceptance, ChatSession } from '../../types/chat';
-import { isTempSessionId, isPersistedSessionId } from '../../utils/ids';
-import { isSessionRunning } from '../../utils/session';
-import { isOk } from '../../utils/api';
-import type { ChatCommand } from '../../services/dto/chat_command';
-import { t } from '../../i18n';
-import { useUserConfigStore } from '../../stores/userConfigStore';
+import {computed, type ComputedRef, ref} from 'vue';
+import {AgentAPI, isAbortError} from '../../services/agent';
+import type {ChatAcceptance, ChatSession} from '../../types/chat';
+import {isPersistedSessionId, isTempSessionId} from '../../utils/ids';
+import {isSessionRunning} from '../../utils/session';
+import {isOk} from '../../utils/api';
+import type {ChatCommand} from '../../services/dto/chat_command';
+import {t} from '../../i18n';
+import {useUserConfigStore} from '../../stores/userConfigStore';
 
 export interface ChatSendingOptions {
   /** 当前活动会话（用于停止生成时定位 sessionId）。 */

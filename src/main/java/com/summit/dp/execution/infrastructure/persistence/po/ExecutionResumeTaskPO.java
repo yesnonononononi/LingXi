@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.summit.dp.shared.persistence.handler.LargeTextTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.ibatis.type.JdbcType;
 
 import java.time.LocalDateTime;
 
@@ -32,7 +34,8 @@ public class ExecutionResumeTaskPO {
 
     private Long generation;
     private String state;
-    @TableField("error_reason")
+    /** 恢复失败的异常文本：长度不可控，H2 侧按 CLOB 存，避免 VARCHAR 截断型静默丢数据。 */
+    @TableField(value = "error_reason", jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String errorReason;
     private Long version;
     @TableField("created_at")

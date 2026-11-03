@@ -1,15 +1,5 @@
 package com.summit.dp.agent;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -20,44 +10,43 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
-import com.summit.dp.session.application.service.TranscriptReplayMatcher;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
+import com.summit.dp.session.application.service.TranscriptReplayMatcher;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
-import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-import com.summit.dp.workflow.application.chat.ChatImageResolver;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
+import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
-import com.summit.dp.mcp.application.service.McpService;
-import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.team.application.service.TeamService;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -73,10 +62,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -98,7 +84,7 @@ class ChatAdmissionTransactionTest {
     private static final String EXECUTION_ID = "2105000000000000001";
     private static final long EXECUTION_ID_NUMERIC = 2105000000000000001L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -108,7 +94,7 @@ class ChatAdmissionTransactionTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ChatAdmissionTransactionTest");
+        database = H2TestDatabase.create("ChatAdmissionTransactionTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         MyBatisTypeHandlers.registerAll(configuration);
         // 不要关驼峰转下划线：SessionMessagePO 没有 @TableField，靠这个开关映射 session_id。
@@ -124,7 +110,7 @@ class ChatAdmissionTransactionTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
         executionMapper = template.getMapper(ExecutionMapper.class);
         chatTurnMapper = template.getMapper(ChatTurnMapper.class);
         sessionMessageMapper = template.getMapper(SessionMessageMapper.class);

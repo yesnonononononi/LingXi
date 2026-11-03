@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue';
-import { useI18n } from '../../../i18n';
-import { useCompactionTab } from './useCompactionTab';
+import {computed, useId} from 'vue';
+import {useI18n} from '../../../i18n';
+import {useCompactionTab} from './useCompactionTab';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 
 /**
- * 压缩模型配置页。
+ * 其它模型配置页：保留压缩设置布局，增加独立生图配置。
  *
  * <p>配色一律走 {@code lx-*} 令牌，不写 zinc/white 字面量：这个仓有「残余灰阶不得上涨」的门禁，
  * 新增页面上手就写 zinc 等于给基线偷偷加债务（本页初版曾 +51 项）。</p>
@@ -37,6 +37,7 @@ const {
   load,
   toggle,
   choose,
+  imageSelectedId, imageOptions, imageUnavailable, imageDisabled, imageSaveError, imageLimitDraft, chooseImage, saveImageLimit,
 } = useCompactionTab();
 
 const cardClass = 'rounded-2xl border p-4 space-y-3 transition-colors bg-lx-surface-sunken border-lx-border-subtle';
@@ -105,6 +106,26 @@ const maxTokensFill = computed(() => {
     </div>
 
     <template v-else>
+      <section :class="cardClass" data-testid="image-model-card">
+        <div>
+          <h5 :class="titleClass">{{ t('settings.compaction.imageTitle') }}</h5>
+          <p :class="hintClass">{{ t('settings.compaction.imageHelp') }}</p>
+        </div>
+        <SettingsSelect :id="`${id}-image-model`" :label="t('settings.compaction.imageChoose')"
+          :model-value="imageSelectedId" :options="imageOptions" :disabled="imageDisabled"
+          data-testid="image-model-select" @update:model-value="chooseImage" />
+        <div class="space-y-1.5">
+          <label :for="`${id}-image-limit`" class="text-xs font-medium text-lx-secondary">{{ t('settings.compaction.imageLimit') }}</label>
+          <input :id="`${id}-image-limit`" v-model="imageLimitDraft" type="number" min="0" max="20" step="1"
+            :disabled="imageDisabled" data-testid="image-generation-limit"
+            class="block w-24 rounded-lg border border-lx-border bg-lx-surface px-3 py-2 text-sm text-lx-primary disabled:opacity-50"
+            @change="saveImageLimit" />
+          <p :class="hintClass">{{ t('settings.compaction.imageLimitHelp') }}</p>
+        </div>
+        <p v-if="imageUnavailable" class="text-lx-fs-sm text-lx-warning">{{ t('settings.compaction.imageUnavailable') }}</p>
+        <p v-if="imageSaveError" class="text-lx-fs-sm text-lx-danger" role="alert">{{ imageSaveError }}</p>
+        <button v-if="imageOptions.length === 1" type="button" :class="ghostBtnClass" @click="emit('openModels')">{{ t('settings.compaction.addModel') }}</button>
+      </section>
       <!-- 压缩模型：开关与「选了哪个模型」是同一件事 -->
       <section :class="cardClass" data-testid="compaction-model-card">
         <div class="flex items-start justify-between gap-3">

@@ -1,14 +1,14 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { AgentEvent } from '../src/types/Event';
-import type { ChatMessage } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { upsertBlockIntoBubble, upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { applyTextPlacement, getTurnState, writeResponseText } from '../src/views/chat/turnRenderState';
-import { AgentToolName } from '../src/utils/toolNames';
-import { compareResponsePosition } from '../src/utils/responseOrder';
+import type {AgentEvent} from '../src/types/Event';
+import type {ChatMessage} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {upsertBlockIntoBubble, upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import {applyTextPlacement, getTurnState, writeResponseText} from '../src/views/chat/turnRenderState';
+import {AgentToolName} from '../src/utils/toolNames';
+import {compareResponsePosition} from '../src/utils/responseOrder';
 
 const metadata = { sessionId: '7', turnId: '900' };
 function setup() {

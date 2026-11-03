@@ -15,11 +15,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { nextTick } from 'vue';
-import { FONT_SCALE_PRESETS } from '../src/utils/enum';
+import {fileURLToPath} from 'node:url';
+import {nextTick} from 'vue';
+import {FONT_SCALE_PRESETS} from '../src/utils/enum';
 
 /** 前端源码根目录（守卫的扫描面）。 */
 const SRC_ROOT = fileURLToPath(new URL('../src', import.meta.url));
@@ -52,13 +52,7 @@ const HARDCODED_FONT_SIZE_WHITELIST: readonly string[] = [
   'components/chat/RequireChoiceCard.vue::text-[13.5px]',
   // 表单手工排版：26px 弹层标题、15px 输入区
   'views/settings/tabs/BatchModelsForm.vue::font-size:15px',
-  'views/settings/tabs/BatchModelsForm.vue::font-size:26px',
-  // 桌宠窗口是独立入口（pet.html 不加载主题令牌层），字号拿不到 --lx-font-size-*，
-  // 故这 4 处是文档化例外：改这里的数值不影响主应用，也请勿把主应用的 text-lx-fs-* 混进来
-  'pet/pet.css::font-size:10px',
-  'pet/pet.css::font-size:11px',
-  'pet/pet.css::font-size:12px',
-  'pet/pet.css::font-size:13px'
+  'views/settings/tabs/BatchModelsForm.vue::font-size:26px'
 ];
 
 /** 扫描面下界：当前 249 个文件。下界断言用来防「遍历空转却报 0 处命中」的假绿。 */

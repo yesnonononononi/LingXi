@@ -1,9 +1,5 @@
 package com.summit.dp.session;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.agent.domain.repository.AgentRepository;
@@ -21,6 +17,8 @@ import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
@@ -37,7 +35,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
@@ -46,7 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class SessionListOrderingTest {
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private SessionMapper sessions;
     private ExecutionMapper executions;
     private SessionServiceImpl service;
@@ -54,7 +51,7 @@ class SessionListOrderingTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("SessionListOrderingTest");
+        database = H2TestDatabase.create("SessionListOrderingTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
@@ -63,7 +60,7 @@ class SessionListOrderingTest {
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
+        SqlSessionTemplate sql = H2TestDatabase.sqlSession(factory.getObject());
         sessions = sql.getMapper(SessionMapper.class);
         executions = sql.getMapper(ExecutionMapper.class);
         SessionRepositoryImpl repository = new SessionRepositoryImpl(sessions);

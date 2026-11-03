@@ -1,42 +1,36 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-
+import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.shared.support.InputTestSupport;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.InterceptorResult;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.core.runtime.loop.LoopResult;
+import com.summit.core.runtime.loop.*;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.ExecutionStatusCodes;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,23 +49,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 委派生命周期交错回归：把「注册表登记 + 结束事实协作 + 恢复协调器 + 收尾驻留判定 + 取信」
  * 五块真实协作件接在一起，验证缺口 1~4 在交错时序下仍然自洽。
  *
  * <p>与各单件测试的分工：单件测试锁死各自内部不变量，本测试锁死<b>接线</b>——唤醒目标是否是
- * 协作根执行、保留唤醒是否在根挂起后被重放、待启动 / 挂起子执行是否仍算「未结束」、
+ * 协作根执行、待处理输入是否在根挂起后被重放、待启动 / 挂起子执行是否仍算「未结束」、
  * 停止后迟到邮件的邮箱键是否仍指向协作根会话。任何一处接错，都会让根提前收尾或永久不被唤醒。</p>
  */
 class QaDelegationLifecycleInterleavingTest {
@@ -103,6 +90,8 @@ class QaDelegationLifecycleInterleavingTest {
     private SessionExecutionRegistry registry;
     private ExecutionResumeCoordinator coordinator;
     private SubExecutionLifecycle lifecycle;
+    private InputWakeupService wakeups;
+    private final AtomicBoolean pendingInput = new AtomicBoolean();
     private SubAgentWaitInterceptor waitInterceptor;
 
     @BeforeEach
@@ -112,18 +101,24 @@ class QaDelegationLifecycleInterleavingTest {
                 new SuspendedExecutionResumer(toolCallRepository, sessionAttributeRestorer,
                         modelContextService, provider(executionControl)),
                 executionControl, provider(frameworkExecutions), provider(activity));
-        lifecycle = new SubExecutionLifecycle(registry, coordinator, executionIdentity, mock(SubAgentCompleteNotifier.class));
-        waitInterceptor = new SubAgentWaitInterceptor(registry, emailService, coordinator);
+        wakeups = InputTestSupport.wakeup(coordinator, frameworkExecutions, activity, registry, emailService);
+        SubAgentCompleteNotifier notifier = mock(SubAgentCompleteNotifier.class);
+        doAnswer(call -> { pendingInput.set(true); return null; }).when(notifier).notifyCommander(any());
+        doAnswer(call -> { pendingInput.set(true); return null; }).when(notifier).notifyAbandoned(anyLong(), anyLong());
+        lifecycle = new SubExecutionLifecycle(registry, wakeups, executionIdentity, notifier);
+        waitInterceptor = new SubAgentWaitInterceptor(InputTestSupport.collaboration(registry, emailService));
 
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID + 1)).thenReturn(ROOT_SESSION_ID);
         when(activity.isActive(any())).thenAnswer(invocation -> rootActive.get());
         when(executionControl.resume(any())).thenAnswer(invocation -> {
+            pendingInput.set(false);
             resumeCount.incrementAndGet();
             return invocation.getArgument(0);
         });
         when(executionControl.fail(any(), any())).thenReturn(() -> { });
-        when(emailService.hasPending(anyLong(), anyLong())).thenReturn(false);
+        when(emailService.pendingItems(anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
+                ? List.of(EmailMessageVO.builder().id(1L).senderId(8L).content("待处理交付").build()) : List.of());
 
         when(executions.findResumeGeneration(ROOT_EXECUTION_ID)).thenReturn(GENERATION);
         stubRootSummary(ExecutionState.SUSPENDED);
@@ -144,6 +139,7 @@ class QaDelegationLifecycleInterleavingTest {
 
     @AfterEach
     void shutdown() {
+        wakeups.close();
         coordinator.close();
     }
 
@@ -155,20 +151,20 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("① 待启动子执行：仍算未结束 → 根驻留不收尾；子执行从未建立（放弃）→ 结束事实唤醒根")
     void pendingStartChildKeepsRootFromFinishingUntilAbandoned() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         // 已受理但异步线程尚未开跑：只登记「待启动」，没有活线程。
-        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID));
+        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), null));
 
         InterceptorResult beforeAbandon = waitInterceptor.onBeforeComplete(rootLoopContext());
         assertFalse(beforeAbandon.next(), "子任务已受理但没开跑时，根不得自然完成");
         assertEquals(LoopResult.Status.SUSPENDED, beforeAbandon.loopResult().status());
 
-        // 子执行从未建立（落库前失败）：兜底结束事实移除待启动登记并在根活跃时保留唤醒。
-        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
+        // 子执行从未建立（落库前失败）：兜底结束事实移除待启动登记并在根活跃时待处理输入。
+        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
         assertResumedCount(0);
 
-        // 根挂起、控制槽位释放：保留唤醒被重放 → 恢复。
+        // 根挂起、控制槽位释放：待处理输入被重放 → 恢复。
         suspendRoot();
         awaitResumedCount(1);
     }
@@ -179,12 +175,12 @@ class QaDelegationLifecycleInterleavingTest {
 
     @Test
     @DisplayName("②A 子执行先终结、根后挂起：唤醒先被保留，挂起后重放 → 恢复一次")
-    void finishBeforeSuspendRetainsWakeThenReplays() {
+    void inputBeforeSuspendIsFoundByReleaseRecheck() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
 
-        // 最后一个子执行在根仍活跃时终结：此刻不能派发，登记为保留唤醒。
+        // 最后一个子执行在根仍活跃时终结：此刻不能派发，登记为待处理输入。
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
         assertResumedCount(0);
 
@@ -196,10 +192,10 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("②B 根先挂起、子执行后终结：结束事实直接唤醒根 → 恢复一次")
     void suspendBeforeFinishWakesRootDirectly() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
 
-        // 根先挂起、释放控制槽位（无保留唤醒，flush 是 no-op）。
+        // 根先挂起、释放控制槽位（无待处理输入，flush 是 no-op）。
         suspendRoot();
 
         // 最后一个子执行随后终结：结束事实闭环直接派发恢复。
@@ -213,21 +209,17 @@ class QaDelegationLifecycleInterleavingTest {
     void firstCompletedChildWakesRootAndDeliversNotice(boolean finishBeforeSuspend) {
         AtomicReference<EmailMessageVO> pendingMail = new AtomicReference<>();
         List<Message> appended = new ArrayList<>();
-        lifecycle = new SubExecutionLifecycle(registry, coordinator, executionIdentity,
-                new SubAgentCompleteNotifier(provider(frameworkExecutions), emailService));
+        lifecycle = new SubExecutionLifecycle(registry, wakeups, executionIdentity, new SubAgentCompleteNotifier(provider(frameworkExecutions), emailService));
         when(emailService.sendMailOnce(eq(ROOT_AGENT_ID), any(), any(), any())).thenAnswer(invocation -> {
             EmailMessageVO mail = EmailMessageVO.builder().senderId(8L)
                     .content(invocation.getArgument(1)).build();
             pendingMail.set(mail);
             return Result.success(mail);
         });
-        when(emailService.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID))
-                .thenAnswer(invocation -> pendingMail.get() != null);
-        when(emailService.consumePending(ROOT_SESSION_ID, ROOT_AGENT_ID)).thenAnswer(invocation -> {
-            EmailMessageVO mail = pendingMail.getAndSet(null);
-            return Result.success(mail == null ? List.of() : List.of(mail));
-        });
-        AgenticLoopInterceptor mailConsumer = new AgenticLoopInterceptor(emailService);
+        when(emailService.pendingItems(ROOT_SESSION_ID, ROOT_AGENT_ID))
+                .thenAnswer(invocation -> pendingMail.get() == null ? List.of() : List.of(pendingMail.get()));
+        doAnswer(invocation -> { pendingMail.set(null); return null; }).when(emailService).consumePendingItems(anyList());
+        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(emailService, new MailInputSource(emailService));
         doAnswer(invocation -> {
             Execution root = invocation.getArgument(0);
             LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
@@ -238,7 +230,7 @@ class QaDelegationLifecycleInterleavingTest {
         }).when(executionControl).resume(any());
 
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
         delegateChild(CHILD_SESSION_ID + 1);
         if (!finishBeforeSuspend) {
@@ -272,7 +264,7 @@ class QaDelegationLifecycleInterleavingTest {
     void twoConsecutiveRoundsEachWakeRootOnce() {
         // 第一轮。
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
         suspendRoot();
@@ -294,11 +286,11 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("④ 子执行等待审批：挂起期根驻留不收尾；子执行终结后才唤醒根")
     void childWaitingApprovalKeepsRootAndWakesOnFinish() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
 
         // 子执行挂起等审批：保留登记、释放死线程，但父侧仍算「未结束」。
-        lifecycle.onSuspended(childExecution(CHILD_SESSION_ID));
+
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍是未结束子执行");
 
         InterceptorResult whileWaiting = waitInterceptor.onBeforeComplete(rootLoopContext());
@@ -320,7 +312,7 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("⑥ 根已暂停时子执行失败：立即恢复主理人，不等其他队员结束")
     void failedChildImmediatelyWakesSuspendedCommander() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
         delegateChild(CHILD_SESSION_ID + 1);
         suspendRoot();
@@ -343,11 +335,11 @@ class QaDelegationLifecycleInterleavingTest {
     void lateMailAfterStopIsConsumedByNextRoundUnderRootSessionKey() {
         EmailService mailbox = mock(EmailService.class);
         AtomicReference<long[]> consumedKey = new AtomicReference<>();
-        when(mailbox.consumePending(anyLong(), anyLong())).thenAnswer(invocation -> {
+        when(mailbox.pendingItems(anyLong(), anyLong())).thenAnswer(invocation -> {
             consumedKey.set(new long[]{invocation.getArgument(0), invocation.getArgument(1)});
-            return Result.success(List.of());
+            return List.of();
         });
-        AgenticLoopInterceptor mailConsumer = new AgenticLoopInterceptor(mailbox);
+        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(mailbox, new MailInputSource(mailbox));
 
         // 停止之后、下一轮 beginRoot 之前到达的邮件：按协作根会话 id 落箱。
         // 新一轮执行的执行 id 与上一轮不同，但会话 id 不变 —— 取信键必须仍命中同一把邮箱。
@@ -370,15 +362,16 @@ class QaDelegationLifecycleInterleavingTest {
     // 编排辅助
     // ------------------------------------------------------------------
 
-    /** 根进入 SUSPENDED 并释放控制槽位：走真实挂起通知链（含保留唤醒重放）。 */
+    /** 根进入 SUSPENDED 并释放控制槽位：走真实挂起通知链（含输入复查）。 */
     private void suspendRoot() {
         rootActive.set(false);
-        lifecycle.onSuspended(rootExecution());
+
+        wakeups.resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     private void delegateChild(long childSessionId) {
-        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId);
-        registry.bindRunningChild(ROOT_SESSION_ID, childSessionId, Thread.currentThread());
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
     }
 
     private LoopContext rootLoopContext() {
@@ -401,7 +394,7 @@ class QaDelegationLifecycleInterleavingTest {
     }
 
     private static Execution childExecution(long childSessionId) {
-        return Execution.builder().id("1234")
+        return Execution.builder().id(String.valueOf(childSessionId))
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, String.valueOf(childSessionId),

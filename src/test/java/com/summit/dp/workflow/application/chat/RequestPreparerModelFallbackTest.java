@@ -1,18 +1,17 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRequest;
-import java.util.List;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.core.agent.Execution;
+import com.summit.core.conf.ModelConfig;
+import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -23,29 +22,26 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.core.conf.ModelConfig;
-import com.summit.ddd.application.vo.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 模型选择规则的回落口径（2026-10-15 四轮对齐后的最终契约）：
@@ -84,7 +80,8 @@ class RequestPreparerModelFallbackTest {
             settingsProvider, ToolListProcessorTestSupport.create(),
             transcriptService, modelContextService,
             chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""),
-            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+            new ChatImageResolver(), new BusinessSystemPromptBuilder("", workspace -> workspace == null ? "" : "wiki=" + workspace.workDir()),
+            mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
 
     @BeforeEach
     void stubCommonPath() {
@@ -105,6 +102,19 @@ class RequestPreparerModelFallbackTest {
 
     private static ModelConfig modelConfig(Long modelId) {
         return ModelConfig.builder().modelName("model-" + modelId).build();
+    }
+
+    @Test
+    void aCustomRootAgentWithAProjectReceivesBothWikiTools() {
+        RuntimeContext context = new RuntimeContext(ExecutionContext.root(SESSION_ID, "1001", 99L, SETTINGS_MODEL_ID,
+                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS), AGENT_ID, null,
+                SessionVO.builder().id(SESSION_ID).build(), List.of(),
+                new LingXiWorkspaceSpec("local", System.getProperty("user.dir"), Map.of()), modelConfig(SETTINGS_MODEL_ID),
+                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false, UserMessageEntity.from("任务"));
+        AgentRequest request = preparer.buildRequest("", context, List.of(ToolCatalog.READ_FILE));
+        assertTrue(request.getToolList().contains(ToolCatalog.LOAD_MEMORY));
+        assertTrue(request.getToolList().contains(ToolCatalog.SEARCH_WIKI));
+        assertTrue(request.getSystemPrompt().contains("wiki=" + context.workspace().workDir()));
     }
 
     private static ChatCommand command(Long modelId, Long agentId) {

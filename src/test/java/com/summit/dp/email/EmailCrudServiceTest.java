@@ -1,27 +1,22 @@
 package com.summit.dp.email;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import cn.hutool.core.util.IdUtil;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.message.Message;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.core.runtime.loop.LoopContext;
+import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.email.application.command.EmailMessageCommand;
 import com.summit.dp.email.application.command.MailSendContext;
@@ -36,7 +31,12 @@ import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
+import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,33 +54,14 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * Email 聚合回归（H2 手工装配，镜像 init.sql 的 email / email_message 两表，含业务键唯一约束）。
@@ -95,7 +76,7 @@ import static org.mockito.ArgumentMatchers.any;
  */
 class EmailCrudServiceTest {
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private EmailMapper emailMapper;
     private EmailMessageMapper messageMapper;
     private EmailRepository emailRepository;
@@ -104,7 +85,7 @@ class EmailCrudServiceTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("EmailCrudServiceTest");
+        database = H2TestDatabase.create("EmailCrudServiceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -113,13 +94,13 @@ class EmailCrudServiceTest {
         configuration.addMapper(EmailMessageMapper.class);
         // 应用侧 MybatisPlusConfig 同款分页插件：selectPage 需要它做 LIMIT 改写与 count
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         configuration.addInterceptor(interceptor);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         emailMapper = session.getMapper(EmailMapper.class);
         messageMapper = session.getMapper(EmailMessageMapper.class);
         emailRepository = new EmailRepositoryImpl(emailMapper);
@@ -151,16 +132,21 @@ class EmailCrudServiceTest {
         when(provider.getObject()).thenReturn(executions);
         when(executions.findById("900")).thenReturn(Optional.of(root));
         SubAgentCompleteNotifier notifier = new SubAgentCompleteNotifier(provider, service);
+        String finalText = "验收报告：.lingxi/qa-report.md\n" + "验收证据与结论。".repeat(600);
+        child.setAiMessage(AiMessageEntity.builder().text(finalText).thinking("不转交的思考内容").build());
         notifier.notifyCommander(child);
         notifier.notifyCommander(child);
         List<Message> appended = new ArrayList<>();
         LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
                 new ExecutionControlSignal("900"), 0, appended::addAll);
-        AgenticLoopInterceptor interceptor = new AgenticLoopInterceptor(service);
+        EmailLoopInterceptor interceptor = new EmailLoopInterceptor(service, new MailInputSource(service));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appended.size());
         assertTrue(appended.getFirst().text().contains("成员 @8 的子任务已完成"));
         assertTrue(appended.getFirst().text().contains("协作消息"));
+        assertTrue(appended.getFirst().text().contains("【系统自动通知】"));
+        assertTrue(appended.getFirst().text().contains("子 Agent 最终答复（系统转交原文）：\n" + finalText));
+        assertFalse(appended.getFirst().text().contains("不转交的思考内容"));
         notifier.notifyCommander(child);
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appended.size());

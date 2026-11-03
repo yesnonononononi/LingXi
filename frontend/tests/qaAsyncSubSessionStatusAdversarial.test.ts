@@ -2,18 +2,18 @@
  * QA 独立验证的对抗用例：锁住 asyncSubSessionStatus 的 ①②③ 优先级与四态回落不变量，
  * 来源见 design-incremental §9。（仅新增本说明，未改动任何断言。）
  */
-import { test } from 'node:test';
+import {test} from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  asyncSubSessionStatus,
-  isAsyncDelegation,
-  subItemStatusDotClass,
-  subItemStatusLabel,
+    asyncSubSessionStatus,
+    isAsyncDelegation,
+    subItemStatusDotClass,
+    subItemStatusLabel,
 } from '../src/utils/asyncDelegation';
-import { buildBubbleFromTurnView } from '../src/views/chat/blockProjection';
-import type { ToolCallTrace } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
+import {buildBubbleFromTurnView} from '../src/views/chat/blockProjection';
+import type {ToolCallTrace} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
 
 /**
  * 交付总监定点复验（QA 严过关）——最终形态 `asyncSubSessionStatus` 的四组对抗用例。

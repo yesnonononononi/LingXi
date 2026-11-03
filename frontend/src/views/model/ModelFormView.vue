@@ -1,13 +1,13 @@
 <script setup lang='ts'>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { ModelAPI, ProviderAPI } from '../../services/api';
-import { useTheme } from '../../composables/useTheme';
-import { useConfirm } from '../../composables/useConfirm';
-import type { OpenAIModelItem, ModelConfigPayload, ProviderConfigVO } from '../../types/chat';
-import ModelVisionField from '../../components/model/ModelVisionField.vue';
-import { isOk } from '../../utils/api';
-import { t } from '../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {useRoute, useRouter} from 'vue-router';
+import {ModelAPI, ProviderAPI} from '../../services/api';
+import {useTheme} from '../../composables/useTheme';
+import {useConfirm} from '../../composables/useConfirm';
+import type {ModelConfigPayload, OpenAIModelItem, ProviderConfigVO} from '../../types/chat';
+import ModelAdvancedOptions from '../../components/model/ModelAdvancedOptions.vue';
+import {isOk} from '../../utils/api';
+import {t} from '../../i18n';
 
 const route = useRoute();
 const router = useRouter();
@@ -20,7 +20,7 @@ const { isDark, toggleTheme } = useTheme();
 const modelId = computed(() => String(route.params.id ?? ''));
 const isEdit = computed(() => modelId.value !== '');
 
-const emptyForm = () => ({ modelName: '', baseUrl: '', apiKey: '', vision: false,
+const emptyForm = () => ({ modelName: '', baseUrl: '', apiKey: '', vision: false, provider: '',
   useProvider: true, providerConfigId: '' as string | number });
 const form = ref(emptyForm());
 const providers = ref<ProviderConfigVO[]>([]);
@@ -63,6 +63,7 @@ const loadDetail = async () => {
     if (isOk(res.code) && res.data) {
       form.value = {
         vision: res.data.vision,
+        provider: res.data.provider ?? '',
         useProvider: res.data.useProvider,
         providerConfigId: res.data.providerConfigId ?? '',
         modelName: res.data.modelName ?? '',
@@ -109,6 +110,7 @@ const submit = async () => {
     // apiKey 留空时不携带该字段（「保留」），带值即替换（「新增/替换」）；清除走 clearKey
     const payload: ModelConfigPayload = {
       vision: form.value.vision,
+      provider: form.value.provider,
       useProvider: form.value.useProvider,
       providerConfigId: form.value.providerConfigId || 0,
       modelName: form.value.modelName.trim(),
@@ -410,7 +412,7 @@ onBeforeUnmount(() => {
             >{{ clearing ? t('model.clearing') : t('model.clearKey') }}</button>
           </div>
 
-          <ModelVisionField v-model="form.vision" :is-dark="isDark" />
+          <ModelAdvancedOptions v-model:vision="form.vision" v-model:provider="form.provider" :is-dark="isDark" />
           <p v-if='formError' class='text-lx-fs-sm text-red-400'>{{ formError }}</p>
 
                     <div class='flex justify-end gap-2 pt-2'>

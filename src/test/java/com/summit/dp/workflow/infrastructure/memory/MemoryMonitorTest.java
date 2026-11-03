@@ -8,15 +8,23 @@ import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
+import com.summit.core.runtime.loop.LoopInterceptorProcessor;
 import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
+import com.summit.core.compact.Tokenizer;
+import com.summit.harness.springbootautoconfigure.config.InterceptorConfig;
+import com.summit.harness.springbootautoconfigure.config.execution.ExecutionRuntimeConfig;
+import com.summit.harness.springbootautoconfigure.loop.LoopInterceptorHandler;
+import com.summit.runtime.loop.LoopInterceptorFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
 import org.springframework.core.env.MapPropertySource;
@@ -31,15 +39,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class MemoryMonitorTest {
     private static final String PROJECT_MEMORY = ".lingxi/memory/consistent/memory.md";
@@ -59,71 +61,46 @@ class MemoryMonitorTest {
     }
 
     @Test
-    void usesIndependentTokenLimitsAndOnlyRemindsAboveTheBoundary() throws IOException {
-        write(globalMemory, "a".repeat(6));
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
-        MemoryMonitor monitor = monitor();
-
-        List<SystemMessageEntity> projectOnly = monitor.checkMemoryLimits(projectRoot.toString());
-        assertEquals(1, projectOnly.size());
-        assertTrue(projectOnly.getFirst().text().contains("项目长期记忆文件：" + projectRoot.resolve(PROJECT_MEMORY)));
-        assertTrue(projectOnly.getFirst().text().contains("当前估算 12 token，上限 10 token"));
-
-        write(globalMemory, "a".repeat(11));
-        assertEquals(2, monitor.checkMemoryLimits(projectRoot.toString()).size());
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(5));
-        List<SystemMessageEntity> globalOnly = monitor.checkMemoryLimits(projectRoot.toString());
-        assertEquals(1, globalOnly.size());
-        assertTrue(globalOnly.getFirst().text().contains("全局长期记忆文件：" + globalMemory));
+    void userLimitOnlyRemindsAboveTheBoundary() throws IOException {
         write(globalMemory, "a".repeat(10));
-        assertTrue(monitor.checkMemoryLimits(projectRoot.toString()).isEmpty());
+        assertTrue(monitor().checkMemoryLimits().isEmpty());
+        write(globalMemory, "a".repeat(11));
+        List<SystemMessageEntity> reminders = monitor().checkMemoryLimits();
+        assertEquals(1, reminders.size());
+        assertTrue(reminders.getFirst().text().contains("用户长期记忆文件：" + globalMemory));
+        assertTrue(reminders.getFirst().text().contains("当前估算 22 token，上限 20 token"));
     }
 
     @Test
     void missingFilesAndDisabledLimitsDoNotReadContent() throws IOException {
-        assertTrue(monitor().checkMemoryLimits(projectRoot.toString()).isEmpty());
+        assertTrue(monitor().checkMemoryLimits().isEmpty());
         write(globalMemory, "超限".repeat(20));
         write(projectRoot.resolve(PROJECT_MEMORY), "超限".repeat(20));
-        MemoryMonitor disabled = new MemoryMonitor(estimator, globalMemory.toString(), 0, PROJECT_MEMORY, -1);
-        assertTrue(disabled.checkMemoryLimits(projectRoot.toString()).isEmpty());
+        MemoryMonitor disabled = new MemoryMonitor(estimator, globalMemory.toString(), 0);
+        assertTrue(disabled.checkMemoryLimits().isEmpty());
         verifyNoInteractions(estimator);
     }
 
     @Test
-    void missingOrRelativeWorkspaceSkipsProjectButStillChecksGlobal() throws IOException {
-        write(globalMemory, "a".repeat(11));
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
-        for (String workDir : new String[] { null, "", "  ", "relative-project" }) {
-            List<SystemMessageEntity> reminders = monitor().checkMemoryLimits(workDir);
-            assertEquals(1, reminders.size());
-            assertTrue(reminders.getFirst().text().contains("全局长期记忆文件"));
-        }
-    }
-
-    @Test
-    void absoluteAndEscapingProjectConfigurationCannotReadAnotherDirectory() throws IOException {
-        Path outside = directory.resolve("outside.md");
-        write(outside, "a".repeat(20));
-        for (String location : List.of(outside.toString(), "../outside.md")) {
-            MemoryMonitor monitor = new MemoryMonitor(estimator, "", 20, location, 10);
-            assertTrue(monitor.checkMemoryLimits(projectRoot.toString()).isEmpty());
-        }
+    void legacyProjectFileAndWikiBodiesAreNotLoadedByTheUserMemoryMonitor() throws IOException {
+        write(projectRoot.resolve(PROJECT_MEMORY), "旧单文件".repeat(1000));
+        write(projectRoot.resolve(".lingxi/memory/wiki/storage.md"), "模块正文".repeat(1000));
+        assertTrue(monitor().checkMemoryLimits().isEmpty());
         verifyNoInteractions(estimator);
     }
 
+
+
     @Test
-    void unreadableGlobalContentDoesNotHideTheProjectReminder() throws IOException {
+    void unreadableUserMemoryDoesNotBlockTheConversation() throws IOException {
         write(globalMemory, "placeholder");
         Files.write(globalMemory, new byte[] { (byte) 0xc3, 0x28 });
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
-        List<SystemMessageEntity> reminders = monitor().checkMemoryLimits(projectRoot.toString());
-        assertEquals(1, reminders.size());
-        assertTrue(reminders.getFirst().text().contains("项目长期记忆文件"));
+        assertTrue(monitor().checkMemoryLimits().isEmpty());
     }
 
     @Test
-    void loopHookUsesTheExecutionWorkspaceAndDoesNotAppendAgainOnTheNextRound() throws IOException {
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
+    void loopHookChecksUserMemoryAndDoesNotAppendAgainOnTheNextRound() throws IOException {
+        write(globalMemory, "b".repeat(11));
         Execution execution = execution(projectRoot);
         AtomicInteger appends = new AtomicInteger();
         LoopContext context = context(execution, appends);
@@ -131,7 +108,7 @@ class MemoryMonitorTest {
 
         assertSame(InterceptorResult.NONE, interceptor.onBeforeModelInvoke(context));
         assertEquals(3, execution.getMessages().size());
-        assertTrue(execution.getMessages().getLast().text().contains(projectRoot.resolve(PROJECT_MEMORY).toString()));
+        assertTrue(execution.getMessages().getLast().text().contains(globalMemory.toString()));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appends.get());
         assertEquals(3, execution.getMessages().size());
@@ -139,7 +116,7 @@ class MemoryMonitorTest {
 
     @Test
     void fileChangesReplaceRemindersAndCompactedFilesRemoveThemWithoutTouchingUserText() throws IOException {
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
+        write(globalMemory, "b".repeat(11));
         Execution execution = execution(projectRoot);
         MemoryMonitorInterceptor interceptor = new MemoryMonitorInterceptor(monitor());
         LoopContext context = context(execution, new AtomicInteger());
@@ -148,11 +125,11 @@ class MemoryMonitorTest {
         UserMessageEntity user = UserMessageEntity.from(first);
         execution.getMessages().add(user);
 
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(7));
+        write(globalMemory, "b".repeat(12));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(4, execution.getMessages().size());
-        assertTrue(execution.getMessages().getLast().text().contains("当前估算 14 token"));
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(5));
+        assertTrue(execution.getMessages().getLast().text().contains("当前估算 24 token"));
+        write(globalMemory, "b".repeat(10));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(3, execution.getMessages().size());
         assertEquals(List.of("业务规则", "用户任务", first), execution.getMessages().stream().map(Message::text).toList());
@@ -161,7 +138,7 @@ class MemoryMonitorTest {
 
     @Test
     void checkpointRestoreKeepsDeduplicationAndMissingContextGetsTheReminderAgain() throws IOException {
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
+        write(globalMemory, "b".repeat(11));
         Execution execution = execution(projectRoot);
         MemoryMonitorInterceptor interceptor = new MemoryMonitorInterceptor(monitor());
         interceptor.onBeforeModelInvoke(context(execution, new AtomicInteger()));
@@ -179,25 +156,7 @@ class MemoryMonitorTest {
         assertEquals(3, restored.getMessages().size());
     }
 
-    @Test
-    void singletonDoesNotMixDifferentExecutionWorkspaces() throws IOException {
-        Path otherRoot = Files.createDirectories(directory.resolve("other-project"));
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(6));
-        write(otherRoot.resolve(PROJECT_MEMORY), "c".repeat(3));
-        MemoryMonitorInterceptor interceptor = new MemoryMonitorInterceptor(monitor());
-        Execution first = execution(projectRoot);
-        Execution second = execution(otherRoot);
-        interceptor.onBeforeModelInvoke(context(first, new AtomicInteger()));
-        interceptor.onBeforeModelInvoke(context(second, new AtomicInteger()));
-        assertEquals(3, first.getMessages().size());
-        assertEquals(2, second.getMessages().size());
 
-        write(otherRoot.resolve(PROJECT_MEMORY), "c".repeat(8));
-        interceptor.onBeforeModelInvoke(context(second, new AtomicInteger()));
-        assertEquals(3, second.getMessages().size());
-        assertTrue(second.getMessages().getLast().text().contains(otherRoot.resolve(PROJECT_MEMORY).toString()));
-        assertTrue(first.getMessages().getLast().text().contains(projectRoot.resolve(PROJECT_MEMORY).toString()));
-    }
 
     @Test
     void loopHookWithoutWorkspaceStillChecksGlobalAndAppendFailureIsNotSwallowed() throws IOException {
@@ -206,9 +165,7 @@ class MemoryMonitorTest {
         MemoryMonitorInterceptor interceptor = new MemoryMonitorInterceptor(monitor());
         interceptor.onBeforeModelInvoke(context(execution, new AtomicInteger()));
         assertEquals(3, execution.getMessages().size());
-        assertTrue(execution.getMessages().getLast().text().contains("全局长期记忆文件"));
-        assertEquals(-825, interceptor.order());
-        assertFalse(interceptor.catchErr());
+        assertTrue(execution.getMessages().getLast().text().contains("用户长期记忆文件"));
 
         Execution fresh = execution(null);
         LoopContext failing = LoopContext.withCompactionCounter(LoopMessages.builder().execution(fresh).build(),
@@ -217,38 +174,95 @@ class MemoryMonitorTest {
     }
 
     @Test
-    void realApplicationYamlWiresMonitorAndRegistersTheLoopExtension() throws IOException {
+    void realYamlSeparatesThreeMemoryLayersAndRemovesTheOldProjectFileConfiguration() throws IOException {
         write(globalMemory, "a".repeat(1501));
-        write(projectRoot.resolve(PROJECT_MEMORY), "b".repeat(1001));
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             for (PropertySource<?> source : new YamlPropertySourceLoader().load("应用配置", new ClassPathResource("application.yaml"))) {
                 context.getEnvironment().getPropertySources().addLast(source);
             }
-            assertEquals("3000", context.getEnvironment().getProperty("lingxi.memory.project.max-tokens"));
+            assertEquals("3000", context.getEnvironment().getProperty("lingxi.memory.user.max-tokens"));
+            assertEquals(".lingxi/memory/wiki", context.getEnvironment().getProperty("lingxi.memory.wiki.relative-location"));
+            assertEquals(".lingxi/memory/work", context.getEnvironment().getProperty("lingxi.memory.work.relative-location"));
+            assertTrue(context.getEnvironment().getProperty("lingxi.memory.user.location").endsWith("/.lingxi/memory/user/memory.md"));
+            assertNull(context.getEnvironment().getProperty("lingxi.memory.project.relative-location"));
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("记忆测试", Map.of(
-                    "lingxi.memory.global.location", globalMemory.toString(), "project.root", projectRoot.toString(),
-                    "lingxi.memory.project.max-tokens", 2000)));
+                    "lingxi.memory.user.location", globalMemory.toString(), "lingxi.memory.user.max-tokens", 2000)));
             context.registerBean(PropertySourcesPlaceholderConfigurer.class);
             context.registerBean(TokenEstimator.class, () -> estimator);
             context.scan("com.summit.dp.workflow.infrastructure.memory");
             context.refresh();
-
-            List<SystemMessageEntity> reminders = context.getBean(MemoryMonitor.class).checkMemoryLimits(projectRoot.toString());
-            assertEquals(2, reminders.size());
+            List<SystemMessageEntity> reminders = context.getBean(MemoryMonitor.class).checkMemoryLimits();
+            assertEquals(1, reminders.size());
             assertTrue(reminders.getFirst().text().contains("上限 2000 token"));
-            assertTrue(reminders.getLast().text().contains("上限 3000 token"));
-            assertEquals(1, context.getBeansOfType(LoopInterceptor.class).size());
-            String prompt = context.getEnvironment().getProperty("lingxi.system-prompt");
-            assertTrue(prompt.contains(globalMemory.toString()));
-            // 提示词模板已把「项目长期记忆」从内嵌绝对路径改为「工作区目录/相对路径」——
-            // Agent 的工作区在运行期才确定，写死绝对路径会随会话漂移。此处按模板现状断言。
-            assertTrue(prompt.contains("工作区目录/" + PROJECT_MEMORY));
-            assertTrue(prompt.contains("项目长期记忆"));
+            assertNotNull(context.getBean(MemoryMonitorInterceptor.class));
+            assertTrue(context.getBeansOfType(LoopInterceptor.class).isEmpty());
+            String instructions = context.getEnvironment().getProperty("lingxi.memory.instructions");
+            assertTrue(instructions.contains(globalMemory.toString()));
+            assertTrue(instructions.contains("模块名.md"));
+            assertTrue(instructions.contains(".lingxi/memory/wiki"));
+            assertTrue(instructions.contains(".lingxi/memory/work/yyyy-MM-dd.md"));
+            assertTrue(instructions.contains("search_wiki"));
+            assertTrue(instructions.contains("load_memory"));
+            assertTrue(instructions.contains("最多提供 30 条"));
         }
     }
 
     private MemoryMonitor monitor() {
-        return new MemoryMonitor(estimator, globalMemory.toString(), 20, PROJECT_MEMORY, 10);
+        return new MemoryMonitor(estimator, globalMemory.toString(), 20);
+    }
+
+    @Test
+    void annotatedMemoryHookRegistersAfterProcessorCreationAndKeepsReminderLifecycle() throws IOException {
+        write(globalMemory, "b".repeat(11));
+        try (AnnotationConfigApplicationContext spring = annotationContext()) {
+            LoopInterceptorProcessor processor = spring.getBean(LoopInterceptorProcessor.class);
+            LoopInterceptorFactory factory = spring.getBean(LoopInterceptorFactory.class);
+            assertFalse(factory.get().containsKey("memoryMonitorInterceptor"));
+            spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
+            LoopInterceptor registered = factory.get().get("memoryMonitorInterceptor");
+            assertNotNull(registered);
+            assertEquals(-825, registered.order());
+            assertFalse(registered.catchErr());
+
+            Execution execution = execution(projectRoot);
+            AtomicInteger appends = new AtomicInteger();
+            LoopContext payload = context(execution, appends);
+            assertSame(InterceptorResult.NONE, processor.onBeforeModelInvoke(payload));
+            assertEquals(3, execution.getMessages().size());
+            assertTrue(execution.getMessages().getLast().text().contains(globalMemory.toString()));
+            processor.onBeforeModelInvoke(payload);
+            assertEquals(1, appends.get());
+
+            write(globalMemory, "b".repeat(10));
+            processor.onBeforeModelInvoke(payload);
+            assertEquals(List.of("业务规则", "用户任务"), execution.getMessages().stream().map(Message::text).toList());
+        }
+    }
+
+    @Test
+    void annotatedMemoryHookPropagatesAppendFailuresThroughTheProcessor() throws IOException {
+        write(globalMemory, "b".repeat(11));
+        try (AnnotationConfigApplicationContext spring = annotationContext()) {
+            spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
+            Execution execution = execution(projectRoot);
+            IllegalStateException failure = new IllegalStateException("注入失败");
+            LoopContext payload = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
+                    new ExecutionControlSignal(execution.getId()), () -> 0, messages -> { throw failure; });
+
+            assertSame(failure, assertThrows(IllegalStateException.class,
+                    () -> spring.getBean(LoopInterceptorProcessor.class).onBeforeModelInvoke(payload)));
+        }
+    }
+
+    private AnnotationConfigApplicationContext annotationContext() {
+        AnnotationConfigApplicationContext spring = new AnnotationConfigApplicationContext();
+        spring.registerBean(MemoryMonitor.class, this::monitor);
+        spring.registerBean(Tokenizer.class, () -> mock(Tokenizer.class));
+        spring.register(MemoryMonitorInterceptor.class, InterceptorConfig.class);
+        spring.registerBean(LoopInterceptorProcessor.class, () -> new ExecutionRuntimeConfig()
+                .defaultLoopInterceptorProcessor(spring.getBean(LoopInterceptorFactory.class)));
+        spring.refresh();
+        return spring;
     }
 
     private Execution execution(Path root) {
@@ -259,7 +273,8 @@ class MemoryMonitorTest {
     }
 
     private LoopContext context(Execution execution, AtomicInteger appends) {
-        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), null, () -> 0,
+        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
+                new ExecutionControlSignal(execution.getId()), () -> 0,
                 messages -> {
                     appends.incrementAndGet();
                     execution.getMessages().addAll(messages);

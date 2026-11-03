@@ -1,13 +1,14 @@
-import { computed, onMounted, ref, watch } from 'vue';
-import { useUserConfigStore } from '../../../stores/userConfigStore';
-import { ModelAPI } from '../../../services/model';
-import { CompactionSettingsAPI } from '../../../services/compaction';
-import { isOk } from '../../../utils/api';
-import { t } from '../../../i18n';
-import type { CompactionParamsVO, ProviderModelGroupVO } from '../../../types/chat';
+import {computed, onMounted, ref, watch} from 'vue';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
+import {ModelAPI} from '../../../services/model';
+import {CompactionSettingsAPI} from '../../../services/compaction';
+import {isOk} from '../../../utils/api';
+import {t} from '../../../i18n';
+import type {CompactionParamsVO, ProviderModelGroupVO} from '../../../types/chat';
+import {isImageModel} from '../../../utils/modelCapabilities';
 
 /**
- * 压缩模型配置页的状态与动作。
+ * 其它模型配置页的状态与动作，压缩和生图独立保存。
  *
  * <p>开关与下拉是**同一件事**：持久化的 compactModelId 非空即「已启用」。
  * 不再单独存一个 enabled 布尔 —— 两份状态必然有一天不同步，
@@ -29,7 +30,39 @@ export function useCompactionTab() {
   }))));
 
   /** 只有凭据齐备的模型能当压缩模型：选一个没有密钥的行，压缩必然在对话中途炸。 */
-  const readyModels = computed(() => models.value.filter(entry => entry.model.credentialConfigured));
+  const readyModels = computed(() => models.value.filter(entry => entry.model.credentialConfigured && !isImageModel(entry.model)));
+  const imageSelectedId = computed(() => store.imageModelId == null ? '' : String(store.imageModelId));
+  const imageOptions = computed(() => [{value:'',label:t('settings.compaction.imageDisabled')},
+    ...models.value.filter(entry => entry.model.credentialConfigured && isImageModel(entry.model)).map(entry => ({
+      value:String(entry.model.id),label:buildModelLabel(entry.providerName,entry.model.modelName),desc:entry.model.baseUrl ?? undefined,
+    }))]);
+  const imageUnavailable = computed(() => imageSelectedId.value !== '' && !imageOptions.value.some(option => option.value === imageSelectedId.value));
+  const imageDisabled = computed(() => !store.loaded || loading.value || store.savingKeys.has('imageModelId') || store.savingKeys.has('imageGenerationMaxCalls'));
+  const imageSaveError = ref('');
+  const imageLimitDraft = ref('');
+  watch(() => store.imageGenerationMaxCalls, value => { imageLimitDraft.value = value == null ? '' : String(value); }, {immediate:true});
+
+  async function chooseImage(value: string) {
+    if (imageDisabled.value) return;
+    imageSaveError.value = '';
+    const id = value || null;
+    if (!await store.patch('imageModelId', id, {imageModelId:id})) imageSaveError.value = t('settings.compaction.saveFailed');
+  }
+
+  async function saveImageLimit() {
+    if (imageDisabled.value) return;
+    imageSaveError.value = '';
+    const raw = String(imageLimitDraft.value ?? '');
+    const value = Number(raw);
+    if (raw.trim() === '' || !Number.isInteger(value) || value < 0 || value > 20) {
+      imageSaveError.value = t('settings.compaction.imageLimitError');
+      return;
+    }
+    if (!await store.patch('imageGenerationMaxCalls', value, {imageGenerationMaxCalls:value})) {
+      imageSaveError.value = t('settings.compaction.saveFailed');
+    }
+    imageLimitDraft.value = store.imageGenerationMaxCalls == null ? '' : String(store.imageGenerationMaxCalls);
+  }
 
   const options = computed(() => readyModels.value.map(entry => ({
     value: String(entry.model.id),
@@ -107,6 +140,7 @@ export function useCompactionTab() {
 
   return {
     store,
+    imageSelectedId, imageOptions, imageUnavailable, imageDisabled, imageSaveError, imageLimitDraft, chooseImage, saveImageLimit,
     params,
     loading,
     loadError,

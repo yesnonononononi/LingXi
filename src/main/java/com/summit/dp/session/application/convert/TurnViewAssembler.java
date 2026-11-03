@@ -8,15 +8,8 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
-import com.summit.dp.shared.vo.block.Block;
-import com.summit.dp.shared.vo.block.ResumeSupplementVO;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.vo.block.BlockOrder;
-import com.summit.dp.shared.vo.block.BlockStatus;
-import com.summit.dp.shared.vo.block.BodyPlacement;
-import com.summit.dp.shared.vo.block.TextBlock;
-import com.summit.dp.shared.vo.block.ThinkingBlock;
-import com.summit.dp.shared.vo.block.ToolBlock;
+import com.summit.dp.shared.vo.block.*;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
@@ -25,12 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 一轮的 Block 装配器：{@code session_message} + {@code chat_turn} + {@code tool_call}
@@ -142,11 +130,13 @@ public class TurnViewAssembler {
 
         // 正文块：isBody 由「无工具请求 + 本轮收尾 + 轮次完成」三者共同判定（唯一规则见 BodyPlacement）。
         String text = aiMessage == null ? aiRow.getText() : aiMessage.text();
-        if (text != null && !text.isBlank()) {
+        List<String> imageUrls = aiMessage == null || aiMessage.getImages() == null ? List.of()
+                : aiMessage.getImages().stream().map(image -> image.getUrl().toString()).toList();
+        if ((text != null && !text.isBlank()) || !imageUrls.isEmpty()) {
             boolean isBody = BodyPlacement.resolve(requests, responseId.equals(concludingResponseId),
                     executionCompleted);
             blocks.add(new TextBlock(TextBlock.identity(responseId), responseId,
-                    BlockOrder.text(), BlockStatus.COMPLETE, isBody, text));
+                    BlockOrder.text(), BlockStatus.COMPLETE, isBody, text == null ? "" : text, imageUrls));
         }
 
         for (ToolCallRequest request : requests) {

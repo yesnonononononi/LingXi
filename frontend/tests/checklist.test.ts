@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effectScope, ref } from 'vue';
-import { useChecklist } from '../src/views/chat/useChecklist';
-import { ChecklistAPI } from '../src/services/checklist';
-import { isChecklistSnapshot, type ChecklistSnapshot } from '../src/types/checklist';
-import { AgentToolName } from '../src/utils/toolNames';
+import {effectScope, ref} from 'vue';
+import {useChecklist} from '../src/views/chat/useChecklist';
+import {ChecklistAPI} from '../src/services/checklist';
+import {type ChecklistSnapshot, isChecklistSnapshot} from '../src/types/checklist';
+import {AgentToolName} from '../src/utils/toolNames';
 import http from '../src/services/interceptor';
-import type { Result } from '../src/services/types';
+import type {Result} from '../src/services/types';
 
 const ROOT = '9007199254740993';
 const OTHER = '9007199254740995';

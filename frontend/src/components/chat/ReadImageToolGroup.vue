@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import type { ReadToolImage } from '../../utils/readImageTools';
-import { resolveApiUrl } from '../../utils/apiConfig';
-import { t } from '../../i18n';
+import {ref} from 'vue';
+import type {ReadToolImage} from '../../utils/readImageTools';
+import {resolveApiUrl} from '../../utils/apiConfig';
+import {t} from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{ images: ReadToolImage[]; sessionId: string | number; isDark: boolean }>();

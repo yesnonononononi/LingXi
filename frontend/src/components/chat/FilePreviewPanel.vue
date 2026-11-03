@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue';
-import type { FilePreviewTab } from '../../types/filePreview';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { t } from '../../i18n';
+import {computed, defineAsyncComponent, onBeforeUnmount, ref} from 'vue';
+import type {FilePreviewTab} from '../../types/filePreview';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {t} from '../../i18n';
 
 const props = defineProps<{
   tabs: FilePreviewTab[];

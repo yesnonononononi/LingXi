@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveContextUsageText, resolveContextRingDash } from '../src/views/chat/contextUsagePresentation';
-import { setPreference } from '../src/i18n';
+import {resolveContextRingDash, resolveContextUsageText} from '../src/views/chat/contextUsagePresentation';
+import {setPreference} from '../src/i18n';
 
 setPreference('zh-CN');
 

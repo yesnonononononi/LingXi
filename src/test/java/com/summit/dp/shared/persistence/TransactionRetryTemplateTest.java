@@ -1,6 +1,6 @@
 package com.summit.dp.shared.persistence;
 
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.dao.CannotAcquireLockException;
@@ -9,12 +9,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 共享整笔重试工具的守卫用例：只对锁冲突重试、有上限、每次尝试是新事务。
@@ -29,7 +28,7 @@ class TransactionRetryTemplateTest {
     @Test
     @Timeout(60)
     void retriesLockConflictWithFreshTransactionsUntilSuccess() {
-        SqliteTestDatabase database = SqliteTestDatabase.create("retry-template-success");
+        H2TestDatabase database = H2TestDatabase.create("retry-template-success");
         try {
             PlatformTransactionManager manager = new DataSourceTransactionManager(database);
             TransactionRetryTemplate template = new TransactionRetryTemplate(manager, "守卫用例", 4, 0L);
@@ -37,7 +36,7 @@ class TransactionRetryTemplateTest {
             String result = template.execute(() -> {
                 int attempt = attempts.incrementAndGet();
                 if (attempt < 3) {
-                    throw new CannotAcquireLockException("模拟 SQLITE_BUSY_SNAPSHOT");
+                    throw new CannotAcquireLockException("模拟 H2 锁超时");
                 }
                 return "第" + attempt + "次成功";
             });
@@ -56,7 +55,7 @@ class TransactionRetryTemplateTest {
     @Test
     @Timeout(60)
     void doesNotRetryNonLockFailure() {
-        SqliteTestDatabase database = SqliteTestDatabase.create("retry-template-business");
+        H2TestDatabase database = H2TestDatabase.create("retry-template-business");
         try {
             PlatformTransactionManager manager = new DataSourceTransactionManager(database);
             TransactionRetryTemplate template = new TransactionRetryTemplate(manager, "守卫用例", 4, 0L);
@@ -76,7 +75,7 @@ class TransactionRetryTemplateTest {
     @Test
     @Timeout(60)
     void givesUpAfterMaxAttemptsAndPropagatesTheFailure() {
-        SqliteTestDatabase database = SqliteTestDatabase.create("retry-template-exhaust");
+        H2TestDatabase database = H2TestDatabase.create("retry-template-exhaust");
         try {
             PlatformTransactionManager manager = new DataSourceTransactionManager(database);
             TransactionRetryTemplate template = new TransactionRetryTemplate(manager, "守卫用例", 3, 0L);
@@ -98,7 +97,7 @@ class TransactionRetryTemplateTest {
     @Test
     @Timeout(60)
     void joinsCallerTransactionWithoutRetrying() {
-        SqliteTestDatabase database = SqliteTestDatabase.create("retry-template-caller-tx");
+        H2TestDatabase database = H2TestDatabase.create("retry-template-caller-tx");
         try {
             PlatformTransactionManager manager = new DataSourceTransactionManager(database);
             TransactionRetryTemplate template = new TransactionRetryTemplate(manager, "守卫用例", 4, 0L);
@@ -127,31 +126,19 @@ class TransactionRetryTemplateTest {
         assertEquals(1, attempts.get());
     }
 
-    /** 锁冲突判定必须认得 SQLite 的错误码与文本，并且不把普通异常误判成锁冲突。 */
     @Test
-    void lockConflictDetectionCoversSqliteCodesAndTextOnly() {
+    void onlyH2LockTimeoutAndDeadlockAreRetried() {
         assertTrue(TransactionRetryTemplate.isLockConflict(new CannotAcquireLockException("锁冲突")));
         assertTrue(TransactionRetryTemplate.isLockConflict(new RuntimeException("包装",
-                new SQLiteBusyException(5, "database is locked"))));
+                new SQLException("锁超时", "HYT00", 50200))));
+        assertTrue(TransactionRetryTemplate.isLockConflict(new SQLException("死锁", "40001", 40001)));
         assertTrue(TransactionRetryTemplate.isLockConflict(
-                new SQLiteBusyException(517, "SQLITE_BUSY_SNAPSHOT")));
-        assertTrue(TransactionRetryTemplate.isLockConflict(new SQLException("database is locked")));
+                new DeadlockLoserDataAccessException("死锁", null)));
+        assertFalse(TransactionRetryTemplate.isLockConflict(new SQLException("旧错误码", null, 517)));
+        assertFalse(TransactionRetryTemplate.isLockConflict(new SQLException("database is locked")));
+        assertFalse(TransactionRetryTemplate.isLockConflict(new SQLTimeoutException("查询超时", "HYT00", 57014)));
         assertFalse(TransactionRetryTemplate.isLockConflict(new IllegalArgumentException("业务失败")));
-        assertFalse(TransactionRetryTemplate.isLockConflict(new SQLException("no such table", "42S02", 1)));
-    }
-
-    /** 携带 SQLite 错误码的 SQLException 替身：spring-jdbc 之外不引依赖。 */
-    private static final class SQLiteBusyException extends SQLException {
-        private final int errorCode;
-
-        SQLiteBusyException(int errorCode, String message) {
-            super(message);
-            this.errorCode = errorCode;
-        }
-
-        @Override
-        public int getErrorCode() {
-            return errorCode;
-        }
+        assertFalse(TransactionRetryTemplate.isLockConflict(new SQLException("语法错误", "42S02", 42102)));
+        assertFalse(TransactionRetryTemplate.isLockConflict(new SQLException("IO 失败", "90028", 90028)));
     }
 }

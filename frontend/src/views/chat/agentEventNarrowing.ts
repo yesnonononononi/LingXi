@@ -1,5 +1,5 @@
-import { isAgentEventType, type AgentEvent, type SseEvent } from '../../types/Event';
-import type { RawSseEvent } from '../../services/sse';
+import {type AgentEvent, isAgentEventType, type SseEvent} from '../../types/Event';
+import type {RawSseEvent} from '../../services/sse';
 
 /**
  * 把传输层原始事件收窄成业务事件（发送流与会话级流共用同一收窄口径）。

@@ -1,12 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
@@ -16,17 +9,22 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
@@ -39,25 +37,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 协作式委派的编排守卫。
@@ -158,7 +142,7 @@ class CallSubAgentAsyncDelegationTest {
     void asyncDelegationReturnsStructuredJsonImmediately() throws Exception {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(true);
 
         long startedAt = System.currentTimeMillis();
         ToolExecuteResult result = tool.execute(toolExecution(args()));
@@ -206,7 +190,7 @@ class CallSubAgentAsyncDelegationTest {
     void cancelledRootFailsClosedWithoutSubmit() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(false);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(false);
 
         ToolExecuteResult result = tool.execute(toolExecution(args()));
 
@@ -221,7 +205,7 @@ class CallSubAgentAsyncDelegationTest {
     void rejectedSubmissionRevokesRegistration() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(true);
         org.mockito.Mockito.doThrow(new java.util.concurrent.RejectedExecutionException("qa: rejected"))
                 .when(asyncSubmitter).submit(any(AsyncDelegationTask.class));
 
@@ -230,7 +214,7 @@ class CallSubAgentAsyncDelegationTest {
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
         assertTrue(result.getToolOutput().contains("委派提交失败"));
         ArgumentCaptor<Long> childCaptor = ArgumentCaptor.forClass(Long.class);
-        verify(registry).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture());
+        verify(registry).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture(), any());
         assertNotNull(childCaptor.getValue(), "撤销的是本次登记的子会话");
     }
 
@@ -246,7 +230,7 @@ class CallSubAgentAsyncDelegationTest {
 
         assertFalse(result.isSuccess(), "缺模型必须失败");
         verify(asyncSubmitter, never()).submit(any(AsyncDelegationTask.class));
-        verify(registry, never()).registerPendingChild(any(), any());
+        verify(registry, never()).registerPendingChild(any(), any(), any(), any());
         verify(subAgent, never()).execute(any(AgentRequest.class));
     }
 }

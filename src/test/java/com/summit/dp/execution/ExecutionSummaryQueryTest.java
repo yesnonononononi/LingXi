@@ -1,9 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
@@ -12,6 +8,8 @@ import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,9 +23,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 执行摘要的批量装配。
@@ -43,14 +39,14 @@ class ExecutionSummaryQueryTest {
 
     private static final long SESSION_ID = 11L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionQueryServiceImpl service;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionSummaryQueryTest");
+        database = H2TestDatabase.create("ExecutionSummaryQueryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
 
         MyBatisTypeHandlers.registerAll(configuration);
@@ -61,7 +57,7 @@ class ExecutionSummaryQueryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         service = new ExecutionQueryServiceImpl(repository);
@@ -79,8 +75,8 @@ class ExecutionSummaryQueryTest {
         row.setStatus(status);
         row.setStartedAt(startedAt);
         row.setCompletedAt(completedAt);
-        // 故意塞入大字符串：摘要查询若把 snapshot 一起读出来，本测试就会在断言处暴露。
-        row.setSnapshotFile("{\"marker\":\"" + "x".repeat(2048) + "\"}");
+        // 非空文件标识使摘要查询误读该列时能被断言发现。
+        row.setSnapshotFile("checkpoint-" + id);
         mapper.insert(row);
     }
 

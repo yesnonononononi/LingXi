@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { SessionBootstrapVO, SessionMessagePageVO, SessionTreeVO, SessionVO } from '../types/chat';
+import type {Result} from './types';
+import type {SessionBootstrapVO, SessionMessagePageVO, SessionTreeVO, SessionVO} from '../types/chat';
 
 export interface SessionCreateRequest {
   name: string;

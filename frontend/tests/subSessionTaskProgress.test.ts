@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { effectScope, ref } from 'vue';
-import { useSubSessionTaskProgress } from '../src/views/chat/useSubSessionTaskProgress';
-import { BackgroundTaskAPI } from '../src/services/backgroundTask';
-import { ChecklistAPI } from '../src/services/checklist';
-import type { SubSessionVO } from '../src/types/chat';
-import type { ChecklistSnapshot } from '../src/types/checklist';
-import type { BackgroundTask } from '../src/types/backgroundTask';
-import type { AgentEvent } from '../src/types/Event';
-import type { Result } from '../src/services/types';
-import { AgentToolName } from '../src/utils/toolNames';
+import {readFileSync} from 'node:fs';
+import {effectScope, ref} from 'vue';
+import {useSubSessionTaskProgress} from '../src/views/chat/useSubSessionTaskProgress';
+import {BackgroundTaskAPI} from '../src/services/backgroundTask';
+import {ChecklistAPI} from '../src/services/checklist';
+import type {SubSessionVO} from '../src/types/chat';
+import type {ChecklistSnapshot} from '../src/types/checklist';
+import type {BackgroundTask} from '../src/types/backgroundTask';
+import type {AgentEvent} from '../src/types/Event';
+import type {Result} from '../src/services/types';
+import {AgentToolName} from '../src/utils/toolNames';
 
 const ROOT = '9007199254740993';
 const SUB = '9007199254740995';

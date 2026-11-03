@@ -1,5 +1,11 @@
 # 项目协作规范（用户明确要求，持续适用）
 
+## 改写现有实现前先说明
+
+- 需要重写用户实现，或明显调整代码布局、结构时，先指出已确认的问题、说明拟改范围，再动手；不要让用户打开文件后才发现实现已大变样。
+- 默认保留原有布局与结构，围绕已确认的问题做最小修改。
+- 项目 wiki 目录在 `BusinessSystemPromptBuilder` 中构建到本次 `AgentRequest.systemPrompt`，不通过循环拦截器追加或替换上下文，避免去重状态和前缀缓存失效。
+
 ## 注释与文档：按侧分语言，不要混
 
 - **框架侧保持全英文 doc。** 指的是 `D:\code\starter` 下的框架仓（`lingxi-harness-agent`、`dev-framework-ddd-starter` 等，即 `com.summit.core.*` / `com.summit.runtime.*`），与那里的既有风格保持一致，不要改成中文。
@@ -24,7 +30,7 @@
 
 - 框架扩展点支持注册**多个** bean，运行时串成一条链：`LoopInterceptor` 由 `DefaultLoopInterceptorProcessor` 按 `order()` 升序调用，值相等的保持注册顺序。每个回调返回 `InterceptorResult`，返回非「继续」即当场终止这一轮，后续实现不再执行。
 - **异常默认被吃掉**（`catchErr()` 默认 `true`：只记一条 error 日志，不打失败整轮、也不阻断后面的实现）。会改变业务语义的动作必须显式 `catchErr()` 返回 `false` 让异常上抛 —— 判据是「吞掉之后世界是否还一致」：消费型、投影型动作吞掉等于静默丢数据，必须上抛。
-- **每个模块写自己的实现类**（邮箱注入归 `AgenticLoopInterceptor`，工具调用收尾之类归各自模块），不要把多个模块的逻辑堆进同一个类。
+- **每个模块写自己的实现类**（邮箱注入归 `EmailLoopInterceptor`，工具调用收尾之类归各自模块），不要把多个模块的逻辑堆进同一个类。
 - `order()` 越小越先；框架自己的 `DefaultLoopInterceptor` 占 `Integer.MIN_VALUE`（信号与预算判定，业务侧不要去抢），业务侧从 -900 起分段：新增实现给出自己的值，不要都取 0 —— 并列时先后只取决于 Spring 的注入顺序，不可依赖。
 - 回调签名里的 `LoopContext` 持有的是 `Execution` 实例本身（不是 id），需要执行身份时取 `context.execution()`，不要从 attributes 里绕。
 

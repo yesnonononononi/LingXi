@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { parse, compileScript } from '@vue/compiler-sfc';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {dirname, resolve} from 'node:path';
+import {compileScript, parse} from '@vue/compiler-sfc';
 import ts from 'typescript';
-import { createRenderer, nextTick, h, reactive, defineComponent } from 'vue';
-import type { DefineComponent } from 'vue';
+import type {DefineComponent} from 'vue';
+import {createRenderer, defineComponent, h, nextTick, reactive} from 'vue';
 
 interface Element {
   tag: string;

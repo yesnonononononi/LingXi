@@ -1,7 +1,7 @@
-import { computed, ref } from 'vue';
-import type { ComputedRef } from 'vue';
-import { isElectron } from '../utils/platform';
-import type { ElectronBackgroundAPI } from '../utils/platform';
+import type {ComputedRef} from 'vue';
+import {computed, ref} from 'vue';
+import type {ElectronBackgroundAPI} from '../utils/platform';
+import {isElectron} from '../utils/platform';
 
 /**
  * 主页背景偏好（**外观偏好**，只在本机，不进后端 user_configs）。

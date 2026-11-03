@@ -10,7 +10,7 @@
  *    只能在此唯一入口兼容。
  */
 
-import type { OpenAIModelItem } from '../types/chat';
+import type {OpenAIModelItem} from '../types/chat';
 
 export function parseOpenAIModelList(json: unknown): OpenAIModelItem[] {
   let rawItems: unknown[] = [];

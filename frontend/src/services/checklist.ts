@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { ChecklistSnapshot } from '../types/checklist';
+import type {Result} from './types';
+import type {ChecklistSnapshot} from '../types/checklist';
 
 export const ChecklistAPI = {
   /**

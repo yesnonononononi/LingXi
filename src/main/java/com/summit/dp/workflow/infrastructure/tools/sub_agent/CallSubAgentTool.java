@@ -4,11 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.anno.Tool;
-import com.summit.core.anno.type.ObjectValue;
-import com.summit.core.anno.type.OptionalBoolean;
-import com.summit.core.anno.type.ToolProperty;
-import com.summit.core.anno.type.Value;
-import com.summit.core.anno.type.ValueType;
+import com.summit.core.anno.type.*;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -28,10 +25,11 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgent
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
-import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import org.springframework.stereotype.Component;
+
+import java.util.Objects;
 
 /**
  * 委派工具：把一段任务交给团队里的另一个 Agent 并<b>立即受理</b>，让指挥者继续推进本轮其它工作。
@@ -45,6 +43,8 @@ import org.springframework.stereotype.Component;
  * 目录里的实际产物与验证记录为准。编排顺序里有两处不能调换：<b>组装请求必须早于登记</b>
  * （组装失败即返回错误，不产生任何登记残留）；<b>登记必须早于提交</b>（提交失败要能撤销登记，
  * 不留孤儿）。</p>
+ *
+ * NOTICE: The task dispatched by the commander will be injected into the target context as a {@link UserMessageEntity}
  */
 @AllArgsConstructor
 @Component
@@ -165,7 +165,8 @@ public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecut
         argument.setSubSessionId(target.subSessionId());
 
         // 提交前登记「待启动」：把「已受理但尚未开跑」这段窗口也计入「未结束」。
-        if (!sessionExecutionRegistry.registerPendingChild(rootSessionId, numericSubSessionId)) {
+        if (!sessionExecutionRegistry.registerPendingChild(rootSessionId, numericSubSessionId,
+                request.getExecutionId(), toolExecution.getExecutionId())) {
             return ToolExecuteResult.err("主会话已停止，取消启动子Agent");
         }
         Long rootExecutionId = ExecutionAttributes.workflowExecutionId(
@@ -175,7 +176,7 @@ public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecut
                     rootExecutionId, target, agent, argument, toolExecution, request));
         } catch (RuntimeException e) {
             // 线程池拒绝等提交失败：撤销登记，绝不谎报已委派（否则模型以为已委派而漏做）。
-            sessionExecutionRegistry.revokeChild(rootSessionId, numericSubSessionId);
+            sessionExecutionRegistry.revokeChild(rootSessionId, numericSubSessionId, request.getExecutionId());
             return ToolExecuteResult.err("委派提交失败: " + e.getMessage());
         }
         return asyncResultRenderer.render(target.subSessionId(), agent.getId(), agent.getName());

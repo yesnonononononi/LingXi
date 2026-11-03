@@ -37,8 +37,12 @@ public interface ToolCatalog {
     /** 读文件工具名 */
     String READ_FILE = "read_file";
 
+    String LOAD_MEMORY = "load_memory";
+    String SEARCH_WIKI = "search_wiki";
+
     /** 读图片工具名：把工作区里的一张图送入模型上下文 */
     String READ_IMAGE = "read_image";
+    String GENERATE_IMAGE = "generate_image";
 
     /** 改文件工具名 */
     String EDIT_FILE = "edit_file";
@@ -62,7 +66,7 @@ public interface ToolCatalog {
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
-            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE,
+            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE,
                     CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, GET_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST,
                     DELETE_CHECKLIST);
 

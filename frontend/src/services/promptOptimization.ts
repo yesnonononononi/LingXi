@@ -1,5 +1,5 @@
 import http from './interceptor';
-import type { Result } from './types';
+import type {Result} from './types';
 
 export class PromptOptimizationAPI {
   static optimize(prompt: string, modelId?: string | number, signal?: AbortSignal): Promise<Result<string>> {

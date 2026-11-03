@@ -1,5 +1,5 @@
-import { computed } from 'vue';
-import { useI18n } from '../../../i18n';
+import {computed} from 'vue';
+import {useI18n} from '../../../i18n';
 
 const messages = {
   'zh-CN': {

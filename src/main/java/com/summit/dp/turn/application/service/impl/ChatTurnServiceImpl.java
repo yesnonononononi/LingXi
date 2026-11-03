@@ -5,6 +5,7 @@ import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,11 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Consumer;
 
 /** 业务轮次应用服务实现。 */
@@ -31,8 +28,8 @@ public class ChatTurnServiceImpl implements ChatTurnService {
 
     @Override
     public long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
-                           String modelName, String modelProvider) {
-        return acceptTurn(sessionId, rootSessionId, parentTurnId, executionId, modelName, modelProvider, null, null);
+                           TurnModelSnapshot model) {
+        return acceptTurn(sessionId, rootSessionId, parentTurnId, executionId, model, null, null);
     }
 
     /**
@@ -44,15 +41,17 @@ public class ChatTurnServiceImpl implements ChatTurnService {
      */
     @Override
     public long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
-                           String modelName, String modelProvider,
-                           String commandId, String commandDigest) {
+                           TurnModelSnapshot model, String commandId, String commandDigest) {
         long turnId = IdUtil.getSnowflakeNextId();
-        ChatTurn turn = ChatTurn.accept(turnId, sessionId, parentTurnId, modelName, modelProvider);
+        ChatTurn turn = ChatTurn.accept(turnId, sessionId, parentTurnId, model);
         // 执行 ID 在 prepare 阶段就已生成，这里直接落库：观察钩子只给 executionId，
         // 若不在此刻写入，START 事件到达时就找不回本轮次（会永远停在 ACCEPTED）。
         turn.attachExecution(executionId);
         turn.attachCommand(commandId, commandDigest);
         chatTurnRepository.save(turn, rootSessionId);
+        // 档位此前只存在运行配置版本里，事后审计要翻 payload；受理时打一行，日志里就能对上。
+        log.info(LOG_PREFIX + "受理轮次: turnId={}, sessionId={}, model={}, provider={}, effort={}",
+                turnId, sessionId, turn.getModelName(), turn.getModelProvider(), turn.getReasoningEffort());
         return turnId;
     }
 

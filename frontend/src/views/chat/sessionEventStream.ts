@@ -1,8 +1,8 @@
-import type { AgentEvent } from '../../types/Event';
-import { AgentAPI } from '../../services/agent';
-import { readSseStream } from '../../services/sse';
-import { toAgentEvent } from './agentEventNarrowing';
-import { BACKGROUND_TASK_CHANGED, isBackgroundTaskChanged, type BackgroundTaskChanged } from '../../types/backgroundTask';
+import type {AgentEvent} from '../../types/Event';
+import {AgentAPI} from '../../services/agent';
+import {readSseStream} from '../../services/sse';
+import {toAgentEvent} from './agentEventNarrowing';
+import {BACKGROUND_TASK_CHANGED, type BackgroundTaskChanged, isBackgroundTaskChanged} from '../../types/backgroundTask';
 
 /** 掉线后重挂的最大尝试次数（有界，避免无限重连）。 */
 const MAX_RECONNECT_ATTEMPTS = 5;

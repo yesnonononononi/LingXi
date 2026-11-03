@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, inject, nextTick } from 'vue';
-import type { PromptCardData } from '../../types/chat';
-import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
-import { CARD_SHELL_CLASS, CARD_BODY_CLASS, CARD_ERROR_TEXT_CLASS, cardToneClass, type CardTone } from '../../utils/cardUi';
-import { canDecideCard } from '../../utils/toolCallCard';
+import {computed, inject, nextTick, ref} from 'vue';
+import type {PromptCardData} from '../../types/chat';
+import {DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
+import {
+  CARD_BODY_CLASS,
+  CARD_ERROR_TEXT_CLASS,
+  CARD_SHELL_CLASS,
+  type CardTone,
+  cardToneClass
+} from '../../utils/cardUi';
+import {canDecideCard} from '../../utils/toolCallCard';
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
-import { useI18n } from '../../i18n';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（CHOICE 澄清提问） */

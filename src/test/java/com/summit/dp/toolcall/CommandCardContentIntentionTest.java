@@ -6,9 +6,7 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * COMMAND 审批卡载荷必须携带模型声明的 {@code intention}（从 args 提取），

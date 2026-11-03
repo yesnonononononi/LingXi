@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPinia, setActivePinia } from 'pinia';
-import { ref, effectScope, nextTick, watchEffect } from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import {effectScope, nextTick, ref, watchEffect} from 'vue';
 import axios from 'axios';
 
 /**

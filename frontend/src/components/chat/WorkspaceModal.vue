@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import {computed, ref, watch} from 'vue';
 import LxModal from '../common/LxModal.vue';
-import type { WorkspaceRequest } from '../../types/chat';
-import { extractDirName } from '../../utils/path';
-import { isElectron, openDirectoryPicker } from '../../utils/platform';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import type {WorkspaceRequest} from '../../types/chat';
+import {extractDirName} from '../../utils/path';
+import {isElectron, openDirectoryPicker} from '../../utils/platform';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;

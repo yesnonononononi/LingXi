@@ -1,9 +1,5 @@
 package com.summit.dp.session;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,6 +17,8 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
 import com.summit.dp.session.infrastructure.stream.ApplicationEventStream;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
@@ -40,18 +38,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.ArrayList;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 class ApplicationSessionStateTest {
     private AnnotationConfigApplicationContext context;
@@ -231,17 +225,17 @@ class ApplicationSessionStateTest {
     @EnableTransactionManagement
     static class Config {
         @Bean(destroyMethod = "shutdown")
-        SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("ApplicationSessionStateTest");
+        H2TestDatabase database() {
+            return H2TestDatabase.create("ApplicationSessionStateTest");
         }
 
         @Bean
-        DataSourceTransactionManager transactionManager(SqliteTestDatabase database) {
+        DataSourceTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
         @Bean
-        SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
+        SqlSessionTemplate sql(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -250,7 +244,7 @@ class ApplicationSessionStateTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return SqliteTestDatabase.sqlSession(factory.getObject());
+            return H2TestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean

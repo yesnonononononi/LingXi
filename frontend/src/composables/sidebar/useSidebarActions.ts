@@ -1,8 +1,8 @@
-import { ref, type ComputedRef, type Ref } from 'vue';
-import { useConfirm } from '../useConfirm';
-import type { BranchedMenuChild, BranchedMenuItem } from '../../components/common/BranchedMenu.vue';
-import type { ChatSession, WorkspaceVO } from '../../types/chat';
-import { t } from '../../i18n';
+import {type ComputedRef, ref, type Ref} from 'vue';
+import {useConfirm} from '../useConfirm';
+import type {BranchedMenuChild, BranchedMenuItem} from '../../components/common/BranchedMenu.vue';
+import type {ChatSession, WorkspaceVO} from '../../types/chat';
+import {t} from '../../i18n';
 
 /**
  * 侧边栏交互动作层：重命名编辑态、项目菜单、删除确认、BranchedMenu 选择/折叠、点击外部关闭菜单。

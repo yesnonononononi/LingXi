@@ -6,22 +6,21 @@ import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
+import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 /**

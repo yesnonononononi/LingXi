@@ -1,40 +1,37 @@
-import { ModelAPI } from './model';
-import { WorkspaceAPI } from './workspace';
-import { SessionAPI } from './session';
-import { AgentAPI } from './agent';
-import { TeamAPI } from './team';
-import { ToolCallAPI } from './toolCall';
-import { ApiError, classifyResult } from './interceptor';
-import { aggregateRecordsByIdentity } from '../utils/session';
-import { attachPromptCards } from '../utils/toolCallCard';
-import { isOk } from '../utils/api';
-import { createLocalId, createTempSessionId } from '../utils/ids';
-import { extractDirName } from '../utils/path';
-import { t } from '../i18n';
-import {
-  extractSubAgentParams,
-  isSubAgentTool,
-  TOOL_CATEGORY
-} from '../utils/toolMeta';
-import { parseTimestampOr } from '../utils/time';
-import type { 
-  ChatSession, 
-  ModelConfig, 
-  ChatMessage, 
-  SessionVO, 
-  WorkspaceVO, 
-  WorkspaceRequest,
-  WorkspaceEnvType,
-  TeamVO,
-  SubSessionVO,
-  AgentVO,
-  ToolCallVO,
-  ChatTurn,
-  SessionMessageVO,
-  ToolCallDecisionReceipt
+import {ModelAPI} from './model';
+import {isImageModel} from '../utils/modelCapabilities';
+import {WorkspaceAPI} from './workspace';
+import {SessionAPI} from './session';
+import {AgentAPI} from './agent';
+import {TeamAPI} from './team';
+import {ToolCallAPI} from './toolCall';
+import {ApiError, classifyResult} from './interceptor';
+import {aggregateRecordsByIdentity} from '../utils/session';
+import {attachPromptCards} from '../utils/toolCallCard';
+import {isOk} from '../utils/api';
+import {createLocalId, createTempSessionId} from '../utils/ids';
+import {extractDirName} from '../utils/path';
+import {t} from '../i18n';
+import {extractSubAgentParams, isSubAgentTool, TOOL_CATEGORY} from '../utils/toolMeta';
+import {parseTimestampOr} from '../utils/time';
+import type {
+    AgentVO,
+    ChatMessage,
+    ChatSession,
+    ChatTurn,
+    ModelConfig,
+    SessionMessageVO,
+    SessionVO,
+    SubSessionVO,
+    TeamVO,
+    ToolCallDecisionReceipt,
+    ToolCallVO,
+    WorkspaceEnvType,
+    WorkspaceRequest,
+    WorkspaceVO
 } from '../types/chat';
-import type { TurnViewVO } from '../types/block';
-import type { ChoiceAnswersPayload, ChoiceAnswersReceipt } from '../types/toolDecision';
+import type {TurnViewVO} from '../types/block';
+import type {ChoiceAnswersPayload, ChoiceAnswersReceipt} from '../types/toolDecision';
 
 /**
  * fetch* 的判别结果：让调用方能区分「加载失败（可重试）」与「确实为空」。
@@ -169,6 +166,7 @@ export const chatApi = {
         const models: ModelConfig[] = [];
         for (const group of groups) {
           for (const item of group.models ?? []) {
+            if (isImageModel(item)) continue;
             models.push({
               id: item.id as string | number,
               name: item.modelName || t('session.modelFallback', { id: item.id ?? '' }),

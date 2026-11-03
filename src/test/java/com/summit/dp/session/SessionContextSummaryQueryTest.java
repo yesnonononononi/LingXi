@@ -10,7 +10,7 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMap
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,10 +20,7 @@ import org.mybatis.spring.SqlSessionTemplate;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 「替换正文前不读旧正文」的 SQLite 真库守卫。
@@ -34,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class SessionContextSummaryQueryTest {
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private SessionContextMapper mapper;
     private SessionContextRepositoryImpl repository;
     private ModelContextService service;
@@ -42,7 +39,7 @@ class SessionContextSummaryQueryTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("SessionContextSummaryQueryTest");
+        database = H2TestDatabase.create("SessionContextSummaryQueryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
@@ -50,7 +47,7 @@ class SessionContextSummaryQueryTest {
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
+        SqlSessionTemplate sql = H2TestDatabase.sqlSession(factory.getObject());
         mapper = sql.getMapper(SessionContextMapper.class);
         repository = new SessionContextRepositoryImpl(mapper);
         service = new ModelContextService(objectMapper, repository);

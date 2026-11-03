@@ -1,36 +1,27 @@
 package com.summit.dp.agent.application.service.impl;
 
-import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
-
-import com.summit.dp.workflow.application.chat.ResendTargetResolver;
-
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
-import com.summit.dp.workflow.application.chat.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * {@code GET /a/completion/{sessionId}/events} 的入口校验与根会话解析。
@@ -64,7 +55,7 @@ class ChatSubscribeSessionIdTest {
                         modelContextService, sessionExecutionRegistry, executionControl),
                 mock(ChatTurnService.class),
                 mock(ExecutionQueryService.class),
-                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));
+                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
     }
 
     @Test

@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { BackgroundTask } from '../types/backgroundTask';
+import type {Result} from './types';
+import type {BackgroundTask} from '../types/backgroundTask';
 
 export const BackgroundTaskAPI = {
   list(sessionId: string, signal?: AbortSignal): Promise<Result<BackgroundTask[]>> {

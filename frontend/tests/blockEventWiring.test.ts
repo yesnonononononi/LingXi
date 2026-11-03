@@ -1,17 +1,16 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 /**
  * 实时块事件接入守卫（P3 第一步）。
  *
  * <p>只验证「事件能进、落点正确、乱序被拦」——**不**动既有排序/去重逻辑（那属于下一步）。
  * 这两条是「替换 allocateOrder / 内容指纹」的前提。</p>
  */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage } from '../src/types/chat';
-import type { AgentEvent } from '../src/types/Event';
-import type { Block, TurnViewVO } from '../src/types/block';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
+import type {ChatMessage} from '../src/types/chat';
+import type {AgentEvent} from '../src/types/Event';
+import type {Block, TurnViewVO} from '../src/types/block';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
 
 function view(blocks: Block[], viewVersion: number, status = 'RUNNING'): TurnViewVO {
   return { sessionId: '7', turnId: '900', status, viewVersion, blocks };

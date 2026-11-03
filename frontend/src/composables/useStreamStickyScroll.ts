@@ -1,4 +1,4 @@
-import { ref, watch, onBeforeUnmount } from 'vue';
+import {onBeforeUnmount, ref, watch} from 'vue';
 
 /** 距底部多少像素以内视为「已经回到最底部」。 */
 const BOTTOM_THRESHOLD = 24;

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage } from '../src/types/chat';
-import type { Block, TurnViewVO } from '../src/types/block';
-import { aggregateRecordsByIdentity, groupMessagesByTurn } from '../src/utils/session';
-import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
+import type {ChatMessage} from '../src/types/chat';
+import type {Block, TurnViewVO} from '../src/types/block';
+import {aggregateRecordsByIdentity, groupMessagesByTurn} from '../src/utils/session';
+import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
 
 /**
  * 跨页 / 幂等 / 排序契约（唯一链路：后端轮次视图 → {@link upsertTurnViewIntoMessages}）。

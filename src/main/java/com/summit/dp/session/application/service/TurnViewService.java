@@ -78,7 +78,8 @@ public class TurnViewService {
                 TurnViewAssembler.resolveMetric(session),
                 messages.stream().filter(message -> turn.getId().equals(message.getTurnId())
                         && message.getType() == SessionMessageType.USER).map(SessionMessage::getId).findFirst().orElse(null),
-                turnViewAssembler.resolveResumeSupplements(turn.getId(), messages)
+                turnViewAssembler.resolveResumeSupplements(turn.getId(), messages),
+                turn.getParentTurnId()
         ));
     }
 

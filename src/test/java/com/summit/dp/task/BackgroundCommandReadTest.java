@@ -14,13 +14,12 @@ import com.summit.dp.task.application.service.TaskRuntimeService;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.repository.TaskRepository;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -29,16 +28,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class BackgroundCommandReadTest {
     private final TaskRepository repository = mock(TaskRepository.class);
-    private final BackendProcessManager manager = new BackendProcessManager(repository, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(repository, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
+    private final BackendProcessManager manager = new BackendProcessManager(repository, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(repository, mock(InputWakeupService.class)), mock(TaskDeletionPolicy.class));
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @AfterEach void close() { manager.close(); }

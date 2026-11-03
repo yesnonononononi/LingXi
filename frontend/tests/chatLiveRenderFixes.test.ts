@@ -1,10 +1,10 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPinia, setActivePinia } from 'pinia';
-import { ref, effectScope, nextTick, watchEffect } from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import {effectScope, nextTick, ref, watchEffect} from 'vue';
 import axios from 'axios';
-import { AgentToolName } from '../src/utils/toolNames';
+import {AgentToolName} from '../src/utils/toolNames';
 
 /**
  * 会话实时渲染 / 会话列表加载回归守卫。

@@ -188,3 +188,17 @@ test('asyncDelegation：对照——阻塞式 + success 仍判完成（回落未
   const blocking = { status: 'success', query: JSON.stringify({ agentId: 5, task: '写代码' }) };
   assert.equal(asyncSubSessionStatus(undefined, blocking), 'completed', '阻塞式 success 等价子代理跑完');
 });
+
+
+test('保留输入的原因在暂停、取消和正常完成后可见，保留权威轮次状态', async t => {
+  for (const status of ['WAITING', 'CANCELLED', 'COMPLETED']) {
+    const reason = '待处理输入已保留：执行已由用户暂停';
+    const root = mountComponent(t, component('components/chat/ChatMessageItem.vue'), {
+      message: { id: `notice-${status}`, role: 'assistant', turnId: '101', timestamp: 0,
+        content: '处理结果', isComplete: true },
+      turn: { id: '101', status, errorReason: reason }, isDark: true, isGroupTail: true,
+    });
+    await nextTick();
+    assert.ok(text(root).includes(reason), `${status} 应显示待处理输入的保留原因`);
+  }
+});

@@ -8,13 +8,13 @@
  * <p>铁律：本模块只做展示派生，不判断「过程是否结束」—— 呈现模式判据唯一一处定义在
  * `processSegments.resolveProcessSegmentMode`。</p>
  */
-import type { ChatMessage, ToolCallTrace } from '../types/chat';
-import { t } from '../i18n';
-import { AgentToolName } from './toolNames';
-import { isReadFileTool, resolveToolMeta } from './toolMeta';
-import type { ToolMeta } from './toolMeta';
-import { parseToolDiff } from './toolDiff';
-import { toObject } from './json';
+import type {ChatMessage, ToolCallTrace} from '../types/chat';
+import {t} from '../i18n';
+import {AgentToolName} from './toolNames';
+import type {ToolMeta} from './toolMeta';
+import {isReadFileTool, resolveToolMeta} from './toolMeta';
+import {parseToolDiff} from './toolDiff';
+import {toObject} from './json';
 
 /** 工具行的头部元信息（分类 / 目标 / 行范围 / 描述 / 命令 / 详情）。 */
 export interface ToolRowMeta extends ToolMeta {

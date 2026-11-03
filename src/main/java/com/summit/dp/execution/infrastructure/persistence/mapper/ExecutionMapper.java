@@ -1,15 +1,9 @@
 package com.summit.dp.execution.infrastructure.persistence.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.ExecutionStatusCodes;
-import org.apache.ibatis.annotations.Delete;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Result;
-import org.apache.ibatis.annotations.Results;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
+import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
+import org.apache.ibatis.annotations.*;
 
 import java.util.Collection;
 import java.util.List;

@@ -17,11 +17,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
-import { buildBubbleFromTurnView, projectTurnView, upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import type { ChatMessage } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
+import {buildBubbleFromTurnView, projectTurnView, upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import type {ChatMessage} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
 
 const SESSION_ID = '2111800762467237888';
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));

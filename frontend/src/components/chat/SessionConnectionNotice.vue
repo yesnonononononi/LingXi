@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { StreamHealthState } from '../../views/chat/sessionEventStream';
-import { t } from '../../i18n';
+import type {StreamHealthState} from '../../views/chat/sessionEventStream';
+import {t} from '../../i18n';
 
 defineProps<{ state?: StreamHealthState }>();
 const emit = defineEmits<{ (event: 'reconnect'): void }>();

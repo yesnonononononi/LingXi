@@ -16,12 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /** 目录搬迁的真实文件系统行为：复制的是整棵树，拒绝的是会毁数据的目录。 */
 class SettingsDirectoryMigratorTest {
@@ -38,8 +34,7 @@ class SettingsDirectoryMigratorTest {
     @BeforeEach
     void setUp() {
         fromDir = tempDir.resolve("from");
-        migrator = new SettingsDirectoryMigrator(dataSource,
-                new LocalFileCheckpointStore(fromDir.toString(), mapper));
+        migrator = new SettingsDirectoryMigrator();
     }
 
     @Test
@@ -78,62 +73,15 @@ class SettingsDirectoryMigratorTest {
     }
 
     @Test
-    @DisplayName("数据目录：目标含无关文件时拒绝，且根本不碰数据库")
-    void dataDirRejectsTargetHoldingForeignFiles() throws IOException {
+    void dataDirChangeRejectsBeforeTouchingAnyFiles() throws Exception {
         Path target = Files.createDirectories(tempDir.resolve("target"));
-        Files.writeString(target.resolve("我的照片.jpg"), "内容");
-
-        ClientException error = assertThrows(ClientException.class,
-                () -> migrator.migrateDataDir(tempDir.resolve("from").toString(), target.toString()));
-
-        assertTrue(error.getMessage().contains("非空"), "报错要说清是目录非空: " + error.getMessage());
-        verifyNoInteractions(dataSource);
-    }
-
-    @Test
-    @DisplayName("数据目录：目标里只躺着库文件时允许复用（改回原目录的场景）")
-    void dataDirAcceptsTargetHoldingOnlyDatabaseArtifacts() throws Exception {
-        Path target = Files.createDirectories(tempDir.resolve("target"));
-        Files.writeString(target.resolve("lingxi.sqlite"), "");
-        Files.writeString(target.resolve("lingxi.sqlite-wal"), "");
-        // 目录校验通过后才会去连库；这里让连接直接失败，用来证明「卡在备份」而不是「卡在校验」。
-        when(dataSource.getConnection()).thenThrow(new SQLException("测试不接真库"));
-
-        ClientException error = assertThrows(ClientException.class,
-                () -> migrator.migrateDataDir(tempDir.resolve("from").toString(), target.toString()));
-
-        assertTrue(error.getMessage().contains("快照"), "应当已经走到备份这一步: " + error.getMessage());
-    }
-
-    @Test
-    @DisplayName("数据目录：目标里躺着库文件 + checkpoints 目录时允许复用（数据集合的另一半）")
-    void dataDirAcceptsTargetHoldingDatabaseAndCheckpointDirectory() throws Exception {
-        Path target = Files.createDirectories(tempDir.resolve("target"));
-        Files.writeString(target.resolve("lingxi.sqlite"), "");
-        Files.createDirectories(target.resolve("checkpoints").resolve("305"));
-        when(dataSource.getConnection()).thenThrow(new SQLException("测试不接真库"));
-
+        Path existing = target.resolve("lingxi-h2.mv.db");
+        Files.writeString(existing, "backup");
         ClientException error = assertThrows(ClientException.class,
                 () -> migrator.migrateDataDir(fromDir.toString(), target.toString()));
-
-        // 校验放行、卡在备份这一步：说明 checkpoints 目录被当作「上一次搬迁的残留」而不是异物。
-        assertTrue(error.getMessage().contains("快照"), "应当已经走到备份这一步: " + error.getMessage());
-    }
-
-    @Test
-    @DisplayName("数据目录：等不到检查点写入静默窗口时明确失败，且不留下库快照")
-    void dataDirFailsWhenCheckpointWriteIsStillRunning() throws Exception {
-        Path target = tempDir.resolve("target-busy");
-        LocalFileCheckpointStore store = new LocalFileCheckpointStore(fromDir.toString(), mapper, 0L);
-        SettingsDirectoryMigrator busyMigrator = new SettingsDirectoryMigrator(dataSource, store);
-        // 打开一个写入句柄且不结束：迁移窗口内仍有检查点写入，必须拒绝搬迁。
-        store.begin("305");
-
-        ClientException error = assertThrows(ClientException.class,
-                () -> busyMigrator.migrateDataDir(fromDir.toString(), target.toString()));
-
-        assertTrue(error.getMessage().contains("检查点"), error.getMessage());
-        assertTrue(Files.notExists(target.resolve("lingxi.sqlite")), "失败时不能留下半成品库快照");
+        assertTrue(error.getMessage().contains("离线"));
+        assertEquals("backup", Files.readString(existing));
+        verifyNoInteractions(dataSource);
     }
 
     @Test

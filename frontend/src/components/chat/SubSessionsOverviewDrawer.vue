@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { SubSessionVO } from '../../types/chat';
-import { formatClockTime } from '../../utils/format';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {computed} from 'vue';
+import type {SubSessionVO} from '../../types/chat';
+import {formatClockTime} from '../../utils/format';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;

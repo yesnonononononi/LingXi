@@ -332,7 +332,28 @@ function setupTray() {
   tray = new Tray(iconPath);
   tray.setToolTip('LX ');
 
-  tray.setContextMenu(buildTrayMenu());
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示界面',
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '彻底退出',
+      click: () => {
+        isQuiting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
 
   // 鼠标左键点击托盘图标：智能切换 显示 / 隐藏
   tray.on('click', () => {
@@ -672,8 +693,6 @@ app.on('before-quit', () => {
   backgroundImages.close();
   // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净
   notifications.closeAll();
-  // 桌宠是置顶窗口，残留下来会一直盖在桌面上；destroy 前会先把位置落盘
-  pet.destroy();
 
   // 停掉更新器的定时器，避免退出过程中触发一次检查
   updater.stop();

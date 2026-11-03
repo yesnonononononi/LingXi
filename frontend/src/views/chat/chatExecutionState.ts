@@ -1,6 +1,6 @@
-import type { AgentEvent } from '../../types/Event';
-import type { ChatAcceptance, ChatSession } from '../../types/chat';
-import { t } from '../../i18n';
+import type {AgentEvent} from '../../types/Event';
+import type {ChatAcceptance, ChatSession} from '../../types/chat';
+import {t} from '../../i18n';
 
 /** 作废范围必须来自重发回执，不能按前端气泡顺序猜测。 */
 export function applyResendAcceptance(session: ChatSession, receipt: ChatAcceptance): void {

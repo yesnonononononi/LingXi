@@ -1,34 +1,27 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.InOrder;
 
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.doThrow;
-import org.mockito.InOrder;
+import static org.mockito.Mockito.*;
 
-/** 子执行自身的保留唤醒与协作根的结束提醒分别处理，不能把两者的执行身份混用。 */
+/** 子执行自身的待处理输入与协作根的结束提醒分别处理，不能把两者的执行身份混用。 */
 class SubExecutionLifecycleTest {
 
     private static final long ROOT_SESSION_ID = 800L;
@@ -36,52 +29,39 @@ class SubExecutionLifecycleTest {
     private static final long ROOT_EXECUTION_ID = 900L;
 
     private final SessionExecutionRegistry registry = mock(SessionExecutionRegistry.class);
-    private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    private final InputWakeupService resumeCoordinator = mock(InputWakeupService.class);
     private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final SubAgentCompleteNotifier notifier = mock(SubAgentCompleteNotifier.class);
 
     private final SubExecutionLifecycle lifecycle =
             new SubExecutionLifecycle(registry, resumeCoordinator, executionIdentity, notifier);
 
-    @Test
-    @DisplayName("子执行挂起：保留登记（markChildSuspended），不唤醒根")
-    void childSuspendedKeepsRegistration() {
-        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-
-        lifecycle.onSuspended(childExecution());
-
-        InOrder order = inOrder(registry, resumeCoordinator);
-        order.verify(registry).markChildSuspended(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        order.verify(resumeCoordinator).flushPendingWake(1234L);
-        verify(resumeCoordinator, never()).accept(anyLong());
-    }
 
     @Test
     @DisplayName("子执行终态且成为空：移除登记并唤醒协作根执行")
     void lastChildFinishedWakesRoot() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(true);
 
         Execution child = childExecution();
         lifecycle.onFinished(child);
 
-        verify(resumeCoordinator).clearPendingWake(1234L);
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(child);
-        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
-    void failedNoticeStillWakesRootBeforeOtherChildrenFinish() {
+    void failedNoticeRetainsDependencyUntilResultBecomesReadable() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
         Execution child = childExecution();
         doThrow(new IllegalStateException("模拟投递失败")).when(notifier).notifyCommander(child);
         lifecycle.onFinished(child);
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        verify(registry, never()).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        verify(resumeCoordinator, never()).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @ParameterizedTest
@@ -89,21 +69,21 @@ class SubExecutionLifecycleTest {
     @DisplayName("子执行成功或取消但仍有其它子在跑：先投递提醒、移除登记，再唤醒根")
     void nonLastSuccessfulOrCancelledChildWakesRoot(ExecutionState state) {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
 
         Execution child = childExecution(state);
         lifecycle.onFinished(child);
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(child);
-        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
     void failedChildWakesCommanderBeforeOtherChildrenFinish() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
         Execution failed = childExecution(ExecutionState.RUNNING);
         failed.fail("模型连接失败");
 
@@ -111,69 +91,54 @@ class SubExecutionLifecycleTest {
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(failed);
-        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
-    void failedChildStillWakesCommanderWhenFailureNoticeCannotBeDelivered() {
+    void failedChildDoesNotWakeWithoutReadableFailureNotice() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
         Execution failed = childExecution(ExecutionState.RUNNING);
         failed.fail("模型连接失败");
         doThrow(new IllegalStateException("邮箱不可用")).when(notifier).notifyCommander(failed);
 
         lifecycle.onFinished(failed);
 
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        verify(registry, never()).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        verify(resumeCoordinator, never()).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
-    @Test
-    @DisplayName("根执行挂起：重放保留唤醒（控制槽位已释放后的唯一时点）")
-    void rootSuspendedFlushesPendingWake() {
-        lifecycle.onSuspended(rootExecution());
-
-        verify(resumeCoordinator).flushPendingWake(ROOT_EXECUTION_ID);
-        verify(registry, never()).markChildSuspended(anyLong(), anyLong());
-    }
 
     @Test
-    @DisplayName("根执行终态：清理保留唤醒，防止悬挂在不再挂起的执行上")
-    void rootFinishedClearsPendingWake() {
+    @DisplayName("根执行终态：本协作器不移除其他子登记")
+    void rootFinishHasNoChildDependencyToRemove() {
         lifecycle.onFinished(rootExecution());
 
-        verify(resumeCoordinator).clearPendingWake(ROOT_EXECUTION_ID);
-        verify(registry, never()).unregisterChild(anyLong(), anyLong());
+        verify(registry, never()).unregisterChild(anyLong(), anyLong(), any());
     }
 
-    @Test void childWithoutCollaborationRoutingStillFlushesItsOwnWake() {
-        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(null);
-        lifecycle.onSuspended(childExecution());
-        verify(resumeCoordinator).flushPendingWake(1234L);
-        verify(registry, never()).markChildSuspended(anyLong(), anyLong());
-    }
 
     @Test
     @DisplayName("兜底结束事实：子执行未建立执行时移除待启动登记并唤醒根")
     void abandonChildWakesRootWhenBecameEmpty() {
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(true);
 
-        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
+        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234", ROOT_EXECUTION_ID);
 
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
     @DisplayName("兜底结束事实：根执行 id 未知则不唤醒（不猜身份、不误唤醒）")
     void abandonChildWithoutRootExecutionIdDoesNotWake() {
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(true);
 
-        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, null);
+        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234", null);
 
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(resumeCoordinator, never()).accept(anyLong());
+        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
+        verify(resumeCoordinator, never()).resumeIfInputPending(anyLong());
     }
 
     private static Execution childExecution() {

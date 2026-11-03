@@ -1,8 +1,8 @@
+import type {AxiosError} from 'axios';
 import axios from 'axios';
-import type { AxiosError } from 'axios';
-import { isOk } from '../utils/api';
-import { getApiBaseUrl } from '../utils/apiConfig';
-import { t } from '../i18n';
+import {isOk} from '../utils/api';
+import {getApiBaseUrl} from '../utils/apiConfig';
+import {t} from '../i18n';
 
 /**
  * 可区分的 API 错误类型。

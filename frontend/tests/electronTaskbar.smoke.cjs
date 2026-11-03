@@ -89,21 +89,7 @@ function createMainWindow(isPackaged) {
       if (name === 'electron') return { ...electron, app, BrowserWindow: ProbeWindow, ipcMain: { handle() {} } };
       if (name === './backend.cjs') return {};
       if (name === './file-preview.cjs') return { registerFilePreview: () => () => {} };
-      if (name === './lx-protocol.cjs') {
-        // 自定义协议只是门面，本用例不关心；给空实现即可（registerSchemesAsPrivileged 需 ready 前调用）
-        return { registerLxSchemePrivileges: () => {}, registerLxProtocol: () => ({ bases: [], scheme: 'lxa' }) };
-      }
       if (name === './notification-window.cjs') return { registerNotificationWindow: () => ({}) };
-      // 桌宠窗口（T01）：本用例只关心主窗口的任务栏属性，这里给一个空壳管理 API
-      if (name === './pet-window.cjs') {
-        return {
-          registerPetWindow: () => ({
-            create() {}, show() {}, hide() {}, toggle() {}, destroy() {},
-            isVisible: () => false,
-            onVisibilityChange: () => () => {},
-          }),
-        };
-      }
       // 主页背景 IPC（L2）：主进程新增的模块，这里只需桩掉注册入口，本用例不关心它
       if (name === './background-images.cjs') return { registerBackgroundImages: () => ({ close() {} }) };
       if (name === './updater.cjs') return { createUpdater: () => ({}) };

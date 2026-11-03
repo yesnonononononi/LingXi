@@ -1,9 +1,9 @@
-import type { ToolCallStartEvent, ToolCallEndEvent } from '../../types/Event';
-import type { ChatMessage, ToolCallTrace } from '../../types/chat';
-import { toObject } from '../../utils/json';
-import { resolveToolCategory, resolveToolExecutionStatus } from '../../utils/toolMeta';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { applyTextPlacement, getTurnState, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import type {ToolCallEndEvent, ToolCallStartEvent} from '../../types/Event';
+import type {ChatMessage, ToolCallTrace} from '../../types/chat';
+import {toObject} from '../../utils/json';
+import {resolveToolCategory, resolveToolExecutionStatus} from '../../utils/toolMeta';
+import {parseToolDiff} from '../../utils/toolDiff';
+import {applyTextPlacement, getTurnState, renderTurnState, writeResponseText, writeToolTrace} from './turnRenderState';
 
 /** 调用身份来自框架事件，开始和收尾更新同一份轮次状态。 */
 export function consumeToolEvent(bubble: ChatMessage, event: ToolCallStartEvent | ToolCallEndEvent): boolean {

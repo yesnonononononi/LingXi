@@ -9,31 +9,23 @@ import org.apache.ibatis.annotations.Update;
 
 import java.time.Instant;
 
-/**
- * 清单行 Mapper。
- *
- * <p>CAS 必须写成 SQL：条件更新的影响行数是「谁赢」的唯一裁决点，用「先查后改」在应用层模拟等于没有。</p>
- *
- * <p><b>为什么没有 {@code SELECT ... FOR UPDATE}</b>：SQLite 没有行锁，写事务本身就是库级排他。
- * 原先靠行锁串行化的入口，退化为「读 → 条件更新（带 version / 状态 / progress_version）」，
- * 竞争失败方由影响行数 0 判定，不再有锁等待。</p>
- */
+/** 写入前先锁父行，步骤读取与聚合裁决才能基于同一次提交。 */
 @Mapper
 public interface ChecklistMapper extends BaseMapper<ChecklistPO> {
 
-    /** 读清单行；并发写由随后的条件更新裁决，见类注释。 */
-    @Select("SELECT * FROM checklist WHERE id = #{id}")
+    /** 父行锁持有到事务结束，再读取步骤。 */
+    @Select("SELECT * FROM checklist WHERE id = #{id} FOR UPDATE")
     ChecklistPO selectByIdForUpdate(@Param("id") long id);
 
-    /** 读会话内的活动清单行；不存在返回 null。 */
-    @Select("SELECT * FROM checklist WHERE session_id = #{sessionId} AND status = 'ACTIVE'")
+    /** 活动行不存在时不产生锁，首次创建仍由唯一索引裁决。 */
+    @Select("SELECT * FROM checklist WHERE session_id = #{sessionId} AND status = 'ACTIVE' FOR UPDATE")
     ChecklistPO selectActiveBySessionIdForUpdate(@Param("sessionId") long sessionId);
 
     /** 条件变化时返回 0，调用方必须重查，不能据此认定提醒已经送达。 */
-    @Update("UPDATE checklist SET remind_status = TRUE, remind_execution_id = #{executionId,jdbcType=BIGINT}, "
+    @Update("UPDATE checklist SET remind_status = 1, remind_execution_id = #{executionId,jdbcType=BIGINT}, "
             + "reminded_progress_version = progress_version, update_at = #{updateAt,jdbcType=TIMESTAMP} "
             + "WHERE id = #{id} AND session_id = #{sessionId} AND status = 'ACTIVE' "
-            + "AND progress_version = #{progressVersion} AND remind_status = FALSE")
+            + "AND progress_version = #{progressVersion} AND remind_status = 0")
     int claimReminder(@Param("id") long id, @Param("sessionId") long sessionId,
                       @Param("progressVersion") long progressVersion, @Param("executionId") long executionId,
                       @Param("updateAt") Instant updateAt);

@@ -7,16 +7,16 @@ import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -105,7 +105,7 @@ public class CommandApprovalExecutor {
             });
             try {
                 dispatchAsync(() -> finish(current, execution, message, call, registered, completion));
-            } catch (RuntimeException dispatchFailure) {
+            } catch (RuntimeException | Error dispatchFailure) {
                 // T1 已提交：派发失败必须当场收口，否则执行永久停在 RUNNING、控制槽位泄漏。
                 settleDispatchFailure(current, execution, registered, dispatchFailure);
                 settled = true;
@@ -113,11 +113,12 @@ public class CommandApprovalExecutor {
             }
             // 回执只承诺「决策已落库 + 命令已受理」；T1 的 beginApproval 已把执行置 RUNNING。
             return new CommandApprovalResult(ToolCallOutcome.APPROVED, ResumeDisposition.RUNNING);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error e) {
+            // 类加载失败也会回滚 T1，必须释放信号，否则待审批卡会永久被判为执行中。
             if (signal != null && !settled) {
                 try {
                     repository.unregister(signal);
-                } catch (RuntimeException cleanupFailure) {
+                } catch (RuntimeException | Error cleanupFailure) {
                     e.addSuppressed(cleanupFailure);
                 }
             }
@@ -195,7 +196,7 @@ public class CommandApprovalExecutor {
             released = true;
             repository.unregister(signal);
             Execution latest = repository.findById(executionId).orElseThrow(ClientException::new);
-            finalizer.resumeIfReady(latest, conversationId, pending);
+            finalizer.resumeIfReady(latest, pending);
         } catch (Exception e) {
             log.error("命令审批失败: executionId={}", executionId, e);
             if (!released) {
@@ -227,15 +228,15 @@ public class CommandApprovalExecutor {
 
     /** 异步派发失败：T1 已提交，必须把执行收成失败并释放控制槽位，不能留下 RUNNING 泄漏。 */
     private void settleDispatchFailure(ToolCall toolCall, Execution execution,
-                                       ExecutionControlSignal signal, RuntimeException failure) {
+                                       ExecutionControlSignal signal, Throwable failure) {
         try {
             finalizer.failApproval(toolCall, execution, failure.getMessage());
-        } catch (RuntimeException saveFailure) {
+        } catch (RuntimeException | Error saveFailure) {
             failure.addSuppressed(saveFailure);
         }
         try {
             executionRepository.getObject().unregister(signal);
-        } catch (RuntimeException cleanupFailure) {
+        } catch (RuntimeException | Error cleanupFailure) {
             failure.addSuppressed(cleanupFailure);
         }
     }

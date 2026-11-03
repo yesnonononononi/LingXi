@@ -1,7 +1,7 @@
-import type { ProcessTimelineItem, ToolCallTrace } from '../types/chat';
-import { AgentToolName } from './toolNames';
-import { toObject } from './json';
-import { unwrapToolResultEnvelope } from './toolMeta';
+import type {ProcessTimelineItem, ToolCallTrace} from '../types/chat';
+import {AgentToolName} from './toolNames';
+import {toObject} from './json';
+import {unwrapToolResultEnvelope} from './toolMeta';
 
 export interface ReadToolImage {
   key: string;

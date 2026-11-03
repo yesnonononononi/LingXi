@@ -1,7 +1,5 @@
 package com.summit.dp.mcp;
 
-import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
@@ -9,15 +7,17 @@ import com.summit.core.mcp.McpToolScope;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
-import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.tool.ToolExecution;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
+import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

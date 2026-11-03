@@ -1,35 +1,23 @@
 package com.summit.dp.tools.baseTools.terminal;
 
-import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
-import com.summit.core.runtime.workspace.OsType;
-import com.summit.core.runtime.workspace.ShellType;
-import com.summit.core.runtime.workspace.Workspace;
-import com.summit.core.runtime.workspace.WorkspaceCommands;
-import com.summit.core.runtime.workspace.WorkspaceBridge;
+import com.summit.core.runtime.workspace.*;
 import com.summit.core.tool.ToolDefinition;
-import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.tool.ToolExecution;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 终端执行器的所有返回路径都必须把模型声明的 {@code intention} 放进 toolMetaData
@@ -152,11 +140,19 @@ class CommandToolDefinitionExecutorTest {
     }
 
     @Test
-    void destructiveRefusalCarriesIntention() {
-        ToolExecuteResult result = executor.execute(execution("rm -rf /", "清空根目录"));
+    void anApprovedHighRiskCommandReachesTheMockBridgeWithoutASecondHardBlock() throws Exception {
+        Workspace workspace = mockedWorkspaceReturning(0, "mocked approval replay");
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .shellType(ShellType.BASH).charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge().commands().execute(anyString(), any(), eq("."), eq(StandardCharsets.UTF_8),
+                eq(240L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenReturn(new WorkspaceCommands.CommandResult(0, "mocked approval replay", false, false));
+        ToolExecuteResult result = executor.execute(execution("rm -rf /", "清空根目录", workspace));
 
-        assertFalse(result.isSuccess());
+        assertTrue(result.isSuccess(), result.getToolOutput());
         assertEquals("清空根目录", result.getToolMetaData().get(ExecuteCommandRequest.INTENTION));
+        verify(workspace.bridge().commands()).execute(eq("rm -rf /"), eq(ShellType.BASH), eq("."),
+                eq(StandardCharsets.UTF_8), eq(240L), eq(TimeUnit.SECONDS), eq(100L));
     }
 
     @Test

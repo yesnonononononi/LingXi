@@ -1,9 +1,12 @@
 package com.summit.dp.checklist.infrastructure.persistence.po;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.summit.dp.shared.persistence.handler.LargeTextTypeHandler;
 import lombok.Data;
+import org.apache.ibatis.type.JdbcType;
 
 import java.time.Instant;
 
@@ -21,6 +24,8 @@ public class ChecklistStepPO {
     private Long id;
     private Long checklistId;
     private int seq;
+    /** 步骤正文：可能很长，H2 侧 CLOB。 */
+    @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String content;
     private String status;
     private Instant updateAt;

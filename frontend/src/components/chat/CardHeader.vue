@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cardDotClass, type CardTone } from '../../utils/cardUi';
+import {cardDotClass, type CardTone} from '../../utils/cardUi';
 
 /**
  * 四类互动卡片统一的 header：状态点 + 类型标签(12px semibold) + 标题（可截断）+ 右侧操作插槽。

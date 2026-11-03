@@ -1,8 +1,8 @@
 package com.summit.dp.task.domain.repository;
 
-import com.summit.dp.task.domain.model.TaskPage;
 import com.summit.ddd.domain.repository.RepositoryTemplate;
 import com.summit.dp.task.domain.model.Task;
+import com.summit.dp.task.domain.model.TaskPage;
 
 import java.util.Collection;
 import java.util.List;
