@@ -1,0 +1,188 @@
+{
+  "version": 4,
+  "assetId": "lingxi-pet-p0-v4",
+  "supersedes": "lingxi-pet-p0-v3",
+  "scope": "P0",
+  "canvas": {
+    "width": 2048,
+    "height": 3072
+  },
+  "anchor": {
+    "x": 1024,
+    "y": 2908
+  },
+  "headRegion": {
+    "left": 0,
+    "top": 0,
+    "width": 2048,
+    "height": 1488
+  },
+  "nativeSourceCanvas": {
+    "width": 1024,
+    "height": 1536
+  },
+  "masterScale": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "expressionIds": [
+    "neutral",
+    "blink",
+    "surprised",
+    "sad",
+    "angry",
+    "shy",
+    "happy",
+    "sleepy",
+    "wink"
+  ],
+  "expressionAssets": {
+    "neutral": "../v3/expr/E1_default.png",
+    "blink": "../v3/expr/E2_blink.png",
+    "surprised": "../v3/expr/E3_surprised.png",
+    "sad": "../v3/expr/E4_sad.png",
+    "angry": "../v3/expr/E5_angry.png",
+    "shy": "../v3/expr/E6_shy.png",
+    "happy": "../v3/expr/E7_happy.png",
+    "sleepy": "../v3/expr/E8_sleepy.png",
+    "wink": "expr/E9_wink.png"
+  },
+  "expressionAssetsNote": "v4 只新增 1 张母版（E9_wink）。其余 8 档（E1–E8）整档沿用 v3，不重复交付、不允许在 v4 里出现副本；构建脚本按 expressionAssets 的路径直接读 v3 裁切。",
+  "composition": "优先使用完整 WebP 帧；PNG 整头与 body-without-head 无重叠合成。不要把整头叠在完整立绘的半透明边缘上。",
+  "blink": {
+    "open": "neutral",
+    "closed": "blink",
+    "half": null,
+    "wink": "wink",
+    "eyeRegionNative": {
+      "left": 288,
+      "top": 536,
+      "width": 380,
+      "height": 152
+    },
+    "halfNote": "v3 的 blink.half='sleepy' 在 v4 显式置空：困倦嘴型不得随眨眼跳动（设计 §5.1）。blinkHalf 资产未交付，BlinkDriver 走两态降级（睁→闭→睁），任何情况下不得回落 sleepy。"
+  },
+  "notDelivered": [
+    {
+      "expressionId": "blinkHalf",
+      "reason": "M1 未要求交付该档；缺资产时按设计 §5.2.3 走两态眨眼，行为层据此判断，不得借用 sleepy 充数。"
+    }
+  ],
+  "nativeFaceEditCrop": {
+    "left": 288,
+    "top": 540,
+    "width": 380,
+    "height": 184
+  },
+  "faceRegion": {
+    "native": {
+      "left": 280,
+      "top": 532,
+      "width": 396,
+      "height": 200
+    },
+    "master": {
+      "left": 560,
+      "top": 1064,
+      "width": 792,
+      "height": 400
+    }
+  },
+  "winkEyeZones": {
+    "openEye": {
+      "left": 1000,
+      "top": 1060,
+      "right": 1400,
+      "bottom": 1380
+    },
+    "closedEye": {
+      "left": 570,
+      "top": 1070,
+      "right": 960,
+      "bottom": 1380
+    }
+  },
+  "wink": {
+    "file": "expr/E9_wink.png",
+    "expressionId": "wink",
+    "form": "整头贴片（与 E1 同画布、同定位、straight alpha、sRGB）",
+    "technique": "E1_default 全图 + E2_blink 单侧闭眼笔迹按差异掩膜合成",
+    "diffThreshold": 7,
+    "dilateRadius": 4,
+    "patchedPixels": 58292,
+    "patchedBbox": {
+      "left": 586,
+      "top": 1092,
+      "right": 877,
+      "bottom": 1371
+    },
+    "sourceEyeInkPixels": 48036,
+    "sourceEyeInkBbox": {
+      "left": 590,
+      "top": 1096,
+      "right": 873,
+      "bottom": 1367
+    },
+    "diffPixels": 57804,
+    "diffPixelsOver7": 48036,
+    "diffBbox": {
+      "left": 586,
+      "top": 1092,
+      "right": 875,
+      "bottom": 1369,
+      "width": 290,
+      "height": 278
+    },
+    "diffOutsideEyeZonePixels": 0,
+    "openEyeZoneDiffPixels": 0,
+    "openEyeZoneVsBlinkPixels": 50244,
+    "newAlphaHoles": 0,
+    "alphaChangedPixels": 0
+  },
+  "build": {
+    "tool": "tools/build-wink.mjs",
+    "buildCommand": "node docs/assets/desktop-pet/v4/tools/build-wink.mjs",
+    "checkTool": "tools/check-wink.mjs",
+    "checkCommand": "node docs/assets/desktop-pet/v4/tools/check-wink.mjs",
+    "dependencies": "无（纯 Node，自带 PNG 编解码；不需要 npm install）",
+    "reproducible": true
+  },
+  "alphaCleanup": {
+    "inheritedFrom": "v3（E9 由 E1 逐像素拷贝而来，未重跑清理，阈值口径沿用 8/248）",
+    "threshold": 8,
+    "solidThreshold": 248
+  },
+  "files": [
+    {
+      "file": "expr/E9_wink.png",
+      "purpose": "同画布整头表情贴片（单眼闭合）",
+      "width": 2048,
+      "height": 3072,
+      "bytes": 953900,
+      "sha256": "823d1705732757ebb1db69527816f873ee0d19de67bdc8a191825f768cda6466",
+      "expressionId": "wink"
+    }
+  ],
+  "sources": [
+    {
+      "file": "../v3/expr/E1_default.png",
+      "purpose": "wink 的整脸底图来源（除闭眼侧眼区外全部像素来自此文件）",
+      "bytes": 800364,
+      "sha256": "49c92582be093310dfaa17f86314e452a699426996918818073afd2d642ae793"
+    },
+    {
+      "file": "../v3/expr/E2_blink.png",
+      "purpose": "wink 的闭眼笔迹来源（只取画面左侧眼区）",
+      "bytes": 778308,
+      "sha256": "5957a43ff9f5e5fb6eb876c509d6c22283d4650f0acb754b7fa5cc0a16c6608d"
+    }
+  ],
+  "deferred": [
+    "P1 尾巴、双耳、呆毛及蝴蝶结独立补绘",
+    "P2 语义分层、三视图及 Cubism 绑定",
+    "60px 迷你画与桌面跟随"
+  ]
+}

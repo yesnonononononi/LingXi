@@ -168,12 +168,22 @@ test('C9：pet-layers.json 的 face.files 与清单 neutral 条目逐字段相�
 });
 
 test('降级属实：degraded 的 id 没有贴片（磁盘上也没有），其余 id 都有贴片', () => {
+  // 期望值由**入库状态**决定，而不是写死"wink + blinkHalf 两档"：
+  // 美术母版到货并 `--include-deferred` 转正后，同一份用例必须继续守得住
+  // （转正的那档不许还留着 degraded，没转正的那档也不许凭空有贴片）。
+  const expectedDegraded = FACE_DEFERRED_IDS.filter((id) => FACE_TILES[id as never] === undefined).sort();
   const degraded = [...FACE_TILES_MANIFEST.degraded].sort();
-  assert.deepEqual(degraded, [...FACE_DEFERRED_IDS].sort(), 'degraded 必须是延迟交付的那两档（wink / blinkHalf）');
-  for (const id of FACE_DEFERRED_IDS) {
-    assert.equal(FACE_DEGRADED_IDS.has(id), true, `${id} 必须在 FACE_DEGRADED_IDS 里`);
+  assert.deepEqual(degraded, expectedDegraded, 'degraded 必须恰好等于"延迟档里没有贴片的那几档"');
+  for (const id of degraded) {
+    assert.ok(
+      (FACE_DEFERRED_IDS as readonly string[]).includes(id),
+      `${id} 不在延迟交付清单里，不该出现在 degraded`,
+    );
+  }
+  // 没转正的延迟档：清单里没有、磁盘上也没有、接口一律返回空（调用方据此走降级路径）
+  for (const id of degraded) {
+    assert.equal(FACE_DEGRADED_IDS.has(id as never), true, `${id} 必须在 FACE_DEGRADED_IDS 里`);
     assert.equal(isFaceDegraded(id as never), true);
-    assert.equal(FACE_TILES[id as never], undefined, `${id} 被标降级却仍有贴片条目：不许假装有资产`);
     assert.equal(faceTileUrl(id as never), '', `${id} 没有贴片时 faceTileUrl 必须返回空串（调用方据此回落）`);
     assert.equal(faceTileFile(id as never), null);
     for (const density of ['1x', '2x']) {
@@ -188,9 +198,13 @@ test('降级属实：degraded 的 id 没有贴片（磁盘上也没有），其�
 
 test('faceTileUrls：只给有贴片的表情，degraded 的不出现', () => {
   const urls = faceTileUrls('2x');
-  assert.deepEqual(Object.keys(urls).sort(), [...FACE_TILE_IDS].sort());
-  for (const id of FACE_DEFERRED_IDS) {
-    assert.equal(urls[id as never], undefined, `${id} 不该出现在 faceTileUrls 里`);
+  // 必备八档一定在；延迟档转正后也要跟着出现（否则贴片生成了却没人用）
+  for (const id of FACE_TILE_IDS) {
+    assert.ok(urls[id], `${id} 必须有贴片 URL`);
+  }
+  assert.deepEqual(Object.keys(urls).sort(), Object.keys(FACE_TILES).sort(), 'URL 表必须与清单条目一一对应');
+  for (const id of FACE_TILES_MANIFEST.degraded) {
+    assert.equal(urls[id as never], undefined, `${id} 是 degraded，不该出现在 faceTileUrls 里`);
   }
   const first = faceTileUrl('angry', '2x');
   assert.ok(first.startsWith(FACE_TILES_MANIFEST.assetBase), 'faceTileUrl 必须带 assetBase');

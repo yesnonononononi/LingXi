@@ -17,7 +17,6 @@
   },
   "masterDir": "docs/assets/desktop-pet/v3/expr",
   "degraded": [
-    "wink",
     "blinkHalf"
   ],
   "faceTiles": {
@@ -178,6 +177,26 @@
         "height": 200,
         "bytes": 74608,
         "sha256": "eb3e566fe057fd69f849f274db73759178af45ab287f51314c35a260c5840e8c",
+        "format": "webp-lossless"
+      }
+    },
+    "wink": {
+      "1x": {
+        "file": "face/wink@1x.webp",
+        "url": "lxa://pet-p1/face/wink@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 24558,
+        "sha256": "310b20bbc5804de2ee2394d92da72dc4afec4db309afde4a484f5e1ae4e62f18",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/wink@2x.webp",
+        "url": "lxa://pet-p1/face/wink@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 75274,
+        "sha256": "8bcc4cf64e0db648fe583d6ea7c1d755898d98adf8bf8b8679eedf8147126526",
         "format": "webp-lossless"
       }
     }

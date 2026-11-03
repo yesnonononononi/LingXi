@@ -134,7 +134,16 @@ export const WINK_EYE_WINDOW_MASTER = Object.freeze({ x: 570, y: 1070, width: 39
  */
 export const FACE_TILE_BYTE_BUDGET = Object.freeze({ '1x': 40 * 1024, '2x': 120 * 1024 });
 
-/** 脸贴片总体积预算（9 档 × 2 密度实测 ≈ 0.9MB，留出 wink/blinkHalf 转正后的余量）。 */
+/**
+ * 脸贴片总体积预算。
+ *
+ * <p><b>实测（wink 转正后）</b>：9 档 × 2 密度、共 18 张无损 webp，`@1x` 合计 223,186B、
+ * `@2x` 合计 685,380B，<b>总计 908,566B ≈ 0.87MB</b>；安装包里 webp 不再压缩，
+ * 但 NSIS 压缩与对齐会再加一点，<b>安装包增量约 1.0MB</b>。</p>
+ *
+ * <p>这里锁的是<b>总量</b>而不是只看单档上限：单档上限挡不住"再多加几档"——每档都在
+ * 40KB/120KB 以内，加起来照样能把安装包顶穿。改预算必须先看这条注释里的实测值。</p>
+ */
 export const FACE_TOTAL_BYTE_BUDGET = Math.round(1.5 * 1024 * 1024);
 
 /** 差异判定阈值（0–255，与设计文档 §4.1 的实测口径一致：7/255）。 */
@@ -790,7 +799,26 @@ export async function buildFaceTiles(options = {}) {
         );
       }
     }
-    if (check) continue;
+    if (check) {
+      // 只校验模式：已转正的延迟档也要按清单核对（不写盘、不重新编码）。
+      // 少了这一步，`--check` 会把一份**正确**的转正清单判成过期（缺 wink 条目），
+      // 于是"转正"与"校验"互相打架，只能靠回滚转正来换绿。
+      const recorded = readExistingCatalog(catalogPath)?.faceTiles?.[expressionId];
+      if (!recorded) {
+        problems.push(
+          `清单过期：${basename(catalogPath)} 缺少表情 ${expressionId}` +
+            '（母版已入库，重跑 node scripts/build-pet-face-tiles.mjs --include-deferred）',
+        );
+        continue;
+      }
+      catalogTiles[expressionId] = recorded;
+      entries.push({
+        expressionId,
+        sha256: { '1x': recorded?.['1x']?.sha256 ?? '', '2x': recorded?.['2x']?.sha256 ?? '' },
+        problems: [],
+      });
+      continue;
+    }
     const region = cropRawRegion(raw, FACE_REGION_MASTER);
     const emitted = await emitDensities(sharp, region, outDir, expressionId, { assetBase, verbose, log });
     problems.push(...emitted.problems);
@@ -950,6 +978,30 @@ export function parseArgs(argv) {
 }
 
 /**
+ * 已入库的 `pet-face-tiles.json` 里是否已经给"延迟交付档"生成了贴片。
+ *
+ * <p><b>`--check` 为什么要读它：</b>`--check` 的职责是"入库状态与母版是否自洽"，
+ * 而不是"要求把已转正的贴片退回 degraded"。母版入库并显式 `--include-deferred` 转正之后，
+ * 不带 flag 的 `--check` 若仍按 degraded 复算，就会把一份**正确**的入库物判成过期，
+ * 逼着人把转正结果回滚——那是把可复现性做反了。所以 `--check` 以<b>入库现状</b>为基准：
+ * 已经转正（清单里有贴片）且母版仍在，就按转正口径重算并比对。</p>
+ *
+ * @returns {boolean} 清单里是否已有任一延迟档的贴片条目
+ */
+function committedHasDeferredTiles() {
+  try {
+    if (!existsSync(FACE_TILES_JSON_PATH)) return false;
+    const catalog = JSON.parse(readFileSync(FACE_TILES_JSON_PATH, 'utf8'));
+    const tiles = catalog && typeof catalog === 'object' ? catalog.faceTiles : null;
+    if (!tiles || typeof tiles !== 'object') return false;
+    return FACE_DEFERRED_IDS.some((expressionId) => Boolean(tiles[expressionId]));
+  } catch (err) {
+    // 清单损坏属于"过期/不可读"，交给 buildFaceTiles 的校验去报；这里只当没转正过
+    return false;
+  }
+}
+
+/**
  * CLI 入口。
  *
  * @returns {Promise<number>} 进程退出码（0 = 成功）
@@ -957,10 +1009,11 @@ export function parseArgs(argv) {
 export async function main() {
   const args = parseArgs(process.argv.slice(2));
   try {
+    const includeDeferred = args.includeDeferred || (args.check && committedHasDeferredTiles());
     const result = await buildFaceTiles({
       check: args.check,
       verbose: args.verbose,
-      includeDeferred: args.includeDeferred,
+      includeDeferred,
       sourceDir: args.source ? resolve(args.source) : undefined,
       outDir: args.out ? resolve(args.out) : undefined,
       log: (message) => console.log(message),
