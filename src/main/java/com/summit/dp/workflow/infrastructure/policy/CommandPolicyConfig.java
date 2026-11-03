@@ -57,15 +57,18 @@ public class CommandPolicyConfig {
                 return ToolExecuteResult.err(unsupported.getMessage());
             }
             CommandApprovalPolicy mode = CommandApprovalPolicy.from(execution.getAttributes());
-            CommandRiskClassifier.Risk risk = CommandRiskClassifier.assess(command);
             SecurityDecision decision = security == null ? null : security.evaluate(command, mode);
             if (decision != null && decision.action() == SecurityAction.DENY) {
                 return ToolExecuteResult.err(decision.describe());
             }
-            // 高危审批不能被允许规则跳过，完全放行也只在这一层保留询问。
+            // 完全放行是明确的免审批选择，不能再由命令文本的风险判定覆盖。
+            if (mode == CommandApprovalPolicy.FULL_ACCESS) {
+                return null;
+            }
+            CommandRiskClassifier.Risk risk = CommandRiskClassifier.assess(command);
+            // 其余档位的高危审批不能被允许规则跳过。
             boolean ask = risk == CommandRiskClassifier.Risk.CRITICAL
-                    || (mode != CommandApprovalPolicy.FULL_ACCESS
-                    && (decision == null ? requiresApproval(mode, risk) : decision.action() == SecurityAction.ASK));
+                    || (decision == null ? requiresApproval(mode, risk) : decision.action() == SecurityAction.ASK);
             if (!ask) {
                 return null;
             }

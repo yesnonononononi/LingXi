@@ -5,7 +5,7 @@ import java.util.Map;
 /** 命令执行的人机放行档位 —— 属于业务侧。 */
 public enum CommandApprovalPolicy {
 
-    /** 完全放行仅保留磁盘、系统破坏与提权等高危审批，自定义禁止仍生效。 */
+    /** 完全放行不发起命令审批，自定义禁止仍生效。 */
     FULL_ACCESS,
 
     /** 逐条确认：每条命令都先给用户看。 */

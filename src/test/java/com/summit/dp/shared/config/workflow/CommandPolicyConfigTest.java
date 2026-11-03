@@ -6,6 +6,7 @@ import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
+import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutionPolicy;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -24,6 +25,9 @@ import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashMap;
 import java.util.List;
@@ -82,8 +86,9 @@ class CommandPolicyConfigTest {
         verify(registrar).registerPromise(argThat(cmd -> cmd.content().contains("\"shell\":\"pwsh\"")));
     }
 
-    @Test
-    void unsupportedShellBlocksTheApprovalCard() throws Exception {
+    @ParameterizedTest
+    @EnumSource(value = CommandApprovalPolicy.class, names = {"PRE_EXEC_CONFIRM", "FULL_ACCESS"})
+    void unsupportedShellBlocksTheApprovalCard(CommandApprovalPolicy mode) throws Exception {
         Workspace workspace = mock(Workspace.class);
         RuntimeEnvironment environment = mock(RuntimeEnvironment.class);
         when(workspace.id()).thenReturn("workspace");
@@ -91,7 +96,7 @@ class CommandPolicyConfigTest {
         when(workspace.runtimeEnvironment()).thenReturn(environment);
         when(environment.osType()).thenReturn(OsType.WINDOWS);
         when(environment.shellType()).thenReturn(ShellType.CMD);
-        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.PRE_EXEC_CONFIRM));
+        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(mode));
         attributes.put(ExecutionAttributes.SESSION_ID, "1");
         ToolExecution execution = ToolExecution.builder().workspace(workspace).executionId("1").id("tool-shell")
                 .toolDefinition(ToolDefinition.<CommandToolDefinitionExecutor>builder()
@@ -122,13 +127,57 @@ class CommandPolicyConfigTest {
                 && cmd.kind() == ToolCallKind.COMMAND && "command".equals(cmd.toolName())));
     }
 
-    @Test
-    void highRiskCommandsRequireApprovalEvenInFullAccess() throws Exception {
-        for (String script : List.of("shutdown now", "rm -rf /", "sudo rm -rf /home", "Clear-Disk -Number 99", "wsl --unregister Ubuntu",
-                "wsl --shutdown", "wsl -d Ubuntu --exec bash -lc 'rm -rf /'", "Start-Process powershell -Verb RunAs")) {
-            assertTrue(policy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)).isPromise(), script);
-        }
-        verify(registrar, times(8)).registerPromise(any());
+    @ParameterizedTest
+    @ValueSource(strings = {"shutdown now", "rm -rf /", "sudo rm -rf /home", "Clear-Disk -Number 99", "wsl --unregister Ubuntu",
+            "wsl --shutdown", "wsl -d Ubuntu --exec bash -lc 'rm -rf /'", "Start-Process powershell -Verb RunAs"})
+    void fullAccessNeverRegistersApprovalForHighRiskCommands(String script) throws Exception {
+        assertNull(policy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)), script);
+        verifyNoInteractions(registrar);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            """
+            cd /d D:\\Code\\LingXi\\frontend && (node --test tests/petAssetTracking.test.cjs > D:\\Code\\LingXi\\.lingxi\\tmp\\final-guard.log 2>&1 && echo GUARD_EXIT=0 || echo GUARD_EXIT=NONZERO) & node -e "const t=require('fs').readFileSync('D:/Code/LingXi/.lingxi/tmp/final-guard.log','utf8').split(/\\r?\\n/);console.log(t.filter(l=>/^ℹ (tests|pass|fail|skipped)|^✔ 索引：git 历史/.test(l)).join('\\n'))" & del /q D:\\Code\\LingXi\\.lingxi\\tmp\\final-guard.log & echo CLEANED & cd /d D:\\Code\\LingXi && git status --porcelain & echo "(空=干净)"
+            """,
+            """
+            cd D:\\Code\\LingXi
+            "=== git status --porcelain（变异自检后，应只有我改的 2 个文件）"
+            & git status --porcelain
+            New-Item -ItemType Directory -Force -Path 'docs/assets/desktop-pet/poses/zz-probe-inflight' | Out-Null
+            Set-Content -Path 'docs/assets/desktop-pet/poses/zz-probe-inflight/a.png' -Value 'probe' -NoNewline
+            Set-Content -Path 'docs/assets/desktop-pet/poses/zz-probe-inflight/b.png' -Value 'probe' -NoNewline
+            cd frontend
+            $out = & node --test tests/petAssetTracking.test.cjs 2>&1
+            $out | Select-String -Pattern 'pet-asset\\]|^✖|^ℹ (tests|pass|fail|skipped)' | ForEach-Object { $_.Line }
+            cd ..
+            Remove-Item -Recurse -Force 'docs/assets/desktop-pet/poses/zz-probe-inflight'
+            """,
+            """
+            cd D:\\Code\\LingXi
+            '=== git status --porcelain (after mutation selfcheck)'
+            & git status --porcelain
+            'git log hit (should be empty) = [' + (& git log -1 --format='%h' -- docs/assets/desktop-pet/poses/zz-probe-inflight) + ']'
+            cd frontend
+            $out = & node --test tests/petAssetTracking.test.cjs 2>&1
+            '退出码 = ' + $LASTEXITCODE
+            cd ..
+            Remove-Item -Recurse -Force 'docs/assets/desktop-pet/poses/zz-probe-inflight'
+            'probe dir removed = ' + (-not (Test-Path 'docs/assets/desktop-pet/poses/zz-probe-inflight'))
+            """,
+            "cd /d D:\\Code\\LingXi\\frontend && node --test tests/petAssetTracking.test.cjs > final-guard.log 2>&1 & del /q final-guard.log & git status --porcelain",
+            "New-Item -ItemType Directory -Force .lingxi/tmp/probe | Out-Null; Remove-Item -Recurse -Force .lingxi/tmp/probe"
+    })
+    void fullAccessPassesCompoundGuardScriptsWithoutApproval(String script) throws Exception {
+        assertNull(policy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)), script);
+        verifyNoInteractions(registrar);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = CommandApprovalPolicy.class, names = {"DANGEROUS_BLOCK", "PRE_EXEC_CONFIRM"})
+    void otherModesStillRequireHighRiskApproval(CommandApprovalPolicy mode) throws Exception {
+        assertTrue(policy.beforeExecution(command("1", "rm -rf /", mode)).isPromise());
+        verify(registrar).registerPromise(any());
     }
 
     @Test
@@ -166,7 +215,7 @@ class CommandPolicyConfigTest {
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.ALLOW, true, null)));
         ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
-        assertTrue(guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", CommandApprovalPolicy.FULL_ACCESS)).isPromise());
+        assertTrue(guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", CommandApprovalPolicy.DANGEROUS_BLOCK)).isPromise());
     }
 
     @Test
@@ -177,6 +226,18 @@ class CommandPolicyConfigTest {
                 new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.DENY, true, null)));
         ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
         assertFalse(guarded.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.FULL_ACCESS)).isSuccess());
+    }
+
+    @Test
+    void fullAccessKeepsCustomDenialsForHighRiskCommandsWithoutAsking() throws Exception {
+        SecurityRuleService rules = mock(SecurityRuleService.class);
+        when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
+                new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.DENY, true, null)));
+        ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
+        ToolExecuteResult result = guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", CommandApprovalPolicy.FULL_ACCESS));
+        assertFalse(result.isSuccess());
+        assertFalse(result.isPromise());
+        verifyNoInteractions(registrar);
     }
 
     @Test
