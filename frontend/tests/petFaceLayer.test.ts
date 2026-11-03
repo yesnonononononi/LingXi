@@ -327,7 +327,7 @@ test('放置：只有 face 写 data-placement=rect 与四个百分比，其余 9
   const { views, host } = setup();
   const face = views.get(FACE_LAYER_ID);
   assert.ok(face, '缺少 face 视图');
-  assert.equal(face?.element.dataset.placement, 'rect');
+  assert.equal(face?.element.dataset.placement, 'rect', "只有 face 层写 data-placement='rect'（整画布层一个字节都不写）");
   // 560/2048、1064/3072、792/2048、400/3072（容忍 1e-4 的百分比写法差异）
   const expect = {
     left: (FACE_RECT.x / PET_LAYERS.canvas.width) * 100,
@@ -362,6 +362,26 @@ test('放置：只有 face 写 data-placement=rect 与四个百分比，其余 9
   assert.equal(container.children.length, 10);
   assert.equal(inferPlanCanvas(planMissing([])).width, 2048);
   assert.equal(inferPlanCanvas(planMissing([])).height, 3072);
+});
+
+test('放置：mountLayerViews 自己就写 data-placement（不靠 LayerPresentation 构造时兜底）', () => {
+  // 真实运行顺序是"先挂层、后构造表现层"（`select-presentation.ts`）：挂载这一步如果不写放置，
+  // 中间会有一帧按整画布 contain 摆的脸贴片——正是 T03 要消灭的"错位闪一下"。
+  // 所以这里**不**构造 LayeredPresentation，只验 mountLayerViews 自己的写入面。
+  const doc = new FakeDocument();
+  const host = new FakeElement('div');
+  const views = mountLayerViews(doc, host, planMissing([]), PET_LAYERS.canvas);
+  const face = views.get(FACE_LAYER_ID);
+  assert.ok(face, '缺少 face 视图');
+  assert.equal(face?.element.dataset.placement, 'rect', '挂载时就必须写 data-placement（否则会先按 contain 错位一下）');
+  const left = face?.element.styleProps.get(RECT_PLACEMENT_VARIABLES.left) ?? '';
+  assert.match(left, /^-?\d+(\.\d+)?%$/, '挂载时就必须写 left 百分比');
+  const top = face?.element.styleProps.get(RECT_PLACEMENT_VARIABLES.top) ?? '';
+  assert.match(top, /^-?\d+(\.\d+)?%$/, '挂载时就必须写 top 百分比');
+  for (const [layerId, view] of views) {
+    if (layerId === FACE_LAYER_ID) continue;
+    assert.equal(view.element.dataset.placement, undefined, `${layerId} 是整画布层，挂载时不该写 data-placement`);
+  }
 });
 
 test('放置：整画布层返回 null（不写放置变量），脏矩形也不写', () => {

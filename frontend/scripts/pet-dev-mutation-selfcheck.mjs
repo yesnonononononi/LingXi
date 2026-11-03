@@ -155,6 +155,62 @@ const MUTATIONS = [
     testFile: 'tests/petNotShipped.test.cjs',
     expect: 'build.files 里仍有桌宠数据',
   },
+  // ---------------------------------------------------------------- T03：表现层接入
+  {
+    id: 'face-layer-hidden',
+    goal: '把"计划里有可见 face 层"判成 false（T03 断言 2 的反向）：layered 下不再换贴片，而是回落整帧',
+    file: 'src/pet/presentation/layered-presentation.ts',
+    find: 'return this.visibleLayerIds.has(FACE_LAYER_ID);',
+    replace: 'return false;',
+    testFile: 'tests/petFaceLayer.test.ts',
+    expect: '脸层 src 必须指向该档贴片',
+  },
+  {
+    id: 'fallback-removed',
+    goal: '删掉整帧回落（partial/composite 下表情彻底看不见）：回落计数断言必须红',
+    file: 'src/pet/presentation/layered-presentation.ts',
+    find: '    base.apply(op);',
+    replace: '    void base;',
+    testFile: 'tests/petFaceLayer.test.ts',
+    expect: 'partial 下表情必须回落压平帧',
+  },
+  {
+    id: 'face-placement-dropped',
+    goal: '挂载时不写 data-placement（T03 断言 1 的反向）：脸贴片会按 contain 错位摆放',
+    file: 'src/pet/presentation/layered-presentation.ts',
+    find: '    if (placement) applyRectPlacement(element, placement);',
+    replace: '    if (placement) void placement;',
+    testFile: 'tests/petFaceLayer.test.ts',
+    expect: '挂载时就必须写 data-placement',
+  },
+  // ---------------------------------------------------------------- T04：眨眼 / 行为
+  {
+    id: 'wink-takes-blink',
+    goal: 'wink 顶替 blink（§5.2 第 2 条的反向）：回礼眨眼会被演成生理眨眼',
+    file: 'src/pet/presentation/blink-driver.ts',
+    find: "  wink: 'wink',",
+    replace: "  wink: 'blink',",
+    testFile: 'tests/petBlinkWink.test.ts',
+    expect: 'wink 必须指向 wink 自己的贴片',
+  },
+  {
+    id: 'half-back-to-sleepy',
+    goal: '半闭帧退回 sleepy（E08 判据的反向）：每眨一次眼嘴型跟着抖一下',
+    file: 'src/pet/presentation/blink-driver.ts',
+    find: "  half: 'blinkHalf',",
+    replace: "  half: 'sleepy',",
+    testFile: 'tests/petBlinkWink.test.ts',
+    expect: '半闭帧必须是独立档',
+  },
+  {
+    id: 'long-drag-sad-removed',
+    goal: '长拖拽不再委屈（§6 表 E04 的反向）：拖久了松手没有任何反馈',
+    file: 'src/pet/behavior/state-machine.ts',
+    find: '    if (dragMs >= SAD_DRAG_MS) {',
+    replace: '    if (dragMs >= SAD_DRAG_MS && false) {',
+    testFile: 'tests/petBehaviorTriggers.test.ts',
+    expect: '长拖拽（≥1200ms）松手必须产出 sad 表情',
+  },
 ];
 
 /** 当前在飞的变异：绝对路径 → 原始文本（进程被中断时据此还原）。 */
@@ -202,15 +258,25 @@ function sha256(text) {
 /**
  * 跑目标测试文件。
  *
+ * <p>`.cjs` 用例用 `node --test` 原生跑；`.ts` 用例必须过 `tsx`（node 原生不理解 TS，
+ * 直接喂给它只会得到语法错误——那种"红"是假红，会污染变异自检的信噪比）。</p>
+ *
  * @param {string} testFile 相对 frontend 的测试路径
  * @returns {{ok: boolean, code: number, out: string, ms: number}} 运行结果
  */
 function runTests(testFile) {
   const started = Date.now();
-  const proc = spawnSync(process.execPath, ['--test', testFile], {
-    cwd: FRONTEND_ROOT,
-    encoding: 'utf8',
-  });
+  const isTypeScript = /\.(ts|mts|tsx)$/.test(String(testFile));
+  const proc = isTypeScript
+    ? spawnSync(`npx tsx --test "${testFile}"`, {
+        cwd: FRONTEND_ROOT,
+        encoding: 'utf8',
+        shell: true,
+      })
+    : spawnSync(process.execPath, ['--test', testFile], {
+        cwd: FRONTEND_ROOT,
+        encoding: 'utf8',
+      });
   const code = typeof proc.status === 'number' ? proc.status : 1;
   return {
     ok: code === 0,
