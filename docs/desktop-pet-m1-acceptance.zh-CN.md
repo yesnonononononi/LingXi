@@ -101,7 +101,39 @@ M5 之前没有变异体覆盖：新增变异体第一次跑是**全绿**（测�
 （`petFaceLayer.test.ts`："贴片与整帧两套 URL 同时存在时，脸层必须取贴片"），把 整帧 URL 与贴片 URL 都设成
 同一 id 的不同值，之后变异体才变红——这就是"假绿"被抓到的过程记录。
 
-## 7. 复现
+## 8. 附录：跨 DPI / 多显示器窗口位置取证（只出结论，未改代码）
+
+现象（主理人报告）：桌宠窗口物理 297×527，位置在副屏 `X=3042 Y=-80`；而 `pet-window-state.json`
+里持久化的是 248×399，与 150% DPI 下的 196×348 逻辑尺寸都不一致。
+
+实测与实验（本次复核）：
+
+1. **显示器为"混 DPI"**：Electron 侧 `screen.getAllDisplays()`
+   - `id=1102200686`（主）`scaleFactor=1`，bounds `0,0 1920×1080`，workArea `0,0 1920×1032`；
+   - `id=1129001747`（副）`scaleFactor=1.5`，bounds `1920,-238 1707×961`，workArea `1920,-238 1707×913`。
+2. **HEAD 代码建出来的窗口就是 196×348（DIP）**：用 `pet-geometry.json` 推导出的尺寸，按 `pet-window.cjs`
+   完全相同的窗口参数建一个隐藏窗口，`getBounds()`/`getContentBounds()` 都返回 `196×348`，
+   渲染层 `devicePixelRatio=1`（在主屏上）；`win.getBounds()` 全程是 **DIP**，不是物理像素。
+3. **297×527 与 196×348 是同一扇窗**：两者比值 1.5153 / 1.5144，**比值一致**（≈ 副屏 1.5 缩放 + 边框/阴影），
+   属于**合法 DPI 换算**（物理 = DIP × scaleFactor），不是错位。
+4. **248×399 不可能由当前代码产生**：比例 1.265 / 1.147 **不一致**，非同一次 DPI 换算；
+   而 `resolveInitialBounds()` 恢复时**只取 saved.x / saved.y**，尺寸一律用当前几何（`normalizeDimension(size.width, PET_WIDTH)`），
+   所以状态文件里的旧 width/height 根本不会被采用 ⇒ "尺寸跨 DPI 恢复错位"这条路径在代码上不存在。
+5. **位置不会被推出屏幕**：`pickDisplay()` 按面积比例选屏，`visibleRatio < MIN_VISIBLE_RATIO(0.4)` 才回默认角落，
+   否则 `clampRectToWorkArea()` 把窗口整体夹进那块 workArea；`display-removed` / `display-metrics-changed`
+   还会 `reclampIntoDisplays()`。DIP 域内比较，不存在"状态存物理像素、恢复按 DIP 读"的换算缺口。
+6. **脚底对不上工作区**：副屏 workArea 底边 = `-238 + 913 = 675`（DIP）。窗口若停在 y=-53（= 物理 -80 / 1.5），
+   底边只有 295 DIP，离工作区底边还有 380 DIP——桌宠悬在半空。这**不是换算缺陷**，而是"上次拖到哪就恢复哪"
+   的设计（代码只保证"可见"，不吸附底边）。
+
+未解释项（需工程师确认，非本次可证伪）：当前在跑的实例（PID 54428）实测物理 289×478、`GetDpiForWindow=96`，
+其 `pet-window-state.json` 也是 `289×478`。按 HEAD 代码该窗口只能是 196×348（且 `pet-window.cjs` 里
+**没有任何** `setBounds`/`setSize`，建窗后尺寸不可变），所以这个实例的几何来源与当前工作树不一致，
+最可能是**存量实例/存量状态文件**（启动于 16:32，状态文件 updatedAt 17:03）。
+建议（不改代码）：停掉该实例、删掉 `pet-window-state.json` 后重启，尺寸应回到 196×348；若仍是 289×478，
+则说明还有第二条改尺寸的路径，需要单独排查。
+
+## 9. 复现
 
 ```bash
 cd .lingxi/work/desktop-pet-visual/frontend
