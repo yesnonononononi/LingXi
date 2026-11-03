@@ -16,7 +16,7 @@ import java.time.Instant;
 @Getter
 @Builder
 public class UserConfig {
-    public static final int DEFAULT_IMAGE_GENERATION_MAX_CALLS = 3;
+    public static final int DEFAULT_IMAGE_GENERATION_MAX_CALLS = 10;
     public static final int MAX_IMAGE_GENERATION_CALLS = 20;
 
 

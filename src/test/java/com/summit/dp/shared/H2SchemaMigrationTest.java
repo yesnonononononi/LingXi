@@ -38,10 +38,13 @@ class H2SchemaMigrationTest {
         H2TestDatabase database = newDatabase("image-settings-upgrade");
         H2SchemaInitializer initializer = new H2SchemaInitializer();
         assertEquals(1, initializer.initialize(database, List.of(baselineScript())));
-        assertEquals(1, initializer.initialize(database));
+        assertEquals(loader.load(H2Storage.SCHEMA_LOCATION).size() - 1, initializer.initialize(database));
         assertEquals("2", database.queryString("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS"
                 + " WHERE TABLE_SCHEMA='PUBLIC' AND TABLE_NAME='USER_CONFIGS'"
                 + " AND COLUMN_NAME IN ('IMAGE_MODEL_ID','IMAGE_GENERATION_MAX_CALLS')"));
+        assertEquals("10", database.queryString("SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS"
+                + " WHERE TABLE_SCHEMA='PUBLIC' AND TABLE_NAME='USER_CONFIGS'"
+                + " AND COLUMN_NAME='IMAGE_GENERATION_MAX_CALLS'"));
         assertEquals(0, initializer.initialize(database));
     }
 

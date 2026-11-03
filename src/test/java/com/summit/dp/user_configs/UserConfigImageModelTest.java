@@ -29,7 +29,8 @@ class UserConfigImageModelTest {
         DefaultSettingsProvider provider=new DefaultSettingsProvider(repository,"",10);
         UserConfigServiceImpl service=new UserConfigServiceImpl(repository,models,provider,mock(SettingsDirectoryMigrator.class));
         ReflectionTestUtils.setField(service,"activeDataDir","/data");
-        assertEquals(3,service.current().getData().getImageGenerationMaxCalls());
+        assertEquals(10,service.current().getData().getImageGenerationMaxCalls());
+        assertEquals(10,provider.current().orElseThrow().imageGenerationMaxCalls());
         service.update(command(9L,true,2));
         assertEquals(9L,provider.current().orElseThrow().imageModelId());
         assertEquals(2,provider.current().orElseThrow().imageGenerationMaxCalls());
