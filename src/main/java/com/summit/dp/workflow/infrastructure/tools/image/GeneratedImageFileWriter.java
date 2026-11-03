@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.summit.core.agent.Image;
+import com.summit.core.model.image.ImageGenerationOptions;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.LocalWorkspaceBridge;
@@ -31,6 +32,7 @@ public class GeneratedImageFileWriter {
     private static final int MAX_BYTES = 16 * 1024 * 1024;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
     private final ImageNormalizer normalizer = new ImageNormalizer();
+    private final GeneratedImageOutputValidator outputValidator = new GeneratedImageOutputValidator();
 
     /** 本地桥接需复核真实父目录，避免工作区内的链接把写入导向外部。 */
     public void validateTarget(Workspace workspace, Path target) throws IOException {
@@ -42,6 +44,10 @@ public class GeneratedImageFileWriter {
     }
 
     public byte[] load(Image image, String extension) throws Exception {
+        return load(image, extension, null);
+    }
+
+    public byte[] load(Image image, String extension, ImageGenerationOptions options) throws Exception {
         byte[] bytes;
         if (image.getBase64Data() != null && !image.getBase64Data().isBlank()) {
             if (image.getBase64Data().length() > (long) MAX_BYTES * 4 / 3 + 4) throw new IOException("生图结果超过 16MB");
@@ -63,6 +69,7 @@ public class GeneratedImageFileWriter {
         if (format != ImageFormat.PNG && format != ImageFormat.JPEG) throw new IOException("生图结果必须为 PNG 或 JPEG");
         ImageNormalizer.ImageSize size = normalizer.probe(bytes);
         if ((long) size.width() * size.height() > ImageNormalizer.MAX_PIXELS) throw new IOException("生图结果像素过大");
+        outputValidator.validate(bytes, format, options);
         if (format.storedExtension().equals(extension)) return bytes;
         BufferedImage source = ImageIO.read(new ByteArrayInputStream(bytes));
         BufferedImage target = source;

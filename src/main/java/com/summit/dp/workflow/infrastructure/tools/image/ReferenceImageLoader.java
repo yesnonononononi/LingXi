@@ -8,6 +8,7 @@ import com.summit.dp.shared.exception.ClientException;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,8 +24,34 @@ public class ReferenceImageLoader {
 
     public Image load(JsonNode args, Workspace workspace) throws IOException {
         if (!args.has("reference_image_path")) return null;
-        JsonNode value = args.path("reference_image_path");
-        throwIf(!value.isTextual() || value.asText().isBlank(), "参考图 reference_image_path 必须为非空文件路径；不使用参考图时请省略该参数");
+        return readImage(args.path("reference_image_path"), workspace);
+    }
+
+    public Image loadMask(JsonNode args, Workspace workspace, Image reference) throws IOException {
+        if (!args.has("mask_image_path")) return null;
+        throwIf(reference == null, "使用蒙版 mask_image_path 时必须同时提供参考图 reference_image_path");
+        Image mask = readImage(args.path("mask_image_path"), workspace);
+        byte[] bytes = Base64.getDecoder().decode(mask.getBase64Data());
+        throwIf(ImageFormat.detect(bytes) != ImageFormat.PNG, "蒙版必须为带透明区域的 PNG 图片");
+        ImageNormalizer.ImageSize original = normalizer.probe(Base64.getDecoder().decode(reference.getBase64Data()));
+        BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(bytes));
+        throwIf(decoded.getWidth() != original.width() || decoded.getHeight() != original.height(), "蒙版尺寸必须与参考图完全一致");
+        throwIf(!decoded.getColorModel().hasAlpha(), "蒙版必须包含 alpha 通道和完全透明的待编辑区域");
+        boolean transparent = false;
+        for (int y = 0; y < decoded.getHeight() && !transparent; y++) {
+            for (int x = 0; x < decoded.getWidth(); x++) {
+                if ((decoded.getRGB(x, y) >>> 24) == 0) {
+                    transparent = true;
+                    break;
+                }
+            }
+        }
+        throwIf(!transparent, "蒙版没有完全透明的待编辑区域，请将需要修改的位置设为透明");
+        return mask;
+    }
+
+    private Image readImage(JsonNode value, Workspace workspace) throws IOException {
+        throwIf(!value.isTextual() || value.asText().isBlank(), "输入图片路径必须为非空文件路径；不使用时请省略该参数");
         String path = value.asText().trim();
         Path target;
         try {

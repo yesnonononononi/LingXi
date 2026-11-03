@@ -57,6 +57,19 @@ class ImageGenerationSpecValidatorTest {
         }
     }
 
+    @Test void transparentBackgroundRequestsPngAndExplicitFormatsMatchTheSavedFile() throws Exception {
+        ModelConfig config = ModelConfig.builder().build();
+        assertEquals(new ImageGenerationOptions("1024x1024", null, 1, "transparent", "png"),
+                validator.resolve(mapper.readTree("{\"path\":\"out.png\",\"background\":\"transparent\"}"), config));
+        assertEquals("jpeg", validator.resolve(mapper.readTree("{\"path\":\"out.jpeg\",\"output_format\":\"jpeg\"}"), config).outputFormat());
+        for (String json : new String[]{"{\"background\":true}", "{\"background\":\"unknown\"}", "{\"output_format\":false}",
+                "{\"output_format\":\"webp\"}", "{\"path\":\"out.jpg\",\"background\":\"transparent\"}",
+                "{\"path\":\"out.jpg\",\"background\":\"transparent\",\"output_format\":\"jpeg\"}",
+                "{\"path\":\"out.png\",\"output_format\":\"jpeg\"}"}) {
+            assertThrows(ClientException.class, () -> validator.resolve(mapper.readTree(json), config), json);
+        }
+    }
+
     private ImageGenerationOptions resolve(String model, String size) throws Exception {
         return validator.resolve(mapper.createObjectNode().put("size", size), ModelConfig.builder().modelName(model).build());
     }

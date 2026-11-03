@@ -44,6 +44,8 @@ import java.util.Map;
         description = "使用已配置的生图模型生成一张图片，保存到工作区内的新文件，不覆盖已有文件。"
                 + "可传 reference_image_path 润色工作区内的一张 PNG/JPEG；省略则按文字生成。参考图传路径，不传 Base64，也无需先调用 read_image。"
                 + "编辑需要模型和服务端支持图片编辑接口，不支持时直接返回错误。"
+                + "可传 mask_image_path 使用同尺寸透明 PNG 蒙版，完全透明区域为待编辑位置。"
+                + "background 与 output_format 是向服务端显式请求，格式或透明度不符合要求会返回失败。"
                 + "prompt 必须完整自洽，path 使用相对路径。size、quality、count 均可不传：默认尺寸沿用模型配置，"
                 + "未配置尺寸时为 1024x1024；默认质量沿用模型配置，未配置则由服务端决定；每次固定一张。"
                 + "本地只校验参数格式，模型不支持的尺寸或质量由工具返回服务端错误信息。调用有次数上限，失败也占次数。"
@@ -53,6 +55,12 @@ import java.util.Map;
                 @ToolProperty(key = "path", value = @Value(type = ValueType.STRING, description = "相对于工作区的新图片路径，扩展名为 .png、.jpg 或 .jpeg，不覆盖已有文件。")),
                 @ToolProperty(key = "reference_image_path", value = @Value(type = ValueType.STRING,
                         description = "可不传。用于润色的单张 PNG/JPEG 文件路径，支持工作区内的相对或绝对路径；不接受 URL 或 Base64。图片不超过 16MB、4000 万像素，保持原图字节。")),
+                @ToolProperty(key = "mask_image_path", value = @Value(type = ValueType.STRING,
+                        description = "可不传。工作区内 PNG 蒙版路径，必须同时传参考图；尺寸与参考图一致，包含 alpha 通道，完全透明区域为待编辑位置。")),
+                @ToolProperty(key = "background", value = @Value(type = ValueType.STRING,
+                        description = "可不传。transparent 请求透明背景，opaque 请求不透明背景，auto 由服务端决定。transparent 必须保存为 PNG，省略 output_format 时自动请求 png。")),
+                @ToolProperty(key = "output_format", value = @Value(type = ValueType.STRING,
+                        description = "可不传。显式请求 png 或 jpeg，必须与 path 扩展名一致。服务端返回的实际格式不符时失败，不通过转码伪装成功。")),
                 @ToolProperty(key = "size", value = @Value(type = ValueType.STRING, description = ImageGenerationSpecValidator.SIZE_DESCRIPTION)),
                 @ToolProperty(key = "quality", value = @Value(type = ValueType.STRING, description = ImageGenerationSpecValidator.QUALITY_DESCRIPTION)),
                 @ToolProperty(key = "count", value = @Value(type = ValueType.INTEGER, integerValue = @IntegerValue(enums = 1, defaultValue = 1),
@@ -98,15 +106,17 @@ public class GenerateImageToolExecutor implements ToolExecutor {
             throwIf(!DefaultModelProviderNames.DEFAULT_IMAGE.equals(config.getProvider()), "配置的生图模型不是图片模型，请重新选择");
             ImageGenerationOptions options = specifications.resolve(args, config);
             Image reference = references.load(args, workspace);
+            Image mask = references.loadMask(args, workspace, reference);
             // 一次工具调用只发一次模型请求，避免 SDK 重试绕过执行次数上限。
             config = config.toBuilder().maxRetries(0).build();
             ImageModel model = providers.create(config);
             ChatResponseEntity response = reference == null ? model.generate(args.path("prompt").asText(), options)
-                    : model.edit(reference, args.path("prompt").asText(), options);
+                    : mask == null ? model.edit(reference, args.path("prompt").asText(), options)
+                    : model.edit(reference, mask, args.path("prompt").asText(), options);
             if (response.getTokenUsage() != null) metadata.put(GenerateImageInterceptor.USAGE, mapper.convertValue(response.getTokenUsage(), Map.class));
             throwIf(response.getAiMessageEntity() == null || response.getAiMessageEntity().getImages() == null
                     || response.getAiMessageEntity().getImages().size() != 1, "生图模型未返回一张完整图片");
-            byte[] bytes = writer.load(response.getAiMessageEntity().getImages().getFirst(), extension);
+            byte[] bytes = writer.load(response.getAiMessageEntity().getImages().getFirst(), extension, options);
             writer.write(files, target, bytes);
             ImageCacheDirectory.CachedImage preview = cache.store(sessionId, bytes, extension);
             String url = "/a/images/" + sessionId + "/" + preview.imageId() + "." + extension;
