@@ -46,16 +46,27 @@ function collector() {
 }
 
 /**
- * 测试用日志路径。
+ * 测试用临时目录（每个测试进程一个）。
  *
- * <p>落系统临时目录：单测不得在仓库源码树里留下任何运行产物。</p>
+ * <p>落系统临时目录：单测不得在仓库源码树里留下任何运行产物；每个进程独立子目录，
+ * 文件跑完由 {@link test.after} 整体删除。</p>
+ */
+const TEST_TMP_DIR = path.join(os.tmpdir(), 'lx-pet-dev-test', String(process.pid));
+
+/**
+ * 测试用文件路径。
  *
  * @param {string} name 文件名
  * @returns {string} 绝对路径
  */
 function testLogPath(name) {
-  return path.join(os.tmpdir(), 'lx-pet-dev-test', name);
+  fs.mkdirSync(TEST_TMP_DIR, { recursive: true });
+  return path.join(TEST_TMP_DIR, name);
 }
+
+test.after(() => {
+  fs.rmSync(TEST_TMP_DIR, { recursive: true, force: true });
+});
 
 /**
  * 构造一个按序返回结论的假探活。
