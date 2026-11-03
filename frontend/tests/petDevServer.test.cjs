@@ -257,8 +257,12 @@ test('startPetDevServer：参数校验（缺日志路径 / cwd 不是前端根�
 });
 
 test('模块自述：前端根目录解析正确（脚本位于 frontend/scripts/）', () => {
+  // 只断言"解析到本脚本所属的 frontend/"，不再断言它的父目录叫 desktop-pet-visual：
+  // 那条断言把"必须跑在 worktree 里"写进了测试，M1 合并到 main 后（dev 链改在 main 上跑）
+  // 会无条件变红，属于布局假设而不是能力断言。
   assert.equal(path.basename(RESOLVED_ROOT), 'frontend');
-  assert.equal(path.basename(path.dirname(RESOLVED_ROOT)), 'desktop-pet-visual');
+  assert.equal(RESOLVED_ROOT, path.resolve(__dirname, '..'));
+  assert.equal(fs.existsSync(path.join(RESOLVED_ROOT, 'package.json')), true, '前端根目录里必须有 package.json');
 });
 
 test('CLI 参数：未知参数与非法 --wait 都被拒绝', () => {
