@@ -107,7 +107,7 @@ const TRACKING_WHITELIST = [];
  *
  * @type {string[]}
  */
-const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'companion/'];
+const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'companion/'];
 
 /**
  * 是否把"在产批次（整批未入库）"的警告升级为失败。
