@@ -647,7 +647,12 @@ test('枚举与美术规格书 §5/§6 逐条对应（枚举名不许再改）',
   for (const id of specExpressions) {
     assert.ok((EXPRESSION_IDS as readonly string[]).includes(id), `缺少规格书 §5 的表情 ${id}`);
   }
-  assert.equal(EXPRESSION_IDS.length, 9, '除 8 档外只允许预留 yawn');
+  // M1/T01：一是预留的 `yawn`，二是新增的 `blinkHalf`（生理眨眼半闭帧）与 `wink`（单眼交互表情）。
+  // 三者的语义分开是设计文档 §5 的核心要求，所以这里是"精确等于 11"而不是放宽成 >=。
+  assert.equal(EXPRESSION_IDS.length, 11, '8 档 + 预留 yawn + blinkHalf/wink 分离后共 11 档');
+  // 两档新语义必须真的进枚举（否则 isExpressionId 会把它们判成非法，指令在总线上被丢掉）
+  assert.ok((EXPRESSION_IDS as readonly string[]).includes('blinkHalf'), '缺少生理眨眼半闭帧 blinkHalf');
+  assert.ok((EXPRESSION_IDS as readonly string[]).includes('wink'), '缺少单眼交互表情 wink');
   // 规格书 §6.2 的运行时动作全集
   const specMotions = ['idle', 'tap', 'happy', 'angry', 'surprised', 'sleepy', 'sad', 'drag', 'wake'];
   assert.deepEqual([...MOTION_IDS].sort(), [...specMotions].sort());

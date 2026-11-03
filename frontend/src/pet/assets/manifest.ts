@@ -37,7 +37,14 @@ export interface PetAssetFile {
 /** 按密度组织的资产表。 */
 export type PetDensityMap = Partial<Record<PetDensity, PetAssetFile>>;
 
-/** 眨眼三态映射（与美术清单 `blink` 字段一致）。 */
+/**
+ * 眨眼映射（与美术清单 `blink` 字段一致，缺项由 {@link PET_BLINK_MAPPING} 兜底）。
+ *
+ * <p><b>`wink` 为什么必填：</b>它属于**交互表情**（单眼闭合），不属于生理眨眼三态。
+ * 放在同一张表里是为了让"眼部语义"只有一个出口：谁想知道"单眼闭合用哪一档"，
+ * 都从这里读，而不是各自在调用点写字面量。生理三态与交互表情是否互斥由
+ * `presentation/priority.ts` 的 `BLINK_LIKE_EXPRESSIONS` 决定，不在这里判。</p>
+ */
 export interface PetBlinkMapping {
   /** 睁眼表情。 */
   readonly open: ExpressionId;
@@ -45,6 +52,13 @@ export interface PetBlinkMapping {
   readonly closed: ExpressionId;
   /** 半闭表情（三态的中间帧）。 */
   readonly half: ExpressionId;
+  /**
+   * 单眼闭合（wink，交互表情）。
+   *
+   * <p>美术母版未交付时该档走 `pet-face-tiles.json` 的 `degraded` 降级路径，
+   * **不代表资产存在**（设计文档 §5.3）。</p>
+   */
+  readonly wink: ExpressionId;
   /** 眼部原生区域（1024×1536 坐标系）。 */
   readonly eyeRegionNative: {
     readonly left: number;
@@ -147,5 +161,17 @@ export function bodyUrl(density: PetDensity = '2x'): string {
   return PET_ASSETS.body?.[density]?.url ?? PET_ASSETS.body?.['2x']?.url ?? '';
 }
 
-/** 眨眼三态映射（渲染层的眨眼调度器与这里同源）。 */
-export const PET_BLINK_MAPPING: PetBlinkMapping = PET_ASSETS.blink;
+/**
+ * 眨眼映射（渲染层的眨眼调度器与这里同源）。
+ *
+ * <p><b>为什么要在这里补 `wink` 而不是直接 `= PET_ASSETS.blink`：</b>`pet-assets.json`
+ * 由 `scripts/build-pet-assets.mjs` 从美术清单生成，v3 清单（`lingxi-pet-p0-v3`）里
+ * 只有生理三态、没有 `wink`；v4 清单会补上。若直接取用，`PET_BLINK_MAPPING.wink` 在
+ * v4 到货前会是 `undefined`，而类型写着 `ExpressionId`——那正是"假装有资产"。
+ * 所以这里显式兜底成枚举里的 `'wink'`：**档位存在、资产可以缺**，
+ * 缺资产由 `pet-face-tiles.json` 的 `degraded` 声明，渲染层按降级路径处理。</p>
+ */
+export const PET_BLINK_MAPPING: PetBlinkMapping = {
+  ...PET_ASSETS.blink,
+  wink: PET_ASSETS.blink.wink ?? 'wink',
+};

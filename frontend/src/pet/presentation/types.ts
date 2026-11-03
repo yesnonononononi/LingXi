@@ -18,10 +18,25 @@
  *
  * <p>前 8 个与美术规格书 §5 的 E1–E8 一一对应；`yawn`（打哈欠）为行为层预留，
  * 本批不产出，但枚举先定死，避免下一批改名牵连 Cubism 映射。</p>
+ *
+ * <p><b>`blinkHalf` / `wink` 是 M1 新拆出来的两档，不要把语义混回去：</b></p>
+ * <ul>
+ *   <li>`blinkHalf`：**生理眨眼**的半闭中间帧（可缺省，缺省时退化成两态眨眼）。
+ *       它必须是"眼睑半闭、嘴型中性"的帧，**不许**借用 `sleepy`——借用会让嘴型每 0.9–9s
+ *       跟着眨一次（设计文档 §5.1 记录的真实缺陷）；</li>
+ *   <li>`wink`：**交互表情**，单眼闭合（抚摸结束的"回礼"）。
+ *       它与 `blink`（双眼闭合）是两套语义，任何时候都不许互相顶替
+ *       （握手见 `presentation/priority.ts` 的 `BLINK_LIKE_EXPRESSIONS`）。</li>
+ * </ul>
+ *
+ * <p>两档的美术母版尚未交付时，资产侧由 `pet-face-tiles.json` 的 `degraded` 声明，
+ * 渲染侧必须走降级路径，**不许假装有资产**（设计文档 §4.3 / §8-T02）。</p>
  */
 export type ExpressionId =
   | 'neutral'
   | 'blink'
+  | 'blinkHalf'
+  | 'wink'
   | 'happy'
   | 'shy'
   | 'angry'
@@ -149,6 +164,8 @@ export interface PetPresentation {
 export const EXPRESSION_IDS: readonly ExpressionId[] = [
   'neutral',
   'blink',
+  'blinkHalf',
+  'wink',
   'happy',
   'shy',
   'angry',
