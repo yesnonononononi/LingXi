@@ -16,6 +16,17 @@
  * <p><b>索引断言为什么逐文件：</b>只查"批次目录里有一件入库"会漏掉"某几个文件被
  * `git rm --cached` 掉"。逐文件比对（磁盘 vs `git ls-files`）才能抓住这种静默缺失，
  * 例外只能来自 {@link TRACKING_WHITELIST}，且必须写明理由。</p>
+ *
+ * <p><b>为什么区分"已交付批次"与"在产批次"：</b>仓库里同时有美术在产的新批次（M2 共 9 批），
+ * 它们的"磁盘有、索引无"是正常中间态。若一律硬失败，`test:pet` 会在美术工作期间长期飘红，
+ * 最后一定有人去删断言来换绿。所以口径是：</p>
+ * <ul>
+ *   <li>已交付批次漏文件、或批次内**部分**入库（静默丢文件）→ 硬失败；</li>
+ *   <li>整批未入库（在产）→ 打印警告、不计入通过；置 `LX_PET_TRACKING_STRICT=1` 时同样硬失败
+ *       （CI 是干净 checkout，两种模式结论一致，交付验收建议用严格模式）。</li>
+ * </ul>
+ * <p>注意：真正"交付了但不可复现"的原始缺陷（被 `.gitignore` 吞掉）走的是上面那条
+ * `check-ignore --no-index` 断言，**不受任何白名单或模式影响**，永远硬失败。</p>
  */
 
 const test = require('node:test');
@@ -62,9 +73,52 @@ const TRACKING_WHITELIST = [];
  * <p>白名单只用于"还没交付"的东西。已交付批次若被豁免，等于把"必须可复现"的承诺作废，
  * 所以这里单独断言一层（新增批次时把前缀加进来）。</p>
  *
+ * <p><b>为什么是"逐批次"而不是"按类别"：</b>M2 会在 `poses/` 下陆续新增
+ * lie/sleep/walk/run/jump/play/edge/side/mini。写成 `poses/` 会把**在产**的新批次
+ * 也算成"已交付"，于是"已交付不得豁免"这条断言会把整个 `poses/` 类别的豁免都禁掉——
+ * 而"在产批次"恰恰是最需要显式豁免的东西。所以粒度必须落到批次一级：
+ * 每交付一批就把它加进来（`poses/sit/` 就是一个例子）。</p>
+ *
  * @type {string[]}
  */
-const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/', 'companion/'];
+const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'companion/'];
+
+/**
+ * 是否把"在产批次（整批未入库）"的警告升级为失败。
+ *
+ * <p>默认只警告：仓库里同时有美术在产的新批次时，"磁盘有、索引无"是**正常中间态**，
+ * 硬失败会让所有人的 `test:pet` 在美术工作期间长期飘红，反而逼着人去删断言。
+ * 交付验收/CI 时置 `LX_PET_TRACKING_STRICT=1` 即可让它在产状态也变红
+ * （CI 是干净 checkout，没有未跟踪文件，两种模式下结论一致）。</p>
+ */
+const STRICT_IN_FLIGHT = process.env.LX_PET_TRACKING_STRICT === '1';
+
+/**
+ * 取一个资产所属的批次（`v3` / `poses/sit` / `companion/v1`；顶层散文件返回空串）。
+ *
+ * @param {string} relPath 仓库相对路径（正斜杠）
+ * @returns {string} 批次标识
+ */
+function batchOf(relPath) {
+  const inner = relPath.startsWith(`${ASSET_ROOT_REL}/`) ? relPath.slice(ASSET_ROOT_REL.length + 1) : relPath;
+  const parts = inner.split('/');
+  if (parts.length < 2) return '';
+  if (parts[0] === 'poses' || parts[0] === 'companion') {
+    return parts.length >= 3 ? `${parts[0]}/${parts[1]}` : parts[0];
+  }
+  return parts[0];
+}
+
+/**
+ * 判断某个批次是否已交付。
+ *
+ * @param {string} batch {@link batchOf} 的返回值
+ * @returns {boolean} 已交付为 true
+ */
+function isDeliveredBatch(batch) {
+  if (batch === '') return false;
+  return DELIVERED_PREFIXES.some((prefix) => `${batch}/`.startsWith(prefix));
+}
 
 /**
  * 执行一条 git 命令。
@@ -222,21 +276,57 @@ test('规则：docs 下非 desktop-pet 的内容仍被忽略（不许用放宽 d
   assert.equal(leaked.length, 0, `这些路径没有被忽略，docs/ 的忽略规则被放宽了：${leaked.join('、')}`);
 });
 
-test('索引：desktop-pet 下每个磁盘文件都已入库（白名单除外）', () => {
+test('索引：已交付批次逐文件入库，在产批次只警告（LX_PET_TRACKING_STRICT=1 时同样硬失败）', () => {
   const files = listFilesRecursive(ASSET_ROOT_ABS);
   const tracked = listTrackedAssets();
-  const missing = files.filter((item) => !tracked.has(item) && findWhitelistEntry(item) === null);
+  assert.ok(tracked.size >= 100, `索引里只有 ${tracked.size} 个桌宠资产，守卫等于空跑`);
+  /** @type {Map<string, string[]>} */
+  const missingByBatch = new Map();
+  for (const item of files) {
+    if (tracked.has(item)) continue;
+    if (findWhitelistEntry(item) !== null) continue;
+    const batch = batchOf(item);
+    const bucket = missingByBatch.get(batch) || [];
+    bucket.push(item);
+    missingByBatch.set(batch, bucket);
+  }
+  /** @type {Array<[string, string[]]>} */
+  const hardFail = [];
+  /** @type {Array<[string, string[]]>} */
+  const inFlight = [];
+  for (const [batch, items] of missingByBatch) {
+    const trackedInBatch = Array.from(tracked).filter((item) => batchOf(item) === batch).length;
+    if (batch === '' || isDeliveredBatch(batch)) {
+      // 已交付批次漏文件，或桌宠资产根下散落的文件：真漏
+      hardFail.push([batch, items]);
+    } else if (trackedInBatch > 0) {
+      // 批次内**部分**入库 = 静默丢文件（比整批未入库更危险，必须红）
+      hardFail.push([batch, items]);
+    } else {
+      // 整批未入库：美术在产的正常中间态，只警告，不冒充通过（会打印在测试输出里）
+      inFlight.push([batch, items]);
+    }
+  }
+  if (inFlight.length > 0) {
+    const summary = inFlight.map(([batch, items]) => `${batch}(${items.length})`).join('、');
+    console.log(`[pet-asset] 在产批次（整批未入库，未计入通过，仅警告）：${summary}`);
+    if (STRICT_IN_FLIGHT) {
+      console.log('[pet-asset] LX_PET_TRACKING_STRICT=1：在产批次也算失败');
+      for (const entry of inFlight) hardFail.push(entry);
+    }
+  }
+  const detail = hardFail
+    .map(([batch, items]) => `  ${batch || '<根目录>'}: ${items.slice(0, 5).join('、')}${items.length > 5 ? ` ……共 ${items.length}` : ''}`)
+    .join('\n');
+  const missingTotal = hardFail.reduce((sum, [, items]) => sum + items.length, 0);
   assert.equal(
-    missing.length,
+    hardFail.length,
     0,
-    `有 ${missing.length} 个资产在磁盘上但没入库（换台机器就没了；修复：git add <path>）：\n${missing
-      .slice(0, 10)
-      .map((item) => `  ${item}`)
-      .join('\n')}`,
+    `有 ${missingTotal} 个资产在磁盘上但没入库（换台机器就没了；修复：git add <path>）：\n${detail}`,
   );
 });
 
-test('索引：每个实际存在的批次目录都在索引里（v1/v2/v3/v4/p1/poses/*/companion/*）', () => {
+test('索引：已交付批次目录不得整批缺失（v1/v2/v3/v4/p1/poses/sit/companion）', () => {
   const tracked = listTrackedAssets();
   const batchDirs = [];
   for (const entry of fs.readdirSync(ASSET_ROOT_ABS, { withFileTypes: true })) {
@@ -248,25 +338,25 @@ test('索引：每个实际存在的批次目录都在索引里（v1/v2/v3/v4/p1
     }
   }
   assert.ok(batchDirs.length > 0, '没有识别到任何批次目录，断言会真空过');
-  const empty = [];
-  const exempted = [];
+  const emptyDelivered = [];
+  const emptyInFlight = [];
   for (const batch of batchDirs) {
     const prefix = `${ASSET_ROOT_REL}/${batch}/`;
-    const hasTracked = Array.from(tracked).some((item) => item.startsWith(prefix));
     const hasDisk = fs.existsSync(path.join(ASSET_ROOT_ABS, ...batch.split('/')));
     if (!hasDisk) continue;
+    const hasTracked = Array.from(tracked).some((item) => item.startsWith(prefix));
     if (hasTracked) continue;
-    // 整批都被白名单豁免（例如 companion 未交付）才算合法例外；否则是真漏
-    const batchFiles = listFilesRecursive(path.join(ASSET_ROOT_ABS, ...batch.split('/')));
-    const allWhitelisted = batchFiles.length > 0 && batchFiles.every((item) => findWhitelistEntry(item) !== null);
-    if (allWhitelisted) {
-      exempted.push(batch);
-      continue;
-    }
-    empty.push(batch);
+    if (isDeliveredBatch(batch) || STRICT_IN_FLIGHT) emptyDelivered.push(batch);
+    else emptyInFlight.push(batch);
   }
-  if (exempted.length > 0) console.log(`[pet-asset] 白名单豁免的批次（未交付）：${exempted.join('、')}`);
-  assert.equal(empty.length, 0, `这些批次目录在磁盘上有、索引里一个文件都没有：${empty.join('、')}`);
+  if (emptyInFlight.length > 0) {
+    console.log(`[pet-asset] 在产批次目录（索引里为空，未计入通过，仅警告）：${emptyInFlight.join('、')}`);
+  }
+  assert.equal(
+    emptyDelivered.length,
+    0,
+    `这些已交付批次在磁盘上有、索引里一个文件都没有：${emptyDelivered.join('、')}`,
+  );
 });
 
 test('白名单：每条豁免都必须写明状态/理由/解除条件（防止用白名单绕过入库要求）', () => {
