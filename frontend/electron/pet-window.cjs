@@ -16,6 +16,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 /**
+ * 桌宠 dev 端点真源（端口 / 入口页 / 身份指纹）。
+ *
+ * <p>"兜底入口地址"与"探活目标"必须同源：以前这里是第二处 `5174` 字面量，
+ * 一旦探活脚本和服务端口对不上，`resolveDevEntryUrl` 的兜底会把窗口指向**主应用**。</p>
+ */
+const PET_DEV_ENDPOINT = require('./pet-dev-endpoint.cjs');
+
+/**
  * 延迟取 electron 运行时。
  *
  * <p>本模块里只有创建窗口与查询屏幕才真正需要 electron；把 require 提到顶层会让这个文件
@@ -310,10 +318,11 @@ function writeState(filePath, state) {
 /**
  * 开发态入口兜底地址。
  *
- * <p>端口与 `frontend/vite.config.ts` 的 `server.port` 保持一致；脚本侧（`.lingxi/tools/pet-up.cmd`）
- * 只负责把同一个端口写进 `ELECTRON_URL`，两处不一致时以此处为最后防线。</p>
+ * <p><b>为什么从单一真源取：</b>以前这里是 `http://localhost:5174` 字面量——5174 是
+ * <b>主应用</b>的 dev server 端口，于是"兜底"变成"兜到主应用界面"。端口、宿主、入口页
+ * 现在只有 `electron/pet-dev-endpoint.cjs` 一处真源，`ELECTRON_URL` 脏值时退化到它。</p>
  */
-const DEV_ENTRY_FALLBACK = 'http://localhost:5174';
+const DEV_ENTRY_FALLBACK = PET_DEV_ENDPOINT.buildDevOrigin();
 
 /**
  * 把 `ELECTRON_URL` 规整成一个可安全拼接的 base URL（恒以 `/` 结尾）。

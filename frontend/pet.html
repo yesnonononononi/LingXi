@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      桌宠身份指纹。探活模块（electron/pet-dev-probe.cjs）只认这一串 + #pet-root：
+      "HTTP 200" 曾被 SPA history fallback 骗过一次（/pet.html 被兜成主应用 index.html，
+      状态码照样 200），所以判定必须落在响应体内容上。改这一行要同步
+      electron/pet-dev-endpoint.cjs 的 appMetaMarker，测试会守住两处一致。
+    -->
+    <meta name="lx-app" content="pet" />
     <title>LX 桌宠</title>
     <style>
       /*
