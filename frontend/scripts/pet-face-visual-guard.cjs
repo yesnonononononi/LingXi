@@ -1428,8 +1428,59 @@ registerLxSchemePrivileges();
 // **必须给守卫一个独立的 userData 目录**：未打包的 Electron 默认共用 `%APPDATA%\Electron`，
 // 而用户正在跑的桌宠实例（npx electron pet-launcher.cjs）用的是同一份 profile。
 // 两个 Chromium 抢同一个 profile 会偶发（不是必现）无声崩溃——现象正是"日志戛然而止、退出码 0"。
-app.setPath('userData', process.env.PET_GUARD_USER_DATA
-  || path.join(require('node:os').tmpdir(), 'lx-pet-face-guard-userdata'));
+const GUARD_USER_DATA_DIR = process.env.PET_GUARD_USER_DATA
+  || path.join(require('node:os').tmpdir(), 'lx-pet-face-guard-userdata');
+/** 默认目录是守卫自己建的临时目录 ⇒ 用完必须自己清；用户显式指定的目录不许删。 */
+const GUARD_OWNS_USER_DATA = !process.env.PET_GUARD_USER_DATA;
+app.setPath('userData', GUARD_USER_DATA_DIR);
+
+/**
+ * 删掉守卫自己的 userData 目录（Chromium profile）。
+ *
+ * <p>为什么要清：它在 `%TEMP%` 下，每次运行都会留下几十个 profile 文件（实测积过
+ * `%TEMP%\lx-pet-face-guard-userdata`）。Chromium 退出时不会删自己的 profile。</p>
+ *
+ * <p>为什么放在 `exit` 而不是 `app.exit()` 之前：`app.exit()` 返回时 Chromium 可能还握着
+ * 文件句柄（Windows 上删不掉），`exit` 事件触发时它已经收尾完。</p>
+ *
+ * <p><b>为什么还要挂一个脱离进程兜底（实测过的坑）：</b>主进程 `exit` 时 Chromium 的
+ * GPU / utility / crashpad 子进程往往还活着并攥着 profile 里的句柄，同步 `rmSync` 会抛
+ * `EPERM, Permission denied`（实测残留一个 60 项的空壳目录）。所以同步删失败后，再起一个
+ * `ELECTRON_RUN_AS_NODE` 的助手进程：它在本进程退出之后反复重试删除，最多约 5s，
+ * 之后自己退出。助手与本进程完全脱离（`detached + unref`），不影响守卫的退出码。</p>
+ *
+ * @returns {void}
+ */
+function cleanupGuardUserData() {
+  if (!GUARD_OWNS_USER_DATA) return;
+  try {
+    fs.rmSync(GUARD_USER_DATA_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch (err) {
+    log('warn', `守卫 userData 同步清理失败，改用助手进程重试：${(err && err.message) || err}`);
+  }
+  if (!fs.existsSync(GUARD_USER_DATA_DIR)) return;
+  /** 助手进程的脚本：每 250ms 试一次，最多 20 次。 */
+  const helper = [
+    'const fs=require("node:fs");',
+    `const dir=${JSON.stringify(GUARD_USER_DATA_DIR)};`,
+    'let left=20;',
+    'const tick=()=>{try{fs.rmSync(dir,{recursive:true,force:true,maxRetries:3,retryDelay:100});}catch(err){}',
+    'if(fs.existsSync(dir)&&left-->0)setTimeout(tick,250);};',
+    'tick();',
+  ].join('');
+  try {
+    spawn(process.execPath, ['-e', helper], {
+      detached: true,
+      windowsHide: true,
+      stdio: 'ignore',
+      // `ELECTRON_RUN_AS_NODE`：process.execPath 是 electron.exe，靠它当 node 用
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    }).unref();
+  } catch (err) {
+    log('warn', `守卫 userData 清理助手启动失败（可手工删 ${GUARD_USER_DATA_DIR}）：${(err && err.message) || err}`);
+  }
+}
+process.on('exit', cleanupGuardUserData);
 
 // 未捕获的 Promise 拒绝在 Electron 下默认会**直接结束进程**（日志都来不及刷），
 // 这里接住并打全栈，避免"守卫无声退出、报告没落盘"这种最难查的形态。

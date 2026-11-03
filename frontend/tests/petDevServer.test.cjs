@@ -66,6 +66,15 @@ function testLogPath(name) {
 
 test.after(() => {
   fs.rmSync(TEST_TMP_DIR, { recursive: true, force: true });
+  // 父目录壳也要收拾：`rmSync(TEST_TMP_DIR)` 只删本进程的 pid 子目录，父目录
+  // `lx-pet-dev-test` 会一直留下（实测 %TEMP% 里积着一个空壳）。空则删；非空说明
+  // 还有别的测试进程正在用，别动它。
+  const parent = path.dirname(TEST_TMP_DIR);
+  try {
+    if (fs.readdirSync(parent).length === 0) fs.rmdirSync(parent);
+  } catch (err) {
+    // 父目录不存在 / 正被别的进程占用：忽略即可（目标是"不留自己的壳"，不是"必须删掉"）
+  }
 });
 
 /**
