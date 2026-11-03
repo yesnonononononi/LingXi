@@ -92,7 +92,8 @@
     "gate:theme:residual": "node scripts/check-theme-equivalence.mjs --residual",
     "test:development-isolation": "node --test tests/developmentIsolation.test.cjs tests/backendSandbox.test.cjs",
     "test:process-segments:ui": "electron tests/processSegments.smoke.cjs",
-    "test:task-progress": "npx tsx --test tests/checklist.test.ts tests/backgroundTasks.test.ts && electron tests/taskProgress.smoke.cjs"
+    "test:task-progress": "npx tsx --test tests/checklist.test.ts tests/backgroundTasks.test.ts && electron tests/taskProgress.smoke.cjs",
+    "guard:pet:face": "electron scripts/pet-face-visual-guard.cjs"
   },
   "devDependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",

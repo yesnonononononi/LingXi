@@ -249,9 +249,10 @@ interface Fixture {
  * 搭夹具。
  *
  * @param plan 首次合成计划（缺省 = 真实清单全齐 → `layered`）
+ * @param overrides 可选注入项（目前只有"整帧表情 URL 表"，用于区分两套 URL）
  * @returns 夹具
  */
-function setup(plan?: CompositePlan): Fixture {
+function setup(plan?: CompositePlan, overrides: { expressionUrls?: Record<string, string> } = {}): Fixture {
   const doc = new FakeDocument();
   const root = new FakeElement('div');
   const host = new FakeElement('div');
@@ -269,7 +270,7 @@ function setup(plan?: CompositePlan): Fixture {
     catalog: MOTION_CATALOG,
     plan: resolved,
     baseFallback: fallback,
-    expressionUrls: { happy: 'lxa://pet-p1/composites/happy@2x.webp' },
+    expressionUrls: overrides.expressionUrls ?? { happy: 'lxa://pet-p1/composites/happy@2x.webp' },
     faceTileUrls: faceTileUrls('2x'),
     timer,
     power: () => 'idle',
@@ -420,6 +421,30 @@ test('R2：layered 下切表情只换脸层贴片，整帧兜底一条都不收'
   assert.equal(face?.element.src, tiles.shy);
   assert.equal(body?.element.getAttribute('src'), bodySrc, '换表情不许动身体层');
   assert.equal(body?.element.styleProps.size, bodyWrites, '换表情不许给身体层写新的 CSS 变量');
+});
+
+test('R2：贴片与整帧两套 URL 同时存在时，脸层必须取贴片（§11.3 M5 的抓手）', () => {
+  // 这条是 M5「关闭 faceTile 资源选择（恒用 expressionUrls）」的专用抓手：
+  // 只有当同一个表情 id 在两套表里**都有值且互不相同**时，才可能区分实现走了哪套。
+  const frameUrls = {
+    angry: 'lxa://pet-p1/composites/angry@2x.webp',
+    shy: 'lxa://pet-p1/composites/shy@2x.webp',
+  };
+  const { presentation, views } = setup(undefined, { expressionUrls: frameUrls });
+  const tiles = faceTileUrls('2x');
+  const face = views.get(FACE_LAYER_ID);
+  assert.ok(face);
+  for (const id of ['angry', 'shy'] as const) {
+    assert.ok(tiles[id], `用例前提：${id} 必须已交付贴片`);
+    assert.notEqual(tiles[id], frameUrls[id], `用例前提：${id} 的贴片与整帧 URL 必须不同`);
+    presentation.apply(expressionOp(id));
+    assert.equal(face?.element.src, tiles[id], `脸层 ${id} 必须用贴片 URL`);
+    assert.notEqual(
+      face?.element.src,
+      frameUrls[id],
+      '整帧 URL 绝不能塞进子矩形脸层（object-fit:fill 会把它压扁成一条）',
+    );
+  }
 });
 
 test('R2：degraded 表情（无贴片）保持当前贴片并记日志，绝不拿别的表情顶替', () => {

@@ -183,6 +183,15 @@ const MUTATIONS = [
     testFile: 'tests/petFaceLayer.test.ts',
     expect: '挂载时就必须写 data-placement',
   },
+  {
+    id: 'face-tile-selection-off',
+    goal: '关闭脸层贴片选择（§11.3 M5 的反向）：applyExpression 改用整帧 expressionUrls，子矩形层被 object-fit:fill 压扁',
+    file: 'src/pet/presentation/layered-presentation.ts',
+    find: '      const tileUrl = this.faceTiles[id];',
+    replace: '      const tileUrl = this.deps.expressionUrls[id] ?? this.faceTiles[id];',
+    testFile: 'tests/petFaceLayer.test.ts',
+    expect: '脸层 angry 必须用贴片 URL',
+  },
   // ---------------------------------------------------------------- T04：眨眼 / 行为
   {
     id: 'wink-takes-blink',
