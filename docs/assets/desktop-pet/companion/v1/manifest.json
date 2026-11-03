@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "assetId": "lingxi-pet-companion-cloudling-v1",
+  "character": "小云酱（设定图称「小云兽」，常伴腿的伙伴）",
+  "scope": "M2 第一批：伙伴单角色基础静态帧",
+  "canvas": {
+    "width": 512,
+    "height": 512
+  },
+  "nativeCanvas": {
+    "width": 256,
+    "height": 256
+  },
+  "masterScale": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false,
+    "note": "512×512 = 原生 256×256 的整数倍放大；每个 2×2 块内像素完全一致，可整画布 /2 无损还原"
+  },
+  "anchor": {
+    "x": 256,
+    "y": 470
+  },
+  "anchorSemantics": "脚底接触点：图形最低一行（bbox.bottom=469）的下边缘压在 y=470 的地面线上；实测偏差 1px，容差 ±2px；下方留白 42px",
+  "gripPoint": {
+    "x": 256,
+    "y": 333
+  },
+  "gripPointSemantics": "主角抱起小云酱时的握持点：身体中心偏上（bbox.top + 34% 高度），实测落在可见像素内、位于包围盒上部 60%",
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "files": [
+    {
+      "file": "cloudling_neutral.png",
+      "purpose": "基础静态帧（中性表情，正面朝向）",
+      "state": "neutral",
+      "width": 244,
+      "height": 208,
+      "bytes": 14479,
+      "sha256": "12f6da6a834e85c77d45bb411ac4df04654c0a2904514e9e60f7c0eae0803806",
+      "canvasWidth": 512,
+      "canvasHeight": 512,
+      "bbox": {
+        "left": 134,
+        "top": 262,
+        "right": 377,
+        "bottom": 469,
+        "width": 244,
+        "height": 208
+      },
+      "margins": {
+        "left": 134,
+        "top": 262,
+        "right": 134,
+        "bottom": 42
+      },
+      "bottomDeviation": 1
+    }
+  ],
+  "sources": [
+    {
+      "file": "source/cloudling_neutral-generated.png",
+      "purpose": "生成源（绿幕原图）：保留以便复算，不参与运行时、不进入产物",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1261532,
+      "sha256": "9c2a63309a4a0e0be6e349ed90cf3baa5c3e2f0a4b814e68629504724e662f69",
+      "model": "gpt-image-2.5-flare",
+      "promptDigest": "奶白云朵体小生物、5–6 瓣云朵轮廓、豆豆眼+ω嘴+粉腮红、头顶淡蓝云朵发夹（完全在头部轮廓内）、细暖棕勾线、平涂赛璐璐、纯 #00A651 绿幕、无投影"
+    }
+  ],
+  "styleReference": {
+    "designSheet": "E:\\user\\image\\桌宠.png（「小云兽（常伴腿的伙伴）」与「云朵发夹（标志性元素）」两个图标；本资产未入库副本，只作对照）",
+    "palette": "../v3/palette.json",
+    "paletteUsage": {
+      "body": "#FDF7F0 主体奶白，取自 v3 hair #FEF2E4 / skin #FEF6EC / robe #F9F9FA 的同一奶白色阶",
+      "shade": "#E7EAF2 冷调浅灰蓝投影，与主角衣褶阴影同族",
+      "outline": "#8C5B47 暖棕描边，落在 v3 outline #A86D59 与 #8C4834 之间",
+      "blush": "#F8CFCB 腮红，对齐 v3 inner_ear #FEC1B6 的粉调",
+      "accent": "#B9C4D9 淡蓝云朵发夹，呼应主角 scarf #A1CBF9 / #B0D7FE 的蓝色系点缀"
+    }
+  },
+  "build": {
+    "tool": "tools/build-companion.mjs",
+    "command": "node docs/assets/desktop-pet/companion/v1/tools/build-companion.mjs --source=docs/assets/desktop-pet/companion/v1/source/cloudling_neutral-generated.png",
+    "checkTool": "tools/check-companion.mjs",
+    "checkCommand": "node docs/assets/desktop-pet/companion/v1/tools/check-companion.mjs",
+    "dependencies": "无（纯 Node，自带 PNG 编解码；不需要 npm install）",
+    "options": {
+      "mirror": "--mirror 可水平镜像（把发夹移到画面右上，严格对齐设定图小图标）；默认不镜像"
+    },
+    "pipeline": [
+      "绿幕抠像：按绿色相对主导度 (g − max(r,b)) 建软 matte，避免奶白色被误判",
+      "反预乘还原前景色 + 去溢色（绿通道钳到 max(r,g?) 上限），杜绝绿色描边",
+      "按 alpha 包围盒裁切，面积平均重采样到原生 122×104（预乘空间做，避免半透明边缘发灰）",
+      "原生分辨率清理：alpha<8 归零、内部实心化、删除 <4px 孤立块",
+      "整数倍 nearest 放大到 244×208，对齐偶数网格贴入 512×512 画布，最低行落在 469"
+    ]
+  },
+  "states": {
+    "neutral": "cloudling_neutral.png"
+  },
+  "deferred": [
+    "触碰 / 抱起 / 回应等状态帧（本批只交基础帧，等基础帧验收后再做）",
+    "左侧/右侧朝向（当前只有正面，与主角正面一致）",
+    "眨眼、跳跃、被摸头的物理反馈"
+  ]
+}

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>小云酱 v1 · 基础帧复核（比例 / 锚点 / 不是主角缩小）</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f3f0; --fg: #1b1b1f; --muted: #55525a; --panel: #fff;
+    --line: #c9c4bd; --accent: #b4243c; --ok: #1f7a4d; --ground: #7c8ba1;
+  }
+  html[data-theme="dark"] {
+    --bg: #17171b; --fg: #f2f1f4; --muted: #b6b3bd; --panel: #22222a;
+    --line: #3a3944; --accent: #ff7a90; --ok: #6ad39b; --ground: #6f7d92;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg);
+    font: 14px/1.6 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 26px 0 8px; }
+  p.lead { margin: 0 0 16px; color: var(--muted); max-width: 84ch; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+    padding: 12px 14px; margin-bottom: 16px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; }
+  .toolbar .group { display: flex; align-items: center; gap: 6px; }
+  .toolbar .label { color: var(--muted); font-size: 12px; }
+  button { font: inherit; padding: 5px 10px; cursor: pointer; color: var(--fg);
+    background: transparent; border: 1px solid var(--line); border-radius: 7px; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stage { display: flex; align-items: flex-end; gap: 28px; padding: 18px 18px 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    overflow-x: auto; }
+  .frame { position: relative; flex: 0 0 auto; overflow: hidden; }
+  .frame .img { position: absolute; top: 0; left: 0; background-repeat: no-repeat;
+    background-size: 100% 100%; image-rendering: pixelated; }
+  .ground { position: absolute; left: -10px; right: -10px; bottom: 0; height: 0;
+    border-top: 1px dashed var(--ground); }
+  .caption { font-size: 12px; color: var(--muted); padding: 6px 0 10px; }
+  .ratio { font-variant-numeric: tabular-nums; color: var(--fg); }
+  .ratio b { color: var(--accent); }
+  .badge { display: inline-block; padding: 1px 7px; margin-left: 6px; font-size: 11px;
+    border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+  .solo { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .marker { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px;
+    border: 1px solid var(--accent); border-radius: 50%; }
+  .marker::after { content: attr(data-tag); position: absolute; left: 14px; top: -6px;
+    white-space: nowrap; font-size: 10px; color: var(--accent); }
+  .marker.grip { border-color: var(--ok); }
+  .marker.grip::after { color: var(--ok); }
+  .notes { max-width: 88ch; }
+  .notes ul { padding-left: 20px; }
+  .notes li { margin: 5px 0; }
+  code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 5px; font-size: 12px; }
+  table { border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
+  th { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>小云酱 v1 · 基础帧复核</h1>
+  <p class="lead">
+    左：主角 <code>v3/front-standing.png</code>（母版 2048×3072，可见包围盒 1690×1330，锚点 1024,2908）；
+    右：<code>cloudling_neutral.png</code>（画布 512×512，可见包围盒 244×208，锚点 256,470，握持点 256,333）。
+    两者按各自锚点踩在同一条地面线上比较，不是把两张图随便摆一起。
+  </p>
+
+  <div class="toolbar">
+    <div class="group">
+      <span class="label">小云酱画布显示倍率（相对主角画布宽度）</span>
+      <button data-k="0.40" aria-pressed="true">0.40×</button>
+      <button data-k="0.47" aria-pressed="false">0.47×</button>
+      <button data-k="0.53" aria-pressed="false">0.53×</button>
+      <button data-k="1.00" aria-pressed="false">1.00×（同框同宽）</button>
+    </div>
+    <div class="group">
+      <span class="label">底色</span>
+      <button data-theme-btn="light" aria-pressed="true">亮</button>
+      <button data-theme-btn="dark" aria-pressed="false">暗</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div>
+      <div class="frame" id="frame-hero">
+        <div class="img" data-src="../../v3/front-standing.png" data-cw="2048" data-ch="3072"></div>
+        <div class="ground"></div>
+      </div>
+      <div class="caption">主角 · 可见高 1330 master px</div>
+    </div>
+    <div>
+      <div class="frame" id="frame-comp">
+        <div class="img" data-src="cloudling_neutral.png" data-cw="512" data-ch="512"></div>
+        <div class="ground"></div>
+      </div>
+      <div class="caption">小云酱 · 可见高 208 master px</div>
+    </div>
+  </div>
+  <p class="caption" id="ratio-readout"></p>
+
+  <h2>小云酱 1:1 母版（标注锚点与握持点）</h2>
+  <div class="solo">
+    <div class="card">
+      <div class="frame" id="frame-solo" style="width:512px;height:512px">
+        <div class="img" data-src="cloudling_neutral.png" data-cw="512" data-ch="512"></div>
+        <div class="marker" data-tag="锚点 256,470（脚底接触点）" style="left:256px;top:470px"></div>
+        <div class="marker grip" data-tag="握持点 256,333" style="left:256px;top:333px"></div>
+      </div>
+      <div class="caption">512×512 母版 1:1；图上十字标为锚点（红）与抱起握持点（绿）</div>
+    </div>
+    <div class="card">
+      <div class="frame" id="frame-zoom" style="width:488px;height:416px">
+        <div class="img" data-src="cloudling_neutral.png" data-cw="512" data-ch="512"></div>
+      </div>
+      <div class="caption">可见区域 2× 放大（从 x134,y262 起裁 244×208）</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>怎么一眼看出这是小云酱，而不是主角被缩小</h2>
+    <ul>
+      <li><strong>轮廓语言不同</strong>：小云酱是「一坨云」，外缘全是圆鼓鼓的凸起，没有四肢、没有脖子；主角有双马尾、兽耳、呆毛、蝴蝶结，外轮廓到处是尖端与凹口。</li>
+      <li><strong>比例相反</strong>：小云酱宽 244 / 高 208 ≈ <b>1.17（横着长）</b>；主角 1690×1330 ≈ 0.73（竖着长）。缩放不会改变宽高比。</li>
+      <li><strong>脸占比不同</strong>：小云酱整只就是一个头（脸直接长在身体上）；主角是头身分离的 Q 版人形。</li>
+      <li><strong>细节密度</strong>：归一化到同尺度后，小云酱的边缘能量只有主角的 54%（0.0771 vs 0.1425）——头发丝、衣褶、蝴蝶结这些高频细节它没有。</li>
+      <li><strong>配色同族但不同角色</strong>：奶白主体 + 暖棕勾线 + 淡蓝云朵发夹，分别取自 <code>v3/palette.json</code> 的 hair/skin、outline、scarf 色阶，所以并排不打架，但形状一眼可分。</li>
+      <li>机检数值见 <code>node tools/check-companion.mjs</code> 的 C6a / C6b / C6c 三条；把主角缩成同样的 244×208 当变异体跑，C6a 立刻从 0.7702 跳到 0.9850（贴着自校准上界 0.9433）并判失败。</li>
+    </ul>
+
+    <h2>比例怎么读（页面右上角的倍率按钮就是这个变量）</h2>
+    <p class="lead">
+      「小云酱约为主角的 1/4–1/3」这句话只有在给定了<strong>两块画布各自的显示倍率</strong>之后才有唯一解。
+      本页按「主角画布宽 340px」为基准：小云酱画布按它宽度的 0.40× / 0.47× / 0.53× 显示时，
+      角色实际高度比分别约为 1/4.0 / 1/3.4 / 1/3.0。点按钮切换即可看哪种读起来协调。
+    </p>
+    <table>
+      <tr><th>小云酱画布显示倍率</th><th>实际高度比（小云酱 ÷ 主角）</th><th>读感</th></tr>
+      <tr><td>0.40×</td><td class="ratio"><b>1/4.0</b></td><td>标准「小跟班」，明显是配角</td></tr>
+      <tr><td>0.47×</td><td class="ratio">1/3.4</td><td>偏亲近，抱起来比例接近</td></tr>
+      <tr><td>0.53×</td><td class="ratio">1/3.0</td><td>上限，再大就抢主角</td></tr>
+      <tr><td>1.00×</td><td class="ratio">1/1.6</td><td>不推荐，像同尺寸的宠物而非伙伴</td></tr>
+    </table>
+
+    <h2>本页不做什么</h2>
+    <ul>
+      <li>不做图像处理：放大用 <code>image-rendering: pixelated</code>，看到的就是母版原像素。</li>
+      <li>不读取 manifest（<code>file://</code> 下 fetch 被 CORS 拦），数字以 <code>manifest.json</code> 与校验脚本输出为准。</li>
+      <li>地面线是虚线，只作对齐参考，不属于资产像素。</li>
+    </ul>
+  </div>
+
+<script>
+(() => {
+  const HERO = { cw: 2048, ch: 3072, anchorY: 2908, visibleHeight: 1330 };
+  const COMP = { cw: 512, ch: 512, anchorY: 470, visibleHeight: 208 };
+  const HERO_DISPLAY_WIDTH = 340;
+  const heroScale = HERO_DISPLAY_WIDTH / HERO.cw;
+  let k = 0.40;
+
+  function layoutFrame(frameId, meta, displayWidth) {
+    const frame = document.getElementById(frameId);
+    const scale = displayWidth / meta.cw;
+    frame.style.width = displayWidth + 'px';
+    frame.style.height = Math.round(meta.anchorY * scale) + 'px';
+    const img = frame.querySelector('.img');
+    img.style.width = displayWidth + 'px';
+    img.style.height = Math.round(meta.ch * scale) + 'px';
+    img.style.backgroundImage = 'url("' + img.dataset.src + '")';
+    return scale;
+  }
+
+  function layoutSolo() {
+    for (const id of ['frame-solo', 'frame-zoom']) {
+      const frame = document.getElementById(id);
+      const width = frame.style.width ? parseInt(frame.style.width, 10) : 512;
+      const img = frame.querySelector('.img');
+      img.style.backgroundImage = 'url("' + img.dataset.src + '")';
+      img.style.width = (id === 'frame-zoom' ? width * (512 / 244) : width) + 'px';
+      img.style.height = (id === 'frame-zoom' ? width * (512 / 244) : width) + 'px';
+      img.style.transform = id === 'frame-zoom' ? 'translate(' + (-134 * (width * (512 / 244) / 512)) + 'px,' + (-262 * (width * (512 / 244) / 512)) + 'px)' : 'none';
+    }
+  }
+
+  function render() {
+    layoutFrame('frame-hero', HERO, HERO_DISPLAY_WIDTH);
+    const compDisplayWidth = Math.round(HERO_DISPLAY_WIDTH * k);
+    const compScale = layoutFrame('frame-comp', COMP, compDisplayWidth);
+    const heroVisibleHeight = HERO.visibleHeight * heroScale;
+    const compVisibleHeight = COMP.visibleHeight * compScale;
+    const ratio = heroVisibleHeight / compVisibleHeight;
+    document.getElementById('ratio-readout').innerHTML =
+      '当前：主角可见高 <b>' + heroVisibleHeight.toFixed(1) + 'px</b>，小云酱可见高 <b>'
+      + compVisibleHeight.toFixed(1) + 'px</b> ⇒ 小云酱 = 主角的 <b>1/' + ratio.toFixed(1) + '</b>'
+      + '（画布显示倍率 ' + k.toFixed(2) + '×）';
+    layoutSolo();
+  }
+
+  document.querySelectorAll('[data-k]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      k = Number(btn.dataset.k);
+      document.querySelectorAll('[data-k]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.documentElement.dataset.theme = btn.dataset.themeBtn;
+      document.querySelectorAll('[data-theme-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+
+  const params = new URLSearchParams(location.search);
+  if (params.get('theme') === 'dark') {
+    document.documentElement.dataset.theme = 'dark';
+    document.querySelectorAll('[data-theme-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeBtn === 'dark')));
+  }
+  const wantedK = Number(params.get('k'));
+  if (wantedK > 0) {
+    k = wantedK;
+    document.querySelectorAll('[data-k]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.k) === wantedK)));
+  }
+  render();
+})();
+</script>
+</body>
+</html>
