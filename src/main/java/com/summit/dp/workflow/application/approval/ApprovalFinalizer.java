@@ -64,8 +64,12 @@ public class ApprovalFinalizer {
                 ? ApprovalOutcome.CANCELLED : ApprovalOutcome.CONTINUE;
         // 门闩内只做落库与上下文替换：不发起网络写，也不调模型。
         transactions.executeWithoutResult(status -> {
-            ToolCall current = toolCallRepository.findById(toolCall.getId()).orElseThrow(ClientException::new);
+
+            ToolCall current = toolCallRepository.findById(toolCall.getId())
+                    .orElseThrow(()->new ClientException("未找到审批请求对应的载体" + toolCall));
+
             current.complete(command.rawOutput());
+
             executionControl.getObject().finishApproval(execution, approvalOutcome);
             modelContextService.replace(conversationId, execution.getMessages());
             toolCallRepository.updateById(current);
@@ -93,7 +97,7 @@ public class ApprovalFinalizer {
      *
      * @return 是否真的登记了恢复任务
      */
-    public boolean resumeIfReady(Execution latest, long conversationId, boolean hasUnresolvedSlot) {
+    public boolean resumeIfReady(Execution latest, boolean hasUnresolvedSlot) {
         if (hasUnresolvedSlot) {
             return false;
         }

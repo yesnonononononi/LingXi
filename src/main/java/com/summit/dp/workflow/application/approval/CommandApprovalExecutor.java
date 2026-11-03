@@ -196,7 +196,7 @@ public class CommandApprovalExecutor {
             released = true;
             repository.unregister(signal);
             Execution latest = repository.findById(executionId).orElseThrow(ClientException::new);
-            finalizer.resumeIfReady(latest, conversationId, pending);
+            finalizer.resumeIfReady(latest, pending);
         } catch (Exception e) {
             log.error("命令审批失败: executionId={}", executionId, e);
             if (!released) {

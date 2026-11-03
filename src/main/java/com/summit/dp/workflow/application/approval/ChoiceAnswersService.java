@@ -44,7 +44,9 @@ public class ChoiceAnswersService {
 
     public ChoiceAnswersReceipt submit(ChoiceAnswersCommand command) {
         validator.validateInput(command);
-        ToolCall located = tools.findById(command.answers().getFirst().toolCallId()).orElseThrow(ClientException::new);
+        ToolCall located = tools.findById(command.answers().getFirst().toolCallId()).orElseThrow(
+                ()->new ClientException("未找到决策结果对应的载体")
+        );
         String digest = validator.digest(command);
         synchronized (ExecutionCoordination.monitor(String.valueOf(located.getExecutionId()))) {
             return transactions.execute(status -> submitLocked(command, digest));
@@ -65,7 +67,7 @@ public class ChoiceAnswersService {
 
         throwIf(cards.stream().anyMatch(ToolCall::isCompleted), DecisionErrorCode.DECISION_ALREADY_APPLIED);
         ExecutionRepository repository = executions.getObject();
-        Execution execution = repository.findById(String.valueOf(executionId)).orElseThrow(ClientException::new);
+        Execution execution = repository.findById(String.valueOf(executionId)).orElseThrow(() -> new ClientException("未找到本次执行受理信息"));
         requireSuspendedExecution(execution);
         requireCompleteGroup(command, execution, cards);
 
