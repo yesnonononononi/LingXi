@@ -22,7 +22,7 @@ export const CONFIG = {
   // 呼吸位移场：只在背部/胸廓这一条带上抬起或压下，腹部（落地侧）位移恒为 0
   breath: {
     x0: 830, x1: 1350,
-    inhale: 14,    // 吸气：背部轮廓上抬 14 native px（= 28 母版 px）
+    inhale: 10,    // 吸气：背部轮廓上抬 10 native px（= 20 母版 px）
     exhale: -10,   // 呼气：背部轮廓下压 10 native px
     featherY: 2,   // 带上下各留 2px 过渡
   },
@@ -112,12 +112,15 @@ function smoothstep(t) {
 
 // 呼吸：竖直位移场。d(x,y) = A·wx(x)·wy(y)，wx 是余弦窗（两端为 0），wy 在背部为 1、落地线为 0。
 // 反向采样（dest(y) = src(y + d)）：A>0 背部抬起，A<0 背部压下；腹部和两端 d=0 ⇒ 一动不动。
+// 关键：循环必须从「墨迹上沿之上」开始，否则 dest 里上沿之上的行永远不被写入，
+// 吸气就只能靠相邻列渗色到 2px，抬不起来（C6 改成「允许小幅起伏」正是为了放开这一点）。
 export function warpBreath(base, amplitude) {
   const { x0, x1, featherY } = CONFIG.breath;
   const out = Buffer.from(base.data);
   const { top, bottom } = columnExtent(base);
   const changed = [];
   let maxShift = 0;
+  const reach = Math.ceil(Math.abs(amplitude)) + featherY + 1; // 向上多写几行，供上沿抬升/回落下沉
   for (let x = x0; x <= x1; x += 1) {
     if (top[x] < 0) continue;
     const t = (x - x0) / (x1 - x0);
@@ -126,7 +129,9 @@ export function warpBreath(base, amplitude) {
     const yTop = top[x] - featherY;
     const yBottom = bottom[x];
     const span = Math.max(1, yBottom - yTop);
-    for (let y = yTop; y <= yBottom; y += 1) {
+    const yStart = Math.max(0, yTop - reach);
+    for (let y = yStart; y <= yBottom; y += 1) {
+      // smoothstep 内部对 u>1 已钳到 1：上沿之上保持满幅位移，所以上沿才真的会动
       const wy = smoothstep((yBottom - y) / span); // 底部 0、顶部 1
       const d = amplitude * wx * wy;
       if (d === 0) continue;

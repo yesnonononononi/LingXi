@@ -76,14 +76,14 @@
     },
     {
       "id": "breathIn",
-      "role": "睡眠呼吸·吸气（由 neutral 派生：躯干局部竖直位移场，峰值 +14 native px，横向 sin² 余弦窗两端归零、纵向 smoothstep 使落地侧为 0，无整体缩放。注意墨迹上沿实际只抬约 2px：实测 x830..1350 每列顶边位移 min=-4 max=3 mean=1.7，带中央 x1050..1150 为 +1.8。原因是位移只重写每列墨迹范围 yTop..yBottom 内的行，上沿之上的行不会被写入）",
+      "role": "睡眠呼吸·吸气（由 neutral 派生：躯干局部竖直位移场，峰值 +10 native px，横向 sin² 余弦窗两端归零、纵向 smoothstep 使落地侧为 0、腹部贴地不动，无整体缩放。位移循环覆盖墨迹上沿之上的行（yStart = yTop - ceil(|A|) - featherY - 1），因此上沿真的会抬起：实测带中央 x1050..1150 顶边位移 min=8 max=10 mean=9.8，全带 x830..1350 mean=5.2，左右 x940..1040 与 x1140..1240 均为 +6.9）",
       "file": "sleep_breath_in_neutral@2x.png",
       "nativeFile": "source/sleep_breath_in_native.png",
       "master": {
         "width": 3072,
         "height": 3072,
-        "bytes": 1681561,
-        "sha256": "f209fecff8f7399a44381dbaf783e1f21fb493a1141dd6d972b98fe987957035",
+        "bytes": 1691166,
+        "sha256": "56eff5fb04eb62a0ae81caca046c4282f9e885db22eac0f4e142c4660dce35c5",
         "bbox": {
           "left": 42,
           "top": 1292,
@@ -94,8 +94,8 @@
       "native": {
         "width": 1536,
         "height": 1536,
-        "bytes": 1356106,
-        "sha256": "79408b3975b5cf7df7fdc45e80bb52841e431997f0d73464ae83747795d4342f",
+        "bytes": 1362980,
+        "sha256": "f44fa4f1dfd857d604d0f6d74e5205a1116f61bf7a8b420a82500489db3dfa7c",
         "bbox": {
           "left": 21,
           "top": 646,
@@ -114,7 +114,7 @@
     },
     {
       "id": "breathOut",
-      "role": "睡眠呼吸·呼气（同上位移场，峰值 -10 native px，负号=向下；实测墨迹上沿下降约 10px：x830..1350 每列顶边位移 min=0 max=10 mean=4.8，带中央 x1050..1150 为 +9.4）",
+      "role": "睡眠呼吸·呼气（同上位移场，峰值 -10 native px，负号=向下；实测带中央 x1050..1150 顶边下降 min=8 max=10 mean=9.4，全带 mean=4.8，左右 +6.4 / +6.5，与吸气的 9.8 相差 0.4px，满足「两侧基本对称（差 ≤4px）」）",
       "file": "sleep_breath_out_neutral@2x.png",
       "nativeFile": "source/sleep_breath_out_native.png",
       "master": {
@@ -312,7 +312,7 @@
   "method": {
     "maskScope": "source/eye_mask_native.png 是「趴睡首帧」专属蒙版（透明区 bbox {322,1116,644,1290}，透明像素 38608），不代表整批共用。",
     "neutral": "lie/source/lie_neutral_native.png 原像素 + 眼区贴片（贴片来自参考图+蒙版生成），眼区外逐字节未变（实测 outsideMaskPx=0）。",
-    "breath": "derive-sleep.mjs：只对躯干做局部竖直位移场（x 830..1350，横向 sin² 余弦窗两端归零，纵向 smoothstep 使落地侧为 0，腹部贴地不动），位移场峰值 吸气 +14 / 呼气 -10 native px，未使用任何整体缩放。注意区分两个量：①位移场峰值 +14/-10（脚本里施加的）；②墨迹上沿实测位移 约 +2/-10（x830..1350 每列 alpha>8 最高点的位移：吸气 min=-4 max=3 mean=1.7、带中央 x1050..1150 为 +1.8；呼气 min=0 max=10 mean=4.8、带中央为 +9.4）。两者不等是因为位移循环只重写每列墨迹范围 yTop..yBottom 内的行，上沿之上的行不会被写入，吸气时上沿无法被抬到原上沿之上。复现峰值用 ①，校验上沿用 ②。",
+    "breath": "derive-sleep.mjs：只对躯干做局部竖直位移场（x 830..1350，横向 sin² 余弦窗两端归零，纵向 smoothstep 使落地侧为 0，腹部贴地不动），位移场峰值 吸气 +10 / 呼气 -10 native px，未使用任何整体缩放。循环范围 yStart..yBottom，yStart = yTop - ceil(|A|) - featherY - 1，即包含墨迹上沿之上的行——这是「胸腔抬起」成立的必要条件：只写每列墨迹范围内的行时，上沿之上的行永远不被写入，吸气只能抬 2px。实测带中央 x1050..1150 顶边位移：吸气 +9.8（min 8 / max 10）、呼气 -9.4（min 8 / max 10），左右两侧 +6.9 / +6.4~6.5。",
     "startle": "derive-sleep.mjs：眼区整块取 lie native 恢复睁眼 → 虹膜掩膜距离变换后半径腐蚀 15%，腾出环带补眼白（眼白取环外亮像素均值）→ 小开口嘴 → 泪滴形汗滴。",
     "curled": "build-curled.mjs：生图直出按墨迹归一化到 native（预乘 alpha box 重采样），按 alpha 质心对齐趴睡帧（Δ0.1 native px），再 2× nearest 出母版。",
     "regions": "startle 帧的汗滴落在首帧蒙版右边界之外（x667..696 > 644），因此不套用「蒙版外零变化」，改为「作者声明区域并集之外逐像素零变化」，区域见 frames[startle].allowedRegions。",

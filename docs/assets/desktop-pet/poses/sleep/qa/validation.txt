@@ -8,14 +8,14 @@ PASS C4  manifest 的 bytes/sha256/bbox 与磁盘一致
      neutral/master; neutral/native; breathIn/master; breathIn/native; breathOut/master; breathOut/native; startle/master; startle/native; curled/master; curled/native
 PASS C5  母版 = native 的 2x 最近邻（每个 2x2 块四像素相同且等于 native）
      neutral ok; breathIn ok; breathOut ok; startle ok; curled ok
-PASS C6  neutral/breathIn/breathOut/startle 四帧 alpha 外轮廓逐值相同
-     base {"left":22,"top":647,"right":1523,"bottom":1467}; neutral same; breathIn same; breathOut same; startle same
+PASS C6  呼吸帧允许 ≤2% 尺寸起伏但禁止整体缩放；startle 与 lie 同轮廓
+     neutral {"left":22,"top":647,"right":1523,"bottom":1467} 1502x821; breathIn 1502x821 dW=0.00% dH=0.00%; breathOut 1502x821 dW=0.00% dH=0.00%; startle=lie {"left":22,"top":647,"right":1523,"bottom":1467}
 PASS C6b  每帧在「作者声明区域并集」之外与 neutral 逐像素零变化
-     breathIn inside=196839 outside=0; breathOut inside=187286 outside=0; startle inside=39313 outside=0
-PASS C7  呼吸两帧只动躯干带、方向相反、幅度非零
-     in=196839px topMean=936.0 out=187286px topMean=945.1
+     breathIn inside=189904 outside=0; breathOut inside=187286 outside=0; startle inside=39313 outside=0
+PASS C7  呼吸两帧只动躯干带；带中央顶边位移 吸气≥+8 / 呼气≤-8 且两侧对称
+     in=189904px lift=9.8(min8/max10) L/R=6.9/6.9 | out=187286px drop=9.4(min8/max10) L/R=-6.4/-6.5  （L/R 为左右各 100 列的顶边位移，正=上移、负=下移）
 PASS C8  呼吸两帧在 234px 显示尺度差异 >=8% 墨迹
-     1662/18451 = 9.01%
+     1535/18483 = 8.30%
 PASS C9  蜷睡帧轮廓与趴睡帧明显不同（IoU<0.75 且 bbox 至少两处不同）
      iou=0.6840 neutral={"left":22,"top":647,"right":1523,"bottom":1467} curled={"left":44,"top":863,"right":1493,"bottom":1467}
 PASS C10  source/ 直出图与 native 齐全，manifest.sources 与磁盘一致

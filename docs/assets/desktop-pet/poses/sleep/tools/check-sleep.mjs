@@ -19,8 +19,10 @@ const EXPECT = {
   alphaSolidAt: 248,
   minIslandArea: 4,
   diffTolerance: 8,
-  derivedFrameIds: ['neutral', 'breathIn', 'breathOut', 'startle'],
   breathBand: { left: 830, top: 646, right: 1350, bottom: 1468 },
+  breathBandCenter: { lo: 1050, hi: 1150 },
+  breathMinTopShift: 8,
+  breathMaxAsymmetry: 4,
   breathDisplayWidth: 234,
   breathMinDisplayDiffPct: 8,
   curledMaxIou: 0.75,
@@ -270,15 +272,36 @@ check('C5', '母版 = native 的 2x 最近邻（每个 2x2 块四像素相同且
   }
   return lines.join('; ');
 });
-check('C6', 'neutral/breathIn/breathOut/startle 四帧 alpha 外轮廓逐值相同', () => {
+// C6 口径（主理人裁定后修正）：
+//   「轮廓完全不动」会禁止真正的呼吸（胸腔抬起必然改变 alpha 外轮廓），
+//   「按比例整体放大/缩小」才是作弊。所以：允许 ≤2% 的尺寸起伏，但禁止宽高同向变化 >1%。
+//   惊醒帧只换眼/嘴/汗滴，外形不该动 → 仍按「与 lie 睁眼帧同轮廓」逐值比对。
+check('C6', '呼吸帧允许 ≤2% 尺寸起伏但禁止整体缩放；startle 与 lie 同轮廓', () => {
   const base = bboxOf(frames.neutral.nativeImg, 128);
-  const lines = ['base ' + JSON.stringify(base)];
-  for (const id of EXPECT.derivedFrameIds) {
+  const baseW = base.right - base.left + 1;
+  const baseH = base.bottom - base.top + 1;
+  const lines = ['neutral ' + JSON.stringify(base) + ' ' + baseW + 'x' + baseH];
+  for (const id of ['breathIn', 'breathOut']) {
     const b = bboxOf(frames[id].nativeImg, 128);
-    assert(b.left === base.left && b.top === base.top && b.right === base.right && b.bottom === base.bottom,
-      id + ' 外轮廓 ' + JSON.stringify(b) + ' != neutral ' + JSON.stringify(base));
-    lines.push(id + ' same');
+    const w = b.right - b.left + 1;
+    const h = b.bottom - b.top + 1;
+    const dw = (w - baseW) / baseW;
+    const dh = (h - baseH) / baseH;
+    assert(Math.abs(dw) <= 0.02, id + ' 宽度变化 ' + (dw * 100).toFixed(2) + '% > 2%');
+    assert(Math.abs(dh) <= 0.02, id + ' 高度变化 ' + (dh * 100).toFixed(2) + '% > 2%');
+    assert(!(dw > 0.01 && dh > 0.01), id + ' 宽高同时增大 >1%（' + (dw * 100).toFixed(2) + '% / ' + (dh * 100).toFixed(2) + '%）＝整体放大');
+    assert(!(dw < -0.01 && dh < -0.01), id + ' 宽高同时减小 >1%（' + (dw * 100).toFixed(2) + '% / ' + (dh * 100).toFixed(2) + '%）＝整体缩小');
+    lines.push(id + ' ' + w + 'x' + h + ' dW=' + (dw * 100).toFixed(2) + '% dH=' + (dh * 100).toFixed(2) + '%');
   }
+  // startle：外形必须与 lie 睁眼帧一致（它只换眼/嘴/汗滴）
+  assert(fs.existsSync(lieNativePath), '找不到 lie 睁眼基准：' + lieNativePath);
+  const lie = readPng(lieNativePath);
+  const lieBox = bboxOf(lie, 128);
+  const stBox = bboxOf(frames.startle.nativeImg, 128);
+  for (const k of ['left', 'top', 'right', 'bottom']) {
+    assert(lieBox[k] === stBox[k], 'startle 外轮廓 ' + k + '=' + stBox[k] + ' != lie ' + lieBox[k]);
+  }
+  lines.push('startle=lie ' + JSON.stringify(lieBox));
   return lines.join('; ');
 });
 
@@ -297,30 +320,49 @@ check('C6b', '每帧在「作者声明区域并集」之外与 neutral 逐像素
   return lines.join('; ');
 });
 
-const bandTopMean = (img) => {
-  let sum = 0;
-  let n = 0;
-  for (let x = 900; x <= 1300; x += 1) {
-    for (let y = 0; y < img.height; y += 1) {
-      if (img.data[(y * img.width + x) * 4 + 3] < 128) continue;
-      sum += y; n += 1;
-      break;
-    }
+const topEdgeAt = (img, x) => {
+  for (let y = 0; y < img.height; y += 1) {
+    if (img.data[(y * img.width + x) * 4 + 3] > 8) return y;
   }
-  return sum / n;
+  return -1;
+};
+// 正数 = b 的墨迹上沿比 a 更靠上（抬升），负数 = 更靠下
+const edgeShift = (a, b, lo, hi) => {
+  const v = [];
+  for (let x = lo; x <= hi; x += 1) {
+    const ya = topEdgeAt(a, x);
+    const yb = topEdgeAt(b, x);
+    if (ya < 0 || yb < 0) continue;
+    v.push(ya - yb);
+  }
+  const mean = v.reduce((s, t) => s + t, 0) / v.length;
+  return { n: v.length, mean: +mean.toFixed(1), min: Math.min(...v), max: Math.max(...v) };
 };
 
-check('C7', '呼吸两帧只动躯干带、方向相反、幅度非零', () => {
-  const sIn = diffStats(frames.neutral.nativeImg, frames.breathIn.nativeImg, [EXPECT.breathBand]);
-  const sOut = diffStats(frames.neutral.nativeImg, frames.breathOut.nativeImg, [EXPECT.breathBand]);
+check('C7', '呼吸两帧只动躯干带；带中央顶边位移 吸气≥+8 / 呼气≤-8 且两侧对称', () => {
+  const neutral = frames.neutral.nativeImg;
+  const sIn = diffStats(neutral, frames.breathIn.nativeImg, [EXPECT.breathBand]);
+  const sOut = diffStats(neutral, frames.breathOut.nativeImg, [EXPECT.breathBand]);
   assert(sIn.insidePixels > 5000, '吸气帧带内变化只有 ' + sIn.insidePixels + ' px');
   assert(sOut.insidePixels > 5000, '呼气帧带内变化只有 ' + sOut.insidePixels + ' px');
-  // 方向：带中央列的平均「背部上沿」在吸气帧必须比呼气帧高（y 更小）
-  const topIn = bandTopMean(frames.breathIn.nativeImg);
-  const topOut = bandTopMean(frames.breathOut.nativeImg);
-  assert(topIn < topOut - 4, '吸气帧背部上沿未高于呼气帧: in=' + topIn.toFixed(1) + ' out=' + topOut.toFixed(1));
-  return 'in=' + sIn.insidePixels + 'px topMean=' + topIn.toFixed(1)
-    + ' out=' + sOut.insidePixels + 'px topMean=' + topOut.toFixed(1);
+  const { lo, hi } = EXPECT.breathBandCenter;
+  const lift = edgeShift(neutral, frames.breathIn.nativeImg, lo, hi);
+  const drop = edgeShift(frames.breathOut.nativeImg, neutral, lo, hi); // 反向：呼气帧上沿更低 ⇒ 正数=下降
+  assert(lift.mean >= EXPECT.breathMinTopShift, '吸气带中央顶边只抬 ' + lift.mean + 'px < ' + EXPECT.breathMinTopShift);
+  assert(drop.mean >= EXPECT.breathMinTopShift, '呼气带中央顶边只降 ' + drop.mean + 'px < ' + EXPECT.breathMinTopShift);
+  assert(Math.abs(lift.mean - drop.mean) <= EXPECT.breathMaxAsymmetry,
+    '吸气/呼气幅度不对称：' + lift.mean + ' vs ' + drop.mean + '（差 > ' + EXPECT.breathMaxAsymmetry + 'px）');
+  const lr = (img) => {
+    const l = edgeShift(neutral, img, 940, 1040).mean;
+    const r = edgeShift(neutral, img, 1140, 1240).mean;
+    assert(Math.abs(l - r) <= EXPECT.breathMaxAsymmetry, '左右不对称：左 ' + l + ' vs 右 ' + r + '（差 > ' + EXPECT.breathMaxAsymmetry + 'px）');
+    return l + '/' + r;
+  };
+  const lrIn = lr(frames.breathIn.nativeImg);
+  const lrOut = lr(frames.breathOut.nativeImg);
+  return 'in=' + sIn.insidePixels + 'px lift=' + lift.mean + '(min' + lift.min + '/max' + lift.max + ') L/R=' + lrIn
+    + ' | out=' + sOut.insidePixels + 'px drop=' + drop.mean + '(min' + drop.min + '/max' + drop.max + ') L/R=' + lrOut
+    + '  （L/R 为左右各 100 列的顶边位移，正=上移、负=下移）';
 });
 
 check('C8', '呼吸两帧在 234px 显示尺度差异 >=8% 墨迹', () => {
