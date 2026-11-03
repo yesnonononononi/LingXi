@@ -43,7 +43,7 @@ import java.util.Map;
         description = "使用已配置的生图模型生成一张图片，保存到工作区内的新文件，不覆盖已有文件。"
                 + "prompt 必须完整自洽，path 使用相对路径。size、quality、count 均可不传：默认尺寸沿用模型配置，"
                 + "未配置尺寸时为 1024x1024；默认质量沿用模型配置，未配置则由服务端决定；每次固定一张。"
-                + "传入尺寸须符合所选模型规格，非法参数在模型调用前报错。调用有次数上限，失败也占次数。"
+                + "本地只校验参数格式，模型不支持的尺寸或质量由工具返回服务端错误信息。调用有次数上限，失败也占次数。"
                 + "回复时用 ![图片描述](previewUrl) 展示结果，需要查看像素时使用 read_image。",
         parameters = @ObjectValue(properties = {
                 @ToolProperty(key = "prompt", value = @Value(type = ValueType.STRING, description = "完整、自洽的生图提示词。")),

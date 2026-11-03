@@ -11,6 +11,8 @@ import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.image.ImageModel;
 import com.summit.core.model.image.ImageGenerationOptions;
+import com.summit.adapter.langchain4j.model.provider.CommonImageModelProvider;
+import com.sun.net.httpserver.HttpServer;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.core.tool.ToolExecuteResult;
@@ -25,12 +27,16 @@ import org.junit.jupiter.api.io.TempDir;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -127,17 +133,48 @@ class GenerateImageToolExecutorTest {
         GenerateImageToolExecutor executor = executor();
         ToolExecution call = call("art/wide.png");
         call.setArgs(mapper.writeValueAsString(Map.of("prompt", "wide scene", "path", "art/wide.png",
-                "size", "1536x1024", "quality", "high")));
+                "size", "123x456", "quality", "custom-quality")));
         assertTrue(executor.execute(call).isSuccess());
-        verify(imageModel).generate("wide scene", new ImageGenerationOptions("1536x1024", "high", 1));
+        verify(imageModel).generate("wide scene", new ImageGenerationOptions("123x456", "custom-quality", 1));
         clearInvocations(imageModel, providers);
-        call.setArgs(mapper.writeValueAsString(Map.of("prompt", "bad size", "path", "art/bad.png", "size", "123x456")));
+        call.setArgs(mapper.writeValueAsString(Map.of("prompt", "bad size", "path", "art/bad.png", "size", "123*456")));
         ToolExecuteResult result = executor.execute(call);
         assertFalse(result.isSuccess());
-        assertTrue(result.getToolOutput().contains("不符合"), result.getToolOutput());
+        assertTrue(result.getToolOutput().contains("正整数宽x高"), result.getToolOutput());
         assertTrue(result.getToolOutput().contains("可不传"), result.getToolOutput());
         assertFalse(Files.exists(root.resolve("art/bad.png")));
         verifyNoInteractions(providers, imageModel);
+    }
+
+    @Test void returnsTheRealServiceErrorWhenFormattedSpecificationsAreUnsupported() throws Exception {
+        GenerateImageToolExecutor executor = executor();
+        AtomicReference<JsonNode> received = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/images/generations", exchange -> {
+            received.set(mapper.readTree(exchange.getRequestBody()));
+            byte[] error = "{\"error\":{\"message\":\"unsupported size 123x456\",\"type\":\"invalid_request_error\",\"code\":\"invalid_size\"}}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(400, error.length);
+            try (OutputStream output = exchange.getResponseBody()) { output.write(error); }
+        });
+        server.start();
+        try {
+            when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
+                    .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("gpt-image-1")
+                    .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1").apiKey("test-key").build());
+            when(providers.create(any())).thenAnswer(invocation -> new CommonImageModelProvider().create(invocation.getArgument(0)));
+            ToolExecution call = call("unsupported.png");
+            call.setArgs(mapper.writeValueAsString(Map.of("prompt", "draw", "path", "unsupported.png", "size", "123x456")));
+            ToolExecuteResult result = executor.execute(call);
+            assertFalse(result.isSuccess());
+            assertNotNull(received.get());
+            assertEquals("123x456", received.get().path("size").asText());
+            assertTrue(result.getToolOutput().contains("unsupported size 123x456"), result.getToolOutput());
+            assertFalse(Files.exists(root.resolve("unsupported.png")));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test void advertisesOptionalSpecificationsAndTheirDefaultsInTheActualToolSchema() throws Exception {

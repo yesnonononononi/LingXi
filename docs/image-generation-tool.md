@@ -16,14 +16,7 @@
 {"prompt":"夕阳下的红色帆船，白帆，插画风格","path":"art/sailboat-wide.png","size":"1536x1024","quality":"high"}
 ```
 
-尺寸在模型调用前校验；非法类型、格式、尺寸和质量会返回中文错误，列出限制并提示可省略参数使用默认规格：
-
-- GPT Image 1 / 1 mini / 1.5：`1024x1024`、`1536x1024`、`1024x1536`、`auto`。
-- GPT Image 2 / 2.5：支持 `auto`，或宽、高均为 16 的倍数，最长边不超过 3840，长短边比例不超过 3:1，总像素在 655360～8294400 之间的自定义尺寸，如 `1536x864`。
-- DALL·E 2：`256x256`、`512x512`、`1024x1024`；DALL·E 3：`1024x1024`、`1792x1024`、`1024x1792`。这些旧模型规则用于兼容服务。
-- 无法识别的兼容模型仅开放上述通用预设尺寸；没有能力声明时，不假定支持自定义尺寸。服务端仍会校验其自身能力。
-
-GPT Image 质量支持 `auto`、`low`、`medium`、`high`，2.5 还支持 `xhigh`、`max`；DALL·E 2 仅支持 `standard`，DALL·E 3 支持 `standard`、`hd`。GPT Image 的尺寸和质量约束按 [OpenAI 生图文档](https://developers.openai.com/api/docs/guides/image-generation) 及 [Images API 参数说明](https://developers.openai.com/api/reference/resources/images/methods/generate) 核对。
+本地只做基础格式校验：`size` 必须为正整数宽x高（如 `1536x1024`）或 `auto`，`quality` 必须为非空白字符串。工具不维护模型白名单、尺寸档位、边长、比例、像素数或质量枚举限制。格式正确的规格直接交给模型；服务端拒绝时，工具返回包含服务端错误信息的失败结果，供主模型决定如何调整参数。
 
 - `path` 必须为工作区内的相对文件路径，支持 `.png`、`.jpg`、`.jpeg`，已有文件不覆盖。
 - 文件通过工作区桥接写入，本地和沙箱共用此工具。预览副本位于数据目录，通过 `/a/images/...` 查询。
