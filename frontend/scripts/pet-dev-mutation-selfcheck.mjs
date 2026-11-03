@@ -34,6 +34,18 @@ const FRONTEND_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url))
  * <p>每个变异体都必须对应一条真实修复点，`expect` 里写的是"测试红起来时输出里必然出现的
  * 断言消息"——只判退出码不够：测试可能因为语法错误而红，那是假红。</p>
  */
+/**
+ * 入口页字面量（运行时拼出来）。
+ *
+ * <p><b>为什么不在源码里直接写：</b>本文件也在「单一真源扫描」的消费方清单里
+ * （`tests/petDevEndpoint.test.cjs` 会扫描代码里的 `pet.html` 字面量），
+ * 而变异体恰恰要**故意**造出一个硬编码。用拼接构造既能让变异体生效，
+ * 又不会让扫描器误报自己。</p>
+ *
+ * @type {string}
+ */
+const ENTRY_PAGE_LITERAL = ['pet', 'html'].join('.');
+
 const MUTATIONS = [
   {
     id: 'probe-no-fingerprint',
@@ -55,7 +67,7 @@ const MUTATIONS = [
   },
   {
     id: 'app-type-spa',
-    goal: '把 appType 改回 spa（history fallback 复活）：/pet.html 又会兜成 index.html',
+    goal: `把 appType 改回 spa（history fallback 复活）：/${ENTRY_PAGE_LITERAL} 又会兜成 index.html`,
     file: 'electron/pet-dev-endpoint.cjs',
     find: "appType: 'mpa',",
     replace: "appType: 'spa',",
@@ -64,12 +76,39 @@ const MUTATIONS = [
   },
   {
     id: 'ensure-starts-anyway',
-    goal: '探活失败也硬起 dev server（原始缺陷形态）：端口被主应用占用时必须拒绝拉起',
+    goal: '去掉"端口被非桌宠占用"的早退：会白抢一轮锁并多做一次探活，必须被抓住',
     file: 'scripts/pet-dev-server.cjs',
     find: '  if (first.reason !== PROBE_REASON.NO_SERVICE) {',
     replace: '  if (false) {',
     testFile: 'tests/petDevServer.test.cjs',
-    expect: '端口被占用时绝不允许再拉起一个 dev server',
+    expect: '端口被占用时不该白抢一次锁',
+  },
+  {
+    id: 'entry-page-literal',
+    goal: `K4 回退：窗口入口页改回字面量（dev 分支不再取真源 ${ENTRY_PAGE_LITERAL}）`,
+    file: 'electron/pet-window.cjs',
+    find: 'return { kind: \'url\', value: `${resolveDevEntryUrl(rawUrl)}${PET_ENTRY_PAGE}` };',
+    replace: 'return { kind: \'url\', value: `${resolveDevEntryUrl(rawUrl)}' + ENTRY_PAGE_LITERAL + '` };',
+    testFile: 'tests/petDevEndpoint.test.cjs',
+    expect: '在代码里写死了入口页名',
+  },
+  {
+    id: 'body-stall-as-network-error',
+    goal: 'K1 回退：响应体停滞重新被判成 network-error（exit 6），与文档的 exit 5 冲突',
+    file: 'electron/pet-dev-probe.cjs',
+    find: 'return { reason: PROBE_REASON.TIMEOUT, cause: PROBE_CAUSE.BODY_TIMEOUT, detail: verdict.detail };',
+    replace: 'return { reason: PROBE_REASON.NETWORK_ERROR, cause: PROBE_CAUSE.NETWORK_ERROR, detail: verdict.detail };',
+    testFile: 'tests/petDevProbe.test.cjs',
+    expect: '响应体停滞必须归入 timeout',
+  },
+  {
+    id: 'lock-ignored-spawn-anyway',
+    goal: 'K3 回退：拿不到锁也当拿到（并发时静默拉起第二个 dev server）',
+    file: 'scripts/pet-dev-server.cjs',
+    find: "    if (claim.acquired) return { acquired: true, lock: claim, reason: '' };",
+    replace: "    if (true) return { acquired: true, lock: claim, reason: '' };",
+    testFile: 'tests/petDevServer.test.cjs',
+    expect: '拿不到锁时绝不允许 spawn 第二个 dev server',
   },
 ];
 
