@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 
 const path = require('node:path');
-const { reactive, nextTick, watch } = require('vue');
+const { reactive, nextTick, watch, h, ref } = require('vue');
 // 挂载 harness 已收敛到 tests/support/chatProcessHarness.cjs：唯一 stub 清单 + 目录递归真实加载。
 const { find, findAll, text, mountComponent, loadModule } = require('./support/chatProcessHarness.cjs');
 
@@ -20,6 +20,60 @@ function loadChatModule(filename, realPlanCards = false, extraStubs = []) {
 function loadComponent() {
   return loadChatModule(path.resolve(__dirname, '../src/components/chat/ChatMessageItem.vue')).default;
 }
+
+test('委派任务：实时快照先于摘要到达，首帧与回查后始终保持任务样式', async t => {
+  const { TurnStreamReducer } = loadChatModule(path.resolve(__dirname, '../src/views/chat/turnStreamReducer.ts'));
+  const { upsertTurnViewIntoMessages } = loadChatModule(path.resolve(__dirname, '../src/views/chat/blockProjection.ts'));
+  const messages = reactive([]);
+  const turn = ref(null);
+  const Item = loadComponent();
+  const root = mountComponent(t, { setup: () => () => h('main', messages.map(message =>
+    h(Item, { key: message.id, message, turn: turn.value, isDark: false, taskRecipientName: 'QA 工程师' }))) }, {});
+  const reducer = new TurnStreamReducer(messages, { sessionId: '88' });
+  const view = { sessionId: '88', turnId: '800', parentTurnId: '700', status: 'RUNNING',
+    viewVersion: '1', userMessage: '核验任务详情', userMessageId: '801', blocks: [] };
+  reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '88', turnId: '800', viewVersion: '1', view });
+  await nextTick();
+  assert.equal(turn.value, null, '前提：快照到达时轮次摘要仍未返回');
+  const task = find(root, node => node.props?.['data-testid'] === 'delegated-task');
+  assert.ok(task, '首帧必须直接渲染下发任务');
+  assert.ok(text(task).includes('@QA 工程师'));
+  assert.ok(text(task).includes('核验任务详情'));
+  assert.equal(find(root, node => node.props?.['data-testid'] === 'user-message-bubble'), undefined,
+    '摘要缺失时不能闪现浅蓝用户气泡');
+
+  turn.value = { turnId: '800', parentTurnId: '700', status: 'RUNNING' };
+  upsertTurnViewIntoMessages(messages, { ...view, viewVersion: '2' });
+  await nextTick();
+  assert.equal(find(root, node => node.props?.['data-testid'] === 'delegated-task'), task,
+    '摘要补齐和历史回查不能重建任务节点');
+  assert.equal(messages.filter(message => message.role === 'user').length, 1);
+});
+
+test('委派任务：历史首屏与已有用户消息补齐都保留父轮次身份', async t => {
+  const { upsertTurnViewIntoMessages } = loadChatModule(path.resolve(__dirname, '../src/views/chat/blockProjection.ts'));
+  const view = { sessionId: '88', turnId: '800', parentTurnId: '700', status: 'COMPLETED',
+    viewVersion: '1', userMessage: '历史任务详情', blocks: [] };
+  const messages = reactive([]);
+  upsertTurnViewIntoMessages(messages, view);
+  const root = mountComponent(t, loadComponent(), { message: messages[0], isDark: true });
+  assert.ok(find(root, node => node.props?.['data-testid'] === 'delegated-task'));
+  const existing = reactive([{ id: 'existing', role: 'user', turnId: '800', content: '历史任务详情', timestamp: 0 }]);
+  const original = existing[0];
+  upsertTurnViewIntoMessages(existing, view);
+  assert.equal(existing[0], original, '补齐身份不能替换已有消息对象');
+  assert.equal(original.parentTurnId, '700');
+});
+
+test('委派任务：普通用户提问不因任务文案被误判，旧视图仍使用权威摘要', async t => {
+  const Item = loadComponent();
+  const message = { id: 'user', role: 'user', turnId: '800', content: '你有一条待处理任务，请查收', timestamp: 0 };
+  const ordinary = mountComponent(t, Item, { message: { ...message, parentTurnId: null }, isDark: false });
+  assert.ok(find(ordinary, node => node.props?.['data-testid'] === 'user-message-bubble'));
+  assert.equal(find(ordinary, node => node.props?.['data-testid'] === 'delegated-task'), undefined);
+  const legacy = mountComponent(t, Item, { message, turn: { turnId: '800', parentTurnId: '700' }, isDark: false });
+  assert.ok(find(legacy, node => node.props?.['data-testid'] === 'delegated-task'));
+});
 
 /** 按内容定位某个思考步骤的滚动框（一个消息里可能同时有多段思考）。 */
 function resolveThinkingBox(root, marker) {

@@ -30,8 +30,17 @@ public record TurnViewVO(
         @JsonProperty("blocks") List<Block> blocks,
         @JsonProperty("metric") ContextUsageMetric metric,
         @JsonProperty("userMessageId") Long userMessageId,
-        @JsonProperty("resumeSupplements") List<ResumeSupplementVO> resumeSupplements
+        @JsonProperty("resumeSupplements") List<ResumeSupplementVO> resumeSupplements,
+        // 委派身份随正文下发，避免展示依赖稍后到达的轮次摘要。
+        @JsonProperty("parentTurnId") Long parentTurnId
 ) {
+    public TurnViewVO(Long sessionId, Long turnId, String status, long viewVersion, String userMessage,
+                      List<String> userImageUrls, List<Block> blocks, ContextUsageMetric metric, Long userMessageId,
+                      List<ResumeSupplementVO> resumeSupplements) {
+        this(sessionId, turnId, status, viewVersion, userMessage, userImageUrls, blocks, metric, userMessageId,
+                resumeSupplements, null);
+    }
+
     public TurnViewVO(Long sessionId, Long turnId, String status, long viewVersion, String userMessage,
                       List<String> userImageUrls, List<Block> blocks, ContextUsageMetric metric, Long userMessageId) {
         this(sessionId, turnId, status, viewVersion, userMessage, userImageUrls, blocks, metric, userMessageId, List.of());

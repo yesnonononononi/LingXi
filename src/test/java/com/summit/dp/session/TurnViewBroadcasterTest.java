@@ -13,11 +13,13 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
+import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -80,6 +82,35 @@ class TurnViewBroadcasterTest {
                 .type(SessionMessageType.AI).text(payload).build();
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(row));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of());
+    }
+
+    @Test
+    void delegatedIdentityTravelsWithHistorySnapshotsAndFilteredBlocks() throws Exception {
+        stubAiRound();
+        Long parentTurnId = 9007199254740993L;
+        ChatTurn delegated = ChatTurn.accept(TURN_ID, SESSION_ID, parentTurnId,
+                TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
+        when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(delegated));
+        when(executionIdentity.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+
+        TurnViewVO history = turnViewService.assembleTurnView(null, delegated, 1L).orElseThrow();
+        assertEquals(parentTurnId, history.parentTurnId());
+        ObjectMapper mapper = new JsonConfig().objectMapper();
+        assertEquals(parentTurnId.toString(), mapper.readTree(mapper.writeValueAsString(history))
+                .get("parentTurnId").textValue(), "父轮次 ID 必须按字符串下发，避免精度丢失");
+        assertEquals(parentTurnId, mapper.readValue(mapper.writeValueAsString(history), TurnViewVO.class).parentTurnId());
+        assertNull(turnViewService.assembleTurnView(null, runningTurn(), 1L).orElseThrow().parentTurnId());
+
+        broadcaster.broadcastSnapshot(TURN_ID);
+        broadcaster.broadcastBlockUpsert(TURN_ID, "call-1");
+        ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
+        verify(sseEventPublisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), any(), payload.capture());
+        assertEquals(3, ((BlockEventType.BlockEventPayload) payload.getAllValues().get(0)).view().blocks().size());
+        assertEquals(1, ((BlockEventType.BlockEventPayload) payload.getAllValues().get(1)).view().blocks().size());
+        for (Object value : payload.getAllValues()) {
+            BlockEventType.BlockEventPayload event = (BlockEventType.BlockEventPayload) value;
+            assertEquals(parentTurnId, event.view().parentTurnId(), "首帧与过滤后的增量必须携带相同委派身份");
+        }
     }
 
     @Test

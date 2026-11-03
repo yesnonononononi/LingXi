@@ -243,8 +243,9 @@ const compactingTitle = computed(() => props.message.contextUsage?.tokenCount
     max: props.message.contextUsage.maxTokens || 0
   })
   : t('chat.message.compressing'));
-// 委派身份由后端父轮次声明，不能从任务文本或会话位置猜测。
-const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);
+// 快照先于摘要到达时也必须使用后端父轮次，避免任务正文短暂套上用户气泡样式。
+const isDelegatedTask = computed(() => props.message.role === 'user'
+  && !!(props.message.parentTurnId ?? props.turn?.parentTurnId));
 
 /**
  * 宿主注册的插槽渲染器（三级解析的中间层：父级 `$slots` > 宿主注入 > 内置默认）。

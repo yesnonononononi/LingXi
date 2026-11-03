@@ -105,7 +105,8 @@ public class TurnViewBroadcaster {
                 .filter(block -> blockIdFilter.equals(block.getBlockId()))
                 .toList();
         return new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
-                view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(), view.resumeSupplements());
+                view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(), view.resumeSupplements(),
+                view.parentTurnId());
     }
 
     /**

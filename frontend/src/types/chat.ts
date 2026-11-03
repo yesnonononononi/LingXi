@@ -155,6 +155,8 @@ export interface ChatMessage {
   id: string;
   /** 服务端用户消息主键；展示气泡 ID 不可用于历史重发。 */
   serverMessageId?: string | null;
+  /** 来自轮次视图的委派身份，首帧渲染时摘要可能尚未到达。 */
+  parentTurnId?: string | null;
   role: MessageRole;
   content: string;
   timestamp: number;

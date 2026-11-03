@@ -119,6 +119,7 @@ export function buildUserMessageFromTurnView(
   return {
     id: `user-${view.sessionId}-turn-${view.turnId}`,
     serverMessageId: view.userMessageId,
+    parentTurnId: view.parentTurnId,
     role: 'user',
     content: text ?? '',
     imageUrls: view.userImageUrls ? [...view.userImageUrls] : [],
@@ -138,6 +139,7 @@ export function upsertTurnViewIntoMessages(
 
   const existingUser = messages.find(message => message.role === 'user' && !message.isResumeSupplement && message.turnId === view.turnId);
   if (existingUser && view.userMessageId != null) existingUser.serverMessageId = view.userMessageId;
+  if (existingUser && view.parentTurnId !== undefined) existingUser.parentTurnId = view.parentTurnId;
   if (existingUser && view.userImageUrls !== undefined) existingUser.imageUrls = [...view.userImageUrls];
 
   // 原气泡只补齐状态，避免替换对象导致 DOM 重建。
