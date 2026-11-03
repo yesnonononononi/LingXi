@@ -140,11 +140,19 @@ class CommandToolDefinitionExecutorTest {
     }
 
     @Test
-    void destructiveRefusalCarriesIntention() {
-        ToolExecuteResult result = executor.execute(execution("rm -rf /", "清空根目录"));
+    void anApprovedHighRiskCommandReachesTheMockBridgeWithoutASecondHardBlock() throws Exception {
+        Workspace workspace = mockedWorkspaceReturning(0, "mocked approval replay");
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .shellType(ShellType.BASH).charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge().commands().execute(anyString(), any(), eq("."), eq(StandardCharsets.UTF_8),
+                eq(240L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenReturn(new WorkspaceCommands.CommandResult(0, "mocked approval replay", false, false));
+        ToolExecuteResult result = executor.execute(execution("rm -rf /", "清空根目录", workspace));
 
-        assertFalse(result.isSuccess());
+        assertTrue(result.isSuccess(), result.getToolOutput());
         assertEquals("清空根目录", result.getToolMetaData().get(ExecuteCommandRequest.INTENTION));
+        verify(workspace.bridge().commands()).execute(eq("rm -rf /"), eq(ShellType.BASH), eq("."),
+                eq(StandardCharsets.UTF_8), eq(240L), eq(TimeUnit.SECONDS), eq(100L));
     }
 
     @Test

@@ -14,6 +14,7 @@ import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
@@ -96,17 +97,9 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
             } catch (IllegalArgumentException unsupported) {
                 return ToolExecuteResult.err(unsupported.getMessage(), ToolResultType.NORMAL, buildMetadata(request));
             }
-            if (CommandGuard.assess(request.getCommand(), shellType) == CommandGuard.Verdict.DESTRUCTIVE) {
-
-                log.warn("【ToolCall】 refused destructive command: {}", request.getCommand());
-
-                return ToolExecuteResult.err("command refused: it is destructive (disk/volume level, "
-                        + "system-wide deletion or an irreversible halt) and cannot be approved — "
-                        + "rephrase it or ask the user to run it themselves", ToolResultType.NORMAL, buildMetadata(request));
-            }
-
             // 审批后再次执行也走这里，最新禁止规则不能被旧审批绕过。
-            SecurityDecision decision = security == null ? null : security.evaluate(request.getCommand());
+            SecurityDecision decision = security == null ? null : security.evaluate(request.getCommand(),
+                    CommandApprovalPolicy.from(toolExecution.getAttributes()));
             if (decision != null && decision.action() == SecurityAction.DENY) {
                 return ToolExecuteResult.err(decision.describe());
             }

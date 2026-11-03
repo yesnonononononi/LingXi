@@ -5,13 +5,13 @@ import java.util.Map;
 /** 命令执行的人机放行档位 —— 属于业务侧。 */
 public enum CommandApprovalPolicy {
 
-    /** 完全放行：任何命令都不询问。 */
+    /** 完全放行仅保留磁盘、系统删除、提权启动及 WSL 等高危审批，自定义禁止仍生效。 */
     FULL_ACCESS,
 
     /** 逐条确认：每条命令都先给用户看。 */
     PRE_EXEC_CONFIRM,
 
-    /** 危险拦截：仅内核判定为「需批准」的命令才询问；毁灭性命令由内核直接拒绝，不询问。 */
+    /** 危险拦截由业务风险分类与终端规则共同决定是否询问。 */
     DANGEROUS_BLOCK;
 
     /** 本业务在不透明 attributes 中使用的键。 */

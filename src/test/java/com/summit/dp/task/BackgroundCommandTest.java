@@ -277,7 +277,7 @@ class BackgroundCommandTest {
         ToolExecuteResult deniedRead = manage.execute(call(manage, Map.of("action", "read", "taskId", "104"), 10));
         assertFalse(deniedRead.isSuccess());
         TerminalSecurityPolicy security = mock(TerminalSecurityPolicy.class);
-        when(security.evaluate(anyString())).thenReturn(new SecurityDecision(SecurityAction.DENY, "policy", "PROGRAM", null));
+        when(security.evaluate(anyString(), any())).thenReturn(new SecurityDecision(SecurityAction.DENY, "policy", "PROGRAM", null));
         BackendProcesser forbidden = mock(BackendProcesser.class);
         CommandToolDefinitionExecutor executor = new CommandToolDefinitionExecutor(json, security, forbidden);
         assertFalse(executor.execute(call(executor, Map.of("command", "echo test", "background", true), 10)).isSuccess());
