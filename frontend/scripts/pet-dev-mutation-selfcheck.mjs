@@ -110,6 +110,51 @@ const MUTATIONS = [
     testFile: 'tests/petDevServer.test.cjs',
     expect: '拿不到锁时绝不允许 spawn 第二个 dev server',
   },
+  // ---- M1 / T01：安装版门禁与产物守卫（用户硬约束 #3：打包态不得出现桌宠入口）----
+  {
+    id: 'gate-always-enabled',
+    goal: '安装版门禁恒真（打包态返回 enabled:true）：装好的 LX 一启动就会冒出桌宠窗口',
+    file: 'electron/pet-feature-gate.cjs',
+    find: '  if (isPackaged) return { enabled: false, reason: PET_EXPOSURE_REASON.PACKAGED };',
+    replace: '  if (isPackaged) return { enabled: true, reason: PET_EXPOSURE_REASON.DEV };',
+    testFile: 'tests/petFeatureGate.test.cjs',
+    expect: '安装版必须不暴露桌宠',
+  },
+  {
+    id: 'pet-window-ungated',
+    goal: "把 pet.show() 的门禁拆掉（require('./pet-window.cjs') 变无条件）：安装版也会创建桌宠窗口",
+    file: 'electron/main.cjs',
+    // 锚点用 \n 书写即可：applyMutation 会按目标文件的行尾风格自动适配（CRLF/LF 都吃得下）
+    find:
+      'const pet = petExposure.enabled\n' +
+      "  ? require('./pet-window.cjs').registerPetWindow({ ipcMain, isDev, frontendRoot })\n" +
+      '  : createDisabledPet();',
+    replace: "const pet = require('./pet-window.cjs').registerPetWindow({ ipcMain, isDev, frontendRoot });",
+    testFile: 'tests/petFeatureGate.test.cjs',
+    expect: '桌宠窗口模块被无条件 require',
+  },
+  {
+    id: 'pet-entry-back-in-build',
+    goal: `pet 入口回流生产构建（vite input 加回 pet）：dist/${ENTRY_PAGE_LITERAL} 会跟着进安装包`,
+    file: 'vite.config.ts',
+    find: "        notification: resolve(__dirname, 'notification.html'),",
+    // 入口页名运行时拼出来：本文件也在「单一真源扫描」的消费方清单里，
+    // 源码里出现连续的入口页字面量会被 tests/petDevEndpoint.test.cjs 判成硬编码。
+    replace:
+      "        notification: resolve(__dirname, 'notification.html'),\n" +
+      "        pet: resolve(__dirname, '" + ENTRY_PAGE_LITERAL + "'),",
+    testFile: 'tests/petNotShipped.test.cjs',
+    expect: '生产构建入口里仍有桌宠入口',
+  },
+  {
+    id: 'pet-data-back-in-build-files',
+    goal: 'build.files 回流 pet 数据（pet-geometry.json）：安装包里带上桌宠几何真源',
+    file: 'package.json',
+    find: '      "electron/**/*",\n      "package.json"',
+    replace: '      "electron/**/*",\n      "pet-geometry.json",\n      "package.json"',
+    testFile: 'tests/petNotShipped.test.cjs',
+    expect: 'build.files 里仍有桌宠数据',
+  },
 ];
 
 /** 当前在飞的变异：绝对路径 → 原始文本（进程被中断时据此还原）。 */
@@ -176,6 +221,24 @@ function runTests(testFile) {
 }
 
 /**
+ * 把锚点文本的行尾统一成目标文件的行尾风格。
+ *
+ * <p><b>为什么必须有这一步：</b>同一份仓库里既有 CRLF 也有 LF（`core.autocrlf=true` 会把
+ * checkout 出来的文件转成 CRLF，而脚本自己写出来的文件是 LF）。变异锚点写成写死的那一种，
+ * 换台机器/换一次 checkout 就会"命中 0 处"，自检直接失效——而它失效的方式是**报错**，
+ * 还算诚实；真正危险的是有人为了让它过而把锚点改短。所以这里按目标文件自动适配。</p>
+ *
+ * @param {string} text 锚点文本（用 `\n` 写即可）
+ * @param {string} reference 目标文件全文（用来判定行尾风格）
+ * @returns {string} 行尾与目标文件一致的文本
+ */
+function normalizeEol(text, reference) {
+  const crlf = String(reference).includes('\r\n');
+  const unified = String(text).replace(/\r\n/g, '\n');
+  return crlf ? unified.replace(/\n/g, '\r\n') : unified;
+}
+
+/**
  * 注入一个变异体。
  *
  * @param {{file: string, find: string, replace: string}} mutation 变异体
@@ -185,12 +248,14 @@ function runTests(testFile) {
 function applyMutation(mutation) {
   const absPath = path.join(FRONTEND_ROOT, mutation.file);
   const original = readFileSync(absPath, 'utf8');
-  const occurrences = original.split(mutation.find).length - 1;
+  const find = normalizeEol(mutation.find, original);
+  const replace = normalizeEol(mutation.replace, original);
+  const occurrences = original.split(find).length - 1;
   if (occurrences !== 1) {
     throw new Error(`${mutation.id}：变异锚点在 ${mutation.file} 命中 ${occurrences} 处（应为 1），源码结构可能已变，请同步脚本`);
   }
   INFLIGHT.set(absPath, original);
-  writeFileSync(absPath, original.replace(mutation.find, mutation.replace), 'utf8');
+  writeFileSync(absPath, original.replace(find, replace), 'utf8');
   return { absPath, original };
 }
 
@@ -210,7 +275,7 @@ function restoreMutation(absPath, original) {
 
 /** 依次执行全部变异体并汇总。 */
 function main() {
-  console.log('[mutate] 桌宠探活/端口隔离变异自检开始');
+  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫）');
   console.log(`[mutate] 前端根目录：${FRONTEND_ROOT}`);
 
   const results = [];
