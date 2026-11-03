@@ -8,15 +8,23 @@ import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
+import com.summit.core.runtime.loop.LoopInterceptorProcessor;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
+import com.summit.core.compact.Tokenizer;
+import com.summit.harness.springbootautoconfigure.config.InterceptorConfig;
+import com.summit.harness.springbootautoconfigure.config.execution.ExecutionRuntimeConfig;
+import com.summit.harness.springbootautoconfigure.loop.LoopInterceptorHandler;
+import com.summit.runtime.loop.LoopInterceptorFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
 import org.springframework.core.env.MapPropertySource;
@@ -158,8 +166,6 @@ class MemoryMonitorTest {
         interceptor.onBeforeModelInvoke(context(execution, new AtomicInteger()));
         assertEquals(3, execution.getMessages().size());
         assertTrue(execution.getMessages().getLast().text().contains("用户长期记忆文件"));
-        assertEquals(-825, interceptor.order());
-        assertFalse(interceptor.catchErr());
 
         Execution fresh = execution(null);
         LoopContext failing = LoopContext.withCompactionCounter(LoopMessages.builder().execution(fresh).build(),
@@ -188,7 +194,8 @@ class MemoryMonitorTest {
             List<SystemMessageEntity> reminders = context.getBean(MemoryMonitor.class).checkMemoryLimits();
             assertEquals(1, reminders.size());
             assertTrue(reminders.getFirst().text().contains("上限 2000 token"));
-            assertEquals(1, context.getBeansOfType(LoopInterceptor.class).size());
+            assertNotNull(context.getBean(MemoryMonitorInterceptor.class));
+            assertTrue(context.getBeansOfType(LoopInterceptor.class).isEmpty());
             String instructions = context.getEnvironment().getProperty("lingxi.memory.instructions");
             assertTrue(instructions.contains(globalMemory.toString()));
             assertTrue(instructions.contains("模块名.md"));
@@ -204,6 +211,60 @@ class MemoryMonitorTest {
         return new MemoryMonitor(estimator, globalMemory.toString(), 20);
     }
 
+    @Test
+    void annotatedMemoryHookRegistersAfterProcessorCreationAndKeepsReminderLifecycle() throws IOException {
+        write(globalMemory, "b".repeat(11));
+        try (AnnotationConfigApplicationContext spring = annotationContext()) {
+            LoopInterceptorProcessor processor = spring.getBean(LoopInterceptorProcessor.class);
+            LoopInterceptorFactory factory = spring.getBean(LoopInterceptorFactory.class);
+            assertFalse(factory.get().containsKey("memoryMonitorInterceptor"));
+            spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
+            LoopInterceptor registered = factory.get().get("memoryMonitorInterceptor");
+            assertNotNull(registered);
+            assertEquals(-825, registered.order());
+            assertFalse(registered.catchErr());
+
+            Execution execution = execution(projectRoot);
+            AtomicInteger appends = new AtomicInteger();
+            LoopContext payload = context(execution, appends);
+            assertSame(InterceptorResult.NONE, processor.onBeforeModelInvoke(payload));
+            assertEquals(3, execution.getMessages().size());
+            assertTrue(execution.getMessages().getLast().text().contains(globalMemory.toString()));
+            processor.onBeforeModelInvoke(payload);
+            assertEquals(1, appends.get());
+
+            write(globalMemory, "b".repeat(10));
+            processor.onBeforeModelInvoke(payload);
+            assertEquals(List.of("业务规则", "用户任务"), execution.getMessages().stream().map(Message::text).toList());
+        }
+    }
+
+    @Test
+    void annotatedMemoryHookPropagatesAppendFailuresThroughTheProcessor() throws IOException {
+        write(globalMemory, "b".repeat(11));
+        try (AnnotationConfigApplicationContext spring = annotationContext()) {
+            spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
+            Execution execution = execution(projectRoot);
+            IllegalStateException failure = new IllegalStateException("注入失败");
+            LoopContext payload = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
+                    new ExecutionControlSignal(execution.getId()), () -> 0, messages -> { throw failure; });
+
+            assertSame(failure, assertThrows(IllegalStateException.class,
+                    () -> spring.getBean(LoopInterceptorProcessor.class).onBeforeModelInvoke(payload)));
+        }
+    }
+
+    private AnnotationConfigApplicationContext annotationContext() {
+        AnnotationConfigApplicationContext spring = new AnnotationConfigApplicationContext();
+        spring.registerBean(MemoryMonitor.class, this::monitor);
+        spring.registerBean(Tokenizer.class, () -> mock(Tokenizer.class));
+        spring.register(MemoryMonitorInterceptor.class, InterceptorConfig.class);
+        spring.registerBean(LoopInterceptorProcessor.class, () -> new ExecutionRuntimeConfig()
+                .defaultLoopInterceptorProcessor(spring.getBean(LoopInterceptorFactory.class)));
+        spring.refresh();
+        return spring;
+    }
+
     private Execution execution(Path root) {
         AgentRequest request = AgentRequest.builder().workspaceSpec(root == null ? null
                 : new LingXiWorkspaceSpec("local", root.toString(), Map.of())).build();
@@ -212,7 +273,8 @@ class MemoryMonitorTest {
     }
 
     private LoopContext context(Execution execution, AtomicInteger appends) {
-        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), null, () -> 0,
+        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
+                new ExecutionControlSignal(execution.getId()), () -> 0,
                 messages -> {
                     appends.incrementAndGet();
                     execution.getMessages().addAll(messages);

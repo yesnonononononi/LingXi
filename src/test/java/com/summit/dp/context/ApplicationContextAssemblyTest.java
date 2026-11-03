@@ -7,6 +7,7 @@ import com.summit.core.anno.Tool;
 import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
+import com.summit.runtime.loop.LoopInterceptorFactory;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
@@ -130,16 +131,19 @@ class ApplicationContextAssemblyTest {
         assertTrue(interceptors.containsKey("emailLoopInterceptor"),
                 "取信拦截器应同时在列（对照），实际=" + interceptors.keySet());
 
-        // 处理器由框架自动装配；反射读取其内部排序后的列表，决定性证明「收集到了」而非仅「bean 存在」。
+        // 确认处理器与启动扫描共用工厂，注解注册才会进入实际执行链。
         LoopInterceptorProcessor processor = context.getBean(LoopInterceptorProcessor.class);
-        @SuppressWarnings("unchecked")
-        List<LoopInterceptor> collected =
-                (List<LoopInterceptor>) ReflectionTestUtils.getField(processor, "interceptors");
-        assertNotNull(collected, "处理器内部拦列表不可为空");
+        LoopInterceptorFactory factory = context.getBean(LoopInterceptorFactory.class);
+        assertSame(factory, ReflectionTestUtils.getField(processor, "loopInterceptorFactory"));
+        List<LoopInterceptor> collected = factory.getInterceptors();
         assertTrue(collected.stream().anyMatch(i -> i instanceof SubAgentWaitInterceptor),
                 "SubAgentWaitInterceptor 必须被 DefaultLoopInterceptorProcessor 收集，实际=" + collected);
         assertTrue(collected.stream().anyMatch(i -> i instanceof BackgroundTaskLoopInterceptor),
                 "后台终端通知拦截器必须进入实际执行链");
+        LoopInterceptor memory = factory.get().get("memoryMonitorInterceptor");
+        assertNotNull(memory, "记忆容量提醒必须由注解扫描注册到共享工厂");
+        assertEquals(-825, memory.order());
+        assertFalse(memory.catchErr());
     }
 
     @Test
