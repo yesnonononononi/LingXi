@@ -275,7 +275,9 @@ const MUTATIONS = [
     goal: '启动器配置层把默认 origin 写成端口字面量（绕过单一真源）：单一真源扫描必须红',
     file: 'electron/pet-launcher-config.cjs',
     find: "  if (text.length === 0) return { origin: buildDevOrigin(), source: 'single-source', note: '' };",
-    replace: `  if (text.length === 0) return { origin: 'http://127.0.0.1:' + ['52', '75'].join(''), source: 'single-source', note: '' };`,
+    // 端口真值在运行时从真源取：脚本自身因此不含端口字面量（它也在单一真源扫描清单里），
+    // 但注入到目标文件里的是一段真正的字符串字面量，扫描器应当抓到。
+    replace: `  if (text.length === 0) return { origin: 'http://127.0.0.1:${String(DEV_ENDPOINT.port)}', source: 'single-source', note: '' };`,
     testFile: 'tests/petDevEndpoint.test.cjs',
     expect: '出现端口字面量',
   },
@@ -283,8 +285,8 @@ const MUTATIONS = [
     id: 'launcher-absolute-path',
     goal: '启动器退回硬编码绝对路径（收敛前的老缺陷）：换机器就失效，启动器守卫必须红',
     file: 'electron/pet-launcher-config.cjs',
-    find: '  const frontendRoot = path.resolve(dirname, \'..\');',
-    replace: `  const frontendRoot = ['D:', 'Code', 'LingXi', 'frontend'].join('/');`,
+    find: "  const frontendRoot = path.resolve(dirname, '..');",
+    replace: `  const frontendRoot = '${['D:', 'Code', 'LingXi', 'frontend'].join('/')}';`,
     testFile: 'tests/petLauncher.test.cjs',
     expect: '硬编码绝对路径',
   },
