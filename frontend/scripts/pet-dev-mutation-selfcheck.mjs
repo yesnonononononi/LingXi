@@ -292,6 +292,15 @@ const MUTATIONS = [
     testFile: 'tests/petDevIdentity.test.cjs',
     expect: 'FOREIGN 必须抛出',
   },
+  {
+    id: 'repo-root-fixed-levels',
+    goal: '把仓库根探测改回"写死向上三层"（原始缺陷）：这个写法只在隔离工作树布局下碰巧算对，主仓下会算到盘符根，守卫截图落到 D:\\tmp\\pet-face-guard（工作区之外）',
+    file: 'scripts/lib/repo-root.cjs',
+    find: '    if (isRepoRoot(cursor)) return cursor;',
+    replace: "    return path.resolve(startDir, '..', '..', '..');",
+    testFile: 'tests/petRepoRoot.test.cjs',
+    expect: '主仓布局下仓库根必须是 frontend 的上一级',
+  },
   // ---------------------------------------------------------------- 美术资产入库（不许再靠 git add -f）
   {
     id: 'gitignore-desktop-pet-exception-removed',

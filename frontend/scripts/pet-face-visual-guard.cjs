@@ -36,11 +36,18 @@
  *   npm run guard:pet:face                       # 全档
  *   npm run guard:pet:face -- --only=E05,E02     # 只跑指定档（排障）
  *   npm run guard:pet:face -- --no-window-shot   # 只落 ROI 图
- *   npm run guard:pet:face -- --out &lt;dir&gt;        # 换截图目录
+ *   npm run guard:pet:face -- --out=&lt;dir&gt;       # 换截图目录（相对路径落在 .lingxi/tmp/pet-face-guard/ 下）
  * </pre>
  *
+ * <p><b>参数一律用 `--key=value` 单 token 形式</b>（上面的例子都是）。本机实测：把
+ * `--out &lt;dir&gt;` 这类"开关 + 独立值"拆成两个 token、且凑到三组时，Electron 会
+ * **启动即崩**（退出码 -1、stdout/stderr 全空，连脚本第一行都跑不到），
+ * 而 `--out=&lt;dir&gt;` 稳定。这不是本脚本的判断逻辑，防不住，只能在用法上避开。</p>
+ *
  * <p>截图默认落 `&lt;repo&gt;/.lingxi/tmp/pet-face-guard/&lt;commit&gt;/&lt;expression&gt;.png`（不入库），
- * 同目录另有 `report.txt` / `report.json` 留档。</p>
+ * 同目录另有 `report.txt` / `report.json` 留档。仓库根由 `scripts/lib/repo-root.cjs` 判定
+ * （向上找含 `.git` 或 `.lingxi` 的第一层），**不用固定层数猜**——固定层数在主仓下会把产物
+ * 丢到 `D:\tmp\pet-face-guard`（工作区之外）。</p>
  *
  * <p>退出码：0 全档 PASS；1 有档 FAIL（或测量不稳定）；2 环境不满足（dev server 起不来）。</p>
  */
@@ -55,6 +62,8 @@ const FRONTEND_ROOT = path.resolve(__dirname, '..');
 const { buildDevOrigin, DEV_ENDPOINT } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'));
 const { probePetDevServer } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-probe.cjs'));
 const { registerLxSchemePrivileges, registerLxProtocol } = require(path.join(FRONTEND_ROOT, 'electron', 'lx-protocol.cjs'));
+// 仓库根探测的唯一真源：产物目录必须落在 <repo>/.lingxi/tmp 下，绝不靠"向上几层"猜
+const { lingxiTmpDir } = require(path.join(__dirname, 'lib', 'repo-root.cjs'));
 
 /**
  * 树身份判据模块的 URL（`electron/pet-tree-fingerprint.mjs`）。
@@ -224,18 +233,26 @@ function resolveCommit() {
 /**
  * 产物目录：`&lt;repo&gt;/.lingxi/tmp/pet-face-guard/&lt;commit&gt;/`（`--out` 可覆盖）。
  *
+ * <p><b>为什么不能靠"向上几层"算仓库根：</b>历史实现是
+ * `path.resolve(FRONTEND_ROOT, '..', '..', '..')`，它只在隔离工作树布局
+ * （`frontend → desktop-pet-visual → work → .lingxi`）下成立。主仓
+ * （`D:\Code\LingXi\frontend`）三层向上是 `D:\`，于是截图落到
+ * `D:\tmp\pet-face-guard` —— **工作区之外**、留给用户去清的垃圾，而且没有任何报错。
+ * 现在统一走 `scripts/lib/repo-root.cjs`（向上找含 `.git` 或 `.lingxi` 的第一层；
+ * 找不到就抛错，不退回猜测路径）。</p>
+ *
  * @param {string} commit 提交号
  * @returns {string} 目录绝对路径
+ * @throws {Error} 判断不出仓库根时抛出（由引导层转成退出码 2）
  */
 function resolveOutDir(commit) {
-  // frontend → desktop-pet-visual → work → .lingxi → tmp
-  const lingxiDir = path.resolve(FRONTEND_ROOT, '..', '..', '..');
-  const guardRoot = path.join(lingxiDir, 'tmp', 'pet-face-guard');
   const explicit = argOf('out');
+  // 绝对路径原样用：这是"不在仓库内也能指定产物目录"的逃生口
+  if (explicit && path.isAbsolute(explicit)) return explicit;
+  const guardRoot = lingxiTmpDir(FRONTEND_ROOT, 'pet-face-guard');
   // 相对路径一律落在 `.lingxi/tmp/pet-face-guard/` 下：以前按 CWD 解析，
   // `--out final2` 会在 `frontend/` 里建目录，把运行产物写进源码树（实测踩过）。
-  if (explicit) return path.isAbsolute(explicit) ? explicit : path.join(guardRoot, explicit);
-  return path.join(guardRoot, commit);
+  return explicit ? path.join(guardRoot, explicit) : path.join(guardRoot, commit);
 }
 
 // ---------------------------------------------------------------- dev server
