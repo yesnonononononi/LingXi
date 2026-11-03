@@ -165,7 +165,8 @@ public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecut
         argument.setSubSessionId(target.subSessionId());
 
         // 提交前登记「待启动」：把「已受理但尚未开跑」这段窗口也计入「未结束」。
-        if (!sessionExecutionRegistry.registerPendingChild(rootSessionId, numericSubSessionId)) {
+        if (!sessionExecutionRegistry.registerPendingChild(rootSessionId, numericSubSessionId,
+                request.getExecutionId(), toolExecution.getExecutionId())) {
             return ToolExecuteResult.err("主会话已停止，取消启动子Agent");
         }
         Long rootExecutionId = ExecutionAttributes.workflowExecutionId(
@@ -175,7 +176,7 @@ public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecut
                     rootExecutionId, target, agent, argument, toolExecution, request));
         } catch (RuntimeException e) {
             // 线程池拒绝等提交失败：撤销登记，绝不谎报已委派（否则模型以为已委派而漏做）。
-            sessionExecutionRegistry.revokeChild(rootSessionId, numericSubSessionId);
+            sessionExecutionRegistry.revokeChild(rootSessionId, numericSubSessionId, request.getExecutionId());
             return ToolExecuteResult.err("委派提交失败: " + e.getMessage());
         }
         return asyncResultRenderer.render(target.subSessionId(), agent.getId(), agent.getName());

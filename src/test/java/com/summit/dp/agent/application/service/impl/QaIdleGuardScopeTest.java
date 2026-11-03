@@ -15,6 +15,7 @@ import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.ResendTargetResolver;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -78,7 +79,7 @@ class QaIdleGuardScopeTest {
                 mock(ChatTurnService.class),
                 realQueryService,
                 mock(ResendTargetResolver.class),
-                mock(ConversationRollbackService.class));
+                mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
     }
 
     private Execution execution(Long sessionId, int statusCode) {

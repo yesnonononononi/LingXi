@@ -15,51 +15,51 @@ class SessionExecutionRegistryLifecycleTest {
     @Test
     void cancellationIncludesAcceptedChildrenBeforeTheyStart() {
         SessionExecutionRegistry registry = new SessionExecutionRegistry();
-        assertTrue(registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION));
-        assertEquals(List.of(CHILD_SESSION), registry.cancelRoot(ROOT_SESSION));
-        assertFalse(registry.tryStartChild(ROOT_SESSION, CHILD_SESSION));
-        assertFalse(registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION + 1));
+        assertTrue(registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION), null));
+        assertEquals(List.of(String.valueOf(CHILD_SESSION)), registry.cancelRoot(ROOT_SESSION));
+        assertFalse(registry.tryStartChild(String.valueOf(CHILD_SESSION)));
+        assertFalse(registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION + 1, String.valueOf(CHILD_SESSION + 1), null));
     }
 
     @Test
     void startingAnAcceptedChildDoesNotDuplicateItsRegistration() {
         SessionExecutionRegistry registry = new SessionExecutionRegistry();
-        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION);
-        assertTrue(registry.tryStartChild(ROOT_SESSION, CHILD_SESSION));
-        assertEquals(List.of(CHILD_SESSION), registry.cancelRoot(ROOT_SESSION));
-        assertTrue(registry.unregisterChild(ROOT_SESSION, CHILD_SESSION));
+        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION), null);
+        assertTrue(registry.tryStartChild(String.valueOf(CHILD_SESSION)));
+        assertEquals(List.of(String.valueOf(CHILD_SESSION)), registry.cancelRoot(ROOT_SESSION));
+        assertTrue(registry.unregisterChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION)));
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION));
     }
 
     @Test
     void rootReleaseKeepsChildRegistrationUntilItsTerminalOutcome() {
         SessionExecutionRegistry registry = new SessionExecutionRegistry();
-        registry.beginRoot(ROOT_SESSION);
-        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION);
-        registry.finishRoot(ROOT_SESSION);
+        registry.beginRoot(ROOT_SESSION, String.valueOf(ROOT_SESSION));
+        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION), null);
+        registry.finishRoot(ROOT_SESSION, String.valueOf(ROOT_SESSION));
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION));
-        registry.unregisterChild(ROOT_SESSION, CHILD_SESSION);
+        registry.unregisterChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION));
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION));
     }
 
     @Test
     void removingOneChildPreservesOtherAcceptedWork() {
         SessionExecutionRegistry registry = new SessionExecutionRegistry();
-        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION);
-        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION + 1);
-        assertFalse(registry.unregisterChild(ROOT_SESSION, CHILD_SESSION));
+        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION), null);
+        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION + 1, String.valueOf(CHILD_SESSION + 1), null);
+        assertFalse(registry.unregisterChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION)));
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION));
-        assertTrue(registry.unregisterChild(ROOT_SESSION, CHILD_SESSION + 1));
+        assertTrue(registry.unregisterChild(ROOT_SESSION, CHILD_SESSION + 1, String.valueOf(CHILD_SESSION + 1)));
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION));
     }
 
     @Test
     void submissionFailureRevokesOnlyItsOwnChild() {
         SessionExecutionRegistry registry = new SessionExecutionRegistry();
-        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION);
-        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION + 1);
-        registry.revokeChild(ROOT_SESSION, CHILD_SESSION);
-        registry.revokeChild(ROOT_SESSION, 999L);
-        assertEquals(List.of(CHILD_SESSION + 1), registry.cancelRoot(ROOT_SESSION));
+        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION), null);
+        registry.registerPendingChild(ROOT_SESSION, CHILD_SESSION + 1, String.valueOf(CHILD_SESSION + 1), null);
+        registry.revokeChild(ROOT_SESSION, CHILD_SESSION, String.valueOf(CHILD_SESSION));
+        registry.revokeChild(ROOT_SESSION, 999L, String.valueOf(999L));
+        assertEquals(List.of(String.valueOf(CHILD_SESSION + 1)), registry.cancelRoot(ROOT_SESSION));
     }
 }

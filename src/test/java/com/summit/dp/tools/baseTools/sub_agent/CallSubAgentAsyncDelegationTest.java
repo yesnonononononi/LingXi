@@ -142,7 +142,7 @@ class CallSubAgentAsyncDelegationTest {
     void asyncDelegationReturnsStructuredJsonImmediately() throws Exception {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(true);
 
         long startedAt = System.currentTimeMillis();
         ToolExecuteResult result = tool.execute(toolExecution(args()));
@@ -190,7 +190,7 @@ class CallSubAgentAsyncDelegationTest {
     void cancelledRootFailsClosedWithoutSubmit() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(false);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(false);
 
         ToolExecuteResult result = tool.execute(toolExecution(args()));
 
@@ -205,7 +205,7 @@ class CallSubAgentAsyncDelegationTest {
     void rejectedSubmissionRevokesRegistration() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(true);
         org.mockito.Mockito.doThrow(new java.util.concurrent.RejectedExecutionException("qa: rejected"))
                 .when(asyncSubmitter).submit(any(AsyncDelegationTask.class));
 
@@ -214,7 +214,7 @@ class CallSubAgentAsyncDelegationTest {
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
         assertTrue(result.getToolOutput().contains("委派提交失败"));
         ArgumentCaptor<Long> childCaptor = ArgumentCaptor.forClass(Long.class);
-        verify(registry).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture());
+        verify(registry).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture(), any());
         assertNotNull(childCaptor.getValue(), "撤销的是本次登记的子会话");
     }
 
@@ -230,7 +230,7 @@ class CallSubAgentAsyncDelegationTest {
 
         assertFalse(result.isSuccess(), "缺模型必须失败");
         verify(asyncSubmitter, never()).submit(any(AsyncDelegationTask.class));
-        verify(registry, never()).registerPendingChild(any(), any());
+        verify(registry, never()).registerPendingChild(any(), any(), any(), any());
         verify(subAgent, never()).execute(any(AgentRequest.class));
     }
 }

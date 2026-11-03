@@ -11,6 +11,7 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -54,7 +55,7 @@ class ChatSubscribeSessionIdTest {
                         modelContextService, sessionExecutionRegistry, executionControl),
                 mock(ChatTurnService.class),
                 mock(ExecutionQueryService.class),
-                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));
+                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
     }
 
     @Test

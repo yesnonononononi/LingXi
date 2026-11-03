@@ -66,20 +66,20 @@ public class InputTurnContinuation {
                     ExecutionAttributes.readLong(InputAutomationPolicy.attributes(previous), ExecutionAttributes.AGENT_ID),
                     false, List.of(), List.of());
             RuntimeContext context = preparer.prepare(command);
-            if (!registry.tryBeginAutomaticRoot(sessionId)) return;
+            if (!registry.tryBeginAutomaticRoot(sessionId, context.executionContext().executionId())) return;
             try {
                 preparer.freezeRuntimeConfigurations(context);
                 if (registry.isCancelled(sessionId)) {
-                    registry.finishRoot(sessionId);
+                    registry.finishRoot(sessionId, context.executionContext().executionId());
                     return;
                 }
                 admitted = admission.admit(context, previous, commandId, mail, tasks);
             } catch (RuntimeException failure) {
-                registry.finishRoot(sessionId);
+                registry.finishRoot(sessionId, context.executionContext().executionId());
                 throw failure;
             }
             if (admitted == null) {
-                registry.finishRoot(sessionId);
+                registry.finishRoot(sessionId, context.executionContext().executionId());
                 return;
             }
         }

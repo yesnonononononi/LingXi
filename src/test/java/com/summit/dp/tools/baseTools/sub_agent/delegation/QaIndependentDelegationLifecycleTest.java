@@ -162,14 +162,14 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("① 待启动子执行（已受理未开跑）→ 根驻留不收尾；revokeChild 撤销后恢复「无未结束子」")
     void pendingStartKeepsRootResidentUntilRevoked() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
-        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID));
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
+        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), null));
 
         InterceptorResult resident = waitInterceptor.onBeforeComplete(rootLoopContext());
         assertFalse(resident.next(), "已受理但尚未开跑的子执行也算未结束，根不得提前完成");
         assertEquals(LoopResult.Status.SUSPENDED, resident.loopResult().status());
 
-        registry.revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        registry.revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "撤销后应恢复为无未结束子");
         assertEquals(0, resumeCount.get());
     }
@@ -200,11 +200,12 @@ class QaIndependentDelegationLifecycleTest {
         when(sessionRepository.findById(ROOT_SESSION_ID)).thenReturn(Optional.empty());
         when(subSessionResolver.resolve(ROOT_SESSION_ID, childAgent)).thenReturn(SubSessionTarget.fresh("660"));
         when(requestFactory.build(any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(mock(AgentRequest.class));
+                .thenReturn(AgentRequest.builder().executionId("901").build());
 
         // 提交失败：线程池拒绝之类。
         doThrow(new RuntimeException("pool rejected")).when(submitter).submit(any());
         SessionExecutionRegistry failingRegistry = new SessionExecutionRegistry();
+        failingRegistry.restoreExecution(ROOT_SESSION_ID, ROOT_SESSION_ID, "900");
         CallSubAgentTool failingTool = new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
                 subSessionResolver, failingRegistry, sessionRepository, submitter, renderer);
 
@@ -217,6 +218,7 @@ class QaIndependentDelegationLifecycleTest {
         doNothing().when(submitter).submit(any());
         when(renderer.render(any(), any(), any())).thenReturn(ToolExecuteResult.success("accepted"));
         SessionExecutionRegistry okRegistry = new SessionExecutionRegistry();
+        okRegistry.restoreExecution(ROOT_SESSION_ID, ROOT_SESSION_ID, "900");
         CallSubAgentTool okTool = new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
                 subSessionResolver, okRegistry, sessionRepository, submitter, renderer);
 
@@ -232,7 +234,7 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("②A 子先终结（根活跃）→ 待处理输入；根随后挂起 → 重放恰好一次恢复")
     void activeInputIsFoundByReleaseRecheck() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
 
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
@@ -247,7 +249,7 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("②B 根先挂起 → 子随后终结 → 结束事实直接唤醒，恰好一次恢复")
     void suspendBeforeFinishWakesRootDirectly() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
 
         suspendRoot();
@@ -284,7 +286,7 @@ class QaIndependentDelegationLifecycleTest {
         when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(first, second);
         liveTasks.set(List.of(first));
 
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
         await(firstResumeEntered);
@@ -308,7 +310,7 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("④ 子执行挂起等审批 → 仍算未结束、根驻留；审批后终结 → 唤醒根")
     void childWaitingApprovalKeepsRootThenWakesOnFinish() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
 
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍算未结束");
@@ -332,7 +334,7 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("⑥ 子执行失败时根仍活跃：待处理输入，根挂起后立即恢复，其他队员继续运行")
     void failedChildResultIsCheckedAfterActiveCommanderReleases() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateRunningChild(CHILD_SESSION_ID);
         delegateRunningChild(CHILD_SESSION_ID + 1);
 
@@ -355,7 +357,7 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("空输入通知在控制槽位释放后不会重放成恢复")
     void notificationWithoutInputDoesNotReplayAfterRelease() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         coordinator.accept(ROOT_EXECUTION_ID);
         assertEquals(0, resumeCount.get(), "根活跃时唤醒被保留");
 
@@ -369,14 +371,14 @@ class QaIndependentDelegationLifecycleTest {
     @Test
     @DisplayName("回收：注册表条目仅当「根已收尾且子已清空」时才从 roots 移除，早一格都不能删")
     void registryEntryReclaimedOnlyWhenRootAndChildrenGone() throws Exception {
-        registry.beginRoot(ROOT_SESSION_ID);
-        registry.tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
+        registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), null);
 
-        registry.finishRoot(ROOT_SESSION_ID);
+        registry.finishRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         assertTrue(rootsOf(registry).containsKey(ROOT_SESSION_ID),
                 "根收尾但子仍在跑时，条目不得被 removeIfFinished 误删");
 
-        registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         assertFalse(rootsOf(registry).containsKey(ROOT_SESSION_ID),
                 "根已收尾且子已清空后，条目必须被回收");
     }
@@ -392,8 +394,8 @@ class QaIndependentDelegationLifecycleTest {
     }
 
     private void delegateRunningChild(long childSessionId) {
-        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId);
-        registry.tryStartChild(ROOT_SESSION_ID, childSessionId);
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
     }
 
     private LoopContext rootLoopContext() {
@@ -416,7 +418,7 @@ class QaIndependentDelegationLifecycleTest {
     }
 
     private static Execution childExecution(long childSessionId) {
-        return Execution.builder().id("1234")
+        return Execution.builder().id(String.valueOf(childSessionId))
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, String.valueOf(childSessionId),

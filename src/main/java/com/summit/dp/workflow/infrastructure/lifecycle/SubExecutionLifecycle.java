@@ -42,7 +42,7 @@ public class SubExecutionLifecycle {
             return;
         }
 
-        boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId);
+        boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId, execution.getId());
 
         // 每份交付都需要主理人及时处理，剩余子执行只阻止根收尾，不能阻止恢复取信。
         log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, state={}, becameEmpty={}",
@@ -56,12 +56,12 @@ public class SubExecutionLifecycle {
      * <p>已开跑的子执行失败走框架 {@code notifyFinished} 链，与这里的兜底可能重叠；二者都是幂等的，
      * 不会重复唤醒出问题。</p>
      */
-    public void abandonChild(Long rootSessionId, Long childSessionId, Long rootExecutionId) {
+    public void abandonChild(Long rootSessionId, Long childSessionId, String executionId, Long rootExecutionId) {
         if (rootSessionId == null || childSessionId == null) {
             return;
         }
         if (rootExecutionId != null) subAgentCompleteNotifier.notifyAbandoned(rootExecutionId, childSessionId);
-        registry.unregisterChild(rootSessionId, childSessionId);
+        registry.unregisterChild(rootSessionId, childSessionId, executionId);
         if (rootExecutionId != null) {
             log.info("子执行未建立，兜底移除并唤醒根: rootExecutionId={}, childSessionId={}",
                     rootExecutionId, childSessionId);

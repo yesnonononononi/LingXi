@@ -1,6 +1,7 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,7 @@ class SessionExecutionRegistryUnfinishedChildrenTest {
     @Test
     @DisplayName("待启动子执行：hasUnfinishedChildren 为 true（提交前登记即计入未结束）")
     void reportsTrueWhenChildPendingStart() {
-        assertTrue(registry.registerPendingChild(800L, 555L));
+        assertTrue(registry.registerPendingChild(800L, 555L, String.valueOf(555L), null));
 
         assertTrue(registry.hasUnfinishedChildren(800L));
     }
@@ -44,16 +45,21 @@ class SessionExecutionRegistryUnfinishedChildrenTest {
     @Test
     @DisplayName("运行中子执行：hasUnfinishedChildren 为 true")
     void reportsTrueWhenChildRunning() {
-        assertTrue(registry.tryStartChild(800L, 555L));
-
+        assertTrue(registry.registerPendingChild(800L, 555L, String.valueOf(555L), null));
+        registry.acquire("555");
+        assertTrue(registry.isActive("555"));
         assertTrue(registry.hasUnfinishedChildren(800L));
     }
 
     @Test
     @DisplayName("挂起子执行（等审批）：保留登记，hasUnfinishedChildren 仍为 true")
     void suspendedChildKeepsUnfinishedFlag() {
-        registry.tryStartChild(800L, 555L);
-
+        registry.registerPendingChild(800L, 555L, "555", null);
+        ExecutionControlSignal running = registry.acquire("555");
+        registry.requireSuspend("555");
+        assertTrue(running.isSuspendRequired());
+        registry.release(running);
+        assertFalse(registry.isActive("555"));
 
         assertTrue(registry.hasUnfinishedChildren(800L),
                 "子执行等人工审批期间仍算「未结束」，根不得据此提前收尾");
@@ -62,9 +68,9 @@ class SessionExecutionRegistryUnfinishedChildrenTest {
     @Test
     @DisplayName("子执行注销后：hasUnfinishedChildren 变 false，且条目被回收")
     void reportsFalseAfterChildUnregistered() {
-        registry.tryStartChild(800L, 555L);
+        registry.registerPendingChild(800L, 555L, String.valueOf(555L), null);
 
-        registry.unregisterChild(800L, 555L);
+        registry.unregisterChild(800L, 555L, String.valueOf(555L));
 
         assertFalse(registry.hasUnfinishedChildren(800L));
     }
@@ -72,25 +78,25 @@ class SessionExecutionRegistryUnfinishedChildrenTest {
     @Test
     @DisplayName("双子在跑：注销其一仍为 true，全部注销才 false；becameEmpty 只在最后一个检出")
     void twoChildrenKeepUnfinishedUntilBothGone() {
-        registry.tryStartChild(800L, 555L);
-        registry.tryStartChild(800L, 556L);
+        registry.registerPendingChild(800L, 555L, String.valueOf(555L), null);
+        registry.registerPendingChild(800L, 556L, String.valueOf(556L), null);
 
         assertTrue(registry.hasUnfinishedChildren(800L));
 
-        assertFalse(registry.unregisterChild(800L, 555L), "还有 556 在跑，不是最后一个");
+        assertFalse(registry.unregisterChild(800L, 555L, String.valueOf(555L)), "还有 556 在跑，不是最后一个");
         assertTrue(registry.hasUnfinishedChildren(800L), "还有 556 在跑，不能判成无子执行");
 
-        assertTrue(registry.unregisterChild(800L, 556L), "最后一个子执行终结才成为空");
+        assertTrue(registry.unregisterChild(800L, 556L, String.valueOf(556L)), "最后一个子执行终结才成为空");
         assertFalse(registry.hasUnfinishedChildren(800L));
     }
 
     @Test
     @DisplayName("撤销待启动登记：条目移除，未结束判定随之收敛")
     void revokeChildRemovesPendingEntry() {
-        registry.registerPendingChild(800L, 555L);
+        registry.registerPendingChild(800L, 555L, String.valueOf(555L), null);
         assertTrue(registry.hasUnfinishedChildren(800L));
 
-        registry.revokeChild(800L, 555L);
+        registry.revokeChild(800L, 555L, String.valueOf(555L));
 
         assertFalse(registry.hasUnfinishedChildren(800L));
     }
@@ -98,17 +104,17 @@ class SessionExecutionRegistryUnfinishedChildrenTest {
     @Test
     @DisplayName("【关键·误删风险】根已收尾但子仍在跑：条目绝不能被回收，hasUnfinishedChildren 必须仍为 true")
     void rootFinishedWhileChildRunningIsNotReclaimed() {
-        registry.beginRoot(800L);
-        registry.tryStartChild(800L, 555L);
+        registry.beginRoot(800L, String.valueOf(800L));
+        registry.registerPendingChild(800L, 555L, String.valueOf(555L), null);
 
         // 根代理本轮无工具调用、准备收尾：finishRoot 释放根运行资格。
-        registry.finishRoot(800L);
+        registry.finishRoot(800L, String.valueOf(800L));
 
         assertTrue(registry.hasUnfinishedChildren(800L),
                 "根已 finishRoot 但子仍注册时，removeIfFinished 不得回收条目，否则驻留判定会漏判");
 
         // 子执行真正收尾后才应回收。
-        registry.unregisterChild(800L, 555L);
+        registry.unregisterChild(800L, 555L, String.valueOf(555L));
         assertFalse(registry.hasUnfinishedChildren(800L));
     }
 
@@ -116,24 +122,24 @@ class SessionExecutionRegistryUnfinishedChildrenTest {
     @DisplayName("根未 beginRoot（异步子执行自主注册）：仍能被 hasUnfinishedChildren 观测，注销后回收")
     void childRegisteredWithoutBeginRootStillVisible() {
         // 异步子执行在虚拟线程内注册，注册表的条目由 registerPendingChild 自行创建。
-        assertTrue(registry.registerPendingChild(800L, 555L));
+        assertTrue(registry.registerPendingChild(800L, 555L, String.valueOf(555L), null));
         assertTrue(registry.hasUnfinishedChildren(800L));
 
-        registry.unregisterChild(800L, 555L);
+        registry.unregisterChild(800L, 555L, String.valueOf(555L));
         assertFalse(registry.hasUnfinishedChildren(800L));
     }
 
     @Test
     @DisplayName("根停止（cancelRoot）后：子仍注册时 hasUnfinishedChildren 仍为 true，子注销后回收")
     void cancelledRootStillReportsRunningChildren() {
-        registry.beginRoot(800L);
-        registry.tryStartChild(800L, 555L);
+        registry.beginRoot(800L, String.valueOf(800L));
+        registry.registerPendingChild(800L, 555L, String.valueOf(555L), null);
 
         registry.cancelRoot(800L);
 
         assertTrue(registry.hasUnfinishedChildren(800L),
                 "停止只是标记取消，在跑的子执行仍未结束，不能判成无子执行");
-        registry.unregisterChild(800L, 555L);
+        registry.unregisterChild(800L, 555L, String.valueOf(555L));
         assertFalse(registry.hasUnfinishedChildren(800L));
     }
 }

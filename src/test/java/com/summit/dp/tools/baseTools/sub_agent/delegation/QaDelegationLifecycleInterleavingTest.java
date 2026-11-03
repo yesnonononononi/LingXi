@@ -151,16 +151,16 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("① 待启动子执行：仍算未结束 → 根驻留不收尾；子执行从未建立（放弃）→ 结束事实唤醒根")
     void pendingStartChildKeepsRootFromFinishingUntilAbandoned() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         // 已受理但异步线程尚未开跑：只登记「待启动」，没有活线程。
-        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID));
+        assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), null));
 
         InterceptorResult beforeAbandon = waitInterceptor.onBeforeComplete(rootLoopContext());
         assertFalse(beforeAbandon.next(), "子任务已受理但没开跑时，根不得自然完成");
         assertEquals(LoopResult.Status.SUSPENDED, beforeAbandon.loopResult().status());
 
         // 子执行从未建立（落库前失败）：兜底结束事实移除待启动登记并在根活跃时待处理输入。
-        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
+        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
         assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
         assertResumedCount(0);
 
@@ -177,7 +177,7 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("②A 子执行先终结、根后挂起：唤醒先被保留，挂起后重放 → 恢复一次")
     void inputBeforeSuspendIsFoundByReleaseRecheck() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
 
         // 最后一个子执行在根仍活跃时终结：此刻不能派发，登记为待处理输入。
@@ -192,7 +192,7 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("②B 根先挂起、子执行后终结：结束事实直接唤醒根 → 恢复一次")
     void suspendBeforeFinishWakesRootDirectly() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
 
         // 根先挂起、释放控制槽位（无待处理输入，flush 是 no-op）。
@@ -230,7 +230,7 @@ class QaDelegationLifecycleInterleavingTest {
         }).when(executionControl).resume(any());
 
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
         delegateChild(CHILD_SESSION_ID + 1);
         if (!finishBeforeSuspend) {
@@ -264,7 +264,7 @@ class QaDelegationLifecycleInterleavingTest {
     void twoConsecutiveRoundsEachWakeRootOnce() {
         // 第一轮。
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
         lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
         suspendRoot();
@@ -286,7 +286,7 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("④ 子执行等待审批：挂起期根驻留不收尾；子执行终结后才唤醒根")
     void childWaitingApprovalKeepsRootAndWakesOnFinish() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
 
         // 子执行挂起等审批：保留登记、释放死线程，但父侧仍算「未结束」。
@@ -312,7 +312,7 @@ class QaDelegationLifecycleInterleavingTest {
     @DisplayName("⑥ 根已暂停时子执行失败：立即恢复主理人，不等其他队员结束")
     void failedChildImmediatelyWakesSuspendedCommander() {
         rootActive.set(true);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         delegateChild(CHILD_SESSION_ID);
         delegateChild(CHILD_SESSION_ID + 1);
         suspendRoot();
@@ -370,8 +370,8 @@ class QaDelegationLifecycleInterleavingTest {
     }
 
     private void delegateChild(long childSessionId) {
-        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId);
-        registry.tryStartChild(ROOT_SESSION_ID, childSessionId);
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
+        registry.registerPendingChild(ROOT_SESSION_ID, childSessionId, String.valueOf(childSessionId), null);
     }
 
     private LoopContext rootLoopContext() {
@@ -394,7 +394,7 @@ class QaDelegationLifecycleInterleavingTest {
     }
 
     private static Execution childExecution(long childSessionId) {
-        return Execution.builder().id("1234")
+        return Execution.builder().id(String.valueOf(childSessionId))
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, String.valueOf(childSessionId),

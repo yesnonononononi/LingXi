@@ -39,7 +39,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** 本机控制信号与已提交检查点分开保存，恢复时不暴露未提交的消息。 */
 @Repository
@@ -63,8 +62,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private final ObjectProvider<ChatTurnLifecycleProjector> chatTurnService;
     private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
 
-    /** 进程内活跃执行的控制信号；与框架 InMemoryActiveExecutionRegistry 语义一致。 */
-    private final Map<String, ExecutionControlSignal> active = new ConcurrentHashMap<>();
+    @Autowired
+    private SessionExecutionRegistry executionRegistry = new SessionExecutionRegistry();
 
     /**
      * 事务管理器：仅用于「自己拥有事务时，每次重试开一个全新事务」。
@@ -84,8 +83,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private volatile TransactionRetryTemplate saveRetry;
     @Autowired
     private ObjectProvider<InputWakeupService> inputWakeups;
-    @Autowired
-    private SessionExecutionRegistry executionRegistry;
 
     /**
      * 预建保存重试器。
@@ -118,8 +115,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             synchronized (ExecutionCoordination.monitor(execution.getId())) {
                 long id = numericId(execution.getId());
                 ExecutionState state = execution.getExecutionState();
-                ExecutionControlSignal currentSignal = active.get(execution.getId());
-                if (state == ExecutionState.SUSPENDED && currentSignal != null && currentSignal.isSuspendRequired()) {
+                if (state == ExecutionState.SUSPENDED && executionRegistry.isSuspendRequired(execution.getId())) {
                     InputAutomationPolicy.putAttribute(execution,
                             InputAutomationPolicy.USER_PAUSED, true);
                 }
@@ -178,7 +174,10 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                     });
                 }
 
-                boolean withoutControlSlot = !active.containsKey(execution.getId());
+                Long rootSessionId = ExecutionAttributes.mailboxSessionId(attributes);
+                boolean terminal = ExecutionStateCodec.isTerminalState(state);
+                afterCommit(() -> executionRegistry.recordExecution(rootSessionId, sessionId, execution.getId(), terminal));
+                boolean withoutControlSlot = !executionRegistry.isActive(execution.getId());
                 // 补一次终结广播，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
                 // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
                 // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
@@ -298,15 +297,13 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                     .get(InputAutomationPolicy.USER_PAUSED))) {
                 throw new IllegalStateException("执行已由用户暂停，请主动恢复");
             }
-            ExecutionControlSignal signal = new ExecutionControlSignal(executionId);
-            if (persisted != null && executionRegistry != null && executionRegistry.isCancelled(
-                    ExecutionAttributes.mailboxSessionId(InputAutomationPolicy.attributes(persisted)))) {
-                signal.requireCancel();
+            if (persisted != null) {
+                executionRegistry.restoreExecution(
+                        ExecutionAttributes.mailboxSessionId(InputAutomationPolicy.attributes(persisted)),
+                        ExecutionAttributes.readLong(InputAutomationPolicy.attributes(persisted), ExecutionAttributes.SESSION_ID),
+                        executionId);
             }
-            if (active.putIfAbsent(executionId, signal) != null) {
-                throw new IllegalStateException("执行已在运行: executionId=" + executionId);
-            }
-            return signal;
+            return executionRegistry.acquire(executionId);
         }
     }
 
@@ -318,7 +315,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 @Override public void afterCompletion(int status) {
                     if (status != STATUS_COMMITTED) {
                         synchronized (ExecutionCoordination.monitor(signal.getExecutionId())) {
-                            active.remove(signal.getExecutionId(), signal);
+                            executionRegistry.release(signal);
                         }
                     }
                 }
@@ -328,7 +325,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             Execution execution;
             boolean cancelledOnRelease;
             synchronized (ExecutionCoordination.monitor(signal.getExecutionId())) {
-                if (!active.remove(signal.getExecutionId(), signal)) {
+                if (!executionRegistry.release(signal)) {
                     throw new IllegalArgumentException("执行控制信号已释放");
                 }
                 execution = findById(signal.getExecutionId()).orElse(null);
@@ -354,17 +351,13 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     @Override
     public boolean isActive(String executionId) {
-        return active.containsKey(executionId);
+        return executionRegistry.isActive(executionId);
     }
 
     @Override
     public void requireSuspend(String executionId) {
         synchronized (ExecutionCoordination.monitor(executionId)) {
-            ExecutionControlSignal signal = active.get(executionId);
-            if (signal != null) {
-                signal.requireSuspend();
-                return;
-            }
+            if (executionRegistry.requireSuspend(executionId)) return;
             Execution execution = findById(executionId).orElseThrow(
                     () -> new IllegalStateException("执行不存在: executionId=" + executionId));
             if (execution.getExecutionState() != ExecutionState.SUSPENDED) {
@@ -378,16 +371,15 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     @Override
     public void requireCancel(String executionId) {
         synchronized (ExecutionCoordination.monitor(executionId)) {
-            ExecutionControlSignal signal = active.get(executionId);
-            if (signal != null) {
-                signal.requireCancel();
-                return;
-            }
+            if (executionRegistry.requireCancel(executionId)) return;
             Execution execution = findById(executionId).orElseThrow(
                     () -> new IllegalStateException("执行不存在: executionId=" + executionId));
             // 异常退出后可能仍留着运行态；没有控制槽位就直接收口，不能只处理挂起态。
             ExecutionState state = execution.getExecutionState();
-            if (state != ExecutionState.SUSPENDED && state != ExecutionState.RUNNING) return;
+            if (ExecutionStateCodec.isTerminalState(state)) {
+                executionRegistry.forgetFinishedExecution(executionId);
+                return;
+            }
             execution.cancelChecked();
             save(execution);
             afterCommit(() -> notifyCancelled(execution));

@@ -121,7 +121,7 @@ class CallSubAgentSessionReuseTest {
                 TeamVO.builder().id(TEAM_ID).commanderAgentId(5L).agents(List.of(childAgent())).build()));
         when(sessionRepository.findById(ROOT_SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(ROOT_SESSION_ID).build()));
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
     }
 
     private AsyncDelegationTask captureSubmittedTask() {
@@ -197,7 +197,7 @@ class CallSubAgentSessionReuseTest {
         when(sessionRepository.findById(ROOT_SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(ROOT_SESSION_ID).build()));
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(false);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(false);
 
         ToolExecuteResult result = tool.execute(toolExecution());
 

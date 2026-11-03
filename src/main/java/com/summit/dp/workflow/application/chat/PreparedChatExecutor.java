@@ -106,7 +106,7 @@ public class PreparedChatExecutor {
      */
     void failSubmit(RuntimeContext context, RuntimeException submitFailure) {
         markStartupFailedQuietly(context, submitFailure);
-        sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId());
+        sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
     }
 
     /**
@@ -144,7 +144,7 @@ public class PreparedChatExecutor {
                 markStartupFailedQuietly(context, e);
                 throw e;
             } finally {
-                sessionExecutionRegistry.finishRoot(rootSessionId);
+                sessionExecutionRegistry.finishRoot(rootSessionId, context.executionContext().executionId());
                 if (inputWakeups != null && context.execution() != null) {
                     inputWakeups.getObject().resumeIfInputPending(Long.parseLong(context.execution().getId()));
                 }

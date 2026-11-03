@@ -156,7 +156,7 @@ class SubmitRejectionReleasesSessionTest {
         persistAccepted(first, TURN_ID);
 
         // 走真实的「单飞 → 受理 → 提交被拒」序列：请求线程 beginRoot，异步提交被拒。
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, firstId);
         assertDoesNotThrow(() -> executor.failSubmit(context(firstId).withExecution(first),
                         new RejectedExecutionException("线程池已满")),
                 "收口本身不该抛：抛了会盖掉「线程池已满」这个真实原因（外抛由 submitAsync 负责）");
@@ -166,8 +166,8 @@ class SubmitRejectionReleasesSessionTest {
         assertEquals(4, executionMapper.selectById(Long.valueOf(firstId)).getStatus());
 
         // 关键：单飞资格必须已释放 —— 真 registry 下再 beginRoot 若被锁死会抛。
-        assertDoesNotThrow(() -> registry.beginRoot(ROOT_SESSION_ID),
+        assertDoesNotThrow(() -> registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID)),
                 "提交失败后会话被单飞锁死，用户再也发不出下一条");
-        registry.finishRoot(ROOT_SESSION_ID);
+        registry.finishRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
     }
 }

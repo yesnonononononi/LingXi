@@ -41,7 +41,7 @@ class SubExecutionLifecycleTest {
     @DisplayName("子执行终态且成为空：移除登记并唤醒协作根执行")
     void lastChildFinishedWakesRoot() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(true);
 
         Execution child = childExecution();
         lifecycle.onFinished(child);
@@ -49,18 +49,18 @@ class SubExecutionLifecycleTest {
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(child);
-        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
     void failedNoticeRetainsDependencyUntilResultBecomesReadable() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
         Execution child = childExecution();
         doThrow(new IllegalStateException("模拟投递失败")).when(notifier).notifyCommander(child);
         lifecycle.onFinished(child);
-        verify(registry, never()).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        verify(registry, never()).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         verify(resumeCoordinator, never()).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
@@ -69,21 +69,21 @@ class SubExecutionLifecycleTest {
     @DisplayName("子执行成功或取消但仍有其它子在跑：先投递提醒、移除登记，再唤醒根")
     void nonLastSuccessfulOrCancelledChildWakesRoot(ExecutionState state) {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
 
         Execution child = childExecution(state);
         lifecycle.onFinished(child);
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(child);
-        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
     void failedChildWakesCommanderBeforeOtherChildrenFinish() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
         Execution failed = childExecution(ExecutionState.RUNNING);
         failed.fail("模型连接失败");
 
@@ -91,21 +91,21 @@ class SubExecutionLifecycleTest {
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(failed);
-        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
     void failedChildDoesNotWakeWithoutReadableFailureNotice() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(false);
         Execution failed = childExecution(ExecutionState.RUNNING);
         failed.fail("模型连接失败");
         doThrow(new IllegalStateException("邮箱不可用")).when(notifier).notifyCommander(failed);
 
         lifecycle.onFinished(failed);
 
-        verify(registry, never()).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        verify(registry, never()).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         verify(resumeCoordinator, never()).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
@@ -115,29 +115,29 @@ class SubExecutionLifecycleTest {
     void rootFinishHasNoChildDependencyToRemove() {
         lifecycle.onFinished(rootExecution());
 
-        verify(registry, never()).unregisterChild(anyLong(), anyLong());
+        verify(registry, never()).unregisterChild(anyLong(), anyLong(), any());
     }
 
 
     @Test
     @DisplayName("兜底结束事实：子执行未建立执行时移除待启动登记并唤醒根")
     void abandonChildWakesRootWhenBecameEmpty() {
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(true);
 
-        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
+        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234", ROOT_EXECUTION_ID);
 
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     @Test
     @DisplayName("兜底结束事实：根执行 id 未知则不唤醒（不猜身份、不误唤醒）")
     void abandonChildWithoutRootExecutionIdDoesNotWake() {
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234")).thenReturn(true);
 
-        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, null);
+        lifecycle.abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234", null);
 
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID, "1234");
         verify(resumeCoordinator, never()).resumeIfInputPending(anyLong());
     }
 

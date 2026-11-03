@@ -69,6 +69,7 @@ class AsyncDelegationSubmitterTest {
         argument.setTask("子任务");
         ToolExecution toolExecution = mock(ToolExecution.class);
         AgentRequest request = mock(AgentRequest.class);
+        when(request.getExecutionId()).thenReturn(String.valueOf(CHILD_SESSION_ID));
         AgentVO agent = new AgentVO();
         agent.setId(CHILD_AGENT_ID);
         agent.setName("架构师");
@@ -83,12 +84,12 @@ class AsyncDelegationSubmitterTest {
     }
 
     @Test
-    @DisplayName("正常路径：先绑定（对象=当前线程）→ 建行 → 落账 → 建执行 → 开跑 → 回写，全程不碰根资格、不主动注销")
+    @DisplayName("正常路径：先检查取消→ 建行 → 落账 → 建执行 → 开跑 → 回写，全程不碰根资格、不主动注销")
     void bindsBeforeRunningAndDoesNotUnregisterOnSuccess() {
         SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
         AsyncDelegationTask task = task(target);
 
-        when(registry.tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         Execution created = mock(Execution.class);
         Execution executed = completedExecution(List.of(UserMessageEntity.from("好的")));
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -96,12 +97,12 @@ class AsyncDelegationSubmitterTest {
 
         submitter.submit(task);
 
-        // 绑定对象 = 跑子 loop 的那根线程（同一线程执行体下即当前线程）。
-        verify(registry).tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        // 排队期间的停止必须在建行前被检查。
+        verify(registry).tryStartChild(any());
 
-        // 顺序不可倒置：绑定 → 建行 → 落账 → 建执行 → 开跑 → 回写。
+        // 顺序不可倒置：检查取消 → 建行 → 落账 → 建执行 → 开跑 → 回写。
         InOrder order = inOrder(registry, subSessionResolver, delegationRecorder, subAgent, modelContextService);
-        order.verify(registry).tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(registry).tryStartChild(any());
         order.verify(subSessionResolver).createSubSession(eq(CHILD_SESSION_ID), eq(ROOT_SESSION_ID), eq(PARENT_WS_ID),
                 any(AgentVO.class), eq("子任务"));
         order.verify(delegationRecorder).record(eq(ROOT_SESSION_ID), any(ToolExecution.class), eq(task.request()),
@@ -111,11 +112,11 @@ class AsyncDelegationSubmitterTest {
         order.verify(modelContextService).replace(CHILD_SESSION_ID, executed.getMessages());
 
         // 成功终态由结束事实链移除登记；本类不再在 finally 注销，也不兜底唤醒。
-        verify(registry, never()).unregisterChild(any(), any());
-        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any());
+        verify(registry, never()).unregisterChild(any(), any(), any());
+        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
         // 根运行资格绝不被子执行误释放（否则根会「提前收尾」）。
-        verify(registry, never()).beginRoot(any());
-        verify(registry, never()).finishRoot(any());
+        verify(registry, never()).beginRoot(any(), anyString());
+        verify(registry, never()).finishRoot(any(), anyString());
     }
 
     @Test
@@ -124,7 +125,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.reused(String.valueOf(CHILD_SESSION_ID), List.of());
         AsyncDelegationTask task = task(target);
 
-        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         Execution created = mock(Execution.class);
         Execution executed = completedExecution(List.of());
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -136,8 +137,8 @@ class AsyncDelegationSubmitterTest {
         verify(delegationRecorder).record(eq(ROOT_SESSION_ID), any(ToolExecution.class), eq(task.request()),
                 eq(CHILD_SESSION_ID), any(), any(AgentVO.class), any());
         verify(modelContextService).replace(CHILD_SESSION_ID, executed.getMessages());
-        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any());
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
+        verify(registry, never()).finishRoot(any(), anyString());
     }
 
     @Test
@@ -145,17 +146,17 @@ class AsyncDelegationSubmitterTest {
     void cancelBeforeStartCreatesNothing() {
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
 
-        when(registry.tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        when(registry.tryStartChild(any())).thenReturn(false);
 
         submitter.submit(task);
 
-        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         verify(subSessionResolver, never()).createSubSession(any(), any(), any(), any(), any());
         verify(delegationRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
-        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any());
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
+        verify(registry, never()).finishRoot(any(), anyString());
     }
 
     @Test
@@ -164,7 +165,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
         AsyncDelegationTask task = task(target);
 
-        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.RUNNING);
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -172,8 +173,8 @@ class AsyncDelegationSubmitterTest {
 
         submitter.submit(task);
 
-        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
+        verify(registry, never()).finishRoot(any(), anyString());
         verify(modelContextService, never()).replace(any(), any());
         // 已开跑（RUNNING）的失败由框架收口，业务侧不得重复 fail（会抛非法状态转换）。
         verify(executionControl, never()).fail(any(Execution.class), any());
@@ -185,7 +186,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
         AsyncDelegationTask task = task(target);
 
-        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.CREATED);
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -194,8 +195,8 @@ class AsyncDelegationSubmitterTest {
         submitter.submit(task);
 
         verify(executionControl).fail(eq(created), any(IllegalStateException.class));
-        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
+        verify(registry, never()).finishRoot(any(), anyString());
     }
 
     @Test
@@ -203,7 +204,7 @@ class AsyncDelegationSubmitterTest {
     void failureBeforeExecutionCreationStillAbandons() {
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
 
-        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         org.mockito.Mockito.doThrow(new IllegalStateException("建会话行失败"))
                 .when(subSessionResolver).createSubSession(any(), any(), any(), any(), any());
 
@@ -211,8 +212,8 @@ class AsyncDelegationSubmitterTest {
 
         verify(executionControl, never()).fail(any(Execution.class), any());
         verify(subAgent, never()).createExecution(any());
-        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
+        verify(registry, never()).finishRoot(any(), anyString());
     }
 
     @Test

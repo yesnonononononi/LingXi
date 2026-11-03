@@ -21,7 +21,7 @@ public class InputAutomationPolicy {
     private final SessionExecutionRegistry registry;
 
     public String blockedReason(Execution execution) {
-        if (registry.isCancelled(ExecutionAttributes.mailboxSessionId(attributes(execution)))
+        if (registry.isExecutionCancelled(execution.getId()) || registry.isCancelled(ExecutionAttributes.mailboxSessionId(attributes(execution)))
                 || execution.getExecutionState() == ExecutionState.CANCELLED) return "执行已取消";
         if (execution.getExecutionState() == ExecutionState.FAILED) return "执行失败或已按崩溃收口";
         if (Boolean.TRUE.equals(attributes(execution).get(USER_PAUSED))) return "执行已由用户暂停";

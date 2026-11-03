@@ -63,6 +63,7 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         argument.setTask("子任务");
         ToolExecution toolExecution = mock(ToolExecution.class);
         com.summit.core.agent.AgentRequest request = mock(com.summit.core.agent.AgentRequest.class);
+        when(request.getExecutionId()).thenReturn(String.valueOf(CHILD_SESSION_ID));
         AgentVO agent = new AgentVO();
         agent.setId(CHILD_AGENT_ID);
         agent.setName("架构师");
@@ -76,7 +77,7 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
 
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
-        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(false);
+        when(registry.tryStartChild(any())).thenReturn(false);
 
         submitter.submit(task);
 
@@ -86,12 +87,12 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
 
-        // 绑定失败 → 撤销待启动登记，不该去注销别人的条目，也不该兜底唤醒。
-        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(registry, never()).unregisterChild(any(), any());
-        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any());
-        verify(registry, never()).beginRoot(any());
-        verify(registry, never()).finishRoot(any());
+        // 取消拦截 → 撤销待启动登记，不该去注销别人的条目，也不该兜底唤醒。
+        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
+        verify(registry, never()).unregisterChild(any(), any(), any());
+        verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
+        verify(registry, never()).beginRoot(any(), anyString());
+        verify(registry, never()).finishRoot(any(), anyString());
         verify(executionControl, never()).fail(any(Execution.class), any());
     }
 
@@ -101,7 +102,7 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
 
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
-        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.tryStartChild(any())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.RUNNING);
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -109,9 +110,9 @@ class QaAsyncDelegationSubmitterAdversarialTest {
 
         submitter.submit(task);
 
-        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, ROOT_EXECUTION_ID);
-        verify(registry, never()).beginRoot(any());
-        verify(registry, never()).finishRoot(any());
+        verify(subExecutionLifecycle).abandonChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID), ROOT_EXECUTION_ID);
+        verify(registry, never()).beginRoot(any(), anyString());
+        verify(registry, never()).finishRoot(any(), anyString());
         verify(modelContextService, never()).replace(any(), any());
         // 已开跑的失败由框架收口，业务侧不得重复 fail。
         verify(executionControl, never()).fail(any(Execution.class), any());

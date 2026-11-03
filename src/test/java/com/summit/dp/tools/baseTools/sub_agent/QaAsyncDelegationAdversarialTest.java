@@ -151,7 +151,7 @@ class QaAsyncDelegationAdversarialTest {
     void asyncResultIsExactStructuredJsonWithoutBody() throws Exception {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
         // 子代理若真被执行，正文会带哨兵；协作式不得把这份正文漏出去。
         Execution sentinelExecution = completedWithSentinel();
         when(subAgent.execute(any(AgentRequest.class))).thenReturn(sentinelExecution);
@@ -191,7 +191,7 @@ class QaAsyncDelegationAdversarialTest {
     void rejectedSubmissionFailsClosedWithoutSideEffects() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
+        when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
 
         // 真提交器 + 拒绝执行的线程池：走真实 submit() 逻辑。
         AsyncDelegationSubmitter rejecting = new AsyncDelegationSubmitter(subAgent, registry,
@@ -205,7 +205,7 @@ class QaAsyncDelegationAdversarialTest {
         assertNotNull(result);
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
         // 提交失败 → 撤销待启动登记；异步体从未运行 → 不建会话行 / 不落账 / 不建执行。
-        verify(registry).revokeChild(eq(ROOT_SESSION_ID), anyLong());
+        verify(registry).revokeChild(eq(ROOT_SESSION_ID), anyLong(), any());
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
         verify(subAgent, never()).execute(any(AgentRequest.class));

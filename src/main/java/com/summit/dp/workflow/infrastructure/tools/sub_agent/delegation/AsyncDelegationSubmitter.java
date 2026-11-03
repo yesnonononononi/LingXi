@@ -57,8 +57,8 @@ public class AsyncDelegationSubmitter {
         Long rootSessionId = task.rootSessionId();
         Long childSessionId = task.numericSubSessionId();
 
-        if (!sessionExecutionRegistry.tryStartChild(rootSessionId, childSessionId)) {
-            sessionExecutionRegistry.revokeChild(rootSessionId, childSessionId);
+        if (!sessionExecutionRegistry.tryStartChild(task.request().getExecutionId())) {
+            sessionExecutionRegistry.revokeChild(rootSessionId, childSessionId, task.request().getExecutionId());
             log.info("子执行未开跑（根已取消）: rootSessionId={}, subSessionId={}", rootSessionId, childSessionId);
             return;
         }
@@ -80,7 +80,7 @@ public class AsyncDelegationSubmitter {
             log.warn("异步子执行失败: rootSessionId={}, subSessionId={}", rootSessionId, childSessionId, e);
             // 子执行从未建立执行（无生命周期通知）时的结束事实：移除登记 + 唤醒根；已开跑的失败走框架
             // notifyFinished 链，二者幂等。
-            subExecutionLifecycle.abandonChild(rootSessionId, childSessionId, task.rootExecutionId());
+            subExecutionLifecycle.abandonChild(rootSessionId, childSessionId, task.request().getExecutionId(), task.rootExecutionId());
         }
     }
 

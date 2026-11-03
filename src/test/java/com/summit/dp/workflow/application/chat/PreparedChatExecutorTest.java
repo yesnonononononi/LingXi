@@ -143,7 +143,7 @@ class PreparedChatExecutorTest {
                 new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class));
         Execution completed = execution(ExecutionState.COMPLETED);
         RuntimeContext context = context(completed);
-        registry.beginRoot(ROOT_SESSION_ID);
+        registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         when(orchestrator.execute(context, completed)).thenReturn(completed);
         doAnswer(call -> {
             assertFalse(registry.isRootRunning(ROOT_SESSION_ID));
@@ -179,7 +179,7 @@ class PreparedChatExecutorTest {
         assertEquals(EXECUTION_ID, event.getValue().path("executionId").asText(), "归属用已固化的 executionId");
 
         // 运行资格必须释放，否则会话被锁死，用户再也发不出下一条。
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     /**
@@ -235,7 +235,7 @@ class PreparedChatExecutorTest {
         ArgumentCaptor<RuntimeException> cause = ArgumentCaptor.forClass(RuntimeException.class);
         verify(frameworkFail).fail(eq(execution), cause.capture());
         assertEquals("线程池已满", cause.getValue().getMessage());
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -248,7 +248,7 @@ class PreparedChatExecutorTest {
         assertThrows(IllegalStateException.class, () -> guardedExecutor.run(context(execution)));
 
         verify(frameworkFail, never()).fail(any(Execution.class), any());
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
     }
 
     @Test
@@ -269,7 +269,7 @@ class PreparedChatExecutorTest {
     void missingExecutionStillReleasesRunToken() {
         assertThrows(IllegalStateException.class, () -> guardedExecutor.run(context(null)));
 
-        verify(registry).finishRoot(ROOT_SESSION_ID);
+        verify(registry).finishRoot(ROOT_SESSION_ID, EXECUTION_ID);
         verify(frameworkFail, never()).fail(any(Execution.class), any());
     }
 

@@ -14,6 +14,7 @@ import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -59,7 +60,7 @@ class ChatAcceptanceEndpointTest {
             mock(ExecutionLocator.class), mock(ToolCallRepository.class),
             mock(SessionAttributeRestorer.class), chatExecutor,
             mock(ChatTurnService.class), executionQueryService,
-            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));
+            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
 
     @BeforeEach
     void sessionIsIdle() {

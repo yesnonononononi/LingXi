@@ -23,6 +23,7 @@ import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
@@ -53,6 +54,12 @@ class InputTurnContinuationTest {
             new BackgroundTaskNotifications(), admission, preparer, executor,
             new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class));
 
+    private RuntimeContext preparedContext() {
+        RuntimeContext context = mock(RuntimeContext.class);
+        when(context.executionContext()).thenReturn(ExecutionContext.root(10L, "101", null, null, null, null));
+        return context;
+    }
+
     private Execution previous() {
         Execution execution = Execution.builder().id("100").executionState(ExecutionState.COMPLETED)
                 .messages(new ArrayList<>()).agentRequest(AgentRequest.builder().runtimeParameters(
@@ -65,7 +72,7 @@ class InputTurnContinuationTest {
 
     @Test void normalCompletionAdmitsOneRealNewTurnAndKeepsTheInputBasedCommandId() {
         Execution previous = previous();
-        RuntimeContext context = mock(RuntimeContext.class);
+        RuntimeContext context = preparedContext();
         when(preparer.prepare(any())).thenReturn(context);
         when(admission.admit(eq(context), eq(previous), anyString(), anyList(), anyList())).thenReturn(context);
         AtomicBoolean admitted = new AtomicBoolean();
@@ -73,7 +80,7 @@ class InputTurnContinuationTest {
                 ? Optional.of(ChatTurn.builder().id(20L).build()) : Optional.empty());
         doAnswer(call -> { admitted.set(true); return null; }).when(executor).submitAsync(context);
         service.continueTurn(previous);
-        registry.finishRoot(10L);
+        registry.finishRoot(10L, "101");
         service.continueTurn(previous);
         verify(executor).submitAsync(context);
         verify(preparer).prepare(argThat(command -> command.sessionId().equals(10L)
@@ -93,7 +100,7 @@ class InputTurnContinuationTest {
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(mock(ToolCallRepository.class),
                 mock(SessionAttributeRestorer.class), contexts,
                 new StaticListableBeanFactory(Map.of("control", control)).getBeanProvider(ExecutionControl.class));
-        RuntimeContext context = mock(RuntimeContext.class);
+        RuntimeContext context = preparedContext();
         when(preparer.prepare(any(ChatCommand.class))).thenReturn(context);
         AtomicBoolean gateHeld = new AtomicBoolean();
         AtomicBoolean contextCommitted = new AtomicBoolean();
@@ -129,7 +136,7 @@ class InputTurnContinuationTest {
 
     @Test void twoConcurrentChecksCreateExactlyOneAuthoritativeTurn() throws Exception {
         Execution previous = previous();
-        RuntimeContext context = mock(RuntimeContext.class);
+        RuntimeContext context = preparedContext();
         when(preparer.prepare(any(ChatCommand.class))).thenReturn(context);
         when(admission.admit(eq(context), eq(previous), anyString(), anyList(), anyList())).thenReturn(context);
         CountDownLatch ready = new CountDownLatch(2);
@@ -157,7 +164,7 @@ class InputTurnContinuationTest {
         Execution previous = previous();
         when(preparer.prepare(any(ChatCommand.class))).thenAnswer(call -> {
             registry.cancelRoot(10L);
-            return mock(RuntimeContext.class);
+            return preparedContext();
         });
         service.continueTurn(previous);
         verifyNoInteractions(admission, executor);

@@ -27,9 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * 会话聊天编排：负责"会话 → 工作空间（运行环境）"的解析与续接。
@@ -61,6 +59,7 @@ public class ChatServiceImpl implements ChatService {
     private final ResendTargetResolver resendTargetResolver;
     /** 重发回滚：把被改写的那条提问及其之后的整段历史从库里作废。 */
     private final ConversationRollbackService conversationRollbackService;
+    private final SessionExecutionStopper executionStopper;
 
     @Override
     public Result<String> chat(ChatCommand command) {
@@ -68,7 +67,7 @@ public class ChatServiceImpl implements ChatService {
         ensureRootExecutionIdle(context.executionContext().rootSessionId());
         // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
         // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
-        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
+        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
         return Result.success(executePrepared(context).getMessages().toString());
     }
 
@@ -103,7 +102,7 @@ public class ChatServiceImpl implements ChatService {
     public Result<ChatAcceptanceVO> acceptCommand(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
         ensureRootExecutionIdle(context.executionContext().rootSessionId());
-        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
+        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
         return Result.success(commitAndSubmit(context));
     }
 
@@ -126,7 +125,7 @@ public class ChatServiceImpl implements ChatService {
 
         ensureRootExecutionIdle(rootSessionId);
 
-        sessionExecutionRegistry.beginRoot(rootSessionId);
+        sessionExecutionRegistry.beginRoot(rootSessionId, context.executionContext().executionId());
 
         ResendAdmission admitted;
         try {
@@ -135,7 +134,7 @@ public class ChatServiceImpl implements ChatService {
             admitted = conversationRollbackService.rollbackAndAdmit(context, target);
         } catch (RuntimeException e) {
             // 回滚没成功就绝不能往下跑：否则新一轮会接在一段本该消失的历史之上。
-            sessionExecutionRegistry.finishRoot(rootSessionId);
+            sessionExecutionRegistry.finishRoot(rootSessionId, context.executionContext().executionId());
             throw e;
         }
 
@@ -178,7 +177,7 @@ public class ChatServiceImpl implements ChatService {
             requestPreparer.freezeRuntimeConfigurations(context);
             return chatExecutor.admit(context);
         } catch (RuntimeException commitFailure) {
-            sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId());
+            sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
             throw commitFailure;
         }
     }
@@ -201,19 +200,8 @@ public class ChatServiceImpl implements ChatService {
                 ? selected.getRootSessionId()
                 : sessionId;
 
-        Set<Long> ids = new LinkedHashSet<>();
-        ids.add(rootSessionId);
-        sessionRepository.findSessionTree(rootSessionId).stream()
-                .map(Session::getId)
-                .forEach(ids::add);
-
-        List<Long> liveChildren = sessionExecutionRegistry.cancelRoot(rootSessionId);
-        ids.addAll(liveChildren);
-        log.info("请求停止会话树: sessionId={}, rootSessionId={}, childCount={}",
-                sessionId, rootSessionId, liveChildren.size());
-        // 框架取消信号会中止模型请求和工具等待；直接打断执行线程会破坏检查点及数据库收尾。
-        ids.stream().flatMap(id -> executionLocator.activeExecutionIds(id).stream())
-                .forEach(this::requestCancel);
+        executionStopper.stop(rootSessionId);
+        log.info("请求停止会话树: sessionId={}, rootSessionId={}", sessionId, rootSessionId);
 
         // 不关流：会话流是会话级资源，生命周期跟页面挂载 / 卸载走。停止只取消执行 ——
         // 一旦在这里断开，前端下一次发送前就必须重新挂载，否则那段时间的事件无处可去。
@@ -257,14 +245,6 @@ public class ChatServiceImpl implements ChatService {
             modelContextService.replace(sessionId, resumed.getMessages());
 
             return Result.success(resumed.getMessages().toString());
-        }
-    }
-
-    private void requestCancel(String executionId) {
-        try {
-            executionControl.cancel(executionId);
-        } catch (IllegalStateException ignored) {
-            // 会话树里既有历史执行，也有当前活跃的执行，取消时命中已终结的执行属正常情况。
         }
     }
 

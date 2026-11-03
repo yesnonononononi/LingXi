@@ -37,6 +37,8 @@ import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.context.ApplicationEventPublisher;
@@ -177,6 +179,40 @@ class LocalExecutionRepositoryResumeTest {
         registry.cancelRoot(405L);
         ReflectionTestUtils.setField(repository, "executionRegistry", registry);
         assertTrue(repository.register("305").isCancelRequired());
+    }
+
+    @Test
+    void cancellationBeforeFirstRunClosesTheCreatedExecutionWithoutWaitingForAWakeup() {
+        Execution created = execution();
+        created.setExecutionState(ExecutionState.CREATED);
+        repository.save(created);
+
+        repository.requireCancel("305");
+
+        assertEquals(ExecutionState.CANCELLED, repository.findById("305").orElseThrow().getExecutionState());
+        assertFalse(repository.isActive("305"));
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+        verify(tools).cancelPendingToolCalls("305");
+        verify(turns).finishExecution(any());
+        verify(runtimeEvents).onExecutionCancelled(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {405L, 406L})
+    void terminalCancellationDropsSlotsRestoredFromStaleSummaries(long sessionId) {
+        Execution completed = execution();
+        completed.setExecutionState(ExecutionState.COMPLETED);
+        InputAutomationPolicy.putAttribute(completed, ExecutionAttributes.SESSION_ID, sessionId);
+        InputAutomationPolicy.putAttribute(completed, ExecutionAttributes.ROOT_SESSION_ID, 405L);
+        repository.save(completed);
+        SessionExecutionRegistry registry = (SessionExecutionRegistry) ReflectionTestUtils.getField(repository, "executionRegistry");
+        registry.restoreExecution(405L, sessionId, "305");
+
+        repository.requireCancel("305");
+
+        assertFalse(registry.hasUnfinishedChildren(405L));
+        assertDoesNotThrow(() -> registry.beginRoot(405L, "306"));
+        verifyNoInteractions(runtimeEvents, tools, turns);
     }
 
     @Test
