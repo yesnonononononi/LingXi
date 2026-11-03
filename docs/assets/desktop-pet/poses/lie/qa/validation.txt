@@ -1,0 +1,33 @@
+命令: node docs/assets/desktop-pet/poses/lie/tools/check-lie.mjs --self-test
+核对母版: file=lie_down_01_neutral@2x.png, bytes=2224248, sha256=0b33b07d0909c2f41c196c943aeb0412cefdfd69bc8e625b0efb1703b1f621dd, bbox={"left":546,"top":158,"right":2553,"bottom":2911}
+核对母版: file=lie_down_02_neutral@2x.png, bytes=1980155, sha256=4033ac494ad279d4bbc60c6f7a65b682ddd93e28154f323dd7cdfb1f8f16cdd9, bbox={"left":546,"top":900,"right":2553,"bottom":2969}
+核对母版: file=lie_down_03_neutral@2x.png, bytes=2137280, sha256=ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7, bbox={"left":42,"top":1292,"right":3047,"bottom":2937}
+核对母版: file=lie_neutral@2x.png, bytes=2137280, sha256=ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7, bbox={"left":42,"top":1292,"right":3047,"bottom":2937}
+核对母版: file=lie_up_01_neutral@2x.png, bytes=2137280, sha256=ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7, bbox={"left":42,"top":1292,"right":3047,"bottom":2937}
+核对母版: file=lie_up_02_neutral@2x.png, bytes=1980155, sha256=4033ac494ad279d4bbc60c6f7a65b682ddd93e28154f323dd7cdfb1f8f16cdd9, bbox={"left":546,"top":900,"right":2553,"bottom":2969}
+核对母版: file=lie_up_03_neutral@2x.png, bytes=2224248, sha256=0b33b07d0909c2f41c196c943aeb0412cefdfd69bc8e625b0efb1703b1f621dd, bbox={"left":546,"top":158,"right":2553,"bottom":2911}
+金丝雀正对照: 末行末列低alpha=命中, 单像素孤岛=命中
+变异拒绝: case=缺少关键帧, expected=C6, detected=true
+变异拒绝: case=错误画布, expected=C1, detected=true
+变异拒绝: case=错误位深, expected=C1, detected=true
+变异拒绝: case=错误哈希, expected=C3, detected=true
+变异拒绝: case=错误字节数, expected=C3, detected=true
+变异拒绝: case=错误包围盒, expected=C3, detected=true
+变异拒绝: case=错误脚底锚点, expected=C4, detected=true
+变异拒绝: case=边缘无留白, expected=C4, detected=true
+成品替换变异: exit=1, C3=命中
+资产机验通过: C1-C6=通过, C7=非mini不适用, C8=纯Node零依赖, C9=复核图已交, C10-C11=对账通过
+人工验收状态: 待确认画风、四肢结构及腹部衣摆接地代理点；7帧位=3张独立画面，起身反向复用
+退出码: 0
+
+命令: node docs/assets/desktop-pet/poses/lie/tools/check-lie.mjs --approved
+核对母版: file=lie_down_01_neutral@2x.png, bytes=2224248, sha256=0b33b07d0909c2f41c196c943aeb0412cefdfd69bc8e625b0efb1703b1f621dd, bbox={"left":546,"top":158,"right":2553,"bottom":2911}
+核对母版: file=lie_down_02_neutral@2x.png, bytes=1980155, sha256=4033ac494ad279d4bbc60c6f7a65b682ddd93e28154f323dd7cdfb1f8f16cdd9, bbox={"left":546,"top":900,"right":2553,"bottom":2969}
+核对母版: file=lie_down_03_neutral@2x.png, bytes=2137280, sha256=ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7, bbox={"left":42,"top":1292,"right":3047,"bottom":2937}
+核对母版: file=lie_neutral@2x.png, bytes=2137280, sha256=ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7, bbox={"left":42,"top":1292,"right":3047,"bottom":2937}
+核对母版: file=lie_up_01_neutral@2x.png, bytes=2137280, sha256=ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7, bbox={"left":42,"top":1292,"right":3047,"bottom":2937}
+核对母版: file=lie_up_02_neutral@2x.png, bytes=1980155, sha256=4033ac494ad279d4bbc60c6f7a65b682ddd93e28154f323dd7cdfb1f8f16cdd9, bbox={"left":546,"top":900,"right":2553,"bottom":2969}
+核对母版: file=lie_up_03_neutral@2x.png, bytes=2224248, sha256=0b33b07d0909c2f41c196c943aeb0412cefdfd69bc8e625b0efb1703b1f621dd, bbox={"left":546,"top":158,"right":2553,"bottom":2911}
+人工验收状态: 待确认画风、四肢结构及腹部衣摆接地代理点；7帧位=3张独立画面，起身反向复用
+校验失败: 人工验收未通过，禁止标记整批完成
+退出码: 1

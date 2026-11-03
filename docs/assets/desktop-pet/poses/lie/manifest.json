@@ -1,0 +1,900 @@
+{
+  "version": 1,
+  "batch": "lie",
+  "assetId": "lingxi-pet-m2-lie-review-v1",
+  "status": "awaiting-static-review",
+  "canvas": {
+    "width": 3072,
+    "height": 3072
+  },
+  "anchor": {
+    "x": 2578,
+    "y": 2909
+  },
+  "contactPoints": {
+    "foot": [
+      2578,
+      2909
+    ],
+    "footImageLeft": [
+      2489,
+      2909
+    ],
+    "footImageRight": [
+      2666,
+      2909
+    ],
+    "belly": [
+      1962,
+      2889
+    ],
+    "palmFront": [
+      746,
+      2925
+    ],
+    "palmFrontImageLeft": [
+      746,
+      2925
+    ],
+    "palmFrontImageRight": [
+      1186,
+      2921
+    ]
+  },
+  "nativeSourceCanvas": {
+    "width": 1536,
+    "height": 1536
+  },
+  "masterScale": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "bboxConvention": "right/bottom含端点，alpha>0",
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "bow",
+    "hairpin",
+    "tail"
+  ],
+  "orientation": "三分之四正面，身体向画面右侧延伸；云朵发夹、发侧蝴蝶结和尾巴保留画面右侧",
+  "normalization": {
+    "generatedCanvas": {
+      "width": 1536,
+      "height": 1024
+    },
+    "sourceBboxAfterCleanup": {
+      "left": 21,
+      "top": 75,
+      "right": 1523,
+      "bottom": 897
+    },
+    "uniformScaleToNative": 1,
+    "kernel": "identity-padding",
+    "translationNative": {
+      "x": 0,
+      "y": 571
+    },
+    "targetNativeFootBaseline": 1454,
+    "originalFootBaselineNative": 883,
+    "sourceCleanup": {
+      "clearedLowAlpha": 23903,
+      "solidifiedInterior": 768283,
+      "removedTinyIslands": 3
+    },
+    "nativeCleanup": {
+      "clearedLowAlpha": 0,
+      "solidifiedInterior": 0,
+      "removedTinyIslands": 0
+    }
+  },
+  "display": {
+    "canvasHeight": 234,
+    "canvasWidth": 234,
+    "comparisonScale": "全部使用234/3072，相同母版像素密度"
+  },
+  "sequences": {
+    "down": [
+      "lie_down_01_neutral@2x.png",
+      "lie_down_02_neutral@2x.png",
+      "lie_down_03_neutral@2x.png"
+    ],
+    "neutral": [
+      "lie_neutral@2x.png"
+    ],
+    "up": [
+      "lie_up_01_neutral@2x.png",
+      "lie_up_02_neutral@2x.png",
+      "lie_up_03_neutral@2x.png"
+    ]
+  },
+  "review": {
+    "requiredNow": [
+      "lie_down_01_neutral@2x.png",
+      "lie_down_02_neutral@2x.png",
+      "lie_down_03_neutral@2x.png",
+      "lie_neutral@2x.png",
+      "lie_up_01_neutral@2x.png",
+      "lie_up_02_neutral@2x.png",
+      "lie_up_03_neutral@2x.png"
+    ],
+    "fullBatchComplete": false,
+    "frameSlotsDelivered": 7,
+    "uniqueDrawings": 3,
+    "newlyDrawnPoses": 2,
+    "humanApproved": false,
+    "reason": "帧位齐全只代表可审阅，画风与脚部结构仍待主理人验收；不自行标记approved。",
+    "focus": [
+      "与v3站姿同尺对比头脸、线条、虹膜与服装",
+      "膝盖到靴口、袖口到手掌的连接",
+      "腹部接地代理点是否符合趴姿"
+    ]
+  },
+  "aliases": {
+    "lie_down_03_neutral@2x.png": "lie_neutral@2x.png",
+    "lie_up_01_neutral@2x.png": "lie_neutral@2x.png",
+    "lie_up_02_neutral@2x.png": "lie_down_02_neutral@2x.png",
+    "lie_up_03_neutral@2x.png": "lie_down_01_neutral@2x.png"
+  },
+  "files": [
+    {
+      "file": "lie_down_01_neutral@2x.png",
+      "purpose": "趴下第1帧：站姿起点",
+      "poseId": "stand",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 2224248,
+      "sha256": "0b33b07d0909c2f41c196c943aeb0412cefdfd69bc8e625b0efb1703b1f621dd",
+      "bbox": {
+        "left": 546,
+        "top": 158,
+        "right": 2553,
+        "bottom": 2911
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          1536,
+          2909
+        ],
+        "footImageLeft": [
+          1380,
+          2909
+        ],
+        "footImageRight": [
+          1579,
+          2911
+        ],
+        "belly": null,
+        "palmFront": null,
+        "palmFrontImageLeft": null,
+        "palmFrontImageRight": null
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          1152,
+          2750,
+          1483,
+          2911
+        ],
+        "footImageRight": [
+          1487,
+          2750,
+          1763,
+          2911
+        ]
+      },
+      "generatedSource": "source/stand_neutral_generated.png",
+      "nativeSource": "source/stand_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 2048,
+          "height": 3072
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 34,
+          "top": 158,
+          "right": 2041,
+          "bottom": 2911
+        },
+        "uniformScaleToNative": 0.5,
+        "kernel": "nearest",
+        "translationNative": {
+          "x": 256,
+          "y": 0
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 1454,
+        "sourceCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 209.77734375
+    },
+    {
+      "file": "lie_down_02_neutral@2x.png",
+      "purpose": "趴下第2帧：屈膝、前掌支撑，腹部离地",
+      "poseId": "crouch",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 1980155,
+      "sha256": "4033ac494ad279d4bbc60c6f7a65b682ddd93e28154f323dd7cdfb1f8f16cdd9",
+      "bbox": {
+        "left": 546,
+        "top": 900,
+        "right": 2553,
+        "bottom": 2969
+      },
+      "anchor": {
+        "x": 1905,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          1905,
+          2909
+        ],
+        "footImageLeft": [
+          1774,
+          2907
+        ],
+        "footImageRight": [
+          2035,
+          2911
+        ],
+        "belly": null,
+        "palmFront": [
+          959,
+          2959
+        ],
+        "palmFrontImageLeft": [
+          959,
+          2959
+        ],
+        "palmFrontImageRight": [
+          1474,
+          2969
+        ]
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          1652,
+          2730,
+          1913,
+          2931
+        ],
+        "footImageRight": [
+          1922,
+          2730,
+          2193,
+          2931
+        ]
+      },
+      "generatedSource": "source/crouch_neutral_generated.png",
+      "nativeSource": "source/crouch_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 1024,
+          "height": 1536
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 17,
+          "top": 285,
+          "right": 1020,
+          "bottom": 1319
+        },
+        "uniformScaleToNative": 1,
+        "kernel": "identity-padding",
+        "translationNative": {
+          "x": 256,
+          "y": 165
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 1289,
+        "sourceCleanup": {
+          "clearedLowAlpha": 24765,
+          "solidifiedInterior": 687395,
+          "removedTinyIslands": 5
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 157.67578125
+    },
+    {
+      "file": "lie_down_03_neutral@2x.png",
+      "purpose": "趴下第3帧：腹部下降到衣摆接地位置",
+      "poseId": "lie",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 2137280,
+      "sha256": "ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7",
+      "bbox": {
+        "left": 42,
+        "top": 1292,
+        "right": 3047,
+        "bottom": 2937
+      },
+      "anchor": {
+        "x": 2578,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          2578,
+          2909
+        ],
+        "footImageLeft": [
+          2489,
+          2909
+        ],
+        "footImageRight": [
+          2666,
+          2909
+        ],
+        "belly": [
+          1962,
+          2889
+        ],
+        "palmFront": [
+          746,
+          2925
+        ],
+        "palmFrontImageLeft": [
+          746,
+          2925
+        ],
+        "palmFrontImageRight": [
+          1186,
+          2921
+        ]
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          2080,
+          2742,
+          2561,
+          2943
+        ],
+        "footImageRight": [
+          2580,
+          2742,
+          3061,
+          2943
+        ]
+      },
+      "generatedSource": "source/lie_neutral_generated.png",
+      "nativeSource": "source/lie_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 1536,
+          "height": 1024
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 21,
+          "top": 75,
+          "right": 1523,
+          "bottom": 897
+        },
+        "uniformScaleToNative": 1,
+        "kernel": "identity-padding",
+        "translationNative": {
+          "x": 0,
+          "y": 571
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 883,
+        "sourceCleanup": {
+          "clearedLowAlpha": 23903,
+          "solidifiedInterior": 768283,
+          "removedTinyIslands": 3
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 125.37890625
+    },
+    {
+      "file": "lie_neutral@2x.png",
+      "purpose": "中性趴姿",
+      "poseId": "lie",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 2137280,
+      "sha256": "ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7",
+      "bbox": {
+        "left": 42,
+        "top": 1292,
+        "right": 3047,
+        "bottom": 2937
+      },
+      "anchor": {
+        "x": 2578,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          2578,
+          2909
+        ],
+        "footImageLeft": [
+          2489,
+          2909
+        ],
+        "footImageRight": [
+          2666,
+          2909
+        ],
+        "belly": [
+          1962,
+          2889
+        ],
+        "palmFront": [
+          746,
+          2925
+        ],
+        "palmFrontImageLeft": [
+          746,
+          2925
+        ],
+        "palmFrontImageRight": [
+          1186,
+          2921
+        ]
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          2080,
+          2742,
+          2561,
+          2943
+        ],
+        "footImageRight": [
+          2580,
+          2742,
+          3061,
+          2943
+        ]
+      },
+      "generatedSource": "source/lie_neutral_generated.png",
+      "nativeSource": "source/lie_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 1536,
+          "height": 1024
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 21,
+          "top": 75,
+          "right": 1523,
+          "bottom": 897
+        },
+        "uniformScaleToNative": 1,
+        "kernel": "identity-padding",
+        "translationNative": {
+          "x": 0,
+          "y": 571
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 883,
+        "sourceCleanup": {
+          "clearedLowAlpha": 23903,
+          "solidifiedInterior": 768283,
+          "removedTinyIslands": 3
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 125.37890625
+    },
+    {
+      "file": "lie_up_01_neutral@2x.png",
+      "purpose": "起身第1帧：趴姿起点",
+      "poseId": "lie",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 2137280,
+      "sha256": "ec47a0f4f8b1760950e25bae7c81ca98dcb7a9ba4d21e5b03d1775be2b6de5e7",
+      "bbox": {
+        "left": 42,
+        "top": 1292,
+        "right": 3047,
+        "bottom": 2937
+      },
+      "anchor": {
+        "x": 2578,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          2578,
+          2909
+        ],
+        "footImageLeft": [
+          2489,
+          2909
+        ],
+        "footImageRight": [
+          2666,
+          2909
+        ],
+        "belly": [
+          1962,
+          2889
+        ],
+        "palmFront": [
+          746,
+          2925
+        ],
+        "palmFrontImageLeft": [
+          746,
+          2925
+        ],
+        "palmFrontImageRight": [
+          1186,
+          2921
+        ]
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          2080,
+          2742,
+          2561,
+          2943
+        ],
+        "footImageRight": [
+          2580,
+          2742,
+          3061,
+          2943
+        ]
+      },
+      "generatedSource": "source/lie_neutral_generated.png",
+      "nativeSource": "source/lie_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 1536,
+          "height": 1024
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 21,
+          "top": 75,
+          "right": 1523,
+          "bottom": 897
+        },
+        "uniformScaleToNative": 1,
+        "kernel": "identity-padding",
+        "translationNative": {
+          "x": 0,
+          "y": 571
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 883,
+        "sourceCleanup": {
+          "clearedLowAlpha": 23903,
+          "solidifiedInterior": 768283,
+          "removedTinyIslands": 3
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 125.37890625
+    },
+    {
+      "file": "lie_up_02_neutral@2x.png",
+      "purpose": "起身第2帧：反向复用半趴支撑画面",
+      "poseId": "crouch",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 1980155,
+      "sha256": "4033ac494ad279d4bbc60c6f7a65b682ddd93e28154f323dd7cdfb1f8f16cdd9",
+      "bbox": {
+        "left": 546,
+        "top": 900,
+        "right": 2553,
+        "bottom": 2969
+      },
+      "anchor": {
+        "x": 1905,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          1905,
+          2909
+        ],
+        "footImageLeft": [
+          1774,
+          2907
+        ],
+        "footImageRight": [
+          2035,
+          2911
+        ],
+        "belly": null,
+        "palmFront": [
+          959,
+          2959
+        ],
+        "palmFrontImageLeft": [
+          959,
+          2959
+        ],
+        "palmFrontImageRight": [
+          1474,
+          2969
+        ]
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          1652,
+          2730,
+          1913,
+          2931
+        ],
+        "footImageRight": [
+          1922,
+          2730,
+          2193,
+          2931
+        ]
+      },
+      "generatedSource": "source/crouch_neutral_generated.png",
+      "nativeSource": "source/crouch_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 1024,
+          "height": 1536
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 17,
+          "top": 285,
+          "right": 1020,
+          "bottom": 1319
+        },
+        "uniformScaleToNative": 1,
+        "kernel": "identity-padding",
+        "translationNative": {
+          "x": 256,
+          "y": 165
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 1289,
+        "sourceCleanup": {
+          "clearedLowAlpha": 24765,
+          "solidifiedInterior": 687395,
+          "removedTinyIslands": 5
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 157.67578125
+    },
+    {
+      "file": "lie_up_03_neutral@2x.png",
+      "purpose": "起身第3帧：回到既有站姿",
+      "poseId": "stand",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 2224248,
+      "sha256": "0b33b07d0909c2f41c196c943aeb0412cefdfd69bc8e625b0efb1703b1f621dd",
+      "bbox": {
+        "left": 546,
+        "top": 158,
+        "right": 2553,
+        "bottom": 2911
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2909
+      },
+      "contactPoints": {
+        "foot": [
+          1536,
+          2909
+        ],
+        "footImageLeft": [
+          1380,
+          2909
+        ],
+        "footImageRight": [
+          1579,
+          2911
+        ],
+        "belly": null,
+        "palmFront": null,
+        "palmFrontImageLeft": null,
+        "palmFrontImageRight": null
+      },
+      "contactRegions": {
+        "footImageLeft": [
+          1152,
+          2750,
+          1483,
+          2911
+        ],
+        "footImageRight": [
+          1487,
+          2750,
+          1763,
+          2911
+        ]
+      },
+      "generatedSource": "source/stand_neutral_generated.png",
+      "nativeSource": "source/stand_neutral_native.png",
+      "normalization": {
+        "generatedCanvas": {
+          "width": 2048,
+          "height": 3072
+        },
+        "sourceBboxAfterCleanup": {
+          "left": 34,
+          "top": 158,
+          "right": 2041,
+          "bottom": 2911
+        },
+        "uniformScaleToNative": 0.5,
+        "kernel": "nearest",
+        "translationNative": {
+          "x": 256,
+          "y": 0
+        },
+        "targetNativeFootBaseline": 1454,
+        "originalFootBaselineNative": 1454,
+        "sourceCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        },
+        "nativeCleanup": {
+          "clearedLowAlpha": 0,
+          "solidifiedInterior": 0,
+          "removedTinyIslands": 0
+        }
+      },
+      "displayInkHeight": 209.77734375
+    }
+  ],
+  "sources": [
+    {
+      "file": "source/stand_neutral_generated.png",
+      "role": "既有v3站姿逐字节副本，不是本轮新生图",
+      "width": 2048,
+      "height": 3072,
+      "bytes": 1754287,
+      "sha256": "29fbbbda445b852c320f9b8181f43a5117788ab9a957d685259c46fd9a06f6e8",
+      "bbox": {
+        "left": 34,
+        "top": 158,
+        "right": 2041,
+        "bottom": 2911
+      }
+    },
+    {
+      "file": "source/stand_neutral_native.png",
+      "role": "统一画布的原生图；母版的1/2",
+      "width": 1536,
+      "height": 1536,
+      "bytes": 1760410,
+      "sha256": "7a7aa71fac9432dd9a774f2b0474c3a524ed1c29880a0541de9bb5043fd9dc08",
+      "bbox": {
+        "left": 273,
+        "top": 79,
+        "right": 1276,
+        "bottom": 1455
+      }
+    },
+    {
+      "file": "source/crouch_neutral_generated.png",
+      "role": "内置image_gen直出原图，未加工",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1892458,
+      "sha256": "dd6d7d77dfadeab7f609c3665af7bde22d5a083d9115c17c897a7ca68994ec34",
+      "bbox": {
+        "left": 0,
+        "top": 70,
+        "right": 1023,
+        "bottom": 1535
+      }
+    },
+    {
+      "file": "source/crouch_neutral_native.png",
+      "role": "统一画布的原生图；母版的1/2",
+      "width": 1536,
+      "height": 1536,
+      "bytes": 1591206,
+      "sha256": "777b00d97d7c31be3644c77327be945c33b1b6970e24ebd08af47e799354b67b",
+      "bbox": {
+        "left": 273,
+        "top": 450,
+        "right": 1276,
+        "bottom": 1484
+      }
+    },
+    {
+      "file": "source/lie_neutral_generated.png",
+      "role": "内置image_gen直出原图，未加工",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2019577,
+      "sha256": "0183fc712b3a2e59fb450e4d390187611540453d87a647c8dfe3e0650607f4c6",
+      "bbox": {
+        "left": 0,
+        "top": 0,
+        "right": 1534,
+        "bottom": 999
+      }
+    },
+    {
+      "file": "source/lie_neutral_native.png",
+      "role": "统一画布的原生图；母版的1/2",
+      "width": 1536,
+      "height": 1536,
+      "bytes": 1729506,
+      "sha256": "24cebe5485d6f6006aa9aadc3c8617387885ab754cf1d82931630287f5f6e1b1",
+      "bbox": {
+        "left": 21,
+        "top": 646,
+        "right": 1523,
+        "bottom": 1468
+      }
+    },
+    {
+      "file": "source/lie_flat_reference.png",
+      "role": "生成过程中使用的姿态参考原图，不是运行时成品",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1961437,
+      "sha256": "1249ec9c978a6ad9a53d247b3ee7e3cfa29e5cfede78e32ca91860882070dc2e",
+      "bbox": {
+        "left": 0,
+        "top": 3,
+        "right": 1513,
+        "bottom": 1005
+      }
+    },
+    {
+      "file": "source/lie_pose_reference.png",
+      "role": "生成过程中使用的姿态参考原图，不是运行时成品",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2019002,
+      "sha256": "e08f1a867000bd735f597c037b090caabbe42a357b9cfbb89a01d4680e643a37",
+      "bbox": {
+        "left": 0,
+        "top": 17,
+        "right": 1497,
+        "bottom": 1023
+      }
+    }
+  ],
+  "notes": "为横向趴姿与原尺寸站姿共用画布，增加横向透明留白至3072×3072；站姿按既有原生2倍策略复刻并水平补边512px，统一再做alpha清理，原像素密度保持不变。新绘图只清理alpha并平移补边，没有压缩或旋转站姿。顶层anchor/contactPoints对应中性趴姿；过渡帧以files各自anchor为准。原图坐标乘uniformScaleToNative，再加translationNative，最后乘2；最低像素行按2倍块的下沿实测。统一脚底基线为y=2909，各脚偏差≤2px。腹部不可穿过衣服直接观测，belly明确记录为对应衣摆下缘的接地代理点；前掌是可见手掌，后掌是两只靴底。前掌和衣摆的透视接触点不强制与后脚处于同一像素行。起身采用下降序列反放，端点和中性帧合法复用，7帧位并非7张独立新画。没有定义播放速度、概率或停留时间。"
+}

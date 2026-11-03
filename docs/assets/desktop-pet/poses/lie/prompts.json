@@ -1,0 +1,33 @@
+{
+  "mode": "built-in image_gen",
+  "identityReference": "../../v3/front-standing.png",
+  "note": "只保存最终选用图及其生成所需参考。站姿来自既有v3快照；2种姿态为本轮新绘，起身和端点明确复用，不声称7张独立新画。",
+  "prompts": [
+    {
+      "id": "crouch",
+      "output": "source/crouch_neutral_generated.png",
+      "references": [
+        "../../v3/front-standing.png",
+        "source/lie_pose_reference.png"
+      ],
+      "prompt": "Use case: stylized-concept. Draw ONE animation keyframe of reference 1's exact character. Reference 1 is the ONLY rendering/style/identity authority; reference 2 is the end prone pose to transition toward.\nKeyframe: halfway lowering from standing to prone. She is in a low crouch, both knees deeply bent beneath her skirt, hips still raised above the ground, upper torso tilting forward, head about halfway between standing and prone height. TWO human hands reach forward to touch the ground below the shoulders, with clearly connected elbows and wrists. TWO separate short legs lead to the SAME two white paw boots as reference 1, both planted on ground behind the hands. The abdomen has NOT reached the ground yet. Face in three-quarter front view looking toward viewer, body extends a little toward image right. NOT a seated legs-forward pose, NOT the final prone pose, NOT four animal legs.\nPreserve EXACT reference 1 face shape and detailed iris pattern (blue gradient, yellow lower highlights), cream long curls, warm fine line art, elaborate shaded blue-and-cream paw-print cape, chest bow with lace tips, pompom ties. Cloud clip and blue side bow on viewer RIGHT only. Keep original boots, no pink foot pads facing camera in this crouch. Fluffy tail on viewer right. Exactly two arms and two legs; make limb connections readable, no extra or merged limbs. Same chibi proportions, no simplified new art style.\nPortrait 1024x1536 genuinely transparent canvas with entire character including ahoge/ears/tail/boots and ample clear margins all around. Opaque interior. No backdrop, cast shadow, floor, glow, vignette, writing, panels or watermark."
+    },
+    {
+      "id": "lie_flat_reference",
+      "output": "source/lie_flat_reference.png",
+      "references": [
+        "../../v3/front-standing.png",
+        "source/lie_pose_reference.png"
+      ],
+      "prompt": "Use case: stylized-concept. One prone resting sprite of reference 1's EXACT character. Reference 1 is the identity and polished detailed anime art authority. Reference 2 shows the intended low body position; correct its overlapped rear boots.\nShe is LYING FLAT ON HER STOMACH, RESTING, NOT crouching, NOT a play-bow, NOT on all fours. Her hips and abdomen are fully lowered onto the ground. Head and chin rest low over two relaxed human hands at front left. Torso, hips, thighs and legs extend horizontally back toward image right, with the entire torso nearly parallel to the ground. TWO legs extend flat behind her, NOT downward like standing legs. White paw boots lie on their sides with toes pointing toward image RIGHT, with two separately readable boots and clearly separate short legs. Make rear boots separated HORIZONTALLY: one boot ends slightly farther to image right than the other, while both boot bottom edges rest along the SAME horizontal ground line as the front hands. Do not merge two legs into one tube. No vertical standing shins. No exposed buttocks. Keep original skirt covering hips.\nPreserve original cream long curly hair, blue eyes with yellow lower highlights, spiral ahoge, pink ear interiors, same cream/blue paw-print cape, chest bow with lace tips, pompom ties. Cloud clip and blue side hair bow remain on viewer RIGHT. Original fluffy tail rests BEHIND lowered hips. Exactly two human arms with hands and two booted legs, naturally connected. Relaxed neutral face, both eyes open. Keep original face proportions and complex soft hair shading; no simplified new mascot style.\nLandscape 1536x1024 true transparent canvas, 40px empty margin each edge, full silhouette and opaque interior. No floor, cast shadow, glow, backdrop, vignette, text, watermark or panels."
+    },
+    {
+      "id": "lie",
+      "output": "source/lie_neutral_generated.png",
+      "references": [
+        "source/lie_flat_reference.png"
+      ],
+      "prompt": "Use case: precise-object-edit. Edit target is the supplied lying-flat cat girl.\nKeep head, face, hands, hair, torso, skirt, tail, detailed anime style and low hips EXACTLY the same. Change only her two rear legs and boots to a natural relaxed FROG-LEGGED prone resting pose: thighs splayed slightly, both knees bent out sideways while hips and belly stay FLAT ON FLOOR. Both lower legs and white paw boots lie HORIZONTALLY on their sides, NOT standing vertically. Put the two boots NEXT TO EACH OTHER horizontally at lower image right, with a visible transparent notch separating the two boot toe silhouettes. One boot can point slightly outward/down-left, the other outward/right. Both boots' lowest edges touch the SAME image ground baseline around y=890. Each boot must have its own distinct connected leg and one blue side bow, two legs TOTAL. No boot may be hidden behind the other or look like a standing shin. No extra limbs. Keep clothing covering hips and thighs.\nThis is a fully relaxed lying-on-belly pose, not crouching, kneeling or play-bowing. Preserve true transparent background, full silhouette, opaque interior. No ground, shadow, glow, new elements, symbols or text. Canvas landscape 1536x1024 with clear margins."
+    }
+  ]
+}

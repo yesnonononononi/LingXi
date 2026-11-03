@@ -1,0 +1,3 @@
+# 文本统一 LF，避免跨平台检出破坏逐字节清单。
+* text eol=lf
+*.png binary

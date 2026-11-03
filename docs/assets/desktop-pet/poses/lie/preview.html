@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>桌宠 M2 · 趴姿首批验收</title>
+<style>
+body{max-width:1380px;margin:36px auto;padding:0 24px;font:16px/1.7 system-ui,sans-serif;color:#343a43;background:#eeeae4}h1{font-size:28px}button{font:inherit;padding:8px 16px;border:1px solid #b8bec6;border-radius:6px;background:#fff;cursor:pointer}button[aria-pressed=true]{background:#334f70;color:white}nav{display:flex;gap:8px;flex-wrap:wrap}img{max-width:100%}.stage{display:flex;gap:20px;flex-wrap:wrap;margin-top:20px}.panel{width:min(620px,100%);background:#faf8f3;border-radius:8px}.panel.dark{background:#212a38}.panel img{width:100%;display:block}.labels{display:grid;grid-template-columns:repeat(3,1fr);text-align:center}.status{padding:12px 16px;background:#fff7de;border-left:3px solid #b58a37}a{color:#375f87}
+</style>
+<h1>趴姿 · 第一批候选</h1>
+<p class="status">待人工验收。机验通过不代表画风和脚部结构通过。本包含7个帧位、3张独立画面，其中2种姿态新绘；起身反向复用，尚未启动剩余8批。</p>
+<p>上排亮底、下排暗底；每排按同一像素密度对照。请重点看脸型、虹膜、头部大小、服装笔触，以及袖口—手掌、膝盖—靴口的连接。</p>
+<div class="labels"><span>既有站姿基准</span><span>新绘半趴</span><span>新绘趴姿</span></div>
+<img src="qa/lie_review.png" alt="站姿、半趴、趴姿同尺对照；亮底和暗底各一排">
+<h2>逐帧检查</h2>
+<nav id="frames">
+<button data-file="lie_down_01_neutral@2x.png">趴下1 · 站</button>
+<button data-file="lie_down_02_neutral@2x.png">趴下2 · 半趴</button>
+<button data-file="lie_down_03_neutral@2x.png">趴下3 · 趴</button>
+<button data-file="lie_neutral@2x.png" aria-pressed="true">中性趴姿</button>
+<button data-file="lie_up_01_neutral@2x.png">起身1 · 趴</button>
+<button data-file="lie_up_02_neutral@2x.png">起身2 · 半趴</button>
+<button data-file="lie_up_03_neutral@2x.png">起身3 · 站</button>
+</nav>
+<p>本页仅提供人工切帧，不定义运行时播放速度、概率或停留时间。两只后靴最低行对齐基线；腹部接触点采用衣摆下缘代理，需人工确认。</p>
+<div class="stage"><div class="panel"><img src="lie_neutral@2x.png" alt="当前帧浅底放大"></div><div class="panel dark"><img src="lie_neutral@2x.png" alt="当前帧暗底放大"></div></div>
+<p><a href="manifest.json">逐帧实测清单</a> · <a href="qa/validation.txt">原样校验输出</a> · <a href="README.md">交付说明与未决项</a> · <a href="prompts.json">完整提示词</a></p>
+<script>
+document.querySelectorAll('#frames button').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('#frames button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+  document.querySelectorAll('.panel img').forEach(image => image.src = button.dataset.file);
+}));
+</script>
+</html>
