@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "batch": "sit",
+  "assetId": "lingxi-pet-m2-sit-static-review-v1",
+  "status": "awaiting-static-review",
+  "canvas": {
+    "width": 2048,
+    "height": 3072
+  },
+  "anchor": {
+    "x": 1024,
+    "y": 2908
+  },
+  "contactPoints": {
+    "foot": [
+      1024,
+      2908
+    ],
+    "footImageLeft": [
+      599,
+      2907
+    ],
+    "footImageRight": [
+      1309,
+      2909
+    ],
+    "belly": null,
+    "palmFront": null
+  },
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "bow",
+    "hairpin",
+    "tail"
+  ],
+  "orientation": "正面；云朵发夹、发侧蝴蝶结与尾巴在画面右侧",
+  "nativeSourceCanvas": {
+    "width": 1024,
+    "height": 1536
+  },
+  "masterScale": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "bboxConvention": "right/bottom 为含端点坐标；alpha>0",
+  "normalization": {
+    "generatedCanvas": {
+      "width": 1024,
+      "height": 1536
+    },
+    "sourceBboxAfterCleanup": {
+      "left": 60,
+      "top": 160,
+      "right": 1015,
+      "bottom": 1427
+    },
+    "uniformScaleToNative": 0.8517350157728707,
+    "kernel": "alpha-weighted-bilinear",
+    "targetNativeFootBaseline": 1454,
+    "sourceCleanup": {
+      "clearedLowAlpha": 27602,
+      "solidifiedInterior": 786529,
+      "removedTinyIslands": 2
+    },
+    "nativeCleanup": {
+      "clearedLowAlpha": 1914,
+      "solidifiedInterior": 3756,
+      "removedTinyIslands": 0
+    }
+  },
+  "display": {
+    "canvasWidth": 156,
+    "canvasHeight": 234,
+    "inkHeight": 164.53125
+  },
+  "review": {
+    "requiredNow": [
+      "sit_neutral@2x.png"
+    ],
+    "deferredUntilApproval": [
+      "sit_happy@2x.png（抱云）",
+      "sit_blink@2x.png",
+      "露肉垫特写参数"
+    ],
+    "fullBatchComplete": false
+  },
+  "files": [
+    {
+      "file": "sit_neutral@2x.png",
+      "purpose": "坐姿中性静帧，供首轮风格与几何验收",
+      "width": 2048,
+      "height": 3072,
+      "bytes": 1641830,
+      "sha256": "a81bf46d0ff6c7b8ce4243a728e64652637db1609e5a73a7ff82b136ef9daa48",
+      "bbox": {
+        "left": 210,
+        "top": 750,
+        "right": 1837,
+        "bottom": 2909
+      }
+    }
+  ],
+  "sources": [
+    {
+      "file": "source/sit_neutral_generated.png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 2087212,
+      "sha256": "abefc5047c938217f4cfb0c1d022d5f92bf9eff79e741df3faf5f8f6643fbd1f",
+      "bbox": {
+        "left": 0,
+        "top": 21,
+        "right": 1023,
+        "bottom": 1535
+      }
+    },
+    {
+      "file": "source/sit_neutral_native.png",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1313431,
+      "sha256": "88970d45f461a8a85dbde3b7f4768e81989b5e64b0e85394b6415110be90cc06",
+      "bbox": {
+        "left": 105,
+        "top": 375,
+        "right": 918,
+        "bottom": 1454
+      }
+    }
+  ],
+  "notes": "本轮遵循任务书第8节，先交坐姿中性静帧，不冒充坐姿整批完成。双腿屈膝前伸、脚底肉垫朝向观者，臀部坐地，裙摆铺开。等比缩小新绘图后以2倍最近邻生成母版，没有压扁站姿。脚掌最低像素与锚点偏差不超过2px。待确认风格与几何后再制作抱云、眨眼及其余批次。"
+}

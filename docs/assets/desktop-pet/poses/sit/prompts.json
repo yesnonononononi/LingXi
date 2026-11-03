@@ -1,0 +1,9 @@
+{
+  "mode": "built-in image_gen",
+  "useCase": "stylized-concept",
+  "selectedSource": "source/sit_neutral_generated.png",
+  "reference": "../../v3/front-standing.png",
+  "supportingDesignReference": "../../v3/source/design-reference.png",
+  "prompt": "Create ONE game sprite of the reference character in a new seated pose, isolated on a completely transparent background. Portrait 2:3 image. No background or shadow of any kind, no glow or vignette.\nPreserve reference identity and crisp detailed anime rendering: cream cat ears and long cream hair, blue eyes, curled ahoge, blue and white paw-print clothes, blue neck bow and pompoms, fluffy tail on viewer right. Cloud hairclip and blue hair bow on viewer right only.\nShe sits with hips on the ground, knees bent outward and both boot soles extended toward viewer, displaying pink paw pads. Hands relaxed on lap. Neutral pleasant expression with both eyes open. Draw anatomically new seated legs, skirt draping on floor. Keep full character centered with ample transparent margin all around, including hair and tail. Character occupies only 78% image width and 75% image height. Entire ahoge and both feet visible. No ground shadow, no halo, no text, no decorations. Fully opaque character interior, clean alpha silhouette.",
+  "notes": "前3次候选未采用；本交付只保存第4次生成的完整坐姿。尺寸排版与alpha清理由随包Node工具完成。"
+}
