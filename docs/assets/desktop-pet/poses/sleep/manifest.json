@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "batch": "sleep",
+  "assetId": "lingxi-pet-m2-sleep-neutral-v1",
+  "status": "awaiting-static-review",
+  "canvas": {
+    "width": 3072,
+    "height": 3072
+  },
+  "anchor": {
+    "x": 2578,
+    "y": 2909
+  },
+  "contactPoints": {
+    "foot": [
+      2578,
+      2909
+    ],
+    "footImageLeft": [
+      2489,
+      2909
+    ],
+    "footImageRight": [
+      2666,
+      2909
+    ],
+    "belly": [
+      1962,
+      2889
+    ],
+    "palmFront": [
+      746,
+      2925
+    ],
+    "palmFrontImageLeft": [
+      746,
+      2925
+    ],
+    "palmFrontImageRight": [
+      1186,
+      2921
+    ]
+  },
+  "nativeSourceCanvas": {
+    "width": 1536,
+    "height": 1536
+  },
+  "masterScale": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "bboxConvention": "right/bottom含端点，alpha>0",
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "bow",
+    "hairpin",
+    "tail"
+  ],
+  "orientation": "正面趴姿；云朵发夹、发侧蝴蝶结与尾巴在画面右侧（与 lie 趴平帧朝向一致）",
+  "method": {
+    "mode": "mask-edit",
+    "referenceImage": "source 上游为 poses/lie/source/lie_neutral_native.png（趴平睁眼）",
+    "mask": "source/eye_mask_native.png",
+    "maskTransparentPx": 38608,
+    "maskBboxNative": {
+      "left": 322,
+      "top": 1116,
+      "right": 644,
+      "bottom": 1290
+    },
+    "maskConvention": "完全透明区域=待编辑区域（眼区）",
+    "verifiedDiff": {
+      "totalChangedPx": 38095,
+      "insideMaskPx": 38095,
+      "outsideMaskPx": 0,
+      "maxDeltaOutsideMask": 0,
+      "against": "poses/lie/source/lie_neutral_native.png",
+      "note": "蒙版外逐像素零变化，证明模型未重绘其余区域"
+    },
+    "generator": "generate_image（reference_image_path + mask_image_path + background:transparent + output_format:png）"
+  },
+  "display": {
+    "canvasHeight": 234,
+    "canvasWidth": 234,
+    "comparisonScale": "全部使用234/3072，相同母版像素密度"
+  },
+  "review": {
+    "requiredNow": [
+      "sleep_neutral@2x.png"
+    ],
+    "deferredUntilApproval": [
+      "蜷睡（轮廓不同，须单独生成）",
+      "惊醒（睁眼+受惊）",
+      "睡眠呼吸 2 帧（须与趴睡同源做躯干局部位移场）"
+    ],
+    "fullBatchComplete": false
+  },
+  "files": [
+    {
+      "file": "sleep_neutral@2x.png",
+      "purpose": "趴睡闭眼母版，供首帧验收",
+      "width": 3072,
+      "height": 3072,
+      "bytes": 1694657,
+      "sha256": "d645872051add4af75800a9a944a5663428b8c2b571f0a61661e8a61929ca83c",
+      "bbox": {
+        "left": 42,
+        "top": 1292,
+        "right": 3047,
+        "bottom": 2937
+      }
+    }
+  ],
+  "sources": [
+    {
+      "file": "source/sleep_neutral_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1111666,
+      "sha256": "1c0f786991de4a2603e01d80d5a547d274301878be703760a2f69814fd3bb2b0",
+      "bbox": {
+        "left": 15,
+        "top": 59,
+        "right": 1252,
+        "bottom": 1237
+      }
+    },
+    {
+      "file": "source/sleep_neutral_native.png",
+      "width": 1536,
+      "height": 1536,
+      "bytes": 1366304,
+      "sha256": "c9f0fbd180383505bb792deb64b5ef9a685845912151c0433cbd46baed19cfee",
+      "bbox": {
+        "left": 21,
+        "top": 646,
+        "right": 1523,
+        "bottom": 1468
+      }
+    },
+    {
+      "file": "source/eye_mask_native.png",
+      "width": 1536,
+      "height": 1536,
+      "bytes": 14104,
+      "sha256": "73026ae345874e5b92e4479bec426a29319088ce5201544148e0ef8db095d43d",
+      "bbox": {
+        "left": 0,
+        "top": 0,
+        "right": 1535,
+        "bottom": 1535
+      }
+    }
+  ],
+  "notes": "趴睡闭眼帧由 lie 趴平帧经蒙版局部编辑派生：只重绘眼区（眼白/虹膜换为眼睑肤色+上眼睑弧线+睫毛+眼睑投影+下睑淡线），其余像素逐字节未变（蒙版外 0 像素、maxDelta 0）。外轮廓 bbox 与 lie 逐值相同{42,1292,3047,2937}，证明身体姿态未动。母版由 native 1536×1536 经 2 倍最近邻放大，2×2 块不一致数 0。canvas 沿用 lie 的 3072×3072（横向趴姿）。本帧不含蜷睡/惊醒/呼吸帧，不是整批完成。"
+}
