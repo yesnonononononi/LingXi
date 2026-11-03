@@ -220,6 +220,27 @@ const MUTATIONS = [
     testFile: 'tests/petBehaviorTriggers.test.ts',
     expect: '长拖拽（≥1200ms）松手必须产出 sad 表情',
   },
+  // ---------------------------------------------------------------- E08 / P4：困倦与真睡不得同形
+  {
+    id: 'sleep-expression-back-to-sleepy',
+    goal: '真睡的表达式改回 sleepy（E08 两档同形的原始缺陷）：§6 的"两档不得同形"用例必须红',
+    file: 'src/pet/behavior/state-machine.ts',
+    find: "      expressionOp('blink', 0, 'behavior:sleep:expression', undefined, 'base'),",
+    replace: "      expressionOp('sleepy', 0, 'behavior:sleep:expression', undefined, 'base'),",
+    testFile: 'tests/petBehaviorTriggers.test.ts',
+    expect: '真睡档必须是闭眼贴片',
+  },
+  {
+    id: 'sleep-expression-back-to-sleepy-guard',
+    goal: '同上变异，但验收层换成真实 offscreen 画面守卫：E08 sleepy-vs-sleeping（P4）那条必须变红',
+    file: 'src/pet/behavior/state-machine.ts',
+    find: "      expressionOp('blink', 0, 'behavior:sleep:expression', undefined, 'base'),",
+    replace: "      expressionOp('sleepy', 0, 'behavior:sleep:expression', undefined, 'base'),",
+    // 守卫只跑 E08/E03 组（快），截图落独立目录，避免覆盖正式验收的证据图
+    command:
+      'npm run guard:pet:face -- --only E08,E03 --out D:/Code/LingXi/.lingxi/tmp/pet-face-guard/mutant-p4',
+    expect: 'FAIL(两档同形)',
+  },
 ];
 
 /** 当前在飞的变异：绝对路径 → 原始文本（进程被中断时据此还原）。 */
@@ -265,27 +286,32 @@ function sha256(text) {
 }
 
 /**
- * 跑目标测试文件。
+ * 跑一个变异体的**验证目标**。
  *
- * <p>`.cjs` 用例用 `node --test` 原生跑；`.ts` 用例必须过 `tsx`（node 原生不理解 TS，
- * 直接喂给它只会得到语法错误——那种"红"是假红，会污染变异自检的信噪比）。</p>
+ * <p>三种目标，按变异体声明择一：</p>
+ * <ul>
+ *   <li>`testFile`（`.cjs`）：`node --test` 原生跑；</li>
+ *   <li>`testFile`（`.ts`）：过 `tsx`（node 原生不理解 TS，直接喂只会得到语法错误——
+ *       那种"红"是假红，会污染变异自检的信噪比）；</li>
+ *   <li>`command`：整条 shell 命令（用于 Electron offscreen 画面守卫这类
+ *       **不是** node:test 用例的目标，例如 `npm run guard:pet:face -- --only E08,E03`）。</li>
+ * </ul>
  *
- * @param {string} testFile 相对 frontend 的测试路径
+ * @param {{testFile?: string, command?: string}} mutation 变异体
  * @returns {{ok: boolean, code: number, out: string, ms: number}} 运行结果
  */
-function runTests(testFile) {
+function runTarget(mutation) {
   const started = Date.now();
-  const isTypeScript = /\.(ts|mts|tsx)$/.test(String(testFile));
-  const proc = isTypeScript
-    ? spawnSync(`npx tsx --test "${testFile}"`, {
-        cwd: FRONTEND_ROOT,
-        encoding: 'utf8',
-        shell: true,
-      })
-    : spawnSync(process.execPath, ['--test', testFile], {
-        cwd: FRONTEND_ROOT,
-        encoding: 'utf8',
-      });
+  const command = typeof mutation.command === 'string' && mutation.command.length > 0 ? mutation.command : null;
+  const testFile = String(mutation.testFile || '');
+  let proc;
+  if (command) {
+    proc = spawnSync(command, { cwd: FRONTEND_ROOT, encoding: 'utf8', shell: true });
+  } else if (/\.(ts|mts|tsx)$/.test(testFile)) {
+    proc = spawnSync(`npx tsx --test "${testFile}"`, { cwd: FRONTEND_ROOT, encoding: 'utf8', shell: true });
+  } else {
+    proc = spawnSync(process.execPath, ['--test', testFile], { cwd: FRONTEND_ROOT, encoding: 'utf8' });
+  }
   const code = typeof proc.status === 'number' ? proc.status : 1;
   return {
     ok: code === 0,
@@ -350,26 +376,28 @@ function restoreMutation(absPath, original) {
 
 /** 依次执行全部变异体并汇总。 */
 function main() {
-  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫）');
+  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫 + 表现层/行为/画面守卫）');
   console.log(`[mutate] 前端根目录：${FRONTEND_ROOT}`);
 
   const results = [];
-  /** 每个测试文件的基线（绿）检查只做一次。 */
+  /** 每个验证目标（测试文件 / 命令）的基线（绿）检查只做一次。 */
   const baseline = new Map();
 
   for (const mutation of MUTATIONS) {
+    const targetKey = mutation.command || mutation.testFile;
     console.log('');
     console.log(`=== 变异体 ${mutation.id} ===`);
     console.log(`  目的：${mutation.goal}`);
     console.log(`  位置：${mutation.file}`);
+    if (mutation.command) console.log(`  验证目标（命令）：${mutation.command}`);
 
-    if (!baseline.has(mutation.testFile)) {
-      const green = runTests(mutation.testFile);
-      baseline.set(mutation.testFile, green.ok);
+    if (!baseline.has(targetKey)) {
+      const green = runTarget(mutation);
+      baseline.set(targetKey, green.ok);
       console.log(`  基线（变异前）：${green.ok ? '绿 OK' : '红 FAIL'}  用时 ${green.ms}ms`);
       if (!green.ok) {
         console.log(green.out);
-        results.push({ id: mutation.id, passed: false, reason: `基线测试未通过：${mutation.testFile}` });
+        results.push({ id: mutation.id, passed: false, reason: `基线未通过：${targetKey}` });
         continue;
       }
     }
@@ -378,7 +406,7 @@ function main() {
     let outcome;
     try {
       applied = applyMutation(mutation);
-      const red = runTests(mutation.testFile);
+      const red = runTarget(mutation);
       const sawExpected = red.out.includes(mutation.expect);
       console.log(`  变异后：退出码 ${red.code}（要求非 0）· 断言文本"${mutation.expect}" ${sawExpected ? '出现 OK' : '未出现 FAIL'}`);
       if (red.ok) {
@@ -389,7 +417,7 @@ function main() {
         passed: !red.ok && sawExpected,
         reason: !red.ok
           ? (sawExpected ? '' : `退出码非 0 但未出现预期断言文本，可能是假红`)
-          : '变异后测试仍然全绿：测试没有守住这条修复',
+          : '变异后仍然全绿：没有守住这条修复',
       };
     } catch (err) {
       outcome = { id: mutation.id, passed: false, reason: (err && err.message) || String(err) };
@@ -402,11 +430,11 @@ function main() {
     }
 
     if (outcome.passed) {
-      const greenAgain = runTests(mutation.testFile);
+      const greenAgain = runTarget(mutation);
       console.log(`  还原后重跑：${greenAgain.ok ? '绿 OK' : '红 FAIL'}`);
       if (!greenAgain.ok) {
         console.log(greenAgain.out);
-        outcome = { id: mutation.id, passed: false, reason: '还原后测试未回到绿' };
+        outcome = { id: mutation.id, passed: false, reason: '还原后未回到绿' };
       }
     }
     results.push(outcome);

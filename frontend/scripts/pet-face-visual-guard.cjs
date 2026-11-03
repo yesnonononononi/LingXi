@@ -666,7 +666,7 @@ async function sampleAtVirtualIdle(page, idleMs, options = {}) {
  * 判定一档并产出一行报告（同时落截图）。
  *
  * @param {object} page 页面句柄
- * @param {object} spec 档位定义
+ * @param {object} spec 档位定义（`shotName` 可覆盖截图文件名，缺省按表情 id 命名）
  * @param {object} sample 采样结果
  * @param {object|null} baseline `neutral` 基线（null 表示本档就是基线）
  * @param {string} outDir 截图目录
@@ -720,7 +720,8 @@ async function judgeStage(page, spec, sample, baseline, outDir) {
     `${pass ? 'PASS' : `FAIL(${problems.join('; ')})`}`,
   ].join('  ') + suffix;
 
-  const baseName = spec.control ? `${spec.expect}-${spec.control.replace(/[^a-z0-9]+/gi, '-')}` : spec.expect;
+  const baseName = spec.shotName
+    || (spec.control ? `${spec.expect}-${spec.control.replace(/[^a-z0-9]+/gi, '-')}` : spec.expect);
   const roiPath = path.join(outDir, `${baseName}.png`);
   fs.writeFileSync(roiPath, sample.roi.image.toPNG());
   let windowPath = null;
@@ -1040,25 +1041,38 @@ async function runComboGroup(url, outDir, rows) {
 }
 
 /**
- * 统计一段时间内的眨眼次数（真实时钟）。
+ * 统计一段时间内的**眨眼次数**（真实时钟）。
  *
- * <p><b>为什么要这个判别器：</b>E08 的 60s 档（困倦）与 90s 档（真睡）当前画面逐像素一致
- * ——脸层只有 `sleepy` 贴片，没有 `sleeping` 贴片。设计给出的唯一"两档可区分"依据是
- * 「困倦仍会眨眼，真睡抑制眨眼」（`state-machine.ts` / `blink-driver.ts`）。所以除了静态
- * ROI 差异，这里再量一条**时间维度**证据：同样 10s 内，困倦档应出现眨眼，真睡档必须为 0。</p>
+ * <p><b>为什么要这个判别器：</b>E08 的两档现在画面已经不同（60s 困倦=`sleepy` 半闭，
+ * 90s 真睡=`blink` 双眼闭合），但"睡得沉不沉"还有一条时间维度证据：
+ * 「困倦仍会眨眼，真睡抑制眨眼」（`state-machine.ts` / `blink-driver.ts`）。
+ * 同样 10s 内，困倦档应出现眨眼，真睡档必须为 0。</p>
+ *
+ * <p><b>为什么不能直接数"表达式是否等于 blink"（这一条踩过）：</b>真睡的基础表情**就是**
+ * 闭眼贴片 `blink`（E08 判据要求两档不同形）。按"当前表达式是不是 blink"计数，
+ * 真睡档从第一个采样点起就一直"在眨眼"，会被数成 1 次——把正确的实现判成缺陷。
+ * 所以这里数的是**一次完整的眨眼过程**（睁→闭或闭→睁的边沿），并额外要求"先见过睁眼"，
+ * 从而把"常驻闭眼"（睡着这张脸）与"眨一下"（动作）彻底分开。</p>
  *
  * @param {object} page 页面句柄
  * @param {number} windowMs 观察时长（真实毫秒）
- * @returns {Promise<number>} 观察到的眨眼次数（按连续段计数）
+ * @returns {Promise<number>} 观察到的眨眼次数（按完整的睁/闭边沿计数）
  */
 async function countBlinks(page, windowMs) {
   const deadline = Date.now() + windowMs;
   let count = 0;
   let inBlink = false;
+  /** 是否已经观察过"睁眼"样本：没见过的常驻闭眼不算眨眼。 */
+  let sawOpen = false;
   while (Date.now() < deadline) {
     const state = await page.evaluate(STATE_JS);
     const blinking = state.expression === 'blink' || /\/face\/blink@/.test(state.faceSrc);
-    if (blinking && !inBlink) count += 1;
+    if (!blinking) {
+      if (inBlink) count += 1; // 闭→睁：这一轮眨眼完整结束
+      sawOpen = true;
+    } else if (!inBlink && sawOpen) {
+      count += 1; // 睁→闭：确实睁着眼时才眨的
+    }
     inBlink = blinking;
     await sleep(10);
   }
@@ -1107,9 +1121,12 @@ async function runIdleGroup(url, outDir, rows) {
     const distinguishable = sleepyVsSleeping >= 0.005;
     rows.push(await judgeStage(page, {
       id: 'E08', name: 'sleeping', entry: 'idle-90s(×60)', expect: sleeping.state.expression,
+      // 真睡的表情 id 是 `blink`，与"生理眨眼"同名：按表情 id 命名会覆盖组 1 的 blink.png 证据，
+      // 所以这一档按**档位**落盘（sleeping.png / sleeping-window.png）。
+      shotName: 'sleeping',
     }, sleeping, baseline, outDir));
-    // judgeStage 按「表情 id」命名截图，而 60s/90s 两档的表情 id 同为 sleepy，
-    // 于是 90s 档会把 60s 档的图覆盖掉。这里按**档位**重新落盘，保证两档各有自己的证据图。
+    // 两档贴片更名前的旧实现里 60s/90s 表情 id 同为 sleepy、后写会覆盖先写；
+    // 现在两档 id 已不同（sleepy / blink），这里仍按**档位**显式落盘，保证证据文件名稳定。
     fs.writeFileSync(path.join(outDir, 'sleepy.png'), sleepy.roi.image.toPNG());
     if (sleepy.window) fs.writeFileSync(path.join(outDir, 'sleepy-window.png'), sleepy.window.toPNG());
     const sleepingShot = path.join(outDir, 'sleeping.png');
