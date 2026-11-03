@@ -150,6 +150,8 @@ const SINGLE_SOURCE_CONSUMERS = [
   'vite.pet.config.ts',
   'electron/pet-window.cjs',
   'electron/pet-dev-probe.cjs',
+  'electron/pet-launcher.cjs',
+  'electron/pet-launcher-config.cjs',
   'scripts/pet-dev-server.cjs',
   'scripts/pet-dev-mutation-selfcheck.mjs',
   'package.json',

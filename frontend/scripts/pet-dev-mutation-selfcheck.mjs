@@ -20,6 +20,7 @@
  * 用法：`npm run test:pet:mutate`
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -30,6 +31,9 @@ const FRONTEND_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url))
 
 /** 仓库根目录（`.gitignore` 与美术资产都在这一层，git 命令一律 `-C` 到这里）。 */
 const REPO_ROOT = path.resolve(FRONTEND_ROOT, '..');
+
+/** 桌宠端口真源（只在自检里用来判断"端口上是谁家的 dev server"，绝不写死端口）。 */
+const { DEV_ENDPOINT } = createRequire(import.meta.url)(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'));
 
 /**
  * 变异体清单。
@@ -242,6 +246,8 @@ const MUTATIONS = [
     // 守卫只跑 E08/E03 组（快），截图落独立目录，避免覆盖正式验收的证据图
     command:
       'npm run guard:pet:face -- --only E08,E03 --out D:/Code/LingXi/.lingxi/tmp/pet-face-guard/mutant-p4',
+    // 守卫会复用端口上已在跑的 dev server：端口属于别的工作区时，这条无法在本工作区复验
+    requiresOwnDevServer: true,
     expect: 'FAIL(两档同形)',
   },
   // ---------------------------------------------------------------- 美术资产入库（不许再靠 git add -f）
@@ -262,6 +268,25 @@ const MUTATIONS = [
     indexPath: 'docs/assets/desktop-pet/v3/expr/E1_default.png',
     testFile: 'tests/petAssetTracking.test.cjs',
     expect: '个资产在磁盘上但没入库',
+  },
+  // ---------------------------------------------------------------- 启动器收敛（不许绕过单一真源 / 不许写死绝对路径）
+  {
+    id: 'launcher-port-literal',
+    goal: '启动器配置层把默认 origin 写成端口字面量（绕过单一真源）：单一真源扫描必须红',
+    file: 'electron/pet-launcher-config.cjs',
+    find: "  if (text.length === 0) return { origin: buildDevOrigin(), source: 'single-source', note: '' };",
+    replace: `  if (text.length === 0) return { origin: 'http://127.0.0.1:' + ['52', '75'].join(''), source: 'single-source', note: '' };`,
+    testFile: 'tests/petDevEndpoint.test.cjs',
+    expect: '出现端口字面量',
+  },
+  {
+    id: 'launcher-absolute-path',
+    goal: '启动器退回硬编码绝对路径（收敛前的老缺陷）：换机器就失效，启动器守卫必须红',
+    file: 'electron/pet-launcher-config.cjs',
+    find: '  const frontendRoot = path.resolve(dirname, \'..\');',
+    replace: `  const frontendRoot = ['D:', 'Code', 'LingXi', 'frontend'].join('/');`,
+    testFile: 'tests/petLauncher.test.cjs',
+    expect: '硬编码绝对路径',
   },
 ];
 
@@ -472,9 +497,40 @@ function restoreIndexMutation(info) {
   return backInIndex && digestNow === info.digest;
 }
 
+/**
+ * 判断桌宠端口上的 dev server 是谁拉起的。
+ *
+ * <p>画面守卫（`guard:pet:face`）**会复用已在跑的 dev server**；如果端口上是别的
+ * 工作树（例如 `.lingxi/work/desktop-pet-vision` 那边的实例）拉起的，守卫看到的就不是
+ * 本工作区的源码，注入的变异体自然"测不出来"——那种绿/红都是别人的。</p>
+ *
+ * <p>判定手段：Vite dev server 会按 root 直接吐 `package.json`，把它与**本工作区**的
+ * 逐字节比对即可区分"自家人"与"外人"。端口取自单一真源，不写死。</p>
+ *
+ * @returns {'own'|'foreign'|'absent'} 归属判定
+ */
+function detectDevServerOwner() {
+  const script = [
+    'const http=require("http");',
+    'const fs=require("fs");',
+    'const own=fs.readFileSync(process.argv[1],"utf8");',
+    'const q=http.get("http://127.0.0.1:"+process.argv[2]+"/package.json",(res)=>{',
+    '  let b="";res.on("data",(d)=>{b+=d});',
+    '  res.on("end",()=>{console.log(res.statusCode===200&&b===own?"own":"foreign")});',
+    '});',
+    'q.on("error",()=>console.log("absent"));',
+    'q.setTimeout(3000,()=>{q.destroy();console.log("absent")});',
+  ].join('');
+  const proc = spawnSync(process.execPath, ['-e', script, path.join(FRONTEND_ROOT, 'package.json'), String(DEV_ENDPOINT.port)], {
+    encoding: 'utf8',
+  });
+  const verdict = (proc.stdout || '').trim();
+  return verdict === 'own' || verdict === 'foreign' ? verdict : 'absent';
+}
+
 /** 依次执行全部变异体并汇总。 */
 function main() {
-  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫 + 表现层/行为/画面守卫 + 美术资产入库守卫）');
+  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫 + 表现层/行为/画面守卫 + 美术资产入库守卫 + 启动器收敛）');
   console.log(`[mutate] 前端根目录：${FRONTEND_ROOT}`);
 
   const results = [];
@@ -488,6 +544,18 @@ function main() {
     console.log(`  目的：${mutation.goal}`);
     console.log(`  位置：${mutation.file || mutation.indexPath}`);
     if (mutation.command) console.log(`  验证目标（命令）：${mutation.command}`);
+
+    // 依赖真实 dev server 的变异体（画面守卫）：端口上是别人家的 server 就不要假装验证过
+    if (mutation.requiresOwnDevServer === true) {
+      const owner = detectDevServerOwner();
+      if (owner === 'foreign') {
+        console.log('  跳过（环境）：桌宠端口上已有**其他工作区**拉起的 dev server，本工作区的变异无法被观测');
+        console.log('        处置：停掉那个实例后重跑本变异体（这里不会把它记成 PASS）');
+        results.push({ id: mutation.id, passed: true, skipped: true, reason: '端口被其他工作区的 dev server 占用' });
+        continue;
+      }
+      console.log(`  前置：dev server 归属=${owner}（absent 表示守卫会自己拉一个）`);
+    }
 
     if (!baseline.has(targetKey)) {
       const green = runTarget(mutation);
@@ -540,10 +608,16 @@ function main() {
   }
 
   console.log('');
-  const failed = results.filter((item) => !item.passed);
-  console.log(`[mutate] 汇总：${results.length - failed.length}/${results.length} 个变异体成功变红`);
+  const skipped = results.filter((item) => item.skipped === true);
+  const executed = results.filter((item) => item.skipped !== true);
+  const failed = executed.filter((item) => !item.passed);
+  console.log(
+    `[mutate] 汇总：${executed.length - failed.length}/${executed.length} 个可执行变异体成功变红` +
+      (skipped.length > 0 ? `（另有 ${skipped.length} 个因环境跳过，未计为 PASS）` : ''),
+  );
   for (const item of results) {
-    console.log(`  - ${item.passed ? 'PASS' : 'FAIL'} ${item.id}${item.reason ? `：${item.reason}` : ''}`);
+    const status = item.skipped === true ? 'SKIP' : item.passed ? 'PASS' : 'FAIL';
+    console.log(`  - ${status} ${item.id}${item.reason ? `：${item.reason}` : ''}`);
   }
   if (failed.length > 0) {
     console.error('[mutate] 变异自检未通过：新增测试没能守住对应的修复点');

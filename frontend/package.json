@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "dev:pet": "vite --config vite.pet.config.ts",
+    "pet:dev": "node scripts/pet-dev-server.cjs --ensure --wait 30000 && electron electron/pet-launcher.cjs",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "gate:theme": "node scripts/check-theme-equivalence.mjs",
@@ -27,7 +28,7 @@
     "build:pet-face": "node scripts/build-pet-face-tiles.mjs",
     "test:pet:mutate": "node scripts/pet-dev-mutation-selfcheck.mjs",
     "guard:pet:face": "electron scripts/pet-face-visual-guard.cjs",
-    "test:pet": "node --test tests/petGeometry.test.cjs tests/petDevEndpoint.test.cjs tests/petDevProbe.test.cjs tests/petDevServer.test.cjs tests/petDevEntryUrl.test.cjs tests/petAssetManifest.test.cjs tests/petFeatureGate.test.cjs tests/petNotShipped.test.cjs tests/petAssetTracking.test.cjs && npx tsx --test tests/petLayout.test.ts tests/petPresentation.test.ts tests/petHitTester.test.ts tests/petMicroMotion.test.ts tests/petCrossfade.test.ts tests/petGesture.test.ts tests/petHintBar.test.ts tests/petBehavior.test.ts tests/petBehaviorTriggers.test.ts tests/petBlinkWink.test.ts tests/petLayerPlan.test.ts tests/petMotionCompiler.test.ts tests/petMotionHost.test.ts tests/petEffectMargin.test.ts tests/petLayeredPresentation.test.ts tests/petFaceLayer.test.ts tests/petPresentationSelector.test.ts tests/petLayerAssets.test.ts tests/petFaceTiles.test.ts",
+    "test:pet": "node --test tests/petGeometry.test.cjs tests/petDevEndpoint.test.cjs tests/petDevProbe.test.cjs tests/petDevServer.test.cjs tests/petDevEntryUrl.test.cjs tests/petAssetManifest.test.cjs tests/petFeatureGate.test.cjs tests/petNotShipped.test.cjs tests/petAssetTracking.test.cjs tests/petLauncher.test.cjs && npx tsx --test tests/petLayout.test.ts tests/petPresentation.test.ts tests/petHitTester.test.ts tests/petMicroMotion.test.ts tests/petCrossfade.test.ts tests/petGesture.test.ts tests/petHintBar.test.ts tests/petBehavior.test.ts tests/petBehaviorTriggers.test.ts tests/petBlinkWink.test.ts tests/petLayerPlan.test.ts tests/petMotionCompiler.test.ts tests/petMotionHost.test.ts tests/petEffectMargin.test.ts tests/petLayeredPresentation.test.ts tests/petFaceLayer.test.ts tests/petPresentationSelector.test.ts tests/petLayerAssets.test.ts tests/petFaceTiles.test.ts",
     "visual:baseline": "node scripts/visual/capture.mjs --mode baseline",
     "visual:check": "node scripts/visual/capture.mjs --mode check",
     "visual:components:baseline": "electron scripts/visual/component-scenes.cjs --mode baseline",
