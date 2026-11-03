@@ -9,7 +9,12 @@
  * 的落点，也是既有 204 条测试不需要改一个字的根本原因。</p>
  *
  * <p>`partial` / `layered` 模式下返回 {@link LayeredPresentation}，并把压平帧实现作为
- * `baseFallback` 传进去：表情帧是全画布合成图（P1 资产没有独立脸层），必须由它承载。</p>
+ * `baseFallback` 传进去。M1 起资产契约里有第 10 层 `face`（脸区子矩形贴片），
+ * 于是表情有两条路，**由计划可见性决定**（`LayeredPresentation.applyExpression`）：</p>
+ * <ul>
+ *   <li>`layered`（脸层在计划里）→ 只换脸层贴片，身体不动；</li>
+ *   <li>`partial` / `composite` / 缺脸层 → 回落压平帧（整帧换表情，失去部件微动，属<b>有意降级</b>）。</li>
+ * </ul>
  *
  * @module pet/presentation/select-presentation
  */
@@ -18,6 +23,7 @@ import type { MotionCatalog } from '../layers/motion-catalog';
 import { isLayered } from '../layers/plan';
 import type { CompositePlan, LayerManifest } from '../layers/types';
 import type { Power } from '../power-policy';
+import { faceTileUrls as faceTileUrlMap } from '../assets/face-tiles';
 import type { TimerPort } from './bus';
 import type { CrossfadeSpec } from './crossfade';
 import {
@@ -44,8 +50,16 @@ export interface SelectorDeps {
   readonly geometry: PetGeometry;
   /** 动作目录。 */
   readonly catalog: MotionCatalog;
-  /** 表情帧 URL 表。 */
+  /** 表情帧 URL 表（整画布合成图，喂给压平帧实现）。 */
   readonly expressionUrls: ExpressionUrlMap;
+  /**
+   * 脸层贴片 URL 表（`assets/face-tiles.ts` 的 `faceTileUrls()`）。
+   *
+   * <p>缺省按计划密度从生成物 `pet-face-tiles.json` 取——注入点是 `main.ts`，
+   * 但默认值必须是"真数据"而不是空表：空表会让 `layered` 模式下的表情全部走降级日志，
+   * 而调用方（以及将来的 `?debug=1` 手测）根本看不出来。</p>
+   */
+  readonly faceTileUrls?: Partial<Record<ExpressionId, string>>;
   /** 层清单（`LayeredPresentation` 解析 `assetBase` 用）。 */
   readonly manifest: LayerManifest;
   /** 交叉过渡配置。 */
@@ -108,7 +122,8 @@ export function selectPresentationWithPlan(plan: CompositePlan, deps: SelectorDe
     return { presentation: sprite, mode: plan.mode, views: new Map<string, LayerView>() };
   }
   const host = deps.layerHost ?? deps.root;
-  const views = mountLayerViews(deps.doc, host, plan);
+  // 层元素挂载时就把画布交给它：子矩形层（脸层）的百分比放置要按真实画布算
+  const views = mountLayerViews(deps.doc, host, plan, deps.manifest.canvas);
   const layered = new LayeredPresentation({
     doc: deps.doc,
     root: deps.root,
@@ -118,6 +133,8 @@ export function selectPresentationWithPlan(plan: CompositePlan, deps: SelectorDe
     plan,
     baseFallback: sprite,
     expressionUrls: deps.expressionUrls,
+    // 表情走贴片还是走整帧，数据在这里注入；缺省取生成物（与生产一致）
+    faceTileUrls: deps.faceTileUrls ?? faceTileUrlMap(plan.density),
     crossfade: deps.crossfade,
     timer: deps.timer,
     power: deps.power,

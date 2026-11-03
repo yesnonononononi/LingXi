@@ -27,6 +27,7 @@ import {
 import type { PetDebugHandle } from './debug/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
+import { faceTileUrls as faceTileUrlMap } from './assets/face-tiles';
 import { loadArt } from './assets/loader';
 import { MOTION_CATALOG } from './layers/motion-catalog';
 import { PET_LAYERS, applyLayersQueryOverride, pickLayerDensity, requestedLayerIds } from './layers/manifest';
@@ -69,9 +70,10 @@ const DENSITY: '1x' | '2x' = (typeof window !== 'undefined' && window.devicePixe
 /**
  * 本次运行的层清单（已被 `?layers=1` / `?layers=0` 覆写，排障与回归手测用）。
  *
- * <p>默认值来自 `frontend/pet-layers.json` 的 `enabled`，M6 之前它是 `false`：于是
- * {@link resolveCompositePlan} 必然返回 `composite`，渲染路径与分层之前**逐字节等价**。
- * 这也是"零风险前半程"的落点——代码可以先合，开闸留给资产到货之后。</p>
+ * <p>默认值来自 `frontend/pet-layers.json` 的 `enabled`。M1 起它是 `true`（P1 十层齐了，
+ * 含第 10 层 `face`），于是 {@link resolveCompositePlan} 在资产齐备时选 `layered`：
+ * 脸层换贴片、身体层微动。任一必需层缺文件/解码失败都会整条链回落 `composite`（压平帧），
+ * 表情仍然可见——那是有意降级，不是缺陷。</p>
  */
 const LAYER_MANIFEST = applyLayersQueryOverride(PET_LAYERS, window.location.search);
 
@@ -862,6 +864,9 @@ function createPresentation(): void {
     geometry: PET_GEOMETRY,
     catalog: MOTION_CATALOG,
     expressionUrls: EXPRESSION_URLS,
+    // 脸层贴片（`pet-face-tiles.json` 的生成物视图）：layered 下表情走这里，只换脸不动身体。
+    // 与上面的整帧表是两套数据，别混——整帧 URL 塞进子矩形层会被 object-fit:fill 压扁。
+    faceTileUrls: faceTileUrlMap(LAYER_DENSITY),
     manifest: LAYER_MANIFEST,
     // 交叉过渡：时长/缓动只有一个来源（crossfade.ts 的常量），CSS 通过变量消费
     crossfade: { durationMs: DEFAULT_CROSSFADE_MS, easing: DEFAULT_CROSSFADE_EASING },

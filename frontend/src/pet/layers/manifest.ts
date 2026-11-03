@@ -57,6 +57,17 @@ export const SUPPORTED_BLENDS: readonly string[] = ['normal', 'multiply', 'scree
 export const SUPPORTED_ROLES: readonly string[] = ['animatable', 'support'];
 
 /**
+ * 表情承载层的层 id（**单一真源**）。
+ *
+ * <p>M1 起资产契约里有第 10 层 `face`（`z = 32`、`rect` = 脸区子矩形）。这个 id 会被
+ * 三处读到：渲染层（`presentation/layered-presentation.ts` 判可见性）、
+ * 命中分类（`behavior/hit-profile.ts` 读它的 `rect`）、构建脚本
+ * （`scripts/build-pet-face-tiles.mjs` 回填 `face.files`）。写在这里而不是散在渲染层，
+ * 是因为**渲染层依赖数据层、数据层不依赖渲染层**——反过来会造成循环导入。</p>
+ */
+export const FACE_LAYER_ID = 'face';
+
+/**
  * 关闸兜底清单：清单读坏时用它顶上。
  *
  * <p>宁可"分层不生效"（等于今天的行为），也不要因为一个手改坏的 JSON 让桌宠白屏。</p>
@@ -427,6 +438,20 @@ export function layersSorted(manifest: LayerManifest = PET_LAYERS): readonly Lay
  */
 export function findLayer(layerId: string, manifest: LayerManifest = PET_LAYERS): LayerSpec | null {
   return manifest.layers.find((layer) => layer.layerId === layerId) ?? null;
+}
+
+/**
+ * 取脸层契约（表情承载层，`z = 32`）。
+ *
+ * <p>返回 `null` 表示这份清单里没有脸层（旧包 / 关闸清单）：此时
+ * `layers/plan.ts` 会让整条链路回落 `composite`（压平帧），表情仍然可见，
+ * 只是失去部件微动。**不要**在调用方另写 `'face'` 字面量。</p>
+ *
+ * @param manifest 层清单
+ * @returns 脸层契约；没有则 null
+ */
+export function faceLayer(manifest: LayerManifest = PET_LAYERS): LayerSpec | null {
+  return findLayer(FACE_LAYER_ID, manifest);
 }
 
 /**

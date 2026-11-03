@@ -14,7 +14,7 @@
  *   <tr><td>priority 相同</td><td>覆盖（后到优先，连点手感要求）</td></tr>
  *   <tr><td>priority 更低且活动剩余 &gt; 120ms</td><td>拒绝</td></tr>
  *   <tr><td>priority 更低且活动剩余 ≤ 120ms</td><td>排队到到期后应用</td></tr>
- *   <tr><td>睡眠中来 blink</td><td>抑制（不排队）</td></tr>
+ *   <tr><td>睡眠中来 blink / blinkHalf / wink</td><td>抑制（不排队）</td></tr>
  *   <tr><td>拖拽中来 ambient</td><td>抑制</td></tr>
  *   <tr><td>同一 op（kind+id）80ms 内重复（仅表现请求）</td><td>合并丢弃</td></tr>
  * </table>
@@ -33,13 +33,37 @@
  *
  * @module pet/presentation/priority
  */
-import type { LayerId, MotionId, Priority, PresentationOp } from './types';
+import type { ExpressionId, LayerId, MotionId, Priority, PresentationOp } from './types';
 
 /** 低优先级指令被"锁住"的剩余时间阈值（毫秒）：活动指令剩余不超过它就排队而不是丢弃。 */
 export const INTERRUPT_LOCK_MS = 120;
 
 /** 同一 op 的连点合并窗口（毫秒）。 */
 export const DUPLICATE_MERGE_MS = 80;
+
+/**
+ * "眨眼类"表情（**单一真源**）：生理闭合 / 生理半闭 / 情绪 wink。
+ *
+ * <p>三件事共用这一份集合，谁也不许再各写一个 `id === 'blink'`：</p>
+ * <ol>
+ *   <li><b>睡眠中全部抑制</b>（本文件的判定规则表第 2 行）——睡着的人不会眨眼，也不会 wink；</li>
+ *   <li><b>切换时禁止交叉过渡</b>（`layered-presentation.ts` 的 `resolveExpressionFadeMs`）：
+ *       80–100ms 的闭眼窗口里叠 100ms 淡入等于全程半透明，看着像"眨眼没眨完"；</li>
+ *   <li><b>三者永不互相顶替</b>：`blink` 双眼闭合、`blinkHalf` 半闭且嘴型中性、`wink` 单眼闭合，
+ *       语义不同就不能拿对方的资产顶上（设计文档 §5.2 第 1 条）。</li>
+ * </ol>
+ */
+export const BLINK_LIKE_EXPRESSIONS: readonly ExpressionId[] = ['blink', 'blinkHalf', 'wink'];
+
+/**
+ * 判断某个 id 是否属于"眨眼类"表情。
+ *
+ * @param id 待判断 id（来自指令，可能是任意字符串）
+ * @returns 是否属于眨眼类
+ */
+export function isBlinkLikeExpression(id: unknown): boolean {
+  return typeof id === 'string' && (BLINK_LIKE_EXPRESSIONS as readonly string[]).includes(id);
+}
 
 /** 当前活动指令的快照（由调度器维护）。 */
 export interface ActiveOpState {
@@ -107,8 +131,9 @@ export function interruptDecision(query: InterruptQuery): InterruptDecision {
     if (elapsed >= 0 && elapsed < DUPLICATE_MERGE_MS) return 'reject';
   }
 
-  // 2) 睡觉不该眨眼：blink 是 ambient 性质的"生理动作"，睡眠时抑制且不排队
-  if (query.sleeping === true && op.kind === 'expression' && op.id === 'blink') return 'reject';
+  // 2) 睡觉不该眨眼：blink / blinkHalf / wink 都是 ambient 性质的"生理或社交小动作"，
+  //    睡眠时一律抑制且不排队（集合真源是 BLINK_LIKE_EXPRESSIONS，别在这里再写 id 字面量）
+  if (query.sleeping === true && op.kind === 'expression' && isBlinkLikeExpression(op.id)) return 'reject';
 
   // 3) 拖拽优先：drag 期间任何 ambient 指令都不该插进来
   if (query.activeMotion === 'drag' && op.layer === 'ambient') return 'reject';
@@ -155,7 +180,7 @@ export function suppressionReason(query: InterruptQuery): string | null {
   const op = query.incoming;
   const last = query.lastApplied;
   if (op.force !== true && last && last.slot === `${op.layer}:${op.kind}` && last.id === String(op.id)) return 'duplicate-within-80ms';
-  if (query.sleeping === true && op.kind === 'expression' && op.id === 'blink') return 'sleeping-no-blink';
+  if (query.sleeping === true && op.kind === 'expression' && isBlinkLikeExpression(op.id)) return 'sleeping-no-blink';
   if (query.activeMotion === 'drag' && op.layer === 'ambient') return 'drag-blocks-ambient';
   return decision === 'queue' ? 'queued-until-active-expires' : 'lower-priority-locked';
 }

@@ -16,9 +16,11 @@
 import type { Power } from '../power-policy';
 import { compileMotion } from '../layers/motion-compiler';
 import type { MotionCatalog } from '../layers/motion-catalog';
-import { animatableLayerIds, layerAssetUrl } from '../layers/manifest';
-import type { CompositePlan, LayerManifest, LayerSpec } from '../layers/types';
+import { FACE_LAYER_ID, animatableLayerIds, layerAssetUrl } from '../layers/manifest';
+import type { CompositePlan, LayerManifest, LayerRect, LayerSpec, Size } from '../layers/types';
 import { DEFAULT_TIMER_PORT, type TimerPort } from './bus';
+import { faceTileUrls as faceTileUrlMap } from '../assets/face-tiles';
+import { BLINK_LIKE_EXPRESSIONS } from './priority';
 import {
   CROSSFADE_CSS_VARIABLES,
   resolveCrossfade,
@@ -68,8 +70,161 @@ export interface DocumentLike {
   createElement(tagName: string): ElementLike;
 }
 
-/** 表情承载层 id：目前 P1 资产没有独立脸部层，故缺省走整帧（见 {@link LayeredPresentation}）。 */
-export const FACE_LAYER_ID = 'face';
+/**
+ * 表情承载层 id（本模块只做**转出**，真源在 `layers/manifest.ts`）。
+ *
+ * <p>为什么不在渲染层自己定义：`behavior/hit-profile.ts` 也要读这一层的 `rect`，
+ * 而它不能 import 渲染层（会形成 `behavior → presentation → assets → behavior` 的环）。
+ * 所以 id 归数据层，渲染层 `export { … }` 转出，既有 import 点一行不用改。</p>
+ */
+export { FACE_LAYER_ID };
+
+/**
+ * 子矩形层的四个放置变量名（与 `pet.css` 的 `[data-placement='rect']` 一一对应）。
+ *
+ * <p>只有**声明了子矩形**的层会写这四个变量；整画布层（既有 9 层）一个字节都不写，
+ * 于是它们的 DOM 写入面与 M1 之前完全一致（可回归性优先）。</p>
+ */
+export const RECT_PLACEMENT_VARIABLES = {
+  /** 左边界（容器宽度百分比）。 */
+  left: '--pet-layer-left',
+  /** 上边界（容器高度百分比）。 */
+  top: '--pet-layer-top',
+  /** 宽度（容器宽度百分比）。 */
+  width: '--pet-layer-width',
+  /** 高度（容器高度百分比）。 */
+  height: '--pet-layer-height',
+} as const;
+
+/** 一个子矩形层的四个百分比取值。 */
+export type RectPlacement = Readonly<Record<keyof typeof RECT_PLACEMENT_VARIABLES, string>>;
+
+/** 判定矩形"等于整画布"时允许的误差（像素；JSON 里都是整数，留余量只为防脏数据）。 */
+const RECT_EPSILON = 1e-6;
+
+/**
+ * 判断一个层矩形是否就是整张画布。
+ *
+ * <p>整画布层是 M1 之前的唯一形态（每层一张 2048×3072 的图），它们**不参与**子矩形放置：
+ * 写了 `inset:auto` + 百分比反而会把 `object-fit: contain` 换成 `fill`，画面会变形。</p>
+ *
+ * @param rect 层矩形（母版像素）
+ * @param canvas 画布尺寸（母版像素）
+ * @returns `true` = 整画布（不写放置变量）
+ */
+export function isFullCanvasRect(rect: LayerRect | undefined, canvas: Size | undefined): boolean {
+  if (!rect || !canvas) return true;
+  if (!(canvas.width > 0) || !(canvas.height > 0)) return true;
+  return (
+    Math.abs(rect.x) <= RECT_EPSILON &&
+    Math.abs(rect.y) <= RECT_EPSILON &&
+    Math.abs(rect.width - canvas.width) <= RECT_EPSILON &&
+    Math.abs(rect.height - canvas.height) <= RECT_EPSILON
+  );
+}
+
+/**
+ * 把层矩形换算成四个百分比（相对画布）。
+ *
+ * <p>用百分比而不是 px：窗口尺寸与 DPR 变化时层栈整体缩放，百分比会自动跟随，
+ * 不需要任何 JS 重算（也就不需要 resize 监听）。</p>
+ *
+ * @param value 偏移或尺寸（母版像素）
+ * @param total 画布对应边长（母版像素）
+ * @returns 形如 `27.34375%`
+ */
+function percentOf(value: number, total: number): string {
+  const ratio = Number.isFinite(value) && Number.isFinite(total) && total > 0 ? value / total : 0;
+  return `${Number((ratio * 100).toFixed(6))}%`;
+}
+
+/**
+ * 计算子矩形层的放置数值。
+ *
+ * @param rect 层矩形（母版像素）
+ * @param canvas 画布尺寸（母版像素）
+ * @returns 四个百分比；整画布 / 脏数据时返回 null（**null = 不写任何放置属性**）
+ */
+export function rectPlacementOf(rect: LayerRect | undefined, canvas: Size | undefined): RectPlacement | null {
+  if (!rect || !canvas) return null;
+  if (!(rect.width > 0) || !(rect.height > 0)) return null;
+  if (isFullCanvasRect(rect, canvas)) return null;
+  return {
+    left: percentOf(rect.x, canvas.width),
+    top: percentOf(rect.y, canvas.height),
+    width: percentOf(rect.width, canvas.width),
+    height: percentOf(rect.height, canvas.height),
+  };
+}
+
+/**
+ * 从合成计划推断画布尺寸（**只在调用方没给画布时兜底**）。
+ *
+ * <p>整画布层本身就是画布：取计划里所有层矩形的最大宽高即为画布。
+ * 正式路径（`select-presentation.ts` / `applyPlan`）一律用清单里的 `manifest.canvas`，
+ * 这条兜底只服务"直接手搓 plan 的老调用点"。</p>
+ *
+ * @param plan 合成计划
+ * @returns 推断的画布尺寸（推断不出时退回 2048×3072，与 P1 母版同值）
+ */
+export function inferPlanCanvas(plan: CompositePlan): Size {
+  let width = 0;
+  let height = 0;
+  for (const item of plan.layers) {
+    width = Math.max(width, item.spec.rect?.width ?? 0);
+    height = Math.max(height, item.spec.rect?.height ?? 0);
+  }
+  return { width: width > 0 ? width : 2048, height: height > 0 ? height : 3072 };
+}
+
+/**
+ * 把放置数值写到层元素上（`data-placement='rect'` + 四个 CSS 变量）。
+ *
+ * @param element 层元素
+ * @param placement 放置数值
+ */
+export function applyRectPlacement(element: ElementLike, placement: RectPlacement): void {
+  element.dataset.placement = 'rect';
+  element.style.setProperty(RECT_PLACEMENT_VARIABLES.left, placement.left);
+  element.style.setProperty(RECT_PLACEMENT_VARIABLES.top, placement.top);
+  element.style.setProperty(RECT_PLACEMENT_VARIABLES.width, placement.width);
+  element.style.setProperty(RECT_PLACEMENT_VARIABLES.height, placement.height);
+}
+
+/**
+ * 某个表情是否是"生理眨眼类"（`blink` / `blinkHalf` / `wink`）。
+ *
+ * <p>这三档切换时**禁止交叉过渡**：闭眼窗口只有 80–100ms，再叠 100ms 淡入
+ * 等于全程半透明，用户看到的不是"眨了一下"而是"眼睛糊了一下"。
+ * 判定真源在 `priority.ts` 的 {@link BLINK_LIKE_EXPRESSIONS}（窗口抑制眨眼也用同一份）。</p>
+ *
+ * @param id 表情 id
+ * @returns `true` = 切换时必须硬切
+ */
+export function isBlinkLikeExpression(id: ExpressionId): boolean {
+  return (BLINK_LIKE_EXPRESSIONS as readonly string[]).includes(id);
+}
+
+/**
+ * 解析一次表情切换实际使用的过渡时长（毫秒）。
+ *
+ * <p>规则只有两条，且顺序有意义：</p>
+ * <ol>
+ *   <li>眨眼类是**硬切**（0ms）——即使调用方传了 `fadeMs` 也不许覆盖；</li>
+ *   <li>其余按 `op.fadeMs` 走，缺省回落交叉过渡的默认时长（100ms）。</li>
+ * </ol>
+ *
+ * @param id 表情 id
+ * @param op 表情指令（读它的 `fadeMs`）
+ * @param defaultMs 缺省时长（毫秒）
+ * @returns 实际过渡时长（毫秒，非负）
+ */
+export function resolveExpressionFadeMs(id: ExpressionId, op: PresentationOp, defaultMs: number): number {
+  if (isBlinkLikeExpression(id)) return 0;
+  const raw = op.fadeMs;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, raw);
+  return Math.max(0, defaultMs);
+}
 
 /** 分层模式的根选择器（编译出的 CSS 规则挂在它下面）。 */
 export const LAYER_SELECTOR_ROOT = '#pet-root';
@@ -112,8 +267,21 @@ export interface LayeredPresentationDeps {
   readonly plan: CompositePlan;
   /** 压平帧兜底实现（表情与降级基线的唯一承载者，`partial` 模式必需）。 */
   readonly baseFallback: PetPresentation | null;
-  /** 表情帧 URL 表（有 `face` 层时才用得上）。 */
+  /**
+   * 表情帧 URL 表（整画布合成图，**只喂给压平帧兜底**）。
+   *
+   * <p>它与 {@link LayeredPresentationDeps.faceTileUrls} 是两套数据，不要混：
+   * 整帧 URL 塞进子矩形层会被 `object-fit: fill` 压扁成一条（设计文档 §3.2 的变异体 M5）。</p>
+   */
   readonly expressionUrls: ExpressionUrlMap;
+  /**
+   * 脸层贴片 URL 表（`assets/face-tiles.ts` 的 `faceTileUrls()`，只含**已交付**的表情）。
+   *
+   * <p>缺省按 `plan.density` 从生成物 `pet-face-tiles.json` 取——这样"忘记注入"不会
+   * 变成"表情看不见"，而只是拿到与生产一致的数据。`degraded`（美术母版未交付）的 id
+   * 不在表里，此时**保持当前贴片并记日志**，绝不拿别的表情顶替（`wink` ≠ `blink`）。</p>
+   */
+  readonly faceTileUrls?: Partial<Record<ExpressionId, string>>;
   /** 交叉过渡配置（复用 `crossfade.ts` 的钳制规则，不重写）。 */
   readonly crossfade?: CrossfadeSpec;
   /** 定时器端口（旧帧退场用）。 */
@@ -177,6 +345,22 @@ export class LayeredPresentation implements PetPresentation {
   private motionSeq = 0;
 
   /**
+   * 本次计划里**可见**的层 id（`applyPlan` 维护）。
+   *
+   * <p><b>为什么表情分支必须看它，而不是看 `views` 里有没有 face 元素：</b>
+   * `partial` 模式下所有层元素都已挂载（`views` 里恒有 `face`），但 `face` 可能不在本次
+   * 计划里（`hidden = true`）。只看"元素存在"就会把 `src` 写进一个隐藏元素并 `return`，
+   * 于是**既不换脸也不回落压平帧**，表情又变没了（设计文档 §3.2(b) 记录的真实漏洞）。</p>
+   */
+  private visibleLayerIds: ReadonlySet<string> = new Set<string>();
+
+  /** 脸层贴片 URL 表（构造时解析一次；缺省取生成物）。 */
+  private readonly faceTiles: Partial<Record<ExpressionId, string>>;
+
+  /** 已经预解码过的贴片 URL（`prepare()` 去重用，避免同一张反复建 img）。 */
+  private readonly preloadedTiles: Set<string> = new Set<string>();
+
+  /**
    * 构造分层表现层。
    *
    * @param deps 依赖
@@ -187,6 +371,7 @@ export class LayeredPresentation implements PetPresentation {
     this.crossfade = resolveCrossfade(deps.crossfade ?? {});
     this.timer = deps.timer ?? DEFAULT_TIMER_PORT;
     this.log = deps.log ?? (() => {});
+    this.faceTiles = deps.faceTileUrls ?? faceTileUrlMap(deps.plan.density);
     this.applyPlan(deps.plan);
   }
 
@@ -210,6 +395,8 @@ export class LayeredPresentation implements PetPresentation {
     this.deps.root.style.setProperty(CROSSFADE_CSS_VARIABLES.easing, this.crossfade.easing);
 
     const visible = new Set(plan.layers.map((item) => item.spec.layerId));
+    // 可见性是"表情走贴片还是回落整帧"的唯一判据（见 visibleLayerIds 的注释）
+    this.visibleLayerIds = visible;
     for (const [layerId, view] of this.views) {
       const isVisible = visible.has(layerId);
       view.element.hidden = !isVisible;
@@ -220,6 +407,9 @@ export class LayeredPresentation implements PetPresentation {
       view.element.style.setProperty('z-index', String(view.spec.z));
       view.element.style.setProperty('opacity', String(view.spec.opacity));
       view.element.style.setProperty('transform-origin', `${view.spec.pivot.u * 100}% ${view.spec.pivot.v * 100}%`);
+      // 子矩形层（脸层）额外写四个百分比；整画布层这一段整体不执行，DOM 写入面零变化
+      const placement = rectPlacementOf(view.spec.rect, this.deps.manifest.canvas);
+      if (placement) applyRectPlacement(view.element, placement);
       const file = view.spec.files[plan.density];
       if (file) {
         const url = file.url || layerAssetUrl(file.file, this.deps.manifest);
@@ -250,25 +440,45 @@ export class LayeredPresentation implements PetPresentation {
   }
 
   /**
-   * 预准备：把表情帧提前解码（层文件由浏览器自身缓存，无需额外预取）。
+   * 预准备：把表情贴片提前解码（层文件由浏览器自身缓存，无需额外预取）。
+   *
+   * <p>分支口径与 {@link LayeredPresentation} 的 `applyExpression` **完全一致**：
+   * 脸层可见 → 预解码脸贴片；脸层不可见 → 把预准备交给压平帧兜底。
+   * 两处口径一旦分叉，就会出现"预解码了整帧、真正应用时走的却是贴片"的白闪。</p>
    *
    * @param next 即将应用的指令
    * @returns 完成后 resolve（永不 reject：缺帧只记日志）
    */
   async prepare(next: PresentationOp): Promise<void> {
     if (this.disposed) return;
-    const base = this.deps.baseFallback;
-    if (!base) return;
-    // 没有 face 层时表情由整帧兜底，预解码也交给它
-    if (next.kind === 'expression' && !this.hasFaceLayer()) {
-      await base.prepare(next);
-      return;
-    }
     if (next.kind === 'motion') {
       // 动作本身不需要预解码：层图已在 `applyPlan` 里设好 src
       return;
     }
+    if (next.kind === 'expression' && this.hasFaceLayer()) {
+      const tile = this.faceTiles[next.id as ExpressionId];
+      if (tile) this.preloadTile(tile);
+      return;
+    }
+    const base = this.deps.baseFallback;
+    if (!base) return;
     await base.prepare(next);
+  }
+
+  /**
+   * 预解码一张脸贴片：建一个不挂到文档上的 `<img>` 并设 `src`。
+   *
+   * <p>浏览器在 `src` 赋值时就开始下载/解码，元素不入 DOM 也会进图片缓存，
+   * 于是紧接着的 `<img>.src` 切换不会有空白档。同一 URL 只做一次。</p>
+   *
+   * @param url 贴片 URL
+   */
+  private preloadTile(url: string): void {
+    if (!url || this.preloadedTiles.has(url)) return;
+    this.preloadedTiles.add(url);
+    const image = this.deps.doc.createElement('img');
+    image.setAttribute('decoding', 'async');
+    image.src = url;
   }
 
   /** 释放：撤掉注入的样式与临时属性（DOM 节点由 `main.ts` 决定去留）。 */
@@ -321,7 +531,14 @@ export class LayeredPresentation implements PetPresentation {
   }
 
   /**
-   * 切表情：有 `face` 层只换脸层，没有则整帧兜底。
+   * 切表情：**脸层可见**时只换脸层贴片，否则回落压平帧。
+   *
+   * <p><b>分支判据是"计划可见性"而不是"元素是否存在"：</b>元素永远都挂在那儿
+   * （`partial` 模式下 10 个 `<img>` 全在），只有 `applyPlan` 里那份 `visibleLayerIds`
+   * 才说明"这一层这次真的在场"。按存在性判会出现"写进隐藏元素 + 不回落到整帧"的漏洞。</p>
+   *
+   * <p><b>过渡：</b>时长写在**脸层元素**的 `--pet-crossfade-ms` 上（`pet.css` 的
+   * `[data-fading='in']` 读它）。根上的那份是全局节奏，不能被眨眼改掉——眨眼类一律 0ms 硬切。</p>
    *
    * @param op 表情指令
    */
@@ -329,24 +546,43 @@ export class LayeredPresentation implements PetPresentation {
     const id = op.id as ExpressionId;
     this.current = { ...this.current, expression: id };
     this.deps.root.dataset.expression = id;
+
+    const faceVisible = this.hasFaceLayer();
     const face = this.views.get(FACE_LAYER_ID);
-    const url = this.deps.expressionUrls[id];
-    if (face && url) {
-      // P1 之后补了独立脸层时走这里：只换脸，前景层（呆毛/蝴蝶结）不动。
-      // 过渡靠 CSS 变量（`.pet-layer[data-fading]` 读 --pet-crossfade-*），
-      // 淡入结束后撤掉临时标记，避免它与下一次淡入叠加。
+    if (faceVisible && face) {
+      const tileUrl = this.faceTiles[id];
+      if (!tileUrl) {
+        // 降级：脸层在场但这档贴片未交付（`pet-face-tiles.json` 的 `degraded`）。
+        // 两条底线：① 不把整帧 URL 塞进子矩形层（object-fit:fill 会压扁成一条）；
+        // ② 不拿别的表情顶替（wink ≠ blink，会变成语义谎言）。保持当前贴片，只记日志。
+        this.log(`[pet] 表情 ${id} 没有脸贴片（degraded），保持当前贴片不动`);
+        return;
+      }
+      const fadeMs = resolveExpressionFadeMs(id, op, this.crossfade.durationMs);
+      // 过渡时长写在层元素上：根上的 --pet-crossfade-ms 是全局节奏，不因眨眼被覆盖
+      face.element.style.setProperty(CROSSFADE_CSS_VARIABLES.duration, `${fadeMs}ms`);
       face.element.dataset.expression = id;
-      if (face.element.getAttribute('src') !== url) face.element.src = url;
-      face.element.dataset.fading = 'in';
-      this.timer.setTimeout(() => {
-        if (this.disposed) return;
+      const changed = face.element.getAttribute('src') !== tileUrl;
+      if (changed) {
+        face.element.setAttribute('src', tileUrl);
+        face.element.src = tileUrl;
+      }
+      if (fadeMs > 0 && changed) {
+        // 先挂标记再交给 CSS 播 `pet-face-in`；到点撤掉，避免与下一次淡入叠加
+        face.element.dataset.fading = 'in';
+        this.timer.setTimeout(() => {
+          if (this.disposed) return;
+          delete face.element.dataset.fading;
+        }, fadeMs);
+      } else {
         delete face.element.dataset.fading;
-      }, this.crossfade.durationMs);
+      }
       return;
     }
+
     const base = this.deps.baseFallback;
     if (!base) {
-      this.log(`[pet] 没有 face 层也没有整帧兜底，表情 ${id} 只改状态不改画面`);
+      this.log(`[pet] 没有可见 face 层也没有整帧兜底，表情 ${id} 只改状态不改画面`);
       return;
     }
     base.apply(op);
@@ -411,12 +647,12 @@ export class LayeredPresentation implements PetPresentation {
   }
 
   /**
-   * 当前清单里是否有独立脸层。
+   * 当前计划里是否有**可见**的独立脸层（不是"元素在不在"）。
    *
-   * @returns 有则为 true
+   * @returns 计划里含 `face` 层则为 true
    */
   private hasFaceLayer(): boolean {
-    return this.views.has(FACE_LAYER_ID);
+    return this.visibleLayerIds.has(FACE_LAYER_ID);
   }
 
   /**
@@ -459,20 +695,28 @@ export function drivenVariableName(param: DrivenParam): string {
  * <p>层顺序按 `z` 升序 append，但真正的叠放仍由 `z-index` 决定——DOM 顺序只是让
  * 无 `z-index` 的兜底场景也是对的。</p>
  *
+ * <p><b>子矩形层（脸层）在这里就写放置数值</b>：它与 `applyPlan()` 写的是同一组值，
+ * 挂载即可见，不会出现"挂上去先按整画布 contain 错位一下、下一帧才对"的闪动。
+ * 整画布层（既有 9 层）**一个字节都不写**——`rectPlacementOf` 对整画布返回 null，
+ * 于是它们的 DOM 写入面与 M1 之前完全一致。</p>
+ *
  * @param doc 文档
  * @param host 宿主（`#pet-root .pet-art`）
  * @param plan 合成计划
+ * @param canvas 画布尺寸（缺省从计划里推断：整画布层的矩形就是画布）
  * @returns 层视图表
  */
 export function mountLayerViews(
   doc: DocumentLike,
   host: ElementLike,
   plan: CompositePlan,
+  canvas?: Size,
 ): ReadonlyMap<string, LayerView> {
   const container = doc.createElement('div');
   container.setAttribute('class', 'pet-layers');
   container.dataset.compositeMode = plan.mode;
   host.appendChild(container);
+  const canvasSize = canvas ?? inferPlanCanvas(plan);
   const views = new Map<string, LayerView>();
   for (const item of plan.layers) {
     const element = doc.createElement('img');
@@ -483,6 +727,9 @@ export function mountLayerViews(
     element.style.setProperty('z-index', String(item.spec.z));
     element.style.setProperty('opacity', String(item.spec.opacity));
     element.style.setProperty('transform-origin', `${item.spec.pivot.u * 100}% ${item.spec.pivot.v * 100}%`);
+    // 只有子矩形层写放置数值；整画布层（既有 9 层）不写任何放置属性
+    const placement = rectPlacementOf(item.spec.rect, canvasSize);
+    if (placement) applyRectPlacement(element, placement);
     container.appendChild(element);
     views.set(item.spec.layerId, { spec: item.spec, element });
   }

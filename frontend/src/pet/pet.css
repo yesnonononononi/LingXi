@@ -709,6 +709,46 @@ body {
   transition: opacity var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, ease-out);
 }
 
+/**
+ * 子矩形层（M1 起只有 `face` 一层）：按契约里的 `rect` 摆到画布对应位置。
+ *
+ * <p>四个百分比由 `layered-presentation.ts` 写入（`rect.x / canvas.width * 100` 等），
+ * **只有子矩形层会带 `data-placement='rect'`**；其余 9 层是整画布图，
+ * 一个字都不写，仍走上一条 `inset:0` + `contain` 的规则（DOM 写入面零变化）。</p>
+ *
+ * <p>`object-fit: fill` 是必须的：百分比已经是精确的画布比例，再 `contain` 会二次缩放——
+ * 贴片会被等比缩到框里，脸就偏了。变异体 M5（把整帧 URL 塞进这一层）正是靠它露馅的。</p>
+ */
+.pet-layer[data-placement='rect'] {
+  inset: auto;
+  object-fit: fill;
+  left: var(--pet-layer-left);
+  top: var(--pet-layer-top);
+  width: var(--pet-layer-width);
+  height: var(--pet-layer-height);
+}
+
+/**
+ * 表情淡入（`data-fading='in'`）。
+ *
+ * <p>此前这个标记在层上没有任何对应规则，等于没写——表情是硬切的。现在补上真正生效的
+ * 进场动画，时长读 `--pet-crossfade-ms`：根上的值由 `crossfade.ts` 注入（100ms），
+ * 脸层元素上那份由 `applyExpression` 按本次指令覆盖（眨眼类 = `0ms`，即硬切）。</p>
+ */
+.pet-layer[data-fading='in'] {
+  animation: pet-face-in var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, ease-out) both;
+}
+
+@keyframes pet-face-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 /* 支撑层（底绘 / 身体遮挡 / 前景遮挡）只参与合成，永不接受动画：
    转一下遮挡片就会露出补绘缝，比穿模更难察觉。 */
 .pet-layer[data-role='support'] {
@@ -746,9 +786,14 @@ body {
  * 所以 layered 下 tap/angry/wake/drag 的整身位移照常可见。
  * 反过来说：任何"动作/表情动画"都不许再挂回 `.pet-art-frame`——
  * 一旦挂回去就等于挂在一个 `opacity: 0` 的元素上，用户什么也看不见
- * （`tests/petMotionHost.test.ts` 有守卫）。表情的**面部**变化在 layered 下依然不可见，
- * 原因是 P1 资产没有 `face` 层（见 `layers/manifest.ts` 的已知限制说明），
- * 与本条规则无关，也不是本轮要修的东西。</p>
+ * （`tests/petMotionHost.test.ts` 有守卫）。</p>
+ *
+ * <p><b>表情在 layered 下由谁承载（M1 反转了旧结论）：</b>以前这里写着"P1 资产没有
+ * `face` 层，所以表情在 layered 下必然不可见，这不是本轮要修的"。M1「可见表情闭环」
+ * 已经补了第 10 层 `face`（`z=32`、脸区子矩形贴片，见 `layers/manifest.ts` 与设计文档 §3），
+ * 于是 layered 下表情**是可见的**：脸层换贴片、身体层继续微动。
+ * 只有缺脸层（旧包 / 资产未交付 / 解码失败）时才会整条链回落到 `composite`，
+ * 由压平帧承载表情——那时本规则不生效，整帧本来就是可见的。</p>
  */
 #pet-root[data-composite-mode='layered'] .pet-art-frame {
   opacity: 0;
