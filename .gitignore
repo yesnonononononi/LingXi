@@ -66,7 +66,20 @@ scratch/
 .workbuddy/
 .workbuddy-ai/
 deliverables/
-docs/
+# docs/ 整体不入库（设计稿、QA 记录、随手笔记都不该进版本树）；
+# 但「桌宠美术资产」必须入库——M2 还有 9 个批次（lie/sleep/walk/run/jump/play/edge/side/mini），
+# 每批都靠人工 `git add -f` 去赌一次，漏一次就是「交付了但不可复现」
+# （companion/v1/tools 已经中过一次：磁盘上有文件，git ls-files 与 git status 都看不见）。
+#
+# ⚠️ gitignore 语义：父目录被排除时，`!` 无法重新包含其内部文件，
+# 所以 `docs/` + `!docs/assets/desktop-pet/` 是**无效**的，必须逐级展开：
+#   1) 忽略 docs 下所有条目  2) 放行 assets/ 目录  3) 忽略 assets 下所有条目  4) 放行 desktop-pet/
+# 放行后 desktop-pet 内的文件不再被任何规则命中，新增批次天然入库。
+# 唯一真源校验：frontend/tests/petAssetTracking.test.cjs（逐个路径判 ignore，接在 test:pet 里）。
+/docs/*
+!/docs/assets/
+/docs/assets/*
+!/docs/assets/desktop-pet/
 # H2 内置库文件（应用启动目录下 ./data/lingxi.mv.db 等），不入库。
 /data/
 AGENTS.md
