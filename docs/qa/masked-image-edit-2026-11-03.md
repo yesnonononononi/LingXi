@@ -35,3 +35,11 @@ SDK 来源为本机 `langchain4j-open-ai-1.22.0-sources.jar` 的 `OpenAiImageMod
 - 跳过蒙版尺寸校验：尺寸反例因错误进入提供者而失败。
 
 验证只使用本地模拟服务。框架产物已安装到本机 Maven 仓库，未调用真实图片服务、重启后端或重打包客户端。远端构建消费新锁定点前需推送框架分支。
+
+## 后续编译修复
+
+普通 Maven 编译曾复现 9 处错误：缺少带规格的编辑重载、五参数构造及 `background()`、`outputFormat()`。原因是框架补丁仅在独立分支，主仓 `develop` 仍停在旧代码，重新安装主仓会覆盖同版本 SNAPSHOT。
+
+已将框架主仓 `develop` 快进到 `2f6fd86`，按 SHA256 核对原有 9 个在飞文件并比较暂存补丁，确认均未改变。随后从主仓执行离线 `install`；检查本机 Maven 仓库实际 JAR，确认新接口存在。
+
+在业务根目录使用默认 Maven 仓库和默认 `target` 再次运行图片相关 7 类测试，源码、测试源码均编译通过，65 条通过、2 条符号链接权限跳过。复验日志位于 `target/mvn-compile-fixed.log`；原编译错误位于 `target/compile-repro.log`。本次未修改生产代码或其它会话的在飞实现。
