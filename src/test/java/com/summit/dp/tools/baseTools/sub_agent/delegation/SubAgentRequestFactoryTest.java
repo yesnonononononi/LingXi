@@ -3,6 +3,7 @@ package com.summit.dp.tools.baseTools.sub_agent.delegation;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.ArrayList;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.ParameterizedTest;
 import com.summit.runtime.model.DefaultChatModelInvoker;
 import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
@@ -40,6 +41,12 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ToolExecution;
+import com.summit.core.tool.ToolDefinition;
+import com.summit.core.tool.ToolExecutionPolicy;
+import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.OsType;
+import com.summit.core.runtime.workspace.ShellType;
+import com.summit.core.runtime.workspace.Workspace;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -50,11 +57,16 @@ import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
@@ -70,6 +82,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * 委派出去的子执行必须拿到「成员版」上下文：
@@ -98,6 +111,73 @@ class SubAgentRequestFactoryTest {
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
                 workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+    }
+
+    @ParameterizedTest
+    @EnumSource(CommandApprovalPolicy.class)
+    void childInheritsApprovalFromParentSnapshotEvenWhenSettingsDiffer(CommandApprovalPolicy policy) throws Exception {
+        stubModel();
+        SettingsView current = mock(SettingsView.class);
+        when(current.commandApprovalPolicy()).thenReturn(policy == CommandApprovalPolicy.FULL_ACCESS
+                ? CommandApprovalPolicy.PRE_EXEC_CONFIRM : CommandApprovalPolicy.FULL_ACCESS);
+        when(settingsProvider.current()).thenReturn(Optional.of(current));
+        AgentVO member = agent(6L, "工程师", "执行委派任务");
+        ToolExecution parent = ToolExecution.builder().executionId("900")
+                .attributes(Map.of(CommandApprovalPolicy.ATTRIBUTE_KEY, policy.name(),
+                        AgentAccessMode.ATTRIBUTE_KEY, AgentAccessMode.OUT_OF_WORKSPACE.name(),
+                        "unrelated.parent.attribute", "不应下行")).build();
+        ObjectMapper json = new JsonConfig().objectMapper();
+        for (boolean reused : List.of(false, true)) {
+            List<Message> prior = reused ? List.of(UserMessageEntity.from("旧任务")) : List.of();
+            AgentRequest request = build(member, buildTeam(member), parent, prior);
+            Map<String, Object> attributes = request.runtimeParametersOrDefault().getAttributes();
+            assertEquals(policy.name(), attributes.get(CommandApprovalPolicy.ATTRIBUTE_KEY));
+            assertEquals(AgentAccessMode.OUT_OF_WORKSPACE, AgentAccessMode.from(attributes));
+            assertFalse(attributes.containsKey("unrelated.parent.attribute"));
+
+            Execution restored = json.readValue(json.writeValueAsString(Execution.create(request, "")), Execution.class);
+            assertEquals(policy.name(), restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()
+                    .get(CommandApprovalPolicy.ATTRIBUTE_KEY));
+        }
+    }
+
+    @Test
+    void childWithoutParentApprovalPolicyCarriesTheDefaultExplicitly() {
+        stubModel();
+        AgentVO member = agent(6L, "工程师", "执行委派任务");
+        AgentRequest request = build(member, buildTeam(member), parentToolExecution());
+        assertEquals(CommandApprovalPolicy.DEFAULT.name(), request.runtimeParametersOrDefault().getAttributes()
+                .get(CommandApprovalPolicy.ATTRIBUTE_KEY));
+    }
+
+    @Test
+    void fullAccessDelegationPassesTheReportedCleanupCommandWithoutApproval() throws Exception {
+        stubModel();
+        AgentVO member = agent(6L, "工程师", "执行委派任务");
+        ToolExecution parent = ToolExecution.builder().executionId("900")
+                .attributes(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.FULL_ACCESS)).build();
+        AgentRequest child = build(member, buildTeam(member), parent);
+        ObjectMapper json = new ObjectMapper();
+        CommandApprovalRegistrar approvals = mock(CommandApprovalRegistrar.class);
+        ToolExecutionPolicy policy = new CommandPolicyConfig().commandApprovalPolicy(json, approvals);
+        Workspace workspace = mock(Workspace.class);
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .osType(OsType.WINDOWS).shellType(ShellType.CMD).build());
+        ToolDefinition<?> definition = ToolDefinition.<CommandToolDefinitionExecutor>builder()
+                .id(ToolCatalog.EXECUTE_COMMAND).name(ToolCatalog.EXECUTE_COMMAND)
+                .maxOutput(1000).timeout(30L)
+                .executor(new CommandToolDefinitionExecutor(json)).build();
+        String cleanup = """
+                cd /d D:\\Code\\LingXi && del /q .lingxi\\tmp\\manifest1.log .lingxi\\tmp\\manifest2.log .lingxi\\tmp\\testpet7.log 2>nul & echo CLEANED & echo === & git status --porcelain -uall & echo "(空=干净)" & echo === & git log --oneline -4 & echo === & powershell -NoProfile -Command "'pet-orphan 现存数 = ' + @(Get-ChildItem $env:TEMP -Directory -Filter 'pet-orphan-*' -ErrorAction SilentlyContinue).Count"
+                """;
+        for (String command : List.of(cleanup, "wsl --shutdown", "Clear-Disk -Number 99")) {
+            ToolExecution execution = ToolExecution.builder().executionId("901").id("child-command")
+                    .toolDefinition(definition).workspace(workspace)
+                    .attributes(child.runtimeParametersOrDefault().getAttributes())
+                    .args(json.writeValueAsString(Map.of("command", command))).build();
+            assertNull(policy.beforeExecution(execution), command);
+        }
+        verifyNoInteractions(approvals);
     }
 
     @ParameterizedTest(name = "复用历史={0}")

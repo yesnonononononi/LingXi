@@ -24,6 +24,7 @@ import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.tools.application.service.ToolProcessingContext;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -156,6 +157,8 @@ public class SubAgentRequestFactory {
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId,
                                                RuntimeModel childModel, Long workspaceId) {
         Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
+        // 审批档位随父执行快照下行，避免成员回落到默认审批。
+        attributes.putAll(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.from(toolExecution.getAttributes())));
 
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
         attributes.put(ExecutionAttributes.MODEL_VISION, childModel.vision());
