@@ -41,8 +41,11 @@ const CHECK_IGNORE_CHUNK = 200;
  * 允许"磁盘有、索引无"的真实例外（**数据驱动的显式清单**，不是"检测到未跟踪就跳过"）。
  *
  * <p>每条必须同时给：`pattern`（相对 {@link ASSET_ROOT_REL} 的匹配正则）、`status`、
- * `reason`（为什么它可以暂不入库）、`until`（解除条件）。当前只有一条：
- * companion（云灵）美术仍在产，主理人确认交付后才单独入库。</p>
+ * `reason`（为什么它可以暂不入库）、`until`（解除条件）。</p>
+ *
+ * <p><b>当前为空</b>：companion（云灵）曾以 `pending-delivery` 暂挂在白名单里，美术定稿
+ * （分支 `e463ea91`，main 侧入库 `613ba7c8`）后已按约定摘掉——这正是白名单该有的生命周期：
+ * 未交付时显式豁免，交付后必须删除，不能长期放水。</p>
  *
  * <p><b>为什么不能写成自动跳过：</b>如果"未跟踪就跳过"，那么把 `.gitignore` 退回 `docs/`
  * 之后（变异体 `gitignore-desktop-pet-exception-removed`）所有文件都"未跟踪"，
@@ -51,14 +54,7 @@ const CHECK_IGNORE_CHUNK = 200;
  *
  * @type {Array<{pattern: RegExp, status: string, reason: string, until: string}>}
  */
-const TRACKING_WHITELIST = [
-  {
-    pattern: /^companion\//,
-    status: 'pending-delivery',
-    reason: 'companion（云灵）美术仍在产，v1 当前是中间态；入库会留下"看似定稿实则待改"的资产',
-    until: '主理人确认 companion 交付后再单独入库，并同步删除本条',
-  },
-];
+const TRACKING_WHITELIST = [];
 
 /**
  * **已交付**的批次前缀：这些路径不允许出现在白名单里。
@@ -68,7 +64,7 @@ const TRACKING_WHITELIST = [
  *
  * @type {string[]}
  */
-const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/'];
+const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/', 'companion/'];
 
 /**
  * 执行一条 git 命令。
