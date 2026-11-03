@@ -40,3 +40,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # 安装版不展示桌宠（用户硬约束 #3）的 CI 侧保障：
+      # 只在本机跑 gate:pet:not-shipped 不够 —— 别人一次构建就可能把桌宠入口带进安装包。
+      # 这一步读的是刚构建出来的 dist，顺序必须紧跟 build 之后（否则等于用旧产物自证）。
+      - name: 校验安装版不含桌宠入口
+        run: node scripts/check-pet-not-shipped.mjs
