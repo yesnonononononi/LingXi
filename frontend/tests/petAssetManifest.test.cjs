@@ -48,7 +48,11 @@ const { readImageSize } = require('../scripts/check-pet-geometry.mjs');
  * 与"渲染层 `BLINK_EXPRESSION_MAP`"必须一致，所以这里读源码文本做正则提取。
  * 提取失败即视为契约被改（宁可让测试红，也不要静默放过）。</p>
  *
- * @returns {{ open: string, closed: string, half: string }} 渲染层声明
+ * <p><b>为什么键值正则要允许大写字母：</b>`blinkHalf` 是驼峰（M1 起半闭帧不再是 `sleepy`），
+ * 只允许 `[a-z]+` 会把 `'blinkHalf'` 整条漏掉、返回空串——那种"提取不到"会伪装成
+ * "双方不一致"，把真正的契约问题埋掉。</p>
+ *
+ * @returns {{ open: string, closed: string, half: string, wink: string }} 渲染层声明
  */
 function readBlinkMapFromSource() {
   const source = readFileSync(resolve(FRONTEND_ROOT, 'src/pet/presentation/blink-driver.ts'), 'utf8');
@@ -59,10 +63,34 @@ function readBlinkMapFromSource() {
    * @returns {string} 值（提不到时为空串）
    */
   const pick = (key) => {
-    const matched = new RegExp(`${key}\\s*:\\s*'([a-z]+)'`).exec(source);
+    const matched = new RegExp(`${key}\\s*:\\s*'([A-Za-z]+)'`).exec(source);
     return matched ? matched[1] : '';
   };
-  return { open: pick('open'), closed: pick('closed'), half: pick('half') };
+  return { open: pick('open'), closed: pick('closed'), half: pick('half'), wink: pick('wink') };
+}
+
+/**
+ * v4 母版清单的眨眼字段（`supersedes: v3`，M1 起它是眼部语义的真源）。
+ *
+ * <p><b>为什么不能继续拿 `pet-assets.json` 对账 `half`：</b>那份清单是由 v3 母版清单生成的，
+ * v3 的 `blink.half = 'sleepy'` 正是 M1 要废掉的写法（困倦嘴型不得随眨眼跳动，§5.1）。
+ * v4 清单已经把 `half` 显式置空并把 `wink` 落成 `'wink'`，所以 `half` / `wink` 与 v4 对账，
+ * `open` / `closed` 仍与 `pet-assets.json` 对账（这档资产没变）。</p>
+ *
+ * @returns {{ open: string, closed: string, half: string|null, wink: string, present: boolean }} v4 声明
+ */
+function readV4Blink() {
+  const file = resolve(FRONTEND_ROOT, '..', 'docs/assets/desktop-pet/v4/manifest.json');
+  if (!existsSync(file)) return { open: '', closed: '', half: null, wink: '', present: false };
+  const manifest = JSON.parse(readFileSync(file, 'utf8'));
+  const blink = manifest && typeof manifest.blink === 'object' && manifest.blink ? manifest.blink : {};
+  return {
+    open: typeof blink.open === 'string' ? blink.open : '',
+    closed: typeof blink.closed === 'string' ? blink.closed : '',
+    half: typeof blink.half === 'string' ? blink.half : null,
+    wink: typeof blink.wink === 'string' ? blink.wink : '',
+    present: true,
+  };
 }
 
 /** 渲染层声明的眨眼三态。 */
@@ -211,11 +239,24 @@ test('pet-assets.json：画布 2:3、锚点归一化、眨眼映射与渲染层�
   assert.equal(assets.canvas.width / assets.canvas.height, ART_ASPECT);
   assert.ok(assets.anchorNormalized.x >= 0 && assets.anchorNormalized.x <= 1);
   assert.ok(assets.anchorNormalized.y >= 0 && assets.anchorNormalized.y <= 1);
-  assert.equal(assets.blink.open, BLINK_EXPRESSION_MAP.open);
-  assert.equal(assets.blink.closed, BLINK_EXPRESSION_MAP.closed);
-  assert.equal(assets.blink.half, BLINK_EXPRESSION_MAP.half);
+  assert.equal(assets.blink.open, BLINK_EXPRESSION_MAP.open, '睁眼档必须与渲染层同源');
+  assert.equal(assets.blink.closed, BLINK_EXPRESSION_MAP.closed, '闭眼档必须与渲染层同源');
   assert.ok(assets.blink.eyeRegionNative.width > 0);
   assert.ok(assets.blink.eyeRegionNative.height > 0);
+
+  // ---- M1：半闭帧与 wink 的真源是 v4 母版清单（`supersedes: v3`），不是 v3 生成的 pet-assets.json。
+  // v3 的 `blink.half = 'sleepy'` 是 §5.1 认定的缺陷本身（每眨一次嘴型抖一下），
+  // 所以这里既要求渲染层不再指向 sleepy，也要求 v4 把它显式置空。
+  assert.equal(BLINK_EXPRESSION_MAP.half, 'blinkHalf', '半闭帧必须是独立档（不许回落 sleepy）');
+  assert.notEqual(BLINK_EXPRESSION_MAP.half, 'sleepy', '半闭帧借用困倦整脸 = E08 缺陷复发');
+
+  const v4 = readV4Blink();
+  if (v4.present) {
+    assert.equal(v4.open, BLINK_EXPRESSION_MAP.open, 'v4 清单的睁眼档必须与渲染层一致');
+    assert.equal(v4.closed, BLINK_EXPRESSION_MAP.closed, 'v4 清单的闭眼档必须与渲染层一致');
+    assert.equal(v4.half, null, 'v4 必须把 blink.half 显式置空（未交付 = 两态降级，不借别人的脸）');
+    assert.equal(v4.wink, BLINK_EXPRESSION_MAP.wink, 'v4 清单的 wink 档必须与渲染层一致');
+  }
 });
 
 test('pet-assets.json：每个文件都能追溯到美术 runtime/，且 URL 走 lxa://pet-v3', { skip: SKIP_NO_ASSETS }, () => {
@@ -309,10 +350,18 @@ test('美术源：runtime 清单与母版清单的 8 档表情、眨眼映射与
   for (const id of ART_EXPRESSION_IDS) {
     assert.ok(runtimeIds.has(id), `美术 runtime 清单缺少表情 ${id} 的产物`);
   }
-  // 眨眼三态是母版清单的契约，必须与渲染层 BLINK_EXPRESSION_MAP 一致
-  assert.equal(masterManifest?.blink?.open, BLINK_EXPRESSION_MAP.open);
-  assert.equal(masterManifest?.blink?.closed, BLINK_EXPRESSION_MAP.closed);
-  assert.equal(masterManifest?.blink?.half, BLINK_EXPRESSION_MAP.half);
+  // 眨眼三态是母版清单的契约。`open` / `closed` 两档资产没变，仍与 v3 母版清单对账：
+  assert.equal(masterManifest?.blink?.open, BLINK_EXPRESSION_MAP.open, '睁眼档必须与美术母版清单一致');
+  assert.equal(masterManifest?.blink?.closed, BLINK_EXPRESSION_MAP.closed, '闭眼档必须与美术母版清单一致');
+  // `half` 在 M1 起**不再由 v3 决定**：v3 的 `blink.half = 'sleepy'` 就是 §5.1 认定的缺陷
+  // （每逢眨眼换一次困倦整脸 → 嘴型抖一下）。v3 历史交付文件不得修改，v4 清单
+  // （`supersedes: v3`）已把 half 显式置空，所以这里只钉"渲染层不再沿用 v3 的换脸写法"，
+  // half / wink 的正向对账放在上一条用例里对着 v4 清单做。
+  assert.notEqual(
+    BLINK_EXPRESSION_MAP.half,
+    masterManifest?.blink?.half,
+    '渲染层不许沿用 v3 的半闭帧（那是 sleepy 整脸，会抖动嘴型）',
+  );
 });
 
 test('美术源：composites 的 neutral 与 front-standing 是同一张（美术声明的等价关系）', () => {

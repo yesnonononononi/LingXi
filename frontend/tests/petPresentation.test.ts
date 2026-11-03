@@ -522,7 +522,9 @@ test('眨眼：三态序列（闭 100ms → 半闭 80ms），每轮两次 emit',
   const timer = new FakeTimer();
   const emitted: PresentationOp[] = [];
   // start 先吃两个数（分支 + 取值）→ 走短分支下限 900ms；再吃一个数判双眨（1 = 不双眨）
-  const driver = new BlinkDriver((item) => emitted.push(item), seq([0, 0, 1, 0, 0]), () => false, timer);
+  // 第 5 个参数 = "半闭帧资产是否可用"：三态是可选优化，未交付时退化成两态（§5.2 第 3 条），
+  // 所以这条用例必须显式声明"资产在"，否则测的是降级路径。
+  const driver = new BlinkDriver((item) => emitted.push(item), seq([0, 0, 1, 0, 0]), () => false, timer, () => true);
   driver.start();
   timer.advance(BLINK_SHORT_MIN_DELAY_MS);
   assert.equal(emitted.length, 1);
@@ -530,8 +532,20 @@ test('眨眼：三态序列（闭 100ms → 半闭 80ms），每轮两次 emit',
   assert.equal(emitted[0]?.durationMs, BLINK_CLOSED_MS);
   timer.advance(BLINK_CLOSED_MS);
   assert.equal(emitted.length, 2);
-  assert.equal(emitted[1]?.id, 'sleepy');
+  assert.equal(emitted[1]?.id, BLINK_EXPRESSION_MAP.half);
+  assert.equal(emitted[1]?.id, 'blinkHalf', '半闭帧必须是独立档，不许再借 sleepy 整脸');
   assert.equal(emitted[1]?.durationMs, BLINK_HALF_MS);
+  driver.stop();
+});
+
+test('眨眼：半闭帧资产未交付时退化成两态（闭 → 睁），仍然只有 blink 一条', () => {
+  const timer = new FakeTimer();
+  const emitted: PresentationOp[] = [];
+  const driver = new BlinkDriver((item) => emitted.push(item), seq([0, 0, 1, 0, 0]), () => false, timer);
+  driver.start();
+  timer.advance(BLINK_SHORT_MIN_DELAY_MS);
+  timer.advance(BLINK_CLOSED_MS + BLINK_HALF_MS);
+  assert.deepEqual(emitted.map((item) => item.id), ['blink'], '缺半闭资产时一次眨眼只产出一条闭眼指令');
   driver.stop();
 });
 
@@ -740,7 +754,9 @@ test('眨眼期间来一条 motion op，不影响表情回落', () => {
   assert.equal(bus.dispatch(blinkClosedOp('test:blink')), 'applied');
   timer.advance(BLINK_CLOSED_MS);
   assert.equal(bus.dispatch(blinkHalfOp('test:blink:half')), 'applied');
-  assert.equal(target.state.expression, 'sleepy');
+  // M1 起半闭帧是独立的 `blinkHalf`（以前借用 `sleepy` 整脸，下一条断言下面还有反向的）
+  assert.equal(target.state.expression, BLINK_EXPRESSION_MAP.half);
+  assert.notEqual(target.state.expression, 'sleepy', '半闭帧不许是困倦整脸（嘴型会跟着眨眼抖）');
 
   // 半闭还挂着的时候，行为层下发一条 tap 动作（写 base 的 motion 槽）
   assert.equal(

@@ -10,11 +10,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   ANGRY_HOLD_MS,
+  DRAG_START_SURPRISED_MS,
   IDLE_BRIDGE_MS,
   MULTI_TAP_THRESHOLD,
   MULTI_TAP_WINDOW_MS,
   PET_BEHAVIOR_DEBUG_STATES,
   PetBehaviorStateMachine,
+  SLEEPY_AFTER_IDLE_MS,
   SLEEP_AFTER_IDLE_MS,
   TAP_HOLD_MS,
   WAKE_HOLD_MS,
@@ -152,9 +154,15 @@ test('行为：89999ms 无交互不睡 / 90000ms 睡（字面量边界）', () =
 
   const clock = new Clock();
   const sm = machine(clock);
-  clock.advance(89999);
-  assert.deepEqual(sm.tick(), []);
-  assert.equal(sm.state, 'idle', '89999ms 不该睡');
+  // M1 起 60s 会先进"困倦"（sleepy，未睡），所以先把这一档消费掉再验 90s 边界
+  clock.advance(SLEEPY_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.state, 'sleepy', '60s 应当先犯困');
+  assert.equal(sm.isSleeping, false, '困倦不是睡眠');
+
+  clock.advance(89999 - SLEEPY_AFTER_IDLE_MS);
+  assert.deepEqual(sm.tick(), [], '困倦态下每拍都必须幂等（不重下发）');
+  assert.equal(sm.state, 'sleepy', '89999ms 只是困倦，还没睡');
 
   clock.advance(1);
   const ops = sm.tick();
@@ -172,8 +180,10 @@ test('行为：睡眠阈值早 1ms 也不许提前入睡（89000ms 仍应清醒�
   const clock = new Clock();
   const sm = machine(clock);
   clock.advance(89000);
-  assert.deepEqual(sm.tick(), []);
-  assert.equal(sm.state, 'idle');
+  sm.tick();
+  // 89000ms 时最多是"困倦"，还绝不能是 sleeping（真睡是 90000ms）
+  assert.equal(sm.state, 'sleepy');
+  assert.equal(sm.isSleeping, false, '89000ms 不许提前入睡');
 });
 
 test('行为：睡眠中点击 → wake（surprised + 一抖）', () => {
@@ -209,18 +219,26 @@ test('行为：wake 到期后回到 idle（并经桥接落到常驻）', () => {
   assert.equal(steady[0]?.priority, 0);
 });
 
-test('行为：拖动开始 → drag（循环、不限时、优先级 2）', () => {
+test('行为：拖动开始 → drag（循环、不限时、优先级 2）+ 惊一下（surprised 600ms）', () => {
   const clock = new Clock();
   const sm = machine(clock);
   const ops = sm.handle('drag-start');
   assert.equal(sm.state, 'drag');
   assert.equal(sm.isDragging, true);
-  assert.equal(ops.length, 1);
-  assert.equal(ops[0]?.kind, 'motion');
-  assert.equal(ops[0]?.id, 'drag');
-  assert.equal(ops[0]?.priority, 2);
-  assert.equal(ops[0]?.loop, true);
-  assert.equal(ops[0]?.durationMs, undefined, '拖拽不限时');
+  // M1 起 drag-start 多一条"惊一下"（E03 的 drag-start 入口），所以是两条
+  const motion = ops.filter((op) => op.kind === 'motion');
+  const expression = ops.filter((op) => op.kind === 'expression');
+  assert.equal(ops.length, 2);
+  assert.equal(motion.length, 1);
+  assert.equal(motion[0]?.id, 'drag');
+  assert.equal(motion[0]?.priority, 2);
+  assert.equal(motion[0]?.loop, true);
+  assert.equal(motion[0]?.durationMs, undefined, '拖拽不限时');
+  assert.equal(expression.length, 1);
+  assert.equal(expression[0]?.id, 'surprised', '刚被拎起来必须惊一下');
+  assert.equal(expression[0]?.layer, 'transient');
+  assert.equal(expression[0]?.priority, 2);
+  assert.equal(expression[0]?.durationMs, DRAG_START_SURPRISED_MS);
 });
 
 test('行为：拖动结束 → 桥接 idle → 常驻 idle', () => {
@@ -356,14 +374,16 @@ test('行为：惊醒后不会立刻又睡回去（计时被重置）', () => {
   clock.advance(SLEEP_AFTER_IDLE_MS);
   sm.tick();
   sm.handle('tap');
-  // 醒来 → 回 idle 之后再过 89 秒也不该睡
+  // 醒来 → 回 idle 之后再过 89 秒也不该睡（M1：60s 会先进困倦，但绝不能进 sleeping）
   clock.advance(WAKE_HOLD_MS);
   sm.tick();
   clock.advance(IDLE_BRIDGE_MS);
   sm.tick();
   clock.advance(88999);
-  assert.deepEqual(sm.tick(), []);
-  assert.equal(sm.state, 'idle');
+  sm.tick();
+  assert.equal(sm.isSleeping, false, '计时被重置，89 秒后还不许睡回去');
+  // M1 起 60s 就会犯困：89s 时应当停在"困倦"这一档，而不是回到 idle 也不是 sleeping
+  assert.equal(sm.state, 'sleepy', '计时重置后 89s 是困倦，不是 sleeping');
 });
 
 test('行为：睡眠中开始拖拽 → 打断持续动作，且拖拽中不入睡', () => {
@@ -444,12 +464,13 @@ test('外部驱动：markInteraction() 把 90 秒计时起点拉回现在', () =
   clock.advance(89999);
   sm.markInteraction();
   clock.advance(1);
-  assert.deepEqual(sm.tick(), []);
+  assert.deepEqual(sm.tick(), [], '重置后 1ms 不该有任何指令（连困倦都不到）');
   assert.equal(sm.state, 'idle', '重置后不该立刻入睡');
-  // 从重置那一刻算起：89999ms 仍清醒、90000ms 才睡
+  // 从重置那一刻算起：89999ms 仍清醒（困倦）、90000ms 才睡（60s 起的困倦是中间态，不算睡）
   clock.advance(89998);
-  assert.deepEqual(sm.tick(), []);
-  assert.equal(sm.state, 'idle');
+  sm.tick();
+  assert.equal(sm.state, 'sleepy', '60s 之后先进困倦');
+  assert.equal(sm.isSleeping, false);
   clock.advance(1);
   sm.tick();
   assert.equal(sm.state, 'sleeping', '从重置那一刻起满 90000ms 才睡');

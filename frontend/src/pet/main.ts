@@ -11,9 +11,10 @@
  * `presentation/`、"鼠标是否在宠物身上"在 `hit/`。换实现时改那几个模块，这里不动。</p>
  */
 import './pet.css';
-import { PET_GEOMETRY, geometryCssVariables } from './layout';
+import { PET_GEOMETRY, geometryCssVariables, toNormalized } from './layout';
 import { HitPipeline } from './hit/hit-pipeline';
 import { RectHitTester } from './hit/rect-hit-tester';
+import { classifyProfile, type HitProfile } from './behavior/hit-profile';
 import { DEFAULT_TIMER_PORT, PresentationBus, type DispatchOutcome } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
@@ -27,7 +28,7 @@ import {
 import type { PetDebugHandle } from './debug/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
-import { faceTileUrls as faceTileUrlMap } from './assets/face-tiles';
+import { faceTileUrls as faceTileUrlMap, isFaceDegraded } from './assets/face-tiles';
 import { loadArt } from './assets/loader';
 import { MOTION_CATALOG } from './layers/motion-catalog';
 import { PET_LAYERS, applyLayersQueryOverride, pickLayerDensity, requestedLayerIds } from './layers/manifest';
@@ -174,6 +175,18 @@ let pressScreenPoint: PetPoint | null = null;
  * 用它做守卫会让收尾流程永远不执行。这里是"IPC 侧"的状态，与手势层各管一边。</p>
  */
 let dragActive = false;
+
+/**
+ * **按下那一刻**的命中分区（头部 / 身体）。
+ *
+ * <p>M1 的"摸头"语义靠它：头部连点 2 次 / 按住 ≥600ms 才是抚摸，身体单击只是 happy。
+ * 分区在 `pointerdown` 里就算好并缓存——`pointerup` 产出的 `tap` 意图里没有坐标
+ * （手势层只回 `pointerId`），到这里再算就只能拿错点。</p>
+ */
+let pressProfile: HitProfile = 'body';
+
+/** **按下那一刻**的时间戳（毫秒）：`holdMs = 松开时刻 - 按下时刻`，判定长按抚摸用。 */
+let pressStartedAt = 0;
 
 /** 命中实现（本批矩形；换 alpha 掩码只改这一处构造）。 */
 let hitTester: RectHitTester | null = null;
@@ -436,7 +449,9 @@ function scheduleMoveReport(point: PetPoint): void {
 function runGesture(intents: readonly GestureIntent[]): void {
   for (const intent of intents) {
     if (intent.type === 'tap') {
-      dispatchEntryOps(behavior ? behavior.handle('tap') : fallbackTapOps(), 'gesture:tap');
+      // 分区 + 按住时长一起交给行为层：它才知道这次是"摸头"还是"点一下"
+      const ctx = { profile: pressProfile, holdMs: Math.max(0, Date.now() - pressStartedAt) };
+      dispatchEntryOps(behavior ? behavior.handle('tap', ctx) : fallbackTapOps(), 'gesture:tap');
       hintBar?.poke();
       continue;
     }
@@ -736,6 +751,12 @@ function wireEvents(): void {
       pressScreenPoint = { cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) };
       lastScreenPoint = pressScreenPoint;
     }
+    // 头部/身体分区在**按下那一刻**算好（`pointerup` 的意图里没有坐标）。
+    // 归一化坐标由 `layout.ts` 的 `toNormalized` 给（与命中、锚点同一坐标空间），
+    // 脸区矩形来自层清单的 `face.rect`（单一真源）。
+    const uv = toNormalized(PET_GEOMETRY, event.clientX, event.clientY);
+    pressProfile = classifyProfile(uv.u, uv.v, LAYER_MANIFEST);
+    pressStartedAt = Date.now();
     hintBar?.poke();
     runGesture(gesture.press({ pointerId: event.pointerId, x: event.clientX, y: event.clientY }));
   });
@@ -890,12 +911,12 @@ function createPresentation(): void {
   // 眨眼抑制的判据：**只看行为状态**（M6-b 第四轮）。
   //
   // 以前这里还额外判"当前表情是不是 sleepy/half"——那是**倒推**，而且会自锁：
-  // 眨眼三态的中间帧用的就是 `sleepy` 贴片（美术规格书 §5：half = sleepy），
-  // 所以"半闭帧上屏"会被读成"睡着了"，BlinkDriver 从此不再眨眼，
-  // 而不再眨眼就意味着表情永远停在 sleepy → 永远判成"睡着了"，完美闭环。
+  // 眨眼三态的中间帧曾借用 `sleepy` 贴片，于是"半闭帧上屏"被读成"睡着了"，
+  // BlinkDriver 从此不再眨眼，而不再眨眼就意味着表情永远停在 sleepy → 永远判成
+  // "睡着了"，完美闭环。M1 已经把半闭帧拆成独立的 `blinkHalf`，倒推链从根上断了。
   //
   // 现在唯一的真源是 `behavior.isSleeping`（行为状态机），总线规则表里已有
-  // 「睡眠中来 blink → 抑制」，所以"睡着别眨眼"由"行为状态 + 规则表"决定。
+  // 「睡眠中来 blink / blinkHalf / wink → 抑制」，所以"睡着别眨眼"由"行为状态 + 规则表"决定。
   //
   // 唯一保留的表情判据是 `yawn`：它不是"像睡着"，而是一个**明确的语义**——
   // "正在打哈欠"这个动作本身就是闭眼张嘴，这时候再叠一次眨眼是错的。
@@ -923,6 +944,9 @@ function createPresentation(): void {
     () => Math.random(),
     sleepingNow,
     DEFAULT_TIMER_PORT,
+    // 半闭帧是否可用：真源是生成的贴片清单（`pet-face-tiles.json` 的 degraded）。
+    // 未交付时眨眼退化成两态，绝不回落 `sleepy`（§5.2 第 3 条）。
+    () => !isFaceDegraded('blinkHalf'),
   );
 
   // 减少动态时不起任何"持续型"定时器：CSS 已经停了动画，JS 也该停手

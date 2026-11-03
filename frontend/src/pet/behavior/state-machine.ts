@@ -35,15 +35,31 @@
  * @module pet/behavior/state-machine
  */
 import type { ExpressionId, MotionId, PresentationOp, Priority } from '../presentation/types';
+import type { HitProfile } from './hit-profile';
 
-/** 行为状态。 */
-export type PetBehaviorState = 'idle' | 'tap' | 'angry' | 'sleeping' | 'wake' | 'drag';
+/**
+ * 行为状态。
+ *
+ * <p>M1 新增两档，语义都来自设计文档 §6 的触发入口表：</p>
+ * <ul>
+ *   <li>`sleepy`：**困倦**。无交互 {@link SLEEPY_AFTER_IDLE_MS}(60s) 进入，
+ *       表现是 `sleepy` 表情 + `sleepy` 动作（循环），再闲 {@link SLEEP_AFTER_IDLE_MS}(90s) 才真睡。
+ *       它与 `sleeping` 必须分开：困倦时仍然会眨眼（睡眠中眨眼被抑制）。</li>
+ *   <li>`pet`：**被抚摸**。头部连点 2 次（间隔 &lt; {@link PET_DOUBLE_TAP_MS}）或
+ *       头部按住 ≥ {@link PET_HOLD_MS} 进入，`shy` 表情 {@link PET_SHOW_MS} 后进 `pet-end`，
+ *       回礼 `wink`（见 {@link WINK_MS}）。</li>
+ * </ul>
+ */
+export type PetBehaviorState = 'idle' | 'tap' | 'angry' | 'sleepy' | 'sleeping' | 'wake' | 'drag' | 'pet';
 
 /**
  * 外部驱动可直达的状态名。
  *
  * <p>比 {@link PetBehaviorState} 多一个 `happy`：它不是一个独立行为状态，
  * 而是"表情 happy + 一次性小弹"的组合，只在调试面板里需要一个直达按钮。</p>
+ *
+ * <p>`sleepy` / `pet` 没有加进来：它们的入口是**真实用户操作**（静置 60s / 摸头），
+ * 而调试直达会让"真的能从界面触发"这条验收判据失去意义（§11.4 要求全部用真实输入验）。</p>
  */
 export type PetBehaviorDebugState = PetBehaviorState | 'happy';
 
@@ -69,7 +85,27 @@ export function isPetBehaviorDebugState(value: unknown): value is PetBehaviorDeb
 }
 
 /** 外部事件。 */
-export type PetBehaviorEvent = 'tap' | 'drag-start' | 'drag-end';
+export type PetBehaviorEvent = 'tap' | 'drag-start' | 'drag-end' | 'pet-end';
+
+/**
+ * 一次点击的上下文（**判定结果由调用方算好再传进来**，行为层不做坐标运算）。
+ *
+ * <p>`profile` 来自 `behavior/hit-profile.ts` 的 `classifyProfile`（脸区矩形 + 外扩），
+ * `holdMs` 是"按下到松开"的时长（毫秒）。两者都只在 `tap` 事件上有意义：
+ * 抚摸语义（连点 2 次 / 按住 600ms）必须靠它们区分，而拖拽/惊醒与分区无关。</p>
+ *
+ * <p><b>缺省值 = 身体单击</b>：既有调用点（纯逻辑测试、纯浏览器排障）不传 ctx 时，
+ * 行为与 M1 之前完全一致（单击 happy），不会因为"少传一个参数"变成摸头。</p>
+ */
+export interface TapContext {
+  /** 命中分区。 */
+  readonly profile: HitProfile;
+  /** 按下到松开的时长（毫秒）；缺省 0 = 短按。 */
+  readonly holdMs: number;
+}
+
+/** 默认点击上下文（身体 + 短按）。 */
+export const DEFAULT_TAP_CONTEXT: TapContext = { profile: 'body', holdMs: 0 };
 
 /** 点一下后回到 idle 的时长（毫秒），与 `MOTION_RECIPES.tap.motionMs` 同源。 */
 export const TAP_HOLD_MS = 480;
@@ -88,6 +124,40 @@ export const MULTI_TAP_THRESHOLD = 3;
 
 /** 无交互多久后进入睡眠（毫秒）。 */
 export const SLEEP_AFTER_IDLE_MS = 90000;
+
+/**
+ * 无交互多久后先进入**困倦**（毫秒，M1 新增）。
+ *
+ * <p>设计文档 §6 的 E08：60s 犯困（表情 + 循环动作），再闲 30s（= 90s）才真睡。
+ * 两档必须分开：困倦仍会眨眼，睡眠中眨眼被抑制——合成一档就会让"眨眼什么时候停"没有中间态。</p>
+ */
+export const SLEEPY_AFTER_IDLE_MS = 60000;
+
+/** 困倦到真睡之间的间隔（毫秒）：`SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS`。 */
+export const SLEEPY_TO_SLEEP_MS = SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS;
+
+/** 抚摸的"按住"阈值（毫秒）：头部按住达到它就触发抚摸。 */
+export const PET_HOLD_MS = 600;
+
+/** 抚摸的"连点"窗口（毫秒）：头部两次点击的相邻间隔小于它才算连点。 */
+export const PET_DOUBLE_TAP_MS = 1500;
+
+/** 被抚摸时 `shy` 的持续时长（毫秒），到点后进 `pet-end` 回礼 wink。 */
+export const PET_SHOW_MS = 900;
+
+/** 回礼 wink 的时长（毫秒）。 */
+export const WINK_MS = 600;
+
+/**
+ * 长拖拽阈值（毫秒）：拎这么久之后松手会"委屈"。
+ */
+export const SAD_DRAG_MS = 1200;
+
+/** 委屈表情的持续时长（毫秒）。 */
+export const SAD_HOLD_MS = 900;
+
+/** 刚开始拖拽时"惊一下"的时长（毫秒，E03 的 drag-start 入口）。 */
+export const DRAG_START_SURPRISED_MS = 600;
 
 /** 从高优先级状态回 idle 时的桥接时长（毫秒），需大于一次 tick 间隔。 */
 export const IDLE_BRIDGE_MS = 250;
@@ -146,6 +216,7 @@ function motionOp(
  * @param priority 优先级
  * @param reason 排障原因串
  * @param durationMs 持续时间（缺省 = 不自动回退）
+ * @param layer 目标层：常驻表情（中性 / 困倦 / 睡眠）用 `base`，一次性反应（happy/angry/…）用 `transient`
  * @returns 指令
  */
 function expressionOp(
@@ -153,11 +224,12 @@ function expressionOp(
   priority: Priority,
   reason: string,
   durationMs?: number,
+  layer: PresentationOp['layer'] = 'transient',
 ): PresentationOp {
   return {
     kind: 'expression',
     id,
-    layer: 'transient',
+    layer,
     priority,
     durationMs,
     fadeMs: 0,
@@ -214,6 +286,12 @@ export interface BehaviorSnapshot {
   readonly lastTapAt: number | null;
   /** 切换前是否在拖拽。 */
   readonly dragging: boolean;
+  /** 切换前的拖拽起点（长拖拽判定用）。 */
+  readonly dragStartedAt: number | null;
+  /** 切换前的头部连点计数。 */
+  readonly petStreak: number;
+  /** 切换前的最后一次头部点击时刻。 */
+  readonly lastPetAt: number | null;
   /** 切换前的持续动作登记。 */
   readonly sustained: MotionId | null;
   /** 切换前的最近互动时刻。 */
@@ -280,6 +358,15 @@ export class PetBehaviorStateMachine {
   /** 是否在拖拽。 */
   private dragging = false;
 
+  /** 本次拖拽的开始时刻（毫秒）；null = 没在拖。长拖拽判定（≥{@link SAD_DRAG_MS}）用它。 */
+  private dragStartedAt: number | null = null;
+
+  /** 头部连点计数（相邻间隔 < {@link PET_DOUBLE_TAP_MS} 才累加）。 */
+  private petStreak = 0;
+
+  /** 上一次头部点击时刻（毫秒）；null = 还没有。 */
+  private lastPetAt: number | null = null;
+
   /**
    * 当前正在持续的"状态型持续动作"；`null` = 没有。
    *
@@ -336,17 +423,19 @@ export class PetBehaviorStateMachine {
   /**
    * 处理一次用户事件。
    *
-   * @param event 事件
+   * @param event 事件（`tap` / `drag-start` / `drag-end` / `pet-end`）
+   * @param ctx 点击上下文（`profile` + `holdMs`）；非 `tap` 事件忽略
    * @returns 需要下发的指令（可能为空）
    */
-  handle(event: PetBehaviorEvent): PresentationOp[] {
+  handle(event: PetBehaviorEvent, ctx: TapContext = DEFAULT_TAP_CONTEXT): PresentationOp[] {
     if (event === 'drag-start') return this.startDrag();
     if (event === 'drag-end') return this.endDrag();
-    return this.tap();
+    if (event === 'pet-end') return this.endPet();
+    return this.tap(ctx);
   }
 
   /**
-   * 推进时钟：处理"到点回 idle"与"久不动入睡"。
+   * 推进时钟：处理"到点回 idle"、"抚摸结束回礼"、"困倦转真睡"与"久不动入睡"。
    *
    * <p>建议每 250ms 调一次（渲染入口用 `setInterval`）。纯函数式推进，不自己挂定时器，
    * 所以测试只要改注入的 `now()` 再调用它。</p>
@@ -360,6 +449,20 @@ export class PetBehaviorStateMachine {
     // （80ms 判重只挡得住同一拍内的重复，挡不住 250ms 的间隔）。
     if (this.sustained !== null) return [];
     const now = this.now();
+
+    // 抚摸结束（shy 到期）→ 回礼 wink（E02 / E06 的退出路径）
+    if (this.stateValue === 'pet') {
+      const petUntil = this.stateUntil;
+      if (petUntil !== null && now >= petUntil) return this.endPet();
+      return [];
+    }
+
+    // 困倦（sleepy）到点 → 真睡（E08：60s 犯困、90s 睡着）
+    if (this.stateValue === 'sleepy') {
+      const sleepyUntil = this.stateUntil;
+      if (sleepyUntil !== null && now >= sleepyUntil) return this.enterSleeping();
+      return [];
+    }
 
     // 桥接 idle 落地：高优先级记录已过期，换成常驻 idle（优先级 0，允许眨眼打断）
     if (this.stateValue === 'idle' && this.bridgeUntil !== null && now >= this.bridgeUntil) {
@@ -378,7 +481,40 @@ export class PetBehaviorStateMachine {
     if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) {
       return this.enterSleeping();
     }
+    // 先困倦（60s）再真睡（90s）：顺序不能反，否则 60s 那条永远到不了
+    if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) {
+      return this.enterSleepy();
+    }
     return [];
+  }
+
+  /**
+   * 进入**困倦**（E08 的第一档）：表情 + 循环动作，{@link SLEEPY_TO_SLEEP_MS} 后转真睡。
+   *
+   * <p>与 {@link enterSleeping} 的区别只有两条，但两条都影响可用性：</p>
+   * <ol>
+   *   <li>**不登记 `sustained`**：困倦不是"跑到被唤醒为止"的持续态，它有自己的到期时间
+   *       （{@link PetBehaviorStateMachine.tick} 的 sleepy 分支），登记了 tick 就永远沉默，
+   *       90s 那条到不了；</li>
+   *   <li>不在 `isSleeping` 里：困倦**仍然会眨眼**，只有真睡才抑制眨眼。</li>
+   * </ol>
+   *
+   * @returns 需要下发的指令
+   */
+  private enterSleepy(): PresentationOp[] {
+    const now = this.now();
+    // 真睡的硬期限挂在"最近一次互动 + 90s"上，而不是"现在 + 30s"：
+    // tick 是 250ms 一拍，用"现在"计数会让记得越晚睡得越晚（最坏慢一拍以上），
+    // 而 90 秒这条边界是验收要精确到 1ms 的口径。
+    const sleepAt = Math.max(now + 1, this.lastInteractionAt + SLEEP_AFTER_IDLE_MS);
+    this.enter('sleepy', sleepAt);
+    this.log(`[pet] 行为：${SLEEPY_AFTER_IDLE_MS}ms 无交互，进入困倦（${sleepAt - now}ms 后入睡）`);
+    return entryOps([
+      // 动作走 `loop` + 不带 TTL：困倦会持续到 90s 真睡，而不是 1.6s 后自己停
+      motionOp('sleepy', 0, 'behavior:sleepy', { loop: true }),
+      // 表情走 base 槽 + 不带 TTL：它就是这个阶段的"基础表情"（到点由睡眠指令接管）
+      expressionOp('sleepy', 0, 'behavior:sleepy:expression', undefined, 'base'),
+    ]);
   }
 
   /**
@@ -396,8 +532,33 @@ export class PetBehaviorStateMachine {
       // 醒来的 wake 是优先级 2，一定能打断它（见 priority.ts 的规则表）。
       // 入态指令带 force：即使上一拍的生气记录还没过期，睡眠也必须真的落到画面上。
       sustainedMotionOp('sleepy', 0, 'behavior:sleep'),
-      // 表情同样不带 TTL：睡到被叫醒为止，而不是 1.6 秒后自己变回中性脸
-      expressionOp('sleepy', 0, 'behavior:sleep:expression'),
+      // 表情同样不带 TTL：睡到被叫醒为止，而不是 1.6 秒后自己变回中性脸。
+      // 走 base 槽：它就是这一阶段的"基础表情"（transient 到期回落的目标）。
+      expressionOp('sleepy', 0, 'behavior:sleep:expression', undefined, 'base'),
+    ]);
+  }
+
+  /**
+   * 抚摸结束（`pet-end`）：回到 idle 的桥接 + 一次**回礼 wink**（E02）。
+   *
+   * <p><b>为什么桥接时长是 {@link WINK_MS} 而不是 {@link IDLE_BRIDGE_MS}：</b>
+   * 桥接落地时会下发常驻 idle（含中性表情），如果它比 wink 早到，中性脸就会把 wink
+   * 在 250ms 处截断——用户看到的是"嘴刚咧开就没了"。让桥接与 wink 同时到期，
+   * wink 播满 600ms 之后再由 tick 落到常驻 idle，两边时序才对得上。</p>
+   *
+   * @returns 需要下发的指令
+   */
+  private endPet(): PresentationOp[] {
+    const now = this.now();
+    this.petStreak = 0;
+    this.lastPetAt = null;
+    this.enter('idle', null);
+    this.bridgeUntil = now + WINK_MS;
+    this.log('[pet] 行为：抚摸结束，回礼 wink');
+    return entryOps([
+      motionOp('idle', 2, 'behavior:pet-end:idle', { loop: true, durationMs: WINK_MS }),
+      // E02：wink 是**交互表情**（单眼闭合），不是生理眨眼——优先级 1、600ms、fade 0
+      expressionOp('wink', 1, 'behavior:pet-end', WINK_MS),
     ]);
   }
 
@@ -409,6 +570,9 @@ export class PetBehaviorStateMachine {
     this.tapStreak = 0;
     this.lastTapAt = null;
     this.dragging = false;
+    this.dragStartedAt = null;
+    this.petStreak = 0;
+    this.lastPetAt = null;
     this.sustained = null;
     this.lastInteractionAt = this.now();
   }
@@ -429,6 +593,9 @@ export class PetBehaviorStateMachine {
       tapStreak: this.tapStreak,
       lastTapAt: this.lastTapAt,
       dragging: this.dragging,
+      dragStartedAt: this.dragStartedAt,
+      petStreak: this.petStreak,
+      lastPetAt: this.lastPetAt,
       sustained: this.sustained,
       lastInteractionAt: this.lastInteractionAt,
     };
@@ -450,7 +617,17 @@ export class PetBehaviorStateMachine {
       return false;
     }
     const state = snapshot.state;
-    const known: readonly PetBehaviorState[] = ['idle', 'tap', 'angry', 'sleeping', 'wake', 'drag'];
+    // known 列表必须与 PetBehaviorState 联合同步（M1 新增 sleepy / pet）
+    const known: readonly PetBehaviorState[] = [
+      'idle',
+      'tap',
+      'angry',
+      'sleepy',
+      'sleeping',
+      'wake',
+      'drag',
+      'pet',
+    ];
     if (!known.includes(state)) {
       this.log(`[pet] 行为回滚失败：未知状态 ${String(state)}`);
       return false;
@@ -461,6 +638,9 @@ export class PetBehaviorStateMachine {
     this.tapStreak = typeof snapshot.tapStreak === 'number' ? snapshot.tapStreak : 0;
     this.lastTapAt = typeof snapshot.lastTapAt === 'number' ? snapshot.lastTapAt : null;
     this.dragging = snapshot.dragging === true;
+    this.dragStartedAt = typeof snapshot.dragStartedAt === 'number' ? snapshot.dragStartedAt : null;
+    this.petStreak = typeof snapshot.petStreak === 'number' ? snapshot.petStreak : 0;
+    this.lastPetAt = typeof snapshot.lastPetAt === 'number' ? snapshot.lastPetAt : null;
     this.sustained = snapshot.sustained === 'sleepy' ? 'sleepy' : null;
     this.lastInteractionAt =
       typeof snapshot.lastInteractionAt === 'number' ? snapshot.lastInteractionAt : this.now();
@@ -485,8 +665,12 @@ export class PetBehaviorStateMachine {
       this.sustained = 'sleepy';
       return entryOps([
         sustainedMotionOp('sleepy', 0, 'behavior:repair:sleep'),
-        expressionOp('sleepy', 0, 'behavior:repair:sleep:expression'),
+        expressionOp('sleepy', 0, 'behavior:repair:sleep:expression', undefined, 'base'),
       ]);
+    }
+    if (this.stateValue === 'sleepy') {
+      // 困倦不是"一次性动作"，重定向时要重新登记它的到期时刻，否则会永远停在困倦
+      return this.enterSleepy();
     }
     if (this.stateValue === 'drag' && this.dragging) {
       return entryOps([motionOp('drag', 2, 'behavior:repair:drag', { loop: true })]);
@@ -527,8 +711,11 @@ export class PetBehaviorStateMachine {
     const now = this.now();
     // 外部驱动可以随时介入：先把"拖拽中"这类长驻标记清掉，否则所有转移都会被 `dragging` 拦住
     this.dragging = false;
+    this.dragStartedAt = null;
     this.tapStreak = 0;
     this.lastTapAt = null;
+    this.petStreak = 0;
+    this.lastPetAt = null;
     this.lastInteractionAt = now;
 
     switch (state) {
@@ -539,7 +726,7 @@ export class PetBehaviorStateMachine {
         return this.idleOps(2, 'debug:force:idle', IDLE_BRIDGE_MS);
       }
       case 'tap':
-        return this.tap();
+        return this.tap(DEFAULT_TAP_CONTEXT);
       case 'happy': {
         // happy 不是独立行为状态：它是"tap 状态 + happy 动作/表情"的组合
         this.enter('tap', now + TAP_HOLD_MS);
@@ -574,22 +761,35 @@ export class PetBehaviorStateMachine {
   }
 
   /**
-   * 点一下。
+   * 点一下（**按命中分区分流**：头部 = 抚摸语义，身体 = 普通点击）。
    *
    * <p>连点判定用<b>相邻间隔</b>而不是"窗口内累计"：用户慢慢点三下（每次隔 1.9s、
    * 总跨度 3.8s）也读作"连着点"，用固定窗口会把第一下漏掉。</p>
    *
+   * <p>顺序有意如此：<b>惊醒 &gt; 连点生气 &gt; 抚摸 &gt; 单击</b>。连点生气放在分区之前，
+   * 是因为"连点 3 次生气（间隔 &lt; 2s）"是既有语义（§6 的 E05，现状不变）。</p>
+   *
+   * <p><b>§6 的 E05 与 E06 在头部会重叠，这里的裁决是「抚摸优先」：</b>头部第 2 下就进
+   * `pet`，并把连点计数清零（见 {@link tapHead}），所以"摸头摸快了"永远走不到生气——
+   * 摸头是亲昵动作，摸到第三下就翻脸是明显的错误表现。生气仍然可以从身体连点 3 下到达
+   * （§6 的 E05 入口写的就是"连点 3 次"，没有限定分区），因此每一档表情依旧有真实入口。
+   * 用例：`tests/petBehaviorTriggers.test.ts` 的「头部连点 3 次是抚摸不是生气」。</p>
+   *
+   * @param ctx 点击上下文（分区 + 按住时长）
    * @returns 需要下发的指令
    */
-  private tap(): PresentationOp[] {
+  private tap(ctx: TapContext): PresentationOp[] {
     if (this.dragging) return [];
     const now = this.now();
     this.lastInteractionAt = now;
 
-    // 睡眠中点击 = 惊醒：优先级 2，抢掉睡眠动作与任何残留表情
+    // 睡眠中点击 = 惊醒：优先级 2，抢掉睡眠动作与任何残留表情。
+    // 与分区无关：睡着的人被点哪儿都该醒。
     if (this.stateValue === 'sleeping') {
       this.tapStreak = 0;
       this.lastTapAt = now;
+      this.petStreak = 0;
+      this.lastPetAt = null;
       this.enter('wake', now + WAKE_HOLD_MS);
       this.log('[pet] 行为：睡眠中被点击，惊醒');
       return entryOps([
@@ -604,6 +804,8 @@ export class PetBehaviorStateMachine {
 
     if (this.tapStreak >= MULTI_TAP_THRESHOLD) {
       this.tapStreak = 0;
+      this.petStreak = 0;
+      this.lastPetAt = null;
       const holdMs = this.jitter(ANGRY_HOLD_MS, ANGRY_HOLD_JITTER_MS);
       this.enter('angry', now + holdMs);
       this.log(`[pet] 行为：相邻间隔 <${MULTI_TAP_WINDOW_MS}ms 连点 ${MULTI_TAP_THRESHOLD} 次，生气`);
@@ -613,6 +815,18 @@ export class PetBehaviorStateMachine {
       ]);
     }
 
+    if (ctx.profile === 'head') return this.tapHead(ctx, now);
+
+    return this.tapBody();
+  }
+
+  /**
+   * 身体单击（E07）：`happy` 表情 + 整图一弹。
+   *
+   * @returns 需要下发的指令
+   */
+  private tapBody(): PresentationOp[] {
+    const now = this.now();
     const holdMs = this.jitter(TAP_HOLD_MS, TAP_HOLD_JITTER_MS);
     this.enter('tap', now + holdMs);
     return entryOps([
@@ -622,31 +836,107 @@ export class PetBehaviorStateMachine {
   }
 
   /**
+   * 头部点击：凑够"抚摸"就进 `pet`，否则仍然给一次普通点击反应。
+   *
+   * <p>两条入口（§6 的 E06）：</p>
+   * <ul>
+   *   <li><b>按住 ≥ {@link PET_HOLD_MS}</b>（长按抚摸）——一次就够；</li>
+   *   <li><b>连点 2 次</b>（相邻间隔 &lt; {@link PET_DOUBLE_TAP_MS}）——第二次触发。</li>
+   * </ul>
+   *
+   * <p>头部单击还没有构成抚摸，但用户确实点了：给一次普通点击反应（与身体单击同一条路径），
+   * 否则"点了一下头什么都没发生"会被读成没响应。</p>
+   *
+   * @param ctx 点击上下文
+   * @param now 当前时间
+   * @returns 需要下发的指令
+   */
+  private tapHead(ctx: TapContext, now: number): PresentationOp[] {
+    const isHold = Number.isFinite(ctx.holdMs) && ctx.holdMs >= PET_HOLD_MS;
+    const gap = this.lastPetAt === null ? Number.POSITIVE_INFINITY : now - this.lastPetAt;
+    if (isHold) {
+      this.petStreak = Math.max(2, this.petStreak + 1);
+    } else {
+      this.petStreak = gap < PET_DOUBLE_TAP_MS ? this.petStreak + 1 : 1;
+    }
+    this.lastPetAt = now;
+
+    if (this.petStreak < 2) return this.tapBody();
+
+    this.petStreak = 0;
+    this.lastPetAt = null;
+    // 抚摸同时把"连点"计数清零：摸头是亲昵动作，不该在摸第 3 下时被连点规则判成生气
+    // （§6 里 E05「连点 3 次」与 E06「头部连点 2 次」在头部会重叠，这里明确让抚摸优先；
+    //  用例：`petBehaviorTriggers.test.ts` 的「头部连点 3 次是抚摸不是生气」）。
+    this.tapStreak = 0;
+    this.lastTapAt = null;
+    const holdMs = PET_SHOW_MS;
+    this.enter('pet', now + holdMs);
+    this.bridgeUntil = null;
+    this.log(`[pet] 行为：头部被抚摸（${isHold ? `按住 ≥${PET_HOLD_MS}ms` : `连点 2 次（间隔 <${PET_DOUBLE_TAP_MS}ms）`}）`);
+    return entryOps([
+      // E06：shy 表情 + 一次小弹。心形特效是表现层的装饰件（M1 未实现，见设计文档 §6 备注）
+      motionOp('happy', 1, 'behavior:pet', { durationMs: holdMs }),
+      expressionOp('shy', 1, 'behavior:pet:expression', holdMs),
+    ]);
+  }
+
+  /**
    * 开始拖拽：不限时、优先级 2（打断一切，包括睡着的呼吸）。
+   *
+   * <p>顺带"惊一下"（E03 的 drag-start 入口）：`surprised` 600ms，
+   * 让"被拎起来"有一个即时反馈，而不是只有整图位移。</p>
    *
    * @returns 需要下发的指令
    */
   private startDrag(): PresentationOp[] {
     if (this.dragging) return [];
+    const now = this.now();
     this.dragging = true;
-    this.lastInteractionAt = this.now();
+    this.dragStartedAt = now;
+    this.lastInteractionAt = now;
     this.tapStreak = 0;
     this.lastTapAt = null;
+    this.petStreak = 0;
+    this.lastPetAt = null;
     this.bridgeUntil = null;
     this.enter('drag', null);
-    return entryOps([motionOp('drag', 2, 'behavior:drag', { loop: true })]);
+    return entryOps([
+      motionOp('drag', 2, 'behavior:drag', { loop: true }),
+      expressionOp('surprised', 2, 'behavior:drag-start:expression', DRAG_START_SURPRISED_MS),
+    ]);
   }
 
   /**
-   * 结束拖拽：先下桥接 idle（带 TTL），由 tick 落到常驻 idle。
+   * 结束拖拽：短拖 → 桥接 idle；**长拖（≥ {@link SAD_DRAG_MS}）→ 委屈 `sad`**（E04）。
+   *
+   * <p>「被拎久了委屈」是唯一一条按<b>拖拽时长</b>分支的表情触发。判定用
+   * {@link PetBehaviorStateMachine.startDrag} 记下的 `dragStartedAt`，不是调用方传的时长——
+   * 少一个可以传错的参数，就少一类"IPC 抖动导致误判"的缺陷。</p>
+   *
+   * <p>委屈的桥接时长同样取 {@link SAD_HOLD_MS}（而不是 250ms）：桥接落地会下发中性表情，
+   * 比 sad 早到就会把委屈截断在 250ms（与 `pet-end` 的 wink 同一个坑）。</p>
    *
    * @returns 需要下发的指令
    */
   private endDrag(): PresentationOp[] {
     if (!this.dragging) return [];
-    this.dragging = false;
     const now = this.now();
+    const dragMs = this.dragStartedAt === null ? 0 : now - this.dragStartedAt;
+    this.dragging = false;
+    this.dragStartedAt = null;
     this.lastInteractionAt = now;
+
+    if (dragMs >= SAD_DRAG_MS) {
+      this.enter('idle', null);
+      this.bridgeUntil = now + SAD_HOLD_MS;
+      this.log(`[pet] 行为：拖拽 ${dragMs}ms ≥ ${SAD_DRAG_MS}ms，松手委屈`);
+      return entryOps([
+        motionOp('idle', 2, 'behavior:drag-end:long:idle', { loop: true, durationMs: SAD_HOLD_MS }),
+        expressionOp('sad', 1, 'behavior:drag-end:long', SAD_HOLD_MS),
+      ]);
+    }
+
     this.enterIdleWithBridge(now);
     return this.idleOps(2, 'behavior:drag-end:idle', IDLE_BRIDGE_MS);
   }
@@ -674,7 +964,10 @@ export class PetBehaviorStateMachine {
     // （旧实现为此专门走"桥接 + 等下一拍"，那条补丁现在只留作心跳节流，不再承担正确性）
     return entryOps([
       motionOp('idle', priority, reason, { loop: true, durationMs }),
-      expressionOp('neutral', priority, `${reason}:expression`, durationMs),
+      // 中性表情走 **base** 槽（E01：`expression neutral base prio0 无TTL`）：
+      // 它就是"回落目标"，transient 槽到期时总线回落到这里；放在 transient 会让
+      // 一次眨眼/一次点击之后的中性脸与"基础表情"变成两条互不相干的记录。
+      expressionOp('neutral', priority, `${reason}:expression`, durationMs, 'base'),
     ]);
   }
 
