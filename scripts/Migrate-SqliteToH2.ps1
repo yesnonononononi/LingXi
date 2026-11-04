@@ -63,65 +63,17 @@ function Resolve-JavaExecutable([string]$Name) {
     Write-Fail "找不到 $Name.exe，请安装 JDK 21 并设置 JAVA_HOME 后重试。" $script:ExitInvalidArgument
 }
 
-# 本地仓库解析顺序与 Initialize-Development.ps1 保持一致，避免两套脚本各说各话。
+# 本地仓库解析（剥注释 + <localRepository> + 候选顺序 + 兜底）的**唯一真源**：
+# scripts/lib/maven-settings.ps1。这里只负责把自己的 SearchLog 递进去，不再自带任何正则或候选顺序
+# ——同一条"注释盲匹配"缺陷曾在三个文件里各写一遍，修一处漏两处，所以收成一份。
+. (Join-Path $PSScriptRoot 'lib/maven-settings.ps1')
+
 # 解析时把"看过哪些位置、结论是什么"记下来：迁移失败时必须能一眼看出它到底找过哪里
 # （CI 上就是这种情况——本地仓库不在 ~/.m2，而在构建的隔离仓库里）。
 $script:RepositorySearchLog = New-Object 'System.Collections.Generic.List[string]'
 
-function Add-RepositorySearchNote([string]$Note) {
-    $script:RepositorySearchLog.Add($Note) | Out-Null
-}
-
-# 读 settings.xml 前先剥掉 XML 注释。
-# 为什么必须剥：Maven 发行版自带的 conf/settings.xml 里就有被注释掉的示例
-# `<localRepository>/path/to/local/repo</localRepository>`；不剥注释会把它当成真实配置
-# （实测：CI 条件下一路解析成 `D:\path\to\local\repo`，把"缺 jar"的结论指向一个不存在的位置）。
-function Read-SettingsWithoutComments([string]$Path) {
-    $raw = [System.IO.File]::ReadAllText($Path)
-    return [System.Text.RegularExpressions.Regex]::Replace($raw, '(?s)<!--.*?-->', '')
-}
-
 function Resolve-LocalRepository {
-    if ($LocalRepository) {
-        $full = [System.IO.Path]::GetFullPath($LocalRepository)
-        Add-RepositorySearchNote "参数 -LocalRepository 指定 → $full"
-        return $full
-    }
-    if ($env:MAVEN_REPO_LOCAL) {
-        $full = [System.IO.Path]::GetFullPath($env:MAVEN_REPO_LOCAL)
-        Add-RepositorySearchNote "环境变量 MAVEN_REPO_LOCAL → $full"
-        return $full
-    }
-    Add-RepositorySearchNote '未传 -LocalRepository 且没有 MAVEN_REPO_LOCAL → 退到 settings.xml / ~/.m2（构建期隔离仓库在这条路径上看不见）'
-    $settingsCandidates = @((Join-Path $env:USERPROFILE '.m2/settings.xml'))
-    foreach ($homeVariable in @($env:MAVEN_HOME, $env:M2_HOME)) {
-        if ($homeVariable) { $settingsCandidates += (Join-Path $homeVariable 'conf/settings.xml') }
-    }
-    $mavenCommand = Get-Command 'mvn.cmd' -ErrorAction SilentlyContinue
-    if (-not $mavenCommand) { $mavenCommand = Get-Command 'mvn' -ErrorAction SilentlyContinue }
-    if ($mavenCommand) {
-        $mavenRoot = Split-Path -Parent (Split-Path -Parent $mavenCommand.Source)
-        $settingsCandidates += (Join-Path $mavenRoot 'conf/settings.xml')
-    } else {
-        Add-RepositorySearchNote 'PATH 里没有 mvn.cmd / mvn → 少一处 settings.xml 候选（CI 用的就是仓库 wrapper）'
-    }
-    foreach ($settingsPath in $settingsCandidates) {
-        if (-not (Test-Path -LiteralPath $settingsPath)) {
-            Add-RepositorySearchNote "settings 候选不存在: $settingsPath"
-            continue
-        }
-        $settingsText = Read-SettingsWithoutComments $settingsPath
-        $match = [System.Text.RegularExpressions.Regex]::Match($settingsText, '<localRepository>\s*([^<]+?)\s*</localRepository>')
-        if ($match.Success) {
-            $configured = [System.IO.Path]::GetFullPath($match.Groups[1].Value)
-            Add-RepositorySearchNote "$settingsPath 的 <localRepository>（已剥注释）→ $configured"
-            return $configured
-        }
-        Add-RepositorySearchNote "$settingsPath 存在但没有生效的 <localRepository>（注释里的示例不算）"
-    }
-    $fallback = Join-Path $env:USERPROFILE '.m2/repository'
-    Add-RepositorySearchNote "兜底（默认本地仓库）→ $fallback"
-    return $fallback
+    return Get-MavenLocalRepository -Explicit $LocalRepository -SearchLog $script:RepositorySearchLog
 }
 
 # pom.xml 里固定的版本；读不到就返回空串（由调用方退化为「取本地仓库里最新的 jar」）。
