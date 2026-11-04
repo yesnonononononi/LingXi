@@ -14,6 +14,12 @@ on:
       - 'frontend/tests/frameworkDependencies.test.cjs'
       - 'frontend/tests/backendRuntimeMaven.test.cjs'
       - 'frontend/tests/developmentIsolation.test.cjs'
+      # 开发初始化/迁移链：本流水线里的「开发隔离与 Maven 运行时守护」直接跑它们，
+      # 改脚本不触发就等于守护对它守护的对象不可见。只列链上真实文件，不整目录。
+      - 'scripts/*.ps1'
+      - 'scripts/*.java'
+      - 'scripts/lib/**'
+      - 'tools/migrate/**'
       - '.mvn/**'
       - 'mvnw*'
       - '.github/workflows/backend-ci.yml'
@@ -31,6 +37,10 @@ on:
       - 'frontend/tests/frameworkDependencies.test.cjs'
       - 'frontend/tests/backendRuntimeMaven.test.cjs'
       - 'frontend/tests/developmentIsolation.test.cjs'
+      - 'scripts/*.ps1'
+      - 'scripts/*.java'
+      - 'scripts/lib/**'
+      - 'tools/migrate/**'
       - '.mvn/**'
       - 'mvnw*'
       - '.github/workflows/backend-ci.yml'
