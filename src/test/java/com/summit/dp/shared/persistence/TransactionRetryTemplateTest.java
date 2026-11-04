@@ -1,6 +1,7 @@
 package com.summit.dp.shared.persistence;
 
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.dao.CannotAcquireLockException;
@@ -26,7 +27,7 @@ class TransactionRetryTemplateTest {
 
     /** 锁冲突后换新事务重试：第 3 次成功，断言尝试次数与返回值都是真的重放过。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void retriesLockConflictWithFreshTransactionsUntilSuccess() {
         H2TestDatabase database = H2TestDatabase.create("retry-template-success");
         try {
@@ -53,7 +54,7 @@ class TransactionRetryTemplateTest {
 
     /** 业务失败不重试：重放同样的输入只会得到同样的失败，吞掉它就等于掩盖缺陷。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void doesNotRetryNonLockFailure() {
         H2TestDatabase database = H2TestDatabase.create("retry-template-business");
         try {
@@ -73,7 +74,7 @@ class TransactionRetryTemplateTest {
 
     /** 次数有上限：一直冲突时尝试次数必须封顶，并把最后一次异常如实抛出（不吞）。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void givesUpAfterMaxAttemptsAndPropagatesTheFailure() {
         H2TestDatabase database = H2TestDatabase.create("retry-template-exhaust");
         try {
@@ -95,7 +96,7 @@ class TransactionRetryTemplateTest {
 
     /** 调用方已有事务时只跑一次：绝不能把动作偷进新事务，那会破坏调用方的原子性。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void joinsCallerTransactionWithoutRetrying() {
         H2TestDatabase database = H2TestDatabase.create("retry-template-caller-tx");
         try {
@@ -115,7 +116,7 @@ class TransactionRetryTemplateTest {
 
     /** 没有事务管理器（例如直接 new 的用例）时降级为一次尝试，不能假装重试成功。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void withoutTransactionManagerRunsOnce() {
         TransactionRetryTemplate template = new TransactionRetryTemplate(null, "守卫用例");
         AtomicInteger attempts = new AtomicInteger();

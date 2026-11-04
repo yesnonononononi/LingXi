@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
@@ -84,7 +85,7 @@ class ModelContextReplaceTransactionTest {
 
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void independentSessionsCommitWithoutSnapshotConflict() throws Exception {
         service.replace(SESSION_A, messages("A 初始上下文"));
         service.replace(SESSION_B, messages("B 初始上下文"));
@@ -128,7 +129,7 @@ class ModelContextReplaceTransactionTest {
 
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void contextReplaceAndCheckpointSaveInterleaveAndBothCommit() throws Exception {
         service.replace(SESSION_C, messages("C 初始上下文"));
         seedExecution(EXECUTION_ID);
@@ -170,7 +171,7 @@ class ModelContextReplaceTransactionTest {
 
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void independentFirstWritesCommitWithoutSnapshotConflict() throws Exception {
         CountDownLatch insertHasReadStaleSnapshot = new CountDownLatch(1);
         CountDownLatch otherSessionCommitted = new CountDownLatch(1);

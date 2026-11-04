@@ -9,6 +9,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class ReclaimFileOrderingTest {
 
     /** 删文件的那一刻，库行必须已经不在了（删除事务已提交）。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void checkpointFileIsDeletedOnlyAfterTheRowDeletionIsCommitted() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("reclaim-order");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
@@ -78,7 +79,7 @@ class ReclaimFileOrderingTest {
 
     /** 删行回滚时，库行与它的正文文件都必须完好 —— 这正是不许先删文件的理由。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void rollbackKeepsBothTheRowAndItsCheckpointFile() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("reclaim-order-rollback");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();

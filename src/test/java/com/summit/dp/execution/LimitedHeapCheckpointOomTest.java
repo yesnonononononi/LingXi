@@ -1,5 +1,6 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.utils.TestTimeouts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -54,7 +55,7 @@ class LimitedHeapCheckpointOomTest {
             Pattern.compile("^SAME_CONTEXT_ROUNDS=(\\d+)$", Pattern.MULTILINE);
 
     @Test
-    @Timeout(600)
+    @Timeout(TestTimeouts.LONG_HANG_GUARD)
     void savingLargeCheckpointsUnderA512MiBHeapNeitherOomsNorRetainsWholeDocuments() throws Exception {
         Path dataDir = Files.createTempDirectory("lingxi-heap-test-");
         Path output = Files.createTempFile("lingxi-heap-test-", ".log");

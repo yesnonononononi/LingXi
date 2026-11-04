@@ -3,6 +3,7 @@ package com.summit.dp.workflow.application.projection;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class ChatTurnLifecycleProjectorRetryTest {
 
     /** 锁冲突后重试：终态投影第二次成功，且重放用的不是同一次调用。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void terminalProjectionRetriesLockConflict() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("turn-projector-retry");
         try {
@@ -48,7 +49,7 @@ class ChatTurnLifecycleProjectorRetryTest {
 
     /** 业务失败不重试：状态机违约等真实错误必须原样抛出，不能被重放掩盖。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void businessFailureIsNotRetried() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("turn-projector-business");
         try {
@@ -68,7 +69,7 @@ class ChatTurnLifecycleProjectorRetryTest {
 
     /** 非终态（如 RUNNING）不投影终态：与改造前一致，不因重试包装而多发一次写入。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void nonTerminalStateIsNotProjected() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("turn-projector-non-terminal");
         try {

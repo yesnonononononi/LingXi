@@ -17,6 +17,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
@@ -51,7 +52,7 @@ class ConcurrentSaveRetryProbeTest {
     private static final String EXECUTION_B = "920002";
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void independentH2WritersBothCommitWithoutSnapshotRetry() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("qa-save-retry");
         Path dataDir = Files.createTempDirectory("lingxi-qa-save-retry-");
@@ -136,7 +137,7 @@ class ConcurrentSaveRetryProbeTest {
 
 
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void nonLockFailureIsNotRetried() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("qa-save-noretry");
         Path dataDir = Files.createTempDirectory("lingxi-qa-save-noretry-");
@@ -176,7 +177,7 @@ class ConcurrentSaveRetryProbeTest {
 
 
     @Test
-    @Timeout(90)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void callerTransactionPathJoinsTheCallerTransactionAndRollsBackAtomically() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("qa-save-caller-tx");
         Path dataDir = Files.createTempDirectory("lingxi-qa-caller-tx-");

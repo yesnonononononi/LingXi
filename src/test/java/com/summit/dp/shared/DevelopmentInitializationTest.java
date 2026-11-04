@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.utils.TestPaths;
+import com.summit.dp.shared.utils.TestTimeouts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -31,7 +32,7 @@ class DevelopmentInitializationTest {
     private String lastProcessLog = "";
 
     @Test
-    @Timeout(180)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void stoppedH2CopiesDataAndRewritesOnlyDevelopmentPaths() throws Exception {
         Path source = sourceHome();
         try (H2TestDatabase database = H2TestDatabase.create("development-copy")) {
@@ -57,7 +58,7 @@ class DevelopmentInitializationTest {
     }
 
     @Test
-    @Timeout(180)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void openH2RefusesCopyWithoutPublishingDestination() throws Exception {
         Path source = sourceHome();
         try (H2TestDatabase database = H2TestDatabase.create("development-open")) {
@@ -74,7 +75,7 @@ class DevelopmentInitializationTest {
     }
 
     @Test
-    @Timeout(180)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void legacySnapshotMigratesUsingRealCheckpointIdentifiers() throws Exception {
         Path source = sourceHome();
         String sqliteJar = Path.of(JDBC.class.getProtectionDomain().getCodeSource()

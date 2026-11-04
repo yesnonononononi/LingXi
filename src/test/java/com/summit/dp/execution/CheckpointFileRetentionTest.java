@@ -6,6 +6,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class CheckpointFileRetentionTest {
     private static final int ROUNDS = 8;
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void repeatedSavesKeepExactlyOneCommittedFile() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("checkpoint-retention");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();

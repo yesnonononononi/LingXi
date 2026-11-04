@@ -9,6 +9,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import org.junit.jupiter.api.Test;
@@ -33,8 +34,25 @@ class ExecutionCleanupCursorProbeTest {
     /** 清理入口单次请求的执行目录预算；孤儿目录数要盖过它才能逼出第二轮。 */
     private static final int SINGLE_RUN_DIRECTORY_BUDGET = 400;
 
+    /** 本次铺的孤儿目录总数：比单轮预算多一个，逼出「第二轮才收干净」。 */
+    private static final int ORPHAN_DIRECTORIES = SINGLE_RUN_DIRECTORY_BUDGET + 1;
+
+    /** 增长守卫窗口：401 个目录按四分位切段，前 1/4 与后 1/4 各 100 个。 */
+    private static final int GROWTH_WINDOW = ORPHAN_DIRECTORIES / 4;
+
+    /**
+     * 增长容许倍数：后 1/4 的典型单次耗时 ≤ 前 1/4 的 3 倍（口径与
+     * {@code ExecutionCleanupFileStorageTest.GROWTH_ALLOWANCE} 一致，理由见那里）。
+     *
+     * <p>本类结构允许套同一口径：铺目录的循环就是「建一个目录 + 写一个孤儿文件」的逐条写入，
+     * 开销与已建目录数无关；若哪天实现退化成「每建一个目录就全量扫一遍 checkpoints」
+     * （O(n²)），后 1/4 会明显变慢。用相对比值而不是绝对秒数：runner 慢 2 倍时两段等比放大，
+     * 比值不变，不会再出现「同一份 diff 前一次绿、后一次红」。</p>
+     */
+    private static final long GROWTH_ALLOWANCE = 3L;
+
     @Test
-    @Timeout(240)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void orphanOnlyDirectoriesAreReclaimedAcrossTwoRunsWithoutAnyReclaimableRow() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("qa-cursor-probe");
         Path dataDir = Files.createTempDirectory("lingxi-qa-cursor-");
@@ -51,12 +69,33 @@ class ExecutionCleanupCursorProbeTest {
                             new DataSourceTransactionManager(database)),
                     maintenance);
 
-            int total = SINGLE_RUN_DIRECTORY_BUDGET + 1;
+            int total = ORPHAN_DIRECTORIES;
+            // 增长守卫采样：前 1/4 与后 1/4 各记一份逐次耗时（自校准相对增长，不引入绝对秒数）。
+            long[] firstWindowNanos = new long[GROWTH_WINDOW];
+            long[] lastWindowNanos = new long[GROWTH_WINDOW];
             for (int index = 0; index < total; index++) {
+                long startedAtNanos = System.nanoTime();
                 Path directory = Files.createDirectories(dataDir.resolve("checkpoints")
                         .resolve(Integer.toString(700000 + index)));
                 Files.writeString(directory.resolve("66666666666666666666666666666666.json"), "{\"orphan\":true}");
+                long elapsedNanos = System.nanoTime() - startedAtNanos;
+                if (index < GROWTH_WINDOW) {
+                    firstWindowNanos[index] = elapsedNanos;
+                } else if (index >= total - GROWTH_WINDOW) {
+                    lastWindowNanos[index - total + GROWTH_WINDOW] = elapsedNanos;
+                }
             }
+            // 自校准的相对增长守卫：铺目录的开销不得随目录数上升（详见 GROWTH_ALLOWANCE）。
+            long firstTypicalNanos = median(firstWindowNanos);
+            long lastTypicalNanos = median(lastWindowNanos);
+            assertTrue(firstTypicalNanos > 0L,
+                    "增长守卫的采样必须取到非零耗时，否则这条守卫是假绿");
+            assertTrue(lastTypicalNanos <= firstTypicalNanos * GROWTH_ALLOWANCE,
+                    () -> "铺孤儿目录的开销随目录数增长过快（疑似 O(n^2)，即整体退化成平方级）：前 1/4 典型耗时 "
+                            + nanosToMillis(firstTypicalNanos) + "ms，后 1/4 典型耗时 "
+                            + nanosToMillis(lastTypicalNanos) + "ms，比值 "
+                            + String.format("%.2f", (double) lastTypicalNanos / firstTypicalNanos)
+                            + " 超过容许的 " + GROWTH_ALLOWANCE + " 倍");
 
             ExecutionCleanupService.Preview before = service.preview();
             assertEquals(0L, before.executionCount(), "没有任何可回收的数据库行");
@@ -85,7 +124,7 @@ class ExecutionCleanupCursorProbeTest {
      * 界面文案「磁盘上还有检查点文件待扫描」在此时是误导的。</p>
      */
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void protectedCheckpointDirectoryKeepsFilesNeedScanTrueEvenWithNothingToReclaim() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("qa-cursor-protected");
         Path dataDir = Files.createTempDirectory("lingxi-qa-protected-");
@@ -124,6 +163,17 @@ class ExecutionCleanupCursorProbeTest {
             database.shutdown();
             deleteQuietly(dataDir);
         }
+    }
+
+    /** 取样本中位数：单次 GC 停顿只会抬高个别样本，污染不了中位数，比总和稳得多。 */
+    private static long median(long[] samples) {
+        long[] sorted = samples.clone();
+        java.util.Arrays.sort(sorted);
+        return sorted[sorted.length / 2];
+    }
+
+    private static String nanosToMillis(long nanos) {
+        return String.format("%.2f", nanos / 1_000_000d);
     }
 
     private static String publish(LocalFileCheckpointStore store, ObjectMapper mapper, long executionId)

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore.CheckpointWriter;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import org.junit.jupiter.api.AfterEach;
@@ -67,7 +68,7 @@ class InFlightReleaseRaceProbeTest {
 
     /** 确定性交错：A 的释放停在自己的窗口里，B 同时在同一个执行上开始写入。 */
     @Test
-    @Timeout(60)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void deterministicInterleavingKeepsTheOtherWritersRegistrationAndFile() throws Exception {
         CountDownLatch insideRelease = new CountDownLatch(1);
         CountDownLatch letReleaseFinish = new CountDownLatch(1);
@@ -117,7 +118,7 @@ class InFlightReleaseRaceProbeTest {
      * 交错窗口很窄，所以靠轮次而不是靠运气：任何一轮丢掉登记或正文就立刻失败。</p>
      */
     @Test
-    @Timeout(180)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void stressRepeatedCompleteAndBeginNeverLosesThePendingWrite() throws Exception {
         for (int round = 0; round < 150; round++) {
             int index = round;

@@ -13,6 +13,7 @@ import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -37,7 +38,7 @@ class McpWorkspaceNativeTest {
     private final McpConfigAssembler assembler = new McpConfigAssembler();
     private final ObjectMapper json = new ObjectMapper();
 
-    @Test @Timeout(30)
+    @Test @Timeout(TestTimeouts.HANG_GUARD)
     void isolatedRequestUsesHostStdioAndDisableTerminatesTheSharedProcess() throws Exception {
         Path root = Files.createDirectory(directory.resolve("work space 中文"));
         Path outside = Files.writeString(directory.resolve("outside"), "host-canary");
@@ -72,7 +73,7 @@ class McpWorkspaceNativeTest {
         verify(workspace, never()).bridge();
     }
 
-    @Test @Timeout(30)
+    @Test @Timeout(TestTimeouts.HANG_GUARD)
     void isolatedRequestCanUseTheRegisteredHttpServer() throws Exception {
         try (McpHttpFixture fixture = new McpHttpFixture("Bearer fixture-token")) {
             Mcp model = Mcp.builder().id(2L).name("remote").transport(Mcp.Transport.STREAMABLE_HTTP)

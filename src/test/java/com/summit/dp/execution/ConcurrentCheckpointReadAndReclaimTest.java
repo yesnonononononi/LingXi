@@ -17,6 +17,7 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
@@ -47,7 +48,7 @@ class ConcurrentCheckpointReadAndReclaimTest {
     private static final String EXECUTION_ID = "305";
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void readingStaysConsistentWhileCleanupReclaimsTheSameExecution() throws Exception {
         H2TestDatabase database = H2TestDatabase.create("concurrent-read-reclaim");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
