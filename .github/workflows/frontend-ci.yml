@@ -6,11 +6,21 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
+      # 桌宠美术资产的**全部**批次都住在 docs/assets/desktop-pet/
+      #（v1–v4 / p1 / companion / poses/{sit,lie,sleep,walk,run,…}），而本 job 的每一步都在读它：
+      #   · gate:pet              读 v3 母版 PNG、p1 分层母版与掩膜做像素级 C2/C3 校验
+      #   · test:pet              读 poses/** 批次清单与帧、v4 expr，以及 .gitignore 的 desktop-pet 例外规则
+      #   · check-pet-not-shipped 验的是「这些资产没有被打进安装包产物」
+      # 缺这一条就会出现「只改资产 ⇒ 整套桌宠门禁一条不跑」的缝（a33afaf9 新增 poses/run 29 个文件即如此）。
+      # 一条前缀即可覆盖所有批次：不需要逐批列举，将来新增批次也不必改本文件。
+      - 'docs/assets/desktop-pet/**'
   pull_request:
     branches: [develop, main]
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
+      # 与 push 同源：资产批次变更必须过同一套桌宠门禁，PR 上不能比推送更松。
+      - 'docs/assets/desktop-pet/**'
 
 # 同一分支/PR 重复触发时，取消进行中的旧任务，避免浪费 Actions 额度
 concurrency:
