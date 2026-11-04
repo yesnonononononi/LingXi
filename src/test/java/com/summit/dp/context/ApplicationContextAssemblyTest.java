@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mockingDetails;
@@ -168,14 +169,40 @@ class ApplicationContextAssemblyTest {
             names.add(definition.name());
         });
 
-        assertTrue(names.containsAll(List.of("execute_command", "manage_command", "read_file", "edit_file",
-                        "read_image", "load_memory", "search_wiki", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
-                        "send_mail_to_agent", "create_plan",
-                        "create_checklist", "get_current_checklist", "get_checklist", "update_checklist_step", "modify_checklist", "delete_checklist")),
+        assertTrue(names.containsAll(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
+                        ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
+                        ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT,
+                        ToolCatalog.CREATE_PLAN,
+                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
+                        ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)),
                 "门禁必须覆盖全部基础工具，实际=" + names);
-        assertEquals(18, definitions.values().stream()
-                .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class)).count(),
-                "注解声明工具的固定数量：十件旧工具 + 六件执行清单工具 + 两件项目记忆工具");
+
+        // 注解工具的「精确集合」白名单：名字取自 ToolCatalog 常量（编译期即可发现改名/删除），
+        // 数量由白名单自身推导，不再写裸数字 18/19——新增一个 @Tool 执行器时，
+        // 这条断言会立刻指出来「你加的工具没进白名单」，而不是只报一句 expected:<19> but was:<20>。
+        // 清单分三组，与 @Tool 的实际落点一一对应：
+        //   基础工具 13 件（含 generate_image）、执行清单 6 件、项目记忆 2 件（load_memory / search_wiki）。
+        // 注：web_search 不在其中——它是配置驱动的 ToolDefinition Bean，不是注解工具。
+        Set<String> expectedAnnotationTools = Set.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
+                ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
+                ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.REQUIRE_CHOICE,
+                ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT,
+                ToolCatalog.CREATE_PLAN,
+                ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
+                ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST);
+        Set<String> annotationTools = new TreeSet<>();
+        definitions.forEach((beanName, definition) -> {
+            if (definition.executor().getClass().isAnnotationPresent(Tool.class)) {
+                annotationTools.add(definition.name());
+            }
+        });
+        assertEquals(expectedAnnotationTools, annotationTools,
+                "注解工具的集合必须与白名单精确一致（多一件=新工具忘了登记；少一件=@Tool 丢了）。"
+                        + "白名单在 ApplicationContextAssemblyTest 里，按 ToolCatalog 常量维护。"
+                        + "白名单=" + new TreeSet<>(expectedAnnotationTools) + "，实际=" + annotationTools);
+        assertEquals(expectedAnnotationTools.size(), annotationTools.size(),
+                "数量由白名单推导，白名单自身必须无重复：" + expectedAnnotationTools.size());
         assertEquals(5, context.getBeansOfType(ToolDefinition.class).size(),
                 "只有配置驱动的网页检索与四个框架内核工具保留定义 Bean");
         definitions.values().stream()

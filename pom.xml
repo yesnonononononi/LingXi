@@ -56,6 +56,15 @@
                                                                     → 直接点名该类
         -->
         <lingxi.surefire.excluded-groups>network</lingxi.surefire.excluded-groups>
+        <!--
+          surefire 的 argLine 默认值（空）。
+
+          为什么要有：surefire 配置里写的是 `@{argLine} -Dfile.encoding=UTF-8 …`，
+          `@{argLine}` 由 JaCoCo 的 prepare-agent 在构建期赋值；一旦 `-Djacoco.skip=true`，
+          属性不存在，未解析的 "@{argLine}" 会被当成一个非法 JVM 参数传给 fork 直接报错。
+          在 properties 里声明成空串，两种情况都能解析（jacoco 跑时由它覆盖）。
+        -->
+        <argLine></argLine>
         <!-- 默认目标只覆盖纯逻辑核心包，单次可接受；要跑别的范围用 -DtargetClasses=a.*,b.* 覆盖（逗号分隔由 Maven 拆成数组）。 -->
     </properties>
     <dependencies>
@@ -170,6 +179,21 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <excludedGroups>${lingxi.surefire.excluded-groups}</excludedGroups>
+                    <!--
+                      控制台编码：CI 的 Windows runner 控制台代码页是 cp437/cp1252，中文断言消息
+                      到那里会被 JVM 编成 "??????????"（连 expected/actual 都读不出来）。
+                      这里给**跑测试的那个 JVM**（surefire fork）显式指定 UTF-8 输出编码，让
+                      字节以 UTF-8 落到 GitHub Actions 日志里；不改任何断言文案（改英文才是掩盖）。
+
+                      为什么必须写 @{argLine} 前缀：JaCoCo 的 prepare-agent 是通过 argLine 注入
+                      agent 的，直接覆盖 argLine 等于静默关掉覆盖率（pom 顶部注释有同样的警告）。
+                      @{argLine} 是 surefire 的延迟替换，会把 jacoco 设好的值原样接上；
+                      为了让 `-Djacoco.skip=true` 时也不留下未解析的 "@{argLine}"，下面在
+                      <properties> 里给了 argLine 的默认空值。
+                    -->
+                    <argLine>@{argLine} -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8</argLine>
+                    <!-- 报告文件（target/surefire-reports/*.txt）同样按 UTF-8 写，便于事后 grep 中文 -->
+                    <reportEncoding>UTF-8</reportEncoding>
                 </configuration>
             </plugin>
             <!-- 变异测试：不绑定生命周期，只在显式执行 `mvn pitest:mutationCoverage` 时运行，不影响 test/package。 -->

@@ -22,6 +22,7 @@ import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceResolver;
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.execution.infrastructure.persistence.mapper.RuntimeConfigRevisionMapper;
 import com.summit.dp.execution.infrastructure.repository.RuntimeConfigRevisionRepositoryImpl;
@@ -30,6 +31,9 @@ import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
+import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.application.service.SessionService;
+import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.shared.exception.ClientException;
@@ -44,6 +48,7 @@ import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
+import com.summit.dp.workflow.application.chat.RequestPreparerTestSupport;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.RuntimeConfigurationProviders;
@@ -227,9 +232,22 @@ class RuntimeConfigurationIntegrationTest {
         configurations.freezeMcp(mcp(Map.of("Authorization", "previous-mcp-secret")));
         McpService mcpService = mock(McpService.class);
         when(mcpService.currentConfig()).thenReturn(mcp);
-        RequestPreparer preparer = new RequestPreparer(null, mock(SessionRepository.class), null, null, null, null,
-                ToolListProcessorTestSupport.create(), null, null, null, null, null, mcpService,
-                new SkillRootResolver(""), null, new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), configurations);
+        // 用具名参数装配：以前这里是 18 个位置参数、其中一堆 null —— settingsProvider 就是
+        // 第 6 位那个 null，字段变成必填之后没人会发现（编译通过、运行期 NPE）。
+        SessionService sessions = mock(SessionService.class);
+        when(sessions.findById(201L)).thenReturn(Result.success(SessionVO.builder().id(201L).build()));
+        SessionRepository sessionRows = mock(SessionRepository.class);
+        when(sessionRows.findById(201L)).thenReturn(Optional.of(Session.builder()
+                .id(201L).rootSessionId(0L).historyRevision(1L).build()));
+        ModelContextService modelContext = mock(ModelContextService.class);
+        when(modelContext.find(201L)).thenReturn(Optional.empty());
+        RequestPreparer preparer = RequestPreparerTestSupport.builder()
+                .sessionService(sessions)
+                .sessionRepository(sessionRows)
+                .modelContextService(modelContext)
+                .mcpService(mcpService)
+                .runtimeConfigurations(configurations)
+                .build();
         RuntimeContext context = new RuntimeContext(ExecutionContext.root(201L, "101", null, 31L,
                 AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.PRE_EXEC_CONFIRM), null, null,
                 SessionVO.builder().id(201L).build(), List.of(), null, model, AgentAccessMode.IN_WORKSPACE,
