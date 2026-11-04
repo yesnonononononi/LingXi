@@ -272,3 +272,145 @@ test('守卫接线：assertOwnTree 必须调用树身份判据，且 FOREIGN 分
   assert.match(undecidableBranch, /throw new Error\(/, 'undecidable 必须抛错（SKIP 也要非 0 退出）');
   assert.match(undecidableBranch, /怎么修/, 'SKIP 必须写清怎么修');
 });
+
+// ---------------------------------------------------------------- 声明 ↔ 实现一致性（防类型声明漂移）
+
+/**
+ * 判据模块的**类型声明**路径。
+ *
+ * <p>`.mjs` → `.d.mts` 是 TypeScript 的既定配对规则（与既有 `pet-dev-endpoint.cjs` →
+ * `pet-dev-endpoint.d.cts` 同一套）。声明与实现放在同目录同名，`vue-tsc -b` 才能拿到强类型；
+ * 而 `.mjs` 里没有任何运行时信息能约束声明，所以**必须有下面这条一致性守卫**——
+ * 否则实现里加/删导出、或把类型写成 `any`，都不会有人发现（`vue-tsc` 照样绿）。</p>
+ */
+const FP_DECL_PATH = path.join(__dirname, '..', 'electron', 'pet-tree-fingerprint.d.mts');
+
+/** 判据模块的实现路径（用于断言"声明与实现在同一目录、同名配对"）。 */
+const FP_MODULE_PATH = path.join(__dirname, '..', 'electron', 'pet-tree-fingerprint.mjs');
+
+/**
+ * 去掉注释（块注释 + 行注释），保留代码。
+ *
+ * <p>注释里写 `any`、写 `@ts-expect-error`（说明"为什么不能用"）都是正当文档，
+ * 只有**代码里**出现才算逃逸；所以判据必须先剥注释，否则守卫会被文档误伤。</p>
+ *
+ * @param {string} source 源码全文
+ * @returns {string} 去掉注释的文本
+ */
+function stripComments(source) {
+  const withoutBlocks = String(source).replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ''));
+  return withoutBlocks
+    .split('\n')
+    .map((line) => line.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
+    .join('\n');
+}
+
+/**
+ * 解析声明里 `export declare function|const` 的导出名与种类。
+ *
+ * @param {string} declText 声明全文
+ * @returns {Array<{name: string, kind: 'function'|'const', line: string}>} 导出项（按出现顺序）
+ */
+function parseDeclaredValueExports(declText) {
+  const lines = stripComments(declText).split('\n');
+  /** @type {Array<{name: string, kind: 'function'|'const', line: string}>} */
+  const found = [];
+  for (const line of lines) {
+    const matched = /^export declare (function|const)\s+([A-Za-z_$][\w$]*)/.exec(line.trim());
+    if (!matched) continue;
+    found.push({ name: matched[2], kind: /** @type {'function'|'const'} */ (matched[1]), line: line.trim() });
+  }
+  return found;
+}
+
+test('声明一致性：.d.mts 与 .mjs 同目录同名配对（否则 vue-tsc 又会退化成 any）', () => {
+  assert.equal(fs.existsSync(FP_MODULE_PATH), true, `实现不存在：${FP_MODULE_PATH}`);
+  assert.equal(fs.existsSync(FP_DECL_PATH), true, `类型声明不存在：${FP_DECL_PATH}`);
+  assert.equal(path.basename(FP_DECL_PATH), path.basename(FP_MODULE_PATH).replace(/\.mjs$/, '.d.mts'));
+  assert.equal(path.dirname(FP_DECL_PATH), path.dirname(FP_MODULE_PATH), '声明必须与实现同目录（TS 按同目录同名配对）');
+  const declText = fs.readFileSync(FP_DECL_PATH, 'utf8');
+  assert.ok(declText.length > 500, '声明文件短得不像话，可能被清空或用 declare module 兜底成 any');
+});
+
+test('声明一致性：声明里的导出名集合 === .mjs 实际 import() 出来的导出名集合（漂移必红）', () => {
+  const declText = fs.readFileSync(FP_DECL_PATH, 'utf8');
+  const declared = parseDeclaredValueExports(declText);
+
+  const actualNames = Object.keys(FP).sort();
+  const declaredNames = declared.map((item) => item.name).sort();
+  assert.deepEqual(
+    declaredNames,
+    actualNames,
+    `声明与实现的导出集合不一致：实现有 [${actualNames.join(', ')}]，声明有 [${declaredNames.join(', ')}]`
+      + '（实现加了导出就在 .d.mts 里补上；声明里多了的导出要从定义里删掉）',
+  );
+
+  // 种类也要对齐：声明成 function 的，运行时必须是函数；声明成 const 的，运行时必须有值
+  const wrongKind = declared.filter((item) => {
+    const runtime = FP[item.name];
+    if (item.kind === 'function') return typeof runtime !== 'function';
+    return runtime === undefined;
+  });
+  assert.deepEqual(
+    wrongKind.map((item) => `${item.name}(${item.kind})`),
+    [],
+    `声明的导出种类与实现不符：${wrongKind.map((item) => item.line).join(' / ')}`,
+  );
+});
+
+test('声明一致性：解析器真的认得出导出（防止"解析出 0 条"让上面的集合比对空跑）', () => {
+  const declared = parseDeclaredValueExports(fs.readFileSync(FP_DECL_PATH, 'utf8'));
+  assert.ok(
+    declared.length >= 8,
+    `只解析出 ${declared.length} 个 export declare 项：声明结构可能已改成 export { } 之类，`
+      + '解析器要同步跟进，否则集合比对会变成空跑',
+  );
+  assert.equal(
+    declared.filter((item) => item.kind === 'function').length >= 4,
+    true,
+    `函数导出只认出 ${declared.filter((item) => item.kind === 'function').length} 个，声明结构可能已变`,
+  );
+});
+
+test('声明一致性：TreeIdentityStatus 三态联合与 TREE_IDENTITY 取值逐字一致', () => {
+  const declText = stripComments(fs.readFileSync(FP_DECL_PATH, 'utf8'));
+  const unionLine = /^export type TreeIdentityStatus = (.+);$/m.exec(declText);
+  assert.ok(unionLine, '声明里必须存在 `export type TreeIdentityStatus = ...;`（三态联合）');
+  const declaredStates = (unionLine[1].match(/'([^']+)'/g) || []).map((item) => item.slice(1, -1)).sort();
+  const runtimeStates = Object.values(TREE_IDENTITY).slice().sort();
+  assert.deepEqual(
+    declaredStates,
+    runtimeStates,
+    `三态联合与 TREE_IDENTITY 取值不一致：声明 [${declaredStates.join(', ')}]，运行时 [${runtimeStates.join(', ')}]`,
+  );
+  assert.equal(runtimeStates.length, 3, '身份判定必须是三态（own / foreign / undecidable），多一个少一个都不行');
+});
+
+test('声明一致性：声明里不得出现 any / @ts-* 逃逸，函数导出必须写明返回类型', () => {
+  const declText = stripComments(fs.readFileSync(FP_DECL_PATH, 'utf8'));
+  assert.doesNotMatch(
+    declText,
+    /\bany\b/,
+    '声明里出现了 any：TypeScript 会因此失去检查能力，等于把 TS7016 换成"静默 any"',
+  );
+  assert.doesNotMatch(
+    declText,
+    /@ts-(ignore|nocheck|nocheck|expect-error)/,
+    '声明里出现了 @ts-* 指令：那不是修复类型，是掩盖类型',
+  );
+  const functions = parseDeclaredValueExports(declText).filter((item) => item.kind === 'function');
+  assert.ok(functions.length >= 4, `只找到 ${functions.length} 个函数导出，声明结构可能已变`);
+  const noReturn = functions.filter((item) => !/\)\s*:\s*[A-Za-z_$]/.test(item.line));
+  assert.deepEqual(noReturn.map((item) => item.line), [], '每个函数导出都必须写明返回类型（省略会退化成隐式 any）');
+});
+
+test('声明防回退：vite.pet.config.ts 仍 import 树指纹插件（不许靠删 import 来消掉 TS7016）', () => {
+  const configPath = path.join(__dirname, '..', 'vite.pet.config.ts');
+  const source = stripComments(fs.readFileSync(configPath, 'utf8'));
+  assert.match(
+    source,
+    /import\s*\{\s*createTreeFingerprintPlugin\s*\}\s*from\s*'\.\/electron\/pet-tree-fingerprint\.mjs'/,
+    'vite.pet.config.ts 必须继续 import createTreeFingerprintPlugin（删掉它只是把桌宠树指纹关掉，不是修类型）',
+  );
+  assert.match(source, /plugins:\s*\[\s*createTreeFingerprintPlugin\(\)/, '插件必须仍然挂在 plugins 里（悬空 import 等于没接）');
+});

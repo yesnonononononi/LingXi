@@ -413,6 +413,34 @@ const MUTATIONS = [
     testFile: 'tests/petAssetTracking.test.cjs',
     expect: '清单外出现盘符字面量',
   },
+  // ---------------------------------------------------------------- 类型声明与实现的一致性（不许声明静默漂移）
+  {
+    id: 'declaration-export-removed',
+    goal: '从 .d.mts 里删掉一个导出（实现里有、声明里没有）：声明一致性守卫必须红，否则类型会悄悄退化成 any',
+    file: 'electron/pet-tree-fingerprint.d.mts',
+    find: 'export declare function verifyOwnTree(options?: VerifyOwnTreeOptions): Promise<TreeIdentityResult>;',
+    replace: '',
+    testFile: 'tests/petDevIdentity.test.cjs',
+    expect: '声明与实现的导出集合不一致',
+  },
+  {
+    id: 'declaration-identity-union-drift',
+    goal: '把声明里的三态联合改掉一个字面量（own/foreign/undecidable 漂移）：三态一致性断言必须红',
+    file: 'electron/pet-tree-fingerprint.d.mts',
+    find: "export type TreeIdentityStatus = 'own' | 'foreign' | 'undecidable';",
+    replace: "export type TreeIdentityStatus = 'own' | 'foreign' | 'unknown';",
+    testFile: 'tests/petDevIdentity.test.cjs',
+    expect: '三态联合与 TREE_IDENTITY 取值不一致',
+  },
+  {
+    id: 'declaration-any-escape',
+    goal: '把声明里的返回类型写成 any（"用 any 消掉 TS7016"的掩盖手段）：守卫必须红',
+    file: 'electron/pet-tree-fingerprint.d.mts',
+    find: 'export declare function computeTreeFingerprint(frontendRoot?: string): TreeFingerprint;',
+    replace: 'export declare function computeTreeFingerprint(frontendRoot?: string): any;',
+    testFile: 'tests/petDevIdentity.test.cjs',
+    expect: '声明里出现了 any',
+  },
 ];
 
 /** 当前在飞的变异：绝对路径 → 原始文本（进程被中断时据此还原）。 */
