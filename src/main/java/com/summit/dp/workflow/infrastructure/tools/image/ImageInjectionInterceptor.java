@@ -2,7 +2,10 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.Image;
+import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.conversation.message.content.Content;
+import com.summit.core.conversation.message.content.ImageContent;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
@@ -26,8 +29,6 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
 
     /** 待注入队列：工具执行时写入，下一轮模型调用前消费。 */
     static final String KEY_PENDING = "lingxi.image.pending";
-    /** 已注入过的图片内容哈希：同一次执行内不重复烧 token。 */
-    static final String KEY_INJECTED = "lingxi.image.injected";
 
     private final ImageCacheDirectory cache;
 
@@ -73,7 +74,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
 
         Map<String, Object> attributes = ImageExecutionAttributes.read(execution);
         Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
-        Set<String> injected = new LinkedHashSet<>(readInjected(execution));
+        Set<String> visibleImages = collectVisibleImages(execution.getMessages());
         List<Image> images = new ArrayList<>();
         List<String> lines = new ArrayList<>();
 
@@ -83,15 +84,6 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
             String mimeType = text(entry.get("mimeType"));
             String extension = text(entry.get("ext"));
             if (imageId == null) continue;
-            if (injected.contains(imageId)) {
-                lines.add("- " + path + "：与之前注入的是同一张图，不重复提供");
-                continue;
-            }
-            // 同一工具轮可并发读取多张，只有汇总后的注入点能守住总量。
-            if (ImageExecutionAttributes.consumed(attributes) + images.size() >= ReadImageToolExecutor.MAX_IMAGE_BUDGET) {
-                lines.add("- " + path + "：本次执行的图片数量已达上限，请不要臆测内容");
-                continue;
-            }
             if (sessionId == null) {
                 lines.add("- " + path + "：会话标识缺失，图片无法注入，请不要臆测内容");
                 continue;
@@ -102,9 +94,12 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
                 continue;
             }
             try {
-                byte[] bytes = Files.readAllBytes(cached);
-                images.add(Image.from(Base64.getEncoder().encodeToString(bytes), mimeType));
-                injected.add(imageId);
+                String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(cached));
+                if (!visibleImages.add(base64)) {
+                    lines.add("- " + path + "：与上下文中的图片相同，不重复提供");
+                    continue;
+                }
+                images.add(Image.from(base64, mimeType));
                 lines.add("- " + path + "（" + entry.get("width") + "×" + entry.get("height") + "）");
             } catch (IOException unreadable) {
                 log.warn("注入图片失败: imageId={}, path={}", imageId, path, unreadable);
@@ -113,23 +108,17 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
         }
 
         // 队列必须清空：同一张图不能在后续每一轮重复注入。
-        int consumed = ImageExecutionAttributes.consumed(attributes) + images.size();
-        List<String> injectedSnapshot = List.copyOf(injected);
         String intro = images.isEmpty()
                 ? "以下是 read_image 的结果说明：\n"
-                : "以下是你在上一轮 read_image 读取的图片，现在可以看到它们：\n";
+                : "以下是上一轮 read_image 的结果，图片内容按上下文窗口保留：\n";
         String text = intro + String.join("\n", lines);
         UserMessageEntity message = images.isEmpty()
                 ? UserMessageEntity.from(text)
                 : UserMessageEntity.from(text, images);
         context.appendMessage(List.of(message));
-        ImageExecutionAttributes.mutate(execution, next -> {
-            next.put(KEY_PENDING, List.of());
-            next.put(KEY_INJECTED, injectedSnapshot);
-            next.put(ReadImageToolExecutor.KEY_CONSUMED, consumed);
-        });
+        ImageExecutionAttributes.mutate(execution, next -> next.put(KEY_PENDING, List.of()));
         if (!images.isEmpty()) {
-            log.info("注入图片: count={}, consumed={}", images.size(), consumed);
+            log.info("注入图片: count={}", images.size());
         }
         return InterceptorResult.NONE;
     }
@@ -145,14 +134,15 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
         return pending;
     }
 
-    private List<String> readInjected(Execution execution) {
-        Object value = ImageExecutionAttributes.read(execution).get(KEY_INJECTED);
-        if (!(value instanceof List<?> list)) return List.of();
-        List<String> ids = new ArrayList<>();
-        for (Object item : list) {
-            if (item != null) ids.add(String.valueOf(item));
+    private Set<String> collectVisibleImages(List<Message> messages) {
+        Set<String> images = new HashSet<>();
+        for (Message message : messages) {
+            if (!(message instanceof UserMessageEntity user)) continue;
+            for (Content content : user.getContent()) {
+                if (content instanceof ImageContent image) images.add(image.getImage().getBase64Data());
+            }
         }
-        return ids;
+        return images;
     }
 
     private static String text(Object value) {

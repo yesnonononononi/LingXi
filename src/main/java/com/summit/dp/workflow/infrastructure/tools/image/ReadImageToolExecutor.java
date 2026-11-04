@@ -58,10 +58,6 @@ public class ReadImageToolExecutor implements ToolExecutor {
 
     /** 单图字节上限：再大就不是「看一眼」的场景了。 */
     static final long MAX_BYTES = 10L * 1024 * 1024;
-    /** 单次执行可注入的图片张数上限：base64 会随执行快照每轮重写，必须有闸门。 */
-    static final int MAX_IMAGE_BUDGET = 15;
-    /** 已注入计数键，与注入拦截器共用。 */
-    public static final String KEY_CONSUMED = "lingxi.image.consumed";
 
     private final ObjectMapper objectMapper;
     private final ImageNormalizer normalizer;
@@ -89,14 +85,13 @@ public class ReadImageToolExecutor implements ToolExecutor {
         Workspace workspace = requireWorkspace(toolExecution);
         Path target = resolveInsideWorkspace(workspace, displayPath);
         Map<String, Object> attributes = toolExecution.getAttributes() == null ? Map.of() : toolExecution.getAttributes();
-        long sessionId = requireVisionAndBudget(attributes);
+        long sessionId = requireVisionSession(attributes);
         byte[] raw = readBytes(workspace, target, displayPath);
         ImageFormat format = requireSupportedFormat(raw);
         requireSafePixelCount(raw, displayPath);
         StoredImage stored = encodeAndCache(raw, format, sessionId, displayPath);
-        int used = ImageExecutionAttributes.consumed(attributes) + 1;
         return ToolExecuteResult.success(
-                receipt(displayPath, stored.cached(), stored.normalized(), used),
+                receipt(displayPath, stored.cached(), stored.normalized()),
                 ToolResultType.NORMAL,
                 metadata(stored.cached(), stored.normalized(), displayPath));
     }
@@ -136,17 +131,14 @@ public class ReadImageToolExecutor implements ToolExecutor {
         return target;
     }
 
-    /** 视觉能力、会话标识、张数闸门都在读文件之前：看不了图的模型不该先碰磁盘。 */
-    private long requireVisionAndBudget(Map<String, Object> attributes) {
+    /** 缺少视觉能力或会话标识时无需读取文件。 */
+    private long requireVisionSession(Map<String, Object> attributes) {
         if (!Boolean.TRUE.equals(attributes.get(ExecutionAttributes.MODEL_VISION))) {
             throw new ReadRejected("VISION_UNAVAILABLE", "当前模型不支持直接读取图片，请改用文字描述或换用视觉模型");
         }
         Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
         if (sessionId == null) {
             throw new ReadRejected("READ_FAILED", "会话标识缺失，无法定位图片缓存");
-        }
-        if (ImageExecutionAttributes.consumed(attributes) >= MAX_IMAGE_BUDGET) {
-            throw new ReadRejected("BUDGET_EXHAUSTED", "本次执行最多读取 " + MAX_IMAGE_BUDGET + " 张图片");
         }
         return sessionId;
     }
@@ -217,7 +209,7 @@ public class ReadImageToolExecutor implements ToolExecutor {
     }
 
     private String receipt(String displayPath, ImageCacheDirectory.CachedImage cached,
-                           ImageNormalizer.NormalizedImage normalized, int used) {
+                           ImageNormalizer.NormalizedImage normalized) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("ok", true);
         ArrayNode images = root.putArray("images");
@@ -229,10 +221,7 @@ public class ReadImageToolExecutor implements ToolExecutor {
         image.put("width", normalized.width());
         image.put("height", normalized.height());
         image.put("bytes", normalized.data().length);
-        ObjectNode budget = root.putObject("budget");
-        budget.put("used", used);
-        budget.put("max", MAX_IMAGE_BUDGET);
-        root.put("note", "图像将在下一轮作为用户消息注入你的上下文");
+        root.put("note", "图像将在下一轮按图片窗口保留，已移出窗口的图可重新读取");
         return root.toString();
     }
 

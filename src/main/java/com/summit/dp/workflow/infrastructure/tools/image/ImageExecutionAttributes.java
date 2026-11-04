@@ -41,9 +41,4 @@ final class ImageExecutionAttributes {
         Long value = ExecutionAttributes.readLong(attributes, key);
         return value == null ? 0 : value.intValue();
     }
-
-    /** 已注入张数，与 {@code read_image} 回执里的 {@code budget.used} 同源。 */
-    static int consumed(Map<String, Object> attributes) {
-        return number(attributes, ReadImageToolExecutor.KEY_CONSUMED);
-    }
 }

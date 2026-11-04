@@ -7,14 +7,13 @@ import com.summit.adapter.langchain4j.model.ChatModelAdapter;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.Image;
 import com.summit.core.compact.ContextAttachmentProvider;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.loop.CheckPointResult;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopResult;
-import com.summit.core.runtime.loop.RuntimeBoundaryChecker;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutionContext;
 import com.summit.core.tool.ToolExecutor;
@@ -22,9 +21,12 @@ import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
+import com.summit.runtime.agent.AgentConfig;
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
+import com.summit.runtime.conversation.DefaultTokenizer;
 import com.summit.runtime.loop.AgentLoopStepRunner;
+import com.summit.runtime.loop.BoundaryChecker;
 import com.summit.runtime.loop.DefaultLoopInterceptor;
 import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
 import com.summit.runtime.model.DefaultChatModelInvoker;
@@ -39,6 +41,7 @@ import org.junit.jupiter.api.io.TempDir;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -47,6 +50,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -57,7 +61,7 @@ class ReadImageLoopIntegrationTest {
     @TempDir Path dataDir;
 
     @Test
-    void toolRoundSendsConvertedPixelsAfterTheToolReceipt() throws Exception {
+    void toolRoundSendsConvertedPixelsAndTrimsOldImagesBeforeTheNextRequest() throws Exception {
         BufferedImage source = new BufferedImage(16, 8, BufferedImage.TYPE_INT_RGB);
         source.setRGB(0, 0, 0x123456);
         assertTrue(ImageIO.write(source, "bmp", workspaceRoot.resolve("sample.bmp").toFile()));
@@ -95,22 +99,22 @@ class ReadImageLoopIntegrationTest {
                     .httpClientBuilder(OkHttpClient.builder())
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
                     .apiKey("local-test-key").modelName("arbitrary-vision-model").timeout(Duration.ofSeconds(5)).maxRetries(0).build());
+            List<Image> history = IntStream.range(0, 15)
+                    .mapToObj(index -> Image.from(URI.create("https://example.test/old-" + index))).toList();
             AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.READ_IMAGE))
                     .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                             ExecutionAttributes.SESSION_ID, "42", ExecutionAttributes.MODEL_VISION, true)).build())
-                    .messages(List.of(UserMessageEntity.from("inspect sample.bmp"))).build();
+                    .messages(List.of(UserMessageEntity.from("inspect sample.bmp", history))).build();
             Execution execution = Execution.builder().id("image-loop").agentId("test")
                     .agentRequest(request).messages(new ArrayList<>(request.getMessages())).tokenUsage(TokenUsageEntity.empty()).build();
-            RuntimeBoundaryChecker budget = new RuntimeBoundaryChecker() {
-                public CheckPointResult before(Execution current) {
-                    return current.getModelAttempts() < 3 ? CheckPointResult.continueWith() : CheckPointResult.cancelWith("测试轮次超限");
-                }
-                public CheckPointResult after(Execution current) { return CheckPointResult.continueWith(); }
-            };
+            DefaultTokenizer tokenizer = new DefaultTokenizer();
+            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            BoundaryChecker budget = new BoundaryChecker(AgentConfig.builder().maxIterations(3).maxTokens(100_000).build(),
+                    tokenizer, conversations, null, null);
             try (DefaultToolExecutionManager tools = new DefaultToolExecutionManager(
                     new ToolExecutionContext(events, new ToolRegistry(List.of(definition)), 4),
                     invocation -> ((ToolExecutor) invocation.getTarget()).execute(invocation.getContext()), List.of())) {
-                RuntimeContext context = RuntimeContext.builder().conversationManager(new DefaultConversationManager(ContextAttachmentProvider.NONE))
+                RuntimeContext context = RuntimeContext.builder().conversationManager(conversations)
                         .workspace(new LocalWorkspace("test", workspaceRoot.toString())).runtimeEventPublisher(events)
                         .toolExecutionManager(tools).runtimeBoundaryChecker(budget)
                         .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(
@@ -121,7 +125,14 @@ class ReadImageLoopIntegrationTest {
             }
             assertEquals(2, requests.size());
             assertEquals(ToolCatalog.READ_IMAGE, requests.getFirst().at("/tools/0/function/name").asText());
+            assertEquals(16, requests.getFirst().at("/messages/0/content").size());
             JsonNode messages = requests.get(1).path("messages");
+            JsonNode retained = messages.get(0).path("content");
+            assertEquals(7, retained.size());
+            assertEquals("inspect sample.bmp", retained.get(0).path("text").asText());
+            for (int index = 1; index < retained.size(); index++) {
+                assertEquals(history.get(index + 8).getUrl().toString(), retained.get(index).at("/image_url/url").asText());
+            }
             assertEquals("assistant", messages.get(1).path("role").asText());
             assertEquals("tool", messages.get(2).path("role").asText());
             assertEquals("read-call", messages.get(2).path("tool_call_id").asText());
