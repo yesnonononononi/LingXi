@@ -36,6 +36,8 @@ public class ChecklistCommand {
     private String status;
     /** 上报结果后按现有顺序继续下一步，默认不启动。 */
     private boolean continueNextStep;
+    /** 同一阶段确认的多个步骤状态。 */
+    private List<StepStatusUpdate> updates;
 
     /** 修改后的新标题，null 表示不改 */
     private String newTitle;
@@ -52,6 +54,9 @@ public class ChecklistCommand {
 
     /** 步骤内容补丁项：标识稳定，文案可改。 */
     public record StepContent(Long stepId, String content) {
+    }
+
+    public record StepStatusUpdate(Long stepId, String status) {
     }
 
     /** 新建清单。 */

@@ -151,10 +151,6 @@ public class Checklist {
         }
         List<ChecklistStep> changedSteps = new ArrayList<>();
         changedSteps.add(step);
-        if (next.isTerminal()) {
-            progressVersion++;
-            resetReminderQuota();
-        }
         if (continueNextStep) {
             Optional<ChecklistStep> following = pendingSteps().stream()
                     .filter(candidate -> candidate.getSeq() > step.getSeq()).findFirst();
@@ -162,10 +158,43 @@ public class Checklist {
                 changedSteps.add(following.get());
             }
         }
-        status = resolveStepStatus();
-        touch();
+        ChecklistMutation mutation = recordStepChanges(changedSteps);
         log.debug("清单步骤推进: checklistId={}, stepId={}, status={}, progressVersion={}",
                 id, stepId, next, progressVersion);
+        return mutation;
+    }
+
+    /** 先核对所有步骤归属，再应用变化，避免中途失败留下部分更新。 */
+    public ChecklistMutation changeStepStatuses(Map<Long, ChecklistStepStatus> updates) {
+        requireEditable("批量更新步骤");
+        Map<ChecklistStep, ChecklistStepStatus> targets = new LinkedHashMap<>();
+        updates.forEach((stepId, next) -> {
+            if (next == null) {
+                throw new ClientException("步骤状态不能为空");
+            }
+            targets.put(requireStep(stepId), next);
+        });
+
+        List<ChecklistStep> changedSteps = new ArrayList<>();
+        targets.forEach((step, next) -> {
+            if (step.changeStatus(next)) {
+                changedSteps.add(step);
+            }
+        });
+        return recordStepChanges(changedSteps);
+    }
+
+    private ChecklistMutation recordStepChanges(List<ChecklistStep> changedSteps) {
+        if (changedSteps.isEmpty()) {
+            return ChecklistMutation.none();
+        }
+        long terminalChanges = changedSteps.stream().filter(step -> step.getStatus().isTerminal()).count();
+        if (terminalChanges > 0) {
+            progressVersion += terminalChanges;
+            resetReminderQuota();
+        }
+        status = resolveStepStatus();
+        touch();
         return new ChecklistMutation(true, List.of(), List.copyOf(changedSteps), List.of());
     }
 

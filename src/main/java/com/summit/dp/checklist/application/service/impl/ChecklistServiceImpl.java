@@ -59,6 +59,24 @@ public class ChecklistServiceImpl implements ChecklistService {
     public ChecklistVO updateStep(ChecklistCommand command) {
         throwIf(command == null, "清单参数不能为空");
         long sessionId = requireSessionId(command.getSessionId());
+        if (command.getUpdates() != null) {
+            throwIf(command.getStepId() != null || command.getStatus() != null || command.isContinueNextStep(),
+                    "批量更新请只在 updates 中指定步骤和状态，需要启动下一步时请显式标为 IN_PROGRESS");
+            throwIf(command.getUpdates().isEmpty(), "批量更新至少需要提供一个步骤");
+            throwIf(command.getUpdates().size() > ChecklistRules.MAX_STEPS,
+                    "批量更新不能超过 " + ChecklistRules.MAX_STEPS + " 个步骤");
+            Map<Long, ChecklistStepStatus> updates = new LinkedHashMap<>();
+            for (ChecklistCommand.StepStatusUpdate update : command.getUpdates()) {
+                throwIf(update == null || update.stepId() == null, "批量更新的每一项都需要提供 stepId");
+                throwIf(updates.containsKey(update.stepId()), "批量更新的步骤 " + update.stepId() + " 重复");
+                updates.put(update.stepId(), ChecklistRules.parseStepStatus(update.status()));
+            }
+
+            Checklist checklist = lockOwned(sessionId, command.getChecklistId());
+            persist(checklist, checklist.changeStepStatuses(updates));
+            return toVO(checklist);
+        }
+
         throwIf(command.getStepId() == null, "更新步骤需要提供 stepId");
         ChecklistStepStatus next = ChecklistRules.parseStepStatus(command.getStatus());
         throwIf(command.isContinueNextStep() && !next.isTerminal(),

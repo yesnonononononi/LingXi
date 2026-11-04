@@ -15,6 +15,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessException;
 
 import java.time.Instant;
@@ -174,22 +176,30 @@ class ChecklistPersistenceTest {
                 .getSteps().getFirst().getStatus().name());
     }
 
-    @Test
-    void failedNextStepWriteRollsBackCurrentCompletionAndReminderReset() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedSecondStepWriteRollsBackFirstCompletionAndReminderReset(boolean batch) {
         ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "原子继续", List.of("一步", "两步")));
+        long first = created.getSteps().getFirst().getStepId();
+        long second = created.getSteps().getLast().getStepId();
         repository.claimReminder(repository.findByIdWithSteps(created.getChecklistId()).orElseThrow(), EXECUTION_ID);
         ChecklistRepositoryImpl failing = spy(repository);
         doAnswer(invocation -> {
             invocation.callRealMethod();
             ChecklistStep step = invocation.getArgument(0);
-            if (step.getId().equals(created.getSteps().get(1).getStepId())) {
+            if (step.getId() == second) {
                 throw new ClientException("模拟启动下一步失败");
             }
             return null;
         }).when(failing).updateStep(any(ChecklistStep.class));
         ChecklistService faultedService = fixture.serviceWithRepository(failing);
-        assertThrows(ClientException.class, () -> faultedService.updateStep(ChecklistCommand.updateStep(
-                SESSION_ID, created.getChecklistId(), created.getSteps().getFirst().getStepId(), "COMPLETED", true)));
+        ChecklistCommand command = batch
+                ? ChecklistCommand.builder().sessionId(SESSION_ID).checklistId(created.getChecklistId())
+                        .updates(List.of(new ChecklistCommand.StepStatusUpdate(first, "COMPLETED"),
+                                new ChecklistCommand.StepStatusUpdate(second, "IN_PROGRESS"))).build()
+                : ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(), first, "COMPLETED", true);
+        ClientException error = assertThrows(ClientException.class, () -> faultedService.updateStep(command));
+        assertEquals("模拟启动下一步失败", error.getMessage());
         Checklist reloaded = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
         assertEquals(ChecklistStatus.ACTIVE, reloaded.getStatus());
         assertTrue(reloaded.getSteps().stream().allMatch(ChecklistStep::isPending));

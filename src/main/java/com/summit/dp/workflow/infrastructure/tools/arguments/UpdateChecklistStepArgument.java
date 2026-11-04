@@ -1,6 +1,9 @@
 package com.summit.dp.workflow.infrastructure.tools.arguments;
 
+import com.summit.dp.checklist.application.ChecklistCommand.StepStatusUpdate;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * update_checklist_step 的参数。
@@ -17,4 +20,5 @@ public class UpdateChecklistStepArgument {
     private String status;
     /** 与当前步骤的结果一起提交，省去单独启动下一步的调用。 */
     private boolean continueNextStep;
+    private List<StepStatusUpdate> updates;
 }

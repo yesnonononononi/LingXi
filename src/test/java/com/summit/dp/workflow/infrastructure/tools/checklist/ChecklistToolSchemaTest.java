@@ -93,7 +93,19 @@ class ChecklistToolSchemaTest {
     void updateSchemaExposesOptionalContinueNextStepFlag() throws Exception {
         JsonNode schema = buildSchema(UpdateChecklistStepTool.class);
         assertEquals("boolean", schema.path("properties").path("continueNextStep").path("type").asText());
-        assertEquals(List.of("stepId", "status"), resolveRequiredFields(schema));
+        assertTrue(resolveRequiredFields(schema).isEmpty());
+        assertEquals(List.of("stepId", "status"), resolveRequiredFields(schema.path("oneOf").get(0)));
+        assertEquals(List.of("updates"), resolveRequiredFields(schema.path("oneOf").get(1)));
+
+        JsonNode properties = schema.path("properties");
+        JsonNode updates = properties.path("updates");
+        assertEquals("array", updates.path("type").asText());
+        assertEquals(1, updates.path("minItems").asInt());
+        assertEquals(ChecklistRules.MAX_STEPS, updates.path("maxItems").asInt());
+        JsonNode item = updates.path("items");
+        assertEquals(List.of("stepId", "status"), resolveRequiredFields(item));
+        assertEquals("integer", item.path("properties").path("stepId").path("type").asText());
+        assertEquals(properties.path("status").path("enum"), item.path("properties").path("status").path("enum"));
     }
 
     @Test

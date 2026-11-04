@@ -1,17 +1,24 @@
 package com.summit.dp.checklist.infrastructure;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.tool.ToolExecution;
 import com.summit.dp.checklist.application.ChecklistCommand;
 import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.support.ChecklistTestDatabase;
+import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.workflow.infrastructure.tools.checklist.UpdateChecklistStepTool;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +37,59 @@ class ChecklistResultPersistenceTest {
     @AfterEach
     void close() {
         fixture.close();
+    }
+
+    @Test
+    void batchToolPersistsEachResultTogetherAndRetryPreservesProgress() throws Exception {
+        ChecklistVO created = service.create(ChecklistCommand.create(
+                SESSION, null, "阶段交接", List.of("验证一", "验证二", "后续工作")));
+        long first = created.getSteps().getFirst().getStepId();
+        long second = created.getSteps().get(1).getStepId();
+        long third = created.getSteps().getLast().getStepId();
+        ObjectMapper json = new ObjectMapper();
+        UpdateChecklistStepTool tool = new UpdateChecklistStepTool(json, service);
+        List<Map<String, Object>> updates = List.of(
+                Map.of("stepId", first, "status", "COMPLETED"),
+                Map.of("stepId", second, "status", "FAILED"),
+                Map.of("stepId", third, "status", "IN_PROGRESS"));
+        ToolExecution request = ToolExecution.builder().id("batch").args(json.writeValueAsString(Map.of("updates", updates)))
+                .attributes(Map.of(ExecutionAttributes.SESSION_ID, SESSION)).build();
+
+        ToolExecuteResult result = tool.execute(request);
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        JsonNode receipt = json.readTree(result.getToolOutput());
+        assertEquals(2L, receipt.path("progressVersion").asLong());
+        assertEquals(1, receipt.path("openStepCount").asInt());
+        ChecklistVO saved = service.findActive(SESSION).orElseThrow();
+        assertEquals(List.of("COMPLETED", "FAILED", "IN_PROGRESS"),
+                saved.sortedSteps().stream().map(ChecklistVO.StepVO::getStatus).toList());
+
+        ToolExecuteResult retry = tool.execute(request);
+        assertTrue(retry.isSuccess(), retry.getToolOutput());
+        assertEquals(saved, service.findActive(SESSION).orElseThrow());
+    }
+
+    @Test
+    void batchRejectsInvalidOrAmbiguousEntriesWithoutChangingAnyStep() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION, null, "批量校验", List.of("一步", "两步")));
+        long first = created.getSteps().getFirst().getStepId();
+        long second = created.getSteps().getLast().getStepId();
+        ChecklistCommand.StepStatusUpdate complete = new ChecklistCommand.StepStatusUpdate(first, "COMPLETED");
+        for (ChecklistCommand.StepStatusUpdate invalid : List.of(
+                new ChecklistCommand.StepStatusUpdate(second, "DONE"),
+                new ChecklistCommand.StepStatusUpdate(first, "FAILED"),
+                new ChecklistCommand.StepStatusUpdate(-1L, "COMPLETED"))) {
+            ChecklistCommand batch = ChecklistCommand.builder().sessionId(SESSION).checklistId(created.getChecklistId())
+                    .updates(List.of(complete, invalid)).build();
+            assertThrows(ClientException.class, () -> service.updateStep(batch));
+        }
+        ChecklistCommand mixed = ChecklistCommand.builder().sessionId(SESSION).checklistId(created.getChecklistId())
+                .stepId(second).status("COMPLETED").updates(List.of(complete)).build();
+        assertThrows(ClientException.class, () -> service.updateStep(mixed));
+
+        ChecklistVO saved = service.findActive(SESSION).orElseThrow();
+        assertEquals(0L, saved.getProgressVersion());
+        assertEquals(List.of("PENDING", "PENDING"), saved.sortedSteps().stream().map(ChecklistVO.StepVO::getStatus).toList());
     }
 
     @Test
