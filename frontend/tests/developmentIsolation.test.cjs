@@ -112,26 +112,89 @@ function resolveJdkJava() {
   throw new Error('找不到带 javac 的 JDK，无法为初始化用例准备 SQLite 库');
 }
 
-/** 按 pom 固定的版本在本地 Maven 仓库里找 sqlite-jdbc；找不到就明确失败，不静默跳过。 */
+/** 仓库根目录（本文件在 `frontend/tests/`）。 */
+const REPO_ROOT_DIR = path.resolve(__dirname, '../..');
+
+/**
+ * Maven 本地仓库解析的**唯一真源**：`scripts/lib/maven-settings.ps1`。
+ *
+ * <p>它负责"剥 XML 注释 → 提取 `<localRepository>` → 候选顺序 → 兜底"四件事。以前这段逻辑在本文件、
+ * `Migrate-SqliteToH2.ps1`、`Initialize-Development.ps1` 里各写了一份，于是同一个缺陷
+ * （Maven 发行版 `conf/settings.xml` 里**被注释掉的** `<localRepository>/path/to/local/repo</localRepository>`
+ * 示例被注释盲正则当成真实配置，最终解析成 `D:\path\to\local\repo` 这种不存在的路径）修一处漏两处。
+ * 所以这里**不再自己维护候选顺序**，一律问真源。</p>
+ */
+const MAVEN_SETTINGS_LIB = path.join(REPO_ROOT_DIR, 'scripts', 'lib', 'maven-settings.ps1');
+
+/** 真源是 Windows PowerShell 脚本（与两个 PS 调用方的运行环境一致）。 */
+const POWERSHELL = 'powershell.exe';
+
+/**
+ * 把值包成 PowerShell 单引号字符串（单引号内只需把 `'` 写成 `''`）。
+ *
+ * @param {unknown} value 原值
+ * @returns {string} 可直接拼进 `-Command` 的字面量
+ */
+function psQuote(value) {
+  return `'${String(value ?? '').replace(/'/g, "''")}'`;
+}
+
+/**
+ * 调 `scripts/lib/maven-settings.ps1` 取解析结果。
+ *
+ * @param {'value'|'candidates'} mode `value` = 单个 settings.xml 里生效的 `<localRepository>`；
+ *   `candidates` = 按优先级排好的本地仓库候选列表
+ * @param {{settingsPath?: string, explicit?: string, env?: NodeJS.ProcessEnv}} [options] 选项；
+ *   `env` 里值为 `undefined` 表示从子进程环境里**删掉**该变量（用于验证"脏值不参与"）
+ * @returns {string|string[]} `value` 模式返回字符串（没有配置时为空串），`candidates` 模式返回数组
+ * @throws {Error} 真源缺失或 PowerShell 调用失败时抛出
+ */
+function runMavenSettingsLib(mode, options = {}) {
+  if (mode !== 'value' && mode !== 'candidates') {
+    throw new TypeError(`runMavenSettingsLib: mode 只能是 value / candidates，收到 ${String(mode)}`);
+  }
+  if (!fs.existsSync(MAVEN_SETTINGS_LIB)) {
+    throw new Error(`缺少 Maven settings 真源：${MAVEN_SETTINGS_LIB}`);
+  }
+  const settingsPath = typeof options.settingsPath === 'string' ? options.settingsPath : '';
+  const explicit = typeof options.explicit === 'string' ? options.explicit : '';
+  const body = mode === 'value'
+    ? `$value = Read-MavenSettingsLocalRepository -Path ${psQuote(settingsPath)}; if ($value) { [Console]::Out.Write($value) }`
+    : `(Get-MavenRepositoryCandidates -Explicit ${psQuote(explicit)}) | ForEach-Object { [Console]::Out.WriteLine($_) }`;
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
+    `. ${psQuote(MAVEN_SETTINGS_LIB)}`,
+    body,
+  ].join('; ');
+  const env = { ...process.env };
+  for (const [key, value] of Object.entries(options.env || {})) {
+    if (value === undefined) delete env[key];
+    else env[key] = String(value);
+  }
+  const result = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    { encoding: 'utf8', env, timeout: 60000 });
+  if (result.error) throw new Error(`调用 Maven settings 真源失败：${result.error.message}`);
+  if (result.status !== 0) {
+    throw new Error(`Maven settings 真源执行失败（${mode}，退出码 ${result.status}）：${(result.stderr || result.stdout || '').trim()}`);
+  }
+  const output = result.stdout || '';
+  if (mode === 'value') return output.trim();
+  return output.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+}
+
+/**
+ * 按 pom 固定的版本在本地 Maven 仓库里找 sqlite-jdbc；找不到就明确失败，不静默跳过。
+ *
+ * <p>候选仓库顺序**不由本文件维护**：来自 `scripts/lib/maven-settings.ps1` 的
+ * `Get-MavenRepositoryCandidates`（显式参数 → `MAVEN_REPO_LOCAL` → 各 settings.xml 的
+ * `<localRepository>` → 兜底 `~/.m2/repository`）。</p>
+ *
+ * @returns {string} sqlite-jdbc jar 的绝对路径
+ * @throws {Error} 所有候选仓库里都没有时抛出
+ */
 function resolveSqliteJdbcJar() {
-  const repositories = [];
-  if (process.env.MAVEN_REPO_LOCAL) repositories.push(process.env.MAVEN_REPO_LOCAL);
-  const settingsFiles = [path.join(os.homedir(), '.m2', 'settings.xml')];
-  for (const variable of [process.env.MAVEN_HOME, process.env.M2_HOME]) {
-    if (variable) settingsFiles.push(path.join(variable, 'conf', 'settings.xml'));
-  }
-  for (const entry of (process.env.PATH || '').split(path.delimiter)) {
-    if (entry && fs.existsSync(path.join(entry, 'mvn.cmd'))) {
-      settingsFiles.push(path.join(entry, '..', 'conf', 'settings.xml'));
-      break;
-    }
-  }
-  for (const settingsFile of settingsFiles) {
-    if (!fs.existsSync(settingsFile)) continue;
-    const matched = /<localRepository>\s*([^<]+?)\s*<\/localRepository>/.exec(fs.readFileSync(settingsFile, 'utf8'));
-    if (matched) repositories.push(matched[1]);
-  }
-  repositories.push(path.join(os.homedir(), '.m2', 'repository'));
+  const repositories = runMavenSettingsLib('candidates');
   for (const repository of repositories) {
     const root = path.join(repository, 'org', 'xerial', 'sqlite-jdbc');
     if (!fs.existsSync(root)) continue;
@@ -140,7 +203,8 @@ function resolveSqliteJdbcJar() {
       if (fs.existsSync(jar)) return jar;
     }
   }
-  throw new Error('本地 Maven 仓库里没有 sqlite-jdbc（先执行一次 mvn -o test 拉取依赖）');
+  throw new Error(`本地 Maven 仓库里没有 sqlite-jdbc（先执行一次 mvn -o test 拉取依赖）；`
+    + `候选仓库：${repositories.join(' / ')}`);
 }
 
 const SQLITE_PROBE = `
@@ -238,3 +302,135 @@ test('初始化用 VACUUM INTO 复制 SQLite 库与 checkpoints，改写副本�
       'checkpoint-copy-canary');
   });
 
+
+// ---------------------------------------------------------------- Maven settings 单一真源与真值表
+
+/**
+ * 造三态 settings.xml fixture（建在系统临时目录，用例结束由 `t.after` 删干净）。
+ *
+ * @param {import('node:test').TestContext} t 用例上下文
+ * @returns {{root: string, home: string, onlyComment: string, real: string, commentedThenReal: string, realAfterPath: string}}
+ *   fixture 根目录、假 USERPROFILE、三个 settings.xml 路径与"注释之后那个真实值"
+ */
+function createMavenSettingsFixtures(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-maven-settings-'));
+  t.after(() => {
+    // 只删自己造的那个前缀目录，绝不动临时目录本体
+    const relative = path.relative(os.tmpdir(), root);
+    assert.ok(relative.startsWith('lx-maven-settings-') && !relative.includes(path.sep), `拒删非 fixture 目录：${root}`);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const home = path.join(root, 'home');
+  fs.mkdirSync(path.join(home, '.m2'), { recursive: true });
+  /** 写一个 settings.xml（无 BOM UTF-8）。 */
+  const write = (name, text) => {
+    const file = path.join(root, name);
+    fs.writeFileSync(file, text, 'utf8');
+    return file;
+  };
+  // (a) 只有被注释掉的示例 —— 这是 Maven 发行版 conf/settings.xml 的真实形态
+  const onlyComment = write('only-comment.xml', `<settings>
+  <!--
+  <localRepository>/path/to/local/repo</localRepository>
+  -->
+</settings>
+`);
+  // (b) 有真实元素
+  const real = write('real.xml', `<settings>
+  <localRepository>D:/tmp/lx-real-repo</localRepository>
+</settings>
+`);
+  // (c) 注释里的示例在前，后面才是真实元素（顺序不能颠倒）
+  const commentedThenReal = write('commented-then-real.xml', `<settings>
+  <!--
+  <localRepository>/path/to/local/repo</localRepository>
+  -->
+  <localRepository>D:/tmp/lx-real-after-comment</localRepository>
+</settings>
+`);
+  return { root, home, onlyComment, real, commentedThenReal, realAfterPath: 'D:/tmp/lx-real-after-comment' };
+}
+
+/** 归一化 Windows 路径，便于与 `GetFullPath` 的产物比较。 */
+function normalizeWinPath(value) {
+  return path.win32.normalize(String(value));
+}
+
+test('Maven settings 解析只有一份实现：两个 PowerShell 脚本都 dot-source scripts/lib/maven-settings.ps1', () => {
+  const libSource = fs.readFileSync(MAVEN_SETTINGS_LIB, 'utf8');
+  for (const name of ['Get-MavenLocalRepository', 'Get-MavenRepositoryCandidates',
+    'Read-MavenSettingsLocalRepository', 'Remove-MavenSettingsComments']) {
+    assert.match(libSource, new RegExp(`function ${name}\\b`), `真源里必须导出 ${name}`);
+  }
+  // 剥掉 PS 注释后再看：注释里提 <localRepository> 是正当说明，代码里出现才是重复实现。
+  // 注意用 trimStart().startsWith('#') 判行注释：JS 的 '.' 不匹配 \r，
+  // 写成 /^\s*#.*$/ 在 CRLF 文件上会整行漏掉（本文件踩过这个坑）。
+  const stripPowerShellComments = source => String(source)
+    .replace(/<#[\s\S]*?#>/g, '')
+    .split(/\r?\n/)
+    .map(line => (line.trimStart().startsWith('#') ? '' : line))
+    .join('\n');
+  for (const name of ['Migrate-SqliteToH2.ps1', 'Initialize-Development.ps1']) {
+    const file = path.join(REPO_ROOT_DIR, 'scripts', name);
+    const code = stripPowerShellComments(fs.readFileSync(file, 'utf8'));
+    assert.match(code, /\.\s+\(Join-Path \$PSScriptRoot 'lib\/maven-settings\.ps1'\)/,
+      `${name} 必须 dot-source 真源，而不是自带一份解析`);
+    assert.equal(code.includes('<localRepository>'), false,
+      `${name} 的代码里不许再出现 <localRepository> 正则/解析（规则真源在 scripts/lib/maven-settings.ps1）`);
+    assert.equal(code.includes('<!--'), false,
+      `${name} 的代码里不许再自带注释剥离规则（规则真源在 scripts/lib/maven-settings.ps1）`);
+  }
+  // 本文件自己也不许再维护第四份：不允许出现注释盲的提取正则
+  const selfSource = fs.readFileSync(__filename, 'utf8');
+  assert.equal(/<localRepository>\\s\*\(\[\^<\]/.test(selfSource), false,
+    'JS 侧不许再出现自己的 <localRepository> 提取正则（问 scripts/lib/maven-settings.ps1）');
+});
+
+test('Maven settings 真值表（PowerShell 真源，三态）', { skip: process.platform !== 'win32' }, t => {
+  const fixtures = createMavenSettingsFixtures(t);
+  const cases = [
+    { name: '(a) 只有被注释掉的示例 → 没有配置', file: fixtures.onlyComment, expected: '' },
+    { name: '(b) 真实 <localRepository> → 返回它', file: fixtures.real, expected: 'D:/tmp/lx-real-repo' },
+    { name: '(c) 注释示例在前、真实元素在后 → 返回真实那个', file: fixtures.commentedThenReal, expected: fixtures.realAfterPath },
+  ];
+  for (const item of cases) {
+    const actual = runMavenSettingsLib('value', { settingsPath: item.file });
+    assert.equal(actual, item.expected, `${item.name}；实际 ${JSON.stringify(actual)}`);
+    assert.notEqual(actual, '/path/to/local/repo', `${item.name}：绝不能把注释里的示例当成配置`);
+    assert.notEqual(actual, 'D:\\path\\to\\local\\repo', `${item.name}：绝不能返回 GetFullPath 把示例拼出来的路径`);
+  }
+});
+
+test('Maven settings 真值表（JS 消费侧同构：候选列表里不得出现被注释的示例）', { skip: process.platform !== 'win32' }, t => {
+  const fixtures = createMavenSettingsFixtures(t);
+  // 假 HOME + 清掉宿主可能带进来的仓库变量，保证 "候选里有什么" 只由 fixture 决定
+  const isolatedEnv = { USERPROFILE: fixtures.home, MAVEN_REPO_LOCAL: undefined, MAVEN_HOME: undefined, M2_HOME: undefined };
+  const candidatesWith = (settingsFixture) => {
+    fs.copyFileSync(settingsFixture, path.join(fixtures.home, '.m2', 'settings.xml'));
+    return runMavenSettingsLib('candidates', { explicit: '', env: isolatedEnv });
+  };
+
+  // (a) 只有注释示例 → 候选里没有示例路径，也没有那个由 GetFullPath 拼出来的假路径
+  const onlyComment = candidatesWith(fixtures.onlyComment);
+  for (const candidate of onlyComment) {
+    assert.equal(candidate.includes('path\\to\\local\\repo'), false, `(a) 候选里出现了注释示例：${candidate}`);
+    assert.equal(candidate.includes('path/to/local/repo'), false, `(a) 候选里出现了注释示例：${candidate}`);
+  }
+  assert.ok(onlyComment.length > 0, '(a) 候选列表至少要有兜底的 ~/.m2/repository');
+
+  // (b) 真实元素 → 候选里必须有它
+  const withReal = candidatesWith(fixtures.real);
+  assert.ok(withReal.map(normalizeWinPath).includes(normalizeWinPath('D:/tmp/lx-real-repo')),
+    `(b) 候选里必须有真实的 <localRepository>：${withReal.join(' / ')}`);
+
+  // (c) 注释在前、真实在后 → 候选是真实那个，且排在兜底 ~/.m2/repository 之前（顺序不能颠倒）
+  const withBoth = candidatesWith(fixtures.commentedThenReal);
+  const index = withBoth.map(normalizeWinPath).indexOf(normalizeWinPath(fixtures.realAfterPath));
+  assert.ok(index >= 0, `(c) 候选里必须有注释之后那个真实值：${withBoth.join(' / ')}`);
+  const fallbackIndex = withBoth.map(normalizeWinPath)
+    .indexOf(normalizeWinPath(path.join(fixtures.home, '.m2', 'repository')));
+  assert.ok(fallbackIndex > index, `(c) 真实值必须排在兜底 ~/.m2/repository 之前：${withBoth.join(' / ')}`);
+  for (const candidate of withBoth) {
+    assert.equal(candidate.includes('path\\to\\local\\repo'), false, `(c) 候选里出现了注释示例：${candidate}`);
+  }
+});
