@@ -446,6 +446,31 @@ check('C13', '惊醒帧眼区/嘴区/汗滴区各自都有变化', () => {
   return out.join(' ');
 });
 
+// C12：§6.1 的共同必备键 + 关键不变量。加这条的理由：本批的契约漂移（nativeCanvas 写成旧名、缺 9 个必备键）
+// 之所以能活到验收之后，就是因为自家门禁根本不查这些键 —— 门禁不查 = 没有门禁。
+check('C14', '§6.1 共同必备键齐全 + nativeSourceCanvas×masterScale=canvas（防契约漂移）', () => {
+  const common = ['version', 'batch', 'assetId', 'status', 'canvas', 'masterScale', 'colorSpace', 'alpha',
+    'bboxConvention', 'normalization', 'nativeSourceCanvas', 'display', 'review', 'notes'];
+  const multi = ['anchor', 'mirrorSafe', 'notMirrorableParts', 'orientation', 'frames', 'sources'];
+  const missing = [...common, ...multi].filter((k) => manifest[k] === undefined);
+  assert(missing.length === 0, '缺必备键: ' + missing.join(','));
+  assert(manifest.review && manifest.review.requiredNow !== undefined
+    && manifest.review.deferredUntilApproval !== undefined
+    && manifest.review.fullBatchComplete !== undefined, 'review 缺 requiredNow/deferredUntilApproval/fullBatchComplete');
+  assert(Number.isFinite(manifest.masterScale), 'masterScale 必须是数字（引擎要用它做乘法）');
+  assert(manifest.nativeSourceCanvas.width * manifest.masterScale === manifest.canvas.width,
+    'nativeSourceCanvas.width×masterScale ≠ canvas.width（' + manifest.nativeSourceCanvas.width + '×' + manifest.masterScale + '≠' + manifest.canvas.width + '）');
+  assert(manifest.nativeSourceCanvas.height * manifest.masterScale === manifest.canvas.height,
+    'nativeSourceCanvas.height×masterScale ≠ canvas.height（' + manifest.nativeSourceCanvas.height + '×' + manifest.masterScale + '≠' + manifest.canvas.height + '）');
+  for (const f of manifest.frames) {
+    assert(f.native, f.id + ' 缺 native{}');
+    assert(f.native.width === manifest.nativeSourceCanvas.width && f.native.height === manifest.nativeSourceCanvas.height,
+      f.id + ' 的 native 尺寸 ≠ nativeSourceCanvas');
+  }
+  return 'common 14 键 + multi 6 键齐全；' + manifest.nativeSourceCanvas.width + '×' + manifest.masterScale
+    + '=' + manifest.canvas.width + '；' + manifest.frames.length + ' 帧 native 尺寸与声明一致';
+});
+
 const failed = results.filter((r) => !r.ok);
 for (const r of results) {
   console.log((r.ok ? 'PASS ' : 'FAIL ') + r.id + '  ' + r.title);

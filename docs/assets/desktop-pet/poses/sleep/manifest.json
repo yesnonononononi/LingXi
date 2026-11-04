@@ -6,7 +6,7 @@
     "width": 3072,
     "height": 3072
   },
-  "nativeCanvas": {
+  "nativeSourceCanvas": {
     "width": 1536,
     "height": 1536
   },
@@ -333,10 +333,17 @@
     "curledPlacement": "墨迹归一化：源墨迹 1737×725（比例 2.396），缩放 0.8348 → native 1450×605，落地线 y=1468，墨迹质心 x 对齐趴睡帧 698.1。"
   },
   "review": {
+    "requiredNow": [
+      "sleep_neutral@2x.png",
+      "sleep_breath_in_neutral@2x.png",
+      "sleep_breath_out_neutral@2x.png",
+      "sleep_startle_neutral@2x.png",
+      "sleep_curled@2x.png"
+    ],
+    "deferredUntilApproval": [],
+    "fullBatchComplete": true,
     "status": "awaiting-static-review",
     "producedFrames": 5,
-    "fullBatchComplete": true,
-    "deferredUntilApproval": [],
     "approvedBy": null,
     "pendingHumanReview": [
       "qa/sleep_review.png 亮底/暗底同尺度复核图需人工过目",
@@ -345,5 +352,35 @@
   },
   "volume": {
     "note": "见 README「体积」一节"
-  }
+  },
+  "batch": "sleep",
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "bboxConvention": "right/bottom 为含端点坐标；alpha>0",
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "bow（头部蓝蝴蝶结，趴睡时压在近侧头发上）",
+    "hairpin（云朵发夹 + 蓝色发夹条）",
+    "tail（粉白羽状尾巴，趴睡时铺在身侧）",
+    "innerEarFluff（近侧耳白色绒毛）"
+  ],
+  "orientation": {
+    "facing": "left",
+    "measured": "本帧为趴姿侧躺：双眼虹膜连通块质心 x≈442 与 x≈812（面部质心 ≈627），小于墨迹水平中心 772 → 头/面在画面左侧；身体与尾巴向画面右侧延伸",
+    "note": "趴姿不能用 walk 那套「头部顶带 + 虹膜偏移」判据（头部不在墨迹顶部），改用双眼虹膜在墨迹水平区间里的位置"
+  },
+  "display": {
+    "canvasWidth": 234,
+    "canvasHeight": 234,
+    "inkHeight": 125.38,
+    "method": "234 / 3072 = 0.07619；inkHeight 取趴睡系 4 帧（neutral/breathIn/breathOut/startle）母版墨迹高度中位数折算；蜷睡帧墨迹更矮，单独见 frames[curled].master.bbox"
+  },
+  "notes": [
+    "neutral 由 lie 的趴平帧 native 做眼区蒙版局部重绘派生（蒙版外逐像素未变，见 check-sleep C6b）",
+    "breathIn / breathOut 由 neutral 派生：躯干带竖直位移场 + 余弦羽化，无整体缩放（见 check-sleep C6/C7/C8）",
+    "startle 由 neutral 派生：眼区取 lie 睁眼、虹膜缩小约 15%、补小开口嘴与汗滴；汗滴在眼区蒙版之外，故该帧按「作者声明区域并集」判定（见 check-sleep C6b 与 regions）",
+    "curled 是唯一重新生成的帧（reference_image_path = sleep_neutral_native.png 保身份），轮廓与趴睡帧 IoU 0.54",
+    "本批 5 帧没有像素完全相同的重复帧，因此没有 aliases；蜷睡帧接地位置与趴睡帧不同，切帧摆放规则见 README",
+    "本次 §6.1 对齐只改 JSON 键（nativeCanvas → nativeSourceCanvas、补 batch/mirrorSafe/notMirrorableParts/orientation/colorSpace/alpha/bboxConvention/display/notes），png 一个字节未动"
+  ]
 }

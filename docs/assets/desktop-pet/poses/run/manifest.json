@@ -1,0 +1,694 @@
+{
+  "version": "1.0.0",
+  "batch": "run",
+  "assetId": "desktop-pet/poses/run",
+  "status": "awaiting-static-review",
+  "canvas": {
+    "width": 3072,
+    "height": 3072
+  },
+  "nativeSourceCanvas": {
+    "width": 1536,
+    "height": 1536
+  },
+  "masterScale": 2,
+  "masterScaleDetail": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "anchor": {
+    "x": 1536,
+    "y": 2908,
+    "semantics": "画布水平中线 + 脚底最低墨迹 y 的正下方 1px（支撑帧最低像素 y=2907）"
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "bboxConvention": "right/bottom 为含端点坐标；alpha>0",
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "bow（头部蓝蝴蝶结）",
+    "hairpin（云朵发夹与蓝色发夹条）",
+    "tail（粉白羽状尾巴，随步态甩动方向）",
+    "innerEarFluff（近侧耳白绒毛）"
+  ],
+  "orientation": {
+    "facing": "left",
+    "criterion": "irisOffset：头部带（墨迹上 40%）最大的实心深蓝连通块（虹膜）质心 - 该带墨迹质心",
+    "measuredNative": "l1:-229.3 l2:-168.5 l3:-192.8 l4:-208.7 l5:-175.5 l6:-157.5",
+    "note": "6 帧符号全为负 = 全部左向；右向 6 帧未做（deferredUntilApproval）"
+  },
+  "display": {
+    "canvasWidth": 234,
+    "canvasHeight": 234,
+    "inkHeight": 209.78,
+    "method": "234 / 3072 = 0.07619；inkHeight 取 6 帧母版墨迹高度的中位数折算（与 sit 的 display 口径一致）"
+  },
+  "normalization": {
+    "method": "premultiplied-alpha box resample（native 层完成）；母版 = native 2x nearest",
+    "uniformScale": 1.122249,
+    "scaleReason": "6 帧墨迹高度中位数 1227 gen px → 站姿墨迹高 1377 native px（v3/front-standing 2754/2）；6 帧共用一个系数，团身/腾空帧不单独放大",
+    "horizontalAlign": "躯干质心（蓝裙簇）固定到 native x=700",
+    "horizontalAlignReason": "walk 用的画布中线 768 在 run 上放不下：run 尾巴后甩更远，躯干到墨迹右缘最远 730 gen px → 缩放后 819 native px > 距中线可用的 768 px，会对齐后把尾巴顶出画布 52px。固定 700 后右缘最坏 1519（留白 16px）、左缘最坏 309；代价是身体相对锚点 x 左移 68 native px（≈10 display px），已列入未决项请裁决",
+    "baselineNative": 1454,
+    "lastInkRowNative": 1453,
+    "airborneGapNative": 48,
+    "airborneFrames": [
+      "l4"
+    ],
+    "alphaCleanup": "alpha<8 清零；alpha>=248 提满；<4 native px 孤立块删除"
+  },
+  "contactPoints": {
+    "groundLine": {
+      "nativeY": 1453,
+      "masterY": 2907,
+      "anchorY": 2908
+    },
+    "note": "支撑帧的接触点逐帧见 frames[i].contactPoints.support；腾空帧 support=null 且有 airborneGap。批级没有统一接触点（跑步的着地点逐帧移动），故 groundLine 只声明地面线。"
+  },
+  "batchBboxRange": {
+    "minWidth": 1900,
+    "maxWidth": 2600,
+    "minHeight": 2400,
+    "maxHeight": 2850
+  },
+  "volume": {
+    "perFrameMaxBytes": 2621440,
+    "batchMaxBytes": 10380902,
+    "masterTotalBytes": 9972125,
+    "masterTotalMB": 9.51,
+    "distinctMasterSha256": 6,
+    "aliases": [],
+    "aliasesNote": "6 帧像素互不相同、sha256 全不同，没有可用 alias 的重复帧；未存物理副本"
+  },
+  "frames": [
+    {
+      "id": "l1",
+      "role": "起步加速：躯干前倾最大（面部前伸最多），后脚蹬地支撑",
+      "facing": -1,
+      "phase": "rear",
+      "airborne": false,
+      "file": "run_l1@2x.png",
+      "bytes": 1762302,
+      "sha256": "5d5e2413caa4fc795b41359464e365c3572ab52efa6d2890baab56a34bb92e6e",
+      "bbox": {
+        "left": 560,
+        "top": 142,
+        "right": 3039,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/run_l1_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1400903,
+        "sha256": "5c12f63a44694f76d554ac092e7bc768f1ef1459e5b0fca560cced5fd2d86846",
+        "bbox": {
+          "left": 280,
+          "top": 71,
+          "right": 1519,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 1099,
+          "contactY": 1452,
+          "width": 85
+        },
+        "airborneGap": null,
+        "otherSegments": [],
+        "note": "support 为真实着地脚（最低墨迹距地面线 <=3 native px）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 1099,
+            "width": 85,
+            "contactY": 1452
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 1047,
+            "width": 203,
+            "contactY": 1452
+          },
+          {
+            "centerX": 596.5,
+            "width": 58,
+            "contactY": 1275
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "orientation": {
+        "irisCentroidX": 475,
+        "headInkCentroidX": 704.4,
+        "irisOffsetNative": -229.3,
+        "irisArea": 1419
+      },
+      "lean": {
+        "faceForwardNative": 225,
+        "headRelNative": -1026,
+        "torsoCentroidX": 700.4
+      },
+      "gait": {
+        "supportForwardnessNative": -399
+      }
+    },
+    {
+      "id": "l2",
+      "role": "支撑落地：前脚落在躯干下方，后腿向后伸展",
+      "facing": -1,
+      "phase": "front",
+      "airborne": false,
+      "file": "run_l2@2x.png",
+      "bytes": 1666125,
+      "sha256": "d68d9c89fe42729d8b41ed4008c1aafafaca175970d44d47c33d090797e461f2",
+      "bbox": {
+        "left": 610,
+        "top": 174,
+        "right": 3027,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/run_l2_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1324124,
+        "sha256": "8ca977c9ced7eba82f03de1d8ef7079602ded7ec79c53024af3bcf42d97ac16c",
+        "bbox": {
+          "left": 305,
+          "top": 87,
+          "right": 1513,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 636,
+          "contactY": 1451,
+          "width": 191
+        },
+        "airborneGap": null,
+        "otherSegments": [],
+        "note": "support 为真实着地脚（最低墨迹距地面线 <=3 native px）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 636,
+            "width": 191,
+            "contactY": 1451
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 668,
+            "width": 255,
+            "contactY": 1451
+          },
+          {
+            "centerX": 1178.5,
+            "width": 34,
+            "contactY": 1262
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "orientation": {
+        "irisCentroidX": 518.9,
+        "headInkCentroidX": 687.4,
+        "irisOffsetNative": -168.5,
+        "irisArea": 1366
+      },
+      "lean": {
+        "faceForwardNative": 181,
+        "headRelNative": -1017,
+        "torsoCentroidX": 700
+      },
+      "gait": {
+        "supportForwardnessNative": 64
+      }
+    },
+    {
+      "id": "l3",
+      "role": "后脚蹬离：前腿摆动前伸，支撑脚在身后",
+      "facing": -1,
+      "phase": "rear",
+      "airborne": false,
+      "file": "run_l3@2x.png",
+      "bytes": 1665958,
+      "sha256": "355e7e0aaf0c8c28ac31e381ad08029697f4012603947cdea3785e1e0881184a",
+      "bbox": {
+        "left": 644,
+        "top": 146,
+        "right": 2977,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/run_l3_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1320214,
+        "sha256": "d282f2c4d68bf88f9ade045c87010c1c350ba570570d28d03738952a44fe67be",
+        "bbox": {
+          "left": 322,
+          "top": 73,
+          "right": 1488,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 1033,
+          "contactY": 1451,
+          "width": 109
+        },
+        "airborneGap": null,
+        "otherSegments": [],
+        "note": "support 为真实着地脚（最低墨迹距地面线 <=3 native px）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 1033,
+            "width": 109,
+            "contactY": 1451
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 995,
+            "width": 193,
+            "contactY": 1451
+          },
+          {
+            "centerX": 696,
+            "width": 67,
+            "contactY": 1297
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "orientation": {
+        "irisCentroidX": 531.7,
+        "headInkCentroidX": 724.4,
+        "irisOffsetNative": -192.8,
+        "irisArea": 1379
+      },
+      "lean": {
+        "faceForwardNative": 168,
+        "headRelNative": -1025,
+        "torsoCentroidX": 700
+      },
+      "gait": {
+        "supportForwardnessNative": -333
+      }
+    },
+    {
+      "id": "l4",
+      "role": "腾空：双脚同时离地，整帧相对地面线上抬 48 native px",
+      "facing": -1,
+      "phase": null,
+      "airborne": true,
+      "file": "run_l4@2x.png",
+      "bytes": 1477088,
+      "sha256": "03a07cbe9f5313b97089919f58a2971115b60b15694eb68ef9e7927840b0d929",
+      "bbox": {
+        "left": 654,
+        "top": 278,
+        "right": 2995,
+        "bottom": 2811
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/run_l4_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1169715,
+        "sha256": "680d564e715d673472a3cdf22f42bbb22aaae3e1b79e28b78264976437a8811d",
+        "bbox": {
+          "left": 327,
+          "top": 139,
+          "right": 1497,
+          "bottom": 1405
+        }
+      },
+      "contactPoints": {
+        "support": null,
+        "airborneGap": 48,
+        "otherSegments": [
+          {
+            "centerX": 1037,
+            "contactY": 1403,
+            "width": 81
+          }
+        ],
+        "note": "腾空帧：无着地点，airborneGap = 地面线 - 该帧最低墨迹 y"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 1037,
+            "width": 81,
+            "contactY": 1403
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 968,
+            "width": 225,
+            "contactY": 1403
+          },
+          {
+            "centerX": 757,
+            "width": 61,
+            "contactY": 1253
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "orientation": {
+        "irisCentroidX": 495.8,
+        "headInkCentroidX": 704.5,
+        "irisOffsetNative": -208.7,
+        "irisArea": 1179
+      },
+      "lean": {
+        "faceForwardNative": 205,
+        "headRelNative": -932,
+        "torsoCentroidX": 700.5
+      },
+      "gait": {
+        "supportForwardnessNative": null
+      }
+    },
+    {
+      "id": "l5",
+      "role": "前脚落地缓冲：支撑脚在躯干前方",
+      "facing": -1,
+      "phase": "front",
+      "airborne": false,
+      "file": "run_l5@2x.png",
+      "bytes": 1680836,
+      "sha256": "5a3fcc074a6bc01aa27d54db477a2833dd0c8e317a5dd047dbaa1892104349d5",
+      "bbox": {
+        "left": 690,
+        "top": 154,
+        "right": 2953,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/run_l5_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1337721,
+        "sha256": "47e77df06f566f7b1ecb4d04ec4547d4d1c7c49a029458942f19126b2dfd6246",
+        "bbox": {
+          "left": 345,
+          "top": 77,
+          "right": 1476,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 578.5,
+          "contactY": 1451,
+          "width": 188
+        },
+        "airborneGap": null,
+        "otherSegments": [],
+        "note": "support 为真实着地脚（最低墨迹距地面线 <=3 native px）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 578.5,
+            "width": 188,
+            "contactY": 1451
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 609.5,
+            "width": 250,
+            "contactY": 1451
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "orientation": {
+        "irisCentroidX": 543.9,
+        "headInkCentroidX": 719.3,
+        "irisOffsetNative": -175.5,
+        "irisArea": 1499
+      },
+      "lean": {
+        "faceForwardNative": 156,
+        "headRelNative": -1032,
+        "torsoCentroidX": 700
+      },
+      "gait": {
+        "supportForwardnessNative": 122
+      }
+    },
+    {
+      "id": "l6",
+      "role": "收步减速：躯干接近直立、步幅收小，支撑脚在身后",
+      "facing": -1,
+      "phase": "rear",
+      "airborne": false,
+      "file": "run_l6@2x.png",
+      "bytes": 1719816,
+      "sha256": "b63664be859cd86ee19b41cf0d6188aedf40c05b22a24000555a8d55569d281a",
+      "bbox": {
+        "left": 854,
+        "top": 192,
+        "right": 2843,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/run_l6_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1364529,
+        "sha256": "ecfcbb59d31d24f21c09d13754c9cf00f32d87569a11ba394a922bc16f062c02",
+        "bbox": {
+          "left": 427,
+          "top": 96,
+          "right": 1421,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 875,
+          "contactY": 1451,
+          "width": 169
+        },
+        "airborneGap": null,
+        "otherSegments": [
+          {
+            "centerX": 1163,
+            "contactY": 1394,
+            "width": 247
+          }
+        ],
+        "note": "support 为真实着地脚（最低墨迹距地面线 <=3 native px）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 875,
+            "width": 169,
+            "contactY": 1451
+          },
+          {
+            "centerX": 1163,
+            "width": 247,
+            "contactY": 1394
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 1093,
+            "width": 605,
+            "contactY": 1451
+          },
+          {
+            "centerX": 527,
+            "width": 199,
+            "contactY": 1360
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "orientation": {
+        "irisCentroidX": 608.4,
+        "headInkCentroidX": 765.9,
+        "irisOffsetNative": -157.5,
+        "irisArea": 1243
+      },
+      "lean": {
+        "faceForwardNative": 91,
+        "headRelNative": -1023,
+        "torsoCentroidX": 699.4
+      },
+      "gait": {
+        "supportForwardnessNative": -176
+      }
+    }
+  ],
+  "sources": [
+    {
+      "id": "l1",
+      "file": "source/run_l1_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1433814,
+      "sha256": "7df0b06e67576e147591e45fa96263009e0799c409e2c0bb5157220d05d29c35",
+      "bbox": {
+        "left": 25,
+        "top": 9,
+        "right": 1253,
+        "bottom": 1253
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/walk/source/walk_l1_native.png；不参与运行时"
+    },
+    {
+      "id": "l2",
+      "file": "source/run_l2_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1340395,
+      "sha256": "d93ebb19aa9d31dfa276e7f95ec08abcaf8f2e79d1076467bef710adc58f865d",
+      "bbox": {
+        "left": 41,
+        "top": 15,
+        "right": 1225,
+        "bottom": 1240
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/walk/source/walk_l1_native.png；不参与运行时"
+    },
+    {
+      "id": "l3",
+      "file": "source/run_l3_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1335488,
+      "sha256": "3b7fb5b66081da16d5a79a53002612ad4e64d28a04e46521fbbb738444ce91fa",
+      "bbox": {
+        "left": 0,
+        "top": 0,
+        "right": 1253,
+        "bottom": 1240
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/walk/source/walk_l1_native.png；不参与运行时"
+    },
+    {
+      "id": "l4",
+      "file": "source/run_l4_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1204544,
+      "sha256": "8bbde8bd02cd7e0a27856fb1c876f49e972ab7daff9dd887778fd8e3a77520f0",
+      "bbox": {
+        "left": 73,
+        "top": 16,
+        "right": 1223,
+        "bottom": 1197
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/walk/source/walk_l1_native.png；不参与运行时"
+    },
+    {
+      "id": "l5",
+      "file": "source/run_l5_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1346079,
+      "sha256": "5aa99f1b054a0267ac4ba656ba30f05a4ef212b12268d493b4433e707fa03ff9",
+      "bbox": {
+        "left": 0,
+        "top": 11,
+        "right": 1221,
+        "bottom": 1253
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/walk/source/walk_l1_native.png；不参与运行时"
+    },
+    {
+      "id": "l6",
+      "file": "source/run_l6_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1361089,
+      "sha256": "887b86fc957f7f87f375c4c1b3e65780c27cfda85fcc37b0dadd43c2beb01684",
+      "bbox": {
+        "left": 41,
+        "top": 12,
+        "right": 1239,
+        "bottom": 1233
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/walk/source/walk_l1_native.png；不参与运行时"
+    }
+  ],
+  "review": {
+    "requiredNow": [
+      "l1",
+      "l2",
+      "l3",
+      "l4",
+      "l5",
+      "l6"
+    ],
+    "deferredUntilApproval": [
+      "run 右向 6 帧（r1-r6）",
+      "jump（5 帧）",
+      "play（4 段）",
+      "edge（3 帧）",
+      "side（2 帧）",
+      "mini（专用简化资产）"
+    ],
+    "fullBatchComplete": false,
+    "note": "本轮只交 run 左向 6 帧；右向 6 帧与其它批次一律未开始，禁止当成整批完成"
+  },
+  "notes": [
+    "6 帧全部独立生成（reference_image_path = poses/walk/source/walk_l1_native.png 保身份与左向），没有一帧由 walk 帧拉伸/平移得到",
+    "l6 为第二次生成：首版支撑脚落在躯干前方，与 l5 同为 front 导致 C11 交替判据不成立，弃用后重出（source/run_l6_generated.png 现存即第二版）",
+    "腾空帧 l4 由构建脚本整体上抬 48 native px（airborneGap），因此该帧 support=null、最低墨迹 1405 高于地面线 1453",
+    "支撑相位：l1 rear / l2 front / l3 rear / l4 腾空 / l5 front / l6 rear；相邻支撑帧交替、front 2 次 rear 3 次",
+    "前倾用「面部（虹膜）质心在躯干质心前方多少 native px」度量：l1 最大、l6 最小，且 run 中位数显著大于 walk",
+    "tools/png.mjs 与 tools/pixels.mjs 从 poses/walk/tools 原样复制（字节一致，未重写编解码器）",
+    "画布 3072x3072 / native 1536x1536 沿用 walk 已验收口径（§4 修订后的「按 bbox 落座」）"
+  ]
+}

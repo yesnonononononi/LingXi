@@ -159,7 +159,8 @@
       },
       "gait": {
         "supportForwardnessNative": 145
-      }
+      },
+      "role": "左向·前脚支撑（支撑脚在躯干前方）"
     },
     {
       "id": "l2",
@@ -251,7 +252,8 @@
       },
       "gait": {
         "supportForwardnessNative": -187
-      }
+      },
+      "role": "左向·后脚支撑（支撑脚在躯干后方）"
     },
     {
       "id": "l3",
@@ -343,7 +345,8 @@
       },
       "gait": {
         "supportForwardnessNative": 119
-      }
+      },
+      "role": "左向·前脚支撑（支撑脚在躯干前方）"
     },
     {
       "id": "l4",
@@ -433,7 +436,8 @@
       },
       "gait": {
         "supportForwardnessNative": -157
-      }
+      },
+      "role": "左向·后脚支撑（支撑脚在躯干后方）"
     },
     {
       "id": "r1",
@@ -525,7 +529,8 @@
       },
       "gait": {
         "supportForwardnessNative": 163
-      }
+      },
+      "role": "右向·前脚支撑（支撑脚在躯干前方）"
     },
     {
       "id": "r2",
@@ -617,7 +622,8 @@
       },
       "gait": {
         "supportForwardnessNative": -166
-      }
+      },
+      "role": "右向·后脚支撑（支撑脚在躯干后方）"
     },
     {
       "id": "r3",
@@ -709,7 +715,8 @@
       },
       "gait": {
         "supportForwardnessNative": 169
-      }
+      },
+      "role": "右向·前脚支撑（支撑脚在躯干前方）"
     },
     {
       "id": "r4",
@@ -804,7 +811,8 @@
       },
       "gait": {
         "supportForwardnessNative": -169
-      }
+      },
+      "role": "右向·后脚支撑（支撑脚在躯干后方）"
     }
   ],
   "sources": [
@@ -959,7 +967,19 @@
     "画布 3072x3072 / native 1536x1536 按主理人本轮硬参数执行，覆盖总规范 §4 的站姿系 2048x3072",
     "tools/png.mjs 与 tools/pixels.mjs 从 poses/sleep/tools 原样复制（未重写编解码器）",
     "镜像检测主判据是 C10b（右向帧与任一左向帧水平翻转后的差异 >=5%，实测最小 73.5%）：把左向帧镜像出来的右向帧几何自洽，尾巴仍在身后、蝴蝶结仍在面朝一侧，所以 C12 单独抓不住完美镜像（变异 M1 实测：该帧 C10b=0.0% 才红）；C12 负责抓部件被搬到错误一侧（变异 M5 实测 bowNorm 由 +93 翻成 -92）"
-  ]
+  ],
+  "contactPoints": {
+    "groundLine": {
+      "nativeY": 1453,
+      "masterY": 2907,
+      "anchorY": 2908
+    },
+    "note": "walk 的着地点逐帧移动，批级只声明地面线；每帧前后两只脚的中心/接触 y 见 frames[i].contactPoints，腾空帧不存在（walk 无腾空）"
+  },
+  "display": {
+    "canvasWidth": 234,
+    "canvasHeight": 234,
+    "inkHeight": 209.7,
+    "method": "234 / 3072 = 0.07619；inkHeight 取 8 帧母版墨迹高度中位数折算（与 sit 的 display 口径一致）"
+  }
 }
-
-
