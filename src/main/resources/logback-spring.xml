@@ -42,10 +42,11 @@
     </appender>
 
     <!-- 阻止向根 logger 再次传播，否则同一异常会重复输出完整堆栈。 -->
-    <logger name="dev.langchain4j.mcp" additivity="false">
+    <!-- 新 MCP 客户端有两层实现：框架自带的 mcp 包与官方 SDK 的 io.modelcontextprotocol。 -->
+    <logger name="mcp" additivity="false">
         <appender-ref ref="MCP_MESSAGE_ONLY"/>
     </logger>
-    <logger name="com.summit.adapter.langchain4j.mcp" additivity="false">
+    <logger name="io.modelcontextprotocol" additivity="false">
         <appender-ref ref="MCP_MESSAGE_ONLY"/>
     </logger>
     <logger name="com.summit.dp.mcp" additivity="false">

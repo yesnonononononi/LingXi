@@ -28,8 +28,6 @@
     </scm>
     <properties>
         <java.version>21</java.version>
-        <!-- OkHttp 所需 Kotlin 版本不能被 Spring Boot 的默认版本覆盖。 -->
-        <kotlin.version>2.2.21</kotlin.version>
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
         <!-- SQLite 只用于旧数据迁移验证，不进入运行包。 -->
@@ -144,11 +142,6 @@
             <groupId>io.github.java-diff-utils</groupId>
             <artifactId>java-diff-utils</artifactId>
             <version>4.15</version>
-        </dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-http-client-okhttp</artifactId>
-            <version>1.22.0-beta32</version>
         </dependency>
     </dependencies>
 

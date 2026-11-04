@@ -1,8 +1,5 @@
 package com.summit.dp.mcp.infrastructure;
 
-import com.summit.adapter.langchain4j.mcp.Langchain4jMcpSession;
-import com.summit.adapter.langchain4j.mcp.MCPToolConverter;
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.mcp.McpSession;
 import com.summit.core.mcp.McpSessionType;
@@ -17,12 +14,11 @@ import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.shared.exception.ClientException;
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.mcp.client.McpClient;
 import jakarta.annotation.PreDestroy;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import mcp.McpSessionFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -41,15 +37,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 @RequiredArgsConstructor
 public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
 
-    private static final long RUNTIME_TIMEOUT_GRACE_SECONDS = 5L;
     /** 启动期重试次数（不含首次）；仍失败就等下一次「保存配置」或重启。 */
-    private static final int STARTUP_RETRY_TIMES = 1;
+    private static final int STARTUP_RETRY_TIMES = 2;
     /** 退避基数，RetryUtil 会在此基础上取 0~基数 的随机抖动，避免多个 server 同时重试。 */
     private static final long STARTUP_RETRY_BASIC_DELAY_MILLIS = 2_000L;
     private static final int STARTUP_RETRY_MULTIPLE = 2;
     private final McpRepository repository;
     private final McpConfigAssembler assembler;
-    private final McpClientFactory clientFactory;
+    private final McpSessionFactory sessionFactory;
     private final Map<Long, PooledSession> sessions = new ConcurrentSkipListMap<>();
     // 每个 id 一把锁：注册是 I/O 密集的，共用一把锁会让卡住的 server 把整批排队拖死。
     private final Map<Long, Object> registrationLocks = new ConcurrentHashMap<>();
@@ -64,14 +59,17 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         repository.findEnabled().forEach(model -> CompletableFuture.runAsync(() -> {
             try {
                 // 启动期一次抖动不该让 server 在整个进程生命周期缺席（注册只有启动和保存配置两个入口）。
-                // 只补一次：连接失败本身可能已经耗掉整个初始化预算，重试太多会把启动拖成几分钟。
+                // 握手中断这类瞬态失败实测重试即成功，所以补两次而不是一次；退避带抖动，不会同步轰同一端点。
+                // 上限仍是两次：连接失败本身可能已经耗掉整个初始化预算，重试太多会把启动拖成几分钟。
                 RetryUtil.retry(STARTUP_RETRY_BASIC_DELAY_MILLIS, STARTUP_RETRY_TIMES, STARTUP_RETRY_MULTIPLE,
                         TimeUnit.MILLISECONDS, () -> {
                             register(model.getId());
                             return null;
                         });
             } catch (Exception failure) {
-                log.warn("初始化 MCP 连接失败: id={}, name={}, error={}", model.getId(), model.getName(), failure.getMessage());
+                // 必须把 throwable 交给 logback：MCP 专用 appender 会把 cause 链压成一行「<- 类名: 消息」，
+                // 只打 getMessage() 的话，SDK 的通用句会把 SSL/超时这些真因全部吞掉。
+                log.warn("初始化 MCP 连接失败: id={}, name={}", model.getId(), model.getName(), failure);
             }
         }, executorService));
     }
@@ -88,11 +86,12 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         throwIf(server == null, "MCP 连接配置不能为空");
         long started = System.nanoTime();
         // 测试连接独立关闭，不能改变已有执行使用的共享连接。
-        try (McpClient client = clientFactory.create(server.name(), server)) {
-            List<String> names = client.listTools().stream().map(ToolSpecification::name).sorted().toList();
+        // 报「服务端原名」而不是 tools()：后者带本地的 mcp_<server>_ 前缀，运维要的是服务自己声明的名字。
+        try (McpSession session = sessionFactory.openSession(server)) {
+            List<String> names = session.serverToolNames();
             return new McpConnectionVO(names.size(), names, (System.nanoTime() - started) / 1_000_000L);
         } catch (Exception failure) {
-            log.warn("测试 MCP 连接失败: name={}, error={}", server.name(), failure.getMessage());
+            log.warn("测试 MCP 连接失败: name={}", server.name(), failure);
             throw new ClientException("MCP 连接测试失败，请检查服务地址、启动命令、凭据和超时设置", failure);
         }
     }
@@ -117,17 +116,23 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             remove(id);
             return;
         }
-        McpConfig.MCP server = assembler.toServer(model);
+        McpConfig.MCP server;
+        try {
+            server = assembler.toServer(model);
+        } catch (IllegalArgumentException invalid) {
+            // 装配阶段就能判定的配置错误（例如 SSE 已没有可用的客户端传输）：原样告诉用户该怎么改，
+            // 不要套上「连接失败」的文案，那会把人引到网络排查上。
+            remove(id);
+            throw new ClientException(invalid.getMessage(), invalid);
+        }
         PooledSession current = sessions.get(id);
         if (current != null && current.server().equals(server)) return;
 
         McpSession candidate = null;
         try {
-            long runtimeTimeout = (long) Math.ceil(server.executionTimeout().toMillis() / 1000.0)
-                    + RUNTIME_TIMEOUT_GRACE_SECONDS;
-            candidate = Langchain4jMcpSession.connect(server.name(), server.description(),
-                    clientFactory.create(server.name(), server),
-                    new MCPToolConverter(server.maxOutput(), runtimeTimeout, McpToolNaming.buildPrefix(server.name())), McpSessionType.REUSE);
+            // 共享连接的 REUSE 语义与工具前缀都由调用方声明；超时与输出预算由框架按 server 配置统一换算。
+            candidate = sessionFactory.openSession(server, null, McpSessionType.REUSE,
+                    McpToolNaming.buildPrefix(server.name()));
             PooledSession ready = new PooledSession(server, candidate, List.copyOf(candidate.tools()));
             PooledSession previous = sessions.put(id, ready);
             closeQuietly(previous);
@@ -135,7 +140,7 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         } catch (RuntimeException failure) {
             closeQuietly(candidate);
             remove(id);
-            log.warn("注册 MCP 连接失败: id={}, name={}, error={}", id, server.name(), failure.getMessage());
+            log.warn("注册 MCP 连接失败: id={}, name={}", id, server.name(), failure);
             throw new ClientException("MCP 配置已保存，但连接或工具发现失败，请检查地址、启动命令、凭据和超时设置", failure);
         }
     }
@@ -186,7 +191,7 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         try {
             session.close();
         } catch (RuntimeException failure) {
-            log.warn("关闭 MCP 连接失败: name={}, error={}", session.name(), failure.getMessage());
+            log.warn("关闭 MCP 连接失败: name={}", session.name(), failure);
         }
     }
 
@@ -196,6 +201,9 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
 
     /**
      * 工具定义随连接发布，避免请求阶段再次访问远端。
+     *
+     * <p>{@code tools} 缓存的是**带本地前缀**的定义（模型看到的名字）；{@code serverToolNames()}
+     * 必须委托给真正的会话，否则这里会退化成「带前缀的名字」。</p>
      */
     private record PooledSession(McpConfig.MCP server, McpSession delegate,
                                  List<ToolDefinition<? extends ToolExecutor>> tools) implements McpSession {
@@ -208,6 +216,11 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         @Override
         public String description() {
             return server.description() == null ? "" : server.description();
+        }
+
+        @Override
+        public List<String> serverToolNames() {
+            return delegate.serverToolNames();
         }
 
         @Override

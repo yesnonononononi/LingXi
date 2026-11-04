@@ -14,7 +14,10 @@ public class McpConfigAssembler {
     public McpConfig.MCP toServer(Mcp model) {
         McpTransport transport = McpTransport.parse(model.getTransport().toString());
         McpConfig.Conf conf = switch (transport) {
-            case STREAMABLE_HTTP, SSE -> new McpConfig.StreamableHttp(
+            // SSE 已无可用的客户端传输：映射成 StreamableHttp 只会让下游报出「transport 不匹配」这种
+            // 看不出病因的错，所以在这里就用能指导用户动作的话拒绝。
+            case SSE -> throw new IllegalArgumentException("SSE 传输不受支持，请改用 streamable-http");
+            case STREAMABLE_HTTP -> new McpConfig.StreamableHttp(
                     model.getUrl(), model.getHeaders() == null ? Map.of() : model.getHeaders(),
                     model.getInitializationTimeout(), model.getExecutionTimeout(),
                     model.getProtocolVersion(), model.getAutoHealthCheck(),
