@@ -13,6 +13,7 @@ on:
       - 'frontend/package-lock.json'
       - 'frontend/tests/frameworkDependencies.test.cjs'
       - 'frontend/tests/backendRuntimeMaven.test.cjs'
+      - 'frontend/tests/developmentIsolation.test.cjs'
       - '.mvn/**'
       - 'mvnw*'
       - '.github/workflows/backend-ci.yml'
@@ -29,6 +30,7 @@ on:
       - 'frontend/package-lock.json'
       - 'frontend/tests/frameworkDependencies.test.cjs'
       - 'frontend/tests/backendRuntimeMaven.test.cjs'
+      - 'frontend/tests/developmentIsolation.test.cjs'
       - '.mvn/**'
       - 'mvnw*'
       - '.github/workflows/backend-ci.yml'
@@ -65,3 +67,27 @@ jobs:
       - name: 构建锁定框架并验证业务
         working-directory: frontend
         run: npm run backend:verify
+      # 这两条守护要 PowerShell + 带 javac 的 JDK（迁移/初始化脚本是 .ps1，探针用 JDK 21 的单文件源码模式），
+      # 所以放在 windows-latest 且已 setup-java 21 的这条流水线，而不是 ubuntu-latest 的 frontend-ci。
+      # 位置上必须在 backend:verify 之后：它把项目依赖（h2 / sqlite-jdbc）装进隔离仓库 .run/maven/<hash>，
+      # 而 CI 的 ~/.m2/repository 是空的，迁移脚本与探针都靠 MAVEN_REPO_LOCAL 指向该仓库才找得到 jar。
+      # 找不到就显式失败并说明原因，绝不静默跳过。
+      - name: 开发隔离与 Maven 运行时守护（PowerShell + JDK）
+        working-directory: frontend
+        shell: pwsh
+        run: |
+          $store = Join-Path $env:GITHUB_WORKSPACE '.run/maven'
+          $repository = $null
+          if (Test-Path $store) {
+            $repository = Get-ChildItem -Directory $store |
+              Where-Object { Test-Path (Join-Path $_.FullName 'com/h2database/h2') } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+          }
+          if (-not $repository) {
+            throw "找不到含 h2 的隔离仓库（期望 $store\<hash>\com\h2database\h2）：迁移脚本会退到空的 ~/.m2 并报缺 jar。请确认上一步 npm run backend:verify 成功。"
+          }
+          Write-Host "使用隔离仓库: $($repository.FullName)"
+          $env:MAVEN_REPO_LOCAL = $repository.FullName
+          node --test tests/developmentIsolation.test.cjs tests/backendRuntimeMaven.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw "开发隔离/Maven 运行时守护失败（退出码 $LASTEXITCODE）" }
