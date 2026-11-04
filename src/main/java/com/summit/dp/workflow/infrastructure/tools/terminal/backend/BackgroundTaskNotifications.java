@@ -30,7 +30,7 @@ public class BackgroundTaskNotifications {
         List<UserMessageEntity> messages = new ArrayList<>();
         for (Task task : tasks) {
             if (!task.getStatus().isTerminal() || !receipts.add(task.getId().toString())) continue;
-            messages.add(UserMessageEntity.from(format(task)));
+            messages.add(UserMessageEntity.from(format(task)).markPendingCompaction());
         }
         if (messages.isEmpty()) return;
         context.appendMessage(messages);

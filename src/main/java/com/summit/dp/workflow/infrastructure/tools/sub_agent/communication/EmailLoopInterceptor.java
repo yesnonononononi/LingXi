@@ -86,7 +86,7 @@ public class EmailLoopInterceptor implements LoopInterceptor {
                 vo.getContent(),
                 recipientAgentId
                 )
-        )).toList();
+        )).map(UserMessageEntity::markPendingCompaction).toList();
         context.appendMessage(list);
         return InterceptorResult.NONE;
     }

@@ -66,6 +66,7 @@ public class InputTurnContinuation {
                     ExecutionAttributes.readLong(InputAutomationPolicy.attributes(previous), ExecutionAttributes.AGENT_ID),
                     false, List.of(), List.of());
             RuntimeContext context = preparer.prepare(command);
+            context.pendingUserMessage().markPendingCompaction();
             if (!registry.tryBeginAutomaticRoot(sessionId, context.executionContext().executionId())) return;
             try {
                 preparer.freezeRuntimeConfigurations(context);

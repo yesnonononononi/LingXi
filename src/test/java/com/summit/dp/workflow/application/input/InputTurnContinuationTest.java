@@ -14,6 +14,7 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
@@ -57,6 +58,7 @@ class InputTurnContinuationTest {
     private RuntimeContext preparedContext() {
         RuntimeContext context = mock(RuntimeContext.class);
         when(context.executionContext()).thenReturn(ExecutionContext.root(10L, "101", null, null, null, null));
+        when(context.pendingUserMessage()).thenReturn(UserMessageEntity.from("自动续跑输入"));
         return context;
     }
 
@@ -85,6 +87,7 @@ class InputTurnContinuationTest {
         verify(executor).submitAsync(context);
         verify(preparer).prepare(argThat(command -> command.sessionId().equals(10L)
                 && command.input().contains("迟到的真实输入") && command.agentId().equals(7L)));
+        assertEquals(Map.of(UserMessageEntity.COMPACT, false), context.pendingUserMessage().getAttrs());
         assertEquals(ExecutionState.COMPLETED, previous.getExecutionState());
     }
 
