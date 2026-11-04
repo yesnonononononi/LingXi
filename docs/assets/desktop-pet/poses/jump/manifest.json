@@ -1,0 +1,697 @@
+{
+  "version": "1.0.0",
+  "batch": "jump",
+  "assetId": "desktop-pet/poses/jump",
+  "status": "awaiting-static-review",
+  "canvas": {
+    "width": 3072,
+    "height": 3072
+  },
+  "nativeSourceCanvas": {
+    "width": 1536,
+    "height": 1536
+  },
+  "masterScale": 2,
+  "masterScaleDetail": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "anchor": {
+    "x": 1536,
+    "y": 2908,
+    "semantics": "画布水平中线 + 脚底最低墨迹 y 的正下方 1px（支撑帧最低像素 y=2907）"
+  },
+  "bodyAnchor": {
+    "x": 700,
+    "y": 1454,
+    "groundLineNative": 1453,
+    "facing": -1,
+    "estimator": "躯干主轴中心 = 蓝裙簇（b-r>=45 且 b>=150 且 g<b-20）在墨迹高度 45%~85% 中段的质心 x。既不是画布中线 768，也不是 bbox 中线（尾巴把 bbox 拉偏）",
+    "byFacing": {
+      "-1": {
+        "x": 700,
+        "y": 1454
+      }
+    },
+    "measuredNativeTorsoX": "anticipate:699.8 ascend:700.5 apex:700 descend:699.8 land:700.8",
+    "spreadNative": 1,
+    "note": "y 永远是地面参考线 1454，不跟帧底走：腾空帧墨迹底边抬到 1377/1283/1389，bodyAnchor.y 仍在 1454（与 run 的 l4/r4 同一语义）"
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "bboxConvention": "right/bottom 为含端点坐标；alpha>0",
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "bow（头部蓝蝴蝶结）",
+    "hairpin（云朵发夹与蓝色发夹条）",
+    "内耳（innerEarFluff，近侧耳白绒毛，镜像后会左右错位）",
+    "tail（粉白蓬松尾巴，甩向固定在身后）"
+  ],
+  "orientation": {
+    "facing": "left（全部 5 帧 facing=-1）",
+    "criterion": "irisOffset：头部带（墨迹上 40%）最大的实心深蓝连通块（虹膜）质心 − 该带墨迹质心",
+    "measuredNative": "anticipate:-232.2 ascend:-233.5 apex:-250.6 descend:-272.1 land:-213.3",
+    "note": "5 帧虹膜偏移全为负 = 全部左向。本轮只交左向；右向 5 帧未做（deferredUntilApproval），也禁止用左向帧水平翻转冒充"
+  },
+  "display": {
+    "canvasWidth": 234,
+    "canvasHeight": 234,
+    "inkHeight": 206.4,
+    "method": "234 / 3072 = 0.07619；inkHeight 取 5 帧母版墨迹高度中位数 2710 master px 折算（与 sit/run 的 display 口径一致）"
+  },
+  "method": "直出图（1254×1254 透明底，参考图 = run 左向 native 保身份与朝向）→ native 层统一缩放 1.122249 + 躯干质心对齐 x=700 → 逐帧按 gap 纯平移落座 → alpha 清理/孤立块清除 → 2× 最近邻出母版。所有几何编辑都只发生在 native 层。",
+  "normalization": {
+    "method": "premultiplied-alpha box resample（native 层完成）；母版 = native 2x nearest",
+    "uniformScale": 1.122249,
+    "scaleReason": "**固定沿用 run 左向交付时的系数**（1377/1227），不按 jump 自身墨迹中位数算：5 帧全是蹲伏/腾空姿态，若用其中位数（1207 gen px）会得到 1.140845，角色比 run 大 1.7%，换动作时忽大忽小。实测 5 帧 nativeInkH/genInkH = 1.12187~1.12262（差异仅来自整数量化的舍入），证明全批共用一个系数",
+    "horizontalAlign": "躯干质心（蓝裙簇）固定到 native x=700（与 run 左向同一套布局）",
+    "horizontalAlignReason": "实测 5 帧「躯干→尾端」最大 758 native、「躯干→面部」最大 531；固定 700 后右缘最坏 1458（留白 78px）、左缘最坏 169（留白 169px），四边留白全部 ≥8px",
+    "baselineNative": 1454,
+    "lastInkRowNative": 1453,
+    "airborneGapNative": {
+      "ascend": 76,
+      "apex": 170,
+      "descend": 64
+    },
+    "airborneFrames": [
+      "ascend",
+      "apex",
+      "descend"
+    ],
+    "gapReason": "apex 170 native 是 run 腾空帧 48 的 3.5 倍（≈13 display px），确保 jump 的\"腾空\"和 run 的\"小碎步腾空\"一眼能分开；ascend 76 / descend 64 都小于 apex，形成上抛再回落。取值还要让头顶（墨迹上沿）成弧：78 → 34 → 20 → 35 → 74（若按 70/132/64 取，ascend 的头顶 y=39 会高于 apex 的 57，最高点反而\"变矮\"）",
+    "placementRule": "每帧只做整幅竖直平移：lowestInkY = 1453 − gap（支撑帧 gap=0）。不做任何逐帧缩放，见 C14",
+    "placements": [
+      {
+        "frame": "anticipate",
+        "scale": 1.122249,
+        "lowestInkY": 1453,
+        "airborneGap": 0
+      },
+      {
+        "frame": "ascend",
+        "scale": 1.122249,
+        "lowestInkY": 1377,
+        "airborneGap": 76
+      },
+      {
+        "frame": "apex",
+        "scale": 1.122249,
+        "lowestInkY": 1283,
+        "airborneGap": 170
+      },
+      {
+        "frame": "descend",
+        "scale": 1.122249,
+        "lowestInkY": 1389,
+        "airborneGap": 64
+      },
+      {
+        "frame": "land",
+        "scale": 1.122249,
+        "lowestInkY": 1453,
+        "airborneGap": 0
+      }
+    ],
+    "alphaCleanup": "alpha<8 清零；alpha>=248 提满；<4 native px 孤立块删除；半透明中性灰脏边净化（仅 descend 帧：alpha 在 [8,248) 且三通道互差<=6 且亮度<=210 的像素清零，见 tools/ink.mjs）；落座校正（整幅上下平移使底部精确落在 lowestInkY）"
+  },
+  "contactPoints": {
+    "groundLine": {
+      "nativeY": 1453,
+      "masterY": 2907,
+      "anchorY": 2908
+    },
+    "note": "支撑帧（anticipate / land）的接触点逐帧见 frames[i].contactPoints.support；腾空帧（ascend / apex / descend）support=null 且有 airborneGap。批级只声明地面线。"
+  },
+  "batchBboxRange": {
+    "minWidth": 900,
+    "maxWidth": 1400,
+    "minHeight": 1100,
+    "maxHeight": 1500,
+    "note": "按本批 5 帧实测墨迹宽 1048–1195、高 1264–1380 定，上下留出收腿/伸展的余量",
+    "unit": "native"
+  },
+  "volume": {
+    "perFrameMaxBytes": 2621440,
+    "budgetPerFrameMB": 1.9,
+    "batchMaxBytes": 9961472,
+    "budgetNote": "§8 第二次修订的每帧预算（14 个母版实测 1.48–1.76MB/帧）；本批 5 帧上限 = 5 × 1.9 = 9.5MB",
+    "masterTotalBytes": 8876649,
+    "masterTotalMB": 8.47,
+    "distinctMasterSha256": 5,
+    "aliases": [],
+    "aliasesNote": "5 帧像素两两不同、sha256 全不同，没有可用 alias 的重复帧；未存物理副本",
+    "globalBatchCeilingMB": 96,
+    "globalBatchTotalBytes": 65419337,
+    "globalBatchTotalMB": 62.39,
+    "globalBatchDetail": "sit=1帧/1.57MB lie=7帧/14.13MB sleep=5帧/7.55MB walk=8帧/12.25MB run=12帧/18.42MB jump=5帧/8.47MB",
+    "globalBatchNote": "sit+lie+sleep+walk+run+jump 六批母版合计（C9b 全局天花板按 §8 第三次修订上调到 96MB）"
+  },
+  "frames": [
+    {
+      "id": "anticipate",
+      "role": "起跳预备：双膝深屈、重心压低、双臂后摆蓄力（支撑帧，双脚着地）",
+      "facing": -1,
+      "phase": "rear",
+      "airborne": false,
+      "file": "jump_anticipate@2x.png",
+      "bytes": 1934388,
+      "sha256": "a57ea847fb147df7f9baf544650b68162eee9431b2c7d79aff7355811da14926",
+      "bbox": {
+        "left": 338,
+        "top": 156,
+        "right": 2695,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/jump_anticipate_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1545518,
+        "sha256": "b8838fb12bd078853f39983e700140f16e8f0f2b528f3a9b32a45e8f265a4d31",
+        "bbox": {
+          "left": 169,
+          "top": 78,
+          "right": 1347,
+          "bottom": 1453
+        },
+        "dirtyEdgeCleared": 0
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 975.5,
+          "contactY": 1451,
+          "width": 188
+        },
+        "airborneGap": null,
+        "otherSegments": [
+          {
+            "role": "lifted",
+            "centerX": 640.5,
+            "contactY": 1422,
+            "width": 202
+          }
+        ],
+        "note": "support 为真实着地脚（该段最低墨迹距地面线 <=3 native px）；otherSegments 为本帧另一只较轻的脚段（仅取证）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 975.5,
+            "width": 188,
+            "contactY": 1451
+          },
+          {
+            "centerX": 640.5,
+            "width": 202,
+            "contactY": 1422
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 804.5,
+            "width": 530,
+            "contactY": 1451
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "pose": {
+        "inkWidth": 1179,
+        "inkHeight": 1376,
+        "headInkCentroidX": 606.2,
+        "headRelBottom": -1020,
+        "inkTop": 78,
+        "scaleRatioNativeOverGenerated": 1.122349
+      },
+      "orientation": {
+        "irisCentroidX": 374.1,
+        "headInkCentroidX": 606.2,
+        "irisOffsetNative": -232.2,
+        "irisArea": 1535
+      }
+    },
+    {
+      "id": "ascend",
+      "role": "腾空上升：双脚离地、身体向上冲、双腿开始收拢（腾空帧）",
+      "facing": -1,
+      "phase": null,
+      "airborne": true,
+      "file": "jump_ascend@2x.png",
+      "bytes": 1684411,
+      "sha256": "a105c4134632644daa7b6c3c3faeb7ab75c63c9e335c5442dcda7c7245f5f344",
+      "bbox": {
+        "left": 600,
+        "top": 68,
+        "right": 2769,
+        "bottom": 2755
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/jump_ascend_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1342589,
+        "sha256": "cf6bda9268b1e38c1077cd2ed27b92ddbe409337e1ff41bd8fe1d24a26eb0e8b",
+        "bbox": {
+          "left": 300,
+          "top": 34,
+          "right": 1384,
+          "bottom": 1377
+        },
+        "dirtyEdgeCleared": 0
+      },
+      "contactPoints": {
+        "support": null,
+        "airborneGap": 76,
+        "otherSegments": [],
+        "note": "腾空帧：双脚最低墨迹都高于地面线，support=null，airborneGap = 地面线 1453 − 最低墨迹 y"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 944.5,
+            "width": 96,
+            "contactY": 1376
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 886,
+            "width": 301,
+            "contactY": 1376
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "pose": {
+        "inkWidth": 1085,
+        "inkHeight": 1344,
+        "headInkCentroidX": 757.4,
+        "headRelBottom": -1002,
+        "inkTop": 34,
+        "scaleRatioNativeOverGenerated": 1.12187
+      },
+      "orientation": {
+        "irisCentroidX": 523.9,
+        "headInkCentroidX": 757.4,
+        "irisOffsetNative": -233.5,
+        "irisArea": 1341
+      }
+    },
+    {
+      "id": "apex",
+      "role": "最高点：双膝上收贴近身体，双脚离地最高（腾空帧）",
+      "facing": -1,
+      "phase": null,
+      "airborne": true,
+      "file": "jump_apex@2x.png",
+      "bytes": 1674903,
+      "sha256": "e739da909ec6cefad5aa7bd4df25115e8a045562af630f88572d548436900daf",
+      "bbox": {
+        "left": 716,
+        "top": 40,
+        "right": 2811,
+        "bottom": 2567
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/jump_apex_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1332069,
+        "sha256": "1565712a3950209684bb110eef357ee0b963e938acae9384e7971746465952fd",
+        "bbox": {
+          "left": 358,
+          "top": 20,
+          "right": 1405,
+          "bottom": 1283
+        },
+        "dirtyEdgeCleared": 0
+      },
+      "contactPoints": {
+        "support": null,
+        "airborneGap": 170,
+        "otherSegments": [],
+        "note": "腾空帧：双脚最低墨迹都高于地面线，support=null，airborneGap = 地面线 1453 − 最低墨迹 y"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 829.5,
+            "width": 124,
+            "contactY": 1281
+          },
+          {
+            "centerX": 946.5,
+            "width": 102,
+            "contactY": 1272
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 808.5,
+            "width": 544,
+            "contactY": 1281
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "pose": {
+        "inkWidth": 1048,
+        "inkHeight": 1264,
+        "headInkCentroidX": 801.7,
+        "headRelBottom": -937,
+        "inkTop": 20,
+        "scaleRatioNativeOverGenerated": 1.122558
+      },
+      "orientation": {
+        "irisCentroidX": 551.1,
+        "headInkCentroidX": 801.7,
+        "irisOffsetNative": -250.6,
+        "irisArea": 1312
+      }
+    },
+    {
+      "id": "descend",
+      "role": "下落：双腿向下伸展准备触地，双脚仍离地（腾空帧）",
+      "facing": -1,
+      "phase": null,
+      "airborne": true,
+      "file": "jump_descend@2x.png",
+      "bytes": 1655936,
+      "sha256": "f43195b4714bafab11e13637659506a071ea8640fd6697b0d567cff1ccad6e14",
+      "bbox": {
+        "left": 606,
+        "top": 70,
+        "right": 2745,
+        "bottom": 2779
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/jump_descend_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1314445,
+        "sha256": "f7715eda3d9ed74fe2e826c56ff3fcaf475a170f02def720144d90996e32ee72",
+        "bbox": {
+          "left": 303,
+          "top": 35,
+          "right": 1372,
+          "bottom": 1389
+        },
+        "dirtyEdgeCleared": 1803
+      },
+      "contactPoints": {
+        "support": null,
+        "airborneGap": 64,
+        "otherSegments": [],
+        "note": "腾空帧：双脚最低墨迹都高于地面线，support=null，airborneGap = 地面线 1453 − 最低墨迹 y"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 971,
+            "width": 87,
+            "contactY": 1388
+          },
+          {
+            "centerX": 802.5,
+            "width": 64,
+            "contactY": 1322
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 945,
+            "width": 139,
+            "contactY": 1388
+          },
+          {
+            "centerX": 792.5,
+            "width": 96,
+            "contactY": 1322
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "pose": {
+        "inkWidth": 1070,
+        "inkHeight": 1355,
+        "headInkCentroidX": 755.8,
+        "headRelBottom": -1008,
+        "inkTop": 35,
+        "scaleRatioNativeOverGenerated": 1.122618
+      },
+      "orientation": {
+        "irisCentroidX": 483.7,
+        "headInkCentroidX": 755.8,
+        "irisOffsetNative": -272.1,
+        "irisArea": 1118
+      }
+    },
+    {
+      "id": "land",
+      "role": "落地缓冲：双脚踩实、双膝深屈吸收冲击（支撑帧）",
+      "facing": -1,
+      "phase": "rear",
+      "airborne": false,
+      "file": "jump_land@2x.png",
+      "bytes": 1927011,
+      "sha256": "37ca6ba6dfa749d0f7f6032789c5559db02fde1a4b90f8bd2fe3012a62cb04b6",
+      "bbox": {
+        "left": 526,
+        "top": 148,
+        "right": 2915,
+        "bottom": 2907
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/jump_land_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1534968,
+        "sha256": "3aa82de18be6c582fafc5315f504171e26970fdf8cbccafe09a14bf613bbdf94",
+        "bbox": {
+          "left": 263,
+          "top": 74,
+          "right": 1457,
+          "bottom": 1453
+        },
+        "dirtyEdgeCleared": 0
+      },
+      "contactPoints": {
+        "support": {
+          "role": "support",
+          "centerX": 865.5,
+          "contactY": 1452,
+          "width": 178
+        },
+        "airborneGap": null,
+        "otherSegments": [
+          {
+            "role": "lifted",
+            "centerX": 647.5,
+            "contactY": 1410,
+            "width": 188
+          }
+        ],
+        "note": "support 为真实着地脚（该段最低墨迹距地面线 <=3 native px）；otherSegments 为本帧另一只较轻的脚段（仅取证）"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 865.5,
+            "width": 178,
+            "contactY": 1452
+          },
+          {
+            "centerX": 647.5,
+            "width": 188,
+            "contactY": 1410
+          }
+        ],
+        "bandNative200": [
+          {
+            "centerX": 855.5,
+            "width": 198,
+            "contactY": 1452
+          },
+          {
+            "centerX": 653,
+            "width": 199,
+            "contactY": 1410
+          }
+        ],
+        "note": "200 带里脚会与裙摆/尾巴下缘粘连，只作取证，不作为着地判据"
+      },
+      "pose": {
+        "inkWidth": 1195,
+        "inkHeight": 1380,
+        "headInkCentroidX": 687.7,
+        "headRelBottom": -1024,
+        "inkTop": 74,
+        "scaleRatioNativeOverGenerated": 1.121951
+      },
+      "orientation": {
+        "irisCentroidX": 474.3,
+        "headInkCentroidX": 687.7,
+        "irisOffsetNative": -213.3,
+        "irisArea": 1476
+      }
+    }
+  ],
+  "sources": [
+    {
+      "id": "anticipate",
+      "file": "source/jump_anticipate_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1552704,
+      "sha256": "b2500e902a6af57d5b3a1f22ee999763c8033297c66e563013527bf763ccc714",
+      "bbox": {
+        "left": 152,
+        "top": 15,
+        "right": 1202,
+        "bottom": 1240
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/run/source/run_l1_native.png（身份/笔触参考；朝向由提示词强制为左向，未使用任何镜像）；不参与运行时",
+      "alphaExtent": {
+        "left": 0,
+        "top": 0,
+        "right": 1207,
+        "bottom": 1253
+      }
+    },
+    {
+      "id": "ascend",
+      "file": "source/jump_ascend_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1333199,
+      "sha256": "ab1da80ce236f6df27521b7682a7659944ef91c6269054b1ef7615856ba280a1",
+      "bbox": {
+        "left": 208,
+        "top": 19,
+        "right": 1174,
+        "bottom": 1216
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/run/source/run_l1_native.png（身份/笔触参考；朝向由提示词强制为左向，未使用任何镜像）；不参与运行时",
+      "alphaExtent": {
+        "left": 81,
+        "top": 15,
+        "right": 1191,
+        "bottom": 1221
+      }
+    },
+    {
+      "id": "apex",
+      "file": "source/jump_apex_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1333578,
+      "sha256": "d518961e30f1b98d65d9adcf534dadfeba70e2325da1ce1a7f48ecabc8211aaf",
+      "bbox": {
+        "left": 225,
+        "top": 9,
+        "right": 1158,
+        "bottom": 1134
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/run/source/run_l1_native.png（身份/笔触参考；朝向由提示词强制为左向，未使用任何镜像）；不参与运行时",
+      "alphaExtent": {
+        "left": 0,
+        "top": 0,
+        "right": 1241,
+        "bottom": 1179
+      }
+    },
+    {
+      "id": "descend",
+      "file": "source/jump_descend_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1326946,
+      "sha256": "d0903a5bfa2b5da7af4c060266c0c7ec3542edc51798e3f6b31e02c24690862e",
+      "bbox": {
+        "left": 224,
+        "top": 15,
+        "right": 1176,
+        "bottom": 1221
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/run/source/run_l1_native.png（身份/笔触参考；朝向由提示词强制为左向，未使用任何镜像）；不参与运行时",
+      "alphaExtent": {
+        "left": 0,
+        "top": 13,
+        "right": 1225,
+        "bottom": 1229
+      }
+    },
+    {
+      "id": "land",
+      "file": "source/jump_land_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1537782,
+      "sha256": "234541277e54c2ee040ff737b04d860191e3df454a288e6b8fc5add539cbf185",
+      "bbox": {
+        "left": 173,
+        "top": 11,
+        "right": 1237,
+        "bottom": 1240
+      },
+      "note": "生图直出原图（1254x1254 透明底），参考图 = poses/run/source/run_l1_native.png（身份/笔触参考；朝向由提示词强制为左向，未使用任何镜像）；不参与运行时",
+      "alphaExtent": {
+        "left": 0,
+        "top": 0,
+        "right": 1241,
+        "bottom": 1253
+      }
+    }
+  ],
+  "review": {
+    "requiredNow": [
+      "anticipate",
+      "ascend",
+      "apex",
+      "descend",
+      "land"
+    ],
+    "deferredUntilApproval": [
+      "jump 右向 5 帧",
+      "play（4 段）",
+      "edge（3 帧）",
+      "side（2 帧）",
+      "mini（专用简化资产）"
+    ],
+    "fullBatchComplete": false,
+    "note": "本轮只交 jump 左向 5 帧；右向 5 帧与 play/edge/side/mini 一律未开始，禁止当成整批完成"
+  },
+  "notes": [
+    "5 帧全部独立生成（reference_image_path = poses/run/source/run_l1_native.png 保身份与左向朝向），没有一帧由 run/walk 帧拉伸/平移得到，也没有镜像",
+    "腾空三帧（ascend/apex/descend）是**整幅竖直平移**产生的离地量，不是放大：见 C14 的「单一缩放系数」与「腾空帧不得比支撑帧更宽」两条断言",
+    "画布 1536 高、角色墨迹约 1376 高、脚踩 1453 时头顶只剩 78px 余量，因此\"整体上移\"最多约 58 native px（≈4.4 display px）；跳跃感由「双脚离地 170 native + apex 收腿」承担。要更大的整体弧线只能加大画布或缩小角色，两者都被硬参数/用户裁决否掉",
+    "支撑相位：anticipate rear / land rear（两只脚都在躯干后方是因为蹲姿重心前压），jump 不是步态，不做左右脚交替断言",
+    "bodyAnchor.y=1454 是地面参考线，不随腾空帧的帧底移动（腾空帧底在 1377 / 1283 / 1389）",
+    "tools/png.mjs 与 tools/pixels.mjs 从 poses/run/tools 原样复制（sha256 与 run 一致，未重写编解码器）",
+    "画布 3072x3072 / native 1536x1536 沿用 walk/run 已验收口径（§4 修订后的「按 bbox 落座」）",
+    "C2c 修补（本轮）：descend 帧有 1803 个半透明中性灰脏边像素（占半透明像素 3.54% > 2% 上限），由 tools/ink.mjs 的 clearDirtyNeutralGray 在 native 层清零后重出母版；墨迹 bbox 变化 0px（1070x1355 不变），其余 4 帧逐字节未变（sha256 相同）。旧 native sha256=625b8eee…，新=f7715eda…；旧母版 ec069cd5…，新=f43195b4…",
+    "C1c/C4b/C5/C10/C16 五条判据修复（本轮）：sRGB 改逐块解析；直出图 bbox 与 alpha 完整范围双口径核对（tools/ink.mjs）；C5 改用 native 对 native 并校验 batchBboxRange.unit；虹膜探测器换成与 run 相同的掩膜（tools/iris.mjs，实测 run 12 帧偏移全部复现）；notMirrorableParts 补「内耳」字样。"
+  ]
+}
