@@ -62,6 +62,35 @@ const measuredBox = measure(official).bbox;
 const measuredHeight = (measuredBox.bottom - measuredBox.top + 1) * 234 / 3072;
 requireValue(measuredHeight >= 150 && measuredHeight <= 170 && measuredHeight === manifest.display.inkHeight, 'C4 坐姿显示高度与实测不符或超出建议范围');
 
+// ---------- C4 bodyAnchor（§6.2）----------
+// x = 躯干主轴中心（蓝裙簇中段质心，不是画布中线 1024、也不是 bbox 中线），y = 本批地面线。
+{
+  const TOL = 2;
+  const ba = manifest.bodyAnchor || {};
+  requireValue(typeof ba.x === 'number' && typeof ba.y === 'number', 'C4 bodyAnchor 缺 x/y');
+  requireValue(typeof ba.estimator === 'string' && ba.estimator.length > 0, 'C4 bodyAnchor 缺 estimator 说明');
+  const img = native;
+  const box = measure(img).bbox;
+  const y0 = box.top + Math.round((box.bottom - box.top + 1) * 0.45);
+  const y1 = box.top + Math.round((box.bottom - box.top + 1) * 0.85);
+  let sx = 0; let n = 0; let hit = 0;
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = box.left; x <= box.right; x += 1) {
+      const o = (y * img.width + x) * 4;
+      if (img.data[o + 3] < 200) continue;
+      const r = img.data[o]; const g = img.data[o + 1]; const b = img.data[o + 2];
+      if (b - r >= 45 && b >= 150 && g < b - 20) { sx += x; n += 1; if (x === Math.round(ba.x)) hit += 1; }
+    }
+  }
+  const cx = n ? sx / n : null;
+  requireValue(cx !== null && Math.abs(cx - ba.x) <= TOL,
+    'C4 躯干主轴实测 ' + (cx === null ? 'null' : cx.toFixed(2)) + ' 与 bodyAnchor.x ' + ba.x + ' 差 >' + TOL);
+  requireValue(hit > 0, 'C4 bodyAnchor.x 不在躯干墨迹内');
+  requireValue(Math.abs(ba.y - box.bottom) <= TOL, 'C4 bodyAnchor.y=' + ba.y + ' 与本批地面线 ' + box.bottom + ' 差 >' + TOL);
+  console.log('bodyAnchor: x=' + ba.x + ' y=' + ba.y + ' 实测躯干x=' + (cx === null ? 'null' : cx.toFixed(2))
+    + ' 地面线=' + box.bottom + ' 偏差=' + (cx === null ? '-' : Math.abs(cx - ba.x).toFixed(2)));
+}
+
 if (process.argv.includes('--self-test')) {
   const entry = manifest.files[0];
   const actual = { bytes: entry.bytes, sha256: entry.sha256 };

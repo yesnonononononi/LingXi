@@ -15,6 +15,16 @@
     "x": 2578,
     "y": 2909
   },
+  "bodyAnchor": {
+    "x": 732,
+    "y": 1468,
+    "groundLineNative": 1468,
+    "estimator": "躯干主轴中心 = 墨迹高度 45%~85% 中段（躯干带）的不透明墨迹质心 x（横躺姿态下蓝裙簇会被蜷曲的肢体遮挡、且虹膜开合会污染蓝色簇，故改用带内墨迹质心）。既不是画布中线，也不是 bbox 中线",
+    "measuredNativeTorsoX": "sleep_neutral:732.74 sleep_breath_in:732.75 sleep_breath_out:732.73 sleep_startle:732.74 sleep_curled:731",
+    "spreadNative": 1.75,
+    "maxDeviationNative": 1,
+    "note": "实测来自 5 份 native；x 取实测均值四舍五入，最大偏差 1.00px（阈值 2px）"
+  },
   "contactPoints": {
     "foot": [
       2578,

@@ -11,6 +11,28 @@
     "x": 2578,
     "y": 2909
   },
+  "bodyAnchor": {
+    "x": 733,
+    "y": 1468,
+    "groundLineNative": 1468,
+    "estimator": "躯干主轴中心 = 墨迹高度 45%~85% 中段（躯干带）的不透明墨迹质心 x（横躺姿态下蓝裙簇会被蜷曲的肢体遮挡、且虹膜开合会污染蓝色簇，故改用带内墨迹质心）。既不是画布中线，也不是 bbox 中线",
+    "measuredNativeTorsoX": "lie_neutral:732.74",
+    "spreadNative": 0,
+    "maxDeviationNative": 0.26,
+    "note": "实测来自 1 份 native；x 取实测均值四舍五入，最大偏差 0.26px（阈值 2px）",
+    "byFrame": {
+      "source/stand_neutral_native.png": {
+        "x": 778,
+        "y": 1455,
+        "note": "过渡起点（站姿）原生图的实测躯干主轴与地面线；姿态与趴姿不同，故不并入本批 bodyAnchor，只逐值声明在此"
+      },
+      "source/crouch_neutral_native.png": {
+        "x": 747,
+        "y": 1484,
+        "note": "过渡中段（蹲伏）原生图的实测值，同上"
+      }
+    }
+  },
   "contactPoints": {
     "foot": [
       2578,

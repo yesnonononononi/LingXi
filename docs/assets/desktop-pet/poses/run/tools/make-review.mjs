@@ -10,10 +10,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
-const CELL = 360;        // 每格内容边长（母版 3072 → 360，统一系数 0.11719）
+const CELL = 234;        // 每格内容边长（母版 3072 → 234 = 引擎 display 宽度，统一系数 0.07619）
 const GAP = 16;
 const PAD = 24;
-const LABEL_H = 26;
+const LABEL_H = 44;      // 两行标签：帧号+朝向箭头+相位 / 前倾量
 const LIGHT = [238, 238, 240];
 const DARK = [26, 26, 30];
 
@@ -40,6 +40,9 @@ const FONT = {
   K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
   F: ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
   B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
+  '<': ['00010', '00100', '01000', '10000', '01000', '00100', '00010'],
+  '>': ['01000', '00100', '00010', '00001', '00010', '00100', '01000'],
   ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
 };
 
@@ -130,17 +133,19 @@ frames.forEach((f, i) => {
   const tile = downsample(img, CELL);
   const x0 = PAD + i * (CELL + GAP);
   rows.forEach((row, ri) => {
-    const y0 = PAD + ri * (rowH + GAP);
+    const y0 = PAD + LABEL_H + ri * (rowH + GAP);
     paintBg(x0 - GAP / 2, y0 - LABEL_H, CELL + GAP, LABEL_H + CELL + GAP / 2, row.bg);
     blendTile(tile, x0, y0);
     const tag = f.airborne ? 'AIR' : (f.phase === 'front' ? 'F' : 'B');
-    drawText(out, W, x0, y0 - LABEL_H + 4, f.id.toUpperCase() + ' ' + tag + ' ' + String(f.lean ? f.lean.faceForwardNative : 0), row.ink, 2);
+    const arrow = f.facing > 0 ? '>' : '<';
+    drawText(out, W, x0, y0 - LABEL_H + 2, f.id.toUpperCase() + ' ' + arrow + ' ' + tag, row.ink, 2);
+    drawText(out, W, x0, y0 - LABEL_H + 20, String(f.lean ? f.lean.faceForwardNative : 0), row.ink, 2);
   });
   rows.forEach(() => {}); // 行标签统一在左上角绘制，避免每格重复
 });
 // 每格标注：帧号 + 相位（F=支撑脚在躯干前方 / B=在后方 / AIR=腾空）+ 前倾量（面部相对躯干前伸的 native px）
 drawText(out, W, PAD, 6, 'LIGHT', [60, 60, 70], 2);
-drawText(out, W, PAD, PAD + rowH + GAP - 20, 'DARK', [230, 230, 240], 2);
+drawText(out, W, PAD, PAD + LABEL_H + rowH + GAP - LABEL_H + 2, 'DARK', [230, 230, 240], 2);
 
 fs.writeFileSync(path.join(root, 'qa/run_review.png'), encodePng({ width: W, height: H, data: out }));
 console.log('qa/run_review.png ' + W + 'x' + H + ' cells=' + frames.length + ' cell=' + CELL + 'px scale=' + (CELL / manifest.canvas.width).toFixed(5));

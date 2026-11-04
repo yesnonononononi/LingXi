@@ -11,6 +11,16 @@
     "x": 1024,
     "y": 2908
   },
+  "bodyAnchor": {
+    "x": 474,
+    "y": 1454,
+    "groundLineNative": 1454,
+    "estimator": "躯干主轴中心 = 蓝裙簇（b-r>=45 且 b>=150 且 g<b-20）在墨迹高度 45%~85% 中段的质心 x。既不是画布中线，也不是 bbox 中线（尾巴把 bbox 拉偏）",
+    "measuredNativeTorsoX": "sit_neutral:474.16",
+    "spreadNative": 0,
+    "maxDeviationNative": 0.16,
+    "note": "实测来自 1 份 native；x 取实测均值四舍五入，最大偏差 0.16px（阈值 2px）"
+  },
   "contactPoints": {
     "foot": [
       1024,

@@ -23,16 +23,25 @@ export const CONFIG = {
   minIslandArea: 4,
   baselineNative: 1454,
   lastInkRowNative: 1453,
-  // 躯干质心固定的 native x。walk 用的是画布中线 768，run 不能直接照抄：run 的尾巴向后甩得更远，
-  // 实测躯干质心到墨迹右缘最远 730 gen px，按 1.122 缩放后 819 native px > 距中线可用的 768 px，
-  // 若仍对齐 768 会把尾巴顶出画布右缘 52 px。改为固定 700 后：右缘最坏 1519（留白 16px）、左缘最坏 309。
-  torsoAnchorXNative: 700,
+  // 躯干质心固定的 native x，按朝向分别取值（= §6.2 bodyAnchor.x 的来源）。
+  // walk 用画布中线 768，run 不能照抄：尾巴把墨迹拉成不对称形，实测
+  //   左向帧 躯干→尾端(右) 721~819 native、躯干→面部(左) 273~420 native；
+  //   右向帧 躯干→尾端(左) 631~801 native、躯干→面部(右) 273~441 native。
+  // 四边留白 ≥8px 的两个约束分别要求：左向 x ≤ 1536-8-819 = 709；右向 x ≥ 8+801 = 809。
+  // 809 > 709 ⇒ 12 帧**不存在**公共躯干 x（缩到能共用就等于把角色缩小，已否决）。
+  // 故左向取 700（与已验收的左向批次完全一致），右向取 1536-700 = 836（严格镜像对称）。
+  torsoAnchorXNativeByFacing: { '-1': 700, 1: 836 },
+  // 缩放系数的基准帧集合固定为左向 6 帧：新增右向帧不得改变已验收的左向母版字节。
+  scaleBasisFrames: ['l1', 'l2', 'l3', 'l4', 'l5', 'l6'],
   standingInkHeightNative: 1377,
   footBandNative: 90,
   airborneGapNative: 48,
-  airborneFrames: ['l4'],
-  frames: ['l1', 'l2', 'l3', 'l4', 'l5', 'l6'],
-  facingOf: { l1: -1, l2: -1, l3: -1, l4: -1, l5: -1, l6: -1 },
+  airborneFrames: ['l4', 'r4'],
+  frames: ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6'],
+  facingOf: {
+    l1: -1, l2: -1, l3: -1, l4: -1, l5: -1, l6: -1,
+    r1: 1, r2: 1, r3: 1, r4: 1, r5: 1, r6: 1,
+  },
 };
 
 const N = CONFIG.native.width;
@@ -139,6 +148,23 @@ function resampleInto(src, srcBox, ox, oy, dw, dh, out) {
   }
 }
 
+// 落座校正：整幅上下平移 dy 行（native 层）。alpha 清理可能抹掉最后一行，
+// 造成最低墨迹离目标 1px；平移后每帧底部精确落在 lowestInkY。左向 6 帧 dy=0，字节不变。
+function translateY(img, dy) {
+  if (!dy) return;
+  const { width: W, height: H, data } = img;
+  const out = Buffer.alloc(W * H * 4);
+  for (let y = 0; y < H; y += 1) {
+    const sy = y - dy;
+    if (sy < 0 || sy >= H) continue;
+    for (let x = 0; x < W; x += 1) {
+      const s = (sy * W + x) * 4; const t = (y * W + x) * 4;
+      out[t] = data[s]; out[t + 1] = data[s + 1]; out[t + 2] = data[s + 2]; out[t + 3] = data[s + 3];
+    }
+  }
+  out.copy(data);
+}
+
 function upscaleNearest2(img) {
   const out = { width: img.width * 2, height: img.height * 2, data: Buffer.alloc(img.width * 2 * img.height * 2 * 4) };
   for (let y = 0; y < out.height; y += 1) {
@@ -183,9 +209,11 @@ export function buildRun() {
     const img = readPng(path.join(root, 'source/run_' + id + '_generated.png'));
     const cleanup = cleanupAlpha(img);
     const box = bboxOf(img, 8);
-    return { id, img, box, cleanup };
+    return { id, img, box, cleanup, facing: CONFIG.facingOf[id] };
   });
-  const heights = gen.map((g) => g.box.height).sort((a, b) => a - b);
+  // 缩放系数只用基准帧（左向 6 帧）算，保证已验收的左向母版字节不变
+  const basis = gen.filter((g) => CONFIG.scaleBasisFrames.includes(g.id));
+  const heights = basis.map((g) => g.box.height).sort((a, b) => a - b);
   const medianH = heights[Math.floor(heights.length / 2)];
   const scale = CONFIG.standingInkHeightNative / medianH;
   const report = [];
@@ -193,7 +221,9 @@ export function buildRun() {
     const dw = Math.round(g.box.width * scale);
     const dh = Math.round(g.box.height * scale);
     const torso = torsoCentroidX(g.img, g.box);
-    const ox = Math.round(CONFIG.torsoAnchorXNative - (torso - g.box.left) * scale);
+    const anchorX = CONFIG.torsoAnchorXNativeByFacing[String(g.facing)];
+    if (anchorX === undefined) throw new Error('缺少 facing ' + g.facing + ' 的躯干锚点: ' + g.id);
+    const ox = Math.round(anchorX - (torso - g.box.left) * scale);
     const airborne = CONFIG.airborneFrames.includes(g.id);
     const lowestInkY = airborne ? CONFIG.lastInkRowNative - CONFIG.airborneGapNative : CONFIG.lastInkRowNative;
     const oy = lowestInkY - (dh - 1);
@@ -202,6 +232,8 @@ export function buildRun() {
     const nativeImg = { width: N, height: N, data: out };
     const cleanup2 = cleanupAlpha(nativeImg);
     const islands = removeIslands(nativeImg, CONFIG.minIslandArea);
+    const seatDelta = lowestInkY - bboxOf(nativeImg, 1).bottom;
+    translateY(nativeImg, seatDelta);
     const master = upscaleNearest2(nativeImg);
     const nativeBytes = encodePng(nativeImg);
     const masterBytes = encodePng(master);
@@ -211,9 +243,10 @@ export function buildRun() {
     const runs = footRuns(nativeImg, nBox.bottom, CONFIG.footBandNative);
     report.push({
       id: g.id,
+      facing: g.facing,
       airborne,
       generated: { width: g.img.width, height: g.img.height, inkBox: g.box, cleanup: g.cleanup },
-      place: { scale: +scale.toFixed(6), dw, dh, ox, oy, lowestInkY, torsoGenX: +torso.toFixed(1) },
+      place: { scale: +scale.toFixed(6), dw, dh, ox, oy, lowestInkY, torsoGenX: +torso.toFixed(1), torsoAnchorX: anchorX },
       native: { bbox: nBox, bytes: nativeBytes.length, sha256: crypto.createHash('sha256').update(nativeBytes).digest('hex'),
         cleanup: cleanup2, islandsRemoved: islands },
       master: { bbox: bboxOf(master, 1), bytes: masterBytes.length,
@@ -230,10 +263,12 @@ if (isMain) {
   const total = r.frames.reduce((s, f) => s + f.master.bytes, 0);
   console.log('scale=' + r.scale + ' medianInk=' + r.medianInkHeight);
   for (const f of r.frames) {
-    console.log(f.id, f.airborne ? 'AIRBORNE' : 'support ', 'nativeBottom=' + f.native.bbox.bottom,
+    console.log(f.id, 'facing=' + (f.facing > 0 ? '+1' : '-1'), f.airborne ? 'AIRBORNE' : 'support ',
+      'anchorX=' + f.place.torsoAnchorX, 'ox=' + f.place.ox, 'dw=' + f.place.dw,
+      'nativeBottom=' + f.native.bbox.bottom,
       'master=' + f.master.bytes, 'feet=' + f.footRuns.map((x) => x.centerX + '@' + x.contactY + '(w' + x.width + ')').join(' '));
   }
-  console.log('TOTAL=' + total + ' (' + (total / 1048576).toFixed(2) + 'MB) budget=' + (CONFIG.frames.length * 1.65).toFixed(2) + 'MB');
+  console.log('TOTAL=' + total + ' (' + (total / 1048576).toFixed(2) + 'MB) budget=' + (CONFIG.frames.length * 1.9).toFixed(1) + 'MB');
 }
 
 

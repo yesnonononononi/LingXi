@@ -19,6 +19,16 @@
     "y": 2908,
     "semantics": "脚底中心：画布水平中线 x，最低墨迹 y=2907 的正下方 1px"
   },
+  "bodyAnchor": {
+    "x": 768,
+    "y": 1453,
+    "groundLineNative": 1453,
+    "estimator": "躯干主轴中心 = 蓝裙簇（b-r>=45 且 b>=150 且 g<b-20）在墨迹高度 45%~85% 中段的质心 x。既不是画布中线，也不是 bbox 中线（尾巴把 bbox 拉偏）",
+    "measuredNativeTorsoX": "walk_l1:767.89 walk_l2:768.42 walk_l3:767.61 walk_l4:768.45 walk_r1:768.61 walk_r2:767.74 walk_r3:766.92 walk_r4:768.2",
+    "spreadNative": 1.69,
+    "maxDeviationNative": 1.08,
+    "note": "实测来自 8 份 native；x 取实测均值四舍五入，最大偏差 1.08px（阈值 2px）"
+  },
   "colorSpace": "sRGB (PNG sRGB chunk 已写入，rendering intent 0)",
   "alpha": "straight",
   "bitDepth": 8,

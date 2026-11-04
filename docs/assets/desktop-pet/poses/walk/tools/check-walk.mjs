@@ -527,7 +527,34 @@ check('C3b 最低像素与锚点 y 偏差 <= 2px', Math.max(...bottomDiffs) <= G
     rows.map((r) => r.id + ':tailNorm=' + Math.round(r.tailOff * r.facing) + ' bowNorm=' + Math.round(r.bowOff * r.facing)).join(' '));
 }
 
-// ---------- 汇总 ----------
+// ---------- C13 bodyAnchor（§6.2）----------
+// x = 躯干主轴中心（蓝裙簇中段 45%~85% 高度的质心），不是画布中线、也不是 bbox 中线（尾巴把 bbox 拉偏）；
+// y = 本批地面线。三条断言：每帧实测 x 与声明差 ≤2px、声明 x 落在躯干墨迹内、同批 spread ≤2px、y 与地面线差 ≤2px。
+{
+  const TOL = 2;
+  const ba = manifest.bodyAnchor || {};
+  const problems = [];
+  if (typeof ba.x !== 'number' || typeof ba.y !== 'number') problems.push('缺 bodyAnchor.x/y');
+  if (!ba.estimator) problems.push('缺 bodyAnchor.estimator 说明');
+  const xs = analyzed.map((a) => a.torsoCx);
+  const spread = Math.max(...xs) - Math.min(...xs);
+  if (spread > TOL) problems.push('同批躯干 x spread=' + spread.toFixed(1) + '>' + TOL);
+  for (const a of analyzed) {
+    if (Math.abs(a.torsoCx - ba.x) > TOL) problems.push(a.id + '.torsoCx=' + a.torsoCx.toFixed(1) + ' 与声明 ' + ba.x + ' 差 >' + TOL);
+    const y0 = a.nativeBox.top + Math.round(a.nativeBox.height * 0.45);
+    const y1 = a.nativeBox.top + Math.round(a.nativeBox.height * 0.85);
+    let hit = 0;
+    for (let y = y0; y <= y1; y += 1) if (a.native.data[(y * a.native.width + Math.round(ba.x)) * 4 + 3] >= 200) hit += 1;
+    if (!hit) problems.push(a.id + ' bodyAnchor.x 不在躯干墨迹内');
+  }
+  const ground = Math.max(...analyzed.map((a) => a.nativeBox.bottom));
+  if (Math.abs(ba.y - ground) > TOL) problems.push('bodyAnchor.y=' + ba.y + ' 与本批地面线 ' + ground + ' 差 >' + TOL);
+  check('C13 bodyAnchor（落在躯干墨迹内 / y=本批地面线±2 / 同批各帧 spread<=2）', problems.length === 0,
+    problems.length ? problems.join('; ')
+      : 'x=' + ba.x + ' y=' + ba.y + ' 地面线=' + ground + ' | 实测躯干 x=' + analyzed.map((a) => a.id + ':' + a.torsoCx.toFixed(1)).join(' ') + ' spread=' + spread.toFixed(1));
+}
+
+// ---------- 汇总 ----------// ---------- 汇总 ----------
 const failed = results.filter((r) => !r.ok);
 console.log('');
 console.log('--- 汇总：' + (results.length - failed.length) + '/' + results.length + ' 通过 ---');

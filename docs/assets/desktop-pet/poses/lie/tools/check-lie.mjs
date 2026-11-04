@@ -74,6 +74,64 @@ const prone = manifest.files.find(entry => entry.file === 'lie_neutral@2x.png');
 assert(prone.contactPoints.belly && prone.contactPoints.palmFront && prone.contactPoints.footImageLeft && prone.contactPoints.footImageRight, 'C4 趴姿缺少腹部/前掌/后掌接触点');
 assert(prone.displayInkHeight < 150 && manifest.files[0].displayInkHeight > 200, 'C6 趴姿高度与站姿不可辨');
 
+// ---------- C12 bodyAnchor（§6.2）----------
+// x = 躯干主轴中心（横躺姿态用「躯干带 45%~85% 高度的墨迹质心」：蓝裙簇会被蜷曲肢体遮挡、虹膜开合会污染蓝色簇），
+// y = 本批地面线。三条断言：实测 x 与声明差 ≤2px、声明 x 落在躯干带墨迹内、同批 spread ≤2px、y 与地面线差 ≤2px。
+{
+  const TOL = 2;
+  const ba = manifest.bodyAnchor || {};
+  assert(typeof ba.x === 'number' && typeof ba.y === 'number', 'C12 bodyAnchor 缺 x/y');
+  assert(typeof ba.estimator === 'string' && ba.estimator.length > 0, 'C12 bodyAnchor 缺 estimator 说明');
+  // bodyAnchor 取「趴平本体」那张原生图（lie_neutral）：lie_down_0x / lie_up_0x 与它逐字节同源（aliases）。
+  // 本批还借用了 stand / crouch 两张过渡姿态的原生图（姿态与地面线都不同），
+  // 它们的实测值单独声明在 bodyAnchor.byFrame 并逐值对账，不与趴姿混算 spread。
+  const allNatives = [...new Set(manifest.files.map((entry) => entry.nativeSource))];
+  const proneEntry = manifest.files.find((entry) => entry.file === 'lie_neutral@2x.png');
+  assert(proneEntry && proneEntry.nativeSource, 'C12 找不到 lie_neutral 的原生图，无法定位趴姿本体');
+  const poseNatives = [proneEntry.nativeSource];
+  const transNatives = allNatives.filter((nativeFile) => nativeFile !== proneEntry.nativeSource);
+  const rows = [];
+  let ground = 0;
+  const measureNative = (nativeFile) => {
+    const img = readPng(path.join(root, nativeFile));
+    const box = measure(img).bbox;
+    const y0 = box.top + Math.round((box.bottom - box.top + 1) * 0.45);
+    const y1 = box.top + Math.round((box.bottom - box.top + 1) * 0.85);
+    let sx = 0; let n = 0; let hit = 0;
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = box.left; x <= box.right; x += 1) {
+        if (img.data[(y * img.width + x) * 4 + 3] < 200) continue;
+        sx += x; n += 1;
+        if (x === Math.round(ba.x)) hit += 1;
+      }
+    }
+    return { cx: n ? sx / n : null, hit, bottom: box.bottom };
+  };
+  for (const nativeFile of poseNatives) {
+    const { cx, hit, bottom } = measureNative(nativeFile);
+    ground = Math.max(ground, bottom);
+    assert(cx !== null && Math.abs(cx - ba.x) <= TOL, `C12 躯干带质心 ${cx === null ? 'null' : cx.toFixed(2)} 与 bodyAnchor.x ${ba.x} 差 >${TOL}: file=${nativeFile}`);
+    assert(hit > 0, `C12 bodyAnchor.x 不在躯干墨迹内: file=${nativeFile}`);
+    assert(Math.abs(ba.y - bottom) <= TOL, `C12 bodyAnchor.y=${ba.y} 与本批地面线 ${bottom} 差 >${TOL}: file=${nativeFile}`);
+    rows.push(`${nativeFile.split('/').pop()}:${cx.toFixed(2)}`);
+  }
+  const xs = rows.map((s) => Number(s.split(':')[1]));
+  const spread = Math.max(...xs) - Math.min(...xs);
+  assert(spread <= TOL, `C12 同批躯干 x spread=${spread.toFixed(2)}>${TOL}`);
+  // 过渡姿态（stand / crouch）的躯干主轴必须逐值声明，不许静默略过
+  const byFrame = ba.byFrame || {};
+  for (const nativeFile of transNatives) {
+    const { cx, bottom } = measureNative(nativeFile);
+    const decl = byFrame[nativeFile];
+    assert(decl, `C12 过渡姿态未在 bodyAnchor.byFrame 声明: file=${nativeFile}`);
+    if (!decl) continue;
+    assert(Math.abs(cx - decl.x) <= TOL, `C12 byFrame.x 与实测不符: file=${nativeFile} 实测 ${cx.toFixed(2)} 声明 ${decl.x}`);
+    assert(Math.abs(bottom - decl.y) <= TOL, `C12 byFrame.y 与实测地面线不符: file=${nativeFile} 实测 ${bottom} 声明 ${decl.y}`);
+    rows.push(`${nativeFile.split('/').pop()}:${cx.toFixed(2)}(过渡,已声明)`);
+  }
+  console.log(`bodyAnchor: x=${ba.x} y=${ba.y} 地面线=${ground} | ${rows.join(' ')} spread=${spread.toFixed(2)}`);
+}
+
 if (process.argv.includes('--self-test')) {
   // 正对照先证明全画布扫描能命中低alpha和孤岛，包括末行末列。
   const test = { width: 16, height: 16, data: Buffer.alloc(16 * 16 * 4) };

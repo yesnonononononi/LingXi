@@ -471,6 +471,39 @@ check('C14', '§6.1 共同必备键齐全 + nativeSourceCanvas×masterScale=canv
     + '=' + manifest.canvas.width + '；' + manifest.frames.length + ' 帧 native 尺寸与声明一致';
 });
 
+check('C15', 'bodyAnchor：躯干带墨迹质心 / y=本批地面线±2 / 同批各帧 spread<=2', () => {
+  const TOL = 2;
+  const ba = manifest.bodyAnchor || {};
+  assert(typeof ba.x === 'number' && typeof ba.y === 'number', '缺 bodyAnchor.x/y');
+  assert(typeof ba.estimator === 'string' && ba.estimator.length > 0, '缺 bodyAnchor.estimator 说明');
+  const rows = [];
+  let ground = 0;
+  for (const id of Object.keys(frames)) {
+    const img = frames[id].nativeImg;
+    const b = bboxOf(img, 1);
+    ground = Math.max(ground, b.bottom);
+    const y0 = b.top + Math.round((b.bottom - b.top + 1) * 0.45);
+    const y1 = b.top + Math.round((b.bottom - b.top + 1) * 0.85);
+    let sx = 0; let n = 0; let hit = 0;
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = b.left; x <= b.right; x += 1) {
+        if (img.data[(y * img.width + x) * 4 + 3] < 200) continue;
+        sx += x; n += 1;
+        if (x === Math.round(ba.x)) hit += 1;
+      }
+    }
+    const cx = n ? sx / n : null;
+    assert(cx !== null && Math.abs(cx - ba.x) <= TOL, id + ' 躯干带质心 ' + (cx === null ? 'null' : cx.toFixed(2)) + ' 与 bodyAnchor.x ' + ba.x + ' 差 >' + TOL);
+    assert(hit > 0, id + ' bodyAnchor.x 不在躯干墨迹内');
+    rows.push({ id, cx });
+  }
+  const xs = rows.map((r) => r.cx);
+  const spread = Math.max(...xs) - Math.min(...xs);
+  assert(spread <= TOL, '同批躯干 x spread=' + spread.toFixed(2) + '>' + TOL);
+  assert(Math.abs(ba.y - ground) <= TOL, 'bodyAnchor.y=' + ba.y + ' 与本批地面线 ' + ground + ' 差 >' + TOL);
+  return 'x=' + ba.x + ' y=' + ba.y + ' 地面线=' + ground + ' | ' + rows.map((r) => r.id + ':' + r.cx.toFixed(2)).join(' ') + ' spread=' + spread.toFixed(2);
+});
+
 const failed = results.filter((r) => !r.ok);
 for (const r of results) {
   console.log((r.ok ? 'PASS ' : 'FAIL ') + r.id + '  ' + r.title);
