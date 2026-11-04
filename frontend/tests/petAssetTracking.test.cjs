@@ -8,7 +8,8 @@
  * `docs/assets/desktop-pet/`。历史批次靠人工 `git add -f` 一个个塞进索引，于是出现
  * "交付了但不可复现"——`companion/v1/tools/` 的三个脚本在磁盘上存在，
  * `git ls-files` 与 `git status --untracked-files=all` 都**看不见**它们。
- * M2 的 9 个批次里 lie/sleep/walk/run 已陆续交付入库，剩下 jump/play/edge/side/mini，每批都会重赌一次。</p>
+ * M2 的 9 个批次里 lie/sleep/walk/run/jump 已陆续交付入库（jump 只交左向 5 帧，右向 5 帧仍 deferred），
+ * 剩下 play/edge/side/mini，每批都会重赌一次。</p>
  *
  * <p><b>为什么用 `git check-ignore --no-index`：</b>不带 `--no-index` 时 git 会先查索引，
  * 已跟踪文件永远"不被忽略"，于是"把 .gitignore 改回 docs/"这种回退**测不出来**。
@@ -38,8 +39,8 @@
  * <p>注意：真正"交付了但不可复现"的原始缺陷（被 `.gitignore` 吞掉）走的是上面那条
  * `check-ignore --no-index` 断言，**不受任何白名单或模式影响**，永远硬失败。</p>
  *
- * <p><b>为什么还要一条"历史"断言：</b>{@link DELIVERED_PREFIXES} 是手工清单，M2 还剩 5 个批次
- *（jump/play/edge/side/mini），
+ * <p><b>为什么还要一条"历史"断言：</b>{@link DELIVERED_PREFIXES} 是手工清单，M2 还剩 4 个批次
+ *（play/edge/side/mini），
  * 每漏加一条，该批次的"整批清空"就会降级成一行 `console.log`——在几百行测试输出里没人看得见。
  * 所以再加一条：磁盘上有文件、索引里整批为空、**但 git 历史里出现过该路径** ⇒ 硬失败
  * （历史出现过 = 确实交付过，索引为空只可能是被清空或前缀漏加）。历史为空的新批次仍然只警告，
@@ -114,15 +115,19 @@ const TRACKING_WHITELIST = [];
  *       `poses/sleep/`（`860090ca` 首帧 + `e1dd42bc` 补呼吸/惊醒/蜷睡三帧，24 文件）、
  *       `poses/walk/`（`8f4d1bbd`，8 帧 / 32 文件）、
  *       `poses/run/`（`a360777d`，12 帧 / 44 文件 = 12 母版@2x + 12 source/generated + 12 source/native
- *       + 5 tools + manifest.json + README.md + 1 qa 评审图）、`companion/`（`613ba7c8`，云灵 v1）。</li>
- *   <li>尚未交付、<b>故意不预先登记</b>：jump / play / edge / side / mini。
+ *       + 5 tools + manifest.json + README.md + 1 qa 评审图）、
+ *       `poses/jump/`（`aa3ab288`，**左向 5 帧 / 25 文件** = 5 母版@2x + 5 source/generated
+ *       + 5 source/native + 7 tools + manifest.json + README.md + 1 qa 评审图；右向 5 帧仍 deferred，
+ *       manifest 里 `review.fullBatchComplete=false`，禁止用左向帧水平翻转冒充）、
+ *       `companion/`（`613ba7c8`，云灵 v1）。</li>
+ *   <li>尚未交付、<b>故意不预先登记</b>：play / edge / side / mini。
  *       预先加进来的坏处是：这些批次"历史为空 + 0 tracked"会被"已交付批次整批缺失"判成失败，
  *       把一个正常在产状态误报成缺陷。交付后再加，逐批补。</li>
  * </ul>
  *
  * @type {string[]}
  */
-const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'poses/walk/', 'poses/run/', 'companion/'];
+const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'poses/walk/', 'poses/run/', 'poses/jump/', 'companion/'];
 
 /**
  * 是否把"在产批次（整批未入库）"的警告升级为失败。
