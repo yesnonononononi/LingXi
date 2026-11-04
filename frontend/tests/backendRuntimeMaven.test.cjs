@@ -137,6 +137,19 @@ test('没传 -Dmaven.repo.local 时不得凭空注入 MAVEN_REPO_LOCAL', (t) => 
     + '那会让迁移脚本去一个 mvn 根本没用的仓库找 jar');
 });
 
+test('没传 -Dmaven.repo.local 时不得继承宿主的 MAVEN_REPO_LOCAL（脏值必须被移除）', (t) => {
+  const fixture = createFixture(t, false);
+  // 宿主环境带脏值：如果它被透传下去，模拟"mvn 用 settings.xml/~/.m2 的仓库、脚本去另一个仓库找 jar"
+  // 这种两个仓库且现场无报错的事故（不变量：脚本看到的仓库 == mvn 实际用的仓库）。
+  const dirty = path.join(os.tmpdir(), 'lx-dirty-repository-must-not-be-inherited');
+  const { status, output, invocation } = runFixtureProbe(fixture, { MAVEN_REPO_LOCAL: dirty });
+  assert.equal(status, 1);
+  assert.match(output, /退出码 47/);
+  assert.equal(invocation.mavenRepoLocal, null,
+    `宿主脏值 ${dirty} 不得透传：没有 -Dmaven.repo.local 时子进程 env 里必须没有 MAVEN_REPO_LOCAL，`
+    + '否则 mvn 与迁移脚本会用两个不同的仓库，且现场无任何报错');
+});
+
 test('参数优先：宿主 env 有脏值也以 -Dmaven.repo.local 为准', (t) => {
   const fixture = createFixture(t, false, {
     mavenArgs: ['-o', '-DskipTests', `-Dmaven.repo.local=${RELATIVE_REPOSITORY}`, 'package'],

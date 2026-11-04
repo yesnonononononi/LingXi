@@ -61,6 +61,10 @@ export function localRepositoryOf(args) {
  * 能直接命中构建真正使用的那个隔离仓库 —— <b>不需要改脚本的解析语义</b>，
  * 也保留了"调用方显式给 `-H2Jar` / `-LocalRepository` 优先于环境变量"这条既有优先级。</p>
  *
+ * <p><b>不变量：脚本看到的仓库 == mvn 实际用的仓库</b>。调用方没声明仓库时（`declared` 为空），
+ * 宿主的 `MAVEN_REPO_LOCAL` 会被从子进程环境里移除：Maven 不读该变量，留着它只会让下游脚本
+ * 去一个 mvn 根本没用的仓库找 jar —— 同样违反这条不变量。</p>
+ *
  * @param {{command: string, prefix: string[], label?: string}} maven {@link resolveMaven} 的返回值
  * @param {string[]} args 传给 mvn 的参数
  * @param {string} repoRoot 仓库根目录（同时作为 mvn 的工作目录）
@@ -85,6 +89,17 @@ export function runMaven(maven, args, repoRoot, options = {}) {
   if (declared.length > 0) {
     // 相对路径按 mvn 的工作目录（repoRoot）解析，保证子进程拿到的是绝对路径
     env.MAVEN_REPO_LOCAL = path.resolve(repoRoot, declared);
+  } else {
+    // 不变量：**脚本看到的仓库 == mvn 实际用的仓库**（要么两者一致，要么都不设）。
+    //
+    // Maven 自己不读 MAVEN_REPO_LOCAL（只认 -Dmaven.repo.local 与 settings.xml），所以宿主进程里
+    // 那个变量对 mvn 没有任何影响；可它会被 surefire fork 与它拉起的 PowerShell 迁移脚本读走
+    // （Migrate-SqliteToH2.ps1 / Initialize-Development.ps1 的候选顺序第二档）。
+    // 于是「调用方没传仓库参数、宿主恰好有脏值」时会出现：mvn 用 settings.xml/~/.m2 的仓库，
+    // 而脚本去宿主指的另一个仓库找 h2 —— 两个仓库且现场无报错，正是最难查的那类事故。
+    // 这里显式移除，让两者一起回到 mvn 自己的默认解析。注意不是设成空串：空串仍可能被下游
+    // 当成"已声明但为空"的脏输入，语义上"没有这个变量"才是正确表达。
+    delete env.MAVEN_REPO_LOCAL;
   }
   const result = spawnSync(maven.command, [...maven.prefix, ...args], {
     cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32' && /\.cmd$/i.test(maven.command),
