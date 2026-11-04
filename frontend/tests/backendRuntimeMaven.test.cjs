@@ -3,13 +3,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+// 路径比较的唯一口径：fixture 目录一律基于规范成长名的 TMP_ROOT 创建（见 tests/support/tmp-paths.cjs）。
+// 直接用 os.tmpdir() 的拼写在 Windows 上可能是 8.3 短名，与子进程回报的长名假不等。
+const { TMP_ROOT } = require('./support/tmp-paths.cjs');
 
 function createFixture(t, scriptOnly, options = {}) {
-  const temporaryRoot = path.resolve(os.tmpdir());
+  const temporaryRoot = TMP_ROOT;
   const repoRoot = fs.mkdtempSync(path.join(temporaryRoot, 'lingxi-maven-'));
   t.after(() => {
     const relativePath = path.relative(temporaryRoot, repoRoot);
@@ -141,7 +143,7 @@ test('没传 -Dmaven.repo.local 时不得继承宿主的 MAVEN_REPO_LOCAL（脏�
   const fixture = createFixture(t, false);
   // 宿主环境带脏值：如果它被透传下去，模拟"mvn 用 settings.xml/~/.m2 的仓库、脚本去另一个仓库找 jar"
   // 这种两个仓库且现场无报错的事故（不变量：脚本看到的仓库 == mvn 实际用的仓库）。
-  const dirty = path.join(os.tmpdir(), 'lx-dirty-repository-must-not-be-inherited');
+  const dirty = path.join(TMP_ROOT, 'lx-dirty-repository-must-not-be-inherited');
   const { status, output, invocation } = runFixtureProbe(fixture, { MAVEN_REPO_LOCAL: dirty });
   assert.equal(status, 1);
   assert.match(output, /退出码 47/);
@@ -154,7 +156,7 @@ test('参数优先：宿主 env 有脏值也以 -Dmaven.repo.local 为准', (t) 
   const fixture = createFixture(t, false, {
     mavenArgs: ['-o', '-DskipTests', `-Dmaven.repo.local=${RELATIVE_REPOSITORY}`, 'package'],
   });
-  const dirty = path.join(os.tmpdir(), 'lx-dirty-repository-should-lose');
+  const dirty = path.join(TMP_ROOT, 'lx-dirty-repository-should-lose');
   const expected = path.resolve(fixture.repoRoot, RELATIVE_REPOSITORY);
   const { status, invocation } = runFixtureProbe(fixture, { MAVEN_REPO_LOCAL: dirty });
   assert.equal(status, 1);

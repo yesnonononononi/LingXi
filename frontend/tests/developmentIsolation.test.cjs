@@ -2,12 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const http = require('node:http');
 const { transformSync } = require('esbuild');
+// 路径比较只有一个口径：先把路径规范成长名（见 tests/support/tmp-paths.cjs 文件头）。
+// 绝不直接用 os.tmpdir() 的拼写：Windows 上它可能是 8.3 短名（CI 的 RUNNER~1），
+// 而 PowerShell / javac 回报的是长名，字符串比较必然假失败。
+const { canonicalPath, TMP_ROOT } = require('./support/tmp-paths.cjs');
 
 function loadViteConfig() {
   const source = fs.readFileSync(path.join(__dirname, '../vite.config.ts'), 'utf8');
@@ -313,7 +316,7 @@ const H2_BASELINE_SCHEMA = path.resolve(__dirname, '../../src/main/resources/db/
 
 test('初始化把 SQLite 迁移成 H2 开发库：产出 H2 库 + 迁移清单 + checkpoints，改写副本目录，并拒绝覆盖已有开发数据',
   { skip: process.platform !== 'win32', timeout: 240000 }, t => {
-    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'lingxi-isolation-'));
+    const temporary = fs.mkdtempSync(path.join(TMP_ROOT, 'lingxi-isolation-'));
     t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
     const probeSource = path.join(temporary, 'SqliteProbe.java');
     fs.writeFileSync(probeSource, SQLITE_PROBE);
@@ -414,8 +417,13 @@ test('初始化把 SQLite 迁移成 H2 开发库：产出 H2 库 + 迁移清单 
     assert.ok(manifest.configFiles.some(file => file.name === 'user-configs.json'));
     assert.equal(fs.readFileSync(path.join(source, 'config', 'user-configs.json'), 'utf8'), originalSettings);
     const copiedSettings = JSON.parse(fs.readFileSync(path.join(destination, 'config', 'user-configs.json'), 'utf8'));
-    assert.equal(copiedSettings[0].dataDir, path.join(destination, 'data'));
-    assert.equal(copiedSettings[0].skillDir, path.join(destination, 'skill'));
+    // 严格相等，只是比较前先规范成长名：PowerShell 改了副本里的 dataDir/skillDir 后回报的是
+    // 长名（runneradmin），而 JS 侧的 destination 可能带 8.3 短名成分（RUNNER~1），
+    // 直接比字符串就会假不等 —— 这是 CI 上红过的那条断言。
+    assert.equal(canonicalPath(copiedSettings[0].dataDir), canonicalPath(path.join(destination, 'data')),
+      '副本 settings 的 dataDir 必须指向开发目录的 data（比较前先规范化，避免 8.3 短名假不等）');
+    assert.equal(canonicalPath(copiedSettings[0].skillDir), canonicalPath(path.join(destination, 'skill')),
+      '副本 settings 的 skillDir 必须指向开发目录的 skill（比较前先规范化）');
     assert.equal(copiedSettings[0].modelId, '123');
     assert.equal(copiedSettings[0].accessMode, 'IN_WORKSPACE');
     // 已有开发目录不许被覆盖。
@@ -436,10 +444,10 @@ test('初始化把 SQLite 迁移成 H2 开发库：产出 H2 库 + 迁移清单 
  *   fixture 根目录、假 USERPROFILE、三个 settings.xml 路径与"注释之后那个真实值"
  */
 function createMavenSettingsFixtures(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-maven-settings-'));
+  const root = fs.mkdtempSync(path.join(TMP_ROOT, 'lx-maven-settings-'));
   t.after(() => {
     // 只删自己造的那个前缀目录，绝不动临时目录本体
-    const relative = path.relative(os.tmpdir(), root);
+    const relative = path.relative(TMP_ROOT, root);
     assert.ok(relative.startsWith('lx-maven-settings-') && !relative.includes(path.sep), `拒删非 fixture 目录：${root}`);
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -474,9 +482,18 @@ function createMavenSettingsFixtures(t) {
   return { root, home, onlyComment, real, commentedThenReal, realAfterPath: 'D:/tmp/lx-real-after-comment' };
 }
 
-/** 归一化 Windows 路径，便于与 `GetFullPath` 的产物比较。 */
+/**
+ * 路径比较的**唯一**口径：先按 Windows 语义归一化分隔符，再规范化成长名。
+ *
+ * <p>为什么不能只 `path.win32.normalize`：候选列表由 PowerShell 生成（`GetFullPath` 回报长名
+ * `runneradmin`），而 fixture home 可能来自 `os.tmpdir()` 的 8.3 短名（`RUNNER~1`），
+ * 两者是同一目录但字符串不同，`indexOf` 会得到 -1，断言假红。</p>
+ *
+ * @param {string} value 待比较的路径
+ * @returns {string} 可安全用于严格相等 / indexOf 的比较键
+ */
 function normalizeWinPath(value) {
-  return path.win32.normalize(String(value));
+  return canonicalPath(path.win32.normalize(String(value)));
 }
 
 test('Maven settings 解析只有一份实现：两个 PowerShell 脚本都 dot-source scripts/lib/maven-settings.ps1', () => {
@@ -556,4 +573,138 @@ test('Maven settings 真值表（JS 消费侧同构：候选列表里不得出�
   for (const candidate of withBoth) {
     assert.equal(candidate.includes('path\\to\\local\\repo'), false, `(c) 候选里出现了注释示例：${candidate}`);
   }
+});
+
+// ---------------------------------------------------------------- 临时目录路径比较的回归守卫（Windows 8.3 短名）
+
+/**
+ * 与子进程交换路径的测试文件：fixture 根**必须**来自 `TMP_ROOT`，且不许再用 `os.tmpdir`
+ * 自己拼路径。
+ *
+ * <p>为什么只锁这几个：短名缺陷的成因是"同一个目录在 JS 侧拼成短名、被子进程回报成长名"，
+ * 只有跨进程交换路径的地方才会踩到；纯 JS 文件里自己跟自己比不会假不等。</p>
+ *
+ * @type {readonly string[]}
+ */
+const TMP_ROOT_GUARDED_FILES = Object.freeze(['developmentIsolation.test.cjs', 'backendRuntimeMaven.test.cjs']);
+
+/**
+ * 跨进程但**暂不**强制走 `TMP_ROOT` 的文件，每条都必须给出"为什么现在不违规"的理由。
+ *
+ * <p>白名单是数据驱动的显式清单，不是"检测到就放过"：新增一个既起子进程又用 `os.tmpdir`
+ * 的文件，必须在这里登记，否则守卫直接红 —— 逼下一个人做决定，而不是默默复制旧写法。</p>
+ *
+ * @type {readonly {file: string, reason: string}[]}
+ */
+const CROSS_PROCESS_TMP_EXEMPTIONS = Object.freeze([
+  {
+    file: 'electronPackaging.test.cjs',
+    reason: 'fixture 根只喂给 electron-builder 配置，全程只在 JS 侧使用，不与子进程回报的路径比较',
+  },
+  {
+    file: 'frameworkDependencies.test.cjs',
+    reason: '已用 fs.realpathSync 直接规范 os.tmpdir 的返回值（同一目录得到同一字符串），未迁到共享模块列入未决项',
+  },
+  {
+    file: 'petDevServer.test.cjs',
+    reason: 'TEST_TMP_DIR 只作隔离用日志/锁目录，涉及 tmpdir 的断言两侧都由本文件拼出，无跨进程比较',
+  },
+  {
+    file: 'sandboxRuntime.test.cjs',
+    reason: '已用 fs.realpathSync 直接规范 os.tmpdir 的返回值（同一目录得到同一字符串），未迁到共享模块列入未决项',
+  },
+]);
+
+/** 扫描用的针：拼出来而不是写成字面量，否则本文件自己会被自己的扫描命中。 */
+const TMPDIR_NEEDLE = ['os', 'tmpdir('].join('.');
+const SUBPROCESS_NEEDLE = /\b(?:spawnSync|execFileSync|execSync|spawn)\s*\(/;
+
+/**
+ * 剥掉 JS 注释：注释里提及 `os.tmpdir` 是正当说明，代码里出现才是违规。
+ *
+ * @param {string} source 源文件全文
+ * @returns {string} 去掉 `/* *\/` 与 `//` 注释后的文本
+ */
+function stripJsComments(source) {
+  return String(source).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
+/**
+ * 递归列出 `tests/` 下的测试源码（.cjs / .ts）。
+ *
+ * @returns {string[]} 绝对路径列表
+ */
+function listTestSources() {
+  const found = [];
+  const walk = directory => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(?:cjs|ts)$/.test(entry.name)) found.push(full);
+    }
+  };
+  walk(__dirname);
+  return found;
+}
+
+test('TMP_ROOT 必须是长名规范形：路径比较的唯一口径（Windows 8.3 短名回归守卫）', () => {
+  const shortSegments = TMP_ROOT.split(path.sep).filter(segment => /~\d/.test(segment));
+  assert.deepEqual(shortSegments, [],
+    `TMP_ROOT 不许含 8.3 短名段（~n）：${TMP_ROOT}；否则 PowerShell / javac 回报的长名与它做字符串比较必然假失败`);
+  assert.equal(canonicalPath(TMP_ROOT), TMP_ROOT, `TMP_ROOT 必须是规范化的不动点，实际 ${TMP_ROOT}`);
+  // 下面两条与本机是否真能造出短名无关：canonicalPath 一旦退化成 "原样返回" 就立刻红，
+  // 保证"去规范化"这个变异体在长名机器上也抓得住。
+  assert.equal(canonicalPath('.'), fs.realpathSync.native(path.resolve('.')),
+    'canonicalPath 必须解出真实路径（相对路径先按 cwd 解析）');
+  assert.equal(path.isAbsolute(canonicalPath('support')), true, 'canonicalPath 必须返回绝对路径');
+  const missing = path.join(TMP_ROOT, 'lx-canonical-probe-not-created', 'tail.webp');
+  assert.equal(canonicalPath(missing), missing,
+    '目标不存在时必须规范化最近的已存在祖先并保留尾段原样（mkdtemp 之前就要能算出同一个键）');
+  assert.throws(() => canonicalPath(''), TypeError, 'canonicalPath 必须校验入参');
+});
+
+test('路径比较必须经过 canonicalPath：跨进程测试文件不许直接用 os.tmpdir 拼路径（注释提及不算）', () => {
+  // 先证明扫描器本身有效，避免它退化成"永远绿"。
+  assert.equal(stripJsComments(`// ${TMPDIR_NEEDLE} 在注释里提及不算违规`).includes(TMPDIR_NEEDLE), false,
+    '注释剥离必须生效：注释里提及不算违规');
+  assert.equal(stripJsComments(`/* ${TMPDIR_NEEDLE} */`).includes(TMPDIR_NEEDLE), false,
+    '块注释也必须剥掉');
+  assert.equal(stripJsComments(`fs.mkdtempSync(path.join(${TMPDIR_NEEDLE}, 'x-'))`).includes(TMPDIR_NEEDLE), true,
+    '代码里的真实调用必须被扫到（否则守卫形同虚设）');
+
+  const sources = listTestSources();
+  assert.ok(sources.length > 10, `tests/ 下应当扫到足够多的测试源码，实际 ${sources.length} 个`);
+
+  // 被判为"跨进程交换路径"的文件：既起子进程、又用 os.tmpdir 拼路径。
+  const crossProcess = [];
+  for (const file of sources) {
+    const code = stripJsComments(fs.readFileSync(file, 'utf8'));
+    if (!code.includes(TMPDIR_NEEDLE)) continue;
+    if (!SUBPROCESS_NEEDLE.test(code)) continue;
+    crossProcess.push(path.relative(__dirname, file).split(path.sep).join('/'));
+  }
+
+  // ① 受管文件：必须只用 TMP_ROOT，不许自己拼 tmpdir。
+  for (const name of TMP_ROOT_GUARDED_FILES) {
+    const code = stripJsComments(fs.readFileSync(path.join(__dirname, name), 'utf8'));
+    assert.equal(code.includes(TMPDIR_NEEDLE), false,
+      `${name} 不许直接用 os.tmpdir 拼路径：fixture 必须基于 TMP_ROOT，`
+      + '否则 Windows 上会出现"JS 侧短名 vs 子进程长名"的假不等');
+    assert.match(code, /require\('\.\/support\/tmp-paths\.cjs'\)/,
+      `${name} 必须从 tests/support/tmp-paths.cjs 取 canonicalPath / TMP_ROOT`);
+  }
+
+  // ② 豁免清单必须名副其实：每条都有理由，且仍然真的"跨进程 + 用 tmpdir"。
+  const exempted = CROSS_PROCESS_TMP_EXEMPTIONS.map(item => item.file);
+  for (const item of CROSS_PROCESS_TMP_EXEMPTIONS) {
+    assert.ok(item.reason.length >= 20, `豁免 ${item.file} 必须写清理由（≥20 字），实际 ${JSON.stringify(item.reason)}`);
+    assert.equal(crossProcess.includes(item.file), true,
+      `豁免清单里的 ${item.file} 已经不需要豁免（不再跨进程交换路径或已迁到 TMP_ROOT），请删掉这条`);
+  }
+
+  // ③ 新增的跨进程文件必须显式登记，不许默默复制旧写法。
+  const declared = new Set([...TMP_ROOT_GUARDED_FILES, ...exempted]);
+  assert.deepEqual(crossProcess.filter(name => !declared.has(name)), [],
+    '新出现的"起子进程 + 用 os.tmpdir 拼路径"文件必须登记到 TMP_ROOT_GUARDED_FILES（改用 TMP_ROOT）'
+    + '或 CROSS_PROCESS_TMP_EXEMPTIONS（写明理由）：短名/长名假不等只会在这里发生');
 });
