@@ -127,12 +127,15 @@ class ReadImageToolExecutorTest {
     }
 
     @Test
-    void exhaustedBudgetStopsBeforeImageDecoding() throws Exception {
-        ToolExecution execution = execution(localWorkspace(), "unused.png", true);
+    void readsEvenWhenALegacyCheckpointHasReachedTheFormerLimit() throws Exception {
+        Files.write(workspaceRoot.resolve("next.png"), png(8, 8));
+        ToolExecution execution = execution(localWorkspace(), "next.png", true);
         Map<String, Object> attributes = new HashMap<>(execution.getAttributes());
-        attributes.put(ReadImageToolExecutor.KEY_CONSUMED, ReadImageToolExecutor.MAX_IMAGE_BUDGET);
+        attributes.put("lingxi.image.consumed", 15);
         execution.setAttributes(attributes);
-        assertEquals("BUDGET_EXHAUSTED", reason(executor().execute(execution)));
+        ToolExecuteResult result = executor().execute(execution);
+        assertTrue(result.isSuccess(), result::getToolOutput);
+        assertFalse(mapper.readTree(result.getToolOutput()).has("budget"));
     }
 
     @Test

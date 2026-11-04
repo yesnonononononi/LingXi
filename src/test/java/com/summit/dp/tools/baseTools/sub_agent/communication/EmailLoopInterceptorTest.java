@@ -103,6 +103,10 @@ class EmailLoopInterceptorTest {
                         ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID)), appended));
 
         assertEquals(2, appended.size());
+        for (Message message : appended) {
+            assertEquals(Map.of(UserMessageEntity.COMPACT, false),
+                    assertInstanceOf(UserMessageEntity.class, message).getAttrs());
+        }
         assertTrue(appended.get(0) instanceof UserMessageEntity);
         assertTrue(((UserMessageEntity) appended.get(0)).text().contains("请处理甲"));
         assertTrue(((UserMessageEntity) appended.get(0)).text().contains("100"));

@@ -13,6 +13,7 @@ import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.TokenUsageEntity;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.*;
 import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
@@ -67,6 +68,8 @@ class BackgroundTaskNotificationTest {
         LoopContext context = context(execution);
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, execution.getMessages().size());
+        assertEquals(false, assertInstanceOf(UserMessageEntity.class, execution.getMessages().getFirst())
+                .getAttrs().get(UserMessageEntity.COMPACT));
         String notice = execution.getMessages().getFirst().text();
         assertTrue(notice.contains("taskId=9007199254740993"));
         assertTrue(notice.contains("status=FAILED, exitCode=7"));

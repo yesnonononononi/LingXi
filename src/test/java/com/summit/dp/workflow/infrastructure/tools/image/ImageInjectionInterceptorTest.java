@@ -45,11 +45,10 @@ class ImageInjectionInterceptorTest {
     @TempDir Path workspaceRoot;
 
     @Test
-    void capsImagesFromOneConcurrentToolBatchAndPersistsTheBudget() throws Exception {
+    void restoresThePendingBatchAndLeavesImageTrimmingToTheBoundary() throws Exception {
         Execution execution = execution();
         List<ToolExecuteResult> results = new ArrayList<>();
-        int budget = ReadImageToolExecutor.MAX_IMAGE_BUDGET;
-        for (int index = 0; index <= budget; index++) {
+        for (int index = 0; index < 16; index++) {
             String name = "image-" + index + ".png";
             prepareImage(name);
             // 改一个像素，确保每张图的内容哈希不同，否则只是在验证去重。
@@ -65,11 +64,8 @@ class ImageInjectionInterceptorTest {
         List<Message> appended = new ArrayList<>();
         interceptor.onBeforeModelInvoke(context(restored, appended));
         UserMessageEntity message = assertInstanceOf(UserMessageEntity.class, appended.getFirst());
-        assertEquals(budget, message.getContent().stream().filter(ImageContent.class::isInstance).count());
-        assertTrue(message.text().contains("上限"));
-        assertEquals(budget, restored.getAgentRequest().runtimeParametersOrDefault().getAttributes().get(ReadImageToolExecutor.KEY_CONSUMED));
-        assertEquals(budget + 1, results.stream().map(result -> result.getToolMetaData().get("imageId")).distinct().count());
-        assertEquals("BUDGET_EXHAUSTED", mapper.readTree(read("image-0.png", restored).getToolOutput()).path("reason").asText());
+        assertEquals(16, message.getContent().stream().filter(ImageContent.class::isInstance).count());
+        assertEquals(16, results.stream().map(result -> result.getToolMetaData().get("imageId")).distinct().count());
         interceptor.onBeforeModelInvoke(context(restored, appended));
         assertEquals(1, appended.size());
     }
@@ -126,11 +122,11 @@ class ImageInjectionInterceptorTest {
     }
 
     @Test
-    void doesNotReinjectSameImageTwice() throws Exception {
+    void deduplicatesVisibleImagesAndReinjectsAfterEviction() throws Exception {
         prepareImage("logo.png");
         Execution execution = execution();
         ImageInjectionInterceptor interceptor = interceptor();
-        List<Message> appended = new ArrayList<>();
+        List<Message> appended = execution.getMessages();
 
         injectOnce(interceptor, execution, appended, "logo.png");
         injectOnce(interceptor, execution, appended, "logo.png");
@@ -139,6 +135,11 @@ class ImageInjectionInterceptorTest {
         UserMessageEntity second = assertInstanceOf(UserMessageEntity.class, appended.get(1));
         assertEquals(1, second.getContent().size());
         assertTrue(second.text().contains("不重复提供"));
+
+        appended.set(0, UserMessageEntity.from(appended.getFirst().text()));
+        injectOnce(interceptor, execution, appended, "logo.png");
+        UserMessageEntity reloaded = assertInstanceOf(UserMessageEntity.class, appended.getLast());
+        assertInstanceOf(ImageContent.class, reloaded.getContent().get(1));
     }
 
     @Test
