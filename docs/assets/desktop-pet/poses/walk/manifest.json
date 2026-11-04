@@ -1,0 +1,965 @@
+{
+  "version": "1.0.0",
+  "batch": "walk",
+  "assetId": "desktop-pet.poses.walk",
+  "status": "awaiting-static-review",
+  "generatedAt": "deterministic build, no timestamps in pixel pipeline",
+  "canvas": {
+    "width": 3072,
+    "height": 3072
+  },
+  "nativeSourceCanvas": {
+    "width": 1536,
+    "height": 1536
+  },
+  "masterScale": 2,
+  "masterScaleMethod": "nearest",
+  "anchor": {
+    "x": 1536,
+    "y": 2908,
+    "semantics": "脚底中心：画布水平中线 x，最低墨迹 y=2907 的正下方 1px"
+  },
+  "colorSpace": "sRGB (PNG sRGB chunk 已写入，rendering intent 0)",
+  "alpha": "straight",
+  "bitDepth": 8,
+  "interlace": false,
+  "bboxConvention": "非零 alpha（a>=1）像素的紧凑包围盒，含半透明边缘；坐标原点在画布左上角",
+  "mirrorSafe": false,
+  "notMirrorableParts": [
+    "蝴蝶结：头部右侧蓝色缎带（含白色波点），镜像会翻到另一侧",
+    "云朵发夹：白色云朵＋蓝色发夹条，与蝴蝶结同侧，镜像翻边",
+    "尾巴：粉白羽状大尾巴垂在身后一侧，镜像会甩到身前",
+    "内耳绒毛：左耳（观众侧）白色绒毛明显多于远侧耳，镜像不对称",
+    "裙摆蝴蝶结与袜口缎带：位置随近侧腿，镜像后与腿序错位"
+  ],
+  "orientation": {
+    "criterion": "iris-offset",
+    "description": "头部带（墨迹上 40%）内最大的实心深蓝连通块视为虹膜，取其质心相对该带墨迹质心的水平偏移；偏移符号必须等于该帧朝向（-1 左 / +1 右）",
+    "why": "侧视下双眼位于面部平面、朝向前进方向，头后侧被长发与后脑占据，故虹膜质心总偏向面朝一侧；镜像一帧会翻转符号",
+    "thresholdNativePx": 60
+  },
+  "gait": {
+    "criterion": "support-foot-vs-torso",
+    "description": "取底部 90px 带内的水平墨迹段，contactY 与整图最低点相差 <=3px 者为支撑脚；支撑脚中心相对躯干质心（蓝裙簇 45%~85% 带内质心）的前后关系定义相位",
+    "forwardWhen": "facing=-1 时支撑脚中心 x 更小为 front；facing=+1 时更大为 front"
+  },
+  "normalization": {
+    "method": "premultiplied-alpha box resample（在 native 层完成，母版由 native 2x nearest 放大）",
+    "uniformScale": 1.124082,
+    "scaleReason": "8 帧墨迹高度中位数 1225 gen px 映射到站姿墨迹高 1377 native px（= v3/front-standing.png 2754 master px / 2）；8 帧共用同一系数，避免蹲伏帧被单独放大成忽高忽低",
+    "horizontalAlign": "躯干质心（蓝裙簇）对齐 native x=768",
+    "horizontalAlignReason": "不用包围盒中心：尾巴垂在身后会把 bbox 中心拉偏，用 bbox 中心对齐会让角色逐帧横向抖动",
+    "baselineNative": 1454,
+    "alphaCleanup": "alpha<8 清零；alpha>=248 提满到 255；<4 native px 的孤立块删除"
+  },
+  "batchBboxRange": {
+    "minWidth": 1900,
+    "maxWidth": 2300,
+    "minHeight": 2650,
+    "maxHeight": 2800
+  },
+  "volume": {
+    "perFrameMaxBytes": 2621440,
+    "batchMaxBytes": 13200000,
+    "masterTotalBytes": 12846431,
+    "masterTotalMB": 12.25,
+    "distinctMasterSha256": 8,
+    "aliases": [],
+    "aliasesNote": "8 帧像素互不相同、sha256 全不相同，没有可用 alias 去重的同像素帧；未存任何物理重复副本",
+    "note": "单张最大 1731309B，低于 2.5MB 编码红线；合计超 8MB 预算的原因见 README「体积」一节"
+  },
+  "frames": [
+    {
+      "id": "l1",
+      "facing": -1,
+      "phase": "front",
+      "file": "walk_l1@2x.png",
+      "bytes": 1611871,
+      "sha256": "07c7b4603a72b9d491e2dbbf29ad8b32a4d06ea62f2366f387fe654ebfccce09",
+      "bbox": {
+        "left": 928,
+        "top": 170,
+        "right": 2993,
+        "bottom": 2907,
+        "width": 2066,
+        "height": 2738
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_l1_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1272125,
+        "sha256": "f25117900f55a8ea8a286437656a303d0bc8e18601ce760203dc168429e36863",
+        "bbox": {
+          "left": 464,
+          "top": 85,
+          "right": 1496,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 623,
+          "contactY": 1453,
+          "width": 185,
+          "role": "support"
+        },
+        "lifted": {
+          "side": "lifted",
+          "centerX": 990,
+          "lowestY": 1440,
+          "gapPx": 13,
+          "width": 99,
+          "role": "lifted"
+        },
+        "note": null
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 623,
+            "width": 185,
+            "lowestY": 1453
+          },
+          {
+            "centerX": 990,
+            "width": 99,
+            "lowestY": 1440
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 653,
+            "width": 245,
+            "lowestY": 1453
+          },
+          {
+            "centerX": 980,
+            "width": 153,
+            "lowestY": 1440
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 767.9,
+        "headInkCentroidX": 813.3,
+        "irisCentroidX": 661.2,
+        "irisOffsetNative": -152,
+        "irisAreaNative": 1492,
+        "irisFill": 0.499
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": 107.6,
+        "bowCentroidOffsetNative": -41.6
+      },
+      "gait": {
+        "supportForwardnessNative": 145
+      }
+    },
+    {
+      "id": "l2",
+      "facing": -1,
+      "phase": "rear",
+      "file": "walk_l2@2x.png",
+      "bytes": 1563356,
+      "sha256": "da2cd074c6370820b90ffa67cc9d12523834a7aab35da2bfc61d9362951d232b",
+      "bbox": {
+        "left": 912,
+        "top": 184,
+        "right": 2955,
+        "bottom": 2907,
+        "width": 2044,
+        "height": 2724
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_l2_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1231800,
+        "sha256": "e4050a5008272f940a05ccca690ce00404a9c6e0208ae73bc42497f5ad77321e",
+        "bbox": {
+          "left": 456,
+          "top": 92,
+          "right": 1477,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 955.5,
+          "contactY": 1451,
+          "width": 148,
+          "role": "support"
+        },
+        "lifted": {
+          "side": "lifted",
+          "centerX": 593,
+          "lowestY": 1386,
+          "gapPx": 67,
+          "width": 75,
+          "role": "lifted"
+        },
+        "note": null
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 955.5,
+            "width": 148,
+            "lowestY": 1451
+          },
+          {
+            "centerX": 593,
+            "width": 75,
+            "lowestY": 1386
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 613.5,
+            "width": 238,
+            "lowestY": 1386
+          },
+          {
+            "centerX": 955.5,
+            "width": 148,
+            "lowestY": 1451
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 768.4,
+        "headInkCentroidX": 790.9,
+        "irisCentroidX": 675,
+        "irisOffsetNative": -115.8,
+        "irisAreaNative": 1377,
+        "irisFill": 0.42
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": 140.2,
+        "bowCentroidOffsetNative": -40
+      },
+      "gait": {
+        "supportForwardnessNative": -187
+      }
+    },
+    {
+      "id": "l3",
+      "facing": -1,
+      "phase": "front",
+      "file": "walk_l3@2x.png",
+      "bytes": 1534687,
+      "sha256": "c665fa6db97c33d61208d04d4910a55c0d0e2a694f9eb2ecafbd3076ac9c0e08",
+      "bbox": {
+        "left": 892,
+        "top": 162,
+        "right": 2963,
+        "bottom": 2907,
+        "width": 2072,
+        "height": 2746
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_l3_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1209653,
+        "sha256": "0cf2d976f3850b4cdf4bf5adf50e48938e87c4225466a3a2dfe8e50dacdfc7cb",
+        "bbox": {
+          "left": 446,
+          "top": 81,
+          "right": 1481,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 649,
+          "contactY": 1452,
+          "width": 183,
+          "role": "support"
+        },
+        "lifted": {
+          "side": "lifted",
+          "centerX": 1001.5,
+          "lowestY": 1441,
+          "gapPx": 12,
+          "width": 124,
+          "role": "lifted"
+        },
+        "note": null
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 649,
+            "width": 183,
+            "lowestY": 1452
+          },
+          {
+            "centerX": 1001.5,
+            "width": 124,
+            "lowestY": 1441
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 685,
+            "width": 255,
+            "lowestY": 1452
+          },
+          {
+            "centerX": 987,
+            "width": 161,
+            "lowestY": 1441
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 767.6,
+        "headInkCentroidX": 801.7,
+        "irisCentroidX": 684.8,
+        "irisOffsetNative": -116.9,
+        "irisAreaNative": 1470,
+        "irisFill": 0.445
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": 153.5,
+        "bowCentroidOffsetNative": -45.4
+      },
+      "gait": {
+        "supportForwardnessNative": 119
+      }
+    },
+    {
+      "id": "l4",
+      "facing": -1,
+      "phase": "rear",
+      "file": "walk_l4@2x.png",
+      "bytes": 1731309,
+      "sha256": "3712585596460e65552c81c9f3a9fc04fedff2493d12fddfbfd40da6daf72b7e",
+      "bbox": {
+        "left": 714,
+        "top": 132,
+        "right": 2919,
+        "bottom": 2907,
+        "width": 2206,
+        "height": 2776
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_l4_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1372809,
+        "sha256": "0938292b8d3cfef10931753155363c21ad4c867fecec3dc22ab5cb8b336848f5",
+        "bbox": {
+          "left": 357,
+          "top": 66,
+          "right": 1459,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 925,
+          "contactY": 1452,
+          "width": 155,
+          "role": "support"
+        },
+        "lifted": null,
+        "note": "该帧第二只脚在 90px 带内不可分离（见 footGeometry），contactPoints 只给真实着地点"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 925,
+            "width": 155,
+            "lowestY": 1452
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 1196,
+            "width": 299,
+            "lowestY": 1339
+          },
+          {
+            "centerX": 923,
+            "width": 159,
+            "lowestY": 1452
+          },
+          {
+            "centerX": 511,
+            "width": 121,
+            "lowestY": 1339
+          },
+          {
+            "centerX": 608,
+            "width": 11,
+            "lowestY": 1294
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 768.5,
+        "headInkCentroidX": 725.4,
+        "irisCentroidX": 585.9,
+        "irisOffsetNative": -139.4,
+        "irisAreaNative": 1823,
+        "irisFill": 0.435
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": 193.6,
+        "bowCentroidOffsetNative": -33.1
+      },
+      "gait": {
+        "supportForwardnessNative": -157
+      }
+    },
+    {
+      "id": "r1",
+      "facing": 1,
+      "phase": "front",
+      "file": "walk_r1@2x.png",
+      "bytes": 1605278,
+      "sha256": "0a1ad504065a2b14f29a5eb1bb9db6a80f08062c64acfbdccbbc1e70f049450b",
+      "bbox": {
+        "left": 30,
+        "top": 136,
+        "right": 2161,
+        "bottom": 2907,
+        "width": 2132,
+        "height": 2772
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_r1_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1268291,
+        "sha256": "b71ac2316ec4d95f3271b28e48c9291593e2856f84c56b4ec37b0e0daffc25b8",
+        "bbox": {
+          "left": 15,
+          "top": 68,
+          "right": 1080,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 932,
+          "contactY": 1452,
+          "width": 203,
+          "role": "support"
+        },
+        "lifted": {
+          "side": "lifted",
+          "centerX": 460.5,
+          "lowestY": 1440,
+          "gapPx": 13,
+          "width": 76,
+          "role": "lifted"
+        },
+        "note": null
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 932,
+            "width": 203,
+            "lowestY": 1452
+          },
+          {
+            "centerX": 460.5,
+            "width": 76,
+            "lowestY": 1440
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 909.5,
+            "width": 248,
+            "lowestY": 1452
+          },
+          {
+            "centerX": 482.5,
+            "width": 162,
+            "lowestY": 1440
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 768.6,
+        "headInkCentroidX": 672.9,
+        "irisCentroidX": 859.3,
+        "irisOffsetNative": 186.4,
+        "irisAreaNative": 992,
+        "irisFill": 0.405
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": -165.4,
+        "bowCentroidOffsetNative": 93.2
+      },
+      "gait": {
+        "supportForwardnessNative": 163
+      }
+    },
+    {
+      "id": "r2",
+      "facing": 1,
+      "phase": "rear",
+      "file": "walk_r2@2x.png",
+      "bytes": 1529219,
+      "sha256": "128bc1ccdb65fabecc891e111cee741dc89235a0d82f8ee27bd77e9653516994",
+      "bbox": {
+        "left": 124,
+        "top": 136,
+        "right": 2203,
+        "bottom": 2907,
+        "width": 2080,
+        "height": 2772
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_r2_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1209778,
+        "sha256": "024c478191c9c9fc397946ca1e1bf93bbd3f75ccb061e339def46f21e99bccd1",
+        "bbox": {
+          "left": 62,
+          "top": 68,
+          "right": 1101,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 602,
+          "contactY": 1451,
+          "width": 169,
+          "role": "support"
+        },
+        "lifted": {
+          "side": "lifted",
+          "centerX": 993,
+          "lowestY": 1392,
+          "gapPx": 61,
+          "width": 81,
+          "role": "lifted"
+        },
+        "note": null
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 602,
+            "width": 169,
+            "lowestY": 1451
+          },
+          {
+            "centerX": 993,
+            "width": 81,
+            "lowestY": 1392
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 971,
+            "width": 257,
+            "lowestY": 1392
+          },
+          {
+            "centerX": 602,
+            "width": 169,
+            "lowestY": 1451
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 767.7,
+        "headInkCentroidX": 688.4,
+        "irisCentroidX": 850.6,
+        "irisOffsetNative": 162.2,
+        "irisAreaNative": 1621,
+        "irisFill": 0.445
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": -165.5,
+        "bowCentroidOffsetNative": 382.7
+      },
+      "gait": {
+        "supportForwardnessNative": -166
+      }
+    },
+    {
+      "id": "r3",
+      "facing": 1,
+      "phase": "front",
+      "file": "walk_r3@2x.png",
+      "bytes": 1616981,
+      "sha256": "bd7f0eb7856cb7d830a18110a0d8b6c4bc2708a41d60d2b4eca39f14cd7d00d2",
+      "bbox": {
+        "left": 28,
+        "top": 156,
+        "right": 2099,
+        "bottom": 2907,
+        "width": 2072,
+        "height": 2752
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_r3_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1282427,
+        "sha256": "a97cac69b4751890c3b23079e7ef728c88d2aee557ef9812633a23b1c2aca10e",
+        "bbox": {
+          "left": 14,
+          "top": 78,
+          "right": 1049,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 936,
+          "contactY": 1451,
+          "width": 223,
+          "role": "support"
+        },
+        "lifted": {
+          "side": "lifted",
+          "centerX": 492.5,
+          "lowestY": 1445,
+          "gapPx": 8,
+          "width": 110,
+          "role": "lifted"
+        },
+        "note": null
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 936,
+            "width": 223,
+            "lowestY": 1451
+          },
+          {
+            "centerX": 492.5,
+            "width": 110,
+            "lowestY": 1445
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 924.5,
+            "width": 246,
+            "lowestY": 1451
+          },
+          {
+            "centerX": 509,
+            "width": 161,
+            "lowestY": 1445
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 766.9,
+        "headInkCentroidX": 661.9,
+        "irisCentroidX": 863.6,
+        "irisOffsetNative": 201.7,
+        "irisAreaNative": 1246,
+        "irisFill": 0.421
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": -151.9,
+        "bowCentroidOffsetNative": 85
+      },
+      "gait": {
+        "supportForwardnessNative": 169
+      }
+    },
+    {
+      "id": "r4",
+      "facing": 1,
+      "phase": "rear",
+      "file": "walk_r4@2x.png",
+      "bytes": 1653730,
+      "sha256": "df65f5714d5808ed131944f2f4663b33582341fcee7e64f1246a66f802a0eccf",
+      "bbox": {
+        "left": 84,
+        "top": 154,
+        "right": 2209,
+        "bottom": 2907,
+        "width": 2126,
+        "height": 2754
+      },
+      "anchor": {
+        "x": 1536,
+        "y": 2908
+      },
+      "native": {
+        "file": "source/walk_r4_native.png",
+        "width": 1536,
+        "height": 1536,
+        "bytes": 1311240,
+        "sha256": "b00bffbeb646c3a97121120150f8d00d1228db22c766c90c559543d3509c8313",
+        "bbox": {
+          "left": 42,
+          "top": 77,
+          "right": 1104,
+          "bottom": 1453
+        }
+      },
+      "contactPoints": {
+        "support": {
+          "side": "planted",
+          "centerX": 599,
+          "contactY": 1453,
+          "width": 153,
+          "role": "support"
+        },
+        "lifted": null,
+        "note": "该帧第二只脚在 90px 带内不可分离（见 footGeometry），contactPoints 只给真实着地点"
+      },
+      "footGeometry": {
+        "bandNative90": [
+          {
+            "centerX": 599,
+            "width": 153,
+            "lowestY": 1453
+          },
+          {
+            "centerX": 998.5,
+            "width": 82,
+            "lowestY": 1390
+          },
+          {
+            "centerX": 323,
+            "width": 69,
+            "lowestY": 1367
+          }
+        ],
+        "bandNative160": [
+          {
+            "centerX": 298,
+            "width": 357,
+            "lowestY": 1367
+          },
+          {
+            "centerX": 992.5,
+            "width": 220,
+            "lowestY": 1390
+          },
+          {
+            "centerX": 591,
+            "width": 169,
+            "lowestY": 1453
+          }
+        ]
+      },
+      "orientation": {
+        "torsoCentroidX": 768.2,
+        "headInkCentroidX": 713,
+        "irisCentroidX": 860.7,
+        "irisOffsetNative": 147.7,
+        "irisAreaNative": 1819,
+        "irisFill": 0.438
+      },
+      "asymmetricParts": {
+        "tailCentroidOffsetNative": -144.9,
+        "bowCentroidOffsetNative": 425.8
+      },
+      "gait": {
+        "supportForwardnessNative": -169
+      }
+    }
+  ],
+  "sources": [
+    {
+      "id": "l1",
+      "file": "source/walk_l1_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1296598,
+      "sha256": "54236e5a8f8c2d237d9be8ec0cf3dfd197674d10cfed21bbe3171a235f3a02a9",
+      "bbox": {
+        "left": 188,
+        "top": 12,
+        "right": 1203,
+        "bottom": 1237
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "l2",
+      "file": "source/walk_l2_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1251462,
+      "sha256": "f45ea0abc5e02238c64c17f323b3fd882c68f2755289e067e6ae72fc7b57d056",
+      "bbox": {
+        "left": 0,
+        "top": 12,
+        "right": 1231,
+        "bottom": 1229
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "l3",
+      "file": "source/walk_l3_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1250632,
+      "sha256": "acb1bbd8209821f74800120400cca91b492169cbcb9d7343292696ab40c39eab",
+      "bbox": {
+        "left": 0,
+        "top": 13,
+        "right": 1192,
+        "bottom": 1239
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "l4",
+      "file": "source/walk_l4_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1393323,
+      "sha256": "5ec9e2d982c6fe54296689620d4f7c003494c8e16b1d9307143895cacada63eb",
+      "bbox": {
+        "left": 0,
+        "top": 0,
+        "right": 1179,
+        "bottom": 1253
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "r1",
+      "file": "source/walk_r1_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1304393,
+      "sha256": "c0acfe1b43b1c8b0b746f72b7a0d1b2c626ca2567e198c6248ee214b5e810c4c",
+      "bbox": {
+        "left": 41,
+        "top": 8,
+        "right": 1094,
+        "bottom": 1253
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "r2",
+      "file": "source/walk_r2_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1239637,
+      "sha256": "4663502e3573b3bdb32de713ae22ac13ce028fb90fff2b763d8085832204d7ee",
+      "bbox": {
+        "left": 73,
+        "top": 0,
+        "right": 1237,
+        "bottom": 1253
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "r3",
+      "file": "source/walk_r3_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1293893,
+      "sha256": "7cf80a987aa39226042ec734f5112b6d70d1c350ba75edb84eba8f6c36d7d67d",
+      "bbox": {
+        "left": 33,
+        "top": 14,
+        "right": 1030,
+        "bottom": 1253
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    },
+    {
+      "id": "r4",
+      "file": "source/walk_r4_generated.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1344671,
+      "sha256": "e21d29c3f3526a8c9aea03367f325da3fdbdee145c7d9ce03a3c78eea620dbe4",
+      "bbox": {
+        "left": 17,
+        "top": 13,
+        "right": 1209,
+        "bottom": 1241
+      },
+      "note": "生图直出原图，未参与运行时；1024x1024 透明底，以 v3/front-standing.png 为参考图保持身份"
+    }
+  ],
+  "review": {
+    "requiredNow": [
+      "l1",
+      "l2",
+      "l3",
+      "l4",
+      "r1",
+      "r2",
+      "r3",
+      "r4"
+    ],
+    "deferredUntilApproval": [
+      "run",
+      "jump",
+      "play",
+      "edge",
+      "side",
+      "mini"
+    ],
+    "fullBatchComplete": false,
+    "note": "本批只交 walk 8 帧；其余批次一律未开始，禁止把 walk 的完成度当整批完成"
+  },
+  "notes": [
+    "左向 4 帧与右向 4 帧全部独立生成（reference_image_path=v3/front-standing.png 保身份），右向未使用任何左向镜像",
+    "支撑相位：左向 l1 front / l2 rear / l3 front / l4 rear；右向 r1 front / r2 rear / r3 front / r4 rear",
+    "脚掌交替由支撑脚中心与躯干质心的前后关系判定，contactY 与最低点差 <=3px",
+    "l4 与 r4 的第二只脚在 90px 扫描带内与裙摆/尾巴下缘纠缠不可分离，contactPoints 只报真实着地点，原始分段见 footGeometry",
+    "画布 3072x3072 / native 1536x1536 按主理人本轮硬参数执行，覆盖总规范 §4 的站姿系 2048x3072",
+    "tools/png.mjs 与 tools/pixels.mjs 从 poses/sleep/tools 原样复制（未重写编解码器）",
+    "镜像检测主判据是 C10b（右向帧与任一左向帧水平翻转后的差异 >=5%，实测最小 73.5%）：把左向帧镜像出来的右向帧几何自洽，尾巴仍在身后、蝴蝶结仍在面朝一侧，所以 C12 单独抓不住完美镜像（变异 M1 实测：该帧 C10b=0.0% 才红）；C12 负责抓部件被搬到错误一侧（变异 M5 实测 bowNorm 由 +93 翻成 -92）"
+  ]
+}
+
+
