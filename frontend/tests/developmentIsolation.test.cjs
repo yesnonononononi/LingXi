@@ -184,27 +184,44 @@ function runMavenSettingsLib(mode, options = {}) {
 }
 
 /**
- * 按 pom 固定的版本在本地 Maven 仓库里找 sqlite-jdbc；找不到就明确失败，不静默跳过。
+ * 在本地 Maven 仓库候选里找一个 jar。
  *
  * <p>候选仓库顺序**不由本文件维护**：来自 `scripts/lib/maven-settings.ps1` 的
  * `Get-MavenRepositoryCandidates`（显式参数 → `MAVEN_REPO_LOCAL` → 各 settings.xml 的
  * `<localRepository>` → 兜底 `~/.m2/repository`）。</p>
  *
- * @returns {string} sqlite-jdbc jar 的绝对路径
+ * @param {string[]} groupSegments 组路径片段，例如 `['org','xerial','sqlite-jdbc']`
+ * @param {string} artifactPrefix jar 名前缀，例如 `'sqlite-jdbc-'`（`-sources`/`-javadoc` 会被跳过）
+ * @returns {string} jar 的绝对路径
  * @throws {Error} 所有候选仓库里都没有时抛出
  */
-function resolveSqliteJdbcJar() {
+function resolveMavenArtifactJar(groupSegments, artifactPrefix) {
   const repositories = runMavenSettingsLib('candidates');
   for (const repository of repositories) {
-    const root = path.join(repository, 'org', 'xerial', 'sqlite-jdbc');
+    const root = path.join(repository, ...groupSegments);
     if (!fs.existsSync(root)) continue;
     for (const version of fs.readdirSync(root)) {
-      const jar = path.join(root, version, `sqlite-jdbc-${version}.jar`);
-      if (fs.existsSync(jar)) return jar;
+      const versionDirectory = path.join(root, version);
+      if (!fs.statSync(versionDirectory).isDirectory()) continue;
+      for (const name of fs.readdirSync(versionDirectory)) {
+        if (!name.startsWith(artifactPrefix) || !name.endsWith('.jar')) continue;
+        if (name.endsWith('-sources.jar') || name.endsWith('-javadoc.jar')) continue;
+        return path.join(versionDirectory, name);
+      }
     }
   }
-  throw new Error(`本地 Maven 仓库里没有 sqlite-jdbc（先执行一次 mvn -o test 拉取依赖）；`
-    + `候选仓库：${repositories.join(' / ')}`);
+  throw new Error(`本地 Maven 仓库里没有 ${groupSegments.join('/')} 的 jar`
+    + `（先执行一次 mvn -o test 拉取依赖）；候选仓库：${repositories.join(' / ')}`);
+}
+
+/** 按 pom 固定的版本找 sqlite-jdbc；找不到就明确失败，不静默跳过。 */
+function resolveSqliteJdbcJar() {
+  return resolveMavenArtifactJar(['org', 'xerial', 'sqlite-jdbc'], 'sqlite-jdbc-');
+}
+
+/** 找 H2 引擎 jar：读 H2 开发库时必须把它放进探针的 classpath。 */
+function resolveH2Jar() {
+  return resolveMavenArtifactJar(['com', 'h2database', 'h2'], 'h2-');
 }
 
 const SQLITE_PROBE = `
@@ -239,12 +256,69 @@ function sqliteProbe(probeSource, databaseFile, statement, query) {
   return result.stdout.trim();
 }
 
-test('初始化用 VACUUM INTO 复制 SQLite 库与 checkpoints，改写副本目录，并拒绝覆盖已有开发数据',
-  { skip: process.platform !== 'win32', timeout: 120000 }, t => {
+/**
+ * 跑一条只读查询并返回**全部**行的第一列（去空行）。
+ *
+ * @param {string} probeSource 探针源码路径
+ * @param {string} databaseFile SQLite 库文件
+ * @param {string} query 查询语句
+ * @returns {string[]} 每一行的第一列
+ */
+function sqliteQueryAll(probeSource, databaseFile, query) {
+  const result = spawnSync(resolveJdkJava(), ['-cp', resolveSqliteJdbcJar(), probeSource,
+    databaseFile, '', query], { encoding: 'utf8' });
+  assert.equal(result.status, 0, `sqlite 查询失败: ${result.stderr}`);
+  return result.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+}
+
+/** H2 只读探针：读 H2 开发库必须走驱动，不能靠翻二进制文件。 */
+const H2_PROBE = `
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+
+public final class H2Probe {
+    public static void main(String[] args) throws Exception {
+        String base = args[0].replace('\\\\', '/');
+        String url = "jdbc:h2:file:" + base + ";IFEXISTS=TRUE;ACCESS_MODE_DATA=r;DB_CLOSE_ON_EXIT=FALSE";
+        try (Connection connection = DriverManager.getConnection(url, "sa", "");
+             Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery(args[1])) {
+            while (rows.next()) {
+                System.out.println(rows.getString(1));
+            }
+        }
+    }
+}
+`;
+
+/**
+ * 对 H2 库跑一条只读查询，返回全部行的第一列。
+ *
+ * @param {string} probeSource H2 探针源码路径
+ * @param {string} databaseBase H2 库文件主干（不含 `.mv.db`）
+ * @param {string} query 查询语句
+ * @returns {string[]} 每一行的第一列
+ */
+function h2Query(probeSource, databaseBase, query) {
+  const result = spawnSync(resolveJdkJava(), ['-cp', resolveH2Jar(), probeSource, databaseBase, query],
+    { encoding: 'utf8' });
+  assert.equal(result.status, 0, `H2 探针失败: ${result.stderr}`);
+  return result.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+}
+
+/** 生产 H2 基线 DDL：迁移后的目标库结构就是它（本用例的夹具在它基础上补哨兵表）。 */
+const H2_BASELINE_SCHEMA = path.resolve(__dirname, '../../src/main/resources/db/h2/V1__schema.sql');
+
+test('初始化把 SQLite 迁移成 H2 开发库：产出 H2 库 + 迁移清单 + checkpoints，改写副本目录，并拒绝覆盖已有开发数据',
+  { skip: process.platform !== 'win32', timeout: 240000 }, t => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'lingxi-isolation-'));
     t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
     const probeSource = path.join(temporary, 'SqliteProbe.java');
     fs.writeFileSync(probeSource, SQLITE_PROBE);
+    const h2ProbeSource = path.join(temporary, 'H2Probe.java');
+    fs.writeFileSync(h2ProbeSource, H2_PROBE);
     const source = path.join(temporary, 'installed');
     const destination = path.join(temporary, 'development');
     fs.mkdirSync(path.join(source, 'config'), { recursive: true });
@@ -252,7 +326,7 @@ test('初始化用 VACUUM INTO 复制 SQLite 库与 checkpoints，改写副本�
     fs.mkdirSync(path.join(source, 'data', 'checkpoints', '123'), { recursive: true });
     fs.mkdirSync(path.join(source, 'skill'), { recursive: true });
     const sourceDatabase = path.join(source, 'data', 'lingxi.sqlite');
-    sqliteProbe(probeSource, sourceDatabase, 'CREATE TABLE canary(value TEXT)', 'SELECT 1');
+    sqliteProbe(probeSource, sourceDatabase, 'CREATE TABLE canary(marker TEXT)', 'SELECT 1');
     sqliteProbe(probeSource, sourceDatabase, "INSERT INTO canary VALUES('database-copy-canary')", 'SELECT 1');
     fs.writeFileSync(path.join(source, 'data', 'checkpoints', '123', 'abc.json'), 'checkpoint-copy-canary');
     fs.writeFileSync(path.join(source, 'data', 'images', 'one.png'), 'image-copy-canary');
@@ -261,10 +335,16 @@ test('初始化用 VACUUM INTO 复制 SQLite 库与 checkpoints，改写副本�
     const originalSettings = JSON.stringify([{ id: '1', dataDir: path.join(source, 'data'),
       skillDir: path.join(source, 'skill'), modelId: '123', accessMode: 'IN_WORKSPACE' }]);
     fs.writeFileSync(path.join(source, 'config', 'user-configs.json'), originalSettings);
+    // 列名用 marker 而不是 value：VALUE 是 H2 2.x 的保留字，写成 value 会直接语法错误。
+    // 迁移工具强制「源库每张表都必须在目标库存在」（SqliteToH2Migration.buildTablePlans），
+    // 所以目标结构必须认识 canary。夹具 = 生产基线 DDL + canary 哨兵表；业务基线本身不动。
+    const schemaPath = path.join(temporary, 'h2-schema-with-canary.sql');
+    fs.writeFileSync(schemaPath,
+      `${fs.readFileSync(H2_BASELINE_SCHEMA, 'utf8')}\nCREATE TABLE IF NOT EXISTS canary(marker TEXT);\n`);
     const sourceDatabaseSha = createHash('sha256').update(fs.readFileSync(sourceDatabase)).digest('hex').toUpperCase();
     const initialize = () => spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-      path.join(__dirname, '../../scripts/Initialize-Development.ps1'), '-SourceHome', source, '-Destination', destination],
-      { encoding: 'utf8' });
+      path.join(__dirname, '../../scripts/Initialize-Development.ps1'), '-SourceHome', source, '-Destination', destination,
+      '-H2Schema', schemaPath], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
     // 库被占用时不允许初始化：复制正在写入的库就是复制一份自相矛盾的数据。
     const occupiedDatabase = fs.openSync(sourceDatabase, 'r');
     try {
@@ -273,21 +353,63 @@ test('初始化用 VACUUM INTO 复制 SQLite 库与 checkpoints，改写副本�
     } finally { fs.closeSync(occupiedDatabase); }
     const result = initialize();
     assert.equal(result.status, 0, result.stderr);
-    // 非库文件按原样复制；库是快照，内容必须能读回同一条业务数据。
+    const dataDirectory = path.join(destination, 'data');
+    // 非库文件按原样复制。
     for (const relative of ['data/images/one.png', 'skill/SKILL.md', 'config/models.json',
       'data/checkpoints/123/abc.json']) {
       assert.deepEqual(fs.readFileSync(path.join(destination, relative)), fs.readFileSync(path.join(source, relative)));
     }
-    assert.equal(fs.existsSync(path.join(destination, 'data', 'lingxi.mv.db')), false);
-    assert.equal(sqliteProbe(probeSource, path.join(destination, 'data', 'lingxi.sqlite'), '',
-      'SELECT value FROM canary'), 'database-copy-canary');
+    // 新契约：开发数据目录里是 H2 库 + 迁移清单 + checkpoints，不再留 SQLite。
+    assert.equal(fs.existsSync(path.join(dataDirectory, 'lingxi-h2.mv.db')), true,
+      '开发目录必须有 H2 库文件 lingxi-h2.mv.db');
+    assert.equal(fs.existsSync(path.join(dataDirectory, 'lingxi.sqlite')), false,
+      '迁移完成后开发目录里不许留 SQLite 库：SQLite 只是搬运来源');
+    assert.equal(fs.existsSync(path.join(dataDirectory, 'lingxi.mv.db')), false,
+      'H2 库名必须是 lingxi-h2.mv.db，不能用默认主干名');
+    const migrationManifest = JSON.parse(
+      fs.readFileSync(path.join(dataDirectory, 'migration-from-sqlite.json'), 'utf8'));
+    assert.equal(migrationManifest.verified, true,
+      `迁移清单必须 verified=true：${migrationManifest.failureReason || '(无 failureReason)'}`);
+    // 迁移清单刻意不落 engine/schemaMode（见 MigrationManifest 注释）：引擎归属看 initialization.json。
+    assert.equal(migrationManifest.targetDatabaseFile, 'lingxi-h2.mv.db');
+    // 表齐全守护（不降力）：H2 目标库必须包含源库**全部**表，canary 哨兵表也在内。
+    const sourceTables = sqliteQueryAll(probeSource, sourceDatabase,
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+    assert.ok(sourceTables.length > 0, '源库必须至少有一张表，否则这条用例什么都没验');
+    assert.ok(sourceTables.map(name => name.toUpperCase()).includes('CANARY'),
+      `源库必须含 canary 哨兵表，实际: ${sourceTables.join(', ')}`);
+    const h2Tables = h2Query(h2ProbeSource, path.join(dataDirectory, 'lingxi-h2'),
+      "SELECT table_name FROM information_schema.tables WHERE table_schema='PUBLIC'")
+      .map(name => name.toUpperCase());
+    for (const table of sourceTables) {
+      assert.ok(h2Tables.includes(table.toUpperCase()),
+        `H2 目标库缺少源库表 ${table}（目标库现有: ${h2Tables.join(', ')}）`);
+    }
+    // 迁移清单的记录方式：tableFingerprints/sourceRowCounts 是「表名 → 指纹/行数」映射（没有 tables 数组），
+    // 它只记**源库**的表（目标库还有基线自带的表，所以不能拿它跟 H2 表数直接比）。
+    const migratedTables = Object.keys(migrationManifest.tableFingerprints || {});
+    assert.deepEqual(migratedTables.map(name => name.toUpperCase()).sort(),
+      sourceTables.map(name => name.toUpperCase()).sort(),
+      '迁移清单必须逐表记录源库全部表（含 canary）');
+    const rowCounts = migrationManifest.sourceRowCounts || {};
+    const canaryKey = Object.keys(rowCounts).find(name => name.toUpperCase() === 'CANARY');
+    assert.ok(canaryKey, `迁移清单必须记录 canary 的行数，实际记录: ${Object.keys(rowCounts).join(', ')}`);
+    assert.equal(rowCounts[canaryKey], 1, 'canary 表必须真的搬过去 1 行');
+    // 数据也得过去：canary 的值必须能在 H2 里读回同一条业务数据。
+    assert.deepEqual(h2Query(h2ProbeSource, path.join(dataDirectory, 'lingxi-h2'), 'SELECT marker FROM canary'),
+      ['database-copy-canary']);
     // 快照是只读动作：源库本体不能被改动（不能靠复制正在写入的主文件蒙过去）。
     assert.equal(createHash('sha256').update(fs.readFileSync(sourceDatabase)).digest('hex').toUpperCase(),
       sourceDatabaseSha);
     const manifest = JSON.parse(fs.readFileSync(path.join(destination, 'initialization.json'), 'utf8'));
-    assert.equal(manifest.databaseSnapshot, 'VACUUM INTO');
-    assert.equal(manifest.databaseSha256, createHash('sha256')
-      .update(fs.readFileSync(path.join(destination, 'data', 'lingxi.sqlite'))).digest('hex').toUpperCase());
+    assert.equal(manifest.engine, 'h2');
+    assert.equal(manifest.databaseSnapshot, 'VACUUM INTO 后迁移 H2');
+    assert.equal(manifest.h2DatabaseFile, 'lingxi-h2.mv.db');
+    assert.equal(manifest.h2MigrationVerified, true);
+    assert.equal(manifest.h2MigrationTables, sourceTables.length,
+      'initialization.json 记录的表数必须等于源库表数');
+    assert.equal(manifest.databaseSha256, manifest.h2MigrationSourceSha256,
+      '库快照指纹必须与迁移清单里的源指纹一致（两者指向同一份 VACUUM INTO 快照）');
     assert.deepEqual(manifest.checkpointFiles.map(file => file.split(path.sep).join('/')), ['123/abc.json']);
     assert.ok(manifest.configFiles.some(file => file.name === 'user-configs.json'));
     assert.equal(fs.readFileSync(path.join(source, 'config', 'user-configs.json'), 'utf8'), originalSettings);
@@ -301,6 +423,7 @@ test('初始化用 VACUUM INTO 复制 SQLite 库与 checkpoints，改写副本�
     assert.equal(fs.readFileSync(path.join(destination, 'data', 'checkpoints', '123', 'abc.json'), 'utf8'),
       'checkpoint-copy-canary');
   });
+
 
 
 // ---------------------------------------------------------------- Maven settings 单一真源与真值表
