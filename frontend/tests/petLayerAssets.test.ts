@@ -13,6 +13,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -166,10 +167,85 @@ test('resolveDensityTargets：两档尺寸与压平帧同尺寸且都是 2:3', (
   }
 });
 
-test('diskPathOf：清单里的 layers/ 前缀只吃一次（拼两次就会 404）', () => {
-  const outDir = 'D:/repo/frontend/public/live2d/pet-p1/layers';
-  assert.equal(diskPathOf(outDir, 'layers/tail-base@2x.webp').split('\\').join('/'), `${outDir}/tail-base@2x.webp`);
-  assert.equal(diskPathOf(outDir, 'tail-base@2x.webp').split('\\').join('/'), `${outDir}/tail-base@2x.webp`);
+/**
+ * `diskPathOf` 的两套路径风味夹具。
+ *
+ * <p><b>为什么不能像以前那样写死一个绝对路径：</b> `diskPathOf()` 内部用的是**宿主平台**的
+ * `path.resolve`。以前夹具写成 `D:/repo/frontend/...`，在 win32 上 `resolve` 认它是绝对路径，
+ * 在 posix 上不认（`D:/` 不是绝对路径），于是结果变成 `cwd + D:/repo/...` —— 本地 Windows
+ * 永远绿，CI 上红一条。测试要覆盖的是"`layers/` 前缀只吃一次"这个**平台无关**的口径，
+ * 所以夹具必须由 `path.win32` / `path.posix` 分别构造，两套都断言。</p>
+ *
+ * <p><b>两套夹具下都不依赖"绝对前缀"：</b> posix 主机上 win32 风味的 outDir 不是绝对路径，
+ * 结果会带 `cwd` 前缀（这是 `resolve` 的正常行为，不是缺陷）。因此断言只建立在跨平台成立的
+ * 不变量上：两条输入同解、尾部结构、相对关系、以及"不许出现 layers/layers"。</p>
+ */
+const PATH_FLAVORS: Array<{ name: string; api: typeof path.win32; outDir: string }> = [
+  {
+    name: 'win32',
+    api: path.win32,
+    outDir: path.win32.join('D:', 'repo', 'frontend', 'public', 'live2d', 'pet-p1', 'layers'),
+  },
+  {
+    name: 'posix',
+    api: path.posix,
+    outDir: path.posix.join('/repo', 'frontend', 'public', 'live2d', 'pet-p1', 'layers'),
+  },
+];
+
+/**
+ * 统一成正斜杠（Windows 的结果里是 `\`）。
+ *
+ * @param value 路径字符串
+ * @returns 正斜杠形式
+ */
+const toSlashes = (value: string): string => value.split('\\').join('/');
+
+test('diskPathOf：清单里的 layers/ 前缀只吃一次（拼两次就会 404）——win32 与 posix 两套都验', () => {
+  for (const flavor of PATH_FLAVORS) {
+    const label = `[${flavor.name}]`;
+    const withPrefix = diskPathOf(flavor.outDir, 'layers/tail-base@2x.webp');
+    const withoutPrefix = diskPathOf(flavor.outDir, 'tail-base@2x.webp');
+
+    // ① 带前缀与不带前缀必须解到同一个文件（"前缀只吃一次"最直接的表述）
+    assert.equal(withPrefix, withoutPrefix, `${label} 两种输入必须解到同一路径：${withPrefix} vs ${withoutPrefix}`);
+
+    // ② 期望值：用 flavor 拼 outDir、用宿主 resolve 落绝对路径（与实现同一套 resolve 语义）
+    assert.equal(withPrefix, resolve(flavor.outDir, 'tail-base@2x.webp'), `${label} 必须是 outDir + 裸文件名`);
+
+    // ③ 尾部结构：结果必须以 <flavor 风格 outDir>/tail-base@2x.webp 结尾
+    assert.equal(
+      toSlashes(withPrefix).endsWith(toSlashes(flavor.api.join(flavor.outDir, 'tail-base@2x.webp'))),
+      true,
+      `${label} 结果必须以 outDir/tail-base@2x.webp 结尾，实际 ${withPrefix}`,
+    );
+
+    // ④ 相对关系：从 outDir 出发只差裸文件名
+    assert.equal(
+      toSlashes(path.relative(resolve(flavor.outDir), withPrefix)),
+      'tail-base@2x.webp',
+      `${label} 相对 outDir 必须只差裸文件名，实际 ${withPrefix}`,
+    );
+
+    // ⑤ 显式反向断言：前缀被吃两次就会拼出 layers/layers
+    assert.equal(
+      toSlashes(withPrefix).includes('layers/layers'),
+      false,
+      `${label} 不许出现 layers/layers（前缀被吃两次就会 404），实际 ${withPrefix}`,
+    );
+  }
+});
+
+test('diskPathOf：只吃**开头**那一个 layers/，反斜杠写法与别处的 layers 都要原样保留', () => {
+  for (const flavor of PATH_FLAVORS) {
+    const label = `[${flavor.name}]`;
+    const bare = diskPathOf(flavor.outDir, 'tail-base@2x.webp');
+    // 清单里若写成反斜杠（layers\x.webp），也要只吃一次
+    assert.equal(diskPathOf(flavor.outDir, 'layers\\tail-base@2x.webp'), bare, `${label} 反斜杠前缀也必须只吃一次`);
+    // 别处的 layers/ 不是前缀，必须原样保留（否则会静默指向错误文件）
+    const nested = toSlashes(diskPathOf(flavor.outDir, 'sub/layers/x.webp'));
+    assert.equal(nested.endsWith('sub/layers/x.webp'), true, `${label} 子目录里的 layers/ 必须原样保留，实际 ${nested}`);
+  }
 });
 
 test('validateAgainstDisk：真实清单与磁盘逐项对齐（字段/体积/sha256/尺寸/比例）', () => {

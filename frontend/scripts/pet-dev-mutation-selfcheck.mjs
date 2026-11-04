@@ -65,6 +65,17 @@ const { DEV_ENDPOINT, buildDevOrigin } = createRequire(import.meta.url)(
  */
 const ENTRY_PAGE_LITERAL = ['pet', 'html'].join('.');
 
+/**
+ * 变异体注入用的盘符绝对路径（用拼接构造，脚本自身不含该字面量）。
+ *
+ * <p><b>为什么不在源码里直接写：</b>本文件注入的目标之一是 `tests/petLayerAssets.test.ts`，
+ * 而「平台无关盘符字面量守卫」会把该文件里的盘符字面量判为违规（它**不该**有）。
+ * 脚本自身若含字面量，会让守卫读到两份来源、排查时分不清是被注入的还是本来就有。</p>
+ *
+ * @type {string}
+ */
+const DRIVE_LITERAL_PATH = ['D:', 'repo', 'frontend', 'public', 'live2d', 'pet-p1', 'layers'].join('/');
+
 const MUTATIONS = [
   {
     id: 'probe-no-fingerprint',
@@ -367,6 +378,40 @@ const MUTATIONS = [
     replace: `  const frontendRoot = '${['D:', 'Code', 'LingXi', 'frontend'].join('/')}';`,
     testFile: 'tests/petLauncher.test.cjs',
     expect: '硬编码绝对路径',
+  },
+  // ---------------------------------------------------------------- 跨平台测试夹具（本地绿、CI 红）
+  {
+    id: 'platform-allowlist-entry-removed',
+    goal:
+      '从盘符字面量豁免清单里删掉一条（= 清单外出现盘符字面量，逼下一个人做决定的那个场景）：'
+      + '被豁免文件里的字面量立刻变成违规，平台无关守卫必须红',
+    file: 'tests/petAssetTracking.test.cjs',
+    find: [
+      '  {',
+      "    file: 'petDevServer.test.cjs',",
+      "    reason: '参数 C:/tmp/x.log 只验 parseArgs 是否原样透传（实现是 logPath = value，不 resolve），'",
+      "      + '断言两侧是同一个字符串 ⇒ 平台无关。',",
+      '  },',
+    ].join('\n'),
+    replace: '',
+    testFile: 'tests/petAssetTracking.test.cjs',
+    expect: '清单外出现盘符字面量',
+  },
+  {
+    id: 'platform-fixture-back-to-absolute',
+    goal:
+      '把修好的 petLayerAssets 夹具改回平台相关的绝对路径（CI 上唯一红灯的原始形态）：'
+      + '该文件不在豁免清单里，平台无关守卫必须红',
+    file: 'tests/petLayerAssets.test.ts',
+    // 正是修好后的那行：把 flavor 夹具换回写死的盘符绝对路径
+    find: "    const withPrefix = diskPathOf(flavor.outDir, 'layers/tail-base@2x.webp');",
+    replace: [
+      `    const legacyOutDir = '${DRIVE_LITERAL_PATH}';`,
+      "    const withPrefix = diskPathOf(legacyOutDir, 'layers/tail-base@2x.webp');",
+    ].join('\n'),
+    // 验证目标必须是**守卫所在的文件**：注入点与被观测点不同文件是既有风格（同 launcher 两条）
+    testFile: 'tests/petAssetTracking.test.cjs',
+    expect: '清单外出现盘符字面量',
   },
 ];
 

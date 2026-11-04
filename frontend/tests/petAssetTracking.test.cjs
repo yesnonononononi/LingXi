@@ -591,3 +591,215 @@ test('白名单：pending-delivery 条目不得过期（全部入库后必须摘
     );
   }
 });
+
+// ---------------------------------------------------------------- 平台无关的测试夹具（设计级回归守卫）
+
+/**
+ * pet 测试里出现盘符字面量的**豁免清单**（数据驱动，必须逐条写清"为什么它可以存在"）。
+ *
+ * <p><b>这条守卫守的是什么：</b>CI 上唯一红的一条测试是 `diskPathOf` 用例把
+ * `D:/repo/frontend/...` 写死成夹具——`path.resolve` 在 win32 上认它是绝对路径、在 posix 上不认，
+ * 于是本地 Windows 永远绿、Linux 上把它拼到 `process.cwd()` 后面。这类缺陷的本质是
+ * "**测试夹具用了平台相关的绝对路径**"，不是被测代码有问题；同一形态在别的 pet 测试里
+ * 也可能潜伏（一次 CI 只红了 1 条，不代表只有 1 处）。</p>
+ *
+ * <p><b>为什么用显式清单而不是自动放过：</b>"扫到就跳过"等于没有守卫。清单外的写入必须由
+ * 人来决定：要么把夹具改成平台无关，要么在这里登记并写清为什么它是平台对称的。</p>
+ *
+ * <p><b>豁免是有寿命的：</b>某文件里的盘符字面量被清理掉后，它的豁免条目必须先删除
+ * （否则 {@link DRIVE_LITERAL_ALLOWLIST 过期断言} 会红）——防止清单变成永久放水口。</p>
+ *
+ * @type {Array<{file: string, reason: string}>}
+ */
+const DRIVE_LITERAL_ALLOWLIST = [
+  {
+    file: 'petAssetManifest.test.cjs',
+    reason: '夹具 D:/tmp/art 与 D:/tmp/env-art 只作 parseArgs 的字符串输入，期望值同样用 resolve(process.cwd(), …) 推导；'
+      + '实现里也是同一个 resolve ⇒ 两侧同一套解析语义，平台对称。',
+  },
+  {
+    file: 'petDevEntryUrl.test.cjs',
+    reason: '夹具 D:/fe 只作 frontendRoot 字符串输入，期望值用 path.join 按同样规则拼出（实现也走 join），'
+      + '全程不做绝对路径判定 ⇒ 平台无关。',
+  },
+  {
+    file: 'petDevServer.test.cjs',
+    reason: '参数 C:/tmp/x.log 只验 parseArgs 是否原样透传（实现是 logPath = value，不 resolve），'
+      + '断言两侧是同一个字符串 ⇒ 平台无关。',
+  },
+  {
+    file: 'petLauncher.test.cjs',
+    reason: '盘符片段 D:/、D:\\、C:/、C:\\ 是"启动器里禁止出现"的扫描模式字面量（被检查的数据，不是被使用的路径），'
+      + '该用例本身也会先剥注释再扫描启动器源码。',
+  },
+];
+
+/** pet 测试所在目录。 */
+const PET_TEST_DIR = path.join(FRONTEND_ROOT, 'tests');
+
+/** 三个引号字符（用数组拼出来，避免把正则的字面写法带进本文件、让守卫自己命中自己）。 */
+const QUOTE_CHARS = ['"', "'", '`'];
+
+/** 盘符字面量：引号（含反引号）紧跟 `<字母>:` 再加路径分隔符，例如 'D:/x'、`C:\\y`。 */
+const DRIVE_LITERAL_PATTERN = new RegExp(`[${QUOTE_CHARS.join('')}][A-Za-z]:[\\\\/]`, 'g');
+
+/**
+ * 去掉注释（块注释 + 行注释），**保留字符串字面量**。
+ *
+ * <p>注释里提到盘符是正当的历史说明（"以前这里写死 D:/Code/LingXi/..."），不算违规；
+ * 代码里的字符串字面量才算。所以要先剥注释再扫描，且必须能正确跳过字符串——
+ * 否则 `'http://x'` 里的 `//` 会被误当成行注释，把同一行后面的真违规吃掉（假绿）。</p>
+ *
+ * <p>已知局限：不识别正则字面量。若某个文件里有引号不配对的正则，最坏结果是"少剥注释"，
+ * 也就是**更吵**（多报）而不是漏报——对守卫来说这是可接受的方向。</p>
+ *
+ * @param {string} source 源码全文
+ * @returns {string} 去掉注释后的文本（换行数保持不变，行号可直接用）
+ */
+function stripCommentsForDriveScan(source) {
+  /** @type {string[]} */
+  const out = [];
+  let inBlock = false;
+  let quote = '';
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    const next = i + 1 < source.length ? source[i + 1] : '';
+    if (inBlock) {
+      if (ch === '*' && next === '/') {
+        inBlock = false;
+        i += 1;
+      } else if (ch === '\n') {
+        out.push('\n');
+      }
+      continue;
+    }
+    if (quote !== '') {
+      out.push(ch);
+      if (ch === '\\' && next !== '') {
+        out.push(next);
+        i += 1;
+        continue;
+      }
+      if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inBlock = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      out.push('\n');
+      continue;
+    }
+    if (QUOTE_CHARS.includes(ch)) {
+      quote = ch;
+      out.push(ch);
+      continue;
+    }
+    out.push(ch);
+  }
+  return out.join('');
+}
+
+/**
+ * 扫出源码里的盘符字面量（先剥注释）。
+ *
+ * @param {string} source 源码全文
+ * @returns {Array<{line: number, text: string}>} 命中位置（行号从 1 开始）
+ */
+function scanDriveLiterals(source) {
+  const lines = stripCommentsForDriveScan(source).split('\n');
+  /** @type {Array<{line: number, text: string}>} */
+  const hits = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    DRIVE_LITERAL_PATTERN.lastIndex = 0;
+    if (!DRIVE_LITERAL_PATTERN.test(lines[index])) continue;
+    hits.push({ line: index + 1, text: lines[index].trim().slice(0, 160) });
+  }
+  return hits;
+}
+
+/**
+ * 列出参与扫描的 pet 测试文件（`pet*.ts` 与 `pet*.cjs`）。
+ *
+ * @returns {string[]} 文件名（相对 `frontend/tests`，按字典序）
+ */
+function listPetTestRelPaths() {
+  return fs
+    .readdirSync(PET_TEST_DIR)
+    .filter((name) => /^pet[^/\\]*\.(ts|cjs)$/.test(name))
+    .filter((name) => fs.statSync(path.join(PET_TEST_DIR, name)).isFile())
+    .sort();
+}
+
+test('平台无关：pet 测试里不得出现盘符字面量（豁免清单外的一律红）', () => {
+  const files = listPetTestRelPaths();
+  assert.ok(files.length >= 15, `只扫到 ${files.length} 个 pet 测试文件，守卫等于空跑`);
+  /** @type {string[]} */
+  const offenders = [];
+  for (const name of files) {
+    if (DRIVE_LITERAL_ALLOWLIST.some((entry) => entry.file === name)) continue;
+    const hits = scanDriveLiterals(fs.readFileSync(path.join(PET_TEST_DIR, name), 'utf8'));
+    for (const hit of hits) offenders.push(`${name}:${hit.line}  ${hit.text}`);
+  }
+  assert.equal(
+    offenders.length,
+    0,
+    `清单外出现盘符字面量 ${offenders.length} 处（这是"本地绿、CI 红"的典型成因：`
+      + 'win32 认它是绝对路径，posix 不认，会被拼到 process.cwd() 后面）：\n  '
+      + offenders.join('\n  ')
+      + '\n处置（二选一）：① 夹具改成平台无关（用 path.win32 / path.posix 分别构造，'
+      + '或只推导期望值、不写死绝对路径）；② 若确实平台对称且必须保留，把文件名加进 '
+      + 'DRIVE_LITERAL_ALLOWLIST 并写明理由。',
+  );
+});
+
+test('平台无关：扫描器自检——代码里的盘符字面量算命中，注释里提及不算（防止守卫恒绿）', () => {
+  // 用拼接构造样例，避免本文件自己出现盘符字面量（守卫也会扫自己）
+  const drive = 'D:';
+  const codeSample = `const outDir = '${drive}/repo/frontend';`;
+  const commentSample = `// 以前这里写死 ${drive}/repo/frontend\nconst ratio = 2 / 3;`;
+  assert.equal(scanDriveLiterals(codeSample).length, 1, '扫描器失灵：代码里的盘符字面量没被识别');
+  assert.equal(scanDriveLiterals(commentSample).length, 0, '扫描器失灵：注释里提到的盘符被误判成违规');
+  // 守卫自己必须干净：否则它只能靠"给自己开豁免"过，那等于没有守卫
+  const selfHits = scanDriveLiterals(fs.readFileSync(path.join(PET_TEST_DIR, 'petAssetTracking.test.cjs'), 'utf8'));
+  assert.equal(selfHits.length, 0, `守卫文件自己命中了盘符字面量：${selfHits.map((hit) => hit.line).join('、')}`);
+});
+
+test('平台无关：豁免清单必须每条有理由、文件仍存在、且仍真的命中（过期要删掉）', () => {
+  for (const entry of DRIVE_LITERAL_ALLOWLIST) {
+    assert.equal(
+      typeof entry.reason === 'string' && entry.reason.trim().length >= 20,
+      true,
+      `豁免 ${entry.file} 必须写明"为什么它可以存在"（≥20 字）`,
+    );
+    const abs = path.join(PET_TEST_DIR, entry.file);
+    assert.equal(fs.existsSync(abs), true, `豁免指向的文件不存在：${entry.file}`);
+    const hits = scanDriveLiterals(fs.readFileSync(abs, 'utf8'));
+    assert.ok(
+      hits.length > 0,
+      `豁免已过期：${entry.file} 里已经没有盘符字面量，请从 DRIVE_LITERAL_ALLOWLIST 删掉这一条`,
+    );
+  }
+});
+
+test('平台无关：修好后的 petLayerAssets.test.ts 必须不在豁免清单里（且确实被扫描）', () => {
+  assert.equal(
+    DRIVE_LITERAL_ALLOWLIST.some((entry) => entry.file === 'petLayerAssets.test.ts'),
+    false,
+    'petLayerAssets.test.ts 应当完全不出现盘符字面量，不许靠豁免过',
+  );
+  assert.ok(
+    listPetTestRelPaths().includes('petLayerAssets.test.ts'),
+    'petLayerAssets.test.ts 必须真的在扫描范围内（否则上面这条是真空过）',
+  );
+  const hits = scanDriveLiterals(fs.readFileSync(path.join(PET_TEST_DIR, 'petLayerAssets.test.ts'), 'utf8'));
+  assert.equal(
+    hits.length,
+    0,
+    `petLayerAssets.test.ts 里仍有盘符字面量（第 ${hits.map((hit) => hit.line).join('、')} 行）：`
+      + '改成用 path.win32 / path.posix 分别构造夹具',
+  );
+});
