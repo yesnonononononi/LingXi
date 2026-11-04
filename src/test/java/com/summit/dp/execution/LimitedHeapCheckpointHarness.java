@@ -61,6 +61,9 @@ public final class LimitedHeapCheckpointHarness {
     private static final int MESSAGE_COUNT = 24;
     private static final int CHARS_PER_MESSAGE = 100_000;
     private static final long BYTES_PER_MB = 1024L * 1024L;
+
+    /** 堆读数入口（{@code usedBytesAfterFullGc} 与采样线程共用）。 */
+    private static final java.lang.management.MemoryMXBean MEMORY = ManagementFactory.getMemoryMXBean();
     /** 并发保存的执行数：对应用户现场「三个执行并发频繁保存」。 */
     private static final int CONCURRENT_EXECUTIONS = 3;
     /** 同一大上下文连续更新的默认轮数（复核 R5 要求补的压力场景）。 */
@@ -83,6 +86,8 @@ public final class LimitedHeapCheckpointHarness {
         int sameContextRounds = args.length > 5 ? Integer.parseInt(args[5]) : SAME_CONTEXT_ROUNDS_DEFAULT;
 
         PeakHeapSampler sampler = new PeakHeapSampler();
+        // 起始活集合（满 GC 之后）：给峰值一个参照点，也能一眼分辨「起始堆就已经很高」的情况。
+        long baselineBytes = usedBytesAfterFullGc();
         sampler.start();
         H2TestDatabase database = null;
         try {
@@ -115,6 +120,7 @@ public final class LimitedHeapCheckpointHarness {
                     execution("1", body, ExecutionState.SUSPENDED)).length;
             System.out.println("FIXTURE_BYTES=" + fixtureBytes);
             System.out.println("MAX_HEAP_MB=" + Runtime.getRuntime().maxMemory() / BYTES_PER_MB);
+            System.out.println("HEAP_BASELINE_MB=" + baselineBytes / BYTES_PER_MB);
 
             // ① 单执行连续保存：最贴近「一次执行里每轮都在存」的现场。
             seed(executions, 1L, ExecutionStatusCodes.SUSPENDED);
@@ -196,6 +202,15 @@ public final class LimitedHeapCheckpointHarness {
             System.out.println("CHECKPOINT_WHOLE_DOCUMENT_STRINGS=" + checkpointMapper.wholeDocumentConversions());
             System.out.println("CHECKPOINT_STREAM_WRITES=" + checkpointMapper.streamWrites());
 
+            // 「活集合」口径：满 GC 之后仍被引用占着的堆 —— 与 GC 时序无关，跨机器/跨负载可比。
+            long retainedBytes = usedBytesAfterFullGc();
+            // 保活：这次使用让 body/single/concurrent/restored 在测量点仍然可达，否则 JIT 可能
+            // 把它们提前判成不可达，测出来就成了「什么都留不住」的假象。
+            System.out.println("LIVE_REFS=" + (body.size() + single.getMessages().size()
+                    + concurrent.size() + restored.getMessages().size()));
+            System.out.println("HEAP_RETAINED_MB=" + retainedBytes / BYTES_PER_MB);
+            System.out.println("PEAK_HEAP_SAMPLES=" + sampler.samples());
+
             sampler.stop();
             long gcMillis = ManagementFactory.getGarbageCollectorMXBeans().stream()
                     .mapToLong(bean -> bean.getCollectionTime())
@@ -222,6 +237,23 @@ public final class LimitedHeapCheckpointHarness {
             }
             deleteQuietly(dataDir);
         }
+    }
+
+    /**
+     * 满 GC 之后再看一次已用堆：这才是「真正被钉在堆上」的活集合（live set），
+     * 与 GC 在什么时刻跑、跑得多快无关，因此跨机器/跨负载可比。
+     *
+     * <p><b>为什么需要它</b>：{@code PEAK_HEAP_MB} 是「10ms 采样看到的最大已用堆」，
+     * 它包含<b>还没来得及回收的垃圾</b>——机器一忙、GC 线程被饿住，这个数就从 150 MiB 涨到 370 MiB，
+     * 而代码一行没变（详见 {@link LimitedHeapCheckpointOomTest} 的分布表）。
+     * 真正想守的是「正文有没有被囤在堆里」，那属于<b>活对象</b>，只有满 GC 之后才看得清。</p>
+     */
+    private static long usedBytesAfterFullGc() throws InterruptedException {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            System.gc();
+            Thread.sleep(150L);
+        }
+        return MEMORY.getHeapMemoryUsage().getUsed();
     }
 
     /** 建一条「已有检查点元数据」的执行行，模拟执行已在库里存在。 */
@@ -328,9 +360,11 @@ public final class LimitedHeapCheckpointHarness {
     /** 后台采样峰值堆：{@code MemoryMXBean#getHeapMemoryUsage()} 取已用堆的最大值。 */
     private static final class PeakHeapSampler {
 
-        private final java.lang.management.MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
+        private final java.lang.management.MemoryMXBean memoryBean = MEMORY;
         private volatile boolean running = true;
         private volatile long peakBytes;
+        /** 采样次数：负载重时采样点会变少，峰值含义随之变化，所以要跟峰值一起打印出来。 */
+        private final AtomicLong sampleCount = new AtomicLong();
         private Thread thread;
 
         private void start() {
@@ -340,6 +374,7 @@ public final class LimitedHeapCheckpointHarness {
                     if (used > peakBytes) {
                         peakBytes = used;
                     }
+                    sampleCount.incrementAndGet();
                     try {
                         Thread.sleep(10L);
                     } catch (InterruptedException interrupted) {
@@ -369,6 +404,11 @@ public final class LimitedHeapCheckpointHarness {
 
         private long peakBytes() {
             return peakBytes;
+        }
+
+        /** 采样点个数（10ms 一个点）：红的时候先看它是「真囤内存」还是「采不到」。 */
+        private long samples() {
+            return sampleCount.get();
         }
     }
 }
