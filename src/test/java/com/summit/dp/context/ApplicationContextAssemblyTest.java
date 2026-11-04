@@ -182,7 +182,7 @@ class ApplicationContextAssemblyTest {
         // 数量由白名单自身推导，不再写裸数字 18/19——新增一个 @Tool 执行器时，
         // 这条断言会立刻指出来「你加的工具没进白名单」，而不是只报一句 expected:<19> but was:<20>。
         // 清单分三组，与 @Tool 的实际落点一一对应：
-        //   基础工具 13 件（含 generate_image）、执行清单 6 件、项目记忆 2 件（load_memory / search_wiki）。
+        //   基础工具 11 件（含 generate_image）、执行清单 6 件、项目记忆 2 件（load_memory / search_wiki），合计 19。
         // 注：web_search 不在其中——它是配置驱动的 ToolDefinition Bean，不是注解工具。
         Set<String> expectedAnnotationTools = Set.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
                 ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
