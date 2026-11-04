@@ -3,17 +3,19 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.summit.adapter.langchain4j.model.ChatModelAdapter;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.Image;
 import com.summit.core.compact.ContextAttachmentProvider;
+import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopResult;
+import com.summit.core.model.DefaultModelProviderNames;
+import com.summit.core.model.chat.ChatModel;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutionContext;
 import com.summit.core.tool.ToolExecutor;
@@ -33,8 +35,11 @@ import com.summit.runtime.model.DefaultChatModelInvoker;
 import com.summit.runtime.tool.DefaultToolExecutionManager;
 import com.summit.runtime.workspace.LocalWorkspace;
 import com.sun.net.httpserver.HttpServer;
-import dev.langchain4j.http.client.okhttp.OkHttpClient;
-import dev.langchain4j.model.openai.OpenAiChatModel;
+import openAi.DefaultChatModel;
+import openAi.MessageSerializer;
+import openAi.ModelChatResolver;
+import openAi.RequestBodyFactory;
+import openAi.ResponseSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,6 +47,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -59,6 +65,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReadImageLoopIntegrationTest {
     @TempDir Path workspaceRoot;
     @TempDir Path dataDir;
+
+    /** 框架自带的 OpenAI 协议实现，模型请求真实打到本地假端点。 */
+    private static ChatModel localChatModel(String baseUrl, String modelName) {
+        ObjectMapper mapper = new ObjectMapper();
+        ModelConfig config = ModelConfig.builder().provider(DefaultModelProviderNames.DEFAULT)
+                .baseUrl(baseUrl).apiKey("local-test-key").modelName(modelName).timeout(Duration.ofSeconds(5)).build();
+        return new DefaultChatModel(config,
+                new ModelChatResolver(new RequestBodyFactory(new MessageSerializer(mapper), mapper), mapper, new ResponseSerializer()),
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());
+    }
 
     @Test
     void toolRoundSendsConvertedPixelsAndTrimsOldImagesBeforeTheNextRequest() throws Exception {
@@ -95,10 +111,7 @@ class ReadImageLoopIntegrationTest {
             ImageCacheDirectory cache = new ImageCacheDirectory(dataDir.toString());
             ToolDefinition<ReadImageToolExecutor> definition = AnnotatedToolTestDefinitions.create(ReadImageToolExecutor.class, new ReadImageToolExecutor(mapper, new ImageNormalizer(), cache));
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
-            ChatModelAdapter model = new ChatModelAdapter(OpenAiChatModel.builder()
-                    .httpClientBuilder(OkHttpClient.builder())
-                    .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
-                    .apiKey("local-test-key").modelName("arbitrary-vision-model").timeout(Duration.ofSeconds(5)).maxRetries(0).build());
+            ChatModel model = localChatModel("http://127.0.0.1:" + server.getAddress().getPort() + "/v1", "arbitrary-vision-model");
             List<Image> history = IntStream.range(0, 15)
                     .mapToObj(index -> Image.from(URI.create("https://example.test/old-" + index))).toList();
             AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.READ_IMAGE))

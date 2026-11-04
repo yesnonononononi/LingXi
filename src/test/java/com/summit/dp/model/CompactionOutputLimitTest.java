@@ -13,6 +13,7 @@ import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.ModelProvider;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.chat.ChatModel;
@@ -139,7 +140,9 @@ class CompactionOutputLimitTest {
             for (ModelConfig compact : selected) {
                 assertEquals(4096, compact.getMaxTokens());
                 assertEquals("chat-key", compact.getApiKey());
-                assertEquals("default", compact.getProvider());
+                // 压缩档用自己的 provider 名（compactContextChatModelProvider 注册的 default-compact），
+                // 这样摘要请求不会继承对话档的流式/思考语义。
+                assertEquals(DefaultModelProviderNames.DEFAULT_COMPACT, compact.getProvider());
                 // 复用连接时仍省略 effort，避免带入对话强度或不兼容的关闭枚举。
                 assertNull(compact.getReasoningEffort());
                 assertFalse(compact.isReturnThinking());

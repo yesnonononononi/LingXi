@@ -2,16 +2,18 @@ package com.summit.dp.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.model.StreamingChatModelAdapter;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.compact.ContextAttachmentProvider;
+import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.event.InvokeRetryEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.model.DefaultModelProviderNames;
+import com.summit.core.model.streaming.StreamingChatModel;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.tool.ToolExecuteCommand;
@@ -31,23 +33,18 @@ import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
 import com.summit.runtime.model.DefaultStreamingModelInvoker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.exception.LangChain4jException;
-import dev.langchain4j.http.client.okhttp.OkHttpClient;
-import dev.langchain4j.model.anthropic.AnthropicStreamingChatModel;
-import dev.langchain4j.model.chat.StreamingChatModel;
-import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
-import dev.langchain4j.model.output.TokenUsage;
-import okhttp3.internal.http2.ErrorCode;
-import okhttp3.internal.http2.StreamResetException;
+import anthropic.AnthropicChatModel;
+import openAi.DefaultChatModel;
+import openAi.MessageSerializer;
+import openAi.ModelChatResolver;
+import openAi.RequestBodyFactory;
+import openAi.ResponseSerializer;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -60,43 +57,42 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 模型故障必须贯穿适配器、重试、执行终态和业务事件序列化。 */
+/**
+ * 模型故障必须贯穿适配器、重试、执行终态和业务事件序列化。
+ *
+ * <p>迁移说明：LangChain4j 模型适配器已退役，模型调用改走框架自有的
+ * {@code openAi.DefaultChatModel} / {@code anthropic.AnthropicChatModel}（端口为
+ * {@code com.summit.core.model.streaming.StreamingChatModel}），本地假端点收到的仍是真实线上协议流量。</p>
+ *
+ * <p>429 有两档：{@code insufficient_quota}（配额耗尽）是终态，一次请求就失败、不重试；
+ * {@code rate_limit_error} 只是限流，仍会重试一次并完成。两档都在下面锁着，
+ * 免得"把配额耗尽当限流重试"这种真花钱的回归悄悄回来。</p>
+ */
 class StreamingRetryContractTest {
     @ParameterizedTest
     @ValueSource(strings = {"OPENAI_SSE", "ANTHROPIC_SSE", "OPENAI_503", "OPENAI_429", "OPENAI_TIMEOUT",
-            "OPENAI_TRUNCATED", "OPENAI_HTTP2_RESET", "OPENAI_401", "OPENAI_QUOTA", "OPENAI_BUDGET"})
+            "OPENAI_TRUNCATED", "OPENAI_STREAM_ABORT", "OPENAI_401", "OPENAI_QUOTA", "OPENAI_RATE_LIMIT",
+            "OPENAI_BUDGET"})
     void providerFailureTraversesRuntimeAndBusinessStream(String mode) throws Exception {
         AtomicInteger requests = new AtomicInteger();
         CountDownLatch retrySeen = new CountDownLatch(1);
         boolean anthropic = mode.startsWith("ANTHROPIC");
-        boolean permanent = mode.endsWith("401") || mode.endsWith("QUOTA") || mode.endsWith("BUDGET");
+        // 401（鉴权失败）与 429+insufficient_quota（配额耗尽）都是终态：一次请求就失败，不发重试通知。
+        boolean retryRefused = mode.endsWith("401") || mode.endsWith("QUOTA");
+        // 步数预算只剩一轮：重试通知照发，第二次尝试被边界检查挡下，网络只打一次。
+        boolean budgetExhausted = mode.endsWith("BUDGET");
+        boolean completed = !retryRefused && !budgetExhausted;
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         try (ExecutorService workers = Executors.newCachedThreadPool(); Capture stream = new Capture()) {
             server.setExecutor(workers);
             server.createContext("/", exchange -> respond(exchange, mode, anthropic, requests.incrementAndGet(), retrySeen));
             server.start();
             String base = "http://127.0.0.1:" + server.getAddress().getPort();
-            StreamingChatModelAdapter model = anthropic
-                    ? new StreamingChatModelAdapter(AnthropicStreamingChatModel.builder()
-                            .httpClientBuilder(OkHttpClient.builder()).baseUrl(base).apiKey("test")
-                            .modelName("probe").maxTokens(100).timeout(Duration.ofSeconds(3)).build())
-                    : new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder()
-                            .httpClientBuilder(OkHttpClient.builder()).baseUrl(base + "/v1").apiKey("test")
-                            .modelName("probe").timeout(Duration.ofMillis(mode.endsWith("TIMEOUT") ? 500 : 3000)).build());
-            if (mode.endsWith("HTTP2_RESET")) {
-                // 注入生产报错的原始类型，避免重试测试提前把它转换成可重试异常。
-                model = new StreamingChatModelAdapter(new StreamingChatModel() {
-                    @Override
-                    public void chat(ChatRequest request, StreamingChatResponseHandler handler) {
-                        if (requests.incrementAndGet() == 1) {
-                            handler.onError(new LangChain4jException(new StreamResetException(ErrorCode.CANCEL)));
-                        } else {
-                            handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("recovered"))
-                                    .tokenUsage(new TokenUsage(3, 2)).build());
-                        }
-                    }
-                });
-            }
+            // 旧实现包一层 StreamingChatModelAdapter(OpenAiStreamingChatModel/AnthropicStreamingChatModel)；
+            // 适配器退役后直接用框架自有实现，本地假端点收到的仍是真实线上协议流量。
+            StreamingChatModel model = anthropic
+                    ? anthropicStreamingModel(base, Duration.ofSeconds(3))
+                    : openAiStreamingModel(base + "/v1", mode.endsWith("TIMEOUT") ? Duration.ofMillis(500) : Duration.ofSeconds(3));
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId("101")).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
@@ -130,24 +126,25 @@ class StreamingRetryContractTest {
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
                             conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
                     .invoker(new DefaultStreamingModelInvoker(model)).build());
-            if (permanent) assertThrows(RuntimeException.class, () -> runtime.execute(execution));
+            if (!completed) assertThrows(RuntimeException.class, () -> runtime.execute(execution));
             else runtime.execute(execution);
 
-            assertEquals(permanent ? 1 : 2, requests.get());
-            assertEquals(permanent ? ExecutionState.FAILED : ExecutionState.COMPLETED, execution.getExecutionState());
-            assertEquals(permanent ? 1 : 2, execution.getModelAttempts());
-            assertEquals(permanent ? 0 : 5, execution.getTokenUsage().getTotalTokens());
+            assertEquals(completed ? 2 : 1, requests.get());
+            assertEquals(completed ? ExecutionState.COMPLETED : ExecutionState.FAILED, execution.getExecutionState());
+            assertEquals(completed ? 2 : 1, execution.getModelAttempts());
+            assertEquals(completed ? 5 : 0, execution.getTokenUsage().getTotalTokens());
             List<JsonNode> notices = stream.frames.stream().filter(frame -> frame.path("type").asText().equals("INVOKE_RETRY")).toList();
-            assertEquals(mode.endsWith("401") || mode.endsWith("QUOTA") ? 0 : 1, notices.size());
+            // 401 不产生重试通知；预算耗尽会通知一次重试但不再发请求；其余都要通知一次并真的重试。
+            assertEquals(retryRefused ? 0 : 1, notices.size());
             for (JsonNode notice : notices) {
                 assertEquals("900", notice.path("metaData").path("turnId").asText());
                 assertEquals("MILLISECONDS", notice.path("timeUnit").asText());
                 assertFalse(notice.path("responseId").asText().isBlank());
             }
             assertEquals(1, stream.frames.stream().filter(frame -> frame.path("type").asText()
-                    .equals(permanent ? "EXECUTION_FAILED" : "EXECUTION_COMPLETED")).count());
+                    .equals(completed ? "EXECUTION_COMPLETED" : "EXECUTION_FAILED")).count());
             assertEquals(0, stream.frames.stream().filter(frame -> frame.path("content").asText().equals("late")).count());
-            if (!permanent) {
+            if (completed) {
                 assertEquals(1, stream.frames.stream().filter(frame -> frame.path("type").asText().equals("AI_MESSAGE")).count());
                 JsonNode terminal = stream.frames.stream().filter(frame -> frame.path("type").asText().equals("EXECUTION_COMPLETED")).findFirst().orElseThrow();
                 assertEquals(5, terminal.path("tokenInfo").path("totalTokenCount").asInt());
@@ -159,17 +156,53 @@ class StreamingRetryContractTest {
         }
     }
 
+    /** 框架自带的 OpenAI 协议流式实现：连本地假端点，流式开关和重试都由框架自己决定。 */
+    private static StreamingChatModel openAiStreamingModel(String baseUrl, Duration timeout) {
+        ObjectMapper mapper = new ObjectMapper();
+        ModelConfig config = ModelConfig.builder()
+                .provider(DefaultModelProviderNames.DEFAULT_STREAMING)
+                .baseUrl(baseUrl).apiKey("test").modelName("probe").timeout(timeout).build();
+        return new DefaultChatModel(config, chatResolver(mapper),
+                HttpClient.newBuilder().connectTimeout(timeout).build());
+    }
+
+    /** 框架自带的 Anthropic 流式实现；同一实现同时提供同步与流式端口。 */
+    private static StreamingChatModel anthropicStreamingModel(String baseUrl, Duration timeout) {
+        ModelConfig config = ModelConfig.builder()
+                .provider(DefaultModelProviderNames.ANTHROPIC_STREAMING)
+                .baseUrl(baseUrl).apiKey("test").modelName("probe").maxTokens(100).timeout(timeout).build();
+        return new AnthropicChatModel(config, HttpClient.newBuilder().connectTimeout(timeout).build(), new ObjectMapper());
+    }
+
+    private static ModelChatResolver chatResolver(ObjectMapper mapper) {
+        return new ModelChatResolver(new RequestBodyFactory(new MessageSerializer(mapper), mapper), mapper, new ResponseSerializer());
+    }
+
     static void respond(HttpExchange exchange, String mode, boolean anthropic, int request,
                                 CountDownLatch retrySeen) throws IOException {
         try (exchange) {
             exchange.getRequestBody().readAllBytes();
+            if (request == 1 && mode.endsWith("ABORT")) {
+                // 生产事故现场：响应头已经下发、正文只到一半就被对端重置。
+                // 旧栈（okhttp）里这是 StreamResetException(HTTP/2 RST_STREAM)；新栈（java.net.http）里表现为
+                // 流中途 IOException / 提前结束。两者都必须被模型实现判成可重试，而不是直接终结执行。
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, 0);
+                exchange.getResponseBody().write(("data: {\"id\":\"m\",\"model\":\"probe\",\"choices\":[{\"index\":0,"
+                        + "\"delta\":{\"content\":\"discard\"}}]}\n\n").getBytes(StandardCharsets.UTF_8));
+                exchange.getResponseBody().flush();
+                return;
+            }
             if (request == 1 && mode.endsWith("TIMEOUT")) {
                 try { Thread.sleep(1500); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
                 return;
             }
             if (request == 1 && !(mode.endsWith("SSE") || mode.endsWith("TRUNCATED"))) {
-                int status = mode.endsWith("401") ? 401 : mode.endsWith("429") || mode.endsWith("QUOTA") ? 429 : 503;
-                String type = mode.endsWith("QUOTA") ? "insufficient_quota" : status == 401 ? "authentication_error" : "server_error";
+                int status = mode.endsWith("401") ? 401
+                        : mode.endsWith("429") || mode.endsWith("QUOTA") || mode.endsWith("RATE_LIMIT") ? 429 : 503;
+                String type = mode.endsWith("QUOTA") ? "insufficient_quota"
+                        : mode.endsWith("RATE_LIMIT") ? "rate_limit_error"
+                        : status == 401 ? "authentication_error" : "server_error";
                 byte[] body = ("{\"error\":{\"type\":\"" + type + "\",\"message\":\"temporary\"}}").getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(status, body.length);

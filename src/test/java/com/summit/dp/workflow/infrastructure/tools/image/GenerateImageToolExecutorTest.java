@@ -9,10 +9,8 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.ModelProviderRegistry;
-import com.summit.core.model.image.ImageModel;
 import com.summit.core.model.image.ImageGenerationOptions;
-import com.summit.adapter.langchain4j.model.provider.CommonImageModelProvider;
-import com.sun.net.httpserver.HttpServer;
+import com.summit.core.model.image.ImageModel;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.core.tool.ToolExecuteResult;
@@ -20,6 +18,8 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.runtime.workspace.LocalWorkspace;
+import com.sun.net.httpserver.HttpServer;
+import openAi.image.DefaultImageModel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.io.TempDir;
@@ -31,7 +31,9 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -163,14 +165,17 @@ class GenerateImageToolExecutorTest {
             when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
                     .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("gpt-image-1")
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1").apiKey("test-key").build());
-            when(providers.create(any())).thenAnswer(invocation -> new CommonImageModelProvider().create(invocation.getArgument(0)));
+            when(providers.create(any())).thenAnswer(invocation -> imageModelOf(invocation.getArgument(0)));
             ToolExecution call = call("unsupported.png");
             call.setArgs(mapper.writeValueAsString(Map.of("prompt", "draw", "path", "unsupported.png", "size", "123x456")));
             ToolExecuteResult result = executor.execute(call);
             assertFalse(result.isSuccess());
             assertNotNull(received.get());
             assertEquals("123x456", received.get().path("size").asText());
-            assertTrue(result.getToolOutput().contains("unsupported size 123x456"), result.getToolOutput());
+            // 真实服务错误原样失败、不落文件：HTTP 状态与服务端 error.message 都必须出现在文案里。
+            assertTrue(result.getToolOutput()
+                            .contains("Image generations failed with HTTP 400: unsupported size 123x456"),
+                    result.getToolOutput());
             assertFalse(Files.exists(root.resolve("unsupported.png")));
         } finally {
             server.stop(0);
@@ -197,6 +202,11 @@ class GenerateImageToolExecutorTest {
         assertEquals(mapper.valueToTree(List.of(1)), properties.path("count").path("enum"));
         assertTrue(definition.description().contains("1024x1024"));
         assertTrue(definition.description().contains("均可不传"));
+    }
+
+    /** 框架自带的生图实现：真实发请求，用于校验 per-call 规格确实进了线上请求体。 */
+    private ImageModel imageModelOf(ModelConfig selected) {
+        return new DefaultImageModel(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), mapper, selected);
     }
 
     private byte[] png() throws Exception {

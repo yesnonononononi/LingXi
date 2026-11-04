@@ -1,7 +1,6 @@
 package com.summit.dp.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -15,6 +14,7 @@ import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
 import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
+import mcp.McpSessionFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,7 +51,8 @@ class McpWorkspaceNativeTest {
                 .initializationTimeout(Duration.ofSeconds(5)).executionTimeout(Duration.ofSeconds(5))
                 .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
         when(repository.findById(1L)).thenReturn(Optional.of(model));
-        McpManager manager = new McpManager(repository, assembler, new McpClientFactory());
+        McpSessionFactory factory = McpSessionFactoryFixture.realFactory(json);
+        McpManager manager = new McpManager(repository, assembler, factory);
         Workspace workspace = workspace(root);
         try {
             manager.register(1L);
@@ -68,7 +69,7 @@ class McpWorkspaceNativeTest {
             assertTrue(new HostMcpScopeProvider(manager).openScope(config(model), workspace).isEmpty());
             for (int i = 0; i < 100 && ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false); i++) Thread.sleep(20);
             assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
-        } finally { manager.close(); manager.disconnect(); }
+        } finally { manager.close(); manager.disconnect(); factory.close(); }
         assertEquals("host-canary", Files.readString(outside));
         verify(workspace, never()).bridge();
     }
@@ -81,7 +82,8 @@ class McpWorkspaceNativeTest {
                     .initializationTimeout(Duration.ofSeconds(5)).executionTimeout(Duration.ofSeconds(5))
                     .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
             when(repository.findById(2L)).thenReturn(Optional.of(model));
-            McpManager manager = new McpManager(repository, assembler, new McpClientFactory());
+            McpSessionFactory factory = McpSessionFactoryFixture.realFactory(json);
+            McpManager manager = new McpManager(repository, assembler, factory);
             Workspace workspace = workspace(directory);
             try {
                 manager.register(2L);
@@ -90,7 +92,7 @@ class McpWorkspaceNativeTest {
                 }
                 manager.remove(2L);
                 assertTrue(new HostMcpScopeProvider(manager).openScope(config(model), workspace).isEmpty());
-            } finally { manager.close(); manager.disconnect(); }
+            } finally { manager.close(); manager.disconnect(); factory.close(); }
             verify(workspace, never()).bridge();
         }
     }

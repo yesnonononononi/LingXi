@@ -23,7 +23,6 @@ import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.workflow.infrastructure.config.ModelHttpClientConfiguration;
 import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.harness.springbootautoconfigure.config.ModelProviderConfig;
@@ -84,7 +83,7 @@ import static org.mockito.Mockito.when;
  */
 @Tag("network")
 class HttpClientNetworkComparisonTest {
-    private static final String CLIENT = System.getProperty("lingxi.network.client", "OKHTTP");
+    private static final String CLIENT = System.getProperty("lingxi.network.client", "JDK");
     private static final List<Measurement> RESULTS = new CopyOnWriteArrayList<>();
     private static final AtomicInteger IDS = new AtomicInteger(1000);
 
@@ -137,7 +136,8 @@ class HttpClientNetworkComparisonTest {
                 assertEquals(1, result.modelAttempts(), result.toString());
             }
             if (scenario == Scenario.IDLE_TIMEOUT) {
-                assertEquals(CLIENT.equals("OKHTTP") ? 2 : 1, result.modelAttempts(), result.toString());
+                // JDK HttpClient 的空闲超时是可重试失败，重新建立连接后再成功一次；旧 OkHttp 栈会多算一轮。
+                assertEquals(1, result.modelAttempts(), result.toString());
             }
             if (cancelled) {
                 assertTrue(result.cancellationMillis() < 1000, result.toString());
@@ -196,11 +196,9 @@ class HttpClientNetworkComparisonTest {
 
         @SuppressWarnings("unchecked")
         private Harness(Endpoint endpoint, boolean anthropic) throws Exception {
-            if (CLIENT.equals("OKHTTP")) {
-                context.register(ModelHttpClientConfiguration.class);
-            } else {
-                assertEquals("JDK", CLIENT, "未知连接器不能悄悄退回默认实现");
-            }
+            // 连接器不再可切换：模型调用固定走框架自带的 java.net.http 实现，
+            // OkHttp 工厂（ModelHttpClientConfiguration）已随 LangChain4j 适配器一起退役。
+            assertEquals("JDK", CLIENT, "唯一可用的连接器是 JDK，其他取值不再支持");
             context.register(ModelProviderConfig.class);
             context.refresh();
             String provider = anthropic ? DefaultModelProviderNames.ANTHROPIC_STREAMING : DefaultModelProviderNames.DEFAULT_STREAMING;

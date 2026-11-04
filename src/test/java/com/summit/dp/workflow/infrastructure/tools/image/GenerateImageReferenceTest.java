@@ -2,7 +2,6 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.model.provider.CommonImageModelProvider;
 import com.summit.core.agent.Image;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.api.ChatResponseEntity;
@@ -21,6 +20,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.runtime.workspace.LocalWorkspace;
 import com.sun.net.httpserver.HttpServer;
+import openAi.image.DefaultImageModel;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,10 +33,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
@@ -90,7 +92,7 @@ class GenerateImageReferenceTest {
                     .apiKey("local-test-key").baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
                     .maxRetries(5).imageOptions(new ModelConfig.ImageOptions("low", "1024x1024", Map.of("X-Route", "edits"), 2)).build();
             when(models.runtimeConfig(eq(9L), isNull())).thenReturn(config);
-            when(providers.create(any())).thenAnswer(invocation -> new CommonImageModelProvider().create(invocation.getArgument(0)));
+            when(providers.create(any())).thenAnswer(invocation -> imageModelOf(invocation.getArgument(0)));
             ToolExecuteResult result = executor().execute(call(absolute ? input.toString() : "original.dat"));
             assertTrue(result.isSuccess(), result.getToolOutput());
             assertEquals(1, calls.get());
@@ -192,10 +194,13 @@ class GenerateImageReferenceTest {
             when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
                     .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").apiKey("local-test-key").maxRetries(5)
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1").build());
-            when(providers.create(any())).thenAnswer(invocation -> new CommonImageModelProvider().create(invocation.getArgument(0)));
+            when(providers.create(any())).thenAnswer(invocation -> imageModelOf(invocation.getArgument(0)));
             ToolExecuteResult result = executor().execute(call("ref.png"));
             assertFalse(result.isSuccess());
-            assertTrue(result.getToolOutput().contains("image editing is not supported by this model"), result.getToolOutput());
+            // 真实服务错误原样上抛：HTTP 状态与服务端 error.message 都必须进入文案，且不重试、不退回文字生成。
+            assertTrue(result.getToolOutput()
+                            .contains("Image edits failed with HTTP 400: image editing is not supported by this model"),
+                    result.getToolOutput());
             assertEquals(1, calls.get());
             assertEquals("/v1/images/edits", route.get());
             assertFalse(Files.exists(root.resolve("polished.png")));
@@ -241,6 +246,11 @@ class GenerateImageReferenceTest {
         assertEquals("image/png", reference.mimeType());
         assertArrayEquals(original, Base64.getDecoder().decode(reference.getBase64Data()));
         verify(files).readBytes(path);
+    }
+
+    /** 框架自带的生图实现：对本地 HTTP 端点发真实请求，保证请求体与响应解析都走生产同一份代码。 */
+    private ImageModel imageModelOf(ModelConfig selected) {
+        return new DefaultImageModel(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), mapper, selected);
     }
 
     private GenerateImageToolExecutor executor() {

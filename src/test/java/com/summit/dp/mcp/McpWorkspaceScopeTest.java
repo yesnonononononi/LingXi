@@ -1,7 +1,8 @@
 package com.summit.dp.mcp;
 
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
+import com.summit.core.mcp.McpSession;
+import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.Workspace;
@@ -10,8 +11,7 @@ import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.mcp.client.McpClient;
+import mcp.McpSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,21 +23,23 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 class McpWorkspaceScopeTest {
     private final McpRepository repository = mock(McpRepository.class);
-    private final McpClientFactory factory = mock(McpClientFactory.class);
+    private final McpSessionFactory factory = mock(McpSessionFactory.class);
     private final McpConfigAssembler assembler = new McpConfigAssembler();
     private final McpManager manager = new McpManager(repository, assembler, factory);
     private final Workspace workspace = mock(Workspace.class);
 
     @AfterEach void close() { manager.close(); manager.disconnect(); }
 
-    @Test void isolatedWorkspaceReusesStdioAndHttpConnectionsWithoutOpeningSandboxSessions() throws Exception {
+    @Test void isolatedWorkspaceReusesStdioAndHttpConnectionsWithoutOpeningSandboxSessions() {
         when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().isolated(true).build());
         Mcp stdio = model(1, "stdio"), http = httpModel();
-        McpClient hostStdio = register(stdio), hostHttp = register(http);
+        McpSession hostStdio = register(stdio), hostHttp = register(http);
         for (int i = 0; i < 2; i++) {
             try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(stdio, http), workspace)) {
                 assertNotNull(scope.getTool("mcp_stdio_inspect"));
@@ -45,8 +47,10 @@ class McpWorkspaceScopeTest {
                 assertEquals(List.of("http", "stdio"), scope.serverNames());
             }
         }
-        verify(factory, never()).create(anyString(), any(), any());
-        verify(factory, times(2)).create(anyString(), any());
+        // 池化注册一律「不带工作区 + REUSE」；带工作区的会话一次都不许开（那才是沙箱路径）。
+        verify(factory, times(2)).openSession(any(McpConfig.MCP.class), isNull(),
+                eq(McpSessionType.REUSE), anyString());
+        verify(factory, never()).openSession(any(McpConfig.MCP.class), any(Workspace.class));
         verify(hostStdio, never()).close();
         verify(hostHttp, never()).close();
         verify(workspace, never()).bridge();
@@ -61,16 +65,16 @@ class McpWorkspaceScopeTest {
         verifyNoInteractions(workspace);
     }
 
-    @Test void disabledServiceClosesSharedClientAndOldSnapshotCannotReopenIt() throws Exception {
+    @Test void disabledServiceClosesSharedSessionAndOldSnapshotCannotReopenIt() {
         Mcp model = model(1, "stdio");
-        McpClient shared = register(model);
+        McpSession shared = register(model);
         McpConfig old = config(model);
         model.changeEnabled(false);
         manager.register(model.getId());
         assertTrue(new HostMcpScopeProvider(manager).openScope(old, workspace).isEmpty());
         verify(shared).close();
-        verify(factory, times(1)).create(anyString(), any());
-        verify(factory, never()).create(anyString(), any(), any());
+        verify(factory, times(1)).openSession(any(), any(), any(), anyString());
+        verify(factory, never()).openSession(any(McpConfig.MCP.class), any(Workspace.class));
     }
 
     @Test void workspaceStillReceivesOnlyRequestedServices() {
@@ -95,13 +99,13 @@ class McpWorkspaceScopeTest {
         }
     }
 
-    private McpClient register(Mcp model) {
-        McpClient client = mock(McpClient.class);
+    private McpSession register(Mcp model) {
+        McpSession session = McpSessionFactoryFixture.mockSession(model.getName(), "inspect");
         when(repository.findById(model.getId())).thenReturn(Optional.of(model));
-        when(factory.create(model.getName(), assembler.toServer(model))).thenReturn(client);
-        when(client.listTools()).thenReturn(List.of(ToolSpecification.builder().name("inspect").build()));
+        when(factory.openSession(eq(assembler.toServer(model)), isNull(), any(), anyString()))
+                .thenReturn(session);
         manager.register(model.getId());
-        return client;
+        return session;
     }
     private Mcp model(long id, String name) {
         return Mcp.builder().id(id).name(name).transport(Mcp.Transport.STDIO).command(List.of("node", "server.mjs"))

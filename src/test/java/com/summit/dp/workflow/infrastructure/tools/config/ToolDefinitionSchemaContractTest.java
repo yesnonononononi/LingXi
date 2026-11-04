@@ -2,7 +2,6 @@ package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.codec.tool.ToolCodecAdapter;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.workspace.ShellType;
@@ -14,7 +13,6 @@ import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchTo
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandShell;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
-import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -27,15 +25,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 工具定义里的 parametersJsonSchema 是模型请求的一部分，必须是合法 JSON 且能被 codec 转换。
+ * 工具定义里的 parametersJsonSchema 就是模型请求的一部分，必须是合法 JSON 且是对象型 schema。
  *
  * <p>这类错误编译期发现不了：Java 文本块同样处理转义序列，写成 {@code \"} 只会退化成裸引号，
- * 让 JSON 在运行时解析失败并阻断整批工具请求组装。所以用真实工具定义跑一次解析与转换。</p>
+ * 让 JSON 在运行时解析失败并阻断整批工具请求组装。所以用真实工具定义跑一次解析。</p>
+ *
+ * <p>旧的 {@code ToolCodecAdapter} 已随 LangChain4j 适配器退役；模型请求直接读取
+ * {@link ToolDefinition#parametersJsonSchema()} 与 {@link ToolDefinition#name()}，
+ * 因此契约测试改为直接断言这份 JSON，不再经过中间层。</p>
  */
 class ToolDefinitionSchemaContractTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ToolCodecAdapter codec = new ToolCodecAdapter();
     private final CommonToolConfiguration configuration = new CommonToolConfiguration();
 
     private List<ToolDefinition<?>> allDefinitions() {
@@ -45,14 +46,18 @@ class ToolDefinitionSchemaContractTest {
                 configuration.webSearchToolDefinition(null, new WebSearchToolProperties(), objectMapper));
     }
 
+    /** 每个工具都必须给出可解析的对象型 schema，且工具名与描述可直接进模型请求。 */
     @Test
-    void everyToolSchemaParsesAndConvertsToFrameworkTool() {
+    void everyToolSchemaParsesAsModelFacingJson() {
         for (ToolDefinition<?> definition : allDefinitions()) {
-            assertDoesNotThrow(() -> objectMapper.readTree(definition.parametersJsonSchema()),
+            JsonNode schema = assertDoesNotThrow(() -> objectMapper.readTree(definition.parametersJsonSchema()),
                     () -> "工具 " + definition.name() + " 的 parametersJsonSchema 不是合法 JSON");
-            ToolSpecification specification = assertDoesNotThrow(() -> codec.toFrameworkTool(definition),
-                    () -> "工具 " + definition.name() + " 无法转换为框架工具定义");
-            assertEquals(definition.name(), specification.name());
+            assertTrue(schema.isObject(), () -> "工具 " + definition.name() + " 的 parametersJsonSchema 必须是 JSON 对象");
+            assertTrue(schema.path("properties").isObject(), () -> "工具 " + definition.name() + " 缺少 properties 对象");
+            assertEquals("object", schema.path("type").asText(), () -> "工具 " + definition.name() + " 的 schema 类型必须是 object");
+            assertFalse(definition.name() == null || definition.name().isBlank(), "工具名必须可用于模型请求");
+            assertFalse(definition.description() == null || definition.description().isBlank(),
+                    () -> "工具 " + definition.name() + " 缺少模型可见的描述");
         }
     }
 
@@ -92,8 +97,8 @@ class ToolDefinitionSchemaContractTest {
     @Test
     void modelFacingGuidanceRequiresShellSelectionForEveryIndependentCall() throws Exception {
         ToolDefinition<?> definition = AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(objectMapper));
-        ToolSpecification specification = codec.toFrameworkTool(definition);
-        String description = specification.description();
+        // 旧实现读 codec 转换后的 ToolSpecification.description()；新实现里模型看到的就是 definition.description()。
+        String description = definition.description();
         assertTrue(description.contains("explicitly set shell on every call"));
         assertTrue(description.contains("including calls in the same batch"));
         assertTrue(description.contains("does not inherit shell selection or directory changes"));
@@ -111,7 +116,7 @@ class ToolDefinitionSchemaContractTest {
         ToolDefinition<?> definition = AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(objectMapper));
         Workspace workspace = mock(Workspace.class);
         when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().osType(OsType.WINDOWS).shellType(ShellType.CMD).build());
-        Matcher examples = Pattern.compile("```json\\n(.*?)\\n```", Pattern.DOTALL).matcher(codec.toFrameworkTool(definition).description());
+        Matcher examples = Pattern.compile("```json\\n(.*?)\\n```", Pattern.DOTALL).matcher(definition.description());
         List<ShellType> shells = new ArrayList<>();
         while (examples.find()) {
             ExecuteCommandRequest request = objectMapper.readValue(examples.group(1), ExecuteCommandRequest.class);

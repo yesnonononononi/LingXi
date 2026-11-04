@@ -1,8 +1,8 @@
 package com.summit.dp.context;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.codec.tool.ToolCodecAdapter;
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
+import mcp.McpSessionFactory;
 import com.summit.core.anno.Tool;
 import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.runtime.loop.LoopInterceptor;
@@ -24,7 +24,6 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendM
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
-import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,7 +75,7 @@ class ApplicationContextAssemblyTest {
     }
 
     @Autowired
-    private McpClientFactory clientFactory;
+    private McpSessionFactory clientFactory;
 
     @Autowired
     private ApplicationContext context;
@@ -93,7 +92,7 @@ class ApplicationContextAssemblyTest {
     @Test
     void realMcpInfrastructureLoadsWithoutTheFrameworkGlobalSwitch() {
         assertNotNull(context.getBean(McpAutoConfiguration.class));
-        assertEquals(1, context.getBeansOfType(McpClientFactory.class).size());
+        assertEquals(1, context.getBeansOfType(McpSessionFactory.class).size());
         assertFalse(mockingDetails(clientFactory).isMock());
         assertEquals(1, context.getBeansOfType(ScopeMcpProvider.class).size());
         assertTrue(context.getBean(ScopeMcpProvider.class) instanceof HostMcpScopeProvider);
@@ -158,16 +157,22 @@ class ApplicationContextAssemblyTest {
         assertTrue(definitions.size() >= 10, "静态装配的工具数量异常，实际=" + definitions.keySet());
 
         ObjectMapper objectMapper = context.getBean(ObjectMapper.class);
-        ToolCodecAdapter codec = new ToolCodecAdapter();
         List<String> names = new ArrayList<>();
         definitions.forEach((beanName, definition) -> {
-            assertDoesNotThrow(() -> objectMapper.readTree(definition.parametersJsonSchema()),
+            JsonNode schema = assertDoesNotThrow(() -> objectMapper.readTree(definition.parametersJsonSchema()),
                     () -> "工具 " + beanName + " 的参数 Schema 不是合法 JSON");
-            ToolSpecification specification = assertDoesNotThrow(() -> codec.toFrameworkTool(definition),
-                    () -> "工具 " + beanName + " 无法转换为框架工具定义");
-            assertEquals(definition.name(), specification.name());
+            // 旧实现把定义经 ToolCodecAdapter 转成框架工具 spec 后再比对名字；codec 已随 LangChain4j 退役，
+            // 模型请求现在直接读 ToolDefinition 自身，因此改为断言同一组「模型面契约」：
+            // schema 是对象型 + 工具名非空，且名字与定义一一对应（末尾还断言名字不重不丢）。
+            assertTrue(schema.isObject(), () -> "工具 " + beanName + " 的参数 Schema 必须是 JSON 对象");
+            assertEquals("object", schema.path("type").asText(), () -> "工具 " + beanName + " 的 Schema 类型必须是 object");
+            assertTrue(schema.path("properties").isObject(), () -> "工具 " + beanName + " 的 Schema 缺少 properties 对象");
+            assertFalse(definition.name() == null || definition.name().isBlank(),
+                    () -> "工具 " + beanName + " 的模型面名字不能为空");
             names.add(definition.name());
         });
+        assertEquals(definitions.size(), new TreeSet<>(names).size(),
+                "模型侧工具名必须与工具定义一一对应，不允许重名或丢失，实际=" + names);
 
         assertTrue(names.containsAll(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
                         ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,

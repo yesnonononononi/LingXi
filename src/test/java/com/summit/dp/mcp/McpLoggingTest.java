@@ -22,7 +22,9 @@ import org.springframework.boot.logging.LoggingInitializationContext;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,9 +49,10 @@ class McpLoggingTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "dev.langchain4j.mcp.client.DefaultMcpClient",
-            "dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport",
-            "com.summit.adapter.langchain4j.mcp.Langchain4jMcpSession",
+            "mcp.McpSessionFactory",
+            "mcp.transport.McpStdioTransportBuilder",
+            "io.modelcontextprotocol.client.McpSyncClient",
+            "io.modelcontextprotocol.client.transport.StdioClientTransport",
             "com.summit.dp.mcp.infrastructure.McpManager"
     })
     void consoleAndFileRenderOnlyMcpExceptionMessage(String loggerName) throws Exception {
@@ -59,10 +62,12 @@ class McpLoggingTest {
         context.getLogger(loggerName).warn("MCP health check failed", failure);
 
         for (String output : readOutputs()) {
-            assertTrue(output.endsWith("MCP health check failed, error=connection unavailable" + System.lineSeparator()), output);
+            // A 修复后的契约：外层消息打头，再按「 <- 类名: 消息」补 cause 链；
+            // 仍然只有一行、不带堆栈，且不写 suppressed（这里不展开兄弟异常）。
+            assertTrue(output.endsWith("MCP health check failed, error=connection unavailable"
+                    + " <- java.lang.IllegalArgumentException: nested cause detail" + System.lineSeparator()), output);
             assertEquals(1, output.lines().count(), output);
             assertFalse(output.contains("IllegalStateException"), output);
-            assertFalse(output.contains("nested cause detail"), output);
             assertFalse(output.contains("suppressed detail"), output);
             assertFalse(output.contains("\tat "), output);
         }
@@ -82,7 +87,7 @@ class McpLoggingTest {
 
     @Test
     void mcpLogWithoutExceptionDoesNotAppendAnError() throws Exception {
-        context.getLogger("dev.langchain4j.mcp.client.DefaultMcpClient").warn("Protocol detection timed out");
+        context.getLogger("mcp.McpSessionFactory").warn("Protocol detection timed out");
 
         for (String output : readOutputs()) {
             assertTrue(output.endsWith("Protocol detection timed out" + System.lineSeparator()), output);
@@ -92,7 +97,7 @@ class McpLoggingTest {
 
     @Test
     void mcpInfoGoesOnlyToConsoleAndRoutingKeepsOriginalFailure() throws Exception {
-        Logger logger = context.getLogger("dev.langchain4j.mcp.client.DefaultMcpClient");
+        Logger logger = context.getLogger("mcp.McpSessionFactory");
         ListAppender<ILoggingEvent> originalEvents = new ListAppender<>();
         originalEvents.start();
         logger.addAppender(originalEvents);
@@ -106,6 +111,36 @@ class McpLoggingTest {
         for (String output : readOutputs()) {
             assertEquals(1, output.lines().filter(line -> line.contains("MCP health check failed")).count(), output);
             assertFalse(output.contains("\tat "), output);
+        }
+    }
+
+    @Test
+    void messageAppenderKeepsTheCauseChainSoAnInitializationFailureStaysDiagnosable() {
+        ExceptionMessageAppender appender = new ExceptionMessageAppender();
+        ListAppender<ILoggingEvent> output = new ListAppender<>();
+        appender.setContext(context);
+        output.start();
+        appender.addAppender(output);
+        appender.start();
+        try {
+            // 真实故障形状：外层只说“初始化失败”，根因在两三层之下（握手被断、读超时）。
+            IllegalStateException failure = new IllegalStateException(
+                    "Client failed to initialize by explicit API call",
+                    new IOException("handshake closed", new SocketTimeoutException("Read timed out")));
+            LoggingEvent source = new LoggingEvent(getClass().getName(), context.getLogger("mcp.McpSessionFactory"),
+                    Level.WARN, "MCP server github connection failed", failure, new Object[]{});
+            appender.doAppend(source);
+
+            assertEquals(1, output.list.size());
+            String rendered = output.list.getFirst().getFormattedMessage();
+            assertTrue(rendered.startsWith("MCP server github connection failed, error="), rendered);
+            assertTrue(rendered.contains("Client failed to initialize by explicit API call"), rendered);
+            assertTrue(rendered.contains("java.io.IOException: handshake closed"), rendered);
+            assertTrue(rendered.contains("java.net.SocketTimeoutException: Read timed out"), rendered);
+            assertFalse(rendered.contains("\tat "), rendered);
+        } finally {
+            appender.stop();
+            output.stop();
         }
     }
 

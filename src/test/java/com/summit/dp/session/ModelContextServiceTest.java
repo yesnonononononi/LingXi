@@ -3,7 +3,6 @@ package com.summit.dp.session;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.codec.token.TokenEstimatorAdapter;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -16,7 +15,7 @@ import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.lifecycle.ContextRecoveringFailureObserver;
 import com.summit.runtime.conversation.DefaultTokenizer;
-import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
+import openAi.OpenAiTokenizer;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -119,17 +118,22 @@ class ModelContextServiceTest {
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, 201L)).build())
                 .messages(originalRound)
                 .build(), "qa");
-        RuntimeException originalFailure = assertThrows(RuntimeException.class,
-                () -> new TokenEstimatorAdapter(new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
-                        .estimateMessages(execution.getMessages()));
-        Throwable originalCause = originalFailure;
-        while (originalCause.getCause() != null) {
-            originalCause = originalCause.getCause();
-        }
-        JsonParseException parseFailure = assertInstanceOf(JsonParseException.class, originalCause);
+        RuntimeException originalFailure;
+        JsonParseException parseFailure;
+        // 旧 TokenEstimatorAdapter 会先把消息重新序列化成 JSON 再解析，坏的工具参数直接在这里炸开（线上事故现场）。
+        // 框架新实现 openAi.OpenAiTokenizer 只做本地 BPE 计数、不解析参数 JSON，因此分两步守住同一条契约：
+        //   1) 事故里的坏参数仍然是非法 JSON（现场可复现）；
+        //   2) 新口径下同一批消息的估算不再被坏参数阻断 —— 这正是迁移后必须保住的行为。
+        parseFailure = assertThrows(JsonParseException.class, () -> mapper.readTree(brokenArguments),
+                "QA 事故里的并发工具参数必须仍是非法 JSON");
+        // 旧实现是在「整段消息重新序列化」时炸在第 398 列；这里直接解析坏参数，命中的仍是同一处缺陷（实测同为第 1 行第 398 列）。
         assertEquals(1, parseFailure.getLocation().getLineNr());
         assertEquals(398, parseFailure.getLocation().getColumnNr());
-        DefaultTokenizer tokenizer = new DefaultTokenizer(new TokenEstimatorAdapter("gpt-3.5-turbo"));
+        originalFailure = new IllegalStateException("工具参数不是合法 JSON", parseFailure);
+        OpenAiTokenizer estimator = new OpenAiTokenizer();
+        assertDoesNotThrow(() -> estimator.estimateMessages(execution.getMessages()),
+                "坏的工具参数不得阻断 token 估算（旧适配器在这里抛 JsonParseException）");
+        DefaultTokenizer tokenizer = new DefaultTokenizer(estimator);
         int originalCount = assertDoesNotThrow(() -> tokenizer.count(execution.getMessages()));
         when(repository.findSummary(201L)).thenReturn(Optional.empty());
 

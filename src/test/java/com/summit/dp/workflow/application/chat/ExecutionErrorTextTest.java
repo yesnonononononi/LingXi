@@ -11,6 +11,10 @@ class ExecutionErrorTextTest {
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
             "dev.langchain4j.exception.TimeoutException: java.net.http.HttpTimeoutException: request timed out|request timed out",
+            // LangChain4j 模型适配器退役后，线上异常换成了框架自有类型：同一套剥离规则必须继续成立。
+            "com.summit.core.exception.RetriableModelException: java.net.http.HttpTimeoutException: request timed out|request timed out",
+            "com.summit.core.exception.NonRetriableModelException: Model request failed with HTTP 401|Model request failed with HTTP 401",
+            "com.summit.core.exception.RetriableModelException|执行异常",
             "java.util.concurrent.CompletionException: java.lang.RuntimeException: request timed out|request timed out",
             "java.io.IOException: Failed: https://example.test:8443|Failed: https://example.test:8443",
             "Service unavailable: retry at https://example.test:8443|Service unavailable: retry at https://example.test:8443",

@@ -1,7 +1,7 @@
 package com.summit.dp.mcp;
 
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
+import com.summit.core.mcp.McpSession;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
@@ -11,8 +11,7 @@ import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
 import com.summit.dp.shared.exception.ClientException;
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.mcp.client.McpClient;
+import mcp.McpSessionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +28,7 @@ class McpLiveConfigurationTest {
 
     private final Map<Long, Mcp> records = new HashMap<>();
     private final McpRepository repository = mock(McpRepository.class);
-    private final McpClientFactory factory = mock(McpClientFactory.class);
+    private final McpSessionFactory factory = mock(McpSessionFactory.class);
     private final McpConfigAssembler assembler = new McpConfigAssembler();
     private final McpManager manager = new McpManager(repository, assembler, factory);
     private final McpServiceImpl service = new McpServiceImpl(repository, new McpValidator(repository),
@@ -68,19 +67,19 @@ class McpLiveConfigurationTest {
         return command;
     }
 
-    private McpClient client(String name) {
-        McpClient client = mock(McpClient.class);
-        when(client.listTools()).thenReturn(List.of(ToolSpecification.builder().name(name).build()));
+    /** 配置必须先落库再连接：openSession 被调用时库里必须已经有这条记录。 */
+    private McpSession session(String serverName, String toolName) {
+        McpSession session = McpSessionFactoryFixture.mockSession(serverName, toolName);
         doAnswer(invocation -> {
             assertFalse(records.isEmpty(), "连接之前配置必须已经保存");
-            return client;
-        }).when(factory).create(anyString(), any());
-        return client;
+            return session;
+        }).when(factory).openSession(any(McpConfig.MCP.class), isNull(), any(), anyString());
+        return session;
     }
 
     @Test
-    void addImmediatelyMakesToolAvailableForNextRequestWithoutRestart() throws Exception {
-        McpClient client = client("inspect");
+    void addImmediatelyMakesToolAvailableForNextRequestWithoutRestart() {
+        McpSession session = session("test-server", "inspect");
         manager.connect();
         service.add(command());
 
@@ -90,17 +89,17 @@ class McpLiveConfigurationTest {
             assertNotNull(scope.getTool("mcp_test-server_inspect"));
         }
         verify(repository).save(saved);
-        verify(client).listTools();
+        verify(session).tools();
         manager.close();
     }
 
     @Test
-    void updateDisableEnableAndDeleteSynchronizePool() throws Exception {
-        McpClient original = client("original");
+    void updateDisableEnableAndDeleteSynchronizePool() {
+        McpSession original = session("test-server", "original");
         service.add(command());
         Long id = records.keySet().iterator().next();
 
-        McpClient replacement = client("replacement");
+        McpSession replacement = session("renamed", "replacement");
         McpCommand update = new McpCommand();
         update.setId(id);
         update.setName("renamed");
@@ -120,7 +119,7 @@ class McpLiveConfigurationTest {
         assertNull(service.currentConfig());
         verify(replacement).close();
 
-        McpClient enabled = client("enabled");
+        McpSession enabled = session("renamed", "enabled");
         McpCommand enable = new McpCommand();
         enable.setId(id);
         enable.setStatus(Mcp.STATUS_ENABLED);
@@ -137,13 +136,14 @@ class McpLiveConfigurationTest {
 
     @Test
     void connectionFailureReportsPersistedConfigurationAndCanBeRetriedBySaving() {
-        when(factory.create(anyString(), any())).thenThrow(new IllegalStateException("unreachable"));
+        when(factory.openSession(any(McpConfig.MCP.class), isNull(), any(), anyString()))
+                .thenThrow(new IllegalStateException("unreachable"));
         ClientException failure = assertThrows(ClientException.class, () -> service.add(command()));
         assertTrue(failure.getMessage().contains("配置已保存"));
         assertEquals(1, records.size());
         assertTrue(manager.openScope(service.currentConfig()).isEmpty());
 
-        client("recovered");
+        session("test-server", "recovered");
         McpCommand retry = new McpCommand();
         retry.setId(records.keySet().iterator().next());
         service.update(retry);

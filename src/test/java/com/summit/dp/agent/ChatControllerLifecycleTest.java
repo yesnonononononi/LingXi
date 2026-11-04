@@ -4,8 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
-import com.summit.adapter.langchain4j.model.StreamingChatModelAdapter;
+import mcp.McpSessionFactory;
 import com.summit.core.agent.Execution;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.ModelRetryConfig;
@@ -15,7 +14,9 @@ import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.TokenUsageEntity;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.RequestModelInvokerFactory;
+import com.summit.core.model.streaming.StreamingChatModel;
 import com.summit.core.runtime.loop.suspension.ExecutionInterruptedException;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -40,8 +41,11 @@ import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.runtime.model.DefaultChatModelInvoker;
 import com.summit.runtime.model.DefaultStreamingModelInvoker;
 import com.sun.net.httpserver.HttpServer;
-import dev.langchain4j.http.client.okhttp.OkHttpClient;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import openAi.DefaultChatModel;
+import openAi.MessageSerializer;
+import openAi.ModelChatResolver;
+import openAi.RequestBodyFactory;
+import openAi.ResponseSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +56,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -95,7 +100,7 @@ class ChatControllerLifecycleTest {
     @Autowired private ExecutionMapper executions;
     @Autowired private MessageRepository messages;
     @Autowired private ChatTurnRepository turns;
-    @MockitoBean private McpClientFactory mcp;
+    @MockitoBean private McpSessionFactory mcp;
     @MockitoBean private RequestModelInvokerFactory modelFactory;
     @MockitoBean private ModelService models;
     @MockitoBean private SettingsProvider settings;
@@ -139,10 +144,15 @@ class ChatControllerLifecycleTest {
             server.createContext("/", exchange -> StreamingRetryContractTest.respond(exchange, "OPENAI_SSE", false,
                     requests.incrementAndGet(), retrySeen));
             server.start();
-            StreamingChatModelAdapter model = new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder()
-                    .httpClientBuilder(OkHttpClient.builder())
+            // 模型侧改用框架自有实现：LangChain4j 适配器（StreamingChatModelAdapter）已退役。
+            // 其余断言（请求次数、终态、token、事件）沿用原样，这段只换模型构造。
+            StreamingChatModel model = new DefaultChatModel(ModelConfig.builder()
+                    .provider(DefaultModelProviderNames.DEFAULT_STREAMING)
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
-                    .apiKey("test").modelName("controlled-model").timeout(Duration.ofSeconds(3)).build());
+                    .apiKey("test").modelName("controlled-model").timeout(Duration.ofSeconds(3)).build(),
+                    new ModelChatResolver(new RequestBodyFactory(new MessageSerializer(mapper), mapper), mapper,
+                            new ResponseSerializer()),
+                    HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build());
             when(modelFactory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection(
                     "default-streaming", new DefaultStreamingModelInvoker(model), true));
             Long sessionId = sessions.initialize("流式重试闭环验证", null, null).getData();

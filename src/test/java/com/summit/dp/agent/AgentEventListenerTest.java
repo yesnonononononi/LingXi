@@ -320,6 +320,24 @@ class AgentEventListenerTest {
         assertEquals(original, event.getErrMsg());
     }
 
+    /** 适配器退役后线上异常换成框架自有类型：同一套「去掉类名前缀」规则必须继续成立。 */
+    @Test
+    @DisplayName("框架自有异常同样去掉类名前缀")
+    void stripsFrameworkExceptionPrefixesBeforeBroadcast() {
+        resolveRootExecution();
+        String original = "com.summit.core.exception.RetriableModelException: java.net.http.HttpTimeoutException: request timed out";
+        ExecutionErrorEvent event = new ExecutionErrorEvent(original, null, EXECUTION_ID,
+                Map.of("turnId", Long.toString(TURN_ID)));
+
+        listener.onExecutionError(event);
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("EXECUTION_FAILED"), payload.capture());
+        assertEquals("request timed out", payload.getValue().path("errMsg").asText());
+        assertEquals(EXECUTION_ID, payload.getValue().path("executionId").asText());
+        assertEquals(original, event.getErrMsg());
+    }
+
     /** 失败 / 取消与完成同口径：都只广播。 */
     @Test
     @DisplayName("根执行失败 / 取消：照常广播到根会话")

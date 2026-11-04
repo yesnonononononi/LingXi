@@ -4,16 +4,17 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
+import com.summit.core.mcp.McpSession;
+import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
+import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
 import com.summit.dp.shared.exception.ClientException;
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.mcp.client.McpClient;
+import mcp.McpSessionFactory;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -36,7 +37,7 @@ class McpManagerTest {
     void startupReadsConfigurationOnlyAfterApplicationReady() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.registerBean(McpRepository.class, () -> repository);
-            context.registerBean(McpClientFactory.class, () -> factory);
+            context.registerBean(McpSessionFactory.class, () -> factory);
             context.registerBean(McpConfigAssembler.class, () -> assembler);
             context.register(McpManager.class);
             context.refresh();
@@ -50,7 +51,7 @@ class McpManagerTest {
     }
 
     private final McpRepository repository = mock(McpRepository.class);
-    private final McpClientFactory factory = mock(McpClientFactory.class);
+    private final McpSessionFactory factory = mock(McpSessionFactory.class);
     private final McpConfigAssembler assembler = new McpConfigAssembler();
     private final McpManager manager = new McpManager(repository, assembler, factory);
 
@@ -61,13 +62,17 @@ class McpManagerTest {
                 .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
     }
 
-    private McpClient client(Mcp model, String toolName) {
-        McpClient client = mock(McpClient.class);
+    /**
+     * 编排「这个 id 已入库，连接池会拿到一个带 {@code mcp_<server>_<tool>} 工具会话」的现场。
+     *
+     * <p>工具的本地前缀由框架统一生成，期望名就在这里显式拼出来，别让测试依赖被测代码的拼接逻辑。</p>
+     */
+    private McpSession session(Mcp model, String... remoteTools) {
+        McpSession session = McpSessionFactoryFixture.mockSession(model.getName(), remoteTools);
         when(repository.findById(model.getId())).thenReturn(Optional.of(model));
-        when(factory.create(model.getName(), assembler.toServer(model))).thenReturn(client);
-        when(client.listTools()).thenReturn(List.of(ToolSpecification.builder().name(toolName)
-                .description(toolName).build()));
-        return client;
+        when(factory.openSession(eq(assembler.toServer(model)), isNull(), eq(McpSessionType.REUSE), anyString()))
+                .thenReturn(session);
+        return session;
     }
 
     private McpConfig config(Mcp... models) {
@@ -77,9 +82,9 @@ class McpManagerTest {
     }
 
     @Test
-    void registerPublishesToolsWithoutRequestTimeIoAndScopeDoesNotCloseSharedClient() throws Exception {
+    void registerPublishesToolsWithoutRequestTimeIoAndScopeDoesNotCloseSharedSession() {
         Mcp model = model(1L, "first");
-        McpClient client = client(model, "inspect");
+        McpSession session = session(model, "inspect");
         manager.register(1L);
         manager.register(1L);
 
@@ -90,33 +95,61 @@ class McpManagerTest {
         try (McpToolScope scope = manager.openScope(config(model))) {
             assertNotNull(scope.getTool("mcp_first_inspect"));
         }
-        verify(client, times(1)).listTools();
-        verify(factory, times(1)).create(anyString(), any());
-        verify(client, never()).close();
+        // 工具定义随连接发布：请求阶段不再访问远端，也不重复建立共享连接。
+        verify(session, times(1)).tools();
+        verify(factory, times(1)).openSession(eq(assembler.toServer(model)), isNull(),
+                eq(McpSessionType.REUSE), anyString());
+        verify(session, never()).close();
         manager.close();
         manager.close();
-        verify(client, times(1)).close();
+        verify(session, times(1)).close();
+    }
+
+    /** 共享会话报给「运维视角」的必须是服务端原名，不能是带前缀的模型可见名。 */
+    @Test
+    void pooledSessionReportsServerToolNamesWhilePublishingPrefixedTools() throws Exception {
+        Mcp model = model(1L, "first");
+        McpSession session = session(model, "inspect", "search");
+        manager.register(1L);
+
+        McpSession pooled = pooledSessionOf(1L);
+        assertEquals(List.of("inspect", "search"), pooled.serverToolNames());
+        assertEquals(List.of("mcp_first_inspect", "mcp_first_search"),
+                pooled.tools().stream().map(ToolDefinition::name).toList());
+        // 委托给真正的会话，而不是自己从前缀工具名反推。
+        verify(session, times(1)).serverToolNames();
+        manager.close();
+    }
+
+    /**
+     * 连接池内部类型是私有 record，只能反射取出来验证；这是唯一能观测「池化会话报什么名字」的缝。
+     */
+    @SuppressWarnings("unchecked")
+    private McpSession pooledSessionOf(Long id) throws Exception {
+        java.lang.reflect.Field field = McpManager.class.getDeclaredField("sessions");
+        field.setAccessible(true);
+        return ((java.util.Map<Long, McpSession>) field.get(manager)).get(id);
     }
 
     @Test
-    void removeClosesClientAndNextScopeDoesNotContainItsTools() throws Exception {
+    void removeClosesSessionAndNextScopeDoesNotContainItsTools() {
         Mcp model = model(1L, "first");
-        McpClient client = client(model, "inspect");
+        McpSession session = session(model, "inspect");
         manager.register(1L);
         manager.remove(1L);
         manager.remove(1L);
 
         assertTrue(manager.openScope(config(model)).isEmpty());
-        verify(client, times(1)).close();
+        verify(session, times(1)).close();
     }
 
     @Test
-    void updateReplacesRenamedConnectionAndRejectsOldRequestConfig() throws Exception {
+    void updateReplacesRenamedConnectionAndRejectsOldRequestConfig() {
         Mcp original = model(1L, "first");
-        McpClient oldClient = client(original, "old_tool");
+        McpSession oldSession = session(original, "old_tool");
         manager.register(1L);
         Mcp changed = model(1L, "renamed");
-        McpClient newClient = client(changed, "new_tool");
+        McpSession newSession = session(changed, "new_tool");
         manager.register(1L);
 
         assertTrue(manager.openScope(config(original)).isEmpty());
@@ -125,47 +158,47 @@ class McpManagerTest {
             assertNotNull(scope.getTool("mcp_renamed_new_tool"));
             assertEquals(List.of("renamed"), scope.serverNames());
         }
-        verify(oldClient).close();
-        verify(newClient, never()).close();
+        verify(oldSession).close();
+        verify(newSession, never()).close();
         manager.close();
     }
 
     @Test
-    void disableRemovesExistingConnectionWithoutConnectingAgain() throws Exception {
+    void disableRemovesExistingConnectionWithoutConnectingAgain() {
         Mcp model = model(1L, "first");
-        McpClient client = client(model, "inspect");
+        McpSession session = session(model, "inspect");
         manager.register(1L);
         model.changeEnabled(false);
         manager.register(1L);
 
         assertTrue(manager.openScope(config(model)).isEmpty());
-        verify(factory, times(1)).create(anyString(), any());
-        verify(client).close();
+        verify(factory, times(1)).openSession(any(), any(), any(), anyString());
+        verify(session).close();
     }
 
     @Test
-    void discoveryFailureClosesCandidateAndRemovesStaleConnection() throws Exception {
+    void discoveryFailureClosesCandidateAndRemovesStaleConnection() {
         Mcp original = model(1L, "first");
-        McpClient oldClient = client(original, "old_tool");
+        McpSession oldSession = session(original, "old_tool");
         manager.register(1L);
         Mcp changed = model(1L, "changed");
-        McpClient brokenClient = client(changed, "new_tool");
-        when(brokenClient.listTools()).thenThrow(new IllegalStateException("secret=do-not-expose"));
+        McpSession broken = session(changed, "new_tool");
+        when(broken.tools()).thenThrow(new IllegalStateException("secret=do-not-expose"));
 
         ClientException failure = assertThrows(ClientException.class, () -> manager.register(1L));
         assertTrue(failure.getMessage().contains("配置已保存"));
         assertFalse(failure.getMessage().contains("do-not-expose"));
         assertTrue(manager.openScope(config(original, changed)).isEmpty());
-        verify(oldClient).close();
-        verify(brokenClient).close();
+        verify(oldSession).close();
+        verify(broken).close();
     }
 
     /** 内部异常链保留原始原因，面向用户的文案不暴露内部细节。 */
     @Test
     void discoveryFailureKeepsOriginalCauseForDiagnosis() {
         Mcp model = model(1L, "first");
-        McpClient brokenClient = client(model, "inspect");
-        when(brokenClient.listTools()).thenThrow(new IllegalStateException("secret=do-not-expose"));
+        McpSession broken = session(model, "inspect");
+        when(broken.tools()).thenThrow(new IllegalStateException("secret=do-not-expose"));
 
         ClientException failure = assertThrows(ClientException.class, () -> manager.register(1L));
 
@@ -183,7 +216,7 @@ class McpManagerTest {
     }
 
     @Test
-    void connectionFailuresLogOnlyTheirMessages() throws Exception {
+    void connectionFailuresAreLoggedWithTheirThrowable() throws Exception {
         Logger logger = (Logger) LoggerFactory.getLogger(McpManager.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -191,7 +224,10 @@ class McpManagerTest {
         try {
             Mcp broken = model(1L, "broken");
             when(repository.findById(1L)).thenReturn(Optional.of(broken));
-            when(factory.create(eq("broken"), any())).thenThrow(new IllegalStateException("connection unavailable"));
+            when(factory.openSession(eq(assembler.toServer(broken))))
+                    .thenThrow(new IllegalStateException("connection unavailable"));
+            when(factory.openSession(eq(assembler.toServer(broken)), isNull(), any(), anyString()))
+                    .thenThrow(new IllegalStateException("connection unavailable"));
 
             assertThrows(ClientException.class, () -> manager.connect(assembler.toServer(broken)));
             assertThrows(ClientException.class, () -> manager.register(1L));
@@ -200,21 +236,25 @@ class McpManagerTest {
             manager.disconnect();
 
             Mcp closing = model(2L, "closing");
-            McpClient client = client(closing, "inspect");
-            doThrow(new IllegalStateException("close unavailable")).when(client).close();
+            McpSession session = session(closing, "inspect");
+            doThrow(new IllegalStateException("close unavailable")).when(session).close();
             manager.register(2L);
             manager.remove(2L);
 
             List<ILoggingEvent> warnings = appender.list.stream()
                     .filter(event -> event.getLevel() == Level.WARN).toList();
-            assertEquals(6, warnings.size());
+            // 首次 + 两次启动重试：测试连接 1、注册 3、初始化 1、关闭 1。
+            assertEquals(7, warnings.size());
             for (ILoggingEvent event : warnings) {
-                assertNull(event.getThrowableProxy(), event.getFormattedMessage());
+                // 必须把 throwable 交给 logback：MCP 专用 appender 靠它渲染「<- 类名: 消息」，
+                // 只拼 getMessage() 会让 SDK 的通用句吞掉 SSL/超时这些真因。
+                assertNotNull(event.getThrowableProxy(), event.getFormattedMessage());
+                assertFalse(event.getFormattedMessage().contains("connection unavailable"), event.getFormattedMessage());
             }
-            assertEquals("测试 MCP 连接失败: name=broken, error=connection unavailable", warnings.getFirst().getFormattedMessage());
-            assertEquals("注册 MCP 连接失败: id=1, name=broken, error=connection unavailable", warnings.get(1).getFormattedMessage());
-            assertTrue(warnings.get(4).getFormattedMessage().startsWith("初始化 MCP 连接失败: id=1, name=broken, error="));
-            assertEquals("关闭 MCP 连接失败: name=closing, error=Failed to close MCP client of server 'closing'",
+            assertEquals("测试 MCP 连接失败: name=broken", warnings.getFirst().getFormattedMessage());
+            assertEquals("注册 MCP 连接失败: id=1, name=broken", warnings.get(1).getFormattedMessage());
+            assertTrue(warnings.get(5).getFormattedMessage().startsWith("初始化 MCP 连接失败: id=1, name=broken"));
+            assertEquals("关闭 MCP 连接失败: name=closing",
                     warnings.getLast().getFormattedMessage());
         } finally {
             logger.detachAppender(appender);
@@ -222,6 +262,21 @@ class McpManagerTest {
             manager.disconnect();
             manager.close();
         }
+    }
+
+    /** SSE 已无可用的客户端传输：必须在装配阶段就拒绝，且不建立任何连接。 */
+    @Test
+    void sseTransportIsRejectedDuringAssemblyWithoutOpeningSession() {
+        Mcp sse = Mcp.builder().id(3L).name("legacy-sse").transport(Mcp.Transport.SSE)
+                .url("https://legacy.test/sse").headers(Map.of()).status(Mcp.STATUS_ENABLED).build();
+        when(repository.findById(3L)).thenReturn(Optional.of(sse));
+
+        ClientException failure = assertThrows(ClientException.class, () -> manager.register(3L));
+
+        assertEquals("SSE 传输不受支持，请改用 streamable-http", failure.getMessage());
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+        verifyNoInteractions(factory);
+        manager.close();
     }
 
     @Test
@@ -232,8 +287,9 @@ class McpManagerTest {
         Mcp broken = model(1L, "broken");
         Mcp healthy = model(2L, "healthy");
         when(repository.findById(1L)).thenReturn(Optional.of(broken));
-        when(factory.create(eq("broken"), any())).thenThrow(new IllegalStateException("unreachable"));
-        client(healthy, "inspect");
+        when(factory.openSession(eq(assembler.toServer(broken)), isNull(), any(), anyString()))
+                .thenThrow(new IllegalStateException("unreachable"));
+        session(healthy, "inspect");
         when(repository.findEnabled()).thenReturn(List.of(broken, healthy));
         assertDoesNotThrow(() -> { manager.connect(); });
         // 启动连接在后台执行，先等待任务落定再检查连接池。
@@ -247,13 +303,13 @@ class McpManagerTest {
     @Test
     void startupRetriesTransientFailureAndPublishesTools() {
         Mcp model = model(1L, "flaky");
-        McpClient client = mock(McpClient.class);
+        McpSession session = mock(McpSession.class);
         when(repository.findById(1L)).thenReturn(Optional.of(model));
-        when(client.listTools()).thenReturn(List.of(ToolSpecification.builder()
-                .name("inspect").description("inspect").build()));
-        when(factory.create(eq("flaky"), any()))
+        when(session.name()).thenReturn("flaky");
+        when(session.tools()).thenReturn(McpSessionFactoryFixture.prefixedTools("flaky", "inspect"));
+        when(factory.openSession(eq(assembler.toServer(model)), isNull(), any(), anyString()))
                 .thenThrow(new IllegalStateException("first attempt fails"))
-                .thenReturn(client);
+                .thenReturn(session);
         when(repository.findEnabled()).thenReturn(List.of(model));
 
         manager.connect();
@@ -262,23 +318,24 @@ class McpManagerTest {
         try (McpToolScope scope = manager.openScope(config(model))) {
             assertNotNull(scope.getTool("mcp_flaky_inspect"));
         }
-        verify(factory, times(2)).create(eq("flaky"), any());
+        verify(factory, times(2)).openSession(eq(assembler.toServer(model)), isNull(), any(), anyString());
         manager.close();
     }
 
     @Test
-    void startupGivesUpAfterSingleRetry() {
+    void startupGivesUpAfterTwoRetries() {
         Mcp model = model(1L, "dead");
         when(repository.findById(1L)).thenReturn(Optional.of(model));
-        when(factory.create(eq("dead"), any())).thenThrow(new IllegalStateException("always fails"));
+        when(factory.openSession(eq(assembler.toServer(model)), isNull(), any(), anyString()))
+                .thenThrow(new IllegalStateException("always fails"));
         when(repository.findEnabled()).thenReturn(List.of(model));
 
         manager.connect();
         manager.disconnect();
 
         assertTrue(manager.openScope(config(model)).isEmpty());
-        // 只补一次：退化成无限重试会把启动拖成几分钟。
-        verify(factory, times(2)).create(eq("dead"), any());
+        // 首次 + 两次重试：握手中断这类瞬态失败重试即成功，再多退化成把启动拖成几分钟。
+        verify(factory, times(3)).openSession(eq(assembler.toServer(model)), isNull(), any(), anyString());
         manager.close();
     }
 
@@ -286,8 +343,8 @@ class McpManagerTest {
     void requestConfigurationFiltersProcessPool() {
         Mcp first = model(1L, "first");
         Mcp second = model(2L, "second");
-        client(first, "first_tool");
-        client(second, "second_tool");
+        session(first, "first_tool");
+        session(second, "second_tool");
         manager.register(1L);
         manager.register(2L);
 
@@ -303,14 +360,18 @@ class McpManagerTest {
     void slowRegistrationOfOneServerDoesNotBlockAnother() throws Exception {
         Mcp slow = model(1L, "slow");
         Mcp fast = model(2L, "fast");
-        McpClient slowClient = client(slow, "slow_tool");
-        client(fast, "fast_tool");
+        McpSession slowSession = mock(McpSession.class);
+        when(repository.findById(1L)).thenReturn(Optional.of(slow));
+        when(slowSession.name()).thenReturn("slow");
+        when(slowSession.tools()).thenReturn(McpSessionFactoryFixture.prefixedTools("slow", "slow_tool"));
+        when(repository.findById(2L)).thenReturn(Optional.of(fast));
+        session(fast, "fast_tool");
         CountDownLatch slowEntered = new CountDownLatch(1);
         CountDownLatch releaseSlow = new CountDownLatch(1);
-        when(factory.create(eq("slow"), any())).thenAnswer(invocation -> {
+        when(factory.openSession(eq(assembler.toServer(slow)), isNull(), any(), anyString())).thenAnswer(invocation -> {
             slowEntered.countDown();
             assertTrue(releaseSlow.await(10, TimeUnit.SECONDS));
-            return slowClient;
+            return slowSession;
         });
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
@@ -334,16 +395,19 @@ class McpManagerTest {
     @Test
     void slowRegistrationDoesNotBlockRequestScope() throws Exception {
         Mcp ready = model(1L, "ready");
-        client(ready, "ready_tool");
+        session(ready, "ready_tool");
         manager.register(1L);
         Mcp slow = model(2L, "slow");
-        McpClient slowClient = client(slow, "slow_tool");
+        McpSession slowSession = mock(McpSession.class);
+        when(repository.findById(2L)).thenReturn(Optional.of(slow));
+        when(slowSession.name()).thenReturn("slow");
+        when(slowSession.tools()).thenReturn(McpSessionFactoryFixture.prefixedTools("slow", "slow_tool"));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        when(factory.create("slow", assembler.toServer(slow))).thenAnswer(invocation -> {
+        when(factory.openSession(eq(assembler.toServer(slow)), isNull(), any(), anyString())).thenAnswer(invocation -> {
             entered.countDown();
             assertTrue(release.await(5, TimeUnit.SECONDS));
-            return slowClient;
+            return slowSession;
         });
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {

@@ -2,7 +2,6 @@ package com.summit.dp.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.model.provider.OpenAiChatModelProvider;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.api.ToolCallRequest;
@@ -11,6 +10,8 @@ import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.model.ModelChatCommand;
 import com.summit.core.model.ModelInvoker;
+import com.summit.core.model.DefaultModelProviderNames;
+import com.summit.core.model.ModelProvider;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.model.chat.ChatModel;
@@ -24,6 +25,11 @@ import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.runtime.model.DefaultRequestModelInvokerFactory;
 import com.sun.net.httpserver.HttpServer;
+import openAi.DefaultChatModel;
+import openAi.MessageSerializer;
+import openAi.ModelChatResolver;
+import openAi.RequestBodyFactory;
+import openAi.ResponseSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,6 +39,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -177,7 +184,7 @@ class PromptOptimizationTest {
                     .apiKey("test-key").modelName("text-model").build();
             when(models.runtimeConfig(7L, current)).thenReturn(config);
             ModelProviderRegistry<ChatModel> chats = new ModelProviderRegistry<>();
-            chats.register(new OpenAiChatModelProvider());
+            chats.register(openAiChatProvider());
             ModelProviderRegistry<StreamingChatModel> streams = new ModelProviderRegistry<>();
             PromptOptimizationService wired = new PromptOptimizationService(models, settings,
                     new DefaultRequestModelInvokerFactory("default", config, chats, streams));
@@ -198,5 +205,29 @@ class PromptOptimizationTest {
 
     private static ChatResponseEntity response(String text) {
         return ChatResponseEntity.builder().aiMessageEntity(AiMessageEntity.builder().text(text).build()).build();
+    }
+
+    /**
+     * 框架自带的 OpenAI 协议 chat provider。
+     *
+     * <p>旧实现是 {@code OpenAiChatModelProvider}（已随 LangChain4j 适配器退役）；
+     * 现在生产环境注册进 {@code ModelProviderRegistry} 的是 harness-net 的 {@link DefaultChatModel}，
+     * 这里直接构造同一实现，保证断言打到真实线上请求体。</p>
+     */
+    private static ModelProvider<ChatModel> openAiChatProvider() {
+        return new ModelProvider<>() {
+            @Override
+            public String name() {
+                return DefaultModelProviderNames.DEFAULT;
+            }
+
+            @Override
+            public ChatModel create(ModelConfig config) {
+                ObjectMapper mapper = new ObjectMapper();
+                return new DefaultChatModel(config,
+                        new ModelChatResolver(new RequestBodyFactory(new MessageSerializer(mapper), mapper), mapper, new ResponseSerializer()),
+                        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());
+            }
+        };
     }
 }

@@ -1,7 +1,6 @@
 package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.adapter.langchain4j.model.provider.CommonImageModelProvider;
 import com.summit.core.agent.Image;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.api.ChatResponseEntity;
@@ -17,6 +16,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.runtime.workspace.LocalWorkspace;
 import com.sun.net.httpserver.HttpServer;
+import openAi.image.DefaultImageModel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,9 +28,11 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -73,7 +75,7 @@ class GenerateImageMaskTest {
             when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
                     .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").apiKey("test-key")
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1").build());
-            when(providers.create(any())).thenAnswer(invocation -> new CommonImageModelProvider().create(invocation.getArgument(0)));
+            when(providers.create(any())).thenAnswer(invocation -> imageModelOf(invocation.getArgument(0)));
             ToolExecuteResult result = executor().execute(call(arguments()));
             assertTrue(result.isSuccess(), result.getToolOutput());
             assertEquals("/v1/images/edits", route.get());
@@ -139,6 +141,11 @@ class GenerateImageMaskTest {
         assertEquals(95, mapper.valueToTree(result.getToolMetaData().get(GenerateImageInterceptor.USAGE)).path("totalTokens").asInt());
         verify(model).edit(any(Image.class), any(Image.class), eq("保留轮廓，润色蒙版区域"),
                 eq(new ImageGenerationOptions("1024x1024", null, 1, background, format)));
+    }
+
+    /** 框架自带的生图实现：对本地 HTTP 端点发真实请求，蒙版必须真的进入 multipart 请求体。 */
+    private ImageModel imageModelOf(ModelConfig selected) {
+        return new DefaultImageModel(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), mapper, selected);
     }
 
     private GenerateImageToolExecutor executor() {

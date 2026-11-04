@@ -122,6 +122,19 @@ class ChatTurnRuntimeListenerTest {
         assertEquals(original, event.getErrMsg());
     }
 
+    /** 适配器退役后线上异常换成框架自有类型：写进轮次的仍是剥掉类名后的可读原因。 */
+    @Test
+    @DisplayName("框架自有异常同样只保留可读原因")
+    void stripsFrameworkExceptionPrefixesBeforeRecordingReason() {
+        String original = "com.summit.core.exception.RetriableModelException: java.net.http.HttpTimeoutException: request timed out";
+        ExecutionErrorEvent event = new ExecutionErrorEvent(original, null, "1001");
+
+        listener.onExecutionError(event);
+
+        verify(chatTurnService).recordFailureReason("1001", "request timed out", null);
+        assertEquals(original, event.getErrMsg());
+    }
+
     @Test
     @DisplayName("文案兜底：errMsg 缺失取 extraDes，两者皆空取常量，绝不写空原因")
     void fallsBackToExtraDesThenConstant() {
