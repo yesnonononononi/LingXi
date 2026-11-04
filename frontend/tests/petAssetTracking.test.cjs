@@ -1,12 +1,14 @@
 'use strict';
 /**
- * 桌宠美术资产的**入库守卫**（纯 Node，零依赖，离线可跑）。
+ * 桌宠美术资产的**入库守卫**（纯 Node，离线可跑；唯一外部依赖是 node_modules 里的 `js-yaml`——
+ * 它是 electron-builder 那条链的传递依赖，`frontend/tests` 里已有三处测试按同样方式取用它，
+ * 这里只用来解析 CI workflow 的 `paths`，取不到会显式失败而不是跳过）。
  *
  * <p><b>它守的是什么缺陷：</b>`.gitignore` 曾经整目录忽略 `docs/`，而桌宠全部美术资产住在
  * `docs/assets/desktop-pet/`。历史批次靠人工 `git add -f` 一个个塞进索引，于是出现
  * "交付了但不可复现"——`companion/v1/tools/` 的三个脚本在磁盘上存在，
  * `git ls-files` 与 `git status --untracked-files=all` 都**看不见**它们。
- * M2 还有 9 个批次（lie/sleep/walk/run/jump/play/edge/side/mini），每批都会重赌一次。</p>
+ * M2 的 9 个批次里 lie/sleep/walk/run 已陆续交付入库，剩下 jump/play/edge/side/mini，每批都会重赌一次。</p>
  *
  * <p><b>为什么用 `git check-ignore --no-index`：</b>不带 `--no-index` 时 git 会先查索引，
  * 已跟踪文件永远"不被忽略"，于是"把 .gitignore 改回 docs/"这种回退**测不出来**。
@@ -36,7 +38,8 @@
  * <p>注意：真正"交付了但不可复现"的原始缺陷（被 `.gitignore` 吞掉）走的是上面那条
  * `check-ignore --no-index` 断言，**不受任何白名单或模式影响**，永远硬失败。</p>
  *
- * <p><b>为什么还要一条"历史"断言：</b>{@link DELIVERED_PREFIXES} 是手工清单，M2 还有 9 个批次，
+ * <p><b>为什么还要一条"历史"断言：</b>{@link DELIVERED_PREFIXES} 是手工清单，M2 还剩 5 个批次
+ *（jump/play/edge/side/mini），
  * 每漏加一条，该批次的"整批清空"就会降级成一行 `console.log`——在几百行测试输出里没人看得见。
  * 所以再加一条：磁盘上有文件、索引里整批为空、**但 git 历史里出现过该路径** ⇒ 硬失败
  * （历史出现过 = 确实交付过，索引为空只可能是被清空或前缀漏加）。历史为空的新批次仍然只警告，
@@ -109,15 +112,17 @@ const TRACKING_WHITELIST = [];
  * <ul>
  *   <li>已交付并登记：`poses/sit/`（M2 首批）、`poses/lie/`（`dbd1d524`，28 文件）、
  *       `poses/sleep/`（`860090ca` 首帧 + `e1dd42bc` 补呼吸/惊醒/蜷睡三帧，24 文件）、
- *       `poses/walk/`（`8f4d1bbd`，8 帧 / 32 文件）、`companion/`（`613ba7c8`，云灵 v1）。</li>
- *   <li>尚未交付、<b>故意不预先登记</b>：run / jump / play / edge / side / mini。
+ *       `poses/walk/`（`8f4d1bbd`，8 帧 / 32 文件）、
+ *       `poses/run/`（`a360777d`，12 帧 / 44 文件 = 12 母版@2x + 12 source/generated + 12 source/native
+ *       + 5 tools + manifest.json + README.md + 1 qa 评审图）、`companion/`（`613ba7c8`，云灵 v1）。</li>
+ *   <li>尚未交付、<b>故意不预先登记</b>：jump / play / edge / side / mini。
  *       预先加进来的坏处是：这些批次"历史为空 + 0 tracked"会被"已交付批次整批缺失"判成失败，
  *       把一个正常在产状态误报成缺陷。交付后再加，逐批补。</li>
  * </ul>
  *
  * @type {string[]}
  */
-const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'poses/walk/', 'companion/'];
+const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'poses/walk/', 'poses/run/', 'companion/'];
 
 /**
  * 是否把"在产批次（整批未入库）"的警告升级为失败。
@@ -804,4 +809,119 @@ test('平台无关：修好后的 petLayerAssets.test.ts 必须不在豁免清�
     `petLayerAssets.test.ts 里仍有盘符字面量（第 ${hits.map((hit) => hit.line).join('、')} 行）：`
       + '改成用 path.win32 / path.posix 分别构造夹具',
   );
+});
+
+// ---------------------------------------------------------------- CI 触发面（workflow paths）守卫
+
+/**
+ * Frontend CI 的 workflow 文件（仓库相对路径，正斜杠）。
+ *
+ * <p><b>为什么它归本文件守：</b>资产入库守卫（`git check-ignore --no-index`）的规则真源是仓库根
+ * `.gitignore`，而它对资产树的门禁（`gate:pet` / `test:pet` / `check-pet-not-shipped`）挂在
+ * Frontend CI 上。**只要 workflow 的 `paths` 漏一条，整套门禁就在那条缝里一条都不跑**——
+ * 守卫看着在、其实没人执行。这是"静默退化"的另一种形态，必须由断言点出来，不能靠人记得。</p>
+ *
+ * @type {string}
+ */
+const FRONTEND_CI_REL = '.github/workflows/frontend-ci.yml';
+
+/**
+ * 取 `js-yaml`（YAML 解析器）。
+ *
+ * <p>`js-yaml` 不是本仓的直接依赖（是 electron-builder 那条链的传递依赖），`frontend/tests` 里已有
+ * 三处测试按同样方式取用它。这里两条解析路径都试，都取不到就**显式失败**：跳过等于把
+ * "没校验"伪装成"通过"，正是本文件一直在防的东西。</p>
+ *
+ * @returns {{load: (text: string, options?: object) => unknown}} js-yaml 模块
+ * @throws {Error} 两条路径都取不到时
+ */
+function loadYaml() {
+  /** @type {Array<() => unknown>} */
+  const loaders = [
+    () => require('js-yaml'),
+    () => require(path.join(FRONTEND_ROOT, 'node_modules', 'js-yaml')),
+  ];
+  /** @type {string[]} */
+  const failures = [];
+  for (const load of loaders) {
+    try {
+      return /** @type {{load: (text: string, options?: object) => unknown}} */ (load());
+    } catch (error) {
+      failures.push(String(error && error.message ? error.message : error).split('\n')[0]);
+    }
+  }
+  throw new Error(`缺少 js-yaml，无法校验 CI 触发面（请把它加进 frontend/package.json 的 devDependencies）：${failures.join(' | ')}`);
+}
+
+/**
+ * 读一个 workflow 文件并返回它解析后的对象。
+ *
+ * <p><b>YAML 1.1 的坑：</b>裸写 `on:` 在某些解析器/模式下会被当成布尔键 `true`。三种形态都兜，
+ * 免得"读不到 on"被误判成"没有触发器"（那会让断言变成真空过）。</p>
+ *
+ * @param {string} relPath 仓库相对路径（正斜杠）
+ * @returns {Record<string, any>} workflow 文档对象
+ */
+function readWorkflow(relPath) {
+  const file = path.join(REPO_ROOT, ...relPath.split('/'));
+  assert.equal(fs.existsSync(file), true, `找不到 workflow：${relPath}`);
+  const parsed = loadYaml().load(fs.readFileSync(file, 'utf8'));
+  assert.ok(parsed && typeof parsed === 'object', `${relPath} 解析后不是对象`);
+  return /** @type {Record<string, any>} */ (parsed);
+}
+
+/**
+ * 取 workflow 的 `on` 触发器对象（裸 `on` 可能被解析成布尔键 `true`）。
+ *
+ * @param {Record<string, any>} doc workflow 文档对象
+ * @param {string} relPath 仓库相对路径（仅用于报错文案）
+ * @returns {Record<string, any>} 触发器对象
+ */
+function readWorkflowTriggers(doc, relPath) {
+  const triggers = doc.on ?? doc[true] ?? doc['true'];
+  assert.ok(triggers && typeof triggers === 'object' && !Array.isArray(triggers),
+    `${relPath} 里读不到 on 触发器（裸 on 会被 YAML 1.1 解析成布尔键 true，三种形态都试过了）`);
+  return /** @type {Record<string, any>} */ (triggers);
+}
+
+test('触发面：资产与 .gitignore 变更都必须命中 Frontend CI 的 paths（push / pull_request 两处）', () => {
+  const triggers = readWorkflowTriggers(readWorkflow(FRONTEND_CI_REL), FRONTEND_CI_REL);
+  /** 两处 paths 都必须包含的条目；每条后面写清"缺了会怎样"。 */
+  const required = [
+    ['frontend/**', '缺了则前端源码改动不跑 CI（原有条目，不许删）'],
+    ['.github/workflows/frontend-ci.yml', '缺了则改 workflow 自身不跑 CI，改坏也没人验（原有条目，不许删）'],
+    ['docs/assets/desktop-pet/**', '缺了则"只改桌宠资产"的提交整套门禁一条不跑（a33afaf9 就是这样漏掉的）'],
+    ['.gitignore', '缺了则改坏 desktop-pet 例外规则也不跑这条守卫（本文件的规则真源就是它）'],
+  ];
+  for (const eventName of ['push', 'pull_request']) {
+    const event = triggers[eventName];
+    assert.ok(event && typeof event === 'object', `${FRONTEND_CI_REL} 缺 ${eventName} 触发器`);
+    const paths = event.paths;
+    assert.ok(Array.isArray(paths), `${eventName}.paths 必须是数组，实际 ${JSON.stringify(paths)}`);
+    for (const [entry, why] of required) {
+      assert.ok(paths.includes(entry),
+        `${eventName}.paths 必须包含 '${entry}'：${why}。当前：${paths.join(' / ')}`);
+    }
+  }
+});
+
+test('触发面：命中 paths 之后必须真的跑门禁与测试，且顺序在 build 之前（早失败）', () => {
+  const doc = readWorkflow(FRONTEND_CI_REL);
+  const build = doc.jobs && doc.jobs.build;
+  assert.ok(build && Array.isArray(build.steps) && build.steps.length > 0,
+    `${FRONTEND_CI_REL} 的 build job 必须要有步骤（否则上面的 paths 断言全是真空过）`);
+  const runs = build.steps.map((step) => String((step && step.run) || ''));
+  const indexOf = (needle) => runs.findIndex((run) => run.includes(needle));
+  const gate = indexOf('npm run gate:pet');
+  const tests = indexOf('npm run test:pet');
+  const shipped = indexOf('check-pet-not-shipped.mjs');
+  const buildStep = indexOf('npm run build');
+  assert.ok(gate >= 0, 'build job 必须执行 `npm run gate:pet`：资产/清单与磁盘失配必须挡在这里');
+  assert.ok(tests >= 0, 'build job 必须执行 `npm run test:pet`：133+ 条 pet 用例（含本文件）必须进 CI');
+  assert.ok(shipped >= 0, 'build job 必须执行 `node scripts/check-pet-not-shipped.mjs`：安装版不含桌宠入口只能靠产物级守卫证明');
+  assert.ok(buildStep >= 0, 'build job 必须执行 `npm run build`');
+  assert.ok(gate < buildStep, `gate:pet 必须排在 build 之前（当前 gate=${gate} build=${buildStep}）：早失败比晚失败好`);
+  assert.ok(tests < buildStep, `test:pet 必须排在 build 之前（当前 test=${tests} build=${buildStep}）`);
+  assert.ok(shipped > buildStep,
+    `check-pet-not-shipped 必须排在 build 之后（当前 build=${buildStep} shipped=${shipped}）：顺序反了等于用旧产物自证`);
 });
