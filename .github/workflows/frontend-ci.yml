@@ -14,6 +14,10 @@ on:
       # 缺这一条就会出现「只改资产 ⇒ 整套桌宠门禁一条不跑」的缝（a33afaf9 新增 poses/run 29 个文件即如此）。
       # 一条前缀即可覆盖所有批次：不需要逐批列举，将来新增批次也不必改本文件。
       - 'docs/assets/desktop-pet/**'
+      # 仓库根 .gitignore 是这份资产守卫的**规则真源**：`tests/petAssetTracking.test.cjs` 用
+      # `git check-ignore --no-index` 断言 desktop-pet 的例外规则（把规则退回 `docs/` 会立刻变红）。
+      # 它不在 frontend/ 下，若不写这一条，"只改 .gitignore"的提交会让那条守卫静默不执行。
+      - '.gitignore'
   pull_request:
     branches: [develop, main]
     paths:
@@ -21,6 +25,8 @@ on:
       - '.github/workflows/frontend-ci.yml'
       # 与 push 同源：资产批次变更必须过同一套桌宠门禁，PR 上不能比推送更松。
       - 'docs/assets/desktop-pet/**'
+      # 同上：.gitignore 是资产守卫的规则真源，PR 里改它同样要跑这条守卫。
+      - '.gitignore'
 
 # 同一分支/PR 重复触发时，取消进行中的旧任务，避免浪费 Actions 额度
 concurrency:
