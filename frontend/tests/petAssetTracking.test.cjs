@@ -107,15 +107,17 @@ const TRACKING_WHITELIST = [];
  *
  * <p><b>M2 批次登记进度</b>（任务书顺序：lie → sleep → walk → run → jump → play → edge → side → mini）：</p>
  * <ul>
- *   <li>已交付并登记：`poses/sit/`（M2 首批）、`poses/lie/`（`dbd1d524`，28 文件）。</li>
- *   <li>尚未交付、<b>故意不预先登记</b>：sleep / walk / run / jump / play / edge / side / mini。
+ *   <li>已交付并登记：`poses/sit/`（M2 首批）、`poses/lie/`（`dbd1d524`，28 文件）、
+ *       `poses/sleep/`（`860090ca` 首帧 + `e1dd42bc` 补呼吸/惊醒/蜷睡三帧，24 文件）、
+ *       `poses/walk/`（`8f4d1bbd`，8 帧 / 32 文件）、`companion/`（`613ba7c8`，云灵 v1）。</li>
+ *   <li>尚未交付、<b>故意不预先登记</b>：run / jump / play / edge / side / mini。
  *       预先加进来的坏处是：这些批次"历史为空 + 0 tracked"会被"已交付批次整批缺失"判成失败，
  *       把一个正常在产状态误报成缺陷。交付后再加，逐批补。</li>
  * </ul>
  *
  * @type {string[]}
  */
-const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'companion/'];
+const DELIVERED_PREFIXES = ['v1/', 'v2/', 'v3/', 'v4/', 'p1/', 'poses/sit/', 'poses/lie/', 'poses/sleep/', 'poses/walk/', 'companion/'];
 
 /**
  * 是否把"在产批次（整批未入库）"的警告升级为失败。
