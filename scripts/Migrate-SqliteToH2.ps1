@@ -29,6 +29,16 @@
 
 $ErrorActionPreference = 'Stop'
 
+# 子进程输出会被 Java 侧按 UTF-8 解码（DevelopmentInitializationTest 用 new String(bytes, UTF_8) 读日志），
+# 而 Windows PowerShell 5.1 默认按控制台/OEM 代码页输出；中文报错到 CI 上就只剩 "??????"，
+# 等于没有诊断信息。这里显式把控制台输出编码（stdout 与 stderr 同源）改成无 BOM 的 UTF-8。
+# 设不上也不致命（例如没有控制台句柄时），所以 try/catch 兜住，不能因为编码设置失败把迁移弄挂。
+try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+} catch {
+    # 忽略：输出编码设置失败只影响可读性，不影响迁移正确性
+}
+
 # 一次性迁移工具启动器：解析 jar、强制显式 --source/--target、规范化路径、禁区拒绝，再调用工具。
 # 为什么校验要在这里也做一遍：脚本是人的入口，宁可脚本先拒（退出码 3、一个文件都不建），
 # 也不要让工具跑了半路才发现路径写错；工具侧仍保留同一套判定，作为最后一道闸。
@@ -54,9 +64,35 @@ function Resolve-JavaExecutable([string]$Name) {
 }
 
 # 本地仓库解析顺序与 Initialize-Development.ps1 保持一致，避免两套脚本各说各话。
+# 解析时把"看过哪些位置、结论是什么"记下来：迁移失败时必须能一眼看出它到底找过哪里
+# （CI 上就是这种情况——本地仓库不在 ~/.m2，而在构建的隔离仓库里）。
+$script:RepositorySearchLog = New-Object 'System.Collections.Generic.List[string]'
+
+function Add-RepositorySearchNote([string]$Note) {
+    $script:RepositorySearchLog.Add($Note) | Out-Null
+}
+
+# 读 settings.xml 前先剥掉 XML 注释。
+# 为什么必须剥：Maven 发行版自带的 conf/settings.xml 里就有被注释掉的示例
+# `<localRepository>/path/to/local/repo</localRepository>`；不剥注释会把它当成真实配置
+# （实测：CI 条件下一路解析成 `D:\path\to\local\repo`，把"缺 jar"的结论指向一个不存在的位置）。
+function Read-SettingsWithoutComments([string]$Path) {
+    $raw = [System.IO.File]::ReadAllText($Path)
+    return [System.Text.RegularExpressions.Regex]::Replace($raw, '(?s)<!--.*?-->', '')
+}
+
 function Resolve-LocalRepository {
-    if ($LocalRepository) { return [System.IO.Path]::GetFullPath($LocalRepository) }
-    if ($env:MAVEN_REPO_LOCAL) { return [System.IO.Path]::GetFullPath($env:MAVEN_REPO_LOCAL) }
+    if ($LocalRepository) {
+        $full = [System.IO.Path]::GetFullPath($LocalRepository)
+        Add-RepositorySearchNote "参数 -LocalRepository 指定 → $full"
+        return $full
+    }
+    if ($env:MAVEN_REPO_LOCAL) {
+        $full = [System.IO.Path]::GetFullPath($env:MAVEN_REPO_LOCAL)
+        Add-RepositorySearchNote "环境变量 MAVEN_REPO_LOCAL → $full"
+        return $full
+    }
+    Add-RepositorySearchNote '未传 -LocalRepository 且没有 MAVEN_REPO_LOCAL → 退到 settings.xml / ~/.m2（构建期隔离仓库在这条路径上看不见）'
     $settingsCandidates = @((Join-Path $env:USERPROFILE '.m2/settings.xml'))
     foreach ($homeVariable in @($env:MAVEN_HOME, $env:M2_HOME)) {
         if ($homeVariable) { $settingsCandidates += (Join-Path $homeVariable 'conf/settings.xml') }
@@ -66,14 +102,26 @@ function Resolve-LocalRepository {
     if ($mavenCommand) {
         $mavenRoot = Split-Path -Parent (Split-Path -Parent $mavenCommand.Source)
         $settingsCandidates += (Join-Path $mavenRoot 'conf/settings.xml')
+    } else {
+        Add-RepositorySearchNote 'PATH 里没有 mvn.cmd / mvn → 少一处 settings.xml 候选（CI 用的就是仓库 wrapper）'
     }
     foreach ($settingsPath in $settingsCandidates) {
-        if (-not (Test-Path -LiteralPath $settingsPath)) { continue }
-        $match = Select-String -LiteralPath $settingsPath -Pattern '<localRepository>\s*([^<]+?)\s*</localRepository>' |
-            Select-Object -First 1
-        if ($match) { return [System.IO.Path]::GetFullPath($match.Matches[0].Groups[1].Value) }
+        if (-not (Test-Path -LiteralPath $settingsPath)) {
+            Add-RepositorySearchNote "settings 候选不存在: $settingsPath"
+            continue
+        }
+        $settingsText = Read-SettingsWithoutComments $settingsPath
+        $match = [System.Text.RegularExpressions.Regex]::Match($settingsText, '<localRepository>\s*([^<]+?)\s*</localRepository>')
+        if ($match.Success) {
+            $configured = [System.IO.Path]::GetFullPath($match.Groups[1].Value)
+            Add-RepositorySearchNote "$settingsPath 的 <localRepository>（已剥注释）→ $configured"
+            return $configured
+        }
+        Add-RepositorySearchNote "$settingsPath 存在但没有生效的 <localRepository>（注释里的示例不算）"
     }
-    return (Join-Path $env:USERPROFILE '.m2/repository')
+    $fallback = Join-Path $env:USERPROFILE '.m2/repository'
+    Add-RepositorySearchNote "兜底（默认本地仓库）→ $fallback"
+    return $fallback
 }
 
 # pom.xml 里固定的版本；读不到就返回空串（由调用方退化为「取本地仓库里最新的 jar」）。
@@ -92,6 +140,43 @@ function Resolve-FirstExistingJar([string[]]$Candidates) {
     return ''
 }
 
+# 依赖解析失败的**可诊断**报告：期望目录/期望文件 + 实际搜索过的位置 + 三条显式修法。
+# 为什么必须这么啰嗦：CI 上这条失败以前只输出 "expected: <0> but was: <1>"（迁移子进程的非 0
+# 退出码被折叠成一句断言），既看不出缺哪个 jar，也看不出脚本找过哪些仓库 —— 排查成本极高。
+function Format-JarResolutionFailure([string]$FlagName, [string]$GroupPath, [string]$ArtifactId, [string]$PomTag, [string]$ExpectedDir) {
+    $pinned = Read-PomVersion $PomTag
+    $expectedJar = if ($pinned) {
+        Join-Path $ExpectedDir "$pinned/$ArtifactId-$pinned.jar"
+    } else {
+        Join-Path $ExpectedDir "$ArtifactId-<version>.jar"
+    }
+    $searchLines = if ($script:RepositorySearchLog.Count -gt 0) {
+        ($script:RepositorySearchLog | ForEach-Object { "      - $_" }) -join [Environment]::NewLine
+    } else {
+        '      - （没有记录：解析在写日志前就结束了）'
+    }
+    $explicitFlag = switch ($GroupPath) {
+        'com/h2database/h2' { '-H2Jar' }
+        'org/xerial/sqlite-jdbc' { '-SqliteJdbcJar' }
+        default { $FlagName }
+    }
+    $lines = @(
+        "找不到依赖 $ArtifactId 的 jar：本地仓库里没有 $GroupPath 目录。",
+        "  期望目录: $ExpectedDir",
+        "  期望文件: $expectedJar",
+        '  本地仓库解析过程（脚本实际搜索/采用过的位置，从上到下就是优先级）:',
+        $searchLines,
+        "  如何显式指定（三选一，都优先于环境变量与自动解析）:",
+        "    1) -LocalRepository <本地仓库根目录>        （例如构建用的隔离仓库 .run/maven/<hash>）",
+        "    2) 环境变量 MAVEN_REPO_LOCAL=<本地仓库根目录>",
+        "    3) $explicitFlag <jar 的绝对路径>",
+        "  说明: CI 上依赖只落在构建的隔离仓库里（.run/maven/<hash>），~/.m2/repository 是空的；",
+        "        frontend/scripts/maven-runtime.mjs 会把该隔离仓库以 MAVEN_REPO_LOCAL 传给本脚本。",
+        "  本地复跑: 先 mvn -o test 拉一次依赖，或用上面的方式显式指定。"
+    )
+    return ($lines -join [Environment]::NewLine)
+}
+
 function Resolve-DependencyJar([string]$FlagName, [string]$Explicit, [string]$GroupPath, [string]$ArtifactId, [string]$PomTag) {
     if ($Explicit) {
         $full = [System.IO.Path]::GetFullPath($Explicit)
@@ -100,7 +185,7 @@ function Resolve-DependencyJar([string]$FlagName, [string]$Explicit, [string]$Gr
     }
     $versionRoot = Join-Path $script:RepositoryResolved $GroupPath
     if (-not (Test-Path -LiteralPath $versionRoot)) {
-        Write-Fail "本地 Maven 仓库里没有 ${ArtifactId}: $versionRoot（先执行一次 mvn -o test 拉取依赖，或用 $FlagName 指定）" $script:ExitInvalidArgument
+        Write-Fail (Format-JarResolutionFailure $FlagName $GroupPath $ArtifactId $PomTag $versionRoot) $script:ExitInvalidArgument
     }
     $pinned = Read-PomVersion $PomTag
     $candidates = @()
@@ -110,7 +195,9 @@ function Resolve-DependencyJar([string]$FlagName, [string]$Explicit, [string]$Gr
     $jar = Get-ChildItem -LiteralPath $versionRoot -Recurse -Filter "$ArtifactId-*.jar" -File |
         Where-Object { $_.Name -notlike '*-sources.jar' -and $_.Name -notlike '*-javadoc.jar' } |
         Sort-Object FullName -Descending | Select-Object -First 1
-    if (-not $jar) { Write-Fail "本地 Maven 仓库里找不到 $ArtifactId 的 jar: $versionRoot" $script:ExitInvalidArgument }
+    if (-not $jar) {
+        Write-Fail (Format-JarResolutionFailure $FlagName $GroupPath $ArtifactId $PomTag $versionRoot) $script:ExitInvalidArgument
+    }
     return $jar.FullName
 }
 
@@ -221,7 +308,11 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Fail '编译迁移工具失败' $script:ExitInvalidArgument }
 
     $classpath = "$classesDir$([System.IO.Path]::PathSeparator)$h2JarPath$([System.IO.Path]::PathSeparator)$sqliteJarPath"
-    $toolArguments = @('-cp', $classpath, 'SqliteToH2Migration',
+    # 迁移工具的告警/失败原因同样是人要读的诊断信息：显式让它按 UTF-8 输出。
+    # 否则 Windows 上它按 OEM 代码页写中文，Java 侧（按 UTF-8 读日志）看到的就是 ??????。
+    # 这两个属性只影响控制台输出编码，不改变业务语义（JDK 19+ 支持）。
+    $toolArguments = @('-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8',
+        '-cp', $classpath, 'SqliteToH2Migration',
         '--source', $sourceFull,
         '--target', $targetFull,
         '--repo-root', $script:RepoRootResolved,
