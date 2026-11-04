@@ -10,6 +10,17 @@
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 本脚本的输出会被 Java 侧按 UTF-8 解码（DevelopmentInitializationTest 用 new String(bytes, UTF_8)
+# 读子进程日志），而 Windows PowerShell 5.1 默认按控制台/OEM 代码页输出；中文报错到 CI 上就只剩
+# "??????"。这里把控制台输出编码（stdout 与 stderr 同源）设成无 BOM 的 UTF-8；
+# 设不上也不致命（例如没有控制台句柄），所以 try/catch 兜住。
+try {
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+} catch {
+    # 忽略：只影响输出可读性，不影响初始化正确性
+}
+
 function Get-Sha256File([string]$Path) {
     $stream = [System.IO.File]::OpenRead($Path)
     $algorithm = [System.Security.Cryptography.SHA256]::Create()
@@ -45,9 +56,12 @@ function Resolve-LocalRepository {
     }
     foreach ($settingsPath in $settingsCandidates) {
         if (-not (Test-Path -LiteralPath $settingsPath)) { continue }
-        $match = Select-String -LiteralPath $settingsPath -Pattern '<localRepository>\s*([^<]+?)\s*</localRepository>' |
-            Select-Object -First 1
-        if ($match) { return [System.IO.Path]::GetFullPath($match.Matches[0].Groups[1].Value) }
+        # 先剥 XML 注释：Maven 发行版自带的 conf/settings.xml 里有被注释掉的示例
+        # `<localRepository>/path/to/local/repo</localRepository>`，不剥注释会把它当成真实配置。
+        $rawSettings = [System.IO.File]::ReadAllText($settingsPath)
+        $settingsText = [System.Text.RegularExpressions.Regex]::Replace($rawSettings, '(?s)<!--.*?-->', '')
+        $match = [System.Text.RegularExpressions.Regex]::Match($settingsText, '<localRepository>\s*([^<]+?)\s*</localRepository>')
+        if ($match.Success) { return [System.IO.Path]::GetFullPath($match.Groups[1].Value) }
     }
     return (Join-Path $env:USERPROFILE '.m2/repository')
 }
@@ -172,7 +186,14 @@ try {
         $snapshotDirectory = Join-Path $stage 'snapshot'
         New-Item -ItemType Directory -Path $snapshotDirectory -Force | Out-Null
         $snapshotTarget = Join-Path $snapshotDirectory 'lingxi.sqlite'
-        $snapshotOutput = & $javaExecutable -cp "$classesDir$([System.IO.Path]::PathSeparator)$jdbcJar" `
+        # -Dstdout/stderr.encoding：让子 JVM 按 UTF-8 输出（与本脚本的输出编码一致），
+        # 否则它按 OEM 代码页写中文，Java 侧按 UTF-8 读日志就只剩 ??????。只影响输出编码。
+        #
+        # 必须用数组 splat 传这批参数：Windows PowerShell 5.1 会把裸写的 `-Dstdout.encoding=UTF-8`
+        # 拆成 `-Dstdout` + `.encoding=UTF-8` 两段，java 于是把后者当成主类名，
+        # 报 "Could not find or load main class .encoding=UTF-8"（实测踩过）。
+        $snapshotJvmArguments = @('-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8')
+        $snapshotOutput = & $javaExecutable @snapshotJvmArguments -cp "$classesDir$([System.IO.Path]::PathSeparator)$jdbcJar" `
             SqliteSnapshot --source $databasePath --target $snapshotTarget
         if ($LASTEXITCODE -ne 0) { throw '库快照生成失败，未启用开发目录。' }
         $snapshotLine = ($snapshotOutput | Select-Object -Last 1)
