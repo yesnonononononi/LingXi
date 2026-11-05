@@ -781,20 +781,41 @@ export function frameOf(batch: PoseBatch, frameId: string): PoseFrame | null {
 /**
  * 判断某姿态在运行时**是否可播**（`playable` 的唯一判据）。
  *
- * <p>三个条件缺一不可：①批次存在；②在 `accepted[]` 里（工程侧显式登记）；
- * ③至少有一条片段，其帧全部齐全<b>且</b>每帧所用朝向在 `bodyAnchor.byFacing` 里声明过
- * （`jump` 右向帧在产时就会出现"有帧没锚"，此时该片段判不可播，绝不拿左向帧镜像冒充）。</p>
+ * <p>四个条件缺一不可：①批次存在；②在 `accepted[]` 里（工程侧显式登记）；
+ * ③<b>批级锚点不是画布镜像推导</b>（`byFacingSource !== 'mirror-derived'`）；
+ * ④至少有一条片段，其帧全部齐全且每帧所用朝向在 `bodyAnchor.byFacing` 里声明过。</p>
+ *
+ * <p><b>为什么判据③必须显式写出来（这是本轮修掉的一个"空门"）：</b>旧注释说
+ * "缺锚 ⇒ 该朝向不可播"，但 `scripts/pet-pose-adapters.mjs` 的 `normalizeBodyAnchor` 在缺某个朝向时
+ * 会**自动补 `nativeCanvas.width − x` 的镜像推导锚**，于是 `byFacing` 归一化后永远两键齐全，
+ * `anchor !== undefined` 这道判据在实现上永远成立。而 `byFacingSource` 是**批级**的，
+ * 无法区分"哪一侧是推导的"——所以口径只能是整批拒绝：</p>
+ *
+ * <p><b>镜像同时镜像锚点 ⇒ 落点对、内容错</b>：这一朝向的实测躯干质心从来没人量过，
+ * 尾巴把 bbox 拉偏时镜像值可偏 20+ native（`run`/`jump` 的左右锚差 20.72 CSS 就是本质差异，
+ * 不是标定误差）。批级信息不够区分左右，那就宁可整批不播（降级 `stand`）也不要点错位置——
+ * 不播是看得见的空白/站姿，点错位置是"看起来在动但整个人歪着"。</p>
  *
  * @param poses 清单
  * @param posture 姿态 id
+ * @param facing 朝向（可选）。<b>缺省时语义与旧实现逐字节相同</b>：不按朝向过滤，
+ *   只要求"存在某一条可播片段"。给值时只统计 `clip.facing === facing` 的片段
+ *   ——即"这一朝向能不能播"，而不是"这个姿态有没有资产"。
  * @returns 是否可播
+ * @throws {TypeError} `facing` 给了但不是 `-1` / `1`（与 `clipOf` 同口径）
  */
-export function isPlayable(poses: PetPoses, posture: PostureId): boolean {
+export function isPlayable(poses: PetPoses, posture: PostureId, facing?: Facing): boolean {
+  if (facing !== undefined && facing !== -1 && facing !== 1) {
+    throw new TypeError(`[pet-poses] isPlayable 的 facing 只能是 -1 或 1，实际为 ${JSON.stringify(facing)}`);
+  }
   if (posture === 'stand') return true;
   if (!poses.accepted.includes(posture)) return false;
   const batch = batchOf(poses, posture);
   if (!batch) return false;
+  // 判据③：整批拒绝镜像推导锚点（批级信息无法区分哪一侧是推导的，安全方向 = 整批不播）
+  if (batch.bodyAnchor.byFacingSource === 'mirror-derived') return false;
   return batch.clips.some((clip) => {
+    if (facing !== undefined && clip.facing !== facing) return false;
     if (clip.frames.length === 0) return false;
     return clip.frames.every((frameId) => {
       const frame = batch.frames[frameId];

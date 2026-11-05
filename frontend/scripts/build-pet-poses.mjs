@@ -393,6 +393,7 @@ function assertSourceSize(absolutePath, batch) {
  * @param {string} [options.outDir] 输出目录
  * @param {string} [options.posesJsonPath] 清单路径（测试用）
  * @param {string} [options.geometryPath] 几何真源路径（测试用）
+ * @param {string[]} [options.accepted] 本次导出哪些批次（缺省 = {@link ACCEPTED_BATCHES}）
  * @param {(message: string) => void} [options.log] 日志出口
  * @returns {Promise<{ok: boolean, check: boolean, problems: string[], notes: string[], manifest: Record<string, unknown>|null, written: boolean, removed: string[], deferred: Array<{posture:string, reason:string, status:string|null}>, totals: {frames:number, bytes1x:number, bytes2x:number} }>}
  *   构建结果
@@ -405,12 +406,22 @@ export async function runBuild(options = {}) {
   const outDir = options.outDir ?? DEFAULT_POSE_OUT_DIR;
   const posesJsonPath = options.posesJsonPath ?? POSES_JSON_PATH;
   const geometryPath = options.geometryPath ?? GEOMETRY_PATH;
+  // 显式覆盖"导出哪几批"（缺省仍是 ACCEPTED_BATCHES ⇒ 生产路径逐字节不变）。
+  // 用途：切片 2 的 T01 要在**不翻 ACCEPTED_BATCHES**（那会立刻让运行时与 state-machine
+  // 测试变红，设计 §E.3 的合并约束）的前提下，让 walk/run/jump 走一遍真实导出管线来
+  // 体积实测 / 结构自证 / 导出确定性比对。写成"可注入的输入"而不是"多一个开关常量"，
+  // 是为了让测试与 CLI 用的是同一条代码路径。
+  const acceptedOverride = Array.isArray(options.accepted) ? options.accepted : null;
   const problems = [];
   const notes = [];
 
   const geometry = readJsonFile(geometryPath);
   const scale = computeScale(geometry);
-  const adapted = adaptAll({ repoRoot, log: verbose ? log : () => {} });
+  const adapted = adaptAll({
+    repoRoot,
+    ...(acceptedOverride ? { accepted: acceptedOverride } : {}),
+    log: verbose ? log : () => {},
+  });
   problems.push(...adapted.problems);
 
   const drafts = adapted.drafts;
@@ -477,7 +488,15 @@ export async function runBuild(options = {}) {
           continue;
         }
         if (result.downgraded) {
-          notes.push(`[${posture}] ${frameId}@${density} 超过 400 KiB，已降为有损 WebP（${result.bytes} 字节）`);
+          // 自动降级旁路（`build-pet-layers.mjs` 的 `lossless && bytes > maxBytes`）：字节更少 ⇒
+          // 体积断言全绿，用户看到的却是块效应与振铃。所以这里**显式打警告**，
+          // 并且 G-P8 会在门禁里判红（两道：日志让人看见，门禁让人改）。
+          const warning =
+            `[${posture}] ${frameId}@${density} 超过 400 KiB，已被自动**降为有损 WebP**` +
+            `（${result.bytes} 字节）：字节更少所以体积断言不会红，但换姿/换朝向时会看出块效应` +
+            '（transcodeLayer 的自动降级旁路；G-P8 会判红）';
+          notes.push(warning);
+          log(`[pet-poses] ⚠ 有损降级：${warning}`);
         }
         if (verbose) log(`[pet-poses] 导出 ${expectedName} ${target.width}×${target.height} ${result.bytes}B ${result.format}`);
         assets[posture][frameId][density] = {
@@ -508,6 +527,7 @@ export async function runBuild(options = {}) {
     assets,
     geometry,
     deferred: adapted.deferred.map((item) => ({ posture: item.posture, reason: item.reason })),
+    ...(acceptedOverride ? { accepted: acceptedOverride } : {}),
   });
 
   // 体积守卫（与 `check-pet-not-shipped` 的 ≤8 MiB 是两道独立闸门：
@@ -662,7 +682,12 @@ export async function main() {
   const verbose = args.includes('--verbose');
   try {
     const result = await runBuild({ check, verbose, log: (message) => console.log(message) });
-    for (const note of result.notes) console.log(`[pet-poses] 注意：${note}`);
+    for (const note of result.notes) {
+      // "有损降级"必须走 stderr：它和普通提示（deferred 原因等）不是一个等级，
+      // 混在 stdout 的"注意："里等于没人看得见。
+      if (note.includes('有损')) console.warn(`[pet-poses] ⚠ ${note}`);
+      else console.log(`[pet-poses] 注意：${note}`);
+    }
     if (result.deferred.length > 0) {
       const names = result.deferred.map((item) => `${item.posture}(${item.reason})`);
       console.log(`[pet-poses] deferred(D-01/切片)：${names.join('、')}`);

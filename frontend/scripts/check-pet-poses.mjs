@@ -43,6 +43,16 @@ export const ENVELOPE_SAFE_PX = 2;
 /** 帧时长的合法区间（毫秒）：低于 80 会让人眼读成"跳帧"，高于 2400 读成"卡住"。 */
 export const FRAME_MS_RANGE = Object.freeze({ min: 80, max: 2400 });
 
+/** 两个密度档（`types.ts` 的 `Density` 联合类型的运行期副本）。 */
+export const DENSITIES = Object.freeze(['1x', '2x']);
+
+/**
+ * pose 帧**唯一允许的编码格式**（U1 裁定：保持无损）。
+ *
+ * <p>写成常量而不是散落字面量：将来若有人改口径，改一处即可，且能一眼看到 G-P8 在守什么。</p>
+ */
+export const LOSSLESS_FORMAT = 'webp-lossless';
+
 /**
  * 从几何真源与对齐点算出**对齐点在窗口内的横坐标** `Px`。
  *
@@ -205,6 +215,286 @@ export function checkVolume(manifest) {
 }
 
 /**
+ * 校验一个批次的 `clips[].facing` 域（**G-P1**）。
+ *
+ * <p>多朝向批次第一次真的产出 clip，`facing` 从"常量 -1"变成"真数据"。写成 `0`、`"1"`、
+ * 或漏掉这个字段，运行时 `clipOf(batch, id, facing)` 会在**播放时**抛 `TypeError`
+ * （`manifest.ts:762` 对 `facing` 做 ±1 校验），那时已经是用户眼前黑屏。所以必须在构建期拦。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkClipFacingDomain(batch) {
+  const problems = [];
+  const clips = Array.isArray(batch.clips) ? batch.clips : [];
+  for (const [index, clip] of clips.entries()) {
+    const label = `[${batch.posture}#${clip && clip.id ? clip.id : index}]`;
+    const facing = clip && clip.facing;
+    if (facing !== -1 && facing !== 1) {
+      problems.push(
+        `${label} clips[${index}].facing=${JSON.stringify(facing)} 不是 -1/1（必须数字：字符串或 0 会让 clipOf 在播放期抛错，G-P1）`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * 校验"每个出现过的朝向都有自己的 clip"（**G-P2**）。
+ *
+ * <p>判据按**行为**写：先从 `frames` 求出现过的朝向集合，再求 `clips` 覆盖的朝向集合，
+ * 前者必须是后者的子集。这样单向缺 clip 会红，而"只有单朝向的批次"（`sit` 只有 `-1`）
+ * 天然通过——不需要维护一张"哪些批次该有两条 clip"的名字表（名字表迟早与真数据漂移）。</p>
+ *
+ * <p>为什么这条必须有：缺一条 clip 时 `isPlayable(posture, facing)` 才判不可播，
+ * 于是运行时**静默**降级成站姿。没有门禁，"少了一条"不会以任何形式被看见。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkClipFacingCoverage(batch) {
+  const problems = [];
+  const clips = Array.isArray(batch.clips) ? batch.clips : [];
+  const frameFacings = new Set();
+  for (const frame of Object.values(batch.frames ?? {})) {
+    if (frame && (frame.facing === -1 || frame.facing === 1)) frameFacings.add(frame.facing);
+  }
+  const clipFacings = new Set();
+  for (const clip of clips) {
+    if (clip && (clip.facing === -1 || clip.facing === 1)) clipFacings.add(clip.facing);
+  }
+  for (const facing of [...frameFacings].sort((a, b) => a - b)) {
+    if (!clipFacings.has(facing)) {
+      problems.push(
+        `[${batch.posture}] frames 里有朝向 ${facing} 的帧，但 clips 里没有该朝向的片段：` +
+          '运行时会静默降级成站姿（G-P2，删掉一条 clip 就会这样）',
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * 校验 clip 内每帧的朝向与 clip 自身朝向一致（**G-P3**）。
+ *
+ * <p><b>为什么必须显式守：</b>跨朝向串帧（把 `r1` 塞进 `facing:-1` 的 clip）**不会让任何既有断言变红** ——
+ * 帧存在、文件齐、`frameMs` 长度对、包络是全体帧的 min/max、`isPlayable` 只看"帧存在且有锚"。
+ * 症状是走路时突然反向抽搐一下，而且只在真机上看得到。所以这里逐个遍历 `clip.frames` 求集合，
+ * 不写成"源码里出现过 facing 字样"的文本断言。</p>
+ *
+ * <p>同时守一条相邻的洞：clip 引用的帧 id 必须在 `frames` 里存在（悬空引用同样不会让
+ * `frameMs` 长度断言变红）。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkClipFrameFacing(batch) {
+  const problems = [];
+  const clips = Array.isArray(batch.clips) ? batch.clips : [];
+  const frames = batch.frames ?? {};
+  for (const clip of clips) {
+    const ids = Array.isArray(clip && clip.frames) ? clip.frames : [];
+    const label = `[${batch.posture}#${clip && clip.id ? clip.id : '?'}]`;
+    for (const frameId of ids) {
+      const frame = frames[frameId];
+      if (!frame) {
+        problems.push(`${label} 引用了不存在的帧 ${JSON.stringify(frameId)}（悬空引用，G-P3）`);
+        continue;
+      }
+      if (frame.facing !== clip.facing) {
+        // 两侧都用 JSON.stringify：`facing` 写成字符串 `"1"` 时，裸模板串会打出
+        // 「facing=1 ≠ clip.facing=1」——两个 1 不相等，读的人第一反应会是"门禁自己坏了"。
+        // 带上引号之后 `"1"` 与 `1` 在文字上可区分，诊断信息才自洽（判据本身一个字没放宽）。
+        problems.push(
+          `${label} 内帧 ${frameId} 的 facing=${JSON.stringify(frame.facing)} ` +
+            `≠ clip.facing=${JSON.stringify(clip.facing)}：` +
+            '跨朝向串帧会让角色在播放中反向抽搐，且不会让任何既有断言变红（G-P3）',
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * 校验批次内没有孤儿帧（**G-P4**）。
+ *
+ * <p>美术多交一帧、或改了帧 id 却没进 clip，构建会成功、`--check` 会成功、盘上多两个 webp
+ * 永远没人读。孤儿帧白占体积（每帧 ≈170 KB），在只剩 14% 体积余量的切片 2 里不是小事。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkOrphanFrames(batch) {
+  const problems = [];
+  const clips = Array.isArray(batch.clips) ? batch.clips : [];
+  const referenced = new Set();
+  for (const clip of clips) {
+    for (const frameId of Array.isArray(clip && clip.frames) ? clip.frames : []) referenced.add(frameId);
+  }
+  for (const frameId of Object.keys(batch.frames ?? {})) {
+    if (!referenced.has(frameId)) {
+      problems.push(
+        `[${batch.posture}] 帧 ${frameId} 没有被任何 clip 引用（孤儿帧白占体积、也永远不会被播放，G-P4）`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * 校验 clip 的播放语义（**G-P5 / G-P6**）。
+ *
+ * <p><b>G-P5</b>：`loop:true` 的 clip 里 `frameMs` 全项必须 `> 0`。填 0 的循环片段 =
+ * 永不推进的假动画（rAF 空转、画面静止），与 D-03 是同类坑。</p>
+ *
+ * <p><b>G-P6</b>：`onEnd:'return-stand'` 的 clip 帧数必须 `≥ 2`。1 帧 + `return-stand`
+ * 的观感是"闪一下就回站姿"（用户侧读成"卡了一下"），而这个形态在单测里完全合法。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkClipSemantics(batch) {
+  const problems = [];
+  const clips = Array.isArray(batch.clips) ? batch.clips : [];
+  for (const clip of clips) {
+    const label = `[${batch.posture}#${clip && clip.id ? clip.id : '?'}]`;
+    const ids = Array.isArray(clip && clip.frames) ? clip.frames : [];
+    const frameMs = Array.isArray(clip && clip.frameMs) ? clip.frameMs : [];
+    if (clip && clip.loop === true) {
+      const zeroIndex = frameMs.findIndex((ms) => !(Number(ms) > 0));
+      if (zeroIndex >= 0) {
+        problems.push(
+          `${label} loop:true 但第 ${zeroIndex} 帧时长 ${JSON.stringify(frameMs[zeroIndex])} 不是正数：` +
+            '循环片段里填 0 等于永不推进的假动画（G-P5）',
+        );
+      }
+    }
+    if (clip && clip.onEnd === 'return-stand' && ids.length < 2) {
+      problems.push(
+        `${label} onEnd:return-stand 但只有 ${ids.length} 帧：` +
+          '单帧 + 回到站姿的观感是"闪一下就消失"（G-P6）',
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * 校验每帧的运行文件都是**无损编码**（**G-P8**）。
+ *
+ * <p><b>为什么必须有这一条：</b>`build-pet-poses.mjs` 调 `transcodeLayer` 时传了
+ * `maxBytes: FRAME_2X_MAX_BYTES`（400 KiB），而 `build-pet-layers.mjs` 里有一条**自动降级旁路**：
+ * `if (lossless && maxBytes > 0 && bytes > maxBytes) { lossless = false; 重新编码 }`，
+ * 返回的 `format` 随之从 `'webp-lossless'` 变成 `'webp'`。</p>
+ *
+ * <p>后果是双向的坏：①U1 裁定的"保持无损"**没有任何门禁守着**；②降级后字节**更少**，
+ * 于是 `checkVolume` 的"单帧 ≤ 400 KiB""合计 ≤ 6 MiB"两条体积断言**照样全绿**
+ * —— 体积断言在这里恰好是"有损反而更容易过"。用户侧看到的是换姿/换朝向时的块效应与振铃。</p>
+ *
+ * <p>判据是行为断言：遍历该批每个帧的 `files['1x']` 与 `files['2x']`，两者的 `format`
+ * 都必须 `=== 'webp-lossless'`（`types.ts` 里 `PoseAssetFile.format` 已声明该字段，
+ * 产物已带，不需要改 schema）。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkFrameEncoding(batch) {
+  const problems = [];
+  for (const [frameId, frame] of Object.entries(batch.frames ?? {})) {
+    const files = frame && frame.files;
+    // adapter 草稿（未转码）没有 `files`：这不是编码问题，"文件齐不齐"由 checkVolume 守。
+    // 一旦 `files` 存在（= 已经过转码的运行帧），两个密度档就都必须无损，缺一档也算缺陷。
+    if (!files || typeof files !== 'object') continue;
+    for (const density of DENSITIES) {
+      const file = files[density];
+      if (!file || typeof file !== 'object') {
+        problems.push(`[${batch.posture}] ${frameId}@${density} 缺少文件信息（无法判断编码格式，G-P8）`);
+        continue;
+      }
+      if (file.format !== LOSSLESS_FORMAT) {
+        problems.push(
+          `[${batch.posture}] ${frameId}@${density} 的编码格式是 ${JSON.stringify(file.format)}，` +
+            `不是 ${JSON.stringify(LOSSLESS_FORMAT)}：该帧被降成了有损编码——字节更少所以体积断言全绿，` +
+            '但换姿时会看出块效应（transcodeLayer 的自动降级旁路，G-P8）',
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * 校验**已 accepted 的批次**没有用镜像推导的锚点（**G-P7**）。
+ *
+ * <p><b>为什么这条必须存在：</b>`isPlayable` 的注释与设计 §B.1 都写"缺锚 ⇒ 该朝向不可播"，
+ * 但 `pet-pose-adapters.mjs` 的 `normalizeBodyAnchor` 在缺某个朝向时会**自动补
+ * `nativeCanvas.width − x` 的镜像推导锚**，把 `byFacing` 补成永远两键齐全。
+ * 也就是说"缺锚即不可播"在实现上曾经是一道**永远成立的空门**。</p>
+ *
+ * <p>镜像同时镜像锚点：落点对（帧确实是镜像画的），**内容错**（这一朝向的实测躯干质心
+ * 从来没人量过，尾巴把 bbox 拉偏时镜像值会偏 20+ native）。所以口径是：
+ * `accepted` 批次一旦 `byFacingSource === 'mirror-derived'` ⇒ 门禁直接红，
+ * 让美术补齐该朝向的实测锚点；运行期 `isPlayable` 同口径整批判不可播（降级 stand）。</p>
+ *
+ * <p><b>判据按行为写</b>：读清单里的 `accepted[]` 与 `batches[*].bodyAnchor.byFacingSource`
+ * 逐批求值，不看源码里出现过什么标识符；也不按批次名硬编码（将来 `lie` 若走 mirror-derived
+ * 同样会被这里拦住）。`batch-single` 合法（v1/v2 正面与卧姿不区分朝向），`sit` 正是这种。</p>
+ *
+ * @param {Record<string, any>} manifest 清单
+ * @returns {string[]} 问题列表
+ */
+export function checkAcceptedAnchorSource(manifest) {
+  const problems = [];
+  const batches = manifest && manifest.batches ? manifest.batches : {};
+  const accepted = Array.isArray(manifest && manifest.accepted) ? manifest.accepted : [];
+  /** 待求值的批次：accepted 名单优先，再补上清单里实际导出的批次（导出即 accepted）。 */
+  const targets = [];
+  const seen = new Set();
+  for (const posture of accepted) {
+    if (seen.has(posture)) continue;
+    seen.add(posture);
+    targets.push([posture, batches[posture]]);
+  }
+  for (const [posture, batch] of Object.entries(batches)) {
+    if (seen.has(posture)) continue;
+    seen.add(posture);
+    targets.push([posture, batch]);
+  }
+  for (const [posture, batch] of targets) {
+    if (!batch || typeof batch !== 'object') continue;
+    const source = batch.bodyAnchor ? batch.bodyAnchor.byFacingSource : undefined;
+    if (source === 'mirror-derived') {
+      problems.push(
+        `[${posture}] 该批次的某个朝向锚点是画布镜像推导，不是实测（byFacingSource=mirror-derived）：` +
+          '镜像同时镜像锚点会让落点对、内容错（尾巴把 bbox 拉偏，镜像值可偏 20+ native），' +
+          '必须让美术补齐该朝向实测锚点（G-P7）',
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * 把剪辑相关的断言汇总成一组（`runPoseGate` 每批调用一次）。
+ *
+ * <p>顺序固定（域 → 覆盖 → 帧朝向 → 孤儿 → 语义 → 编码），报错行因此稳定、可 diff。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表
+ */
+export function checkClips(batch) {
+  return [
+    ...checkClipFacingDomain(batch),
+    ...checkClipFacingCoverage(batch),
+    ...checkClipFrameFacing(batch),
+    ...checkOrphanFrames(batch),
+    ...checkClipSemantics(batch),
+    ...checkFrameEncoding(batch),
+  ];
+}
+
+/**
  * 校验输出目录里没有 PNG（母版绝不许被顺手拷进 `public/`）。
  *
  * @param {string} outDir 输出目录
@@ -270,6 +560,7 @@ export async function runPoseGate(options = {}) {
       ...checkDomains(batch),
       ...checkTiming(batch),
       ...checkEnvelope(batch, geometry, align),
+      ...checkClips(batch),
       ...checkVolume(manifest).filter((line) => line.includes(`[${posture}]`)),
     ];
     if (verbose) {
@@ -278,6 +569,7 @@ export async function runPoseGate(options = {}) {
     problems.push(...batchProblems);
   }
   problems.push(...checkVolume(manifest).filter((line) => !line.includes(']')));
+  problems.push(...checkAcceptedAnchorSource(manifest));
   problems.push(...checkNoPng(outDir));
 
   // 漂移 + 盘上资产完整性（这一条会重新跑 adapter，所以美术 manifest 一改就红）

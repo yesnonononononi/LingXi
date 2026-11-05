@@ -18,6 +18,7 @@ import {
   ACCEPTED_BATCHES,
   ANCHOR_SPREAD_MAX_NATIVE,
   BATCH_SPECS,
+  DEFERRED_REASONS,
   FRAME_TIMING,
   PoseAdapterError,
   adaptAll,
@@ -76,8 +77,12 @@ function readSourceManifest(posture: string): Record<string, any> {
   return JSON.parse(readFileSync(resolve(POSE_SOURCE_ROOT, posture, 'manifest.json'), 'utf8')) as Record<string, any>;
 }
 
-test('accepted 是显式登记：只有 sit 可播，adapter 归属逐批写死（改一处必须改本测试）', () => {
-  assert.deepEqual([...ACCEPTED_BATCHES], ['sit'], 'ACCEPTED_BATCHES 变了：这是"工程接受"的唯一开关，必须同步改测试');
+test('accepted 是显式登记：切片 2 起 sit/walk/run/jump 可播，adapter 归属逐批写死（改一处必须改本测试）', () => {
+  assert.deepEqual(
+    [...ACCEPTED_BATCHES],
+    ['sit', 'walk', 'run', 'jump'],
+    'ACCEPTED_BATCHES 变了：这是"工程接受"的唯一开关，必须同步改测试',
+  );
   const mapping = Object.fromEntries(
     (BATCH_SPECS as Array<{ posture: string; adapter: string }>).map((spec) => [spec.posture, spec.adapter]),
   );
@@ -100,7 +105,19 @@ test('accepted 是显式登记：只有 sit 可播，adapter 归属逐批写死�
   }
   const result = adaptEverything();
   assert.deepEqual(result.missing, [], `有批次资产缺失：${result.missing.join(', ')}`);
-  assert.deepEqual(Object.keys(result.drafts), ['sit'], '草稿里应当只有 sit（其余 5 批 deferred）');
+  assert.deepEqual(
+    Object.keys(result.drafts).sort(),
+    ['jump', 'run', 'sit', 'walk'],
+    '草稿里应当只有 accepted 的四批（lie/sleep 仍 deferred）',
+  );
+  // 幽灵守卫：已 accepted 的批次不许还留着 deferred 理由（"已可播却仍说未导出"）
+  for (const posture of ACCEPTED_BATCHES) {
+    assert.equal(
+      (DEFERRED_REASONS as Record<string, string>)[posture],
+      undefined,
+      `${posture} 已 accepted，DEFERRED_REASONS 里不许再有它的理由`,
+    );
+  }
 });
 
 test('G-08：批内帧锚点与批级 bodyAnchor 一致（≤2 native），且离散度实测值被真收下', () => {
@@ -306,11 +323,22 @@ test('G-14：jump 的腾空相位（anticipate/land 贴地，其余腾空，apex
     Math.max(...ids.filter((id) => id.includes('apex')).map((id) => gaps[id])),
     '全局最大腾空高度不在 apex 帧上',
   );
-  // jump 在切片 1 是 deferred：它不进运行清单，所以"与释放到运行时的值逐值相等"这条
-  // 只能以"清单里没有 jump"的形式成立（有 jump 就必须逐值比对，届时本断言会先红）
-  const deferredJump = POSES_MANIFEST.deferred.find((item) => item.posture === 'jump');
-  assert.ok(deferredJump, 'jump 应当在 deferred 列表里（切片 1 不导出）');
-  assert.equal(POSES_MANIFEST.batches.jump, undefined, 'jump 在切片 1 不该进运行清单');
+  // 切片 2 起 jump 已 accepted ⇒ 进运行清单，因此"与运行时的值逐值相等"这条现在**真的能比**
+  // （旧断言只能以"清单里没有 jump"的形式成立，那是切片 1 的权宜说法）
+  assert.equal(
+    POSES_MANIFEST.deferred.some((item: any) => item.posture === 'jump'),
+    false,
+    'jump 已 accepted，不该再出现在 deferred 列表里（幽灵理由）',
+  );
+  const runtimeJump = (POSES_MANIFEST.batches as any).jump;
+  assert.ok(runtimeJump, 'jump 已 accepted，必须在运行清单里');
+  for (const [frameId, frame] of Object.entries(jump.frames) as Array<[string, any]>) {
+    assert.equal(
+      runtimeJump.frames[frameId].airborneGapNative,
+      frame.airborneGapNative,
+      `jump/${frameId} 的腾空高度与 adapter 草稿不一致（导出管线把值改坏了）`,
+    );
+  }
 });
 
 test('G-15：体积预算与 aliases 去重（lie 7 个帧位只有 3 张不同像素）', () => {

@@ -30,7 +30,7 @@ import {
 } from '../src/pet/behavior/state-machine';
 import { PET_POSES } from '../src/pet/poses/manifest';
 import { PoseController, type PoseBlinkLike } from '../src/pet/poses/controller';
-import { POSTURE_IDS, type PetPoses, type PostureId } from '../src/pet/poses/types';
+import { POSTURE_IDS, type PetPoses, type PosePostureId, type PostureId } from '../src/pet/poses/types';
 import type { DocumentLike, ElementLike } from '../src/pet/presentation/layered-presentation';
 
 /** 可控时钟（状态机只认注入的 `now()`）。 */
@@ -214,6 +214,28 @@ function posesWithSleep(): PetPoses {
   return cloned;
 }
 
+/**
+ * 造一份"把某个姿态批次整个摘掉"的假清单。
+ *
+ * <p><b>为什么需要它：</b>切片 2 把 `walk`/`run`/`jump` 翻进 `accepted` 之后，真清单里
+ * 这些姿态都能播了，于是"没有资产 ⇒ 降级 stand"这条路径在真数据上**不再可达**。
+ * 直接删掉那段覆盖等于放行"将来某批资产丢了会变成空白窗口"。
+ * 所以用合成清单继续守住它：摘掉批次 + 从 `accepted` 移除 ⇒ 必须降级 stand。</p>
+ *
+ * @param posture 要摘掉的姿态
+ * @returns 假清单
+ */
+function posesWithout(posture: PosePostureId): PetPoses {
+  assert.ok(PET_POSES.batches[posture], `真实清单里必须有 ${posture} 批次（否则本用例无意义）`);
+  const batches = { ...PET_POSES.batches };
+  delete batches[posture];
+  return {
+    ...PET_POSES,
+    batches,
+    accepted: PET_POSES.accepted.filter((item) => item !== posture),
+  };
+}
+
 test('SIT_AFTER_IDLE_MS 边界：19999ms 仍站着，20000ms 恰好坐下（且姿态不下发 PresentationOp）', () => {
   const clock = new Clock();
   const sm = machine(clock);
@@ -378,11 +400,33 @@ test('有 sleep 资产时 postureOf 才切 sleep（证明降级判据不是硬�
   const withSleep = posesWithSleep();
   assert.equal(postureOf('sleeping', withSleep), 'sleep');
   assert.equal(postureOf('sleeping', PET_POSES), 'stand');
-  // 切片 1 只登记了 sit：其余姿态一律 stand（未交付 = 站姿，不是空白）
+  // 切片 2 起 sit/walk/run/jump 已登记：真数据下它们必须返回**自己**（不是 stand）
   for (const posture of POSTURE_IDS) {
-    if (posture === 'stand' || posture === 'sit') continue;
-    assert.equal(postureOf(posture as PetBehaviorState, PET_POSES), 'stand', `${posture} 未交付时应降级为 stand`);
-    assert.equal(postureOf(posture as PetBehaviorState, withSleep), 'stand', `${posture} 没有资产时仍应站姿`);
+    if (posture === 'stand') continue;
+    // 姿态 id → 行为状态名（唯一例外：姿态 `sleep` 对应的状态叫 `sleeping`）
+    const state = (posture === 'sleep' ? 'sleeping' : posture) as PetBehaviorState;
+    // 真清单：accepted 决定可播性（未 accepted 的一律 stand，不许空白窗口）
+    const expected = PET_POSES.accepted.includes(posture) ? posture : 'stand';
+    assert.equal(
+      postureOf(state, PET_POSES),
+      expected,
+      `${posture}（状态 ${state}）在真清单下应派生为 ${expected}（accepted 决定可播性）`,
+    );
+    // 合成清单（withSleep）：多了一个可播的 sleep，其余口径不变
+    const expectedWithSleep = withSleep.accepted.includes(posture) ? posture : 'stand';
+    assert.equal(
+      postureOf(state, withSleep),
+      expectedWithSleep,
+      `${posture}（状态 ${state}）在 withSleep 下应派生为 ${expectedWithSleep}`,
+    );
+    // 摘掉批次 ⇒ 必须降级 stand。只对真清单里存在的批次做（sleep 是切片 3，真清单没有它）
+    if (PET_POSES.batches[posture]) {
+      assert.equal(
+        postureOf(state, posesWithout(posture as PosePostureId)),
+        'stand',
+        `${posture} 摘掉批次后必须降级为 stand（否则"资产丢了"会表现成空白窗口）`,
+      );
+    }
   }
 });
 
@@ -402,6 +446,7 @@ test('postureOf 对全部状态都有定义，且只有姿态态才返回非 sta
     'run',
     'jump',
   ];
+  // 切片 2 已把 walk/run/jump 翻进 accepted ⇒ 它们必须返回自己；lie/sleep 仍属切片 3 ⇒ stand
   const expected: Record<PetBehaviorState, PostureId> = {
     idle: 'stand',
     tap: 'stand',
@@ -413,13 +458,51 @@ test('postureOf 对全部状态都有定义，且只有姿态态才返回非 sta
     pet: 'stand',
     sit: 'sit',
     lie: 'stand',
-    walk: 'stand',
-    run: 'stand',
-    jump: 'stand',
+    walk: 'walk',
+    run: 'run',
+    jump: 'jump',
   };
   for (const state of states) {
     assert.equal(postureOf(state, PET_POSES), expected[state], `状态 ${state} 派生的姿态不对`);
   }
+  // 反向守卫：期望表与清单的 accepted 必须一致（将来再翻一批而忘了改这张表，这里会红）
+  const postureStates = states.filter((state) => state !== 'idle' && state !== 'tap' && state !== 'angry'
+    && state !== 'sleepy' && state !== 'sleeping' && state !== 'wake' && state !== 'drag' && state !== 'pet');
+  for (const state of postureStates) {
+    const derived = expected[state];
+    if (derived === 'stand') {
+      assert.equal(PET_POSES.accepted.includes(state as PostureId), false, `${state} 已 accepted，本表却写 stand`);
+    } else {
+      assert.equal(PET_POSES.accepted.includes(state as PostureId), true, `${state} 未 accepted，本表却写 ${derived}`);
+    }
+  }
+});
+
+test('postureOf 的 facing 透传：给了朝向就判该朝向能否播，绝不回落另一侧', () => {
+  // sit 只有 facing:-1 一条 hold ⇒ 右向不可播（降级 stand，不拿左向那条冒充）
+  assert.equal(postureOf('sit', PET_POSES), 'sit', '缺省（不给朝向）语义必须与旧实现一致');
+  assert.equal(postureOf('sit', PET_POSES, -1), 'sit');
+  assert.equal(postureOf('sit', PET_POSES, 1), 'stand', 'sit 没有右向片段 ⇒ 右向必须降级 stand');
+
+  // walk/run/jump 左右各一条 ⇒ 两个朝向都能播
+  for (const posture of ['walk', 'run', 'jump'] as const) {
+    assert.equal(postureOf(posture, PET_POSES, -1), posture);
+    assert.equal(postureOf(posture, PET_POSES, 1), posture);
+  }
+
+  // 合成：把右向 clip 摘掉 ⇒ 该朝向降级，左向不受影响（证明判据真的按 facing 过滤）
+  const walk = PET_POSES.batches.walk;
+  assert.ok(walk, '真实清单里必须有 walk 批次');
+  const leftOnly: PetPoses = {
+    ...PET_POSES,
+    batches: {
+      ...PET_POSES.batches,
+      walk: { ...walk, clips: walk.clips.filter((clip) => clip.facing !== 1) },
+    },
+  };
+  assert.equal(postureOf('walk', leftOnly, 1), 'stand', '右向缺 clip ⇒ 右向不可播');
+  assert.equal(postureOf('walk', leftOnly, -1), 'walk', '左向不受影响');
+  assert.equal(postureOf('walk', leftOnly), 'walk', '缺省语义只看"有没有可播片段"');
 });
 
 test('restore 接受 sit（快照的 known 列表已扩到 5 个姿态态）', () => {

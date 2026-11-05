@@ -11,6 +11,109 @@
 import type { ExpressionId, MotionId, PresentationOp } from '../presentation/types';
 import type { ForceStateResult } from '../presentation/entry-report';
 import type { PetBehaviorState } from '../behavior/state-machine';
+import type { Facing, PostureId } from '../poses/types';
+
+/**
+ * 姿态快照（dev 后门断言"真的在播这个姿态这个朝向"用）。
+ *
+ * <p>为什么带 `clipFacing`：只断言 `posture` 会放过最危险的那种坏法——姿态对了但播的是
+ * **另一朝向**的片段（角色突然翻转）。`override` 用来确认"后门确实接管了行为拍"。</p>
+ */
+export interface PoseDebugSnapshot {
+  /** 当前姿态。 */
+  readonly posture: PostureId;
+  /** 当前朝向（控制器的朝向状态）。 */
+  readonly facing: Facing;
+  /** 当前片段 id（`null` = 没有在放姿态）。 */
+  readonly clipId: string | null;
+  /** 当前片段的朝向（`null` = 没有在放姿态）。 */
+  readonly clipFacing: Facing | null;
+  /** 当前帧 id（`null` = 没有在放姿态）。 */
+  readonly frameId: string | null;
+  /** 是否在播放。 */
+  readonly playing: boolean;
+  /** 当前 dev 强制姿态（`null` = 由行为状态机派生）。 */
+  readonly override: PostureId | null;
+}
+
+/**
+ * 片段时序（判定采样时机的依据）。
+ *
+ * <p>为什么要把它显式带出来：判定"这个姿态在播吗"必须**在片段还在播的时候**拍照。
+ * `jump` 的 `once` 只有 `5 × 130 = 650ms` 且 `onEnd:'return-stand'`——固定等 700ms
+ * 拍到的已经是"播完回站姿"，正确行为会被判成三条失败。所以时长必须从片段自己算。</p>
+ */
+export interface PoseClipTiming {
+  /** 片段 id。 */
+  readonly clipId: string;
+  /** 片段总时长（毫秒，= `frameMs` 之和）。 */
+  readonly clipMs: number;
+  /** 是否循环。 */
+  readonly loop: boolean;
+  /** 播完是否回站姿（`onEnd === 'return-stand'`）。 */
+  readonly returnsToStand: boolean;
+}
+
+/** 一次姿态试验的结果（`ok:false` 时 `problems` 说明哪里没生效）。 */
+export interface PoseDebugStep {
+  /** 试验的姿态（**用户输入原样回显**，所以是 `string`：非法名也要能如实带回来）。 */
+  readonly posture: string;
+  /** 试验的朝向（同上，非法值是 `number` 而不是 `Facing`）。 */
+  readonly facing: number;
+  /** 是否真的播起来了（姿态 + 片段朝向 + 播放中三项都对）。 */
+  readonly ok: boolean;
+  /** 采样时刻的快照（读不到时 `null`）。 */
+  readonly snapshot: PoseDebugSnapshot | null;
+  /** 没生效的具体原因（`ok:true` 时为空数组）。 */
+  readonly problems: readonly string[];
+  /** 片段总时长（毫秒；查不到时序时 `null`）——让人一眼看出这个组合有多长。 */
+  readonly clipMs: number | null;
+  /** **判定采样时刻**（毫秒，从 `play()` 起算）——让人一眼看出它是在哪一刻判的。 */
+  readonly sampleAtMs: number;
+  /** 是否补验了"播完回站姿"的终态（只有一次性 + `return-stand` 片段才为 `true`）。 */
+  readonly terminalChecked: boolean;
+}
+
+/** 6 组合矩阵的结果（一条命令验完 `walk`/`run`/`jump` × 左右）。 */
+export interface PoseMatrixReport {
+  /** 6 个组合是否全部 OK。 */
+  readonly ok: boolean;
+  /** 逐个组合的结果（顺序即执行顺序）。 */
+  readonly steps: readonly PoseDebugStep[];
+  /** 汇总问题（`ok:true` 时为空数组）。 */
+  readonly problems: readonly string[];
+}
+
+/** 姿态调试后门（`import.meta.env.DEV` 下才有）。 */
+export interface PetPoseDebugHandle {
+  /**
+   * 指定姿态 + 朝向播放一次（走生产路径 `setPosture` / `setFacing`）。
+   *
+   * @param posture 姿态名（不可信输入，非法名给 `ok:false` 的结果而不是抛错）
+   * @param facing 朝向（缺省 = 当前朝向）
+   * @returns 试验结果（含真实快照）
+   */
+  play: (posture: string, facing?: Facing) => PoseDebugStep;
+  /** 停在站姿（保持后门接管，行为拍仍不会抢回来）。 */
+  stop: () => PoseDebugStep;
+  /** 交还控制权给行为状态机。 */
+  release: () => void;
+  /** 只改朝向（站姿下也就只记下，不重启播放）。 */
+  facing: (next: Facing) => Facing;
+  /** 读当前快照。 */
+  snapshot: () => PoseDebugSnapshot;
+  /**
+   * 一条命令验完 `walk`/`run`/`jump` × 左右 6 个组合。
+   *
+   * <p>采样时机按**片段真实时长**算（循环片段 `min(总时长/2, 300ms)`、一次性片段
+   * `min(总时长×0.4, 300ms)`）；一次性 + `return-stand` 的片段再等到 `总时长 + 缓冲`
+   * 补一条"回站姿"终态断言。每步都会带回 `clipMs` / `sampleAtMs` / `terminalChecked`。</p>
+   *
+   * @param holdMs 采样时刻的**上限**（毫秒；缺省 300。不是固定等待时长）
+   * @returns 矩阵报告（`ok:false` 时 `problems` 逐条说明）
+   */
+  verifyMatrix: (holdMs?: number) => Promise<PoseMatrixReport>;
+}
 
 /** 调试句柄（`import.meta.env.DEV` 下才有；生产态整个对象不挂到 window）。 */
 export interface PetDebugHandle {
@@ -49,4 +152,10 @@ export interface PetDebugHandle {
   compositeMode: () => string;
   /** 参与本次合成的层 id（`composite` 时为空数组）。 */
   layerIds: () => string[];
+  /**
+   * 姿态通道（T04）：指定姿态 + 朝向 + 播放/停止 + 6 组合一条命令校验。
+   *
+   * <p>真机验收只需要一条命令：`await petDebug.pose.verifyMatrix()`。</p>
+   */
+  pose: PetPoseDebugHandle;
 }

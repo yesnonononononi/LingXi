@@ -78,7 +78,9 @@ export interface PoseControllerOptions {
    *
    * <p>为什么要有它：`walk`/`run` 的 `cycle` 会产出**同 id 两条片段**（左右各一条）。
    * 选片段必须按朝向定位，否则右向动作会静默拿到左向那一条（旧实现的 `find` 就是这个问题）。
-   * 切片 1 的 `sit` 只有一条 `facing:-1` 的 `hold`，默认值即命中，行为与旧实现逐字节相同。</p>
+   * 切片 1 的 `sit` 只有一条 `facing:-1` 的 `hold`，默认值即命中，行为与旧实现逐字节相同。
+ * 切片 2 起 `walk`/`run`/`jump` 各有左右两条片段：朝向由 {@link setFacing} 在运行时切换，
+ * 而生产态没有朝向来源（漫游未做，D8）⇒ 缺省值 `-1` 仍是真实生效值。</p>
    */
   readonly facing?: Facing;
 }
@@ -87,7 +89,7 @@ export interface PoseControllerOptions {
  * 姿态控制器。
  *
  * <p>生命周期：`main.ts` 在 `buildDom()` 之后构造一次，之后只调 `setPosture()` /
- * `pause()` / `resume()`。</p>
+ * `setFacing()` / `pause()` / `resume()`。</p>
  */
 export class PoseController {
   /** 依赖。 */
@@ -115,7 +117,7 @@ export class PoseController {
   private placedFrameId: string | null = null;
 
   /** 当前朝向（选项缺省为 `-1`；非法值在构造时抛错，不在选片段时才发现）。 */
-  private readonly facingValue: Facing;
+  private facingValue: Facing;
 
   /**
    * 构造控制器：建 `.pet-pose` 与其中唯一的 `<img>`，并写入初始站姿。
@@ -164,6 +166,21 @@ export class PoseController {
   /** 当前姿态。 */
   get posture(): PostureId {
     return this.postureValue;
+  }
+
+  /** 当前朝向（`-1` 左 / `1` 右）。 */
+  get facing(): Facing {
+    return this.facingValue;
+  }
+
+  /** 当前片段（`null` = 没有在放姿态；调试与断言用）。 */
+  get clipId(): string | null {
+    return this.clip === null ? null : this.clip.id;
+  }
+
+  /** 当前片段的朝向（`null` = 没有在放姿态；断言"没有回落到另一朝向"用）。 */
+  get clipFacing(): Facing | null {
+    return this.clip === null ? null : this.clip.facing;
   }
 
   /** 当前帧 id（`null` = 没有在放姿态）。 */
@@ -239,6 +256,62 @@ export class PoseController {
       // 时序非法属于构建期就该拦住的问题（G-13）；运行时只在日志里点名，画面回落站姿
       this.log(`姿态 ${next} 播放失败：${(err as Error).message}`);
       this.leavePose(`姿态 ${next} 播放失败`);
+    }
+  }
+
+  /**
+   * 切朝向（T04：运行时多朝向接入的唯一入口）。
+   *
+   * <p><b>为什么需要它：</b>`facing` 之前是构造期常量、且 `main.ts` 构造时没传 ⇒ 姿态通道被
+   * 硬编码为 `-1`。多朝向批次（`walk`/`run`/`jump` 的左右各一条 `cycle`/`once`）因此永远只能播
+   * 左向那条。本方法把朝向变成可变状态，并在朝向真变时**重排播放**。</p>
+   *
+   * <p><b>四条硬性口径（每条都有用例）：</b></p>
+   * <ol>
+   *   <li>非法值抛 `TypeError`（与构造器同口径），不在选片段时才发现；</li>
+   *   <li><b>朝向未变必须是 no-op</b>：重复 `setFacing(-1)` 不许重启播放（重启 = 相位跳回第 0 帧，
+   *       走路会一顿一顿）；</li>
+   *   <li>正在播姿态时用新朝向**重新 pickClip 并从第 0 帧重播**（相位不能跨朝向延续：
+   *       左右两条 clip 的帧数与地面线可以不同，续相位会让角色踩空半拍）；</li>
+   *   <li>新朝向**没有片段** ⇒ 走既有 `leavePose('没有可播片段')` 降级到站姿，
+   *       <b>绝不回落到另一朝向</b>（拿反朝向的片段上屏比不播更糟：角色会突然翻转）。</li>
+   * </ol>
+   *
+   * @param next 目标朝向（`-1` 左 / `1` 右）
+   * @throws {TypeError} `next` 不是 `-1` / `1`
+   */
+  setFacing(next: Facing): void {
+    if (next !== -1 && next !== 1) {
+      throw new TypeError(`[pet-poses] PoseController.setFacing 只能是 -1 或 1，实际为 ${JSON.stringify(next)}`);
+    }
+    if (next === this.facingValue) return;
+    this.facingValue = next;
+    if (this.postureValue === STAND_POSTURE) {
+      // 站姿下没有"正在播的姿态"要重排：只记住新朝向，下次进姿态直接用它
+      this.log(`朝向 → ${next}（当前是站姿，无需重播）`);
+      return;
+    }
+    const batch = batchOf(this.options.poses, this.postureValue);
+    if (batch === null) {
+      this.leavePose(`姿态 ${this.postureValue} 没有批次`);
+      return;
+    }
+    const clip = this.pickClip(batch);
+    if (clip === null) {
+      // 该朝向没有片段：降级站姿，绝不回落到另一朝向
+      this.leavePose(`姿态 ${this.postureValue} 朝向 ${next} 没有可播片段`);
+      return;
+    }
+    this.clip = clip;
+    // 重播前清掉"已写过 placement 的帧"，否则新朝向的第 0 帧若与旧帧同 id 就不会重写姿态盒
+    this.placedFrameId = null;
+    try {
+      // 从第 0 帧重播：跨朝向续相位会让角色踩空半拍
+      this.player.play(clip, 0);
+      this.log(`朝向 → ${next}：重播 ${clip.id}@${clip.facing}`);
+    } catch (err) {
+      this.log(`朝向 ${next} 重播失败：${(err as Error).message}`);
+      this.leavePose(`朝向 ${next} 重播失败`);
     }
   }
 

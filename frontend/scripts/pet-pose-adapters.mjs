@@ -42,8 +42,14 @@ export const SOURCE_ROOT = 'docs/assets/desktop-pet/poses';
  *
  * <p>美术 6 批 `status` 全是 `awaiting-static-review`——"已交付"与"被工程接受"是两件事。
  * 改这个常量必须同时改 `tests/petPoseAdapters.test.ts` 的期望，不可能"悄悄跑起来"。</p>
+ *
+ * <p><b>切片 2 起的形态：</b>`sit`（单帧静止 `hold`）+ `walk`/`run`（左右各一条 `cycle`）
+ * + `jump`（左右各一条 `once`）。三批的左/右锚点全部来自美术 manifest 的**实测**值
+ * （`run` 是 `{1:836, -1:700}`、`jump` 同值），没有任何一条走画布镜像推导——
+ * 这是 G-P7 的判据，不是本文件的承诺：`byFacingSource === 'mirror-derived'` 的 accepted 批次
+ * 会被门禁直接判红。</p>
  */
-export const ACCEPTED_BATCHES = Object.freeze(['sit']);
+export const ACCEPTED_BATCHES = Object.freeze(['sit', 'walk', 'run', 'jump']);
 
 /** 每批的 adapter 归属（显式登记，不做启发式猜测；检测结果与它不符即硬失败）。 */
 export const BATCH_SPECS = Object.freeze([
@@ -71,14 +77,17 @@ export const FRAME_TIMING = Object.freeze({
   jump: Object.freeze({ once: 130 }),
 });
 
-/** 未登记批次的降级原因（**常量**，不随美术 manifest 抖动；否则 `--check` 会天天红）。 */
+/**
+ * 未登记批次的降级原因（**常量**，不随美术 manifest 抖动；否则 `--check` 会天天红）。
+ *
+ * <p><b>纪律：`ACCEPTED_BATCHES` 里有的批次，这里就不许有理由。</b>
+ * "已 accepted 却仍写着 deferred 原因"会造出一个幽灵：门禁的提醒行会继续对用户说
+ * "walk 未导出"，而它其实每一拍都在播。所以切片 2 翻 accepted 的**同一批**里
+ * 删掉了 walk/run/jump 三条（不是"以后清理"）。</p>
+ */
 export const DEFERRED_REASONS = Object.freeze({
-  sit: '切片 1 之前的空清单骨架：sit 由构建脚本回写登记',
   lie: '切片 3（卧姿语义）：运行资产未导出',
   sleep: '切片 3（卧姿语义）：运行资产未导出',
-  walk: '切片 2：运行资产未导出',
-  run: '切片 2：运行资产未导出',
-  jump: '切片 2：运行资产未导出（美术左右 10 帧已交齐，等切片 2 接漫游）',
 });
 
 /** 姿态态下显式交付的降级（"没做"与"做坏了"必须是两句不同的话）。 */

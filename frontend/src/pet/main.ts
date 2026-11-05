@@ -27,7 +27,7 @@ import {
   PetBehaviorStateMachine,
   postureOf,
 } from './behavior/state-machine';
-import type { PetDebugHandle } from './debug/types';
+import type { PetDebugHandle, PoseDebugSnapshot } from './debug/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { faceTileUrls as faceTileUrlMap, isFaceDegraded } from './assets/face-tiles';
@@ -42,6 +42,7 @@ import type { PetPresentation } from './presentation/types';
 import { PET_POSES, densityFor } from './poses/manifest';
 import { PoseController, type PoseBlinkLike } from './poses/controller';
 import { poseBoxOf } from './poses/placement';
+import type { Facing, PostureId } from './poses/types';
 import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
 import { mountHalo } from './visual/halo';
@@ -302,6 +303,25 @@ let hintBar: HintBar | null = null;
 let poseController: PoseController | null = null;
 
 /**
+ * 当前朝向（T04）。只可能是 `-1`（左）/ `1`（右）。
+ *
+ * <p><b>生产态没有朝向来源</b>：漫游（D8）未做，"角色正在往哪走"这件事今天不存在，
+ * 所以它恒为 `-1`，姿态通道与切片 1 **逐字节相同**。把朝向变成可变状态只是把入口留出来
+ * （`applyPoseFacing`），任何"根据光标/窗口位置猜朝向"的写法都属于 D8，不在本轮。</p>
+ */
+let petFacing: Facing = -1;
+
+/**
+ * 开发态强制姿态（`null` = 由行为状态派生）。
+ *
+ * <p>只有 `import.meta.env.DEV` 下的 `debug/dev-backdoor.ts` 会写它（生产构建里那段动态
+ * `import()` 被摇掉 ⇒ 这个变量恒为 `null` ⇒ `syncPosture` 的两条分支与今天完全一致）。
+ * 它的唯一用途是让真机验收能一条命令验完 `walk`/`run`/`jump` × 左右 6 个组合：
+ * 否则行为状态机每 250ms 一拍会把手工指定的姿态抢回去。</p>
+ */
+let poseOverride: PostureId | null = null;
+
+/**
  * 提示行文案（O2：压成一行小字、**去掉"表情：xx"实时值**、不再提示双击）。
  *
  * <p>关闭入口已经收敛到右键原生菜单（O3/D-B2），所以这里也不该再教用户"双击隐藏"——
@@ -398,12 +418,17 @@ function syncPosture(label: string): void {
   const controller = poseController;
   const machine = behavior;
   if (!controller || !machine) return;
+  if (poseOverride !== null) {
+    // dev 后门正在手动指定姿态：行为拍不许把它抢回去。
+    // 生产态 `poseOverride` 恒为 null（唯一写入点在 dev-only 模块里），这一行永远不成立。
+    return;
+  }
   const state = machine.state;
   if (state === 'drag') {
     controller.pause();
     return;
   }
-  const desired = postureOf(state, PET_POSES);
+  const desired = postureOf(state, PET_POSES, petFacing);
   if (desired !== controller.posture) {
     if (DEBUG_ENABLED) console.debug(`[pet] 姿态 ${controller.posture} → ${desired}（${label}: ${state}）`);
     controller.setPosture(desired);
@@ -411,6 +436,86 @@ function syncPosture(label: string): void {
   }
   // 姿态没变：把拖拽期间的暂停接上（未暂停时是空操作）
   controller.resume();
+}
+
+/**
+ * 改朝向：**唯一的朝向写入点**（T04）。
+ *
+ * <p>顺序固定：先记下朝向（`postureOf` 与 `pickClip` 都读它），再让控制器重排播放。
+ * 朝向未变时控制器内部是 no-op（不重启播放，否则走路会一顿一顿）。</p>
+ *
+ * @param next 目标朝向（`-1` 左 / `1` 右）
+ * @returns 生效后的朝向
+ * @throws {TypeError} 非法朝向（与 `PoseController` 同口径）
+ */
+function applyPoseFacing(next: Facing): Facing {
+  if (next !== -1 && next !== 1) {
+    throw new TypeError(`[pet] 朝向只能是 -1 或 1，实际为 ${JSON.stringify(next)}`);
+  }
+  petFacing = next;
+  poseController?.setFacing(next);
+  return petFacing;
+}
+
+/**
+ * 读当前姿态快照（dev 后门断言"真的在播这个姿态这个朝向"用）。
+ *
+ * @returns 快照（控制器未就绪时给出站姿空快照，不抛错——排障时抛错只会掩盖现场）
+ */
+function readPoseSnapshot(): PoseDebugSnapshot {
+  const controller = poseController;
+  if (!controller) {
+    return {
+      posture: 'stand',
+      facing: petFacing,
+      clipId: null,
+      clipFacing: null,
+      frameId: null,
+      playing: false,
+      override: poseOverride,
+    };
+  }
+  return {
+    posture: controller.posture,
+    facing: controller.facing,
+    clipId: controller.clipId,
+    clipFacing: controller.clipFacing,
+    frameId: controller.currentFrameId,
+    playing: controller.isPlaying,
+    override: poseOverride,
+  };
+}
+
+/**
+ * 强制指定姿态 + 朝向（**dev 后门专用**）。
+ *
+ * <p>姿态的可用性判定仍由 `setPosture()` 内部的 `isPlayable` + `pickClip` 负责：
+ * 不可播或缺该朝向的片段就降级站姿，返回的快照会如实反映"现在是站姿"，
+ * 不许假装切成功了——这正是之前那套 `debug-force-hit` 后门坑人的方式。</p>
+ *
+ * @param posture 目标姿态（`stand` = 回站姿并停在站姿）
+ * @param facing 目标朝向
+ * @returns 切换后的快照
+ * @throws {Error} 姿态控制器未就绪
+ */
+function forcePose(posture: PostureId, facing: Facing): PoseDebugSnapshot {
+  const controller = poseController;
+  if (!controller) throw new Error('[pet] 姿态控制器未就绪：先等 boot 完成');
+  applyPoseFacing(facing);
+  poseOverride = posture;
+  controller.setPosture(posture);
+  return readPoseSnapshot();
+}
+
+/**
+ * 交还控制权给行为状态机（**dev 后门专用**）。
+ *
+ * <p>必须先清 `poseOverride` 再 `syncPosture`：否则早退分支会把这次同步也吃回去。</p>
+ */
+function releasePose(): void {
+  poseOverride = null;
+  poseController?.setPosture('stand');
+  syncPosture('debug:release');
 }
 
 /**
@@ -786,6 +891,17 @@ function mountDevTools(): void {
       sustainedMotion: () => behavior?.sustainedMotion ?? null,
       compositeMode: () => compositePlan?.mode ?? 'composite',
       layerIds: () => [...layerViews.keys()],
+      // 姿态通道（T04）：指定姿态 + 朝向 + 播放/停止。
+      // 这是**只读真状态**的后门——它调用生产路径（`setPosture` / `setFacing`），
+      // 不给"跳过判定直接改 DOM"的第二条路。
+      posePlay: (posture, facing) => forcePose(posture, facing),
+      poseStop: () => {
+        forcePose('stand', petFacing);
+      },
+      poseRelease: () => releasePose(),
+      poseFacing: (next) => applyPoseFacing(next),
+      poseSnapshot: () => readPoseSnapshot(),
+      poseWait: (ms) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)),
       host,
       onPoke: () => hintBar?.poke(),
     });
@@ -1098,6 +1214,9 @@ function createPresentation(): void {
       // 唯一的位置来源：placement 的纯函数（切姿态不改窗口位置，C6）
       boxOf: (batch, frame) => poseBoxOf(batch, frame, PET_POSES.scale, PET_POSES.align, PET_GEOMETRY),
       blink: poseBlinkPort(),
+      // T04：朝向显式传入（之前这里没有这个键 ⇒ 姿态通道被硬编码为 -1）。
+      // 生产态 `petFacing` 恒为 -1（漫游未做，D8），与切片 1 逐字节相同。
+      facing: petFacing,
       log: (message) => console.debug(message),
     });
   }

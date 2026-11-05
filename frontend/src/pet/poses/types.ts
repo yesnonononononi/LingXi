@@ -252,7 +252,7 @@ export interface PoseBatch {
   readonly provenance: PoseProvenance;
 }
 
-/** 未进入运行时的批次（切片 1 里除 `sit` 外的全部）。 */
+/** 未进入运行时的批次（切片 2 起是 `lie` / `sleep`；它们属切片 3）。 */
 export interface PoseDeferredBatch {
   /** 姿态 id。 */
   readonly posture: PosePostureId;

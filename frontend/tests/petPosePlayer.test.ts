@@ -736,11 +736,22 @@ test('姿态盒只由 boxOf 写入（单一位置写入者的地基），不注�
 
 test('不可播的姿态优雅回落站姿（没有资产不能变成空白窗口）', () => {
   const { controller, root, frames } = makeController();
-  // walk 在切片 1 未导出 ⇒ 不在 accepted ⇒ 不可播
-  controller.setPosture('walk');
+  // lie 属切片 3（未导出 ⇒ 不在 accepted）⇒ 不可播
+  controller.setPosture('lie');
   assert.equal(controller.posture, 'stand', '不可播姿态必须回落到站姿');
   assert.equal(root.getAttribute('data-posture'), 'stand');
   assert.deepEqual(frames, [], '不可播姿态一帧都不该上屏');
+
+  // 合成清单：把 walk 从 accepted 里摘掉 ⇒ 同一个姿态必须降级（证明判据不是按名字硬编码，
+  // 也不是"walk 只是恰好还没翻 accepted"）
+  const stripped: PetPoses = {
+    ...PET_POSES,
+    accepted: PET_POSES.accepted.filter((item) => item !== 'walk'),
+  };
+  const sandbox = makeController({ poses: stripped });
+  sandbox.controller.setPosture('walk');
+  assert.equal(sandbox.controller.posture, 'stand', 'accepted 摘掉后 walk 必须降级站姿');
+  assert.deepEqual(sandbox.frames, [], '降级的姿态一帧都不该上屏');
 
   // sit 可播：正例（否则上面的断言可能是"什么都不工作"）
   controller.setPosture('sit');

@@ -36,7 +36,7 @@
  */
 import type { ExpressionId, MotionId, PresentationOp, Priority } from '../presentation/types';
 import { isPlayable } from '../poses/manifest';
-import type { PetPoses, PosePostureId, PostureId } from '../poses/types';
+import type { Facing, PetPoses, PosePostureId, PostureId } from '../poses/types';
 import type { HitProfile } from './hit-profile';
 
 /**
@@ -69,8 +69,10 @@ export type PetBehaviorState =
   | 'drag'
   | 'pet'
   // M2：姿态型状态。**姿态本身不是状态**（见 `postureOf`），这里是"身体形态"的状态来源：
-  // `sit` 由静置 20s 派生；`lie/walk/run/jump` 在切片 1 没有真实入口（无位移引擎，C6），
-  // 先占位是为了让 `postureOf` 与可达图的形状一次写对，切片 2/3 只填资产不改类型。
+  // `sit` 由静置 20s 派生；`lie/walk/run/jump` 目前**没有真实入口**——切片 2 已把
+  // walk/run/jump 的资产接进运行时（可播），但漫游/位移引擎（D8）未做，所以行为层还不会
+  // 自己切到这三个状态；`lie` 的资产属切片 3。先占位是为了让 `postureOf` 与可达图的形状
+  // 一次写对，后续切片只填资产与入口、不改类型。
   | 'sit'
   | 'lie'
   | 'walk'
@@ -1103,12 +1105,18 @@ export class PetBehaviorStateMachine {
  * ③至少一条片段的帧全部齐全且朝向已声明。判据本体在 `poses/manifest.ts` 的
  * {@link isPlayable}（单一真源），这里只是转出，避免行为层再写一遍。</p>
  *
+ * <p>`facing` 是**可选透传**：不给时语义与旧实现逐字节相同（"这个姿态有没有可播资产"）；
+ * 给了时判的是"这个姿态在**这个朝向**下能不能播"——多朝向批次（`walk`/`run`/`jump`）
+ * 左右各一条 clip，某一侧缺 clip 时该朝向不可播，必须降级 `stand`，
+ * 绝不能拿另一侧的片段顶上去（角色会突然翻转）。</p>
+ *
  * @param assets 姿态清单
  * @param posture 姿态 id
+ * @param facing 朝向（可选；缺省 = 不按朝向过滤）
  * @returns 是否可播
  */
-function hasPlayablePose(assets: PetPoses, posture: PosePostureId): boolean {
-  return isPlayable(assets, posture);
+function hasPlayablePose(assets: PetPoses, posture: PosePostureId, facing?: Facing): boolean {
+  return isPlayable(assets, posture, facing);
 }
 
 /**
@@ -1118,8 +1126,9 @@ function hasPlayablePose(assets: PetPoses, posture: PosePostureId): boolean {
  * "身体怎么抖"，姿态决定"身体是什么形态"。所以姿态只在这里派生，任何地方都不许写
  * `posture` 字段，也不许把它塞进 `MotionId` 枚举。</p>
  *
- * <p><b>没有资产就优雅降级为 `stand`</b>：切片 1 只登记了 `sit`，所以 `sleeping` 仍然走
- * 既有的"闭眼表情 + sleepy 动作"（逐字节不变，兼容点 2），`walk/run/jump/lie` 一律 stand。
+ * <p><b>没有资产就优雅降级为 `stand`</b>：切片 2 起 `sit`/`walk`/`run`/`jump` 已登记可播，
+ * 所以 `walk`/`run`/`jump` 会返回自己；`lie`/`sleep`（切片 3）与一切未登记姿态仍降级 stand，
+ * `sleeping` 继续走既有的"闭眼表情 + sleepy 动作"。
  * 这条降级必须存在，否则"资产未交付"会表现成空白窗口。</p>
  *
  * <p><b>`drag` 不在特例里</b>：设计 §A1.8.2 要求"拖着坐着的猫时姿态保持"，但那是
@@ -1130,22 +1139,25 @@ function hasPlayablePose(assets: PetPoses, posture: PosePostureId): boolean {
  *
  * @param state 行为状态
  * @param assets 姿态清单
+ * @param facing 朝向（可选；缺省 = 不按朝向过滤，行为与旧实现逐字节相同）。
+ *   给了值时判"该姿态在该朝向下能否播"：多朝向批次的某一侧缺 clip ⇒ 降级 `stand`，
+ *   **绝不回落另一侧**。
  * @returns 姿态 id
  */
-export function postureOf(state: PetBehaviorState, assets: PetPoses): PostureId {
+export function postureOf(state: PetBehaviorState, assets: PetPoses, facing?: Facing): PostureId {
   switch (state) {
     case 'sleeping':
-      return hasPlayablePose(assets, 'sleep') ? 'sleep' : 'stand';
+      return hasPlayablePose(assets, 'sleep', facing) ? 'sleep' : 'stand';
     case 'sit':
-      return hasPlayablePose(assets, 'sit') ? 'sit' : 'stand';
+      return hasPlayablePose(assets, 'sit', facing) ? 'sit' : 'stand';
     case 'lie':
-      return hasPlayablePose(assets, 'lie') ? 'lie' : 'stand';
+      return hasPlayablePose(assets, 'lie', facing) ? 'lie' : 'stand';
     case 'walk':
-      return hasPlayablePose(assets, 'walk') ? 'walk' : 'stand';
+      return hasPlayablePose(assets, 'walk', facing) ? 'walk' : 'stand';
     case 'run':
-      return hasPlayablePose(assets, 'run') ? 'run' : 'stand';
+      return hasPlayablePose(assets, 'run', facing) ? 'run' : 'stand';
     case 'jump':
-      return hasPlayablePose(assets, 'jump') ? 'jump' : 'stand';
+      return hasPlayablePose(assets, 'jump', facing) ? 'jump' : 'stand';
     default:
       return 'stand';
   }

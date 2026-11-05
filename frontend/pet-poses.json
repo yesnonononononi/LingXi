@@ -119,10 +119,1386 @@
         ],
         "aliasesResolved": []
       }
+    },
+    "walk": {
+      "posture": "walk",
+      "assetId": "desktop-pet.poses.walk",
+      "status": "awaiting-static-review",
+      "masterScale": 2,
+      "canvas": {
+        "width": 3072,
+        "height": 3072
+      },
+      "nativeCanvas": {
+        "width": 1536,
+        "height": 1536
+      },
+      "bodyAnchor": {
+        "byFacing": {
+          "1": {
+            "x": 768,
+            "y": 1453
+          },
+          "-1": {
+            "x": 768,
+            "y": 1453
+          }
+        },
+        "byFacingSource": "batch-single",
+        "spreadNative": 1.69,
+        "maxDeviationNative": 1.08
+      },
+      "envelopeCss": {
+        "left": -114.8672,
+        "right": 110.9063,
+        "top": -211.3008,
+        "bottom": 0
+      },
+      "clips": [
+        {
+          "id": "cycle",
+          "facing": -1,
+          "frames": [
+            "l1",
+            "l2",
+            "l3",
+            "l4"
+          ],
+          "loop": true,
+          "frameMs": [
+            110,
+            110,
+            110,
+            110
+          ]
+        },
+        {
+          "id": "cycle",
+          "facing": 1,
+          "frames": [
+            "r1",
+            "r2",
+            "r3",
+            "r4"
+          ],
+          "loop": true,
+          "frameMs": [
+            110,
+            110,
+            110,
+            110
+          ]
+        }
+      ],
+      "frames": {
+        "l1": {
+          "id": "l1",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/l1@1x.webp",
+              "url": "lxa://pet-poses/walk/l1@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 41440,
+              "sha256": "ea8beaa02d68447692518589b5d1f96a333c55868f19af2a8aef161a2b86e2ea",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/l1@2x.webp",
+              "url": "lxa://pet-poses/walk/l1@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 129326,
+              "sha256": "3296420084cbe9461cbca213d9e6fd9993590e64c1b202315edd4ad0a6af3cf5",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 464,
+            "top": 85,
+            "right": 1496,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 623
+        },
+        "l2": {
+          "id": "l2",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/l2@1x.webp",
+              "url": "lxa://pet-poses/walk/l2@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39922,
+              "sha256": "30b0674a9a6cb79f9e003bad26878ad3bcbee38365f0bdbc1f1d6d8bdd1042e9",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/l2@2x.webp",
+              "url": "lxa://pet-poses/walk/l2@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 125434,
+              "sha256": "c6236a3c931dc5d66bf1eed8fef51327f0f04d976e02729864265958d6577228",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 456,
+            "top": 92,
+            "right": 1477,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 955.5
+        },
+        "l3": {
+          "id": "l3",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/l3@1x.webp",
+              "url": "lxa://pet-poses/walk/l3@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39472,
+              "sha256": "74fe64d49941539611b5930eab2880e2f1e369b64ea8128298beb0a3e89b7f5a",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/l3@2x.webp",
+              "url": "lxa://pet-poses/walk/l3@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 123216,
+              "sha256": "e544a58a47941789b6ccf430fa80d4ecdb781b6c4af8aa24ad304748d5568aea",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 446,
+            "top": 81,
+            "right": 1481,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 649
+        },
+        "l4": {
+          "id": "l4",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/l4@1x.webp",
+              "url": "lxa://pet-poses/walk/l4@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 44172,
+              "sha256": "e0000681bc159cd0c2105625e75d8dd4df00a636e133fd642455657573bd5c62",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/l4@2x.webp",
+              "url": "lxa://pet-poses/walk/l4@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 138570,
+              "sha256": "e52af731c5adfb2632b9a561f93bdf15d2e9856d3af0970d6c26d14c740f187d",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 357,
+            "top": 66,
+            "right": 1459,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 925
+        },
+        "r1": {
+          "id": "r1",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/r1@1x.webp",
+              "url": "lxa://pet-poses/walk/r1@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 41706,
+              "sha256": "71ac806c30c346d3c6f7b89143e71bb27e6c41a69999e91b1ad6b4b8c3ab8ef5",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/r1@2x.webp",
+              "url": "lxa://pet-poses/walk/r1@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 129194,
+              "sha256": "c07f6f1f46348d5674291d07cd680277747586730a3598155d26be6a4717977a",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 15,
+            "top": 68,
+            "right": 1080,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 932
+        },
+        "r2": {
+          "id": "r2",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/r2@1x.webp",
+              "url": "lxa://pet-poses/walk/r2@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39092,
+              "sha256": "e412b087a20a0f66d5a61d5f3346666ee932779f9ed2405ec1c26aaea8adc00a",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/r2@2x.webp",
+              "url": "lxa://pet-poses/walk/r2@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 121408,
+              "sha256": "654c9e0a421b4cd52c85729fff26ba627f94a19e491b8e4cc0ed6f5511820cae",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 62,
+            "top": 68,
+            "right": 1101,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 602
+        },
+        "r3": {
+          "id": "r3",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/r3@1x.webp",
+              "url": "lxa://pet-poses/walk/r3@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 41208,
+              "sha256": "17da8e9b44484d7f1a372847cb7cd5579b4a3523e8796f1d8e9c2dc8bf7038d9",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/r3@2x.webp",
+              "url": "lxa://pet-poses/walk/r3@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 128990,
+              "sha256": "eff4db91d4fc35fa7e0961e6f6fd5d11260edb9f160e77f379bebb65f691a5aa",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 14,
+            "top": 78,
+            "right": 1049,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 936
+        },
+        "r4": {
+          "id": "r4",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/walk/r4@1x.webp",
+              "url": "lxa://pet-poses/walk/r4@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 42202,
+              "sha256": "47968f284e7de3bdc2529587ca974e652695bcccf0b823458735f7eff7d8ea72",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/walk/r4@2x.webp",
+              "url": "lxa://pet-poses/walk/r4@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 132890,
+              "sha256": "ef820513809452aa2a7168beb7c15b3038feadb3a64bd114adc07a03e9eb2dc5",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 768,
+            "y": 1453
+          },
+          "inkNative": {
+            "left": 42,
+            "top": 77,
+            "right": 1104,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 599
+        }
+      },
+      "provenance": {
+        "adapter": "frames-nested-v3",
+        "manifestSha256": "65629bdd3de1103f5de1b5a07ded35cf9a08457ffa92e03ca9562955eadfe460",
+        "consumedKeys": [
+          "canvas",
+          "nativeSourceCanvas",
+          "masterScale",
+          "bodyAnchor.x",
+          "bodyAnchor.y",
+          "bodyAnchor.byFacing",
+          "frames[].id",
+          "frames[].facing",
+          "frames[].file",
+          "frames[].master.bbox",
+          "frames[].native.bbox",
+          "frames[].contactPoints.airborneGap",
+          "frames[].contactPoints.support.centerX"
+        ],
+        "aliasesResolved": []
+      }
+    },
+    "run": {
+      "posture": "run",
+      "assetId": "desktop-pet/poses/run",
+      "status": "awaiting-static-review",
+      "masterScale": 2,
+      "canvas": {
+        "width": 3072,
+        "height": 3072
+      },
+      "nativeCanvas": {
+        "width": 1536,
+        "height": 1536
+      },
+      "bodyAnchor": {
+        "byFacing": {
+          "1": {
+            "x": 836,
+            "y": 1454
+          },
+          "-1": {
+            "x": 700,
+            "y": 1454
+          }
+        },
+        "byFacingSource": "measured-per-facing",
+        "spreadNative": 1.1,
+        "maxDeviationNative": 0
+      },
+      "envelopeCss": {
+        "left": -122.0273,
+        "right": 124.7695,
+        "top": -210.6914,
+        "bottom": -0.1523
+      },
+      "clips": [
+        {
+          "id": "cycle",
+          "facing": -1,
+          "frames": [
+            "l1",
+            "l2",
+            "l3",
+            "l4",
+            "l5",
+            "l6"
+          ],
+          "loop": true,
+          "frameMs": [
+            90,
+            90,
+            90,
+            90,
+            90,
+            90
+          ]
+        },
+        {
+          "id": "cycle",
+          "facing": 1,
+          "frames": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5",
+            "r6"
+          ],
+          "loop": true,
+          "frameMs": [
+            90,
+            90,
+            90,
+            90,
+            90,
+            90
+          ]
+        }
+      ],
+      "frames": {
+        "l1": {
+          "id": "l1",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/run/l1@1x.webp",
+              "url": "lxa://pet-poses/run/l1@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 45830,
+              "sha256": "d5f9d59d48739d1a14c082fc595f06ce4a105f0976d31726e531712b131d9085",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/l1@2x.webp",
+              "url": "lxa://pet-poses/run/l1@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 144280,
+              "sha256": "1abc6841ec3e55b2e2d31a905cae77321ff81652a61bf0b47d30e8eae50b2d31",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 280,
+            "top": 71,
+            "right": 1519,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 1099
+        },
+        "l2": {
+          "id": "l2",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/run/l2@1x.webp",
+              "url": "lxa://pet-poses/run/l2@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 43122,
+              "sha256": "99a00748d6062a9d1cf56860a693a011c03680210889aaae14b975a175bef93e",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/l2@2x.webp",
+              "url": "lxa://pet-poses/run/l2@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 135362,
+              "sha256": "918d95bdbef0734acf3c1d8478f462d302de50ecce5cd8870c8022e7adccbed1",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 305,
+            "top": 87,
+            "right": 1513,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 636
+        },
+        "l3": {
+          "id": "l3",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/run/l3@1x.webp",
+              "url": "lxa://pet-poses/run/l3@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 42938,
+              "sha256": "773952f2171f7b4ff0b1c7df7d42b1b6494cb2b82a32bec0887c16aadba94df2",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/l3@2x.webp",
+              "url": "lxa://pet-poses/run/l3@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 134578,
+              "sha256": "f1242879d47c0e35ced33b5de0c2fb4d1e2a7d4d246b82b4c4fbb3bb17e559a6",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 322,
+            "top": 73,
+            "right": 1488,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 1033
+        },
+        "l4": {
+          "id": "l4",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/run/l4@1x.webp",
+              "url": "lxa://pet-poses/run/l4@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 38332,
+              "sha256": "df75c4fa2dad2946eaafd4a00a2589dbf10d7fd8a6e079b6939f387ae4994f29",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/l4@2x.webp",
+              "url": "lxa://pet-poses/run/l4@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 120410,
+              "sha256": "1a2a552cd85427e21605720dbfca84c5777669c2dbe59059b96d17f70582ad7b",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 327,
+            "top": 139,
+            "right": 1497,
+            "bottom": 1405
+          },
+          "airborneGapNative": 48,
+          "supportFootX": null
+        },
+        "l5": {
+          "id": "l5",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/run/l5@1x.webp",
+              "url": "lxa://pet-poses/run/l5@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 43882,
+              "sha256": "e02e33c9f3b427e4a65013fdc51cae39bc582216d3c0903356fb934013175557",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/l5@2x.webp",
+              "url": "lxa://pet-poses/run/l5@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 137634,
+              "sha256": "99ac271f898bbbd8b74bda038db1d1cbceebb18dfc132fe6bfac159e9ae90f48",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 345,
+            "top": 77,
+            "right": 1476,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 578.5
+        },
+        "l6": {
+          "id": "l6",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/run/l6@1x.webp",
+              "url": "lxa://pet-poses/run/l6@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 43646,
+              "sha256": "6cb0174aae871aa809ba537163d5967d37e623a97aa4ccb9f976850c5fe6b0f7",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/l6@2x.webp",
+              "url": "lxa://pet-poses/run/l6@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 138586,
+              "sha256": "7ab2acd2a9f031a34e0292d1a3bba2ba3c7b5edb76b43656d627684e66f2a64b",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 427,
+            "top": 96,
+            "right": 1421,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 875
+        },
+        "r1": {
+          "id": "r1",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/run/r1@1x.webp",
+              "url": "lxa://pet-poses/run/r1@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 40908,
+              "sha256": "04c74c3c328bcebf6ba95c2da2bdac7ef452f3f6379a71031219c3aa4d53091e",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/r1@2x.webp",
+              "url": "lxa://pet-poses/run/r1@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 128276,
+              "sha256": "4d251358119b62e20a079c49da3e8dbbc0039c7cd124d9e0b1695ab3cc60c4cf",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 209,
+            "top": 78,
+            "right": 1278,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 525
+        },
+        "r2": {
+          "id": "r2",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/run/r2@1x.webp",
+              "url": "lxa://pet-poses/run/r2@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 42906,
+              "sha256": "6822c70b16f36177e34097fa8287923a2e35a98f19a766e0adde68cc6f99eb26",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/r2@2x.webp",
+              "url": "lxa://pet-poses/run/r2@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 136372,
+              "sha256": "e5344e55a106fd8dfd0eb46e8a3473bb45052f0c4771ad45b5337fee82403a34",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 108,
+            "top": 98,
+            "right": 1196,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 1019
+        },
+        "r3": {
+          "id": "r3",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/run/r3@1x.webp",
+              "url": "lxa://pet-poses/run/r3@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 40656,
+              "sha256": "f2dc9f61c33da922e3e6467224817b18ba1f80c367bc4f30e53dccc24bf870e7",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/r3@2x.webp",
+              "url": "lxa://pet-poses/run/r3@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 127980,
+              "sha256": "9e79eb714d20072c1234db9f36c3471f14796ce9901db1eec41fc0526ed6a62d",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 35,
+            "top": 90,
+            "right": 1185,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 519.5
+        },
+        "r4": {
+          "id": "r4",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/run/r4@1x.webp",
+              "url": "lxa://pet-poses/run/r4@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39384,
+              "sha256": "0b5e2dc0a1b15f69f14d6931c66c417ac7d9eb7df66e2c81365769cb51e02ab7",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/r4@2x.webp",
+              "url": "lxa://pet-poses/run/r4@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 124272,
+              "sha256": "b48dd851c8a2478a4af3680f57367be6956a38a3b68f2fa323ffccc4aff64fc3",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 263,
+            "top": 97,
+            "right": 1216,
+            "bottom": 1405
+          },
+          "airborneGapNative": 48,
+          "supportFootX": null
+        },
+        "r5": {
+          "id": "r5",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/run/r5@1x.webp",
+              "url": "lxa://pet-poses/run/r5@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 41782,
+              "sha256": "9bb6493756e1d0ff74bc447fada0a80c5ab3d8f4c4dafbb8255845eadbedc03b",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/r5@2x.webp",
+              "url": "lxa://pet-poses/run/r5@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 131410,
+              "sha256": "3fc8ed6c22a9d3139c3b178829d6f7df734971cfcb833f398187d41af4d98a06",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 205,
+            "top": 76,
+            "right": 1229,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 1021.5
+        },
+        "r6": {
+          "id": "r6",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/run/r6@1x.webp",
+              "url": "lxa://pet-poses/run/r6@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 35826,
+              "sha256": "a52165ad68ab726366b3aa694f73beb03ff6d8ede3776a3001466addc920183b",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/run/r6@2x.webp",
+              "url": "lxa://pet-poses/run/r6@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 114324,
+              "sha256": "2472591ee9c737b9b93b4d11fc176b47b2b19a190a7661481bef7618726d37d1",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 270,
+            "top": 78,
+            "right": 1116,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 737
+        }
+      },
+      "provenance": {
+        "adapter": "frames-nested-v3",
+        "manifestSha256": "09710856eb6f2365ddca46dfbea51c646902489cb12618822f8bc62fbd500266",
+        "consumedKeys": [
+          "canvas",
+          "nativeSourceCanvas",
+          "masterScale",
+          "bodyAnchor.x",
+          "bodyAnchor.y",
+          "bodyAnchor.byFacing",
+          "frames[].id",
+          "frames[].facing",
+          "frames[].file",
+          "frames[].master.bbox",
+          "frames[].native.bbox",
+          "frames[].contactPoints.airborneGap",
+          "frames[].contactPoints.support.centerX"
+        ],
+        "aliasesResolved": []
+      }
+    },
+    "jump": {
+      "posture": "jump",
+      "assetId": "desktop-pet/poses/jump",
+      "status": "awaiting-static-review",
+      "masterScale": 2,
+      "canvas": {
+        "width": 3072,
+        "height": 3072
+      },
+      "nativeCanvas": {
+        "width": 1536,
+        "height": 1536
+      },
+      "bodyAnchor": {
+        "byFacing": {
+          "1": {
+            "x": 836,
+            "y": 1454
+          },
+          "-1": {
+            "x": 700,
+            "y": 1454
+          }
+        },
+        "byFacingSource": "measured-per-facing",
+        "spreadNative": 1,
+        "maxDeviationNative": 0
+      },
+      "envelopeCss": {
+        "left": -111.3633,
+        "right": 115.3242,
+        "top": -218.4609,
+        "bottom": -0.1523
+      },
+      "clips": [
+        {
+          "id": "once",
+          "facing": -1,
+          "frames": [
+            "anticipate",
+            "ascend",
+            "apex",
+            "descend",
+            "land"
+          ],
+          "loop": false,
+          "frameMs": [
+            130,
+            130,
+            130,
+            130,
+            130
+          ],
+          "onEnd": "return-stand"
+        },
+        {
+          "id": "once",
+          "facing": 1,
+          "frames": [
+            "r_anticipate",
+            "r_ascend",
+            "r_apex",
+            "r_descend",
+            "r_land"
+          ],
+          "loop": false,
+          "frameMs": [
+            130,
+            130,
+            130,
+            130,
+            130
+          ],
+          "onEnd": "return-stand"
+        }
+      ],
+      "frames": {
+        "anticipate": {
+          "id": "anticipate",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/anticipate@1x.webp",
+              "url": "lxa://pet-poses/jump/anticipate@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 48690,
+              "sha256": "e2cb0653ae52de044ed3f622aef2551a9a5cc5a599b67d6867671f82666a14bb",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/anticipate@2x.webp",
+              "url": "lxa://pet-poses/jump/anticipate@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 155916,
+              "sha256": "ff3c6bc8751a372f4dcbfc17865462b0fabeba1a496b3623e75320796da51e87",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 169,
+            "top": 78,
+            "right": 1347,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 975.5
+        },
+        "ascend": {
+          "id": "ascend",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/ascend@1x.webp",
+              "url": "lxa://pet-poses/jump/ascend@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 42538,
+              "sha256": "2d29713a30e204ca86406e4b18c327d143440ddae8f30021a47d26485c52f0b2",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/ascend@2x.webp",
+              "url": "lxa://pet-poses/jump/ascend@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 135694,
+              "sha256": "d04371138025a0b11277fb61b2ae0d7b14ff9bc4578f27231b98e0c8245f6861",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 300,
+            "top": 34,
+            "right": 1384,
+            "bottom": 1377
+          },
+          "airborneGapNative": 76,
+          "supportFootX": null
+        },
+        "apex": {
+          "id": "apex",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/apex@1x.webp",
+              "url": "lxa://pet-poses/jump/apex@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 42446,
+              "sha256": "067e11868b4e823e12301b8e7cf0a7fd76701da0436091e63aee2df7b491ca97",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/apex@2x.webp",
+              "url": "lxa://pet-poses/jump/apex@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 135024,
+              "sha256": "9afaabbbbc23318253774f4b2ddea5a60dba52c06d90545b18fcf6c1a97c36ef",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 358,
+            "top": 20,
+            "right": 1405,
+            "bottom": 1283
+          },
+          "airborneGapNative": 170,
+          "supportFootX": null
+        },
+        "descend": {
+          "id": "descend",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/descend@1x.webp",
+              "url": "lxa://pet-poses/jump/descend@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 41810,
+              "sha256": "9091fe15ec91c7de0365260febcc72d5e4cf3982620f61fbecaf1d4f56499c24",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/descend@2x.webp",
+              "url": "lxa://pet-poses/jump/descend@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 133674,
+              "sha256": "3eb0790fbd0179a6f7162528e5559401121d64d53af01d6fc60926d09cd66c78",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 303,
+            "top": 35,
+            "right": 1372,
+            "bottom": 1389
+          },
+          "airborneGapNative": 64,
+          "supportFootX": null
+        },
+        "land": {
+          "id": "land",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/land@1x.webp",
+              "url": "lxa://pet-poses/jump/land@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 48858,
+              "sha256": "aba4bd4b9bd36c70c596ae791407ecc0b7edcc59e1024c1a7cc583ca1f3f725e",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/land@2x.webp",
+              "url": "lxa://pet-poses/jump/land@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 155874,
+              "sha256": "eadc5238bde0b5dba80dced026ecdcfa6a28903e9ea4dfa668afc8dcb30611a6",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 700,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 263,
+            "top": 74,
+            "right": 1457,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 865.5
+        },
+        "r_anticipate": {
+          "id": "r_anticipate",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/r_anticipate@1x.webp",
+              "url": "lxa://pet-poses/jump/r_anticipate@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 47214,
+              "sha256": "8eec4ae8f9c6166c45b26825388b79b262ffd7eb482c1dbfe58d67443f52c77c",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/r_anticipate@2x.webp",
+              "url": "lxa://pet-poses/jump/r_anticipate@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 151240,
+              "sha256": "5e366dee14c85d62c2ea4025fa43f53e78ffb4ae94cf4b72d2e1edd393203fcc",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 105,
+            "top": 97,
+            "right": 1354,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 761.5
+        },
+        "r_ascend": {
+          "id": "r_ascend",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/r_ascend@1x.webp",
+              "url": "lxa://pet-poses/jump/r_ascend@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 36442,
+              "sha256": "a5361ad10daebe546a60a9e9764a3ef5f093f3667338219de99eae82f8d48493",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/r_ascend@2x.webp",
+              "url": "lxa://pet-poses/jump/r_ascend@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 115454,
+              "sha256": "fdcbc54435fa396b51f183b9e2097ddd149c71356d67eaca0dab1202495a9b85",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 205,
+            "top": 106,
+            "right": 1213,
+            "bottom": 1377
+          },
+          "airborneGapNative": 76,
+          "supportFootX": null
+        },
+        "r_apex": {
+          "id": "r_apex",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/r_apex@1x.webp",
+              "url": "lxa://pet-poses/jump/r_apex@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39884,
+              "sha256": "17756851b5c50c506883ee132ae16e6621285a79b4c513d3aa8291f169e1a566",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/r_apex@2x.webp",
+              "url": "lxa://pet-poses/jump/r_apex@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 125288,
+              "sha256": "ecdf3a14f0aab69a68f2f1e1873ec01213baa2e45eaa3e5a6eb0f964eced594e",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 173,
+            "top": 65,
+            "right": 1195,
+            "bottom": 1283
+          },
+          "airborneGapNative": 170,
+          "supportFootX": null
+        },
+        "r_descend": {
+          "id": "r_descend",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/r_descend@1x.webp",
+              "url": "lxa://pet-poses/jump/r_descend@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 45818,
+              "sha256": "a3718808dcedc60c2018aa5571701699022bef552aaa3ff15ff03aa16ef8fcf3",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/r_descend@2x.webp",
+              "url": "lxa://pet-poses/jump/r_descend@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 143444,
+              "sha256": "d0bdacf6bd1f37e840f39f44246e0d1504554a0af8776c3a0e20032c3a30901c",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 156,
+            "top": 26,
+            "right": 1312,
+            "bottom": 1389
+          },
+          "airborneGapNative": 64,
+          "supportFootX": null
+        },
+        "r_land": {
+          "id": "r_land",
+          "facing": 1,
+          "files": {
+            "1x": {
+              "file": "poses/jump/r_land@1x.webp",
+              "url": "lxa://pet-poses/jump/r_land@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 45172,
+              "sha256": "26038184d66256690ba2980976b0a9b13d6d4af186dba23271b0abff34b6ac01",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/jump/r_land@2x.webp",
+              "url": "lxa://pet-poses/jump/r_land@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 142518,
+              "sha256": "b711f00f6a0413e7d73f0fb6fbfbe60024699e96d44232ebc66abf8777fda871",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 836,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 156,
+            "top": 128,
+            "right": 1265,
+            "bottom": 1453
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 652
+        }
+      },
+      "provenance": {
+        "adapter": "frames-nested-v3",
+        "manifestSha256": "e2d41b91f30b997ab3076eb766f0b17ee45617bc2049eb1c17fd527054685306",
+        "consumedKeys": [
+          "canvas",
+          "nativeSourceCanvas",
+          "masterScale",
+          "bodyAnchor.x",
+          "bodyAnchor.y",
+          "bodyAnchor.byFacing",
+          "frames[].id",
+          "frames[].facing",
+          "frames[].file",
+          "frames[].master.bbox",
+          "frames[].native.bbox",
+          "frames[].contactPoints.airborneGap",
+          "frames[].contactPoints.support.centerX"
+        ],
+        "aliasesResolved": []
+      }
     }
   },
   "accepted": [
-    "sit"
+    "sit",
+    "walk",
+    "run",
+    "jump"
   ],
   "deferred": [
     {
@@ -132,18 +1508,6 @@
     {
       "posture": "sleep",
       "reason": "切片 3（卧姿语义）：运行资产未导出"
-    },
-    {
-      "posture": "walk",
-      "reason": "切片 2：运行资产未导出"
-    },
-    {
-      "posture": "run",
-      "reason": "切片 2：运行资产未导出"
-    },
-    {
-      "posture": "jump",
-      "reason": "切片 2：运行资产未导出（美术左右 10 帧已交齐，等切片 2 接漫游）"
     }
   ],
   "degradations": [
@@ -151,8 +1515,8 @@
     "no-blink"
   ],
   "totals": {
-    "frames": 1,
-    "bytes1x": 31846,
-    "bytes2x": 100182
+    "frames": 31,
+    "bytes1x": 1299144,
+    "bytes2x": 4096820
   }
 }
