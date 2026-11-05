@@ -1,0 +1,475 @@
+{
+  "version": 1,
+  "assetId": "lingxi-pet-gif-supplement-v1",
+  "status": "awaiting-visual-review",
+  "scope": [
+    "A01 坐姿眨眼",
+    "A01 坐姿抱云关键帧",
+    "A07 靠近—接触抱起—回应—结束",
+    "伙伴开心弹跳反馈"
+  ],
+  "generator": "tools/build.mjs",
+  "dependencies": "纯 Node；PNG 编解码复用 sit 批次工具，无新增依赖",
+  "nativeCanvas": {
+    "protagonist": [
+      1024,
+      1536
+    ],
+    "companion": [
+      512,
+      512
+    ],
+    "playStage": [
+      1280,
+      1536
+    ]
+  },
+  "masterScale": {
+    "factor": 2,
+    "kernel": "nearest",
+    "addsDetail": false
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "anchors": {
+    "protagonistBody": [
+      474,
+      1454
+    ],
+    "protagonistGround": [
+      512,
+      1454
+    ],
+    "companionFoot": [
+      256,
+      470
+    ],
+    "companionGrip": [
+      256,
+      333
+    ]
+  },
+  "placement": {
+    "companionCanvas": [
+      400,
+      400
+    ],
+    "protagonistCanvas": [
+      1024,
+      1536
+    ],
+    "hugGripStage": [
+      475,
+      1040
+    ],
+    "order": [
+      "protagonist",
+      "companion",
+      "sit_hug_hands"
+    ]
+  },
+  "masks": {
+    "sit_blink": [
+      [
+        326,
+        748,
+        446,
+        845,
+        7
+      ],
+      [
+        508,
+        748,
+        620,
+        845,
+        7
+      ]
+    ],
+    "sit_welcome": [
+      [
+        270,
+        953,
+        690,
+        1260,
+        12
+      ],
+      [
+        446,
+        832,
+        510,
+        883,
+        6
+      ]
+    ],
+    "sit_hug": [
+      [
+        270,
+        953,
+        690,
+        1260,
+        12
+      ],
+      [
+        326,
+        748,
+        446,
+        845,
+        7
+      ],
+      [
+        508,
+        748,
+        620,
+        845,
+        7
+      ],
+      [
+        446,
+        832,
+        510,
+        883,
+        6
+      ]
+    ],
+    "cloud_happy": [
+      [
+        208,
+        340,
+        309,
+        383,
+        4
+      ]
+    ]
+  },
+  "sourceMode": "built-in image_gen；仅采纳声明区域，原图轮廓、alpha、脚底与区域外像素保持不变",
+  "baseReferences": [
+    {
+      "file": "../../poses/sit/source/sit_neutral_native.png",
+      "sha256": "88970d45f461a8a85dbde3b7f4768e81989b5e64b0e85394b6415110be90cc06"
+    },
+    {
+      "file": "../../companion/v1/cloudling_neutral.png",
+      "sha256": "12f6da6a834e85c77d45bb411ac4df04654c0a2904514e9e60f7c0eae0803806"
+    }
+  ],
+  "clips": {
+    "sit_blink": {
+      "file": "gifs/sit_blink.gif",
+      "canvas": [
+        256,
+        384
+      ],
+      "loop": true,
+      "frames": [
+        "sit_neutral",
+        "sit_blink",
+        "sit_neutral",
+        "sit_blink",
+        "sit_neutral",
+        "sit_blink",
+        "sit_neutral"
+      ],
+      "frameMs": [
+        2600,
+        110,
+        1800,
+        90,
+        100,
+        110,
+        1800
+      ]
+    },
+    "cloud_react": {
+      "file": "gifs/cloud_react.gif",
+      "canvas": [
+        256,
+        256
+      ],
+      "loop": true,
+      "steps": [
+        {
+          "frame": "cloud_neutral",
+          "dy": 0,
+          "ms": 1000
+        },
+        {
+          "frame": "cloud_neutral",
+          "dy": -4,
+          "ms": 80
+        },
+        {
+          "frame": "cloud_neutral",
+          "dy": -9,
+          "ms": 80
+        },
+        {
+          "frame": "cloud_happy",
+          "dy": -14,
+          "ms": 160
+        },
+        {
+          "frame": "cloud_happy",
+          "dy": -9,
+          "ms": 80
+        },
+        {
+          "frame": "cloud_happy",
+          "dy": -4,
+          "ms": 80
+        },
+        {
+          "frame": "cloud_happy",
+          "dy": 0,
+          "ms": 700
+        },
+        {
+          "frame": "cloud_neutral",
+          "dy": 0,
+          "ms": 1000
+        }
+      ]
+    },
+    "play_cloud": {
+      "file": "gifs/play_cloud.gif",
+      "canvas": [
+        320,
+        384
+      ],
+      "loop": true,
+      "stageScale": 0.25,
+      "steps": [
+        {
+          "phase": "approach",
+          "protagonist": "sit_neutral",
+          "companion": "cloud_neutral",
+          "companionCenterX": 1080,
+          "companionFootY": 1454,
+          "ms": 700
+        },
+        {
+          "phase": "approach",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 1010,
+          "companionFootY": 1444,
+          "ms": 160
+        },
+        {
+          "phase": "approach",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 930,
+          "companionFootY": 1418,
+          "ms": 120
+        },
+        {
+          "phase": "approach",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 850,
+          "companionFootY": 1454,
+          "ms": 120
+        },
+        {
+          "phase": "approach",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 770,
+          "companionFootY": 1420,
+          "ms": 120
+        },
+        {
+          "phase": "contact",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 690,
+          "companionFootY": 1370,
+          "ms": 140
+        },
+        {
+          "phase": "contact",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 600,
+          "companionFootY": 1260,
+          "ms": 140
+        },
+        {
+          "phase": "contact",
+          "protagonist": "sit_hug",
+          "companion": "cloud_neutral",
+          "companionCenterX": 475,
+          "companionFootY": 1147,
+          "ms": 420
+        },
+        {
+          "phase": "response",
+          "protagonist": "sit_hug",
+          "companion": "cloud_happy",
+          "companionCenterX": 475,
+          "companionFootY": 1147,
+          "ms": 650
+        },
+        {
+          "phase": "response",
+          "protagonist": "sit_hug",
+          "companion": "cloud_happy",
+          "companionCenterX": 475,
+          "companionFootY": 1141,
+          "ms": 160
+        },
+        {
+          "phase": "response",
+          "protagonist": "sit_hug",
+          "companion": "cloud_happy",
+          "companionCenterX": 475,
+          "companionFootY": 1147,
+          "ms": 650
+        },
+        {
+          "phase": "end",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_happy",
+          "companionCenterX": 600,
+          "companionFootY": 1260,
+          "ms": 160
+        },
+        {
+          "phase": "end",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 770,
+          "companionFootY": 1400,
+          "ms": 160
+        },
+        {
+          "phase": "end",
+          "protagonist": "sit_welcome",
+          "companion": "cloud_neutral",
+          "companionCenterX": 930,
+          "companionFootY": 1454,
+          "ms": 160
+        },
+        {
+          "phase": "end",
+          "protagonist": "sit_neutral",
+          "companion": "cloud_neutral",
+          "companionCenterX": 1080,
+          "companionFootY": 1454,
+          "ms": 1000
+        }
+      ]
+    }
+  },
+  "gif": {
+    "palette": 256,
+    "transparentIndex": 0,
+    "alphaThreshold": 128,
+    "disposal": 2,
+    "note": "GIF 仅支持二值透明；运行接入优先使用 PNG 分层与时序，不将 GIF 反解为母版"
+  },
+  "files": [
+    {
+      "file": "frames/sit_blink_native.png",
+      "bytes": 1295123,
+      "sha256": "6117348fe8176a372ff8f3bd101b7f83ea9065c73fd3fb8ade16f30412940a7e"
+    },
+    {
+      "file": "frames/sit_blink@2x.png",
+      "bytes": 1624722,
+      "sha256": "da7c6cfcca74ed55728b67bf5b25ec9e69f7f34a467e4281929fef28d0b30287"
+    },
+    {
+      "file": "frames/sit_welcome_native.png",
+      "bytes": 1329405,
+      "sha256": "dee2bea609d11de7ad4c50960cab4fea5611fe8a67f18da2b772d7043a5d719d"
+    },
+    {
+      "file": "frames/sit_welcome@2x.png",
+      "bytes": 1656556,
+      "sha256": "76790b88c3fee7eee37ce8c5fa1775b95ace128691ff6a67c8bfbca294aa4865"
+    },
+    {
+      "file": "frames/sit_hug_native.png",
+      "bytes": 1310231,
+      "sha256": "7b560cbd21c2fddc0ca7da6b78dfbf7715e160c99eb0731b0562a9e6c63ed0e1"
+    },
+    {
+      "file": "frames/sit_hug@2x.png",
+      "bytes": 1640112,
+      "sha256": "a57bc8acd683832b305de5fef9fc3cab1898046bbd08578e6006812ca6432d7b"
+    },
+    {
+      "file": "frames/cloud_happy_native.png",
+      "bytes": 19640,
+      "sha256": "3552c0894670104e8cbdc0ca8ee370bddebd68e719bb76858c6e086f640f42b8"
+    },
+    {
+      "file": "frames/cloud_happy@2x.png",
+      "bytes": 28092,
+      "sha256": "61473239eab96798afc55bb6175ded1e3f105e87b6625ea1f8ded0a5a50c8b51"
+    },
+    {
+      "file": "frames/sit_hug_hands_native.png",
+      "bytes": 50350,
+      "sha256": "57690e8c01497447953785037f695053eaa273a05eb1ec686fbd6ad190f78c0b"
+    },
+    {
+      "file": "gifs/sit_blink.gif",
+      "bytes": 219088,
+      "sha256": "48b6cef04eaa10ed75289911d2bb1bdbfe5ba6bd3964fce454f872b72c2e1b1d"
+    },
+    {
+      "file": "gifs/cloud_react.gif",
+      "bytes": 28226,
+      "sha256": "7efe27bbe9c26eb3a0171e8b56992f2c2da650f0f4d2dd27f7fca76377203e51"
+    },
+    {
+      "file": "gifs/play_cloud.gif",
+      "bytes": 487761,
+      "sha256": "044e5918f332b9724aba1edd4c2100d4f5ae702d9936176be56903d80cf5a6cd"
+    },
+    {
+      "file": "qa/review.png",
+      "bytes": 263699,
+      "sha256": "c8c746f57c5ae92e3c0a91a417d412ef17423b832891dc71194784ed45ca2fc3"
+    },
+    {
+      "file": "qa/play_frames.png",
+      "bytes": 120031,
+      "sha256": "23987b1bdb19f653d836e958b1c5bbac66264782db34814ada5f71c3bf5e0adf"
+    }
+  ],
+  "sources": [
+    {
+      "file": "source/cloud_happy_generated.png",
+      "bytes": 332989,
+      "sha256": "b530630de10ab729e3d06d338bb32891f9b0cdd6943a7f1e7b291a326dd3fdec"
+    },
+    {
+      "file": "source/sit_blink_generated.png",
+      "bytes": 1778197,
+      "sha256": "0abe7cf3434805ccc3dff09c3bb032854f67f6ed0b46451b8b5cd9460ca9b562"
+    },
+    {
+      "file": "source/sit_hug_generated.png",
+      "bytes": 1770520,
+      "sha256": "88cf5ea1f3df25345a4e9907c55871d0e5055f6a644f00c24f8242384085a5e7"
+    },
+    {
+      "file": "source/sit_welcome_generated.png",
+      "bytes": 1818544,
+      "sha256": "56fbd1a25bed2838d238204eadca773bafd82c2784adc453ab23ada9c2ac8f16"
+    }
+  ],
+  "review": {
+    "approvedBy": null,
+    "fullBatchComplete": false
+  },
+  "deferred": [
+    "尚未接入 frontend 运行时",
+    "坐姿持续呼吸与耳尾分层动作",
+    "其他玩耍变体与朝向",
+    "side / edge / mini 独立资产"
+  ]
+}

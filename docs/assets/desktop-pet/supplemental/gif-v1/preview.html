@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>桌宠动画补充资产 v1</title>
+<style>
+body{margin:0;padding:32px;background:#f0eee9;color:#303744;font:15px/1.6 system-ui,sans-serif}header{max-width:1100px;margin:auto}h1{font-size:25px;margin:0 0 8px}p{margin:6px 0 20px}button{padding:8px 16px;border:1px solid #9fa8b5;background:transparent;border-radius:8px;color:inherit;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:18px;max-width:1100px;margin:24px auto}.card{background:#fbfaf7;border:1px solid #d5d7db;border-radius:12px;overflow:hidden}.stage{height:400px;display:grid;place-items:center;background:#f8f6f0}.stage img{max-width:100%;max-height:384px}.copy{padding:16px}h2{font-size:17px;margin:0 0 6px}.copy p{margin:0}.dark .stage{background:#242a35}.note{max-width:1100px;margin:auto;color:#5b6572}@media(max-width:860px){.grid{grid-template-columns:1fr}}
+</style>
+<header><h1>桌宠动画补充资产 v1</h1><p>坐姿眨眼、伙伴回应与一条完整玩耍循环。透明 PNG、时序和锚点与 GIF 一并交付，等待视觉审核和工程接入。</p><button id="toggle">切换为深色背景</button></header>
+<main class="grid">
+<article class="card"><div class="stage"><img src="gifs/sit_blink.gif" alt="坐姿自然眨眼循环"></div><div class="copy"><h2>坐姿眨眼</h2><p>7 帧 · 6.61 秒 · 轮廓与脚底保持不动</p></div></article>
+<article class="card"><div class="stage"><img src="gifs/cloud_react.gif" alt="小云酱开心闭眼并轻跳"></div><div class="copy"><h2>小云酱回应</h2><p>8 帧 · 3.18 秒 · 开心轻跳后落回原位</p></div></article>
+<article class="card"><div class="stage"><img src="gifs/play_cloud.gif" alt="小云酱靠近，主角抱起，开心回应后放回"></div><div class="copy"><h2>抱云玩耍</h2><p>15 帧 · 4.86 秒 · 靠近、抱起、回应、放回</p></div></article>
+</main>
+<p class="note">本批仅交付资产；尚未接入桌宠运行时。GIF 为 256 色二值透明，工程接入优先使用 frames/ 中的完整透明 PNG 与 manifest.json。<a href="qa/review.png">明暗底对照</a> · <a href="qa/play_frames.png">玩耍逐帧</a> · <a href="manifest.json">资产清单</a></p>
+<script>document.querySelector('#toggle').onclick=()=>{const dark=document.body.classList.toggle('dark');document.querySelector('#toggle').textContent=dark?'切换为浅色背景':'切换为深色背景'};</script>
+</html>
