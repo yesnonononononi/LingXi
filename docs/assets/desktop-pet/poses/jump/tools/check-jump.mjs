@@ -40,6 +40,10 @@ export const GATE = {
   scaleRatioSpread: 0.004,
   // C17 bodyAnchor 容差
   bodyAnchorTol: 2,
+  // C10b 镜像判据：右向帧 vs 左向帧水平翻转后的差异像素 / 并集墨迹 ≥5%
+  mirrorDiffMinRatio: 0.05,
+  // C9c 单朝向体积上限：帧数 × 1.9MB（本轮右向 5 帧 ≤9.5MB，与左向同口径）
+  facingMaxBytes: 9961472,
   // C16 §6.1 必备键
   requiredTopKeys: ['batch', 'mirrorSafe', 'notMirrorableParts', 'orientation', 'nativeSourceCanvas', 'masterScale',
     'canvas', 'anchor', 'bodyAnchor', 'colorSpace', 'alpha', 'bboxConvention', 'display', 'frames', 'sources',
@@ -181,6 +185,22 @@ const analyzed = manifest.frames.map((f) => {
 const byId = new Map(analyzed.map((a) => [a.id, a]));
 const FRAME_ORDER = ['anticipate', 'ascend', 'apex', 'descend', 'land'];
 const DECL_AIRBORNE = new Set(['ascend', 'apex', 'descend']);
+// 相位基准（左右向同相位必须落在同一套数字上，判据 C18）。数值与左向上轮交付一字不差。
+const PHASE_GROUND = { anticipate: 0, ascend: 76, apex: 170, descend: 64, land: 0 };
+
+// 按朝向分组：本批同时含左向(-1)与右向(+1)帧。
+// 跨朝向共用同一个躯干锚点在几何上不成立（尾巴把墨迹拉成不对称形 + 左向帧字节已冻结），
+// 故「同批躯干零抖动」「腾空判据」这类判据一律在**同朝向组内**成立，跨组另由 C17（镜像对称）与 C10b 把关。
+const groups = new Map();
+for (const a of analyzed) {
+  const k = a.facing;
+  if (!groups.has(k)) groups.set(k, []);
+  groups.get(k).push(a);
+}
+const leftGroup = groups.get(-1) || [];
+const rightGroup = groups.get(1) || [];
+const rightIds = FRAME_ORDER.map((p) => 'r_' + p);
+const rightByPhase = new Map(rightGroup.map((a) => [a.id.replace(/^r_/, ''), a]));
 
 // ---------- C1 ----------
 check('C1a 画布 3072x3072', analyzed.every((a) => a.mInfo.ihdr.width === canvas.width && a.mInfo.ihdr.height === canvas.height),
@@ -322,18 +342,35 @@ check('C3b 支撑帧最低像素与锚点 y 偏差 <= 2px', supportDiffs.length 
 }
 // ---------- C8 ----------
 {
+  // 左右向同批：画布/锚点仍必须全批一致（这些与朝向无关），朝向一致性拆到组内判，
+  // 另加「两个朝向组各 FRAME_ORDER.length 帧、facing 取值只能是 ±1」——比原来的单朝向断言只增不减。
   const sizes = new Set(analyzed.map((a) => a.mInfo.ihdr.width + 'x' + a.mInfo.ihdr.height));
   const nativeSizes = new Set(analyzed.map((a) => a.native.width + 'x' + a.native.height));
   const anchors = new Set(analyzed.map((a) => (a.decl.anchor ? a.decl.anchor.x + ',' + a.decl.anchor.y : 'none')));
-  const facings = new Set(analyzed.map((a) => a.facing));
-  const xs = analyzed.map((a) => a.torsoCx);
-  const spread = Math.max(...xs) - Math.min(...xs);
-  const ok = sizes.size === 1 && nativeSizes.size === 1 && anchors.size === 1 && facings.size === 1
-    && facings.has(-1) && spread <= GATE.bodyAnchorTol;
-  check('C8 同批画布/锚点/朝向一致 + 躯干横向零抖动（spread<=2）', ok,
-    'master=' + [...sizes].join(',') + ' native=' + [...nativeSizes].join(',') + ' anchor=' + [...anchors].join(',')
-    + ' facing=' + [...facings].join('/') + ' | torsoX ' + analyzed.map((a) => a.id + ':' + a.torsoCx.toFixed(1)).join(' ')
-    + ' spread=' + spread.toFixed(2) + 'px');
+  const badFacing = analyzed.filter((a) => a.facing !== -1 && a.facing !== 1).map((a) => a.id);
+  const spreadOf = (g) => {
+    const xs = g.map((a) => a.torsoCx);
+    return xs.length ? Math.max(...xs) - Math.min(...xs) : Infinity;
+  };
+  const problems = [];
+  if (sizes.size !== 1) problems.push('母版尺寸不一致');
+  if (nativeSizes.size !== 1) problems.push('native 尺寸不一致');
+  if (anchors.size !== 1) problems.push('anchor 不一致');
+  if (badFacing.length) problems.push('非法 facing: ' + badFacing.join(','));
+  if (leftGroup.length !== FRAME_ORDER.length) problems.push('左向组帧数=' + leftGroup.length + ' 应为 ' + FRAME_ORDER.length);
+  if (rightGroup.length !== FRAME_ORDER.length) problems.push('右向组帧数=' + rightGroup.length + ' 应为 ' + FRAME_ORDER.length);
+  if (!leftGroup.every((a) => a.facing === -1)) problems.push('左向组混入非 -1');
+  if (!rightGroup.every((a) => a.facing === 1)) problems.push('右向组混入非 +1');
+  const spreadL = spreadOf(leftGroup);
+  const spreadR = spreadOf(rightGroup);
+  if (spreadL > GATE.bodyAnchorTol) problems.push('左向组躯干 spread=' + spreadL.toFixed(2));
+  if (spreadR > GATE.bodyAnchorTol) problems.push('右向组躯干 spread=' + spreadR.toFixed(2));
+  check('C8 同批画布/锚点一致 + 左右组各 5 帧且朝向纯一 + 组内躯干横向零抖动（spread<=2）', problems.length === 0,
+    problems.length ? problems.join('; ')
+      : 'master=' + [...sizes].join(',') + ' native=' + [...nativeSizes].join(',') + ' anchor=' + [...anchors].join(',')
+      + ' facing=' + [...groups.keys()].sort((p, q) => p - q).join('/')
+      + ' | 左向(' + leftGroup.length + '帧) spread=' + spreadL.toFixed(2) + 'px 右向(' + rightGroup.length + '帧) spread=' + spreadR.toFixed(2) + 'px'
+      + ' | torsoX ' + analyzed.map((a) => a.id + ':' + a.torsoCx.toFixed(1)).join(' '));
 }
 // ---------- C9 / C9b ----------
 {
@@ -362,40 +399,114 @@ check('C3b 支撑帧最低像素与锚点 y 偏差 <= 2px', supportDiffs.length 
     detail.join(' ') + ' | 合计=' + (grand / GATE.mbBytes).toFixed(2) + 'MB / 上限' + GATE.batchTotalGlobalMaxMB + 'MB ('
     + (grand / limit * 100).toFixed(1) + '%)');
 }
+// ---------- C9c 单朝向体积 ----------
+{
+  // 右向 5 帧单独按 5 × 1.9MB = 9.5MB 复核（与上一轮左向交付同口径），防止右向帧悄悄变胖
+  const sum = (g) => g.reduce((s, a) => s + bytes(a.masterPath), 0);
+  const rightBytes = sum(rightGroup);
+  const leftBytes = sum(leftGroup);
+  const problems = [];
+  if (rightGroup.length !== FRAME_ORDER.length) problems.push('右向组帧数=' + rightGroup.length);
+  if (rightBytes > GATE.facingMaxBytes) problems.push('右向合计 ' + rightBytes + 'B > ' + GATE.facingMaxBytes + 'B');
+  if (leftBytes > GATE.facingMaxBytes) problems.push('左向合计 ' + leftBytes + 'B > ' + GATE.facingMaxBytes + 'B（回归）');
+  check('C9c 单朝向体积：左右各 5 帧 ≤ 5×1.9MB=9.5MB', problems.length === 0,
+    problems.length ? problems.join('; ')
+      : '左向=' + (leftBytes / GATE.mbBytes).toFixed(2) + 'MB 右向=' + (rightBytes / GATE.mbBytes).toFixed(2)
+      + 'MB 上限=' + (GATE.facingMaxBytes / GATE.mbBytes).toFixed(1) + 'MB'
+      + ' | 右向逐帧 ' + rightGroup.map((a) => a.id + ':' + bytes(a.masterPath)).join(' '));
+}
 // ---------- C10 ----------
 {
   const rows = analyzed.map((a) => ({ id: a.id, facing: a.facing, off: a.irisOffset, area: a.iris ? a.iris.n : 0 }));
   const bad = rows.filter((r) => r.off === null || Math.sign(r.off) !== r.facing || Math.abs(r.off) < GATE.irisMinOffset);
-  check('C10 虹膜朝向判据（全部左向：符号=facing=-1，|偏移|>=60 native px）', bad.length === 0,
+  const cnt = (f) => rows.filter((r) => r.facing === f).length;
+  check('C10 虹膜朝向判据（符号=facing，|偏移|>=60 native px）', bad.length === 0,
     rows.map((r) => r.id + ':' + Math.round(r.off) + '(n' + Math.round(r.area) + ')').join(' ')
-    + ' | 5 帧全为负 = 全部左向');
+    + ' | 左向 ' + cnt(-1) + ' 帧全为负、右向 ' + cnt(1) + ' 帧全为正'
+    + (bad.length ? ' | 未通过: ' + bad.map((r) => r.id).join(',') : ''));
+}
+// ---------- C10b ----------
+// 镜像判据（与 run 的 C10b 完全同一口径）：把每个右向帧与每个左向帧的水平翻转逐像素比，
+// 取差异最小（最像镜像）的那一对。差异比 = 差异像素数 / 并集墨迹像素数（任一帧 alpha>=8 即计入并集），通道容差 8/255。
+// 真重画的右向帧与任何左向帧的镜像都应在姿态/部件侧别上明显不同，差异比远高于 5%；
+// 若有人拿左向帧水平翻转冒充右向，差异比会掉到 0% 附近，这条必红。
+{
+  const problems = [];
+  const rows = [];
+  if (!leftGroup.length || !rightGroup.length) problems.push('缺少左向或右向帧，镜像判据无从比较');
+  for (const r of rightGroup) {
+    const W = r.native.width;
+    const H = r.native.height;
+    let worst = null;
+    let paired = null;
+    for (const l of leftGroup) {
+      let ink = 0; let diff = 0;
+      for (let y = 0; y < H; y += 1) {
+        const rowR = y * W;
+        for (let x = 0; x < W; x += 1) {
+          const oR = (rowR + x) * 4;
+          const oL = (rowR + (W - 1 - x)) * 4;
+          const aR = r.native.data[oR + 3];
+          const aL = l.native.data[oL + 3];
+          if (aR < 8 && aL < 8) continue;
+          ink += 1;
+          if (Math.abs(aR - aL) > 8
+            || Math.abs(r.native.data[oR] - l.native.data[oL]) > 8
+            || Math.abs(r.native.data[oR + 1] - l.native.data[oL + 1]) > 8
+            || Math.abs(r.native.data[oR + 2] - l.native.data[oL + 2]) > 8) diff += 1;
+        }
+      }
+      const ratio = ink ? diff / ink : 0;
+      const rec = { l: l.id, ratio, ink, diff };
+      if (!worst || ratio < worst.ratio) worst = rec;
+      // 同相位那一对（r_apex vs mirror(apex)）单列出来，说明"最像镜像的那对不是你同相位的对手"
+      if (r.id.replace(/^r_/, '') === l.id) paired = rec;
+    }
+    rows.push({ id: r.id, worst, paired });
+    if (!(worst.ratio >= GATE.mirrorDiffMinRatio)) {
+      problems.push(r.id + ' vs mirror(' + worst.l + ')=' + (worst.ratio * 100).toFixed(2) + '%');
+    }
+  }
+  check('C10b 右向帧不是左向帧的镜像（翻转后差异 >=5% 并集墨迹）', problems.length === 0,
+    rows.map((x) => x.id + ':min=' + (x.worst.ratio * 100).toFixed(1) + '%(vs mirror ' + x.worst.l + ')'
+      + (x.paired ? ' 同相位=' + (x.paired.ratio * 100).toFixed(1) + '%' : '')).join(' ')
+    + ' | 阈值>=' + (GATE.mirrorDiffMinRatio * 100) + '%' + (problems.length ? ' | 未通过: ' + problems.join(',') : ''));
 }
 // ---------- C13 腾空判据 ----------
 {
   const problems = [];
-  const asc = byId.get('ascend'); const apex = byId.get('apex'); const desc = byId.get('descend');
-  for (const id of FRAME_ORDER) {
-    const a = byId.get(id);
-    const shouldAir = DECL_AIRBORNE.has(id);
-    if (shouldAir !== a.airborne) problems.push(id + '.airborne=' + a.airborne + '(应为' + shouldAir + ')');
-    if (shouldAir) {
-      if (a.decl.contactPoints.support !== null) problems.push(id + '.declSupport 应为 null');
-      if (!(a.airborneGap > 0)) problems.push(id + '.gap<=0');
-      if (a.airborneGap < GATE.airborneMinGapNative) problems.push(id + '.gap=' + a.airborneGap + ' <' + GATE.airborneMinGapNative);
-      for (const f of a.feet90 || a.feet) { if (f.contactY >= GROUND) problems.push(id + '.foot@' + f.contactY + ' 未高于地面线'); }
-    } else if (!a.support) problems.push(id + ' 支撑帧缺 support');
-  }
-  if (!(apex.airborneGap >= GATE.apexMinGapNative)) problems.push('apex.gap=' + apex.airborneGap + ' <' + GATE.apexMinGapNative);
   const runGap = manifest.notes.find((n) => n.includes('run')) ? 48 : 48;
-  if (!(apex.airborneGap >= runGap + GATE.gapMarginOverRun)) problems.push('apex.gap 未显著大于 run 的 ' + runGap);
-  if (!(asc.airborneGap < apex.airborneGap)) problems.push('ascend(' + asc.airborneGap + ') 未小于 apex(' + apex.airborneGap + ')');
-  if (!(desc.airborneGap < apex.airborneGap)) problems.push('descend(' + desc.airborneGap + ') 未小于 apex(' + apex.airborneGap + ')');
-  // 双脚最低点都高于地面线：脚段 contactY 与 native 底部一致即可证明（墨迹最低点即脚）
-  for (const a of [asc, apex, desc]) if (a.nativeBox.bottom >= GROUND) problems.push(a.id + '.nativeBottom 未高于地面线');
-  check('C13 腾空判据（support=null + gap>0 + apex>=120 且显著大于 run 48 + ascend<apex>descend + 双脚高于地面线）',
+  // 左右两组的断言集合完全相同（同相位同 gap），跨组的"左右一高一低"由 C18 另外把关
+  for (const [fac, g] of [[-1, leftGroup], [1, rightGroup]]) {
+    const get = (phase) => g.find((a) => a.id === (fac === 1 ? 'r_' + phase : phase));
+    if (!get('ascend') || !get('apex') || !get('descend')) { problems.push('facing' + fac + ' 缺 ascend/apex/descend'); continue; }
+    for (const phase of FRAME_ORDER) {
+      const a = get(phase);
+      const shouldAir = DECL_AIRBORNE.has(phase);
+      if (!a) { problems.push('facing' + fac + ' 缺帧 ' + phase); continue; }
+      if (shouldAir !== a.airborne) problems.push(a.id + '.airborne=' + a.airborne + '(应为' + shouldAir + ')');
+      if (shouldAir) {
+        if (a.decl.contactPoints.support !== null) problems.push(a.id + '.declSupport 应为 null');
+        if (!(a.airborneGap > 0)) problems.push(a.id + '.gap<=0');
+        if (a.airborneGap < GATE.airborneMinGapNative) problems.push(a.id + '.gap=' + a.airborneGap + ' <' + GATE.airborneMinGapNative);
+        for (const f of a.feet) { if (f.contactY >= GROUND) problems.push(a.id + '.foot@' + f.contactY + ' 未高于地面线'); }
+      } else if (!a.support) problems.push(a.id + ' 支撑帧缺 support');
+    }
+    const asc = get('ascend'); const apex = get('apex'); const desc = get('descend');
+    if (!(apex.airborneGap >= GATE.apexMinGapNative)) problems.push(apex.id + '.gap=' + apex.airborneGap + ' <' + GATE.apexMinGapNative);
+    if (!(apex.airborneGap >= runGap + GATE.gapMarginOverRun)) problems.push(apex.id + '.gap 未显著大于 run 的 ' + runGap);
+    if (!(asc.airborneGap < apex.airborneGap)) problems.push(asc.id + '(' + asc.airborneGap + ') 未小于 apex(' + apex.airborneGap + ')');
+    if (!(desc.airborneGap < apex.airborneGap)) problems.push(desc.id + '(' + desc.airborneGap + ') 未小于 apex(' + apex.airborneGap + ')');
+    // 双脚最低点都高于地面线：脚段 contactY 与 native 底部一致即可证明（墨迹最低点即脚）
+    for (const a of [asc, apex, desc]) if (a.nativeBox.bottom >= GROUND) problems.push(a.id + '.nativeBottom 未高于地面线');
+  }
+  const gapLine = (g) => FRAME_ORDER.map((p) => {
+    const a = g.find((x) => x.id === p || x.id === 'r_' + p);
+    return a ? a.id + ':' + (a.airborne ? 'gap' + a.airborneGap : 'bottom' + a.nativeBox.bottom) : p + ':缺失';
+  }).join(' ');
+  check('C13 腾空判据（左右两组同口径：support=null + gap>0 + apex>=120 且显著大于 run 48 + ascend<apex>descend + 双脚高于地面线）',
     problems.length === 0,
-    'ascend=' + asc.airborneGap + ' apex=' + apex.airborneGap + ' descend=' + desc.airborneGap
-    + ' nativeBottom=' + FRAME_ORDER.map((id) => id + ':' + byId.get(id).nativeBox.bottom).join(' ')
+    '左向 ' + gapLine(leftGroup) + ' | 右向 ' + gapLine(rightGroup)
     + (problems.length ? ' | ' + problems.join('; ') : ''));
 }
 // ---------- C14 禁整体缩放 ----------
@@ -426,12 +537,36 @@ check('C3b 支撑帧最低像素与锚点 y 偏差 <= 2px', supportDiffs.length 
     + ' apexW/landW=' + widthScaled.toFixed(4) + '（若用缩放解释 gap 应≈' + wouldBeScale.toFixed(4) + '）'
     + (problems.length ? ' | ' + problems.join('; ') : ''));
 }
+// ---------- C14b 禁整体缩放（逐朝向组复核）----------
+// C14 已把 10 帧放在同一个系数极差里（更强），这里再按朝向组各算一遍
+// 「腾空帧不得比支撑帧更宽」与「apex 比 land 窄」，防止某一侧靠放大伪造跳跃。
+{
+  const problems = [];
+  const lines = [];
+  for (const [fac, g] of [[-1, leftGroup], [1, rightGroup]]) {
+    const sup = g.filter((a) => !a.airborne);
+    const air = g.filter((a) => a.airborne);
+    if (!sup.length || !air.length) { problems.push('facing' + fac + ' 缺支撑帧或腾空帧'); continue; }
+    const supW = Math.max(...sup.map((a) => a.nativeBox.width));
+    const airW = Math.max(...air.map((a) => a.nativeBox.width));
+    if (airW >= supW) problems.push('facing' + fac + ' 腾空帧宽(' + airW + ') >= 支撑帧宽(' + supW + ')');
+    const apex = g.find((a) => a.id === (fac === 1 ? 'r_apex' : 'apex'));
+    const land = g.find((a) => a.id === (fac === 1 ? 'r_land' : 'land'));
+    const ratio = apex.nativeBox.width / land.nativeBox.width;
+    if (ratio > 1) problems.push('facing' + fac + ' apex宽/land宽=' + ratio.toFixed(3) + ' >1');
+    lines.push('facing' + fac + ' maxAirW=' + airW + ' < maxSupportW=' + supW + ' apexW/landW=' + ratio.toFixed(4)
+      + ' 墨迹高 ' + FRAME_ORDER.map((p) => p + ':' + (g.find((a) => a.id === p || a.id === 'r_' + p) || { nativeBox: {} }).nativeBox.height).join(' '));
+  }
+  check('C14b 禁整体缩放（逐朝向组：腾空帧不得比支撑帧更宽 / apex 不得比 land 宽）', problems.length === 0,
+    problems.length ? problems.join('; ') : lines.join(' | '));
+}
 // ---------- C15 ----------
 {
   const uniq = new Set(analyzed.map((a) => sha256(a.masterPath))).size;
   const uniqNative = new Set(analyzed.map((a) => sha256(a.nativePath))).size;
-  check('C15 5 帧母版/native sha256 互不相同（禁重复副本）', uniq === analyzed.length && uniqNative === analyzed.length,
-    'master=' + uniq + '/' + analyzed.length + ' native=' + uniqNative + '/' + analyzed.length);
+  check('C15 10 帧（左右各 5）母版/native sha256 互不相同（禁重复副本）', uniq === analyzed.length && uniqNative === analyzed.length,
+    'master=' + uniq + '/' + analyzed.length + ' native=' + uniqNative + '/' + analyzed.length
+    + ' | 右向 ' + rightGroup.map((a) => a.id).join(','));
 }
 // ---------- C16 §6.1 必备键 + 不变量 ----------
 {
@@ -443,32 +578,62 @@ check('C3b 支撑帧最低像素与锚点 y 偏差 <= 2px', supportDiffs.length 
   const parts = ['蝴蝶结', '云朵发夹', '内耳', '尾巴'];
   for (const p of parts) if (!manifest.notMirrorableParts.some((s) => s.includes(p))) problems.push('notMirrorableParts 缺 ' + p);
   const deferred = manifest.review.deferredUntilApproval.join('|');
-  for (const need of ['右向', 'play', 'edge', 'side', 'mini']) if (!deferred.includes(need)) problems.push('deferredUntilApproval 缺 ' + need);
-  if (manifest.review.fullBatchComplete !== false) problems.push('fullBatchComplete 应为 false（右向未做）');
+  for (const need of ['play', 'edge', 'side', 'mini']) if (!deferred.includes(need)) problems.push('deferredUntilApproval 缺 ' + need);
+  // 右向已交，不允许再挂在 deferred 里（挂回去说明"其实没做"或清单没同步）
+  if (deferred.includes('右向')) problems.push('deferredUntilApproval 仍含「右向」，但右向 5 帧本轮已交');
+  if (manifest.review.fullBatchComplete !== true) problems.push('fullBatchComplete 应为 true（左右 10 帧已交齐）');
   const req = new Set(manifest.review.requiredNow);
   for (const id of FRAME_ORDER) if (!req.has(id)) problems.push('requiredNow 缺 ' + id);
-  if (manifest.frames.length !== FRAME_ORDER.length) problems.push('frames 数=' + manifest.frames.length);
-  check('C16 §6.1 必备键 + nativeSourceCanvas×masterScale=canvas + mirrorSafe=false + notMirrorableParts + deferred 清单',
+  for (const id of rightIds) if (!req.has(id)) problems.push('requiredNow 缺 ' + id);
+  if (manifest.frames.length !== FRAME_ORDER.length * 2) problems.push('frames 数=' + manifest.frames.length + ' 应为 ' + FRAME_ORDER.length * 2);
+  if (manifest.sources.length !== FRAME_ORDER.length * 2) problems.push('sources 数=' + manifest.sources.length);
+  const badFacingCount = k => manifest.frames.filter((f) => f.facing === k).length;
+  if (badFacingCount(-1) !== FRAME_ORDER.length || badFacingCount(1) !== FRAME_ORDER.length) {
+    problems.push('facing 分布 -1:' + badFacingCount(-1) + ' +1:' + badFacingCount(1));
+  }
+  check('C16 §6.1 必备键 + nativeSourceCanvas×masterScale=canvas + mirrorSafe=false + notMirrorableParts + deferred 清单 + 左右各 5 帧已交齐',
     problems.length === 0,
     problems.length ? problems.join('; ')
       : GATE.requiredTopKeys.length + ' 个必备键齐全, 1536×2=3072 ✓, mirrorSafe=false, 不可镜像件=' + manifest.notMirrorableParts.length
-      + ', deferred=' + manifest.review.deferredUntilApproval.length + ' 项');
+      + ', frames=' + manifest.frames.length + '(左' + badFacingCount(-1) + '/右' + badFacingCount(1) + '), deferred=' + manifest.review.deferredUntilApproval.length + ' 项');
 }
 // ---------- C17 bodyAnchor ----------
+// §6.2：anchor 只管单批内尺寸/命中推导；跨批切换按 bodyAnchor（躯干主轴中心 + 本批地面线）对齐。
+// 六条断言：① 每帧实测躯干主轴 x 与「该帧朝向的声明值」差 <=2px；② 声明 x 落在躯干墨迹内（不是画布中线/bbox 中线）；
+// ③ 同朝向组内 spread <=2px；④ 声明 y 与本批地面线差 <=2px；⑤ 腾空帧不跟帧底；
+// ⑥ byFacing 的左右 x 必须**严格**镜像（x_left + x_right = native 画布宽，容差 0，因为是算术关系不是测量）。
 {
   const problems = [];
   const ba = manifest.bodyAnchor;
+  const byFacing = ba && ba.byFacing ? ba.byFacing : null;
   if (!ba) problems.push('缺 bodyAnchor');
   else {
-    const xs = analyzed.map((a) => a.torsoCx);
-    const mean = xs.reduce((s, v) => s + v, 0) / xs.length;
-    if (Math.abs(mean - ba.x) > GATE.bodyAnchorTol) problems.push('bodyAnchor.x=' + ba.x + ' vs 实测均值' + mean.toFixed(1));
-    const spread = Math.max(...xs) - Math.min(...xs);
-    if (spread > GATE.bodyAnchorTol) problems.push('同批 spread=' + spread.toFixed(2) + ' >' + GATE.bodyAnchorTol);
+    const declaredFor = (a) => (byFacing && byFacing[String(a.facing)]) ? byFacing[String(a.facing)] : { x: ba.x, y: ba.y };
+    for (const a of analyzed) {
+      const d = declaredFor(a);
+      const dx = Math.abs(a.torsoCx - d.x);
+      if (dx > GATE.bodyAnchorTol) problems.push(a.id + '.torsoCx=' + a.torsoCx.toFixed(1) + ' 与声明 ' + d.x + ' 差 ' + dx.toFixed(1));
+      // 声明 x 必须落在该帧躯干墨迹内（45%~85% 带内 alpha>=200 的像素），防止"拿画布中线糊弄"
+      const bandStart = a.nativeBox.top + Math.round(a.nativeBox.height * 0.45);
+      const bandEnd2 = a.nativeBox.top + Math.round(a.nativeBox.height * 0.85);
+      const xi = Math.round(d.x);
+      let hit = 0;
+      for (let y = bandStart; y <= bandEnd2; y += 1) {
+        const o = (y * a.native.width + xi) * 4;
+        if (a.native.data[o + 3] >= 200) hit += 1;
+      }
+      if (hit === 0) problems.push(a.id + ' bodyAnchor.x=' + d.x + ' 不在躯干墨迹内');
+      if (xi < a.nativeBox.left || xi > a.nativeBox.right) problems.push(a.id + ' bodyAnchor.x 落在墨迹 bbox 之外');
+    }
+    for (const [fc, g] of [...groups.entries()].sort((p, q) => p[0] - q[0])) {
+      const xs = g.map((a) => a.torsoCx);
+      const spread = Math.max(...xs) - Math.min(...xs);
+      if (spread > GATE.bodyAnchorTol) problems.push('facing' + fc + ' 组内 spread=' + spread.toFixed(2) + ' >' + GATE.bodyAnchorTol);
+    }
     if (Math.abs(ba.y - (GROUND - 1)) > GATE.bodyAnchorTol && Math.abs(ba.y - ANCHOR_Y_NATIVE) > GATE.bodyAnchorTol) {
       problems.push('bodyAnchor.y=' + ba.y + ' 与地面线 ' + GROUND + ' 偏差 >' + GATE.bodyAnchorTol);
     }
-    if (ba.byFacing && ba.byFacing['-1'] && Math.abs(ba.byFacing['-1'].x - ba.x) > GATE.bodyAnchorTol) problems.push('byFacing[-1] 与 x 不一致');
+    if (byFacing && byFacing['-1'] && Math.abs(byFacing['-1'].x - ba.x) > GATE.bodyAnchorTol) problems.push('byFacing[-1] 与 x 不一致');
     // y 不随帧底走：所有帧的 bodyAnchor.y 都必须是同一个地面参考，腾空帧帧底应与 y 相差 gap
     for (const a of analyzed) {
       if (a.airborne) {
@@ -476,12 +641,59 @@ check('C3b 支撑帧最低像素与锚点 y 偏差 <= 2px', supportDiffs.length 
         if (Math.abs(a.nativeBox.bottom - expect) > GATE.bodyAnchorTol) problems.push(a.id + ' 帧底与 bodyAnchor.y−gap 不符');
       }
     }
+    // ⑥ 左右镜像对称（严格算术，容差 0）
+    if (!byFacing) problems.push('缺 bodyAnchor.byFacing（左右向必须各声明一个 x）');
+    else {
+      const L = byFacing['-1']; const R = byFacing['1'];
+      if (!L || !R) problems.push('byFacing 缺 -1 或 1 的声明');
+      else {
+        if (L.x + R.x !== manifest.nativeSourceCanvas.width) {
+          problems.push('左右 bodyAnchor.x 不是严格镜像：' + L.x + '+' + R.x + '≠' + manifest.nativeSourceCanvas.width);
+        }
+        if (R.y !== L.y) problems.push('左右 bodyAnchor.y 不一致：' + L.y + ' vs ' + R.y);
+        if (typeof R.x !== 'number' || R.x <= 0 || R.x >= manifest.nativeSourceCanvas.width) problems.push('byFacing[1].x 越界');
+      }
+    }
   }
-  check('C17 bodyAnchor（躯干墨迹内 / x=实测质心±2 / 同批 spread<=2 / y=地面线±2 / 腾空帧不跟帧底）', problems.length === 0,
+  const meanOf = (g) => (g.length ? g.reduce((s, a) => s + a.torsoCx, 0) / g.length : NaN);
+  const spreadOf = (g) => (g.length ? Math.max(...g.map((a) => a.torsoCx)) - Math.min(...g.map((a) => a.torsoCx)) : NaN);
+  const baRow = (g) => g.length ? '实测均值=' + meanOf(g).toFixed(1) + ' spread=' + spreadOf(g).toFixed(2) : '缺失';
+  check('C17 bodyAnchor（按朝向取值 / 躯干墨迹内 / x=实测质心±2 / 组内 spread<=2 / y=地面线±2 / 腾空帧不跟帧底 / 左右严格镜像）',
+    problems.length === 0,
     problems.length ? problems.join('; ')
-      : 'x=' + manifest.bodyAnchor.x + ' 实测均值=' + (analyzed.reduce((s, a) => s + a.torsoCx, 0) / analyzed.length).toFixed(1)
-      + ' spread=' + (Math.max(...analyzed.map((a) => a.torsoCx)) - Math.min(...analyzed.map((a) => a.torsoCx))).toFixed(2)
-      + ' y=' + manifest.bodyAnchor.y + ' 地面线=' + GROUND + ' | 腾空帧帧底 ' + airborneFrames.map((a) => a.id + ':' + a.nativeBox.bottom).join(','));
+      : 'x=' + manifest.bodyAnchor.x + '(左)/' + (manifest.bodyAnchor.byFacing ? manifest.bodyAnchor.byFacing['1'].x : '缺失') + '(右)'
+      + ' y=' + manifest.bodyAnchor.y + ' 地面线=' + GROUND
+      + ' | 左向 ' + baRow(leftGroup) + ' 右向 ' + baRow(rightGroup)
+      + ' | 镜像 ' + (manifest.bodyAnchor.byFacing ? manifest.bodyAnchor.byFacing['-1'].x + '+' + manifest.bodyAnchor.byFacing['1'].x + '=' + manifest.nativeSourceCanvas.width : '缺失')
+      + ' | 腾空帧帧底 ' + airborneFrames.map((a) => a.id + ':' + a.nativeBox.bottom).join(','));
+}
+// ---------- C18 相位几何左右同帧对齐 ----------
+// 左右转身时若同一相位的离地量不同，动作会"一高一低"。判据是硬数字：
+// 支撑相位（anticipate / land）native 墨迹底边 = 地面线 1453；腾空相位 ascend 76 / apex 170 / descend 64。
+// 左右都要落在 ±2 native 内，且左右同相位的底边/离地量互相也要 ±2 对齐。
+{
+  const problems = [];
+  const rows = [];
+  for (const phase of FRAME_ORDER) {
+    const l = leftGroup.find((a) => a.id === phase);
+    const r = rightByPhase.get(phase);
+    if (!l || !r) { problems.push(phase + ' 缺左向或右向帧'); continue; }
+    const spec = PHASE_GROUND[phase];
+    for (const [tag, a] of [['左', l], ['右', r]]) {
+      const got = a.airborne ? a.airborneGap : (GROUND - a.nativeBox.bottom);
+      if (Math.abs(got - spec) > GATE.contactTolPx) problems.push(phase + ' ' + tag + '向=' + got + ' 应为 ' + spec);
+      if (a.airborne && a.nativeBox.bottom !== GROUND - spec) problems.push(phase + ' ' + tag + '向 帧底=' + a.nativeBox.bottom + ' 应为 ' + (GROUND - spec));
+      if (!a.airborne && a.nativeBox.bottom !== GROUND) problems.push(phase + ' ' + tag + '向 支撑帧底部=' + a.nativeBox.bottom + ' 应为 ' + GROUND);
+    }
+    const gotL = l.airborne ? l.airborneGap : (GROUND - l.nativeBox.bottom);
+    const gotR = r.airborne ? r.airborneGap : (GROUND - r.nativeBox.bottom);
+    if (Math.abs(gotL - gotR) > GATE.contactTolPx) problems.push(phase + ' 左右不齐：' + gotL + ' vs ' + gotR);
+    if (Math.abs(l.nativeBox.bottom - r.nativeBox.bottom) > GATE.contactTolPx) problems.push(phase + ' 左右帧底差=' + Math.abs(l.nativeBox.bottom - r.nativeBox.bottom));
+    rows.push(phase + ' 左=' + (l.airborne ? 'gap' + gotL : 'bottom' + l.nativeBox.bottom)
+      + ' 右=' + (r.airborne ? 'gap' + gotR : 'bottom' + r.nativeBox.bottom) + '(基准' + spec + ')');
+  }
+  check('C18 相位几何左右同帧对齐（anticipate/land 底 1453·gap 0；ascend 76 / apex 170 / descend 64，±2 native）',
+    problems.length === 0, problems.length ? problems.join('; ') : rows.join(' | '));
 }
 
 const failed = results.filter((r) => !r.ok);

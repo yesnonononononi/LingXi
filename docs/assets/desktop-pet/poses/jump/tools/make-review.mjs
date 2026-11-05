@@ -52,6 +52,11 @@ const FONT = {
   9: ['01110', '10001', '10001', '01111', '00001', '00001', '01110'],
   '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
   '<': ['00010', '00100', '01000', '10000', '01000', '00100', '00010'],
+  '>': ['01000', '00100', '00010', '00001', '00010', '00100', '01000'],
+  '(': ['00010', '00100', '01000', '01000', '01000', '00100', '00010'],
+  ')': ['01000', '00100', '00010', '00010', '00010', '00100', '01000'],
+  '/': ['00001', '00010', '00010', '00100', '01000', '01000', '10000'],
+  '.': ['00000', '00000', '00000', '00000', '00000', '01100', '01100'],
   ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
 };
 
@@ -107,9 +112,15 @@ function downsample(img, outSize) {
 }
 
 const frames = manifest.frames;
-const W = PAD * 2 + frames.length * CELL + (frames.length - 1) * GAP;
-const rowH = CELL + LABEL_H;
-const H = PAD * 2 + rowH * 2 + GAP;
+// 左右向各一组：同一相位左右相邻排布，方便一眼比对「转身有没有走形 / 一高一低」
+const PHASES = ['anticipate', 'ascend', 'apex', 'descend', 'land'];
+const facingOf = (f) => (f.id.startsWith('r_') ? 1 : -1);
+const pick = (facing, phase) => frames.find((f) => facingOf(f) === facing && f.id.replace(/^r_/, '') === phase);
+const COLS = PHASES.length;
+const W = PAD * 2 + COLS * CELL + (COLS - 1) * GAP;
+const HEAD_H = 22;
+const SECTION_H = HEAD_H + 2 * (LABEL_H + CELL) + GAP;
+const H = PAD * 2 + SECTION_H * 2;
 const out = Buffer.alloc(W * H * 4);
 
 function paintBg(x0, y0, w, h, color) {
@@ -133,27 +144,43 @@ function blendTile(px, x0, y0) {
   }
 }
 
-const rows = [
+const sections = [
   { label: 'LIGHT BG', bg: LIGHT, ink: [40, 40, 48] },
   { label: 'DARK BG', bg: DARK, ink: [225, 225, 235] },
 ];
+const FACING_ROWS = [
+  { facing: -1, tag: 'LEFT (<)', arrow: '<' },
+  { facing: 1, tag: 'RIGHT (>)', arrow: '>' },
+];
 
-frames.forEach((f, i) => {
-  const img = decodePng(fs.readFileSync(path.join(root, f.file)));
-  const tile = downsample(img, CELL);
-  const x0 = PAD + i * (CELL + GAP);
-  const gap = f.contactPoints.airborneGap === null || f.contactPoints.airborneGap === undefined ? 0 : f.contactPoints.airborneGap;
-  const tag = f.airborne ? 'AIR' : 'SUP';
-  rows.forEach((row, ri) => {
-    const y0 = PAD + LABEL_H + ri * (rowH + GAP);
-    paintBg(x0 - GAP / 2, y0 - LABEL_H, CELL + GAP, LABEL_H + CELL + GAP / 2, row.bg);
-    blendTile(tile, x0, y0);
-    drawText(out, W, x0, y0 - LABEL_H + 2, f.id.toUpperCase(), row.ink, 2);
-    drawText(out, W, x0, y0 - LABEL_H + 20, tag + ' ' + gap, row.ink, 2);
+// 每帧只解码/降采样一次（同一帧在亮底暗底两排复用）
+const tileCache = new Map();
+function tileOf(f) {
+  if (!tileCache.has(f.id)) tileCache.set(f.id, downsample(decodePng(fs.readFileSync(path.join(root, f.file))), CELL));
+  return tileCache.get(f.id);
+}
+
+sections.forEach((section, si) => {
+  const secY = PAD + si * SECTION_H;
+  paintBg(0, secY, W, SECTION_H - GAP / 2, section.bg);
+  drawText(out, W, PAD, secY + 2, section.label, section.ink, 2);
+  FACING_ROWS.forEach((row, ri) => {
+    const y0 = secY + HEAD_H + ri * (LABEL_H + CELL);
+    drawText(out, W, PAD, y0 + 2, row.tag, section.ink, 1);
+    PHASES.forEach((phase, ci) => {
+      const f = pick(row.facing, phase);
+      const x0 = PAD + ci * (CELL + GAP);
+      if (!f) { drawText(out, W, x0, y0 + LABEL_H + 20, 'MISSING', section.ink, 2); return; }
+      const gap = f.contactPoints.airborneGap === null || f.contactPoints.airborneGap === undefined ? 0 : f.contactPoints.airborneGap;
+      const tag = f.airborne ? 'AIR' : 'SUP';
+      blendTile(tileOf(f), x0, y0 + LABEL_H);
+      drawText(out, W, x0, y0 + 2, phase.toUpperCase(), section.ink, 2);
+      drawText(out, W, x0, y0 + 20, tag + ' ' + gap + ' ' + row.arrow, section.ink, 2);
+    });
   });
 });
-drawText(out, W, PAD, 6, 'JUMP LEFT', [60, 60, 70], 2);
-drawText(out, W, PAD, PAD + LABEL_H + rowH + GAP - LABEL_H + 2, 'DARK', [230, 230, 240], 2);
+// 同尺度声明：10 格全部按 母版 3072 → 234 的同一系数降采样，左右两组没有不同缩放
+drawText(out, W, PAD, H - PAD + 4, 'ALL 10 CELLS: MASTER 3072 > 234 PX (SAME SCALE)', sections[0].ink, 1);
 
 fs.writeFileSync(path.join(root, 'qa/jump_review.png'), encodePng({ width: W, height: H, data: out }));
 console.log('qa/jump_review.png ' + W + 'x' + H + ' cells=' + frames.length + ' cell=' + CELL + 'px scale=' + (CELL / manifest.canvas.width).toFixed(5));

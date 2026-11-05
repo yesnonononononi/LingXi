@@ -53,6 +53,14 @@ export const CONFIG = {
   dirtyEdgeCleanFrames: ['descend'],
   frames: ['anticipate', 'ascend', 'apex', 'descend', 'land'],
   facingOf: { anticipate: -1, ascend: -1, apex: -1, descend: -1, land: -1 },
+  // 右向 5 帧（本轮补齐）：与左向共用同一套直出→native→母版流程与同一缩放系数，
+  // 只改三处：① 躯干质心固定到 native x=836（=1536−700 严格镜像，见 manifest.bodyAnchor.byFacing["+1"]）；
+  // ② 每帧 lowestInkY 与左向**同相位**完全一致（相位几何左右对齐，避免左右动作一高一低）；
+  // ③ 帧 id 加 r_ 前缀（文件名因此自动变成 jump_r_<phase>@2x.png / source/jump_r_<phase>_native.png）。
+  rightPrefix: 'r_',
+  torsoAnchorXNativeRight: 836,
+  // 右向帧的 C2c 中性灰脏边净化名单（按实测决定，为空表示一帧都不需要净化）。
+  dirtyEdgeCleanRight: [],
 };
 
 const N = CONFIG.native.width;
@@ -201,10 +209,44 @@ export function footRuns(img, bottom, band) {
   }).sort((p, q) => q.width - p.width);
 }
 
-export function buildJump() {
+/**
+ * 本批要构建的帧规格（左向 + 右向），供 build 与「只构建某个朝向」的增量调用共用。
+ *
+ * 每帧只声明 4 件与几何有关的事实：id（决定文件名）、相位（决定 gap）、朝向、躯干锚点 x。
+ * gap 与锚点以外的所有编辑（缩放、alpha 清理、孤立块、2× nearest）对左右向完全同口径。
+ *
+ * @param {number|null} facingFilter -1 / 1 只构建该朝向；null 构建全部
+ * @returns {Array<{id:string,phase:string,facing:number,torsoAnchorX:number,lowestInkY:number,airborne:boolean,dirtyEdgeClean:boolean}>}
+ */
+export function frameSpecs(facingFilter = null) {
+  const specs = [];
+  for (const phase of CONFIG.frames) {
+    specs.push({
+      id: phase, phase, facing: -1,
+      torsoAnchorX: CONFIG.torsoAnchorXNative,
+      lowestInkY: CONFIG.lowestInkY[phase],
+      airborne: CONFIG.airborneFrames.includes(phase),
+      dirtyEdgeClean: CONFIG.dirtyEdgeCleanFrames.includes(phase),
+    });
+  }
+  for (const phase of CONFIG.frames) {
+    const id = CONFIG.rightPrefix + phase;
+    specs.push({
+      id, phase, facing: 1,
+      torsoAnchorX: CONFIG.torsoAnchorXNativeRight,
+      lowestInkY: CONFIG.lowestInkY[phase],
+      airborne: CONFIG.airborneFrames.includes(phase),
+      dirtyEdgeClean: CONFIG.dirtyEdgeCleanRight.includes(id),
+    });
+  }
+  return facingFilter === null ? specs : specs.filter((s) => s.facing === facingFilter);
+}
+
+export function buildJump(facingFilter = null) {
   const scale = CONFIG.uniformScale;
   const report = [];
-  for (const id of CONFIG.frames) {
+  for (const spec of frameSpecs(facingFilter)) {
+    const id = spec.id;
     const sourcePath = path.join(root, 'source/jump_' + id + '_generated.png');
     const sourceBytes = fs.readFileSync(sourcePath);
     const img = readPng(sourcePath);
@@ -216,8 +258,8 @@ export function buildJump() {
     const dw = Math.round(box.width * scale);
     const dh = Math.round(box.height * scale);
     const torso = torsoCentroidX(img, box);
-    const ox = Math.round(CONFIG.torsoAnchorXNative - (torso - box.left) * scale);
-    const lowestInkY = CONFIG.lowestInkY[id];
+    const ox = Math.round(spec.torsoAnchorX - (torso - box.left) * scale);
+    const lowestInkY = spec.lowestInkY;
     const oy = lowestInkY - (dh - 1);
     const out = Buffer.alloc(N * N * 4);
     resampleInto(img, box, ox, oy, dw, dh, out);
@@ -225,7 +267,7 @@ export function buildJump() {
     const cleanup2 = cleanupAlpha(nativeImg);
     // 半透明中性灰脏边净化：只在 dirtyEdgeCleanFrames 里的帧执行（见 CONFIG 注释）。
     // 口径与 C2c 度量同源（isDirtyNeutralGray），只把 alpha 在 [INK_ALPHA_MIN, SOLID_ALPHA) 的中性灰暗像素清零。
-    const dirtyEdgeCleared = CONFIG.dirtyEdgeCleanFrames.includes(id) ? clearDirtyNeutralGray(nativeImg) : 0;
+    const dirtyEdgeCleared = spec.dirtyEdgeClean ? clearDirtyNeutralGray(nativeImg) : 0;
     const islands = removeIslands(nativeImg, CONFIG.minIslandArea);
     const seatDelta = lowestInkY - bboxOf(nativeImg, ANY_ALPHA_MIN).bottom;
     translateY(nativeImg, seatDelta);
@@ -241,15 +283,15 @@ export function buildJump() {
     const { iris } = irisBlob(nativeImg, nBox, bandEnd, { minArea: IRIS_MIN_AREA, minFill: IRIS_MIN_FILL });
     report.push({
       id,
-      facing: CONFIG.facingOf[id],
-      airborne: CONFIG.airborneFrames.includes(id),
+      facing: spec.facing,
+      airborne: spec.airborne,
       generated: {
         file: 'source/jump_' + id + '_generated.png', width: img.width, height: img.height,
         bytes: sourceBytes.length, sha256: crypto.createHash('sha256').update(sourceBytes).digest('hex'),
         inkBox: sourceInkBox, alphaExtent: sourceAlphaExtent, cleanup,
       },
       place: {
-        scale, dw, dh, ox, oy, lowestInkY, torsoGenX: +torso.toFixed(1), torsoAnchorX: CONFIG.torsoAnchorXNative,
+        scale, dw, dh, ox, oy, lowestInkY, torsoGenX: +torso.toFixed(1), torsoAnchorX: spec.torsoAnchorX,
         seatDelta, airborneGap: CONFIG.lastInkRowNative - lowestInkY,
       },
       native: {
@@ -264,7 +306,7 @@ export function buildJump() {
         irisFill: iris ? +iris.fill.toFixed(3) : 0,
         headInkCentroidX: headC ? +headC.x.toFixed(1) : null,
         irisOffsetNative: iris && headC ? +(iris.cx - headC.x).toFixed(1) : null,
-        facing: CONFIG.facingOf[id],
+        facing: spec.facing,
       },
       footRuns: footRuns(nativeImg, nBox.bottom, CONFIG.footBandNative).map((r) => ({
         left: r.left, right: r.right, width: r.width, centerX: +r.centerX.toFixed(1), contactY: r.contactY,
@@ -276,7 +318,10 @@ export function buildJump() {
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (isMain) {
-  const r = buildJump();
+  // --facing=1 / --facing=-1 只重建该朝向（左向已验收，重建右向时绝不重写左向字节）
+  const facingArg = process.argv.find((arg) => arg.startsWith('--facing='));
+  const facingFilter = facingArg ? Number(facingArg.slice('--facing='.length)) : null;
+  const r = buildJump(facingFilter);
   const reportArg = process.argv.find((arg) => arg.startsWith('--report='));
   if (reportArg) {
     const reportPath = reportArg.slice('--report='.length);
@@ -284,13 +329,13 @@ if (isMain) {
     console.log('report -> ' + reportPath);
   }
   const total = r.frames.reduce((s, f) => s + f.master.bytes, 0);
-  console.log('scale=' + r.scale + ' (固定沿用 run 左向系数)');
+  console.log('scale=' + r.scale + ' (固定沿用 run 左向系数) facing=' + (facingFilter === null ? '全部' : facingFilter));
   for (const f of r.frames) {
-    console.log(f.id.padEnd(11), f.airborne ? 'AIRBORNE' : 'support ', 'nativeBottom=' + f.native.bbox.bottom,
+    console.log(f.id.padEnd(13), f.facing > 0 ? 'RIGHT' : 'LEFT ', f.airborne ? 'AIRBORNE' : 'support ', 'nativeBottom=' + f.native.bbox.bottom,
       'gap=' + f.place.airborneGap, 'dw=' + f.place.dw, 'dh=' + f.place.dh, 'ox=' + f.place.ox, 'oy=' + f.place.oy,
       'master=' + f.master.bytes, 'dirtyEdgeCleared=' + f.native.dirtyEdgeCleared,
       'iris=' + f.orientation.irisOffsetNative + '(n' + f.orientation.irisArea + ')',
       'feet=' + f.footRuns.map((x) => x.centerX + '@' + x.contactY + '(w' + x.width + ')').join(' '));
   }
-  console.log('TOTAL=' + total + ' (' + (total / 1048576).toFixed(2) + 'MB) budget=' + (CONFIG.frames.length * 1.9).toFixed(1) + 'MB');
+  console.log('TOTAL=' + total + ' (' + (total / 1048576).toFixed(2) + 'MB) budget=' + (r.frames.length * 1.9).toFixed(1) + 'MB');
 }
