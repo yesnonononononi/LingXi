@@ -48,6 +48,14 @@ export interface PoseClipTiming {
   readonly clipId: string;
   /** 片段总时长（毫秒，= `frameMs` 之和）。 */
   readonly clipMs: number;
+  /**
+   * 片段帧数（= `clip.frames.length`）。
+   *
+   * <p>只为一件事存在：判"帧在推进"时区分**多帧**与**单帧**。单帧片段（如 `sit` 的 `hold`）
+   * 根本没有"下一帧"，要求它换帧是错的——所以必须显式豁免并在报告里写清 `motionChecked: false`，
+   * 不许用"帧数 > 1 才检查"这种隐式豁免蒙过去（那样读报告的人会以为每一格都验过"在动"）。</p>
+   */
+  readonly frameCount: number;
   /** 是否循环。 */
   readonly loop: boolean;
   /** 播完是否回站姿（`onEnd === 'return-stand'`）。 */
@@ -60,7 +68,7 @@ export interface PoseDebugStep {
   readonly posture: string;
   /** 试验的朝向（同上，非法值是 `number` 而不是 `Facing`）。 */
   readonly facing: number;
-  /** 是否真的播起来了（姿态 + 片段朝向 + 播放中三项都对）。 */
+  /** 是否真的播起来了（姿态 + 片段朝向 + 播放中 + 帧在推进，四项都对）。 */
   readonly ok: boolean;
   /** 采样时刻的快照（读不到时 `null`）。 */
   readonly snapshot: PoseDebugSnapshot | null;
@@ -72,6 +80,19 @@ export interface PoseDebugStep {
   readonly sampleAtMs: number;
   /** 是否补验了"播完回站姿"的终态（只有一次性 + `return-stand` 片段才为 `true`）。 */
   readonly terminalChecked: boolean;
+  /** 采样前的帧 id（"帧在推进"判据的起点；读不到时 `null`）。 */
+  readonly startFrameId: string | null;
+  /** 采样时刻的帧 id（与 {@link startFrameId} 比对）。 */
+  readonly sampleFrameId: string | null;
+  /**
+   * 是否真的验了"帧在推进"。
+   *
+   * <p><b>`false` 不等于通过，等于"这一项没验"</b>：单帧片段没有帧可推进、或时序查不到（帧数未知）
+   * 时为 `false`，具体原因见 {@link motionReason}。绝对不许把 `motionChecked: false` 读成"动画在动"。</p>
+   */
+  readonly motionChecked: boolean;
+  /** 为什么没验 / 或验了什么（人话，直接可读）。 */
+  readonly motionReason: string;
 }
 
 /** 6 组合矩阵的结果（一条命令验完 `walk`/`run`/`jump` × 左右）。 */

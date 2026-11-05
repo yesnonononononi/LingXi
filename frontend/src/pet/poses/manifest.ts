@@ -779,10 +779,26 @@ export function frameOf(batch: PoseBatch, frameId: string): PoseFrame | null {
 }
 
 /**
+ * 允许播放的锚点来源（**白名单**）。
+ *
+ * <p><b>为什么是白名单而不是黑名单：</b>黑名单写法（`!== 'mirror-derived'`）只拒绝**已知的坏值**，
+ * 任何"未知值"都会被放行——而未知值恰恰是将来新增枚举、手搓对象、或跨版本清单最可能出现的东西。
+ * 白名单把方向反过来：只认实测过的两种来源，其余一律按"不可播"处理（安全方向 = 降级 `stand`）。</p>
+ *
+ * <ul>
+ *   <li>`measured-per-facing`：每朝向都用实测躯干质心；</li>
+ *   <li>`batch-single`：批级单值，两侧同锚（`sit`/`walk` 就是这样，属正常形态）。</li>
+ * </ul>
+ *
+ * <p>`mirror-derived`（画布镜像推导）**不在**白名单里：镜像同时镜像锚点会让落点对、内容错。</p>
+ */
+const PLAYABLE_ANCHOR_SOURCES: readonly string[] = ['measured-per-facing', 'batch-single'];
+
+/**
  * 判断某姿态在运行时**是否可播**（`playable` 的唯一判据）。
  *
  * <p>四个条件缺一不可：①批次存在；②在 `accepted[]` 里（工程侧显式登记）；
- * ③<b>批级锚点不是画布镜像推导</b>（`byFacingSource !== 'mirror-derived'`）；
+ * ③<b>批级锚点来源在允许白名单里</b>（见 {@link PLAYABLE_ANCHOR_SOURCES}；`mirror-derived` 与任何未知值一律拒绝）；
  * ④至少有一条片段，其帧全部齐全且每帧所用朝向在 `bodyAnchor.byFacing` 里声明过。</p>
  *
  * <p><b>为什么判据③必须显式写出来（这是本轮修掉的一个"空门"）：</b>旧注释说
@@ -812,8 +828,10 @@ export function isPlayable(poses: PetPoses, posture: PostureId, facing?: Facing)
   if (!poses.accepted.includes(posture)) return false;
   const batch = batchOf(poses, posture);
   if (!batch) return false;
-  // 判据③：整批拒绝镜像推导锚点（批级信息无法区分哪一侧是推导的，安全方向 = 整批不播）
-  if (batch.bodyAnchor.byFacingSource === 'mirror-derived') return false;
+  // 判据③：**白名单**。已知的坏值（mirror-derived）与任何未知值（undefined / 'x' / null / 将来新增枚举）
+  // 一律拒绝——批级信息无法区分哪一侧是推导的，安全方向 = 整批不播。
+  const source: unknown = batch.bodyAnchor.byFacingSource;
+  if (typeof source !== 'string' || !PLAYABLE_ANCHOR_SOURCES.includes(source)) return false;
   return batch.clips.some((clip) => {
     if (facing !== undefined && clip.facing !== facing) return false;
     if (clip.frames.length === 0) return false;

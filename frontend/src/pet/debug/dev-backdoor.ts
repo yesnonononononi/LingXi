@@ -217,9 +217,44 @@ export function clipTimingOf(
   return {
     clipId: clip.id,
     clipMs,
+    frameCount: clip.frames.length,
     loop: clip.loop === true,
     returnsToStand: clip.onEnd === 'return-stand',
   };
+}
+
+/**
+ * 查"这个姿态在清单里有没有声明 `onEnd:'return-stand'`"（**独立于时序查询端口**）。
+ *
+ * <p><b>为什么需要这个独立查询（G-2）：</b>`judgePoseStep` 的终态断言以前挂在
+ * `timing !== null && timing.returnsToStand` 上——于是**时序查不到时整块断言静默消失**，
+ * `jump` 就算播完不回站姿也 `ok:true`。这是"该验的没验"。而 `poseClip` 是**注入端口**，
+ * 谁都能让它返回 `null`（QA 实测：`poseClip: () => null` ⇒ 6 步 `terminalChecked` 全 false、
+ * `report.ok === true`）。所以"该不该验终态"必须有一个不依赖该端口的来源。</p>
+ *
+ * @param poses 姿态清单
+ * @param posture 姿态
+ * @param facing 朝向（缺省 = 任一看朝向）
+ * @param clipId 快照报告的片段 id（`null` = 当时没在播，退化为"扫描该姿态全部片段"）
+ * @returns 是否声明了 `onEnd:'return-stand'`
+ */
+export function declaresReturnStand(
+  poses: PetPoses,
+  posture: PostureId,
+  facing?: Facing,
+  clipId?: string | null,
+): boolean {
+  const batch = batchOf(poses, posture);
+  if (batch === null) return false;
+  const candidates = batch.clips.filter((clip) => facing === undefined || clip.facing === facing);
+  if (typeof clipId === 'string' && clipId.length > 0) {
+    const exact =
+      candidates.find((clip) => clip.id === clipId) ?? batch.clips.find((clip) => clip.id === clipId);
+    if (exact) return exact.onEnd === 'return-stand';
+  }
+  // 片段查不到（clipId 在清单里不存在 / 没在播）：保守地看"该姿态有没有任何一条 return-stand 片段"。
+  // 宁可多验一次终态，也不许因为查不到就当作"不用验"。
+  return candidates.some((clip) => clip.onEnd === 'return-stand');
 }
 
 /**
@@ -246,27 +281,41 @@ export function sampleDelayOf(timing: PoseClipTiming | null, capMs: number = SAM
 /**
  * 判断一次姿态试验是否真的生效。
  *
- * <p>三条基础判据缺一不可：①姿态对；②**片段朝向**对（只对姿态会放过"播了另一朝向"这种最危险的坏法）；
- * ③真的在播。任何一条不满足都返回具体原因，绝不返回"看起来成功了"。</p>
+ * <p>四条基础判据缺一不可：①姿态对；②**片段朝向**对（只对姿态会放过"播了另一朝向"这种最危险的坏法）；
+ * ③真的在播；④要求时，**帧在推进**（`playing:true` + `frameId` 不变 = 动画冻住）。
+ * 任何一条不满足都返回具体原因，绝不返回"看起来成功了"。</p>
  *
- * <p><b>第四条判据（`return-stand` 的终态）</b>：一次性 + `onEnd:'return-stand'` 的片段
+ * <p><b>第五条判据（`return-stand` 的终态）</b>：一次性 + `onEnd:'return-stand'` 的片段
  * 播完后必须自己回到站姿（`posture === 'stand' && playing === false`）。这条以前**根本没验**
- * ——而它正是 `jump` 的真实语义。给了 `timing` 却不给 `terminal` 快照，说明"该验的没验"，
- * 同样判红（否则删掉这条断言不会有任何人发现）。</p>
+ * ——而它正是 `jump` 的真实语义。给了 `timing` 却不给 `terminal` 快照，说明"该验的没验"，判红。</p>
+ *
+ * <p><b>G-2：`timing === null` 且该姿态声明了 `onEnd:'return-stand'` 也必须判红。</b>
+ * `timing` 查不到有两种成因（片段查不到 / `poseClip` 端口缺失或返回 null），两种都判红——
+ * 静默降级为"跳过"等于把终态断言整块删掉而没人发现。该不该验终态由调用方用
+ * {@link declaresReturnStand} 独立查出来传进来，不依赖那个可以被注入的时序端口。</p>
  *
  * @param snapshot 采样时刻的快照
  * @param posture 期望姿态
  * @param facing 期望朝向
  * @param options 选项
- * @param options.timing 片段时序（给了一次性 return-stand 片段就必须同时给 `terminal`）
+ * @param options.timing 片段时序（`null`/缺省 = 查不到）
  * @param options.terminal 播完（`clipMs + 缓冲`）后的终态快照
+ * @param options.declaresReturnStand 该姿态是否声明了 `onEnd:'return-stand'`（独立来源；`timing` 查不到时靠它判红）
+ * @param options.startFrameId 采样前的帧 id（"帧在推进"的起点；`undefined` = 没给，视为该验的没验）
+ * @param options.motionRequired 是否要求帧推进（多帧片段 = `true`；单帧片段必须由调用方显式传 `false` 并说明原因）
  * @returns 问题列表（空数组 = 生效了）
  */
 export function judgePoseStep(
   snapshot: PoseDebugSnapshot | null,
   posture: PostureId,
   facing: Facing,
-  options: { readonly timing?: PoseClipTiming | null; readonly terminal?: PoseDebugSnapshot | null } = {},
+  options: {
+    readonly timing?: PoseClipTiming | null;
+    readonly terminal?: PoseDebugSnapshot | null;
+    readonly declaresReturnStand?: boolean;
+    readonly startFrameId?: string | null;
+    readonly motionRequired?: boolean;
+  } = {},
 ): string[] {
   if (snapshot === null) return ['读不到姿态快照（姿态控制器未就绪）'];
   const problems: string[] = [];
@@ -281,20 +330,52 @@ export function judgePoseStep(
   }
   if (snapshot.playing !== true) problems.push('没有在播（playing=false）');
 
+  // ④ 帧在推进（G-4）：`playing:true` 只说明"标志位说在播"，不说明画面在动。
+  if (options.motionRequired === true) {
+    const start = options.startFrameId;
+    if (start === undefined) {
+      problems.push(
+        '没有验"帧在推进"：没给采样前的 frameId（该验的没验——只比姿态/朝向/在播，' +
+          '动画冻住也会绿）',
+      );
+    } else if (start === null || snapshot.frameId === null) {
+      problems.push(
+        '没有验"帧在推进"：起点或采样时刻的 frameId 读不到（' +
+          `start=${JSON.stringify(start)}，sample=${JSON.stringify(snapshot.frameId)}）`,
+      );
+    } else if (snapshot.frameId === start) {
+      problems.push(
+        `帧没在推进：采样前后 frameId 都是 ${JSON.stringify(start)}` +
+          '（动画冻住：rAF 停了 / img.src 不换，但 playing 仍为 true ⇒"在播"不等于"画面在动"）',
+      );
+    }
+  }
+
+  // ⑤ 一次性 return-stand 的终态（G-2：时序查不到时也必须判红，不许静默跳过）
   const timing = options.timing ?? null;
-  if (timing !== null && timing.returnsToStand && !timing.loop) {
-    const terminal = options.terminal ?? null;
-    if (terminal === null) {
+  const mustVerifyTerminal =
+    timing !== null ? timing.returnsToStand && !timing.loop : options.declaresReturnStand === true;
+  if (mustVerifyTerminal) {
+    if (timing === null) {
       problems.push(
-        `一次性片段 ${timing.clipId} 是 onEnd:return-stand，但没有验"播完回站姿"的终态` +
-          '（该验的没验等于没守：删掉终态断言必须有人红）',
+        `该验的没验：该姿态声明了 onEnd:return-stand，但查不到片段时序` +
+          '（两种成因都算：①快照里的 clipId 在清单里查不到；②poseClip 端口缺失或返回 null）' +
+          '——终态"播完回站姿"因此完全没有被验证',
       );
-    } else if (terminal.posture !== 'stand' || terminal.playing !== false) {
-      problems.push(
-        `一次性片段 ${timing.clipId}（${timing.clipMs}ms）播完后没有回站姿：` +
-          `posture=${JSON.stringify(terminal.posture)}，playing=${JSON.stringify(terminal.playing)}` +
-          '（onEnd:return-stand 该有的语义是"自己回站姿"，现在没做到）',
-      );
+    } else {
+      const terminal = options.terminal ?? null;
+      if (terminal === null) {
+        problems.push(
+          `一次性片段 ${timing.clipId} 是 onEnd:return-stand，但没有验"播完回站姿"的终态` +
+            '（该验的没验等于没守：删掉终态断言必须有人红）',
+        );
+      } else if (terminal.posture !== 'stand' || terminal.playing !== false) {
+        problems.push(
+          `一次性片段 ${timing.clipId}（${timing.clipMs}ms）播完后没有回站姿：` +
+            `posture=${JSON.stringify(terminal.posture)}，playing=${JSON.stringify(terminal.playing)}` +
+            '（onEnd:return-stand 该有的语义是"自己回站姿"，现在没做到）',
+        );
+      }
     }
   }
   return problems;
@@ -325,6 +406,11 @@ export interface PoseMatrixPorts {
  * `jump` 的 `once` 只有 650ms，固定等 700ms 拍到的是"已经回站姿"，会把正确行为判红。
  * 一次性 + `return-stand` 的片段还会**再等到 `clipMs + 缓冲`** 补一条终态断言。</p>
  *
+ * <p><b>G-4「帧在推进」</b>：每步记下 `play()` 那一刻的 `frameId`，采样时要求它**已经变了**；
+ * 否则动画冻住（rAF 停了 / `src` 不换）也会因为 `playing:true` 通过。
+ * 单帧片段（`frames.length === 1`，如 `sit` 的 `hold`）**显式豁免**，报告里写 `motionChecked: false`
+ * 并给出原因——`false` 的意思是"这一项没验"，不是"验过且通过"。</p>
+ *
  * <p>顺序固定：姿态外层、朝向内层（`-1` 先），所以报告顺序稳定、可 diff。
  * 结束后一定 `poseStop()`——不留一个"矩阵跑完还在跳"的现场。</p>
  *
@@ -332,20 +418,23 @@ export interface PoseMatrixPorts {
  * @param options 选项
  * @param options.holdMs 采样时刻的**上限**（毫秒，缺省 {@link SAMPLE_CAP_MS}）。
  *   **不是**固定等待时长：真正的采样时刻由片段时长决定，这个值只负责封顶。
+ * @param options.poses 姿态清单（缺省真清单 `PET_POSES`）。**必须与控制器实际使用的那份同源**：
+ *   否则"合成片段说 hold-last、这里查真清单说 return-stand"会造出假红。
  * @returns 矩阵报告
  */
 export async function runPoseMatrix(
   ports: PoseMatrixPorts,
-  options: { readonly holdMs?: number } = {},
+  options: { readonly holdMs?: number; readonly poses?: PetPoses } = {},
 ): Promise<PoseMatrixReport> {
   const capMs =
     typeof options.holdMs === 'number' && Number.isFinite(options.holdMs) && options.holdMs >= 0
       ? Math.min(options.holdMs, SAMPLE_CAP_MS)
       : SAMPLE_CAP_MS;
-  /** 查时序：优先用注入的，其次按真清单查。 */
+  const poses = options.poses ?? PET_POSES;
+  /** 查时序：优先用注入的，其次按清单查。 */
   const queryTiming = (posture: PostureId, facing: Facing, clipId: string | null): PoseClipTiming | null => {
     if (typeof ports.poseClip === 'function') return ports.poseClip(posture, facing, clipId);
-    return clipTimingOf(PET_POSES, posture, facing, clipId);
+    return clipTimingOf(poses, posture, facing, clipId);
   };
   const steps: PoseDebugStep[] = [];
   const problems: string[] = [];
@@ -353,8 +442,35 @@ export async function runPoseMatrix(
     for (const posture of POSE_MATRIX_POSTURES) {
       for (const facing of POSE_MATRIX_FACINGS) {
         const started = ports.posePlay(posture, facing);
+        const startFrameId: string | null = started === null ? null : started.frameId;
         const timing = queryTiming(posture, facing, started?.clipId ?? null);
+        // 终态该不该验：不看时序端口（它可能缺失或撒谎），用清单独立查（G-2）
+        const declaredReturnStand =
+          timing === null ? declaresReturnStand(poses, posture, facing, started?.clipId ?? null) : false;
+        // 帧在推进：多帧才要求推进；单帧必须显式豁免并写明理由（G-4）
+        const frameCount = timing !== null && Number.isFinite(timing.frameCount) ? timing.frameCount : null;
+        const frameIntervalMs =
+          timing !== null && frameCount !== null && frameCount > 0 ? timing.clipMs / frameCount : null;
         const sampleAtMs = sampleDelayOf(timing, capMs);
+        // "采样时刻是否已经跨过一个帧边界"：没跨过去就**不能**判"帧没在推进"（那是采样太早，不是动画冻住），
+        // 只能如实标 motionChecked:false。用片段自己的单帧时长判定，不引入任何新手调阈值。
+        const crossedFrameBoundary = frameIntervalMs !== null && sampleAtMs >= frameIntervalMs;
+        const motionRequired = frameCount !== null && frameCount > 1 && crossedFrameBoundary;
+        let motionReason: string;
+        if (timing === null) {
+          motionReason = '查不到片段时序（帧数未知）：没有依据判"帧在推进"，本项未验';
+        } else if (frameCount === null) {
+          motionReason = '时序里没有可用的帧数：无法判断单帧还是多帧，本项未验';
+        } else if (frameCount <= 1) {
+          motionReason = `单帧片段（${frameCount} 帧）：没有帧可推进，本项不适用（显式豁免，不是静默跳过）`;
+        } else if (!crossedFrameBoundary) {
+          motionReason =
+            `采样时刻 ${sampleAtMs}ms 短于单帧时长 ${Math.round(frameIntervalMs ?? 0)}ms：` +
+            '还没跨过一个帧边界，本项未验（把采样上限压到这么小就无法判"帧在推进"）';
+        } else {
+          motionReason = `多帧片段（${frameCount} 帧、单帧 ${Math.round(frameIntervalMs ?? 0)}ms）：采样前后 frameId 必须不同`;
+        }
+
         if (sampleAtMs > 0) await ports.poseWait(sampleAtMs);
         const settled = ports.poseSnapshot() ?? started;
         // 一次性 + return-stand：等到 clipMs + 缓冲再补一条终态断言（这才是它该有的语义）
@@ -367,7 +483,13 @@ export async function runPoseMatrix(
           terminal = ports.poseSnapshot();
           terminalChecked = true;
         }
-        const stepProblems = judgePoseStep(settled, posture, facing, { timing, terminal });
+        const stepProblems = judgePoseStep(settled, posture, facing, {
+          timing,
+          terminal,
+          declaresReturnStand: declaredReturnStand,
+          startFrameId,
+          motionRequired,
+        });
         steps.push({
           posture,
           facing,
@@ -377,6 +499,10 @@ export async function runPoseMatrix(
           clipMs: timing === null ? null : timing.clipMs,
           sampleAtMs,
           terminalChecked,
+          startFrameId,
+          sampleFrameId: settled === null ? null : settled.frameId,
+          motionChecked: motionRequired,
+          motionReason,
         });
         for (const problem of stepProblems) problems.push(`${posture}@${facing}: ${problem}`);
       }
@@ -451,6 +577,10 @@ export function buildPoseHandle(deps: PoseHandleDeps): PetPoseDebugHandle {
           clipMs: null,
           sampleAtMs: 0,
           terminalChecked: false,
+          startFrameId: null,
+          sampleFrameId: current === null ? null : current.frameId,
+          motionChecked: false,
+          motionReason: '未知姿态名：没有播放，不涉及帧推进',
         };
       }
       if (!isFacingValue(requestedFacing)) {
@@ -463,14 +593,19 @@ export function buildPoseHandle(deps: PoseHandleDeps): PetPoseDebugHandle {
           clipMs: null,
           sampleAtMs: 0,
           terminalChecked: false,
+          startFrameId: null,
+          sampleFrameId: current === null ? null : current.frameId,
+          motionChecked: false,
+          motionReason: '非法朝向：没有播放，不涉及帧推进',
         };
       }
       deps.onPoke?.();
       const play = need(deps.posePlay, 'posePlay');
       const played = play(posture, requestedFacing) ?? null;
       const timing = timingOf(posture, requestedFacing, played?.clipId ?? null);
-      // `play()` 是**同步单点探针**：它判"这一刻在不在播"。`return-stand` 的终态需要等待，
-      // 那是 `verifyMatrix()` 的职责——所以这里**不传 timing**，否则会把"没验终态"报成红。
+      // `play()` 是**同步单点探针**：它判"这一刻在不在播"。`return-stand` 的终态需要等待、
+      // "帧在推进"需要两个时刻，那都是 `verifyMatrix()` 的职责——所以这里**不传** timing /
+      // startFrameId / motionRequired，否则会把"单点探针没验终态/没验帧推进"报成红。
       const problems = judgePoseStep(played, posture, requestedFacing);
       return {
         posture,
@@ -481,6 +616,10 @@ export function buildPoseHandle(deps: PoseHandleDeps): PetPoseDebugHandle {
         clipMs: timing === null ? null : timing.clipMs,
         sampleAtMs: 0,
         terminalChecked: false,
+        startFrameId: played === null ? null : played.frameId,
+        sampleFrameId: played === null ? null : played.frameId,
+        motionChecked: false,
+        motionReason: 'play() 是同步单点探针：只有一个时刻，无法比对帧推进（要验请用 verifyMatrix()）',
       };
     },
     stop: (): PoseDebugStep => {
@@ -496,6 +635,10 @@ export function buildPoseHandle(deps: PoseHandleDeps): PetPoseDebugHandle {
         clipMs: null,
         sampleAtMs: 0,
         terminalChecked: false,
+        startFrameId: null,
+        sampleFrameId: settled === null ? null : settled.frameId,
+        motionChecked: false,
+        motionReason: 'stop() 不判帧推进（本来就要求停下）',
       };
     },
     release: (): void => {

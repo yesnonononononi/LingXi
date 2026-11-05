@@ -20,7 +20,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PET_POSES, isPlayable } from '../src/pet/poses/manifest';
 import { PoseController, type PoseBlinkLike } from '../src/pet/poses/controller';
-import { buildPoseHandle, clipTimingOf, judgePoseStep, runPoseMatrix, sampleDelayOf, POSE_MATRIX_POSTURES } from '../src/pet/debug/dev-backdoor';
+import {
+  buildPoseHandle,
+  clipTimingOf,
+  declaresReturnStand,
+  judgePoseStep,
+  runPoseMatrix,
+  sampleDelayOf,
+  POSE_MATRIX_POSTURES,
+} from '../src/pet/debug/dev-backdoor';
 import type { PoseClipTiming, PoseDebugSnapshot } from '../src/pet/debug/types';
 import type { PoseMatrixPorts } from '../src/pet/debug/dev-backdoor';
 import type { BodyAnchor, Facing, PetPoses, PostureId } from '../src/pet/poses/types';
@@ -676,7 +684,7 @@ test('F17 judgePoseStep：该验的终态没验也必须判红（删掉终态断
     playing: true,
     override: 'jump',
   };
-  const timing = { clipId: 'once', clipMs: 650, loop: false, returnsToStand: true };
+  const timing = { clipId: 'once', clipMs: 650, frameCount: 5, loop: false, returnsToStand: true };
   // 给了 timing 却不给终态快照 ⇒ "该验的没验"
   const unchecked = judgePoseStep(playing, 'jump', -1, { timing });
   assert.equal(unchecked.length, 1);
@@ -689,4 +697,200 @@ test('F17 judgePoseStep：该验的终态没验也必须判红（删掉终态断
   const stuck = judgePoseStep(playing, 'jump', -1, { timing, terminal: playing });
   assert.equal(stuck.length, 1);
   assert.match(stuck[0], /没有回站姿/);
+});
+
+test('F18 【G-1】锚点来源是白名单：mirror-derived 与任何未知值一律判不可播', () => {
+  /** 把某个批次的 byFacingSource 改成任意值（`undefined` 直接删键，模拟"清单里没这个字段"）。 */
+  const withSource = (posture: PostureId, value: unknown): PetPoses =>
+    posesWith((draft) => {
+      const anchor = draft.batches[posture]?.bodyAnchor as unknown as Record<string, unknown> | undefined;
+      assert.ok(anchor, `真清单里必须有 ${posture}`);
+      if (value === undefined) delete anchor.byFacingSource;
+      else anchor.byFacingSource = value;
+      return draft;
+    });
+
+  // 黑名单写法（`!== 'mirror-derived'`）会把这些**未知值全部放行**——白名单必须全部拒绝。
+  const rejected = [undefined, 'x', null, '', 0, 'MEASURED-PER-FACING', 'mirror-derived'];
+  for (const value of rejected) {
+    const poses = withSource('walk', value);
+    assert.equal(isPlayable(poses, 'walk'), false, `byFacingSource=${JSON.stringify(value)} 必须判不可播（缺省 facing）`);
+    assert.equal(isPlayable(poses, 'walk', -1), false, `byFacingSource=${JSON.stringify(value)} 必须判不可播（facing=-1）`);
+    assert.equal(isPlayable(poses, 'walk', 1), false, `byFacingSource=${JSON.stringify(value)} 必须判不可播（facing=1）`);
+  }
+
+  // 零行为变化：真清单四批的来源都是合法白名单值，逐批仍可播（左右两向都查一遍）
+  for (const posture of ['sit', 'walk', 'run', 'jump'] as const) {
+    const source = PET_POSES.batches[posture]?.bodyAnchor.byFacingSource;
+    assert.ok(
+      source === 'measured-per-facing' || source === 'batch-single',
+      `${posture} 的真来源必须落在白名单里，实际 ${JSON.stringify(source)}`,
+    );
+    assert.equal(isPlayable(PET_POSES, posture), true, `${posture} 必须仍可播（白名单没有改变真数据的行为）`);
+    assert.equal(isPlayable(PET_POSES, posture, -1), true, `${posture}@-1 必须仍可播`);
+  }
+  // 白名单里两种值都必须真的放行（否则"全部拒绝"也能骗过上面的断言）
+  for (const allowed of ['measured-per-facing', 'batch-single'] as const) {
+    assert.equal(isPlayable(withSource('walk', allowed), 'walk'), true, `${allowed} 必须放行`);
+  }
+});
+
+test('F19 【G-2】时序查不到 + 姿态声明了 return-stand ⇒ 判红"该验的没验"（两种成因都算）', () => {
+  const playing: PoseDebugSnapshot = {
+    posture: 'jump',
+    facing: 1,
+    clipId: 'once',
+    clipFacing: 1,
+    frameId: 'apex',
+    playing: true,
+    override: 'jump',
+  };
+  // ① 独立查询：真数据里 jump 声明了 return-stand，其余姿态没有
+  assert.equal(declaresReturnStand(PET_POSES, 'jump', 1, 'once'), true);
+  assert.equal(declaresReturnStand(PET_POSES, 'jump', -1, 'once'), true);
+  assert.equal(declaresReturnStand(PET_POSES, 'walk', -1, 'cycle'), false, 'walk 是循环片段，不该要求终态');
+  assert.equal(declaresReturnStand(PET_POSES, 'sit', -1, 'hold'), false);
+  // 片段查不到时保守扫描该姿态全部片段（宁可多验一次，也不许当作"不用验"）
+  assert.equal(declaresReturnStand(PET_POSES, 'jump', 1, 'does-not-exist'), true);
+  assert.equal(declaresReturnStand(PET_POSES, 'jump', 1, null), true);
+
+  // ② timing 查不到 + 声明了 return-stand ⇒ 红（成因一：片段查不到；成因二：poseClip 端口缺失/null）
+  const unchecked = judgePoseStep(playing, 'jump', 1, { timing: null, declaresReturnStand: true });
+  assert.equal(unchecked.length, 1, `必须只有这一条红：${unchecked.join(' | ')}`);
+  assert.match(unchecked[0], /该验的没验/);
+  assert.match(unchecked[0], /return-stand/);
+  // 对照组：没声明 return-stand 的姿态，timing 查不到不算缺陷（不许"永远判红"）
+  assert.deepEqual(judgePoseStep(playing, 'jump', 1, { timing: null, declaresReturnStand: false }), []);
+});
+
+test('F19b 【G-2】矩阵里 poseClip 端口撒谎（返回 null）也红：jump 两步必须点名"该验的没验"', async () => {
+  const live: { current: PoseDebugSnapshot | null } = { current: null };
+  const report = await runPoseMatrix({
+    posePlay: (posture, facing) => {
+      live.current = {
+        posture,
+        facing,
+        clipId: posture === 'jump' ? 'once' : 'cycle',
+        clipFacing: facing,
+        frameId: `${posture}-0`,
+        playing: true,
+        override: posture,
+      };
+      return live.current;
+    },
+    poseStop: () => {},
+    poseSnapshot: () => live.current,
+    poseWait: async () => {},
+    // 端口撒谎：任何片段都查不到时序
+    poseClip: () => null,
+  });
+  assert.equal(report.ok, false, 'jump 声明了 return-stand 而时序查不到 ⇒ 不许判绿');
+  const jumps = report.steps.filter((step) => step.posture === 'jump');
+  assert.equal(jumps.length, 2);
+  for (const step of jumps) {
+    assert.equal(step.ok, false, `jump@${step.facing} 必须红`);
+    assert.equal(step.terminalChecked, false, '报告必须承认"终态没验"');
+    assert.ok(
+      step.problems.some((line) => line.includes('该验的没验')),
+      `必须点名"该验的没验"，实际：${step.problems.join(' | ')}`,
+    );
+  }
+  // walk/run 是循环片段，不受这条影响（不许连带打红）
+  for (const step of report.steps.filter((item) => item.posture !== 'jump')) {
+    assert.equal(step.problems.some((line) => line.includes('该验的没验')), false, `${step.posture} 不该被连坐`);
+  }
+});
+
+test('F20 【G-4】"帧在推进"判据：冻住的动画必须红，单帧片段必须显式豁免并写明原因', async () => {
+  // ① judgePoseStep 单点：frameId 不变 ⇒ 红；变了 ⇒ 零问题
+  const playing: PoseDebugSnapshot = {
+    posture: 'walk',
+    facing: -1,
+    clipId: 'cycle',
+    clipFacing: -1,
+    frameId: 'l1',
+    playing: true,
+    override: 'walk',
+  };
+  const frozen = judgePoseStep(playing, 'walk', -1, { startFrameId: 'l1', motionRequired: true });
+  assert.equal(frozen.length, 1);
+  assert.match(frozen[0], /帧没在推进/);
+  assert.deepEqual(judgePoseStep({ ...playing, frameId: 'l3' }, 'walk', -1, { startFrameId: 'l1', motionRequired: true }), []);
+  // 没给起点同样算"该验的没验"（不许静默通过）
+  const missing = judgePoseStep(playing, 'walk', -1, { motionRequired: true });
+  assert.equal(missing.length, 1);
+  assert.match(missing[0], /没有验"帧在推进"/);
+  // 单帧片段：调用方必须显式传 motionRequired:false，此时不许判红
+  assert.deepEqual(judgePoseStep(playing, 'walk', -1, { startFrameId: 'l1', motionRequired: false }), []);
+
+  // ② 真控制器 + 假时钟：6 个组合都必须真的验过"帧在推进"
+  const { controller, clock } = makeController({ facing: -1 });
+  const okReport = await runPoseMatrix(matrixPorts(controller, clock), {});
+  assert.equal(okReport.ok, true, `真控制器必须全绿：${okReport.problems.join(' | ')}`);
+  for (const step of okReport.steps) {
+    assert.equal(step.motionChecked, true, `${step.posture}@${step.facing} 必须真的验了帧推进（${step.motionReason}）`);
+    assert.notEqual(step.startFrameId, step.sampleFrameId, `${step.posture}@${step.facing} 采样前后帧必须不同`);
+    assert.equal(step.sampleFrameId, step.snapshot?.frameId ?? null);
+  }
+
+  // ③ 冻住的端口（frameId 恒定、playing 恒 true）：必须红，且点名"帧没在推进"
+  const frozenReport = await runPoseMatrix({
+    posePlay: (posture, facing) => ({
+      posture,
+      facing,
+      clipId: posture === 'jump' ? 'once' : 'cycle',
+      clipFacing: facing,
+      frameId: `${posture}-frozen-0`,
+      playing: true,
+      override: posture,
+    }),
+    poseStop: () => {},
+    poseSnapshot: () => null, // 退化到 posePlay 的返回值（同一帧）
+    poseWait: async () => {},
+  });
+  assert.equal(frozenReport.ok, false, '动画冻住必须判红——"playing:true"不等于"画面在动"');
+  for (const step of frozenReport.steps) {
+    assert.ok(
+      step.problems.some((line) => line.includes('帧没在推进')),
+      `${step.posture}@${step.facing} 必须点名"帧没在推进"，实际：${step.problems.join(' | ')}`,
+    );
+  }
+  assert.equal(
+    frozenReport.problems.filter((line) => line.includes('帧没在推进')).length,
+    6,
+    '6 个组合的帧推进都必须被验到并判红（一个都不许漏）',
+  );
+
+  // ④ 单帧片段（如 sit 的 hold）：显式豁免，motionChecked 必须是 false 且原因写明"单帧"
+  const singleFrame = await runPoseMatrix(
+    {
+      posePlay: (posture, facing) => ({
+        posture,
+        facing,
+        clipId: posture === 'jump' ? 'once' : 'cycle',
+        clipFacing: facing,
+        frameId: `${posture}-0`,
+        playing: true,
+        override: posture,
+      }),
+      poseStop: () => {},
+      poseSnapshot: () => null,
+      poseWait: async () => {},
+      // 谎称每条片段都是"单帧 0ms 的静止姿态"（等价于 sit 的 hold）
+      poseClip: (posture, facing, clipId) => ({ clipId: clipId ?? 'hold', clipMs: 0, frameCount: 1, loop: false, returnsToStand: false }),
+    },
+    {},
+  );
+  assert.equal(singleFrame.ok, true, '单帧片段没有帧可推进，不该判红');
+  for (const step of singleFrame.steps) {
+    assert.equal(step.motionChecked, false, '单帧片段必须标 motionChecked:false（false = 没验，不是通过）');
+    assert.match(step.motionReason, /单帧片段/, `必须写明理由，实际：${step.motionReason}`);
+  }
+  // ⑤ 采样时刻短于单帧时长 ⇒ 不能判"帧没在推进"（那是采样太早，不是动画冻住），必须标未验
+  const early = await runPoseMatrix(matrixPorts(controller, clock), { holdMs: 0 });
+  assert.equal(early.ok, true, `立即采样不该被打红：${early.problems.join(' | ')}`);
+  for (const step of early.steps) {
+    assert.equal(step.motionChecked, false, '0ms 采样跨不过帧边界 ⇒ 必须如实标未验');
+    assert.match(step.motionReason, /短于单帧时长/);
+  }
 });
