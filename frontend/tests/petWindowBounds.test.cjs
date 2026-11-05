@@ -27,9 +27,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const os = require('node:os');
-const Module = require('node:module');
-const { readFileSync, mkdtempSync, readdirSync, rmSync, existsSync } = require('node:fs');
+const { readFileSync, readdirSync, existsSync } = require('node:fs');
+
+// 假 electron / 手动时钟 / 舞台全部来自共用脚手架（与 petHitOwnership.test.cjs 同一份，
+// 不另起第二套：两套假 electron 的后果是"两边都绿、真机都不成立"）。
+const {
+  PRIMARY_AREA,
+  makeFakeElectron,
+  withFakeElectron,
+  makeStage,
+  FAKE_IPC_MAIN,
+} = require('./helpers/petWindowHarness.cjs');
 
 const petWindow = require(path.join(__dirname, '..', 'electron', 'pet-window.cjs'));
 
@@ -44,9 +52,6 @@ const {
   clampIntoWorkArea,
   resolveInitialBounds,
 } = petWindow;
-
-/** 主屏工作区（1920×1080 减去任务栏：常见 Windows 桌面）。 */
-const PRIMARY_AREA = { x: 0, y: 0, width: 1920, height: 1040 };
 
 /** 默认落点（右下角内缩 `EDGE_MARGIN`），从真源算出来而不是抄数字。 */
 const DEFAULT_POINT = {
@@ -313,142 +318,12 @@ test('D-02 职责分离（源码形态）：reclampIntoDisplays 只许夹取 + f
 
 // ---------------------------------------------------------------- 真跑窗口管理器
 //
-// 上面那条"源码形态"断言只是权宜：它认得调用点，认不出运行时数值。这里用**假 electron 模块**
-// 把 `registerPetWindow` 真跑起来（不启动 Electron），于是"reclampIntoDisplays 连调 5 次位置
-// 逐次相等"可以被逐值验证——这正是 QA 判据 1 的原话。做法：临时替换 `Module._load`，
-// 让 pet-window.cjs 内部的 `require('electron')` 拿到桩件（它是懒加载的，所以来得及）。
-
-/**
- * 造一套假 electron（`BrowserWindow` / `screen` / `app`），只实现 `create()` 真正会调的方法。
- *
- * @param {object} state 共享状态：`moves` 记录 setPosition、`sent` 记录下发消息
- * @returns {{fake: object, screenHandlers: Map<string, Function[]>}} 假模块与 screen 事件表
- */
-function makeFakeElectron(state) {
-  const screenHandlers = new Map();
-  /**
-   * 假 BrowserWindow：位置存在 `bounds` 里，`setPosition` 同步更新并记账。
-   */
-  class FakeBrowserWindow {
-    constructor(options) {
-      this.bounds = { x: options.x, y: options.y, width: options.width, height: options.height };
-      this.destroyed = false;
-      this.visible = false;
-      this.webContents = {
-        send(channel, payload) {
-          state.sent.push({ channel, payload });
-        },
-        on() {},
-        once() {},
-        setWindowOpenHandler() {},
-      };
-    }
-
-    getBounds() {
-      return { ...this.bounds };
-    }
-
-    setPosition(x, y) {
-      this.bounds.x = x;
-      this.bounds.y = y;
-      state.moves.push({ x, y });
-    }
-
-    isDestroyed() {
-      return this.destroyed;
-    }
-
-    setAlwaysOnTop() {}
-    setIgnoreMouseEvents() {}
-    loadURL(target) {
-      state.loaded = target;
-    }
-
-    loadFile(target) {
-      state.loaded = target;
-    }
-
-    showInactive() {
-      this.visible = true;
-    }
-
-    isVisible() {
-      return this.visible;
-    }
-
-    hide() {
-      this.visible = false;
-    }
-
-    destroy() {
-      this.destroyed = true;
-    }
-
-    once() {}
-    on() {}
-  }
-
-  const fake = {
-    BrowserWindow: FakeBrowserWindow,
-    app: { getPath: () => state.userData },
-    screen: {
-      getAllDisplays: () => [{ workArea: { ...PRIMARY_AREA } }],
-      getPrimaryDisplay: () => ({ workArea: { ...PRIMARY_AREA } }),
-      getDisplayNearestPoint: () => ({ workArea: { ...PRIMARY_AREA } }),
-      on(name, handler) {
-        const list = screenHandlers.get(name) || [];
-        list.push(handler);
-        screenHandlers.set(name, list);
-      },
-    },
-  };
-  return { fake, screenHandlers };
-}
-
-/**
- * 在假 electron 模块下执行一段同步代码（`Module._load` 临时改写，`finally` 必还原）。
- *
- * @param {object} fakeElectron 假 electron 模块
- * @param {Function} run 待执行的回调
- * @returns {*} 回调返回值
- */
-function withFakeElectron(fakeElectron, run) {
-  const originalLoad = Module._load;
-  Module._load = function patchedLoad(request) {
-    if (request === 'electron') return fakeElectron;
-    return originalLoad.apply(this, arguments);
-  };
-  try {
-    return run();
-  } finally {
-    Module._load = originalLoad;
-  }
-}
-
-/**
- * 一个临时状态文件目录 + 假 electron 的完整舞台（跑完必须 `cleanup()`）。
- *
- * @param {object} savedState 预置的状态文件内容（`null` 表示不预置）
- * @returns {{statePath: string, state: object, cleanup: Function}} 舞台
- */
-function makeStage(savedState) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'pet-bounds-'));
-  const statePath = path.join(dir, 'pet-window-state.json');
-  if (savedState) {
-    petWindow.writeState(statePath, savedState);
-  }
-  const state = { userData: dir, moves: [], sent: [], loaded: null };
-  return {
-    statePath,
-    state,
-    cleanup() {
-      rmSync(dir, { recursive: true, force: true });
-    },
-  };
-}
-
-/** 假 ipcMain：`create()` 之前会用 registerPetWindow 挂 IPC，这里全部吞掉。 */
-const FAKE_IPC_MAIN = { on() {}, handle() {}, removeHandler() {}, removeAllListeners() {} };
+// 下面 4 例用**共用脚手架**（`tests/helpers/petWindowHarness.cjs`：假 electron + 手动时钟 + 舞台）
+// 把 `registerPetWindow().create()` 真跑起来。它认得运行时数值，与纯函数断言互补——
+// 只有源码形态断言时，把 `reclamp` 改回混用形态只能红 1 例；真跑之后红 4 例。
+//
+// 注意：`clock` 必须传手动时钟。命中轮询器现在挂在 create() 上，用真实的 setInterval 会让
+// 测试进程多一个 40ms 定时器（Module._load 已还原 ⇒ 定时器里 require electron 会抛）。
 
 test('D-02 幂等性（真跑 reclampIntoDisplays）：连触 5 次显示器事件，窗口位置逐次相等', () => {
   const stage = makeStage({ x: 1000, y: 500, width: PET_WIDTH, height: PET_HEIGHT });
@@ -460,6 +335,8 @@ test('D-02 幂等性（真跑 reclampIntoDisplays）：连触 5 次显示器事�
         isDev: false,
         frontendRoot: path.join(__dirname, '..'),
         statePath: stage.statePath,
+        // 命中轮询器挂在 create() 上：必须给手动时钟，否则会留下真实 40ms 定时器
+        clock: stage.clock,
       });
       const win = controller.create();
       // 老存档（无 artOrigin）→ 启动迁移一次：(1000,500) − (40,8) = (960,492)
@@ -501,6 +378,8 @@ test('D-02 落盘（真跑）：reclamp 之后状态文件立刻是"当前位置
         isDev: false,
         frontendRoot: path.join(__dirname, '..'),
         statePath: stage.statePath,
+        // 命中轮询器挂在 create() 上：必须给手动时钟，否则会留下真实 40ms 定时器
+        clock: stage.clock,
       });
       const win = controller.create();
       firstPosition = win.getBounds();
@@ -524,6 +403,8 @@ test('D-02 落盘（真跑）：reclamp 之后状态文件立刻是"当前位置
         isDev: false,
         frontendRoot: path.join(__dirname, '..'),
         statePath: stage.statePath,
+        // 命中轮询器挂在 create() 上：必须给手动时钟，否则会留下真实 40ms 定时器
+        clock: stage.clock,
       });
       const win = controller.create();
       assert.deepEqual(
@@ -548,6 +429,8 @@ test('B-3 反向守（真跑）：当前布局存档 + 一次显示器事件，�
         isDev: false,
         frontendRoot: path.join(__dirname, '..'),
         statePath: stage.statePath,
+        // 命中轮询器挂在 create() 上：必须给手动时钟，否则会留下真实 40ms 定时器
+        clock: stage.clock,
       });
       const win = controller.create();
       assert.deepEqual({ x: win.getBounds().x, y: win.getBounds().y }, { x: 1234, y: 567 }, '带 artOrigin 的存档零补偿');
@@ -571,6 +454,8 @@ test('B-3 反向守（真跑）：临时目录里不许留下中间文件（舞�
         isDev: false,
         frontendRoot: path.join(__dirname, '..'),
         statePath: stage.statePath,
+        // 命中轮询器挂在 create() 上：必须给手动时钟，否则会留下真实 40ms 定时器
+        clock: stage.clock,
       });
       controller.create();
     });

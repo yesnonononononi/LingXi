@@ -51,10 +51,31 @@ contextBridge.exposeInMainWorld('petAPI', {
    */
   endDrag: () => ipcRenderer.invoke('pet:drag-end'),
   /**
-   * 报告鼠标是否在命中区。true = 关掉穿透（可交互），false = 恢复穿透。
-   * @param hit 命中与否，非 true 一律按 false 处理
+   * 悬停提示：**只叫醒主进程，不上报判定结果**（M2 修正版的主通道）。
+   *
+   * <p>穿透态下窗口收不到点击，但 `{ forward: true }` 仍会把 `mousemove` 转发进来，
+   * 渲染层对每次转发调用本方法 ⇒ 主进程当场读系统光标 + 同步 apply，
+   * 于是"光标刚进立绘就点"也能命中（延迟 = 一次 IPC 往返）。</p>
+   *
+   * <p><b>载荷里的坐标主进程不读</b>：判定只认 `screen.getCursorScreenPoint()`。
+   * 这是防回声的结构性保证 —— 伪造一条 hint（哪怕坐标指向立绘中心）也不会改变窗口状态，
+   * `tests/petHitOwnership.test.cjs` 的 C20 就是这条的守卫。</p>
+   *
+   * <p>注意与已删除的 `setHit` 的区别：`setHit` 上报的是"渲染层认为命中与否"（判定），
+   * 本方法上报的是"现在可能该看一眼"（触发）。**`setHit` 不许复活**：
+   * `scripts/check-pet-hit-ownership.mjs` 与 `tests/petHitRenderSide.test.ts` 两处都守着。</p>
+   *
+   * @param payload `{ x, y }` 光标屏幕坐标（仅排障参考，主进程不参与判定）
    */
-  setHit: (hit) => ipcRenderer.send('pet:set-hit', hit === true),
+  hoverHint: (payload) => {
+    const source = payload && typeof payload === 'object' ? payload : {};
+    const x = Number(source.x);
+    const y = Number(source.y);
+    const point = {};
+    if (Number.isFinite(x)) point.x = Math.round(x);
+    if (Number.isFinite(y)) point.y = Math.round(y);
+    ipcRenderer.send('pet:hover-hint', point);
+  },
   /**
    * 关掉桌宠（隐藏，不销毁）。保留给主进程内部与调试用；
    * **用户手势走 {@link openContextMenu}**（M6-b：关闭入口唯一）。

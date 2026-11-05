@@ -14,6 +14,7 @@ import './pet.css';
 import { PET_GEOMETRY, geometryCssVariables, toNormalized } from './layout';
 import { HitPipeline } from './hit/hit-pipeline';
 import { RectHitTester } from './hit/rect-hit-tester';
+import { applyHitView } from './hit/hit-view';
 import { classifyProfile, type HitProfile } from './behavior/hit-profile';
 import { DEFAULT_TIMER_PORT, PresentationBus, type DispatchOutcome } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
@@ -164,7 +165,13 @@ interface PetBridge {
   startDrag: (payload?: PetPoint) => Promise<PetIpcResult>;
   moveDrag: (payload: PetPoint) => void;
   endDrag: () => Promise<PetIpcResult>;
-  setHit: (hit: boolean) => void;
+  /**
+   * 悬停提示：把"有鼠标在动"告诉主进程（**只叫醒，不判定**）。
+   *
+   * <p>主进程收到后自己读系统光标并同步 apply；载荷坐标不参与判定。
+   * 详见 `electron/pet-preload.cjs` 的同名方法。</p>
+   */
+  hoverHint: (payload: { x: number; y: number }) => void;
   close: () => Promise<PetIpcResult>;
   /**
    * 弹出原生右键菜单（显隐 / 关闭 / 退出）——M6-b 起这是**关闭与显隐的唯一入口**。
@@ -188,8 +195,6 @@ declare global {
   }
 }
 
-/** 当前是否处于「可交互」状态（true = 主进程已关掉穿透）。 */
-let hit = false;
 /**
  * 手势判定（点击 vs 拖拽的**唯一**语义来源）。
  *
@@ -269,6 +274,16 @@ let artFrames: [HTMLImageElement, HTMLImageElement] | null = null;
 let moveFrame = 0;
 let pendingMovePoint: PetPoint | null = null;
 
+/**
+ * 悬停提示的合并帧句柄（`0` = 当前帧没有待合并的尾巴）。
+ *
+ * <p>提示走"前沿必发 + 帧末补一条"：第一次 `mousemove` 立刻发（首击能不能中就靠它），
+ * 同一帧内后续移动只记最后一点，帧末再补一次。这样 4000Hz 的游戏鼠标也不会把 IPC 打满。</p>
+ */
+let hoverHintFrame = 0;
+/** 本帧内最后一次移动点（前沿已经发过，帧末补一条收尾）。 */
+let hoverHintTail: { x: number; y: number } | null = null;
+
 /** 关键 DOM 引用（构建时赋值，之后只读）。 */
 let artElement: HTMLDivElement | null = null;
 /**
@@ -302,30 +317,18 @@ function petBridge(): PetBridge | null {
 /**
  * 把命中状态应用到界面。
  *
- * <p>这是命中的唯一收口：无论状态来自本地判定还是主进程回执，都从这里进。</p>
+ * <p><b>命中的唯一收口。</b>值只可能来自主进程（`pet:command{type:'hit-state'}` 或
+ * `ready.clickThrough`）：渲染层已经没有上报命中的通道，也没有本地判定驱动 UI —— 这是本次
+ * 重构的核心（回声耦合的物理消灭）。真正的 DOM 写入在 `hit-view.ts` 的纯函数里。</p>
+ *
+ * <p>注意这里**没有**第二份模块级 `hit` 变量：状态存在 DOM 上（`is-hit` /
+ * `dataset.hitSource`），`hit-view.ts` 是唯一写入口。曾经那份本地 `hit` 只被已删除的
+ * 上报函数读，回声通道删掉后它就成了死状态，留着只会诱使下一个人把它当成判定源。</p>
  *
  * @param next 是否可交互
  */
 function applyHitState(next: boolean): void {
-  hit = next;
-  if (artElement) {
-    artElement.classList.toggle('is-hit', next);
-  }
-  if (badgeElement) {
-    badgeElement.textContent = next ? '可交互' : '穿透中';
-    badgeElement.classList.toggle('is-hit', next);
-  }
-}
-
-/**
- * 上报命中状态（变化时才发 IPC，避免每帧重复调用 setIgnoreMouseEvents）。
- *
- * @param next 是否可交互
- */
-function reportHit(next: boolean): void {
-  if (next === hit) return;
-  applyHitState(next);
-  petBridge()?.setHit(next);
+  applyHitView({ root: rootElement, art: artElement, badge: badgeElement }, next);
 }
 
 /**
@@ -818,12 +821,35 @@ function applyInitialState(): void {
 function wireEvents(): void {
   if (!artElement) return;
 
-  window.addEventListener('mousemove', (event) => {
-    hitPipeline?.schedule(event.clientX, event.clientY);
-  }, { passive: true });
+  // 命中的**判定**接线已从渲染层删除（M2）：
+  //   ① "是否在宠物身上"只由主进程算（`electron/pet-hit-poller.cjs` 读系统光标 +
+  //      `pet-hit-region.cjs` 半开区间/滞回），渲染层没有判定权；
+  //   ② `mouseleave → hitPipeline.reset()` 会把"切换穿透"本身误读成"光标离开"，
+  //      而切换穿透又会制造 enter/leave —— 同一个状态既因又果，就是手↔穿透闪烁的来源。
+  // 这里只保留一条**触发**通道（见下方 `mousemove → hoverHint`）与 `hit-state` 消费。
 
-  // 光标离开窗口时没有 mousemove 了，必须主动回到穿透态，否则窗口会一直「可交互」
-  document.addEventListener('mouseleave', () => hitPipeline?.reset(), { passive: true });
+  // 即时触发器（M2 修正版）：转发的 mousemove 只是**叫醒**，不是判定。
+  // 前沿必发 —— 手型/可交互在 1~5ms 内出现，不会"迟到一拍"；同帧后续移动合并成帧末一条，
+  // 这样 4000Hz 的游戏鼠标也不会把 IPC 打满。主进程收到后会自己读一遍系统光标，
+  // 所以这里传的坐标即使过期/伪造也改不了任何状态。
+  window.addEventListener(
+    'mousemove',
+    (event) => {
+      const point = { x: Math.round(event.screenX), y: Math.round(event.screenY) };
+      if (hoverHintFrame !== 0) {
+        hoverHintTail = point;
+        return;
+      }
+      petBridge()?.hoverHint(point);
+      hoverHintFrame = requestAnimationFrame(() => {
+        hoverHintFrame = 0;
+        const tail = hoverHintTail;
+        hoverHintTail = null;
+        if (tail) petBridge()?.hoverHint(tail);
+      });
+    },
+    { passive: true },
+  );
 
   artElement.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
@@ -866,8 +892,7 @@ function wireEvents(): void {
     // 一次按压结束：按下点作废（下一次按压会重新记录）。留着只会让下一次拖拽
     // 有极小概率读到过期坐标。
     pressScreenPoint = null;
-  });
-  window.addEventListener('pointercancel', (event) => {
+  });  window.addEventListener('pointercancel', (event) => {
     runGesture(gesture.cancel(event.pointerId));
     pressScreenPoint = null;
   });
@@ -1123,9 +1148,18 @@ function createPowerPolicy(): void {
 /** 入口。 */
 function boot(): void {
   injectGeometryVariables();
-  // 命中先建：它不依赖 DOM，几何一注入就能判
+  // 命中二道门用的矩形实现：**永远创建**（pointerdown / contextmenu 仍用它筛掉
+  // "点在猫旁边空气里"的误触）。它不决定穿透，只做事件级二次筛选。
   hitTester = new RectHitTester(PET_GEOMETRY);
-  hitPipeline = new HitPipeline(hitTester, { onHitChange: reportHit });
+  // HitPipeline 降级为**调试诊断器**：只有 DEBUG_ENABLED 才实例化。
+  // 它的"本地视角 vs 主进程视角"对照是排查回声缺陷的唯一手段，但生产路径不跑（省 rAF、不留后门）。
+  if (DEBUG_ENABLED) {
+    hitPipeline = new HitPipeline(hitTester, {
+      onHitChange: (next: boolean) => {
+        console.debug(`[pet] 命中诊断（本地视角，不参与决策）: ${next ? '在立绘上' : '离开立绘'}`);
+      },
+    });
+  }
   // 顺序有依赖：DOM（含双缓冲帧）→ 表现层（要帧）→ 初始指令（要总线）
   buildDom();
   createPresentation();
