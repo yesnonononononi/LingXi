@@ -41,6 +41,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -138,6 +139,26 @@ class GenerateImageReferenceTest {
         ToolExecuteResult nullResult = executor().execute(call(null));
         assertFalse(nullResult.isSuccess(), nullResult.getToolOutput());
         verifyNoInteractions(providers);
+    }
+
+    @Test
+    void rejectsInvalidReferenceArraysBeforeCreatingTheModel() throws Exception {
+        Files.write(root.resolve("valid.png"), image("png", 3));
+        when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
+                .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").build());
+        for (Map<String, Object> args : List.<Map<String, Object>>of(
+                Collections.singletonMap("reference_image_paths", null),
+                Map.of("reference_image_paths", "valid.png"),
+                Map.of("reference_image_paths", List.of()),
+                Map.of("reference_image_paths", Collections.nCopies(17, "valid.png")),
+                Map.of("reference_image_paths", List.of("valid.png", 123)),
+                Map.of("reference_image_paths", List.of("valid.png", "../outside.png")),
+                Map.of("reference_image_path", "valid.png", "reference_image_paths", List.of("valid.png")))) {
+            ToolExecuteResult result = executor().execute(callWithReferences(args));
+            assertFalse(result.isSuccess(), args.toString());
+        }
+        verifyNoInteractions(providers);
+        assertFalse(Files.exists(root.resolve("polished.png")));
     }
 
     @Test
@@ -242,7 +263,8 @@ class GenerateImageReferenceTest {
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(path)).thenReturn(original);
-        Image reference = new ReferenceImageLoader().load(mapper.valueToTree(Map.of("reference_image_path", "ref.png")), workspace);
+        Image reference = new ReferenceImageLoader()
+                .loadReferences(mapper.valueToTree(Map.of("reference_image_path", "ref.png")), workspace).getFirst();
         assertEquals("image/png", reference.mimeType());
         assertArrayEquals(original, Base64.getDecoder().decode(reference.getBase64Data()));
         verify(files).readBytes(path);
@@ -259,10 +281,14 @@ class GenerateImageReferenceTest {
     }
 
     private ToolExecution call(Object reference) throws Exception {
+        return callWithReferences(Collections.singletonMap("reference_image_path", reference));
+    }
+
+    private ToolExecution callWithReferences(Map<String, Object> references) throws Exception {
         Map<String, Object> args = new HashMap<>();
         args.put("prompt", "保留构图，润色光影");
         args.put("path", "polished.png");
-        args.put("reference_image_path", reference);
+        args.putAll(references);
         args.put("size", "1536x1024");
         args.put("quality", "high");
         Map<String, Object> attributes = new HashMap<>();

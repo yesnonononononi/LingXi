@@ -3,9 +3,11 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ArrayValue;
 import com.summit.core.anno.type.ObjectValue;
 import com.summit.core.anno.type.IntegerValue;
 import com.summit.core.anno.type.OptionalBoolean;
+import com.summit.core.anno.type.ScalarType;
 import com.summit.core.anno.type.ToolProperty;
 import com.summit.core.anno.type.Value;
 import com.summit.core.anno.type.ValueType;
@@ -42,9 +44,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Tool(id = ToolCatalog.GENERATE_IMAGE, name = ToolCatalog.GENERATE_IMAGE, executor = GenerateImageToolExecutor.class,
         description = "使用已配置的生图模型生成一张图片，保存到工作区内的新文件，不覆盖已有文件。"
-                + "可传 reference_image_path 润色工作区内的一张 PNG/JPEG；省略则按文字生成。参考图传路径，不传 Base64，也无需先调用 read_image。"
+                + "可用 reference_image_path 指定一张参考图，或用 reference_image_paths 按顺序指定多张参考图；都省略时按文字生成。参考图传工作区内的文件路径。"
                 + "编辑需要模型和服务端支持图片编辑接口，不支持时直接返回错误。"
-                + "可传 mask_image_path 使用同尺寸透明 PNG 蒙版，完全透明区域为待编辑位置。"
+                + "可传 mask_image_path 使用与首张参考图同尺寸的 PNG 蒙版，完全透明区域为待编辑位置。"
                 + "background 与 output_format 是向服务端显式请求，格式或透明度不符合要求会返回失败。"
                 + "prompt 必须完整自洽，path 使用相对路径。size、quality、count 均可不传：默认尺寸沿用模型配置，"
                 + "未配置尺寸时为 1024x1024；默认质量沿用模型配置，未配置则由服务端决定；每次固定一张。"
@@ -55,8 +57,11 @@ import java.util.Map;
                 @ToolProperty(key = "path", value = @Value(type = ValueType.STRING, description = "相对于工作区的新图片路径，扩展名为 .png、.jpg 或 .jpeg，不覆盖已有文件。")),
                 @ToolProperty(key = "reference_image_path", value = @Value(type = ValueType.STRING,
                         description = "可不传。用于润色的单张 PNG/JPEG 文件路径，支持工作区内的相对或绝对路径；不接受 URL 或 Base64。图片不超过 16MB、4000 万像素，保持原图字节。")),
+                @ToolProperty(key = "reference_image_paths", value = @Value(type = ValueType.ARRAY,
+                        arrayValue = @ArrayValue(itemType = ScalarType.STRING, minItems = 1, maxItems = ReferenceImageLoader.MAX_REFERENCES),
+                        description = "可不传。按顺序提供工作区内 PNG/JPEG 的相对或绝对路径，每张不超过 16MB、4000 万像素，合计不超过 64MB。与 reference_image_path 互斥。")),
                 @ToolProperty(key = "mask_image_path", value = @Value(type = ValueType.STRING,
-                        description = "可不传。工作区内 PNG 蒙版路径，必须同时传参考图；尺寸与参考图一致，包含 alpha 通道，完全透明区域为待编辑位置。")),
+                        description = "可不传。工作区内 PNG 蒙版路径，必须同时传参考图；尺寸与首张参考图一致，包含 alpha 通道，完全透明区域为待编辑位置。")),
                 @ToolProperty(key = "background", value = @Value(type = ValueType.STRING,
                         description = "可不传。transparent 请求透明背景，opaque 请求不透明背景，auto 由服务端决定。transparent 必须保存为 PNG，省略 output_format 时自动请求 png。")),
                 @ToolProperty(key = "output_format", value = @Value(type = ValueType.STRING,
@@ -83,9 +88,9 @@ public class GenerateImageToolExecutor implements ToolExecutor {
             GeneratedImageTarget target = writableTarget(execution, args);
             GenerationQuota quota = authorizedQuota(execution);
             ImageGenerationOptions options = specifications.resolve(args, quota.config());
-            Image reference = references.load(args, target.workspace());
-            Image mask = references.loadMask(args, target.workspace(), reference);
-            ChatResponseEntity response = requestImage(quota.config(), args.path("prompt").asText(), options, reference, mask);
+            List<Image> inputs = references.loadReferences(args, target.workspace());
+            Image mask = references.loadMask(args, target.workspace(), inputs.isEmpty() ? null : inputs.getFirst());
+            ChatResponseEntity response = requestImage(quota.config(), args.path("prompt").asText(), options, inputs, mask);
             // 用量先落进 metadata：后面任何一步失败，错误回执仍要带上已计费的 token。
             if (response.getTokenUsage() != null) metadata.put(GenerateImageInterceptor.USAGE, mapper.convertValue(response.getTokenUsage(), Map.class));
             ImageToolChecks.rejectIf(response.getAiMessageEntity() == null || response.getAiMessageEntity().getImages() == null
@@ -148,11 +153,12 @@ public class GenerateImageToolExecutor implements ToolExecutor {
 
     /** 按参考图/蒙版分派 generate 或 edit；一次工具调用只发一次请求，避免 SDK 重试绕过执行次数上限。 */
     private ChatResponseEntity requestImage(ModelConfig config, String prompt, ImageGenerationOptions options,
-                                            Image reference, Image mask) throws Exception {
+                                            List<Image> inputs, Image mask) throws Exception {
         ImageModel model = providers.create(config.toBuilder().maxRetries(0).build());
-        if (reference == null) return model.generate(prompt, options);
-        if (mask == null) return model.edit(reference, prompt, options);
-        return model.edit(reference, mask, prompt, options);
+        if (inputs.isEmpty()) return model.generate(prompt, options);
+        if (inputs.size() > 1) return model.editWithReferences(inputs, mask, prompt, options);
+        if (mask == null) return model.edit(inputs.getFirst(), prompt, options);
+        return model.edit(inputs.getFirst(), mask, prompt, options);
     }
 
     /** 校验过的落盘目标：桥接文件句柄、扩展名与回执里的相对路径。 */

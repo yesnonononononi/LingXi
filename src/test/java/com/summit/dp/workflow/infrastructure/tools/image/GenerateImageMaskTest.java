@@ -17,7 +17,6 @@ import com.summit.dp.model.application.service.ModelService;
 import com.summit.runtime.workspace.LocalWorkspace;
 import com.sun.net.httpserver.HttpServer;
 import openAi.image.DefaultImageModel;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -37,6 +36,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -51,16 +51,21 @@ class GenerateImageMaskTest {
     @SuppressWarnings("unchecked")
     private final ModelProviderRegistry<ImageModel> providers = mock(ModelProviderRegistry.class);
 
-    @Test
-    void uploadsMaskBytesAndOutputRequirementsThroughTheExistingSdk() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void uploadsOrderedReferencesMaskAndOutputRequirements(boolean multiple) throws Exception {
         byte[] reference = image("transparent", 3);
+        byte[] second = image("jpeg", 4);
         byte[] mask = image("mask", 3);
         Files.write(root.resolve("ref.png"), reference);
+        Files.write(root.resolve("second.jpg"), second);
         Files.write(root.resolve("mask.png"), mask);
         AtomicReference<byte[]> request = new AtomicReference<>();
         AtomicReference<String> route = new AtomicReference<>();
+        AtomicInteger calls = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
+            calls.incrementAndGet();
             route.set(exchange.getRequestURI().getPath());
             request.set(exchange.getRequestBody().readAllBytes());
             byte[] body = mapper.writeValueAsBytes(Map.of("created", 1,
@@ -76,15 +81,27 @@ class GenerateImageMaskTest {
                     .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").apiKey("test-key")
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1").build());
             when(providers.create(any())).thenAnswer(invocation -> imageModelOf(invocation.getArgument(0)));
-            ToolExecuteResult result = executor().execute(call(arguments()));
+            Map<String, Object> args = arguments();
+            if (multiple) {
+                args.remove("reference_image_path");
+                args.put("reference_image_paths", List.of("ref.png", root.resolve("second.jpg").toString()));
+            }
+            ToolExecuteResult result = executor().execute(call(args));
             assertTrue(result.isSuccess(), result.getToolOutput());
+            assertEquals(1, calls.get());
             assertEquals("/v1/images/edits", route.get());
             String multipart = new String(request.get(), StandardCharsets.ISO_8859_1);
             String payload = new String(mask, StandardCharsets.ISO_8859_1);
             int maskOffset = multipart.indexOf("name=\"mask\"");
             assertTrue(maskOffset >= 0, multipart);
             assertTrue(multipart.substring(maskOffset).contains(payload), "蒙版原始字节必须随 mask 文件上传");
-            assertTrue(multipart.substring(0, maskOffset).contains(new String(reference, StandardCharsets.ISO_8859_1)));
+            int firstOffset = multipart.indexOf(new String(reference, StandardCharsets.ISO_8859_1));
+            assertTrue(firstOffset >= 0 && firstOffset < maskOffset, multipart);
+            if (multiple) {
+                int secondOffset = multipart.indexOf(new String(second, StandardCharsets.ISO_8859_1));
+                assertTrue(secondOffset > firstOffset && secondOffset < maskOffset, multipart);
+                assertEquals(2, multipart.split("name=\"image\\[\\]\"", -1).length - 1, multipart);
+            }
             assertTrue(multipart.contains("name=\"background\"\r\n\r\ntransparent"));
             assertTrue(multipart.contains("name=\"output_format\"\r\n\r\npng"));
             assertArrayEquals(reference, Files.readAllBytes(root.resolve("out.png")));
@@ -95,7 +112,7 @@ class GenerateImageMaskTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"no-reference", "wrong-size", "rgb", "opaque", "semi", "jpeg", "missing", "outside", "null", "number"})
+    @ValueSource(strings = {"no-reference", "wrong-size", "matches-second", "rgb", "opaque", "semi", "jpeg", "missing", "outside", "null", "number"})
     void rejectsInvalidMasksBeforeCreatingTheProvider(String problem) throws Exception {
         Files.write(root.resolve("ref.png"), image("transparent", 3));
         Files.write(root.resolve("mask.png"), image("transparent", 3));
@@ -103,6 +120,11 @@ class GenerateImageMaskTest {
         switch (problem) {
             case "no-reference" -> args.remove("reference_image_path");
             case "wrong-size" -> Files.write(root.resolve("mask.png"), image("transparent", 4));
+            case "matches-second" -> {
+                Files.write(root.resolve("first.png"), image("transparent", 4));
+                args.remove("reference_image_path");
+                args.put("reference_image_paths", List.of("first.png", "ref.png"));
+            }
             case "rgb", "opaque", "semi", "jpeg" -> Files.write(root.resolve("mask.png"), image(problem, 3));
             case "missing" -> args.put("mask_image_path", "missing.png");
             case "outside" -> args.put("mask_image_path", "../outside.png");
@@ -114,6 +136,7 @@ class GenerateImageMaskTest {
                 .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").build());
         ToolExecuteResult result = executor().execute(call(args));
         assertFalse(result.isSuccess(), problem);
+        if ("matches-second".equals(problem)) assertTrue(result.getToolOutput().contains("第一张参考图"), result.getToolOutput());
         verifyNoInteractions(providers);
         assertFalse(Files.exists(root.resolve("out.png")));
     }

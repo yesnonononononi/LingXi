@@ -14,35 +14,56 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 /** 润色依赖原图细节，不沿用看图流程的缩放与重编码。 */
 @Component
 public class ReferenceImageLoader {
     static final int MAX_BYTES = 16 * 1024 * 1024;
+    static final int MAX_REFERENCES = 16;
+    private static final int MAX_TOTAL_BYTES = 64 * 1024 * 1024;
     private final ImageNormalizer normalizer = new ImageNormalizer();
 
-    public Image load(JsonNode args, Workspace workspace) throws IOException {
-        if (!args.has("reference_image_path")) return null;
-        return readSource(args.path("reference_image_path"), workspace).toImage();
+    public List<Image> loadReferences(JsonNode args, Workspace workspace) throws IOException {
+        if (!args.has("reference_image_paths")) {
+            return args.has("reference_image_path")
+                    ? List.of(readSource(args.path("reference_image_path"), workspace).toImage())
+                    : List.of();
+        }
+        ImageToolChecks.rejectIf(args.has("reference_image_path"), "reference_image_path 和 reference_image_paths 只能传一个");
+        JsonNode paths = args.path("reference_image_paths");
+        ImageToolChecks.rejectIf(!paths.isArray() || paths.isEmpty() || paths.size() > MAX_REFERENCES,
+                "reference_image_paths 必须是包含 1 至 16 个文件路径的数组");
+        List<Image> images = new ArrayList<>(paths.size());
+        int totalBytes = 0;
+        for (JsonNode path : paths) {
+            LoadedImage source = readSource(path, workspace);
+            totalBytes += source.bytes().length;
+            // 同一次请求会同时持有 Base64 和上传字节，限制多图总大小。
+            ImageToolChecks.rejectIf(totalBytes > MAX_TOTAL_BYTES, "多张参考图合计不能超过 64MB");
+            images.add(source.toImage());
+        }
+        return List.copyOf(images);
     }
 
     public Image loadMask(JsonNode args, Workspace workspace, Image reference) throws IOException {
         if (!args.has("mask_image_path")) return null;
-        ImageToolChecks.rejectIf(reference == null, "使用蒙版 mask_image_path 时必须同时提供参考图 reference_image_path");
+        ImageToolChecks.rejectIf(reference == null, "使用蒙版 mask_image_path 时必须同时提供参考图");
         LoadedImage mask = readSource(args.path("mask_image_path"), workspace);
         ImageToolChecks.rejectIf(mask.format() != ImageFormat.PNG, "蒙版必须为带透明区域的 PNG 图片");
         ImageNormalizer.ImageSize original = normalizer.probe(Base64.getDecoder().decode(reference.getBase64Data()));
         BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(mask.bytes()));
         ImageToolChecks.rejectIf(decoded.getWidth() != original.width() || decoded.getHeight() != original.height(),
-                "蒙版尺寸必须与参考图完全一致");
+                "蒙版尺寸必须与第一张参考图完全一致");
         ImageToolChecks.rejectIf(!decoded.getColorModel().hasAlpha(), "蒙版必须包含 alpha 通道和完全透明的待编辑区域");
         ImageToolChecks.rejectIf(!ImagePixels.hasFullyTransparentPixel(decoded),
                 "蒙版没有完全透明的待编辑区域，请将需要修改的位置设为透明");
         return mask.toImage();
     }
 
-    /** 读取并校验一张输入图；字节留在手里，蒙版比对尺寸时不必再从 base64 解一次。 */
+    /** 校验后保留原始字节，避免上传时损失细节或透明通道。 */
     private LoadedImage readSource(JsonNode value, Workspace workspace) throws IOException {
         ImageToolChecks.rejectIf(!value.isTextual() || value.asText().isBlank(), "输入图片路径必须为非空文件路径；不使用时请省略该参数");
         String path = value.asText().trim();

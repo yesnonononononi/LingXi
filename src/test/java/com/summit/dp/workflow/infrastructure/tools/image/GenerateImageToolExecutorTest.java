@@ -190,6 +190,11 @@ class GenerateImageToolExecutorTest {
         JsonNode properties = schema.path("properties");
         assertEquals("string", properties.path("reference_image_path").path("type").asText());
         assertTrue(properties.path("reference_image_path").path("description").asText().contains("绝对路径"));
+        JsonNode referencePaths = properties.path("reference_image_paths");
+        assertEquals("array", referencePaths.path("type").asText());
+        assertEquals("string", referencePaths.path("items").path("type").asText());
+        assertEquals(1, referencePaths.path("minItems").asInt());
+        assertEquals(16, referencePaths.path("maxItems").asInt());
         assertEquals("string", properties.path("mask_image_path").path("type").asText());
         assertTrue(properties.path("mask_image_path").path("description").asText().contains("完全透明"));
         assertEquals("string", properties.path("background").path("type").asText());
