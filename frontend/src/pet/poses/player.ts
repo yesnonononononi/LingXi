@@ -59,11 +59,18 @@ export interface PosePlayerPosition {
  * <p>单帧静止姿态允许 `frameMs === [0]`；**除此之外任何 0 或越界值都是错的**：
  * 多帧片段里出现 0 ⇒ 调度器立刻重排（空转）；越界 ⇒ 人眼读成跳帧或卡死。</p>
  *
+ * <p>同时校验 `facing`：片段朝向必须是 `-1` / `1`。播放器本身不按朝向取片段
+ * （它只负责把**给定**片段按时序推上去），但它是最后一道"手里的片段是不是动物园"
+ * 的检查点——构造出来的宽松对象（测试、调试面板）也走这里。</p>
+ *
  * @param clip 片段
  * @returns 问题列表（空数组 = 合法）
  */
 export function validatePoseClip(clip: PoseClip): string[] {
   const problems: string[] = [];
+  if (clip.facing !== -1 && clip.facing !== 1) {
+    problems.push(`片段 ${clip.id} 的 facing 必须是 -1 或 1，实际为 ${JSON.stringify(clip.facing)}`);
+  }
   const frames = Array.isArray(clip.frames) ? clip.frames : [];
   const frameMs = Array.isArray(clip.frameMs) ? clip.frameMs : [];
   if (frames.length === 0) {

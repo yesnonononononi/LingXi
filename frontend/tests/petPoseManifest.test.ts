@@ -29,11 +29,18 @@ import {
   assertScaleConsistent,
   batchOf,
   clipOf,
+  clipsOf,
   densityFor,
   frameOf,
   isPlayable,
   normalizePetPoses,
 } from '../src/pet/poses/manifest';
+import { POSES_SCHEMA_LAYERS, describeUnknownKey, findUnknownKeys } from '../src/pet/poses/schema';
+import {
+  assertNoUnknownKeys as buildAssertNoUnknownKeys,
+  describeUnknownKey as buildDescribeUnknownKey,
+  findUnknownKeys as buildFindUnknownKeys,
+} from '../scripts/pet-poses-schema.mjs';
 import type { PetPoses, PoseScale } from '../src/pet/poses/types';
 
 const FRONTEND_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -71,7 +78,7 @@ function rawPoses(patch: Record<string, unknown> = {}): Record<string, unknown> 
       byFacingSource: 'batch-single',
     },
     envelopeCss: { left: -56.21, right: 67.72, top: -173.19, bottom: 0.08 },
-    clips: [{ id: 'hold', frames: ['sit_neutral'], loop: false, frameMs: [0], onEnd: 'hold-last' }],
+    clips: [{ id: 'hold', facing: -1, frames: ['sit_neutral'], loop: false, frameMs: [0], onEnd: 'hold-last' }],
     frames: {
       sit_neutral: {
         id: 'sit_neutral',
@@ -156,9 +163,10 @@ test('合法清单可加载，且 accepted 才可播（"有资产"与"被接受"
   assert.ok(batch, '合法数据必须解析出 sit 批');
   assert.equal(batch?.posture, 'sit');
   assert.equal(isPlayable(poses, 'sit'), true);
-  assert.equal(clipOf(batch!, 'hold')?.frames.length, 1);
+  assert.equal(clipOf(batch!, 'hold', -1)?.frames.length, 1);
   assert.equal(frameOf(batch!, 'sit_neutral')?.inkNative.bottom, 1454.5);
-  assert.equal(clipOf(batch!, 'nope'), null);
+  assert.equal(clipOf(batch!, 'hold', 1), null, 'sit 只有左向片段，右向必须取不到（不许回落）');
+  assert.equal(clipOf(batch!, 'nope', -1), null);
   assert.equal(frameOf(batch!, 'nope'), null);
 
   // 从 accepted 里摘掉：资产还在，但不许播（`status` 是美术声明，不驱动行为）
@@ -216,12 +224,12 @@ test('G-09 域混用：把母版锚点当 native 塞进来必须抛错（合法�
 test('清单结构校验：缺帧、时长不等长、accepted 指向不存在的批都必须硬失败', () => {
   const missingFrame = clone(rawPoses());
   const missingBatch = (missingFrame.batches as Record<string, Record<string, unknown>>).sit;
-  missingBatch.clips = [{ id: 'hold', frames: ['ghost'], loop: false, frameMs: [0] }];
+  missingBatch.clips = [{ id: 'hold', facing: -1, frames: ['ghost'], loop: false, frameMs: [0] }];
   assert.throws(() => normalizePetPoses(missingFrame), TypeError);
 
   const badTiming = clone(rawPoses());
   const badTimingBatch = (badTiming.batches as Record<string, Record<string, unknown>>).sit;
-  badTimingBatch.clips = [{ id: 'hold', frames: ['sit_neutral'], loop: false, frameMs: [0, 100] }];
+  badTimingBatch.clips = [{ id: 'hold', facing: -1, frames: ['sit_neutral'], loop: false, frameMs: [0, 100] }];
   assert.throws(() => normalizePetPoses(badTiming), RangeError);
 
   const phantomAccept = rawPoses({ accepted: ['lie'] });
@@ -310,3 +318,223 @@ test('PET_POSES 单例与 JSON 真源一致（加载即校验，非法数据在 
   assert.deepEqual([...PET_POSES.accepted], [...source.accepted]);
   assert.deepEqual([...PET_POSES.densities], [...source.densities]);
 });
+/**
+ * 造一份"同 `id` 双朝向 `cycle`"的最小清单（`walk` 的真实形态）。
+ *
+ * <p>两帧各属一个朝向（`walk_l1` 左、`walk_r1` 右），`cycle` 因此拆成两条同 id 片段——
+ * 这正是旧 `clipOf` 会静默取第一条的场景。</p>
+ *
+ * @returns 可喂给 `normalizePetPoses` 的原始对象
+ */
+function dualFacingPoses(): Record<string, unknown> {
+  const poses = clone(rawPoses());
+  const batch = (poses.batches as Record<string, Record<string, unknown>>).sit;
+  const frames = batch.frames as Record<string, Record<string, unknown>>;
+  const left = clone(frames.sit_neutral);
+  left.id = 'walk_l1';
+  left.facing = -1;
+  const right = clone(frames.sit_neutral);
+  right.id = 'walk_r1';
+  right.facing = 1;
+  batch.frames = { walk_l1: left, walk_r1: right };
+  batch.clips = [
+    { id: 'cycle', facing: -1, frames: ['walk_l1'], loop: true, frameMs: [110] },
+    { id: 'cycle', facing: 1, frames: ['walk_r1'], loop: true, frameMs: [110] },
+  ];
+  return poses;
+}
+
+test('同 id 双朝向：clipsOf 取到 2 条、clipOf 按朝向区分，且不是同一个对象', () => {
+  const poses = normalizePetPoses(dualFacingPoses());
+  const batch = batchOf(poses, 'sit');
+  assert.ok(batch, '双朝向样本必须解析出批次');
+
+  const all = clipsOf(batch!, 'cycle');
+  assert.equal(all.length, 2, '同 id 双朝向必须能拿到 2 条（旧实现只能拿 1 条）');
+  assert.deepEqual(
+    all.map((clip) => clip.facing),
+    [-1, 1],
+    '两条片段的朝向必须分别是 -1 与 1',
+  );
+  assert.deepEqual(
+    all.map((clip) => clip.frames),
+    [['walk_l1'], ['walk_r1']],
+    '朝向必须与帧对应，不能两条都指向同一帧',
+  );
+
+  const leftClip = clipOf(batch!, 'cycle', -1);
+  const rightClip = clipOf(batch!, 'cycle', 1);
+  assert.ok(leftClip !== null && rightClip !== null);
+  assert.notEqual(leftClip, rightClip, 'clipOf(id, -1) 与 clipOf(id, 1) 必须是不同对象');
+  assert.equal(leftClip!.facing, -1);
+  assert.equal(rightClip!.facing, 1);
+  assert.deepEqual([...leftClip!.frames], ['walk_l1']);
+  assert.deepEqual([...rightClip!.frames], ['walk_r1']);
+  // 显式取向：不存在的朝向取不到，也不许"就近返回"
+  assert.equal(clipOf(batch!, 'hold', -1), null);
+});
+
+test('facing 校验：缺失 / 0 / "1" / true 一律抛 TypeError（绝不默默默认成 -1）', () => {
+  /** 把 sit 的第一条片段的 facing 换成给定值。 */
+  const withFacing = (value: unknown): Record<string, unknown> => {
+    const poses = clone(rawPoses());
+    const batch = (poses.batches as Record<string, Record<string, unknown>>).sit;
+    const clips = batch.clips as Array<Record<string, unknown>>;
+    if (value === undefined) {
+      delete clips[0].facing;
+    } else {
+      clips[0].facing = value;
+    }
+    return poses;
+  };
+
+  // 金丝雀：合法值必须能过（否则下面的"必红"可能只是因为样本本身是坏的）
+  assert.doesNotThrow(() => normalizePetPoses(withFacing(-1)));
+  // 右向样本要连帧朝向一起给：只把 clip 改 1 而帧还是 -1，命中的是"混朝向"那条判据，
+  // 与本用例要证的"facing 值域校验"是两件事，混在一起会含混。
+  const rightPoses = clone(rawPoses());
+  const rightBatch = (rightPoses.batches as Record<string, Record<string, unknown>>).sit;
+  (rightBatch.frames as Record<string, Record<string, unknown>>).sit_neutral.facing = 1;
+  (rightBatch.clips as Array<Record<string, unknown>>)[0].facing = 1;
+  assert.doesNotThrow(() => normalizePetPoses(rightPoses));
+
+  for (const bad of [undefined, 0, 2, -2, '1', '-1', true, null]) {
+    assert.throws(
+      () => normalizePetPoses(withFacing(bad)),
+      TypeError,
+      `clip.facing=${JSON.stringify(bad)} 必须抛 TypeError（不许默认成 -1）`,
+    );
+  }
+  // 错误信息必须点名路径与值，否则排障时只能靠猜
+  assert.throws(
+    () => normalizePetPoses(withFacing('1')),
+    /batches\.sit\.clips\[0\]\.facing/,
+    '报错必须打出一条能定位的路径',
+  );
+});
+
+test('clip 混朝向必须硬失败（同一片段里不许同时出现左右向帧）', () => {
+  const poses = dualFacingPoses();
+  const batch = (poses.batches as Record<string, Record<string, unknown>>).sit;
+  // 把左向片段改成"左+右"两帧：播放器会按顺序上屏，角色会原地翻转
+  (batch.clips as Array<Record<string, unknown>>)[0] = {
+    id: 'cycle',
+    facing: -1,
+    frames: ['walk_l1', 'walk_r1'],
+    loop: true,
+    frameMs: [110, 110],
+  };
+  assert.throws(() => normalizePetPoses(poses), TypeError, '同片段混朝向必须红');
+});
+
+test('同 id 同朝向重复：明确硬失败（口径 = 禁止，不是"任取一条"）', () => {
+  // 设计口径：`(id, facing)` 是取用面的唯一键。同 id 同朝向出现两条，
+  // "哪条算数"就没有答案了，所以**选择报错**而不是任选其一（含糊等于埋雷）。
+  const poses = dualFacingPoses();
+  const batch = (poses.batches as Record<string, Record<string, unknown>>).sit;
+  const clips = batch.clips as Array<Record<string, unknown>>;
+  clips.push({ ...clips[0] });
+  assert.throws(
+    () => normalizePetPoses(poses),
+    /重复/,
+    '同 id 同朝向两条必须抛错（口径写在 normalizeClip 的注释里，二者一致）',
+  );
+});
+
+test('G-16 未知键：batch / clip / frame 三层各注入一个键，运行时反序列化必须抛 TypeError', () => {
+  /** 在给定位置塞一个 schema 没声明的键。 */
+  const injected = (where: 'batch' | 'clip' | 'frame'): Record<string, unknown> => {
+    const poses = clone(rawPoses());
+    const batch = (poses.batches as Record<string, Record<string, unknown>>).sit;
+    if (where === 'batch') {
+      batch.unknownKey = 1;
+    } else if (where === 'clip') {
+      (batch.clips as Array<Record<string, unknown>>)[0].unknownKey = 1;
+    } else {
+      (batch.frames as Record<string, Record<string, unknown>>).sit_neutral.unknownKey = 1;
+    }
+    return poses;
+  };
+
+  // 金丝雀：未注入时必须能过（证明"红"来自注入而不是样本本身）
+  assert.doesNotThrow(() => normalizePetPoses(injected('batch') && clone(rawPoses())));
+
+  assert.throws(() => normalizePetPoses(injected('batch')), TypeError, 'batch 层未知键必须红');
+  assert.throws(() => normalizePetPoses(injected('clip')), TypeError, 'clip 层未知键必须红');
+  assert.throws(() => normalizePetPoses(injected('frame')), TypeError, 'frame 层未知键必须红');
+
+  // 错误信息必须打出键名与所在路径（任务 A/B 的硬要求）
+  assert.throws(
+    () => normalizePetPoses(injected('clip')),
+    /batches\.sit\.clips\[0\]\.unknownKey/,
+    'clip 层报错必须给出 batches.<posture>.clips[i].<key> 这样的路径',
+  );
+  assert.throws(
+    () => normalizePetPoses(injected('frame')),
+    /batches\.sit\.frames\.sit_neutral\.unknownKey/,
+    'frame 层报错必须给出 batches.<posture>.frames.<frameId>.<key> 这样的路径',
+  );
+  assert.throws(() => normalizePetPoses(injected('batch')), /batches\.sit\.unknownKey/);
+  // 文案里还要列出该层允许的键，排障时能直接照着改
+  assert.throws(() => normalizePetPoses(injected('clip')), /clip 层只允许：/);
+});
+
+test('G-16 构建期与运行时逐字对账：同一份 schema、同一组路径、同一句报错', () => {
+  /** 造一份"三层都脏"的清单。 */
+  const dirty = (): Record<string, unknown> => {
+    const poses = clone(rawPoses());
+    const batch = (poses.batches as Record<string, Record<string, unknown>>).sit;
+    batch.extraBatch = true;
+    (batch.clips as Array<Record<string, unknown>>)[0].extraClip = true;
+    (batch.frames as Record<string, Record<string, unknown>>).sit_neutral.extraFrame = true;
+    (batch.envelopeCss as Record<string, unknown>).extraEnvelope = true;
+    return poses;
+  };
+
+  const runtimeProblems = findUnknownKeys(dirty());
+  const buildProblems = buildFindUnknownKeys(dirty());
+  assert.ok(runtimeProblems.length >= 4, `运行时侧至少该报 4 条，实际 ${runtimeProblems.length}`);
+  assert.ok(buildProblems.length >= 4, `构建期侧至少该报 4 条，实际 ${buildProblems.length}`);
+
+  assert.deepEqual(
+    runtimeProblems.map((problem) => problem.path),
+    buildProblems.map((problem) => problem.path),
+    '两侧报出的路径必须逐项一致（否则生成物与消费端会各说各话）',
+  );
+  for (const [index, problem] of runtimeProblems.entries()) {
+    assert.equal(
+      describeUnknownKey(problem),
+      buildDescribeUnknownKey(buildProblems[index]),
+      '两侧的报错文案必须逐字一致',
+    );
+  }
+  // 合法清单两侧都必须安静（金丝雀）
+  assert.deepEqual(findUnknownKeys(clone(rawPoses())), []);
+  assert.deepEqual(buildFindUnknownKeys(clone(rawPoses())), []);
+  // 构建期的抛错版入口也必须真的抛（同一个机制的另一张脸，别让它变成无人调用的死代码）
+  assert.throws(() => buildAssertNoUnknownKeys(dirty()), TypeError);
+  assert.doesNotThrow(() => buildAssertNoUnknownKeys(clone(rawPoses())));
+});
+
+test('白名单是"正向"的：可选键显式列在层内（不许存在"凡不认识的都放过"的写法）', () => {
+  // 任务 B/2 的硬要求：`onEnd` / `airborneGapNative` / `supportFootX` 这些可选键
+  // 必须出现在同一份层白名单里，而不是靠"未声明的键都放过"。
+  assert.deepEqual([...POSES_SCHEMA_LAYERS.clip], ['id', 'facing', 'frames', 'loop', 'frameMs', 'onEnd']);
+  for (const key of ['airborneGapNative', 'supportFootX']) {
+    assert.ok(
+      (POSES_SCHEMA_LAYERS.frame ?? []).includes(key),
+      `frame 层白名单必须显式包含可选键 ${key}（靠"放过未知键"就退化成恒真了）`,
+    );
+  }
+  // 每个层都必须是显式清单：空名单会让该层退化成"什么都放过"
+  for (const [layer, keys] of Object.entries(POSES_SCHEMA_LAYERS)) {
+    assert.ok(keys.length > 0, `层 ${layer} 的允许键为空：等于没有校验`);
+  }
+});
+
+test('G-16 真清单本身没有未知键（白名单与 pet-poses.json 保持同步）', () => {
+  const source = JSON.parse(readFileSync(join(FRONTEND_ROOT, 'pet-poses.json'), 'utf8')) as unknown;
+  assert.deepEqual(findUnknownKeys(source), [], '真实清单出现了 schema 未声明的键：先改 schema 再重建清单');
+  assert.deepEqual(buildFindUnknownKeys(source), []);
+});
+

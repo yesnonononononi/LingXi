@@ -138,11 +138,27 @@ export interface EnvelopeCss {
   readonly bottom: CssPx;
 }
 
+/** 朝向：`-1` 左、`1` 右。帧与片段都必须显式声明，缺省值不存在（见各字段注释）。 */
+export type Facing = -1 | 1;
+
 /** 一段可播内容。 */
 export interface PoseClip {
   /** `hold` | `cycle` | `enter` | `idle` | `exit` … */
   readonly id: string;
-  /** `PoseFrame` id 顺序。 */
+  /**
+   * 该片段所属朝向。
+   *
+   * <p><b>为什么必须有这个字段：</b>`pet-poses.json` 里 adapter
+   * （`scripts/pet-pose-adapters.mjs` 的 `buildClips`）从切片 1 起就按朝向拆片段——
+   * `walk`/`run` 的 `cycle` 会产出**同 id 两条 clip**，一条 `facing:-1`、一条 `facing:1`。
+   * 旧类型不带 `facing`，`normalizeClip` 也就不读它，于是"生产者写入 → 类型与归一化器丢弃"，
+   * 信息当场蒸发：取用时只能"取第一条"，右向永远拿不到（而且没人报错）。
+   * 这属数据完整性 bug，不是未来功能——所以它是**必填**字段，
+   * 缺失/`0`/`"1"` 一律由 `normalizeClip` 抛 `TypeError`，绝不默认成 `-1`
+   * （默认值会让"漏写"和"左向"不可区分）。</p>
+   */
+  readonly facing: Facing;
+  /** `PoseFrame` id 顺序（必须都属于本片段朝向）。 */
   readonly frames: readonly string[];
   /** 循环（true）还是一次性（false）。 */
   readonly loop: boolean;
@@ -175,7 +191,7 @@ export interface PoseFrame {
   /** 运行时帧 id（如 `sit_neutral`、`walk_l1`）。 */
   readonly id: string;
   /** 朝向：`-1` 左 / `1` 右。 */
-  readonly facing: -1 | 1;
+  readonly facing: Facing;
   /** 两档密度。 */
   readonly files: { readonly '1x': PoseAssetFile; readonly '2x': PoseAssetFile };
   /** 接地参考（native，逐帧实名）。与批级 `bodyAnchor` 的一致性由 G-08 断言（≤2 native）。 */

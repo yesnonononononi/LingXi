@@ -32,6 +32,7 @@ import type {
   BodyAnchor,
   Density,
   EnvelopeCss,
+  Facing,
   FacingAnchor,
   NativePx,
   PetPoses,
@@ -47,6 +48,7 @@ import type {
   PostureId,
 } from './types';
 import { POSTURE_IDS } from './types';
+import { assertNoUnknownKeys } from './schema';
 
 /** `pet-poses.json` 里声明的 schema 版本（改了字段语义才自增）。 */
 export const PET_POSES_VERSION = 1;
@@ -115,6 +117,28 @@ function requireNumber(value: unknown, name: string): number {
     throw new TypeError(`[pet-poses] ${name} 必须是有限数值，实际为 ${String(value)}`);
   }
   return num;
+}
+
+/**
+ * 断言朝向是 `-1` 或 `1`（**不做类型宽松转换**：`"1"` 与 `1` 不是一回事）。
+ *
+ * <p>为什么不用 {@link requireNumber} 再判范围：`Number("1") === 1`，会把字符串 `"1"`
+ * 悄悄当合法朝向收下，正好掩盖"生产者写了字符串"这种真缺陷。这里要求
+ * `typeof value === 'number'` 且严格等于 ±1。</p>
+ *
+ * @param value 原始值
+ * @param name 字段路径
+ * @returns 朝向
+ * @throws {TypeError} 缺失/非数值/不是 ±1
+ */
+function requireFacing(value: unknown, name: string): Facing {
+  if (value === undefined || value === null) {
+    throw new TypeError(`[pet-poses] ${name} 缺失：朝向必须显式声明为 -1 或 1（不许默认成 -1）`);
+  }
+  if (typeof value !== 'number' || (value !== -1 && value !== 1)) {
+    throw new TypeError(`[pet-poses] ${name} 只能是数值 -1 或 1，实际为 ${JSON.stringify(value)}`);
+  }
+  return value;
 }
 
 /**
@@ -326,12 +350,21 @@ function normalizeEnvelope(raw: unknown, name: string): EnvelopeCss {
  *
  * @param raw 原始值
  * @param name 字段路径
- * @param batch 所属批次（校验帧引用）
+ * @param batch 所属批次（校验帧引用与朝向一致）
  * @returns 片段
- * @throws {TypeError} 帧引用不存在 / 时长与帧数不等长
+ * @throws {TypeError} `facing` 缺失/非法、帧引用不存在、帧朝向与片段不一致
+ * @throws {RangeError} 时长与帧数不等长
  */
-function normalizeClip(raw: unknown, name: string, batch: { frames: Readonly<Record<string, PoseFrame>> }): PoseClip {
+function normalizeClip(
+  raw: unknown,
+  name: string,
+  batch: { frames: Readonly<Record<string, PoseFrame>>; clips?: readonly PoseClip[] },
+): PoseClip {
   const source = requireObject(raw, name);
+  // `facing` 必填且严格校验：缺失、`0`、`"1"`、`undefined` 全部抛错。
+  // 绝不默认成 -1——否则"漏写 facing"与"左向片段"在数据上不可区分，
+  // 而 adapter 早在切片 1 就为每个片段写了 facing（信息源头是有的，只是被丢弃过）。
+  const facing = requireFacing(source.facing, `${name}.facing`);
   const frames = requireStringArray(source.frames, `${name}.frames`);
   const frameMs = requireNumberArray(source.frameMs, `${name}.frameMs`);
   if (frames.length === 0) {
@@ -341,8 +374,16 @@ function normalizeClip(raw: unknown, name: string, batch: { frames: Readonly<Rec
     throw new RangeError(`[pet-poses] ${name}.frameMs 长度 ${frameMs.length} 与帧数 ${frames.length} 不等长`);
   }
   for (const frameId of frames) {
-    if (!(frameId in batch.frames)) {
+    const frame = batch.frames[frameId];
+    if (frame === undefined) {
       throw new TypeError(`[pet-poses] ${name}.frames 引用了不存在的帧 ${frameId}`);
+    }
+    // 跨朝向混帧必须硬失败：播放器按 clip 顺序上屏，混入反朝向帧等于让角色原地翻转。
+    // 真正要左右各一条时，adapter 会产出**两条同 id 不同 facing 的 clip**（buildClips）。
+    if (frame.facing !== facing) {
+      throw new TypeError(
+        `[pet-poses] ${name}.facing=${facing} 但帧 ${frameId} 的 facing=${frame.facing}（同一片段不许混朝向）`,
+      );
     }
   }
   const loop = source.loop === true;
@@ -350,8 +391,16 @@ function normalizeClip(raw: unknown, name: string, batch: { frames: Readonly<Rec
   if (onEnd !== undefined && onEnd !== 'hold-last' && onEnd !== 'return-stand') {
     throw new TypeError(`[pet-poses] ${name}.onEnd 只能是 hold-last / return-stand，实际为 ${String(onEnd)}`);
   }
+  const id = requireString(source.id, `${name}.id`);
+  const duplicated = batch.clips?.some((clip) => clip.id === id && clip.facing === facing);
+  if (duplicated === true) {
+    // 同 id 同朝向 = 取用面二义（"两条一模一样的东西哪条算数"），明确报错而不是任选其一。
+    // 同 id **不同**朝向是允许的（walk/run 的 cycle 左右各一条），见 `clipsOf` / `clipOf`。
+    throw new TypeError(`[pet-poses] ${name} 与前面的片段重复：id=${id} facing=${facing} 已存在`);
+  }
   return {
-    id: requireString(source.id, `${name}.id`),
+    id,
+    facing,
     frames,
     loop,
     frameMs,
@@ -369,10 +418,7 @@ function normalizeClip(raw: unknown, name: string, batch: { frames: Readonly<Rec
  */
 function normalizeFrame(raw: unknown, name: string): PoseFrame {
   const source = requireObject(raw, name);
-  const facingRaw = requireNumber(source.facing, `${name}.facing`);
-  if (facingRaw !== -1 && facingRaw !== 1) {
-    throw new TypeError(`[pet-poses] ${name}.facing 只能是 -1 或 1，实际为 ${facingRaw}`);
-  }
+  const facing = requireFacing(source.facing, `${name}.facing`);
   const filesRaw = requireObject(source.files, `${name}.files`);
   const oneX = filesRaw['1x'];
   const twoX = filesRaw['2x'];
@@ -393,7 +439,7 @@ function normalizeFrame(raw: unknown, name: string): PoseFrame {
   const supportRaw = source.supportFootX;
   return {
     id: requireString(source.id, `${name}.id`),
-    facing: facingRaw === 1 ? 1 : -1,
+    facing,
     files: {
       '1x': normalizeAssetFile(oneX, `${name}.files['1x']`),
       '2x': normalizeAssetFile(twoX, `${name}.files['2x']`),
@@ -511,7 +557,11 @@ function normalizeBatch(raw: unknown, posture: PostureId, name: string): PoseBat
   if (!Array.isArray(clipsRaw) || clipsRaw.length === 0) {
     throw new TypeError(`[pet-poses] ${name}.clips 必须是非空数组`);
   }
-  const clips = clipsRaw.map((item, index) => normalizeClip(item, `${name}.clips[${index}]`, { frames }));
+  const clips: PoseClip[] = [];
+  clipsRaw.forEach((item, index) => {
+    // 边归一化边累积：`normalizeClip` 借它拦"同 id 同朝向重复"（取用面二义）。
+    clips.push(normalizeClip(item, `${name}.clips[${index}]`, { frames, clips }));
+  });
 
   // 域混用的第二道（G-09 的运行时部分）：躯干质心必然落在该帧墨迹的水平范围内。
   // 把母版值（sit 的 474 母版 = 948）当 native 塞进来时，948 会掉到墨迹右缘 918.5 之外，
@@ -554,6 +604,9 @@ function normalizeBatch(raw: unknown, posture: PostureId, name: string): PoseBat
  */
 export function normalizePetPoses(raw: unknown, geometry: PetGeometry = PET_GEOMETRY): PetPoses {
   const source = requireObject(raw, 'pet-poses');
+  // 未知键闸门（G-16）放在最前：schema 没声明的键一律抛 TypeError，绝不静默丢弃。
+  // 位置在"逐字段取值"之前，这样报错说的是"有个键不认识"，而不是"某个字段算出来不对"。
+  assertNoUnknownKeys(raw);
   const version = requireNumber(source.version, 'pet-poses.version');
   if (version !== PET_POSES_VERSION) {
     throw new RangeError(`[pet-poses] version=${version} 不是本引擎支持的 ${PET_POSES_VERSION}`);
@@ -682,14 +735,36 @@ export function batchOf(poses: PetPoses, posture: PostureId): PoseBatch | null {
 }
 
 /**
- * 取一个片段。
+ * 取某个 id 的**全部**片段（可能有多条：`walk`/`run` 的 `cycle` 左右各一条）。
+ *
+ * <p>这是"同 id 多朝向"的显式出口：调用方自己按 `facing` 挑，
+ * 不存在"取第一条"这种隐式行为。</p>
  *
  * @param batch 批次
  * @param clipId 片段 id
+ * @returns 片段列表（无匹配时为空数组；顺序即清单顺序）
+ */
+export function clipsOf(batch: PoseBatch, clipId: string): readonly PoseClip[] {
+  return batch.clips.filter((clip) => clip.id === clipId);
+}
+
+/**
+ * 取一个片段：**`id` + `facing` 双键定位**。
+ *
+ * <p>`facing` 是必填参数（没有默认值），所以"忘了朝向"在编译期就被拦住，
+ * 不会像旧实现那样在多朝向批次里静默拿到左向那条。要"某 id 的所有条"用 {@link clipsOf}。</p>
+ *
+ * @param batch 批次
+ * @param clipId 片段 id
+ * @param facing 朝向（`-1` 左 / `1` 右）
  * @returns 片段；不存在时 null
  */
-export function clipOf(batch: PoseBatch, clipId: string): PoseClip | null {
-  return batch.clips.find((clip) => clip.id === clipId) ?? null;
+export function clipOf(batch: PoseBatch, clipId: string, facing: Facing): PoseClip | null {
+  if (facing !== -1 && facing !== 1) {
+    // 运行期兜底：JS 调用方可能绕过类型（例如测试里构造的宽松对象）
+    throw new TypeError(`[pet-poses] clipOf 的 facing 只能是 -1 或 1，实际为 ${JSON.stringify(facing)}`);
+  }
+  return batch.clips.find((clip) => clip.id === clipId && clip.facing === facing) ?? null;
 }
 
 /**

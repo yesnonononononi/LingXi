@@ -244,13 +244,33 @@ function makePorts(clock: FakeClock): { ports: PosePlayerPorts; log: RecordedFra
 }
 
 /** 单帧静止姿态（`sit` 的真实形态：1 帧 + 0ms）。 */
-const SIT_HOLD: PoseClip = { id: 'hold', frames: ['sit_neutral'], loop: false, frameMs: [0], onEnd: 'hold-last' };
+const SIT_HOLD: PoseClip = {
+  id: 'hold',
+  facing: -1,
+  frames: ['sit_neutral'],
+  loop: false,
+  frameMs: [0],
+  onEnd: 'hold-last',
+};
 
 /** 三帧循环（`walk` 的形态：110ms × 4 帧，这里取 3 帧够用）。 */
-const WALK_CYCLE: PoseClip = { id: 'cycle', frames: ['l1', 'l2', 'l3'], loop: true, frameMs: [110, 110, 110] };
+const WALK_CYCLE: PoseClip = {
+  id: 'cycle',
+  facing: -1,
+  frames: ['l1', 'l2', 'l3'],
+  loop: true,
+  frameMs: [110, 110, 110],
+};
 
 /** 一次性片段（`jump` 的形态：落地即回站姿）。 */
-const JUMP_ONCE: PoseClip = { id: 'once', frames: ['anticipate', 'apex'], loop: false, frameMs: [130, 130], onEnd: 'return-stand' };
+const JUMP_ONCE: PoseClip = {
+  id: 'once',
+  facing: -1,
+  frames: ['anticipate', 'apex'],
+  loop: false,
+  frameMs: [130, 130],
+  onEnd: 'return-stand',
+};
 
 test('G-13：frameMs 边界 79/80/2400/2401 逐个判定，单帧静止姿态允许 0', () => {
   assert.equal(FRAME_MS_MIN, 80, '下界变了：这是守门值，改动必须同步整份文档与门禁');
@@ -258,6 +278,7 @@ test('G-13：frameMs 边界 79/80/2400/2401 逐个判定，单帧静止姿态允
 
   const clipOf = (frameMs: readonly number[]): PoseClip => ({
     id: 'c',
+    facing: -1,
     frames: frameMs.map((_, index) => `f${index}`),
     loop: true,
     frameMs,
@@ -272,8 +293,11 @@ test('G-13：frameMs 边界 79/80/2400/2401 逐个判定，单帧静止姿态允
   // 多帧片段里出现 0：调度器会立刻自我重排 ⇒ 必须红
   assert.equal(validatePoseClip(clipOf([110, 0])).length, 1, '多帧片段里的 0ms 必须红（否则 rAF 空转）');
   // 长度不等 / 空片段
-  assert.equal(validatePoseClip({ id: 'c', frames: ['a', 'b'], loop: true, frameMs: [110] }).length, 1);
-  assert.equal(validatePoseClip({ id: 'c', frames: [], loop: true, frameMs: [] }).length, 1);
+  assert.equal(validatePoseClip({ id: 'c', facing: -1, frames: ['a', 'b'], loop: true, frameMs: [110] }).length, 1);
+  assert.equal(validatePoseClip({ id: 'c', facing: -1, frames: [], loop: true, frameMs: [] }).length, 1);
+  // facing 也是校验项：0 不是"中立"，它是没写/写错
+  const badFacing = { ...clipOf([110]), facing: 0 } as unknown as PoseClip;
+  assert.equal(validatePoseClip(badFacing).length, 1, 'facing=0 必须红（不是默认左向）');
   // 播放器入口也拒绝（不是只有校验函数会报）
   const clock = new FakeClock();
   const { ports } = makePorts(clock);
@@ -443,7 +467,9 @@ function multiFramePoses(): PetPoses {
     batches: Record<string, { frames: Record<string, unknown>; clips: readonly PoseClip[] }>;
   };
   mutable.batches.sit.frames = frames;
-  mutable.batches.sit.clips = [{ id: 'hold', frames: ['sit_a', 'sit_b', 'sit_c'], loop: true, frameMs: [80, 80, 80] }];
+  mutable.batches.sit.clips = [
+    { id: 'hold', facing: -1, frames: ['sit_a', 'sit_b', 'sit_c'], loop: true, frameMs: [80, 80, 80] },
+  ];
   return clone;
 }
 

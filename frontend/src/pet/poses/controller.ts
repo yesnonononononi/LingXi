@@ -26,7 +26,7 @@ import type { DocumentLike, ElementLike } from '../presentation/layered-presenta
 import { POSE_FRAME_ATTRIBUTE, POSE_LAYER_CLASS_NAME, POSTURE_ATTRIBUTE } from './css-contract';
 import { batchOf, clipOf, frameOf, isPlayable } from './manifest';
 import { PosePlayer, type PosePlayerPorts } from './player';
-import type { Density, PetPoses, PoseBatch, PoseClip, PoseFrame, PostureId } from './types';
+import type { Density, Facing, PetPoses, PoseBatch, PoseClip, PoseFrame, PostureId } from './types';
 
 /** 站姿（`PostureId` 的成员；不写字面量散落各处）。 */
 const STAND_POSTURE: PostureId = 'stand';
@@ -73,6 +73,14 @@ export interface PoseControllerOptions {
   readonly blink?: PoseBlinkLike | null;
   /** 日志。 */
   readonly log?: (message: string) => void;
+  /**
+   * 当前朝向（`-1` 左 / `1` 右），默认 `-1`。
+   *
+   * <p>为什么要有它：`walk`/`run` 的 `cycle` 会产出**同 id 两条片段**（左右各一条）。
+   * 选片段必须按朝向定位，否则右向动作会静默拿到左向那一条（旧实现的 `find` 就是这个问题）。
+   * 切片 1 的 `sit` 只有一条 `facing:-1` 的 `hold`，默认值即命中，行为与旧实现逐字节相同。</p>
+   */
+  readonly facing?: Facing;
 }
 
 /**
@@ -106,6 +114,9 @@ export class PoseController {
   /** 已写过 placement 的帧 id（同一帧重复上屏时不重复写样式）。 */
   private placedFrameId: string | null = null;
 
+  /** 当前朝向（选项缺省为 `-1`；非法值在构造时抛错，不在选片段时才发现）。 */
+  private readonly facingValue: Facing;
+
   /**
    * 构造控制器：建 `.pet-pose` 与其中唯一的 `<img>`，并写入初始站姿。
    *
@@ -113,6 +124,11 @@ export class PoseController {
    */
   constructor(options: PoseControllerOptions) {
     this.options = options;
+    const facing = options.facing ?? -1;
+    if (facing !== -1 && facing !== 1) {
+      throw new TypeError(`[pet-poses] PoseController 的 facing 只能是 -1 或 1，实际为 ${JSON.stringify(facing)}`);
+    }
+    this.facingValue = facing;
     const doc = options.doc;
     const layer = doc.createElement('div');
     layer.setAttribute('class', POSE_LAYER_CLASS_NAME);
@@ -259,20 +275,29 @@ export class PoseController {
   }
 
   /**
-   * 选片段：优先 `hold` / `cycle` / `once`，否则取第一条。
+   * 选片段：按 `hold` / `cycle` / `once` / `enter` 顺序找**当前朝向**的片段。
    *
-   * <p>切片 1 只有 `sit.hold`；`lie` 哪天进来，`enter → hold → exit` 的顺序由状态机驱动，
-   * 这里只保证"有一个能播的起点"。</p>
+   * <p>与旧实现的差别只有一处、但是关键的一处：旧实现的 `clipOf` 是 `find(clip.id === id)`，
+   * 在多朝向批次（`walk`/`run` 的 `cycle` 左右各一条）里会静默拿到左向那条。
+   * 现在按 `(id, facing)` 双键定位；该朝向下四个 id 都没有片段就返回 null
+   * （由调用方走"没有可播片段"的降级路径），**不再退回"取第一条"**——
+   * 拿反朝向的片段上屏比不播更糟（角色会突然翻转）。</p>
    *
    * @param batch 批次
-   * @returns 片段；没有可用片段时 null
+   * @returns 片段；没有当前朝向的可用片段时 null
    */
   private pickClip(batch: PoseBatch): PoseClip | null {
     for (const id of ['hold', 'cycle', 'once', 'enter']) {
-      const clip = clipOf(batch, id);
+      const clip = clipOf(batch, id, this.facingValue);
       if (clip !== null) return clip;
     }
-    return batch.clips.length > 0 ? batch.clips[0] : null;
+    const available = batch.clips.map((clip) => `${clip.id}@${clip.facing}`).join('/');
+    if (available.length > 0) {
+      this.log(
+        `姿态 ${batch.posture} 没有朝向 ${this.facingValue} 的片段（现有：${available}），不回落到其它朝向`,
+      );
+    }
+    return null;
   }
 
   /**

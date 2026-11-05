@@ -35,6 +35,7 @@ import {
   POSES_JSON_PATH,
   runBuild,
 } from './build-pet-poses.mjs';
+import { checkUnknownKeys } from './pet-poses-schema.mjs';
 
 /** 包络的安全余量（CSS px）：两侧各留 2px 吸收半透明羽化边缘。 */
 export const ENVELOPE_SAFE_PX = 2;
@@ -259,6 +260,10 @@ export async function runPoseGate(options = {}) {
   }
   const geometry = readJsonFile(geometryPath);
   const align = manifest.align ?? {};
+
+  // 未知键闸门（G-16）：只拦"schema 没声明的键"。手改了清单却没重建、或上游 adapter
+  // 新写了一个字段而这里没登记，都会在这一行红掉——不许静默丢弃。
+  problems.push(...checkUnknownKeys(manifest));
 
   for (const [posture, batch] of Object.entries(manifest.batches ?? {})) {
     const batchProblems = [

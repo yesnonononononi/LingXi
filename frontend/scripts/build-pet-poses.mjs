@@ -31,6 +31,7 @@ import { GEOMETRY_PATH, readJsonFile } from './build-pet-geometry.mjs';
 import { WEBP_OPTIONS, loadSharp, sha256Of } from './build-pet-assets.mjs';
 import { discoverRepoRoot, transcodeLayer } from './build-pet-layers.mjs';
 import { readImageSize } from './pet-image-headers.mjs';
+import { checkUnknownKeys } from './pet-poses-schema.mjs';
 import {
   ACCEPTED_BATCHES,
   DEFERRED_REASONS,
@@ -530,6 +531,9 @@ export async function runBuild(options = {}) {
       problems.push(`清单不存在：${posesJsonPath}（请先跑 npm run build:pet-poses）`);
     } else {
       const committed = readJsonFile(posesJsonPath);
+      // 未知键闸门（G-16）：先拦"有人往清单里塞了 schema 没声明的键"。
+      // 放在比对之前——否则 diff 只会说"多了个键"，看起来像漂移而不像缺陷。
+      problems.push(...checkUnknownKeys(committed));
       // 期望值里带上已提交的 bytes/sha/format（--check 不解码，字节与哈希来自盘上核验）
       const expected = JSON.parse(JSON.stringify(manifest));
       for (const [posture, batch] of Object.entries(expected.batches)) {

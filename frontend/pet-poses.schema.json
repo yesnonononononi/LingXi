@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "about": "pet-poses.json 的按键白名单（唯一真源）。运行时 src/pet/poses/schema.ts 与构建期 scripts/pet-poses-schema.mjs 都读这一份，任何一边新增字段都必须先改这里，否则两侧同时红。",
+  "why": "本项目已经为'未消费字段被静默忽略'吃过两次亏（sleep 缺 11 个必备键、walk 缺 3 个都没人发现，见 wiki 桌宠.md）。所以这里用正向白名单：只有列出来的键才是认识的，多一个就抛错——不许写成'凡不认识的都放过'。",
+  "layers": {
+    "batch": ["posture", "assetId", "status", "masterScale", "canvas", "nativeCanvas", "bodyAnchor", "envelopeCss", "clips", "frames", "provenance"],
+    "batch.canvas": ["width", "height"],
+    "batch.nativeCanvas": ["width", "height"],
+    "batch.bodyAnchor": ["byFacing", "byFacingSource", "spreadNative", "maxDeviationNative"],
+    "batch.bodyAnchor.byFacing.*": ["x", "y"],
+    "batch.envelopeCss": ["left", "right", "top", "bottom"],
+    "batch.provenance": ["adapter", "manifestSha256", "consumedKeys", "aliasesResolved"],
+    "clip": ["id", "facing", "frames", "loop", "frameMs", "onEnd"],
+    "frame": ["id", "facing", "files", "anchorNative", "inkNative", "airborneGapNative", "supportFootX"],
+    "frame.files": ["1x", "2x"],
+    "frame.files.*": ["file", "url", "width", "height", "bytes", "sha256", "format"],
+    "frame.anchorNative": ["x", "y"],
+    "frame.inkNative": ["left", "top", "right", "bottom"]
+  },
+  "optionalKeysNote": "已知可选键（clip.onEnd、frame.airborneGapNative、frame.supportFootX）直接列在上面的层白名单里，不再单开一份 optionalKeys——两份名单会漂移，且没有任何代码会去读第二份（死数据等于没写）。"
+}
