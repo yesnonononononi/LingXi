@@ -8,7 +8,7 @@
  * `docs/assets/desktop-pet/`。历史批次靠人工 `git add -f` 一个个塞进索引，于是出现
  * "交付了但不可复现"——`companion/v1/tools/` 的三个脚本在磁盘上存在，
  * `git ls-files` 与 `git status --untracked-files=all` 都**看不见**它们。
- * M2 的 9 个批次里 lie/sleep/walk/run/jump 已陆续交付入库（jump 只交左向 5 帧，右向 5 帧仍 deferred），
+ * M2 的 9 个批次里 lie/sleep/walk/run/jump 已陆续交付入库（jump 现已左右 10 帧交齐），
  * 剩下 play/edge/side/mini，每批都会重赌一次。</p>
  *
  * <p><b>为什么用 `git check-ignore --no-index`：</b>不带 `--no-index` 时 git 会先查索引，
@@ -116,9 +116,11 @@ const TRACKING_WHITELIST = [];
  *       `poses/walk/`（`8f4d1bbd`，8 帧 / 32 文件）、
  *       `poses/run/`（`a360777d`，12 帧 / 44 文件 = 12 母版@2x + 12 source/generated + 12 source/native
  *       + 5 tools + manifest.json + README.md + 1 qa 评审图）、
- *       `poses/jump/`（`aa3ab288`，**左向 5 帧 / 25 文件** = 5 母版@2x + 5 source/generated
- *       + 5 source/native + 7 tools + manifest.json + README.md + 1 qa 评审图；右向 5 帧仍 deferred，
- *       manifest 里 `review.fullBatchComplete=false`，禁止用左向帧水平翻转冒充）、
+ *       `poses/jump/`（`aa3ab288` 交左向 5 帧 + `0e521051` 补齐右向 5 帧，
+ *       **左右 10 帧 / 40 文件** = 10 母版@2x + 10 source/generated + 10 source/native
+ *       + 8 tools + manifest.json + README.md + 1 qa 评审图；
+ *       manifest 里 `review.fullBatchComplete=true`，`bodyAnchor.byFacing` 左右各一（700 / 836）；
+ *       禁止用左向帧水平翻转冒充右向）、
  *       `companion/`（`613ba7c8`，云灵 v1）。</li>
  *   <li>尚未交付、<b>故意不预先登记</b>：play / edge / side / mini。
  *       预先加进来的坏处是：这些批次"历史为空 + 0 tracked"会被"已交付批次整批缺失"判成失败，

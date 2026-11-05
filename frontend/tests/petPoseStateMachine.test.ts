@@ -1,0 +1,450 @@
+/**
+ * 姿态入口单测：`sit` 从"真实可达"到"能被任意交互打断"的整条行为链。
+ *
+ * <p><b>为什么这条链必须用假时钟精确测：</b>切片 1 唯一的用户可见新增是
+ * "静置 20s 坐下"。它有三类只能靠 1ms 精度才能抓住的缺陷：</p>
+ * <ol>
+ *   <li><b>顺序错</b>：`sit`(20s) 排在 `sleepy`(60s) / `sleeping`(90s) 之前，
+ *       会把困倦与睡眠两档全吃掉——用户再也看不到 60s 犯困、90s 睡着；</li>
+ *   <li><b>计时起点错</b>：从"构造时刻"起算而不是"最近一次互动"起算，
+ *       于是拖完一次就立刻坐下（用户读成"松手就瘫了"）；</li>
+ *   <li><b>打断不了</b>：`sit` 没有 TTL（它不自己过期），退出只能靠交互或更高档状态，
+ *       所以"点一下必须立刻回 stand"是它唯一的下车通道。</li>
+ * </ol>
+ *
+ * <p>同时逐条钉住三条<b>既有行为不许退化</b>的兼容点（89999/90000ms、连点 3 次生气、
+ * 无 `sleep` 资产时 sleeping 的指令逐项不变），因为本改动的最大风险不是新功能不工作，
+ * 而是旧功能被别人以为"顺手改一下更好"。</p>
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  MULTI_TAP_THRESHOLD,
+  PetBehaviorStateMachine,
+  PET_SHOW_MS,
+  SIT_AFTER_IDLE_MS,
+  SLEEPY_AFTER_IDLE_MS,
+  SLEEP_AFTER_IDLE_MS,
+  postureOf,
+  type PetBehaviorState,
+} from '../src/pet/behavior/state-machine';
+import { PET_POSES } from '../src/pet/poses/manifest';
+import { PoseController, type PoseBlinkLike } from '../src/pet/poses/controller';
+import { POSTURE_IDS, type PetPoses, type PostureId } from '../src/pet/poses/types';
+import type { DocumentLike, ElementLike } from '../src/pet/presentation/layered-presentation';
+
+/** 可控时钟（状态机只认注入的 `now()`）。 */
+class Clock {
+  /** 虚拟时间（毫秒）。 */
+  time = 0;
+
+  /** 读时间。 */
+  now = (): number => this.time;
+
+  /**
+   * 推进时间。
+   *
+   * @param ms 毫秒
+   */
+  advance(ms: number): void {
+    this.time += ms;
+  }
+}
+
+/**
+ * 建一个抖动为 0 的状态机（`rng` 固定 0.5）。
+ *
+ * @param clock 时钟
+ * @returns 状态机
+ */
+function machine(clock: Clock): PetBehaviorStateMachine {
+  return new PetBehaviorStateMachine({ now: clock.now, rng: () => 0.5 });
+}
+
+/** 假眨眼驱动（记录 start/stop 次数）。 */
+class FakeBlink implements PoseBlinkLike {
+  /** 是否在跑。 */
+  private running = true;
+
+  /** `stop()` 被调用次数。 */
+  stops = 0;
+
+  /** `start()` 被调用次数。 */
+  starts = 0;
+
+  /** 是否在跑（`PoseBlinkLike` 的只读面）。 */
+  get isRunning(): boolean {
+    return this.running;
+  }
+
+  /** 停。 */
+  stop(): void {
+    this.stops += 1;
+    this.running = false;
+  }
+
+  /** 启。 */
+  start(): void {
+    this.starts += 1;
+    this.running = true;
+  }
+}
+
+/** 极简假元素（控制器只用到这几个成员）。 */
+class FakeElement implements ElementLike {
+  /** 标签名（`poseImageCount` 靠它数 `<img>`）。 */
+  readonly tagName: string;
+
+  /** `data-*` 写入面。 */
+  readonly dataset: Record<string, string | undefined> = {};
+
+  /** 属性写入面。 */
+  readonly attributes = new Map<string, string>();
+
+  /** 子节点。 */
+  readonly children: FakeElement[] = [];
+
+  /** CSS 写入面（控制器只写 left/top/width/height）。 */
+  readonly style = {
+    setProperty: (name: string, value: string): void => {
+      this.properties.set(name, value);
+    },
+  };
+
+  /** 已写入的 CSS 属性。 */
+  readonly properties = new Map<string, string>();
+
+  /** 图片地址。 */
+  src = '';
+
+  /** 是否隐藏。 */
+  hidden = false;
+
+  /** 文本内容。 */
+  textContent: string | null = null;
+
+  /**
+   * @param tagName 标签名
+   */
+  constructor(tagName: string) {
+    this.tagName = tagName;
+  }
+
+  /**
+   * @param child 子节点
+   * @returns 入参
+   */
+  appendChild(child: ElementLike): unknown {
+    this.children.push(child as FakeElement);
+    return child;
+  }
+
+  /**
+   * @param name 属性名
+   * @param value 属性值
+   */
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
+
+  /**
+   * @param name 属性名
+   * @returns 属性值
+   */
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+}
+
+/** 假文档（只造 `div` / `img`）。 */
+class FakeDocument implements DocumentLike {
+  /**
+   * @param tagName 标签名
+   * @returns 假元素
+   */
+  createElement(tagName: string): ElementLike {
+    assert.ok(tagName === 'div' || tagName === 'img', `控制器不该创建 <${tagName}>`);
+    return new FakeElement(tagName);
+  }
+}
+
+/**
+ * 造一个控制器 + 假眨眼驱动（端口用不到定时器：`sit` 是单帧 hold）。
+ *
+ * @param clock 时钟
+ * @returns 控制器与眨眼驱动
+ */
+function makeController(clock: Clock): { controller: PoseController; blink: FakeBlink; root: FakeElement } {
+  const root = new FakeElement();
+  const host = new FakeElement();
+  const blink = new FakeBlink();
+  const controller = new PoseController({
+    doc: new FakeDocument(),
+    root,
+    host,
+    poses: PET_POSES,
+    density: '1x',
+    ports: {
+      now: clock.now,
+      schedule: () => 0,
+      cancel: () => {},
+      onFrame: () => {},
+      onClipEnd: () => {},
+    },
+    boxOf: null,
+    blink,
+  });
+  return { controller, blink, root };
+}
+
+/**
+ * 造一份"把 `sleep` 批次补齐"的假清单（证明降级不是硬编码 stand）。
+ *
+ * @returns 假清单
+ */
+function posesWithSleep(): PetPoses {
+  const sit = PET_POSES.batches.sit;
+  assert.ok(sit, '真实清单里必须有 sit 批次');
+  const sleep = JSON.parse(JSON.stringify(sit)) as typeof sit;
+  const cloned: PetPoses = {
+    ...PET_POSES,
+    batches: { ...PET_POSES.batches, sleep: { ...sleep, posture: 'sleep' } },
+    accepted: [...PET_POSES.accepted, 'sleep'],
+  };
+  return cloned;
+}
+
+test('SIT_AFTER_IDLE_MS 边界：19999ms 仍站着，20000ms 恰好坐下（且姿态不下发 PresentationOp）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+
+  clock.advance(SIT_AFTER_IDLE_MS - 1);
+  assert.deepEqual(sm.tick(), [], '19999ms 不该产生任何指令');
+  assert.equal(sm.state, 'idle', '19999ms 还不该坐下');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand');
+
+  clock.advance(1);
+  const ops = sm.tick();
+  assert.equal(sm.state, 'sit', '20000ms 必须恰好坐下');
+  // 姿态走独立通道（PostureId → PoseController.setPosture），不进表现层总线
+  assert.deepEqual(ops, [], '坐姿是姿态不是动作：不许产出 PresentationOp');
+  assert.equal(postureOf(sm.state, PET_POSES), 'sit');
+});
+
+test('sit 入口真实可达：拖拽松手后重新计时，满 20s 才坐下', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  // 拖着不放 30s：全程不坐（拖拽期间 tick 直接返回）
+  sm.handle('drag-start');
+  clock.advance(30000);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'drag');
+
+  sm.handle('drag-end');
+  clock.advance(250); // 桥接 idle 落地
+  sm.tick();
+  assert.equal(sm.state, 'idle');
+
+  clock.advance(SIT_AFTER_IDLE_MS - 1);
+  sm.tick();
+  assert.equal(sm.state, 'idle', '松手后 19999ms 不该坐（计时起点必须是松手时刻）');
+
+  clock.advance(1);
+  sm.tick();
+  assert.equal(sm.state, 'sit');
+});
+
+test('点击立刻回 stand：sit 无 TTL，点击是它唯一的下车通道（blink 同步重启）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  const { controller, blink } = makeController(clock);
+
+  clock.advance(SIT_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.state, 'sit');
+
+  // 站姿 → 坐姿：画面切到 pose 层、眨眼停掉
+  controller.setPosture(postureOf(sm.state, PET_POSES));
+  assert.equal(controller.posture, 'sit');
+  assert.equal(blink.isRunning, false, '姿态态必须停眨眼（G-02）');
+  assert.equal(controller.poseImageCount, 1, '姿态层恒有 1 张 <img>（G-03）');
+
+  const ops = sm.handle('tap');
+  assert.equal(sm.state, 'tap');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', '点击后必须立刻派生回站姿');
+  assert.ok(ops.some((op) => op.kind === 'motion' && op.id === 'tap'), '点击仍要下发 tap 动作');
+
+  controller.setPosture(postureOf(sm.state, PET_POSES));
+  assert.equal(controller.posture, 'stand');
+  assert.equal(blink.isRunning, true, '回站姿必须重启眨眼');
+});
+
+test('拖拽期间暂停播放且姿态保持不变，松手后才重算（drag 本身派生 stand）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  const { controller, blink } = makeController(clock);
+
+  clock.advance(SIT_AFTER_IDLE_MS);
+  sm.tick();
+  controller.setPosture('sit');
+  assert.equal(controller.isPlaying, true);
+  assert.equal(blink.isRunning, false);
+
+  sm.handle('drag-start');
+  // 主循环（main.ts 的 syncPosture）在 drag 态只 pause，不 setPosture
+  controller.pause();
+  assert.equal(controller.isPlaying, true, '暂停不是停止：片段还在');
+  assert.equal(controller.posture, 'sit', '拖拽期间姿态必须保持住（画面不许切回站姿）');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', 'drag 派生的纯函数结果仍是 stand（保持由调用方负责）');
+
+  sm.handle('drag-end');
+  controller.resume();
+  assert.equal(controller.posture, 'sit', '松手到下一拍重算之间，姿态不能闪回站姿');
+  controller.setPosture(postureOf(sm.state, PET_POSES));
+  assert.equal(controller.posture, 'stand');
+  assert.equal(blink.isRunning, true);
+});
+
+test('sleeping 抢占一切姿态：坐着也会在 60s 犯困、90s 睡着', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SIT_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.state, 'sit');
+
+  clock.advance(SLEEPY_AFTER_IDLE_MS - SIT_AFTER_IDLE_MS - 1);
+  assert.deepEqual(sm.tick(), [], 'sit 驻留态自己不该再下发指令');
+  assert.equal(sm.state, 'sit', `${SLEEPY_AFTER_IDLE_MS - 1}ms 还没到困倦`);
+
+  clock.advance(1);
+  sm.tick();
+  assert.equal(sm.state, 'sleepy', '坐满 60s 必须升级到困倦（否则睡眠两档被吃掉）');
+
+  clock.advance(SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.state, 'sleeping');
+  assert.equal(sm.sustainedMotion, 'sleepy');
+});
+
+test('兼容点 ①：89999 / 90000ms 入睡边界逐值不变', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEPY_AFTER_IDLE_MS);
+  assert.ok(sm.tick().length > 0, '60s 必须下发困倦指令');
+  assert.equal(sm.state, 'sleepy');
+
+  clock.advance(SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS - 1);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'sleepy', '89999ms 仍在困倦（不能提前睡）');
+
+  clock.advance(1);
+  assert.ok(sm.tick().length > 0, '90000ms 必须入睡');
+  assert.equal(sm.state, 'sleeping');
+});
+
+test('兼容点 ②：身体连点 3 次仍然生气（sit 的加入没有吃掉连点规则）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  for (let index = 0; index < MULTI_TAP_THRESHOLD; index += 1) {
+    sm.handle('tap', { profile: 'body', holdMs: 0 });
+    clock.advance(100); // 相邻间隔远小于连点窗口
+  }
+  assert.equal(sm.state, 'angry');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', '生气是动作，不改姿态');
+});
+
+test('兼容点 ③：无 sleep 资产时 sleeping 的指令与姿态逐项不变', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEPY_AFTER_IDLE_MS);
+  sm.tick();
+  clock.advance(SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS);
+  const ops = sm.tick();
+
+  const motion = ops.find((op) => op.kind === 'motion');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(motion?.id, 'sleepy', '睡眠动作仍是 sleepy 循环');
+  assert.equal(motion?.loop, true);
+  assert.equal(motion?.durationMs, undefined, '睡眠动作不带 TTL');
+  assert.equal(motion?.priority, 0);
+  assert.equal(expression?.id, 'blink', '睡眠表情仍是闭眼贴片（不是困倦的半闭眼）');
+  assert.equal(expression?.layer, 'base');
+  assert.equal(expression?.durationMs, undefined);
+  // 切片 1 没有 sleep 批次 ⇒ 姿态必须降级为 stand（扔走的不是"趴睡"，是"空白窗口"）
+  assert.equal(postureOf('sleeping', PET_POSES), 'stand');
+});
+
+test('有 sleep 资产时 postureOf 才切 sleep（证明降级判据不是硬编码）', () => {
+  const withSleep = posesWithSleep();
+  assert.equal(postureOf('sleeping', withSleep), 'sleep');
+  assert.equal(postureOf('sleeping', PET_POSES), 'stand');
+  // 切片 1 只登记了 sit：其余姿态一律 stand（未交付 = 站姿，不是空白）
+  for (const posture of POSTURE_IDS) {
+    if (posture === 'stand' || posture === 'sit') continue;
+    assert.equal(postureOf(posture as PetBehaviorState, PET_POSES), 'stand', `${posture} 未交付时应降级为 stand`);
+    assert.equal(postureOf(posture as PetBehaviorState, withSleep), 'stand', `${posture} 没有资产时仍应站姿`);
+  }
+});
+
+test('postureOf 对全部状态都有定义，且只有姿态态才返回非 stand', () => {
+  const states: readonly PetBehaviorState[] = [
+    'idle',
+    'tap',
+    'angry',
+    'sleepy',
+    'sleeping',
+    'wake',
+    'drag',
+    'pet',
+    'sit',
+    'lie',
+    'walk',
+    'run',
+    'jump',
+  ];
+  const expected: Record<PetBehaviorState, PostureId> = {
+    idle: 'stand',
+    tap: 'stand',
+    angry: 'stand',
+    sleepy: 'stand',
+    sleeping: 'stand',
+    wake: 'stand',
+    drag: 'stand',
+    pet: 'stand',
+    sit: 'sit',
+    lie: 'stand',
+    walk: 'stand',
+    run: 'stand',
+    jump: 'stand',
+  };
+  for (const state of states) {
+    assert.equal(postureOf(state, PET_POSES), expected[state], `状态 ${state} 派生的姿态不对`);
+  }
+});
+
+test('restore 接受 sit（快照的 known 列表已扩到 5 个姿态态）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  const before = sm.snapshot();
+  assert.equal(sm.restore(before, 'test'), true);
+  assert.equal(sm.state, 'idle');
+
+  clock.advance(SIT_AFTER_IDLE_MS);
+  sm.tick();
+  const sitSnapshot = sm.snapshot();
+  assert.equal(sitSnapshot.state, 'sit');
+  clock.advance(1000);
+  sm.handle('tap');
+  assert.equal(sm.state, 'tap');
+  assert.equal(sm.restore(sitSnapshot, '回滚到坐姿'), true, 'sit 必须在 known 列表里');
+  assert.equal(sm.state, 'sit');
+});
+
+test('PET_SHOW_MS 等既有时长常量未被改动（守卫：改阈值必须显式改这条）', () => {
+  // 这些数值是既有验收口径的一部分，改它们会让"90s 睡""480ms 点击"整套断言失衡
+  assert.equal(PET_SHOW_MS, 900);
+  assert.equal(SIT_AFTER_IDLE_MS, 20000);
+  assert.equal(SLEEPY_AFTER_IDLE_MS, 60000);
+  assert.equal(SLEEP_AFTER_IDLE_MS, 90000);
+  assert.equal(MULTI_TAP_THRESHOLD, 3);
+});

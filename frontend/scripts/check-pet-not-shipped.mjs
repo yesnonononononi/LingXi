@@ -17,6 +17,9 @@
  *   <li>`frontend/dist/pet.html` <b>不存在</b>；</li>
  *   <li>`frontend/dist` 下任何文本产物都<b>不含</b>桌宠指纹（`<div id="pet-root"` /
  *       `<meta name="lx-app" content="pet"`）。</li>
+ *   <li>`public/live2d/pet-poses` 与 `dist/live2d/pet-poses` 里<b>没有 PNG</b>（母版只许留在
+ *       `docs/assets/desktop-pet/`）；</li>
+ *   <li>上述两处 pose 运行资产<b>合计 ≤ 8 MiB</b>（裁决 D-02：pose 资产留在包里，改设总量上限）。</li>
  * </ol>
  *
  * <p><b>dist 不存在时不算失败</b>（干净的开发树很正常），但会打印一条"请先跑 npm run build"的
@@ -31,8 +34,9 @@
  *
  * @module scripts/check-pet-not-shipped
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { FRONTEND_ROOT, readJsonFile } from './build-pet-geometry.mjs';
 
@@ -49,8 +53,22 @@ export const FORBIDDEN_BUILD_FILES = Object.freeze([
   'pet-layers.json',
   'pet-face-tiles.json',
   'pet-motions.json',
+  // pose 运行时清单（M2）：与其它桌宠清单同级对待，进包就等于给安装版留了桌宠数据
+  'pet-poses.json',
   PET_ENTRY_FILE,
 ]);
+
+/**
+ * pose 运行资产的体积预算（裁决 D-02，8 MiB）。
+ *
+ * <p>D-02 否决了"把 pose 资产排除出安装包"的方案，改为<b>留在包里但设总量上限</b>：
+ * 资产留在包里才能保证开发态与打包态走同一条 `lxa://` 路径；设上限是为了让"美术顺手塞
+ * 一堆 @4x 母版"这种事故在门禁阶段就红，而不是等安装包膨胀到用户投诉。</p>
+ */
+export const POSE_RUNTIME_MAX_BYTES = 8 * 1024 * 1024;
+
+/** pose 运行资产目录（相对 `frontend/`）：开发态 `public/live2d/pet-poses`，打包后 `dist/live2d/pet-poses`。 */
+export const POSE_RUNTIME_DIR_SEGMENTS = Object.freeze(['live2d', 'pet-poses']);
 
 /** 参与指纹扫描的文本产物扩展名（图片等二进制一律不读）。 */
 export const SCANNED_SUFFIXES = Object.freeze(['.html', '.js', '.mjs', '.cjs', '.css', '.json', '.svg']);
@@ -179,6 +197,53 @@ export function readDistTexts(distDir) {
 }
 
 /**
+ * 统计 pose 运行目录的体积与非法文件（D-02）。
+ *
+ * <p>只看文件系统事实，不读清单：清单可以被人为写小，磁盘上的字节不会说谎。
+ * 目录不存在时返回 `exists: false`（切片 1 之前或干净检出都正常）。</p>
+ *
+ * @param {string} poseDir pose 运行目录绝对路径
+ * @returns {{exists: boolean, bytes: number, files: number, webpFiles: number, pngFiles: string[], otherFiles: string[]}}
+ *   统计结果
+ */
+export function scanPoseRuntimeDir(poseDir) {
+  const result = {
+    exists: false,
+    bytes: 0,
+    files: 0,
+    webpFiles: 0,
+    pngFiles: [],
+    otherFiles: [],
+  };
+  if (!existsSync(poseDir)) return result;
+  result.exists = true;
+  /** 深度优先遍历。 */
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const absolute = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      result.files += 1;
+      result.bytes += statSync(absolute).size;
+      const lower = entry.name.toLowerCase();
+      if (lower.endsWith('.webp')) {
+        result.webpFiles += 1;
+      } else if (lower.endsWith('.png')) {
+        // 母版绝不能出现在运行目录：png 母版动辄 1.6 MB，且会让"@2x 就该是 2 倍宽"的口径失效
+        result.pngFiles.push(absolute);
+      } else {
+        result.otherFiles.push(absolute);
+      }
+    }
+  };
+  walk(poseDir);
+  return result;
+}
+
+/**
  * 执行全部产物级判据。
  *
  * @param {object} [options] 选项（测试可注入假路径）
@@ -290,6 +355,51 @@ export function runNotShippedChecks(options = {}) {
     }
   }
 
+  // 判据 5 / 6：pose 运行资产（D-02 替代方案：留在包里，但禁 PNG 且总量 ≤ 8 MiB）
+  // 清单存在 ⇒ 运行资产"应该有"，目录缺失就必须说出来；清单不存在（切片 1 之前 / 干净样本）⇒ 静默跳过。
+  const poseManifestPath = resolve(root, 'pet-poses.json');
+  const poseAssetsClaimed = existsSync(poseManifestPath);
+  const poseDirs = [
+    { id: 'public', dir: resolve(root, 'public', ...POSE_RUNTIME_DIR_SEGMENTS) },
+    { id: 'dist', dir: resolve(distDir, ...POSE_RUNTIME_DIR_SEGMENTS) },
+  ];
+  let poseChecked = 0;
+  for (const { id, dir } of poseDirs) {
+    const stats = scanPoseRuntimeDir(dir);
+    if (!stats.exists) {
+      if (poseAssetsClaimed) notes.push(`pose 运行目录不存在，已跳过该项：${dir}`);
+      continue;
+    }
+    poseChecked += 1;
+    if (stats.pngFiles.length > 0) {
+      record(
+        'pose-png',
+        false,
+        `${id} 侧 pose 运行目录里出现 PNG（母版只许留在 docs/assets/desktop-pet）：${stats.pngFiles.join(', ')}`,
+      );
+    } else {
+      record('pose-png', true, `${id} 侧 pose 运行目录无 PNG（${stats.webpFiles} 个 webp）`);
+    }
+    if (stats.bytes > POSE_RUNTIME_MAX_BYTES) {
+      record(
+        'pose-budget',
+        false,
+        `${id} 侧 pose 运行资产合计 ${(stats.bytes / 1024 / 1024).toFixed(2)} MiB > 预算 ` +
+          `${(POSE_RUNTIME_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
+      );
+    } else {
+      record(
+        'pose-budget',
+        true,
+        `${id} 侧 pose 运行资产 ${(stats.bytes / 1024).toFixed(1)} KiB ≤ ` +
+          `${(POSE_RUNTIME_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
+      );
+    }
+  }
+  if (poseChecked === 0 && poseAssetsClaimed) {
+    notes.push('清单里声明了 pose 运行资产，但两处运行目录都不存在：体积与 PNG 判据本轮没有实测对象');
+  }
+
   return { ok: problems.length === 0, problems, notes, checks };
 }
 
@@ -330,6 +440,23 @@ export function selftest() {
   if (parsedGood.htmlFiles.some((file) => basename(file) === PET_ENTRY_FILE)) {
     problems.push('自检失败：注释里的 pet.html 被误判成入口引用');
   }
+
+  // 体积/PNG 扫描器自证：造一个 9 MiB 假 webp + 一个 png，扫描必须认出二者
+  const probeRoot = mkdtempSync(join(tmpdir(), 'lx-pose-scan-'));
+  try {
+    const nested = join(probeRoot, 'sit');
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, 'fake@2x.webp'), Buffer.alloc(POSE_RUNTIME_MAX_BYTES + 4096, 0x00));
+    writeFileSync(join(nested, 'master.png'), Buffer.alloc(16, 0x89));
+    const stats = scanPoseRuntimeDir(probeRoot);
+    if (!stats.exists) problems.push('自检失败：pose 扫描器没认出存在的目录');
+    if (stats.pngFiles.length !== 1) problems.push('自检失败：pose 扫描器没抓到 PNG');
+    if (stats.bytes <= POSE_RUNTIME_MAX_BYTES) problems.push('自检失败：pose 扫描器没算对体积（预算判据会空转）');
+    const tiny = scanPoseRuntimeDir(join(probeRoot, 'not-there'));
+    if (tiny.exists || tiny.bytes !== 0) problems.push('自检失败：pose 扫描器把不存在的目录当成存在');
+  } finally {
+    rmSync(probeRoot, { recursive: true, force: true });
+  }
   return { ok: problems.length === 0, problems };
 }
 
@@ -352,7 +479,7 @@ export function main() {
     return 1;
   }
   try {
-    const result = runNotShippedChecks({ verbose });
+    const result = runNotShippedChecks({ verbose, log: (message) => console.log(message) });
     if (result.ok) {
       console.log('✓ 桌宠入口未进入产物（构建入口无 pet / build.files 无桌宠数据 / dist 无 pet.html 与指纹）');
       return 0;

@@ -35,6 +35,8 @@
  * @module pet/behavior/state-machine
  */
 import type { ExpressionId, MotionId, PresentationOp, Priority } from '../presentation/types';
+import { isPlayable } from '../poses/manifest';
+import type { PetPoses, PosePostureId, PostureId } from '../poses/types';
 import type { HitProfile } from './hit-profile';
 
 /**
@@ -57,7 +59,23 @@ import type { HitProfile } from './hit-profile';
  *       回礼 `wink`（见 {@link WINK_MS}）。</li>
  * </ul>
  */
-export type PetBehaviorState = 'idle' | 'tap' | 'angry' | 'sleepy' | 'sleeping' | 'wake' | 'drag' | 'pet';
+export type PetBehaviorState =
+  | 'idle'
+  | 'tap'
+  | 'angry'
+  | 'sleepy'
+  | 'sleeping'
+  | 'wake'
+  | 'drag'
+  | 'pet'
+  // M2：姿态型状态。**姿态本身不是状态**（见 `postureOf`），这里是"身体形态"的状态来源：
+  // `sit` 由静置 20s 派生；`lie/walk/run/jump` 在切片 1 没有真实入口（无位移引擎，C6），
+  // 先占位是为了让 `postureOf` 与可达图的形状一次写对，切片 2/3 只填资产不改类型。
+  | 'sit'
+  | 'lie'
+  | 'walk'
+  | 'run'
+  | 'jump';
 
 /**
  * 外部驱动可直达的状态名。
@@ -131,6 +149,18 @@ export const MULTI_TAP_THRESHOLD = 3;
 
 /** 无交互多久后进入睡眠（毫秒）。 */
 export const SLEEP_AFTER_IDLE_MS = 90000;
+
+/**
+ * 松手后静置多久**坐下**（毫秒，M2 切片 1 新增）。
+ *
+ * <p>这是 `sit` 在切片 1 的**唯一真实入口**（§A1.8.3）：拖拽松手 → 静置 ≥ 20s → 坐。
+ * 为什么是这个数：20s 比"困倦"（60s）早得多，用户在小憩感出现之前先看到"它坐下了"，
+ * 而且它复用 `drag-end` 已经重置过的 `lastInteractionAt`，**零新计时器**。</p>
+ *
+ * <p>顺序（`tick()` 里）必须是 睡眠(90s) &gt; 困倦(60s) &gt; 落座(20s)：
+ * 反过来写会让 60s 那档永远到不了（20s 先命中，之后每一拍都留在 `sit`）。</p>
+ */
+export const SIT_AFTER_IDLE_MS = 20000;
 
 /**
  * 无交互多久后先进入**困倦**（毫秒，M1 新增）。
@@ -464,6 +494,14 @@ export class PetBehaviorStateMachine {
       return [];
     }
 
+    // 坐姿（M2）：坐是一个**没有 TTL** 的驻留态，所以它自己决定下一步去困倦还是继续坐。
+    // 这里只处理"更久没动"的两档，不重复判断 20s（已经坐在那儿了）。
+    if (this.stateValue === 'sit') {
+      if (now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) return this.enterSleeping();
+      if (now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) return this.enterSleepy();
+      return [];
+    }
+
     // 困倦（sleepy）到点 → 真睡（E08：60s 犯困、90s 睡着）
     if (this.stateValue === 'sleepy') {
       const sleepyUntil = this.stateUntil;
@@ -492,6 +530,31 @@ export class PetBehaviorStateMachine {
     if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) {
       return this.enterSleepy();
     }
+    // 落座（20s，M2）：必须排在 60s / 90s 之后，否则会把困倦与睡眠两档全吃掉
+    if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SIT_AFTER_IDLE_MS) {
+      return this.enterSit();
+    }
+    return [];
+  }
+
+  /**
+   * 进入**坐姿**（M2 切片 1 的用户可见入口）。
+   *
+   * <p>坐是"姿态"而不是"动作"：它不产生 `PresentationOp`（姿态走独立通道
+   * `PostureId` → `PoseController.setPosture()`，见 §A1.5.3），只把状态切过去。
+   * 因此这里返回空数组是**正确**的，不是"忘了下发指令"——动作/表情在姿态态本来就不可见
+   * （`.pet-action` / `.pet-layers` 被 `display:none`）。</p>
+   *
+   * <p>`stateUntil = null`：坐没有自然到期时间，退出靠"任意交互"（点击/拖拽会把状态
+   * 切到 `tap` / `drag`，于是 `postureOf()` 自动派生回 `stand`）。</p>
+   *
+   * @returns 空数组（姿态不产生表现层指令）
+   */
+  private enterSit(): PresentationOp[] {
+    const now = this.now();
+    this.enter('sit', null);
+    this.sustained = null;
+    this.log(`[pet] 行为：静置 ${now - this.lastInteractionAt}ms，坐下`);
     return [];
   }
 
@@ -643,7 +706,7 @@ export class PetBehaviorStateMachine {
       return false;
     }
     const state = snapshot.state;
-    // known 列表必须与 PetBehaviorState 联合同步（M1 新增 sleepy / pet）
+    // known 列表必须与 PetBehaviorState 联合同步（M1 新增 sleepy / pet，M2 新增 sit 等姿态态）
     const known: readonly PetBehaviorState[] = [
       'idle',
       'tap',
@@ -653,6 +716,11 @@ export class PetBehaviorStateMachine {
       'wake',
       'drag',
       'pet',
+      'sit',
+      'lie',
+      'walk',
+      'run',
+      'jump',
     ];
     if (!known.includes(state)) {
       this.log(`[pet] 行为回滚失败：未知状态 ${String(state)}`);
@@ -1025,5 +1093,60 @@ export class PetBehaviorStateMachine {
     const raw = this.rng();
     const unit = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.5;
     return Math.max(1, Math.round(baseMs + (unit * 2 - 1) * jitterMs));
+  }
+}
+
+/**
+ * 姿态是否**真的可播**（`postureOf` 的判据"`has()`"）。
+ *
+ * <p>三条同时满足：①批次存在；②在 `accepted[]` 里（工程侧显式登记，与美术 `status` 无关）；
+ * ③至少一条片段的帧全部齐全且朝向已声明。判据本体在 `poses/manifest.ts` 的
+ * {@link isPlayable}（单一真源），这里只是转出，避免行为层再写一遍。</p>
+ *
+ * @param assets 姿态清单
+ * @param posture 姿态 id
+ * @returns 是否可播
+ */
+function hasPlayablePose(assets: PetPoses, posture: PosePostureId): boolean {
+  return isPlayable(assets, posture);
+}
+
+/**
+ * 由行为状态派生**姿态**（唯一派生点，M2）。
+ *
+ * <p><b>姿态不是状态</b>（§A1.5.3）：动作（tap/happy/angry…）与姿态正交——动作决定
+ * "身体怎么抖"，姿态决定"身体是什么形态"。所以姿态只在这里派生，任何地方都不许写
+ * `posture` 字段，也不许把它塞进 `MotionId` 枚举。</p>
+ *
+ * <p><b>没有资产就优雅降级为 `stand`</b>：切片 1 只登记了 `sit`，所以 `sleeping` 仍然走
+ * 既有的"闭眼表情 + sleepy 动作"（逐字节不变，兼容点 2），`walk/run/jump/lie` 一律 stand。
+ * 这条降级必须存在，否则"资产未交付"会表现成空白窗口。</p>
+ *
+ * <p><b>`drag` 不在特例里</b>：设计 §A1.8.2 要求"拖着坐着的猫时姿态保持"，但那是
+ * **拖拽期间不重算**（`main.ts` 的 `syncPosture()` 在 drag 态直接跳过 setPosture 并
+ * `player.pause()`），不是"drag 派生出一个姿态"。让 `postureOf` 记住"上一个姿态"
+ * 就等于引入第二处状态，正是本设计要避免的。所以 `drag → stand` 在这里是**纯函数结果**，
+ * 拖拽期间的保持由调用方负责。</p>
+ *
+ * @param state 行为状态
+ * @param assets 姿态清单
+ * @returns 姿态 id
+ */
+export function postureOf(state: PetBehaviorState, assets: PetPoses): PostureId {
+  switch (state) {
+    case 'sleeping':
+      return hasPlayablePose(assets, 'sleep') ? 'sleep' : 'stand';
+    case 'sit':
+      return hasPlayablePose(assets, 'sit') ? 'sit' : 'stand';
+    case 'lie':
+      return hasPlayablePose(assets, 'lie') ? 'lie' : 'stand';
+    case 'walk':
+      return hasPlayablePose(assets, 'walk') ? 'walk' : 'stand';
+    case 'run':
+      return hasPlayablePose(assets, 'run') ? 'run' : 'stand';
+    case 'jump':
+      return hasPlayablePose(assets, 'jump') ? 'jump' : 'stand';
+    default:
+      return 'stand';
   }
 }

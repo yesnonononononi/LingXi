@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/build-pet-poses.mjs",
+  "sourceRoot": "docs/assets/desktop-pet/poses",
+  "scale": {
+    "masterToCss": 0.076171875,
+    "nativeToCss": 0.15234375,
+    "artWidth": 156,
+    "canvasWidth": 2048
+  },
+  "align": {
+    "xNative": 479.7,
+    "yNative": 1454,
+    "xSource": "measured-blue-skirt-centroid"
+  },
+  "densities": [
+    "1x",
+    "2x"
+  ],
+  "batches": {
+    "sit": {
+      "posture": "sit",
+      "assetId": "lingxi-pet-m2-sit-static-review-v1",
+      "status": "awaiting-static-review",
+      "masterScale": 2,
+      "canvas": {
+        "width": 2048,
+        "height": 3072
+      },
+      "nativeCanvas": {
+        "width": 1024,
+        "height": 1536
+      },
+      "bodyAnchor": {
+        "byFacing": {
+          "1": {
+            "x": 474,
+            "y": 1454
+          },
+          "-1": {
+            "x": 474,
+            "y": 1454
+          }
+        },
+        "byFacingSource": "batch-single",
+        "spreadNative": 0,
+        "maxDeviationNative": 0.16
+      },
+      "envelopeCss": {
+        "left": -56.2148,
+        "right": 67.7168,
+        "top": -164.3789,
+        "bottom": 0.0762
+      },
+      "clips": [
+        {
+          "id": "hold",
+          "facing": -1,
+          "frames": [
+            "sit_neutral"
+          ],
+          "loop": false,
+          "frameMs": [
+            0
+          ],
+          "onEnd": "hold-last"
+        }
+      ],
+      "frames": {
+        "sit_neutral": {
+          "id": "sit_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sit/sit_neutral@1x.webp",
+              "url": "lxa://pet-poses/sit/sit_neutral@1x.webp",
+              "width": 156,
+              "height": 234,
+              "bytes": 31846,
+              "sha256": "44f0802390cd3f784090ffc93f51317792398b9eaf2156257a4074afbc90d7b8",
+              "format": "webp-lossless"
+            },
+            "2x": {
+              "file": "poses/sit/sit_neutral@2x.webp",
+              "url": "lxa://pet-poses/sit/sit_neutral@2x.webp",
+              "width": 312,
+              "height": 468,
+              "bytes": 100182,
+              "sha256": "cf82cf28958e61cf95571fb20890bfd4cccfd83055dfa7800f1f64055d0563d0",
+              "format": "webp-lossless"
+            }
+          },
+          "anchorNative": {
+            "x": 474,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 105,
+            "top": 375,
+            "right": 918.5,
+            "bottom": 1454.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 512
+        }
+      },
+      "provenance": {
+        "adapter": "legacy-v1",
+        "manifestSha256": "a23441ddb6ab1015ec18288265bbf7497d151b2de9c5d6aaac0469bc44bee48d",
+        "consumedKeys": [
+          "canvas",
+          "nativeSourceCanvas",
+          "masterScale.factor",
+          "bodyAnchor.x",
+          "bodyAnchor.y",
+          "files[].file",
+          "files[].bbox",
+          "contactPoints.foot"
+        ],
+        "aliasesResolved": []
+      }
+    }
+  },
+  "accepted": [
+    "sit"
+  ],
+  "deferred": [
+    {
+      "posture": "lie",
+      "reason": "切片 3（卧姿语义）：运行资产未导出"
+    },
+    {
+      "posture": "sleep",
+      "reason": "切片 3（卧姿语义）：运行资产未导出"
+    },
+    {
+      "posture": "walk",
+      "reason": "切片 2：运行资产未导出"
+    },
+    {
+      "posture": "run",
+      "reason": "切片 2：运行资产未导出"
+    },
+    {
+      "posture": "jump",
+      "reason": "切片 2：运行资产未导出（美术左右 10 帧已交齐，等切片 2 接漫游）"
+    }
+  ],
+  "degradations": [
+    "no-face-overlay",
+    "no-blink"
+  ],
+  "totals": {
+    "frames": 1,
+    "bytes1x": 31846,
+    "bytes2x": 100182
+  }
+}

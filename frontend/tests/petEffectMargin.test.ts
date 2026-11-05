@@ -6,7 +6,7 @@
  * 换成四边之后，一旦有人写回 `glowPad × 2`，只有**非对称边距**才会暴露差异——
  * 而线上真源是对称的 16/16/16/16，测试会全绿。所以这里用非对称 fixture 钉死它。</p>
  *
- * <p>另外锁住两条不变式：① 真源的窗口尺寸 = 立绘箱 + 四边边距 + 顶部气泡（M4 起为 196×348，
+ * <p>另外锁住两条不变式：① 真源的窗口尺寸 = 立绘箱 + 四边边距 + 顶部气泡（D-01 2026-11-05 起为 268×348，
  * 断言里不写死数字，改边距只改 JSON）；② `effectMargin` 缺省时四边回落 `glowPad`（老版本 JSON 不会炸）。</p>
  */
 import test from 'node:test';
@@ -34,18 +34,19 @@ function geometryWith(overrides: Partial<PetGeometry> = {}): PetGeometry {
   return { ...PET_GEOMETRY, ...overrides };
 }
 
-/** 非对称夹具（**故意与真源不同**：真源是 24/20/18/20，用它会让"四边分别加"的断言失去区分度）。 */
+/** 非对称夹具（**故意与真源不同**：真源是 24/56/18/56，用它会让"四边分别加"的断言失去区分度）。 */
 const ASYMMETRIC: PetGeometry['effectMargin'] = { top: 30, right: 8, bottom: 12, left: 4 };
 
-test('真源窗口 = 立绘箱 + 四边边距 + 气泡（M4：196×348，断言不写死数字）', () => {
+test('真源窗口 = 立绘箱 + 四边边距 + 气泡（D-01 2026-11-05：268×348，断言不写死派生式）', () => {
   const margin = PET_GEOMETRY.effectMargin;
-  assert.deepEqual(margin, { top: 24, right: 20, bottom: 18, left: 20 });
+  assert.deepEqual(margin, { top: 24, right: 56, bottom: 18, left: 56 });
   assert.equal(PET_GEOMETRY.artWidth, 156);
   assert.equal(PET_GEOMETRY.artHeight, 234);
   assert.deepEqual(windowSize(PET_GEOMETRY), {
     width: PET_GEOMETRY.artWidth + margin.left + margin.right,
     height: PET_GEOMETRY.artHeight + margin.top + margin.bottom + PET_GEOMETRY.bubbleHeight,
   });
+  assert.deepEqual(windowSize(PET_GEOMETRY), { width: 268, height: 348 });
   assert.deepEqual(ART_ORIGIN(PET_GEOMETRY), { x: margin.left, y: margin.top + PET_GEOMETRY.bubbleHeight });
 });
 

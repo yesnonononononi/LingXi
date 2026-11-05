@@ -14,9 +14,9 @@
   "artWidth": 156,
   "effectMargin": {
     "top": 24,
-    "right": 20,
+    "right": 56,
     "bottom": 18,
-    "left": 20
+    "left": 56
   },
   "glowPad": 16,
   "bubbleHeight": 72

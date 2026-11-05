@@ -19,9 +19,9 @@
      四边本来就不该同值。M4 起按设计文档 §1.8 定值：上 24（呆毛弹动）/ 右 20 / 下 18（接地光晕）
      / 左 20（耳根位移），窗口随之变成 196×348，立绘箱本身仍是 156×234，视觉大小不变。 */
   --pet-effect-top: 24px;
-  --pet-effect-right: 20px;
+  --pet-effect-right: 56px;
   --pet-effect-bottom: 18px;
-  --pet-effect-left: 20px;
+  --pet-effect-left: 56px;
 
   /* 立绘箱：按 1024×1536 画布的 2:3 比例定 → 156×234（窗口 196×348 = 立绘箱 + 四边特效边距 + 顶部气泡）。
      箱子比例必须等于画布比例，否则等比 contain 时要么留横白、要么裁掉尾巴。 */
@@ -804,4 +804,73 @@ body {
     animation: none;
     will-change: auto;
   }
+}
+
+/**
+ * 姿态层（M2 切片 1）：压平整帧的**独占**画面层。
+ *
+ * <p><b>为什么是"并列 + 互斥"而不是"第 11 层"</b>（裁决 D-A）：pose 帧是 3072² 压平整帧，
+ * 而层栈的层坐标系是站姿母版 2048²。混进同一个 `plan` 会让 `z / rect / pivot` 全部失真，
+ * 而且分层件的呼吸/摇摆会叠到压平帧上（两套互相打架的运动）。
+ * 并列 + CSS 互斥则天然只有**一个**可见源，穿模在结构上不可能发生。</p>
+ *
+ * <p>`left/top/width/height` 由 `poses/controller.ts` 从 `placement.ts` 的纯函数结果写入
+ * （窗口坐标，CSS px）。刻意不给 `inset: 0` 兜底：位置算错时要"看得见的错位"，
+ * 而不是被 `inset` 悄悄拉满整窗。</p>
+ *
+ * <p>`pointer-events: none` 是硬要求：命中判定仍以站姿 `.pet-art` 为锚
+ * （§A1.7.1 的已知取舍），姿态层不许改变可点区域。</p>
+ */
+.pet-pose {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  /* 默认隐藏：`data-posture` 还没写（或写成 stand）时绝不能让姿态层盖在立绘上。
+     这条是"未设置"第三态的兜底——`:not([data-posture='stand'])` 对"没有属性"也成立，
+     只靠它会让首帧闪一下空姿态层。 */
+  display: none;
+  /* 与压平帧同一个投影，切姿态时影子不跳 */
+  filter: drop-shadow(0 3px 8px var(--pet-glow));
+}
+
+/**
+ * 站姿：姿态层让位。
+ *
+ * <p>用 `display: none` 而不是 `opacity: 0`：后者仍然参与合成与 `drop-shadow` 滤镜计算，
+ * 白烧 GPU，而且会与压平帧的投影叠加出双影。G-01 断言的正是这三条规则。</p>
+ */
+#pet-root[data-posture='stand'] .pet-pose {
+  display: none;
+}
+
+/** 非站姿：姿态层独占画面。 */
+#pet-root:not([data-posture='stand']) .pet-pose {
+  display: block;
+}
+
+/**
+ * 非站姿：动作宿主与层栈全部让位（不穿模·单一可见源，G-01）。
+ *
+ * <p>`display: none` 而不是 `opacity: 0`：见上一条。另外这一层是**整棵子树**隐藏，
+ * 于是 layered 模式下的层动画、脸层贴片、压平帧的双缓冲全部停止参与合成 ——
+ * 姿态态"不叠脸层、不眨眼"（G-02）就由这条 + `controller` 的 `blinkDriver.stop()`
+ * 共同保证，不靠"记得别下发表情"。</p>
+ */
+#pet-root:not([data-posture='stand']) .pet-action,
+#pet-root:not([data-posture='stand']) .pet-layers {
+  display: none;
+}
+
+/** 姿态图：铺满姿态盒（盒尺寸 = `batch.canvas` × `masterToCss`，逐批读，不写死 234）。 */
+[data-pose-frame] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* pose 帧与姿态盒同比例（156×234 / 234×234），contain 保证绝不变形、绝不裁切 */
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
 }

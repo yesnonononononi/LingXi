@@ -213,3 +213,82 @@ test('守卫自检（--selftest 的同一实现）必须通过', async () => {
   const result = selftest();
   assert.equal(result.ok, true, `守卫自检失败：\n${result.problems.join('\n')}`);
 });
+
+test('反例：build.files 里加回 pet-poses.json → 守卫必须红（M2）', async () => {
+  const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
+  const pkg = { name: 'fixture', build: { files: ['dist/**/*', 'electron/**/*', 'pet-poses.json', 'package.json'] } };
+  const root = makeFixture({ pkg });
+  try {
+    const result = runNotShippedChecks({ frontendRoot: root, distDir: path.join(root, 'no-dist') });
+    assert.equal(result.ok, false, 'pose 清单回到 build.files 却仍然绿：守卫失效');
+    assert.ok(
+      result.problems.some((problem) => problem.startsWith('build-files') && problem.includes('pet-poses.json')),
+      `问题列表里没有点名 pet-poses.json：\n${result.problems.join('\n')}`,
+    );
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('反例：pose 运行目录里出现 PNG 母版 → 守卫必须红（D-02 母版不外流）', async () => {
+  const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
+  const root = makeFixture({});
+  try {
+    // 母版 png 只该留在 docs/assets/desktop-pet；进了 public/ 就会被 vite 拷进 dist 并随包发布
+    const poseDir = path.join(root, 'public', 'live2d', 'pet-poses', 'sit');
+    fs.mkdirSync(poseDir, { recursive: true });
+    fs.writeFileSync(path.join(poseDir, 'sit_neutral@2x.png'), Buffer.alloc(64, 0x89));
+    fs.writeFileSync(path.join(poseDir, 'sit_neutral@2x.webp'), Buffer.alloc(64, 0x52));
+    // 清单存在 = 运行资产"应该有"，此时缺 dist 侧目录会只记 note，不影响本次断言
+    fs.writeFileSync(path.join(root, 'pet-poses.json'), JSON.stringify({ version: 1, batches: {} }), 'utf8');
+    const result = runNotShippedChecks({ frontendRoot: root, distDir: path.join(root, 'no-dist') });
+    assert.equal(result.ok, false, 'pose 运行目录里躺着 PNG 却仍然绿：守卫失效');
+    assert.ok(
+      result.problems.some((problem) => problem.startsWith('pose-png') && problem.includes('.png')),
+      `问题列表里没有点名 PNG：\n${result.problems.join('\n')}`,
+    );
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('反例：pose 运行资产合计超过 8 MiB → 守卫必须红（D-02 体积预算）', async () => {
+  const { runNotShippedChecks, POSE_RUNTIME_MAX_BYTES } = await import('../scripts/check-pet-not-shipped.mjs');
+  const root = makeFixture({});
+  try {
+    const poseDir = path.join(root, 'public', 'live2d', 'pet-poses', 'walk');
+    fs.mkdirSync(poseDir, { recursive: true });
+    // 预算 +4 KiB：跨过阈值的形状（不是"随便写个大数"，越界幅度越小越能证明比较符号没写错）
+    fs.writeFileSync(path.join(poseDir, 'walk_a@2x.webp'), Buffer.alloc(POSE_RUNTIME_MAX_BYTES + 4096, 0x52));
+    const result = runNotShippedChecks({ frontendRoot: root, distDir: path.join(root, 'no-dist') });
+    assert.equal(result.ok, false, 'pose 资产超预算却仍然绿：守卫失效');
+    assert.ok(
+      result.problems.some((problem) => problem.startsWith('pose-budget') && problem.includes('MiB')),
+      `问题列表里没有点名体积预算：\n${result.problems.join('\n')}`,
+    );
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('真实仓库：public 侧 pose 运行资产满足 D-02（无 PNG 且 ≤ 8 MiB）', async () => {
+  const { runNotShippedChecks, POSE_RUNTIME_DIR_SEGMENTS, POSE_RUNTIME_MAX_BYTES, scanPoseRuntimeDir } = await import(
+    '../scripts/check-pet-not-shipped.mjs'
+  );
+  const publicPoseDir = path.join(FRONTEND_ROOT, 'public', ...POSE_RUNTIME_DIR_SEGMENTS);
+  const stats = scanPoseRuntimeDir(publicPoseDir);
+  if (!stats.exists) {
+    // 切片 1 之后此目录必然存在；不存在说明有人删了运行资产，这是真问题
+    assert.fail(`pose 运行目录不存在：${publicPoseDir}（请先跑 npm run build:pet-poses）`);
+  }
+  assert.deepEqual(stats.pngFiles, [], '运行目录里不许出现 PNG 母版');
+  assert.ok(stats.webpFiles >= 1, '运行目录里至少要有 1 个 webp（sit 单帧也算可播放内容，D-03）');
+  assert.ok(
+    stats.bytes <= POSE_RUNTIME_MAX_BYTES,
+    `运行资产 ${(stats.bytes / 1024 / 1024).toFixed(2)} MiB 超过 D-02 预算 ${POSE_RUNTIME_MAX_BYTES / 1024 / 1024} MiB`,
+  );
+  const result = runNotShippedChecks({});
+  assert.ok(result.checks.some((item) => item.id === 'pose-budget'), '缺少 pose-budget 判据');
+  assert.ok(result.checks.some((item) => item.id === 'pose-png'), '缺少 pose-png 判据');
+  assert.equal(result.ok, true, `真实仓库未通过产物级守卫：\n${result.problems.join('\n')}`);
+});

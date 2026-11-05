@@ -24,6 +24,7 @@ import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp }
 import { emptyEntryReport, summarizeOutcomes, type EntryDispatchReport } from './presentation/entry-report';
 import {
   PetBehaviorStateMachine,
+  postureOf,
 } from './behavior/state-machine';
 import type { PetDebugHandle } from './debug/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
@@ -37,6 +38,9 @@ import type { CompositePlan } from './layers/types';
 import type { DocumentLike, ElementLike, LayerView } from './presentation/layered-presentation';
 import { selectPresentationWithPlan, type SelectorDeps } from './presentation/select-presentation';
 import type { PetPresentation } from './presentation/types';
+import { PET_POSES, densityFor } from './poses/manifest';
+import { PoseController, type PoseBlinkLike } from './poses/controller';
+import { poseBoxOf } from './poses/placement';
 import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
 import { mountHalo } from './visual/halo';
@@ -96,6 +100,43 @@ const ART_URL_FALLBACK = expressionFrameUrl('neutral', DENSITY === '2x' ? '1x' :
  * （立绘头顶有羽化半透明边缘，叠上去会出现双层头皮硬边）。</p>
  */
 const EXPRESSION_URLS: ExpressionUrlMap = expressionFrameUrls(DENSITY);
+
+/**
+ * 姿态帧的密度档（≥1.5 → `@2x`）。
+ *
+ * <p>与既有 `LAYER_DENSITY` 同一口径（`densityFor`），但**只决定选哪一档文件**：
+ * 姿态盒的 `left/top/width/height` 是 CSS px（DIP），DPR 从 1.0 改到 2.0 必须逐位不变
+ * （设计 §A1.7.1 第 ④ 条）。
+ */
+const POSE_DENSITY = densityFor(
+  typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1,
+);
+
+/**
+ * 把 `BlinkDriver` 适配成姿态层能用的最小接口。
+ *
+ * <p><b>为什么不在 controller 里直接拿 `BlinkDriver`：</b>姿态层只需要
+ * 停/启/在跑吗三件事，拿整个驱动等于把阈值、随机源、睡眠判定都暴露给它。
+ * 另外能不能启动有两条既有否决权——减少动态（不该自启）与功耗 `off` 档
+ * （主进程明确要求停掉一切持续定时器）——这两个判断只属于这里，不属于姿态层。</p>
+ *
+ * @returns 眨眼端口
+ */
+function poseBlinkPort(): PoseBlinkLike {
+  return {
+    get isRunning(): boolean {
+      return blinkDriver?.isRunning === true;
+    },
+    stop: () => {
+      blinkDriver?.stop();
+    },
+    start: () => {
+      if (REDUCED_MOTION) return;
+      if ((powerPolicy?.power ?? 'idle') === 'off') return;
+      blinkDriver?.start();
+    },
+  };
+}
 
 /** 主进程推来的指令。类型与 `pet-window.cjs` 的 `pet:command` 一一对应。 */
 type PetCommand =
@@ -242,6 +283,9 @@ let badgeElement: HTMLSpanElement | null = null;
 /** 提示行控制器（自动淡出；O2）。 */
 let hintBar: HintBar | null = null;
 
+/** 姿态控制器（M2）：`.pet-pose` 层与 `data-posture` 的唯一主人。 */
+let poseController: PoseController | null = null;
+
 /**
  * 提示行文案（O2：压成一行小字、**去掉"表情：xx"实时值**、不再提示双击）。
  *
@@ -328,6 +372,42 @@ function dispatchOps(ops: readonly PresentationOp[]): DispatchOutcome[] {
     results.push(dispatchOp(op));
   }
   return results;
+}
+
+
+/**
+ * 把"当前行为状态"同步到"当前姿态"（M2）。
+ *
+ * <p><b>姿态只有一个派生点</b>：`postureOf(state)`。本函数只做两件事——</p>
+ * <ol>
+ *   <li>姿态变了就 `setPosture()`；</li>
+ *   <li>**拖拽期间不重算**（§A1.8.2 最高优先级那一行）：拖着一只坐着的猫是合理的，
+ *       所以 drag 态只 `player.pause()`，松手后由下一拍 `resume()` 接上。
+ *       这条规则写在这里而不是 `postureOf` 里，是为了不引入"上一个姿态"这份第二状态。</li>
+ * </ol>
+ *
+ * <p>每 250ms 的行为拍与每次交互后都会调用；`postureOf` 是纯函数、`setPosture` 同值早退，
+ * 所以高频调用没有代价。</p>
+ *
+ * @param label 排障标签（只在姿态真变时进日志）
+ */
+function syncPosture(label: string): void {
+  const controller = poseController;
+  const machine = behavior;
+  if (!controller || !machine) return;
+  const state = machine.state;
+  if (state === 'drag') {
+    controller.pause();
+    return;
+  }
+  const desired = postureOf(state, PET_POSES);
+  if (desired !== controller.posture) {
+    if (DEBUG_ENABLED) console.debug(`[pet] 姿态 ${controller.posture} → ${desired}（${label}: ${state}）`);
+    controller.setPosture(desired);
+    return;
+  }
+  // 姿态没变：把拖拽期间的暂停接上（未暂停时是空操作）
+  controller.resume();
 }
 
 /**
@@ -452,6 +532,8 @@ function runGesture(intents: readonly GestureIntent[]): void {
       // 分区 + 按住时长一起交给行为层：它才知道这次是"摸头"还是"点一下"
       const ctx = { profile: pressProfile, holdMs: Math.max(0, Date.now() - pressStartedAt) };
       dispatchEntryOps(behavior ? behavior.handle('tap', ctx) : fallbackTapOps(), 'gesture:tap');
+      // 点击一律退出姿态（§A1.8.2：动作与脸层只在 stand 可见），所以这里紧跟一次姿态同步
+      syncPosture('gesture:tap');
       hintBar?.poke();
       continue;
     }
@@ -498,6 +580,8 @@ function beginDrag(pointerId: number): void {
   artElement?.classList.add('is-dragging');
   // 行为层同步进入 drag：拖拽期间不该触发睡眠（也不该被眨眼打断）
   if (behavior) dispatchEntryOps(behavior.handle('drag-start'), 'gesture:drag-start');
+  // 拖拽期间姿态保持、只暂停播放（拖着坐着的猫是合理的）；窗口位置仍由主进程独占
+  syncPosture('gesture:drag-start');
   // 指针捕获：光标移动快于窗口时事件也不会丢，否则会出现「甩一下就掉」。
   // 捕获失败（指针 id 已失效等）不能中断拖拽本身，故吞掉异常。
   try {
@@ -523,6 +607,7 @@ function endDrag(pointerId: number): void {
   artElement?.classList.remove('is-dragging');
   // 行为层回到 idle（先落桥接 idle，等 drag 的高优先级记录过期再落到常驻 idle）
   if (behavior) dispatchEntryOps(behavior.handle('drag-end'), 'gesture:drag-end');
+  syncPosture('gesture:drag-end');
   try {
     if (artElement?.hasPointerCapture(pointerId)) {
       artElement.releasePointerCapture(pointerId);
@@ -965,6 +1050,34 @@ function createPresentation(): void {
     motionPacer.start();
   }
 
+  // 姿态通道（M2）：`.pet-pose` 层与 `data-posture` 的唯一主人。
+  //
+  // 挂到 `#pet-root` 而不是 `.pet-art`：placement 算出的是**窗口坐标**，而 `.pet-art`
+  // 的原点是 (effectMargin.left, margin.top + bubble)；更要紧的是 `.pet-motion` /
+  // `.pet-sway` 上的呼吸与摇摆 transform 会作用到子元素上——姿态层若挂在里面，
+  // 接地基线就会随呼吸上下浮动，G-06 的 ±0.35 CSS 判据直接失效。
+  if (root && artElement) {
+    poseController = new PoseController({
+      doc: document,
+      root: root as unknown as ElementLike,
+      host: root as unknown as ElementLike,
+      poses: PET_POSES,
+      density: POSE_DENSITY,
+      ports: {
+        now: () => Date.now(),
+        schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+        cancel: (handle) => window.clearTimeout(handle),
+        onFrame: () => {},
+        onClipEnd: () => {},
+      },
+      // 唯一的位置来源：placement 的纯函数（切姿态不改窗口位置，C6）
+      boxOf: (batch, frame) => poseBoxOf(batch, frame, PET_POSES.scale, PET_POSES.align, PET_GEOMETRY),
+      blink: poseBlinkPort(),
+      log: (message) => console.debug(message),
+    });
+  }
+  syncPosture('boot');
+
   // 行为推进：250ms 一拍足够（最短的状态时长是 250ms 的桥接），
   // 比起每条转移各挂一个定时器，单拍轮询更好测也更好停。
   behaviorTimer = window.setInterval(() => {
@@ -972,6 +1085,9 @@ function createPresentation(): void {
     // 走"入态"通道：tick 产出的都是状态进场指令（桥接 idle / 常驻 idle / 入睡），
     // 一旦没落地就会被回滚并记账，不会出现"行为层以为落地了"的静默失败
     dispatchEntryOps(behavior.tick(), 'behavior:tick');
+    // 姿态与行为**同一拍**同步：sit 的入场不产生任何 PresentationOp（姿态走独立通道），
+    // 所以不能只在 dispatchEntryOps 里同步，否则静置 20s 后姿态永远不会变。
+    syncPosture('behavior:tick');
   }, 250);
 }
 
@@ -1031,6 +1147,8 @@ function boot(): void {
     }
     blinkDriver?.stop();
     motionPacer?.stop();
+    // 姿态层也要收：播放器的定时器是 window.setTimeout，不收就会在隐藏窗口里继续跑
+    poseController?.reset();
     hintBar?.dispose();
     gesture.reset();
   });

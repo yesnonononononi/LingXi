@@ -332,16 +332,27 @@ export function scanLayerSource(manifest, sourceDir) {
 export async function transcodeLayer(sharp, job, outDir, target, options = {}) {
   const fail = (reason) => ({ ok: false, reason, format: '', bytes: 0, downgraded: false });
   if (!sharp) return fail('未安装 sharp，无法转码（npm i -D sharp 后重试）');
+  // 比例断言**参数化**（M2/T02）：分层件是 2:3，pose 母版是 1:1（3072²）。
+  // 默认值保持 2:3 ⇒ 分层件的既有行为逐字节不变（这是"扩而不新写"的前提）。
+  const aspect = options.aspect && Number(options.aspect.w) > 0 && Number(options.aspect.h) > 0
+    ? { w: Number(options.aspect.w), h: Number(options.aspect.h) }
+    : { w: 2, h: 3 };
+  const expectedAspect = aspect.w / aspect.h;
+  const aspectLabel = `${aspect.w}:${aspect.h}`;
   const sourceSize = readImageSize(job.path);
   const sourceAspect = sourceSize.width / sourceSize.height;
-  if (Math.abs(sourceAspect - 2 / 3) > ASPECT_TOLERANCE) {
-    return fail(`母版不是 2:3（${sourceSize.width}×${sourceSize.height}），等比 contain 会留白或裁切`);
+  if (Math.abs(sourceAspect - expectedAspect) > ASPECT_TOLERANCE) {
+    return fail(
+      `母版不是 ${aspectLabel}（${sourceSize.width}×${sourceSize.height}），等比 contain 会留白或裁切`,
+    );
   }
   const targetAspect = target.width / target.height;
-  if (Math.abs(targetAspect - 2 / 3) > ASPECT_TOLERANCE) {
-    return fail(`目标尺寸不是 2:3（${target.width}×${target.height}）`);
+  if (Math.abs(targetAspect - expectedAspect) > ASPECT_TOLERANCE) {
+    return fail(`目标尺寸不是 ${aspectLabel}（${target.width}×${target.height}）`);
   }
   const outputPath = resolve(outDir, `${job.layerId}@${job.density}.webp`);
+  // 子目录自动创建：pose 走 `pet-poses/<batch>/`，分层件走 `pet-p1/layers/`（都已存在）
+  mkdirSync(dirname(outputPath), { recursive: true });
   const quality = Number.isFinite(options.quality) ? Number(options.quality) : WEBP_OPTIONS.quality;
   const maxBytes = Number.isFinite(options.maxBytes) ? Number(options.maxBytes) : 0;
 

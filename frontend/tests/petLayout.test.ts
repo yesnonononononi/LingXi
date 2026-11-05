@@ -35,12 +35,15 @@ function near(actual: number, expected: number, message: string): void {
   assert.ok(Math.abs(actual - expected) < EPSILON, `${message}: actual=${actual}, expected=${expected}`);
 }
 
-test('windowSize：立绘箱 + 四边特效边距 + 顶部气泡（从真源派生）', () => {
+test('windowSize：立绘箱 + 四边特效边距 + 顶部气泡（D-01 2026-11-05：窗口 268×348）', () => {
   const margin = PET_GEOMETRY.effectMargin;
   assert.deepEqual(windowSize(PET_GEOMETRY), {
     width: PET_GEOMETRY.artWidth + margin.left + margin.right,
     height: PET_GEOMETRY.artHeight + margin.top + margin.bottom + PET_GEOMETRY.bubbleHeight,
   });
+  // D-01：左右各 56（不是设计稿的 49——49 时 run 的左墨迹只剩 0.05 CSS px 余量）
+  assert.deepEqual(margin, { top: 24, right: 56, bottom: 18, left: 56 });
+  assert.deepEqual(windowSize(PET_GEOMETRY), { width: 268, height: 348 });
 });
 
 test('ART_ORIGIN：原点 = (左边距, 上边距 + bubbleHeight)', () => {
