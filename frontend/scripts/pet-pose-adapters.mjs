@@ -31,7 +31,7 @@
  * @module scripts/pet-pose-adapters
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /** 美术源根（相对仓库根，排障用；引擎不读）。 */
@@ -746,5 +746,47 @@ export function adaptAll(options = {}) {
       log(`[pet-poses] 失败 ${message}`);
     }
   }
+  problems.push(...detectUnregisteredBatches(repoRoot, log));
   return { drafts, deferred, missing, problems };
+}
+
+/**
+ * 找出源目录里**未在 {@link BATCH_SPECS} 登记**的批次目录（QA 盲区 B-5）。
+ *
+ * <p><b>守的是什么：</b>美术新交一批资产（`docs/assets/desktop-pet/poses/<new>/manifest.json`）时，
+ * 如果构建只遍历 `BATCH_SPECS`，那批会被**静默忽略**——构建成功、`--check` 成功、
+ * 运行时空清单，于是"美术交了、工程说没收到"这种扯皮又出现一次。所以这里反向扫目录：
+ * 只要 `poses/` 下出现未登记的子目录，就报问题让构建红。</p>
+ *
+ * <p>为什么算 `problems` 而不是 `warnings`：这不是"可以用但要注意"的降级
+ * （不登记 ⇒ 永远不进清单），必须有人去 `BATCH_SPECS` 补一行登记或删掉目录。</p>
+ *
+ * @param {string} repoRoot 仓库根
+ * @param {(message: string) => void} log 日志出口
+ * @returns {string[]} 问题列表（每个未登记目录一条）
+ */
+function detectUnregisteredBatches(repoRoot, log) {
+  const problems = [];
+  const posesRoot = resolve(repoRoot, SOURCE_ROOT);
+  if (!existsSync(posesRoot)) return problems;
+  const registered = new Set(BATCH_SPECS.map((spec) => spec.posture));
+  let entries;
+  try {
+    entries = readdirSync(posesRoot, { withFileTypes: true });
+  } catch (err) {
+    return [`[pet-poses] 无法枚举源目录 ${posesRoot}：${(err && err.message) || err}`];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (registered.has(entry.name)) continue;
+    const hasManifest = existsSync(resolve(posesRoot, entry.name, 'manifest.json'));
+    const message =
+      `[pet-poses] 源目录 ${SOURCE_ROOT}/${entry.name} 是未登记批次` +
+      `（${hasManifest ? '有 manifest.json 但 BATCH_SPECS 里没有该姿态' : '没有 manifest.json，也不是已知姿态'}）：` +
+      '新批次必须先在 scripts/pet-pose-adapters.mjs 的 BATCH_SPECS 里登记 adapter，' +
+      '否则资产永远进不了 pet-poses.json（构建成功但运行时空清单）';
+    problems.push(message);
+    log(message);
+  }
+  return problems;
 }

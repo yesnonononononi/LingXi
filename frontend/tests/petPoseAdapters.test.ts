@@ -367,6 +367,43 @@ test('G-09 域隔离：批级锚点必须落在本批墨迹的横跨范围内（
   }
 });
 
+test('B-5：源目录出现未登记批次目录 ⇒ adaptAll 必须报问题（不许静默忽略）', () => {
+  // 真实仓库里 6 批全部登记过 ⇒ 不许误报（金丝雀）
+  assert.deepEqual(adaptAll({ repoRoot: REPO_ROOT }).problems, [], '真实源目录不该有未登记批次');
+
+  const tmpRoot = mkdtempSync(resolve(tmpdir(), 'lx-pet-poses-unregistered-'));
+  const posesDir = resolve(tmpRoot, 'docs', 'assets', 'desktop-pet', 'poses');
+  try {
+    // ① 有 manifest.json 但没在 BATCH_SPECS 登记（美术新交一批、工程忘了登记）
+    const stretchDir = resolve(posesDir, 'stretch');
+    mkdirSync(stretchDir, { recursive: true });
+    writeFileSync(resolve(stretchDir, 'manifest.json'), JSON.stringify({ posture: 'stretch' }, null, 2), 'utf8');
+    // ② 连 manifest.json 都没有的野目录（误建的 / 半途废弃的）
+    mkdirSync(resolve(posesDir, 'tmp-wip'), { recursive: true });
+
+    const result = adaptAll({ repoRoot: tmpRoot });
+    assert.ok(result.problems.length >= 2, `未登记批次必须报问题，实际：${JSON.stringify(result.problems)}`);
+    assert.ok(
+      result.problems.some((line: string) => line.includes('stretch')),
+      `报错必须点名 stretch：\n${result.problems.join('\n')}`,
+    );
+    assert.ok(
+      result.problems.some((line: string) => line.includes('tmp-wip')),
+      `报错必须点名 tmp-wip：\n${result.problems.join('\n')}`,
+    );
+    assert.ok(
+      result.problems.some((line: string) => line.includes('BATCH_SPECS')),
+      '报错必须告诉人该改哪里（BATCH_SPECS）',
+    );
+    // 未登记目录**不能**被当成"已交付批次"塞进 drafts（否则会出现没有 adapter 的批次）
+    assert.equal(result.drafts.stretch, undefined);
+    // 已登记但缺 manifest 的批次仍走 missing（两条判据互不干扰）
+    assert.deepEqual(result.missing.sort(), BATCH_SPECS.map((spec: any) => spec.posture).sort());
+  } finally {
+    rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('结构漂移必须硬失败：未知 manifest 形态与登记不符都不许"能跑就行"', () => {
   // ① 三种已知形态都不是 ⇒ 拒绝猜
   assert.throws(

@@ -196,16 +196,38 @@ export class PosePlayer {
     this.paused = true;
   }
 
-  /** 恢复（拖拽结束）：按**剩余**时长继续，不重放当前帧。 */
+  /**
+   * 恢复（拖拽结束）：按**剩余**时长继续，且**绝不推进帧、绝不上报收尾**。
+   *
+   * <p><b>为什么必须分三种情况（QA D-03 的根因）：</b>老实现在 `remainingMs <= 0` 时直接
+   * `advance()`，于是"暂停期间剩余时间归零"与"自然播完"被当成同一件事。对单帧静止片段
+   * （`frameMs = [0]`，`emitCurrentFrame` 把 `remainingMs` 置 0）来说，`pause → resume`
+   * 就会走 `advance()` → 到末尾 → `onClipEnd('return-stand')` 被误触发：
+   * 用户只是拖了一下宠物，姿态就提前结束了。暂停是**用户手势**，不是播放进度，
+   * 让手势改变播放结果本身就是缺陷（`sit` 因为 `hold-last` 才侥幸无害）。</p>
+   *
+   * <p>三种情况：</p>
+   * <ol>
+   *   <li>当前帧时长 ≤ 0（静止帧，只会出现在单帧片段里）：恢复 = 原地不动，不排程、不推进；</li>
+   *   <li>剩余 ≤ 0 但当前帧时长 > 0（整帧在暂停期间走完）：**从当前帧重开一个完整时长**，
+   *       索引不变——宁可让这一帧多停一个 `frameMs`，也不让一次拖拽吃掉半帧；</li>
+   *   <li>剩余 > 0：按剩余时长继续，不重算已流逝时间。</li>
+   * </ol>
+   */
   resume(): void {
     if (this.clip === null || !this.paused) return;
     this.paused = false;
-    if (this.remainingMs <= 0) {
-      this.advance();
+    const frameMs = this.clip.frameMs[this.index] ?? 0;
+    if (frameMs <= 0) {
+      // 静止帧：本来就没有"待推进的时序"，恢复只能是原地不动
+      this.remainingMs = frameMs;
+      this.handle = null;
       return;
     }
+    const remaining = this.remainingMs > 0 ? this.remainingMs : frameMs;
+    this.remainingMs = remaining;
     this.frameStartedAt = this.ports.now();
-    this.scheduleCurrentFrame(this.remainingMs);
+    this.scheduleCurrentFrame(remaining);
   }
 
   /**

@@ -163,6 +163,53 @@ test('G-06 金丝雀：jump 的 apex 与 land 期望基线相差 25.90 CSS（证
   );
 });
 
+test('B-1：右向帧必须用 bodyAnchor.byFacing[1]（run/jump 右向锚 836 ≠ 左向 700，差 20.72 CSS）', () => {
+  const scale = PET_POSES.scale;
+  const point = alignPointOf(scale, PET_POSES.align);
+  const drafts = adaptAll({ repoRoot: REPO_ROOT, accepted: ['run', 'jump'] }).drafts;
+
+  /** 断言一批里"右向帧用右向锚"，返回该批的右向锚 x。 */
+  const assertRightFacingAnchor = (name: 'run' | 'jump'): number => {
+    const batch = drafts[name] as unknown as PoseBatch | undefined;
+    assert.ok(batch, `${name} 草稿缺失（美术 manifest 变了？）`);
+    const right = Object.values(batch.frames).find((frame) => frame.facing === 1);
+    assert.ok(right, `${name} 必须有右向帧，否则本用例失去对象`);
+    const anchorRight = batch.bodyAnchor.byFacing['1'];
+    const anchorLeft = batch.bodyAnchor.byFacing['-1'];
+    assert.notEqual(anchorRight.x, anchorLeft.x, '左右向锚点相同则本用例无鉴别力');
+
+    const box = poseBoxOf(batch, right, scale, PET_POSES.align);
+    // 逐值：left === Px − byFacing['1'].x × nativeToCss（这里不写死 836，锚点取自数据）
+    assert.equal(
+      Number(box.left.toFixed(6)),
+      Number((point.x - anchorRight.x * scale.nativeToCss).toFixed(6)),
+      `${name}/${right.id} 的 left 必须由**右向**锚点算出`,
+    );
+    // 变异点：把取值写死成 `byFacing['-1']`（QA M1 的变异）⇒ left 偏移 (836−700)×nativeToCss
+    const wrongLeft = point.x - anchorLeft.x * scale.nativeToCss;
+    assert.equal(
+      Number(Math.abs(wrongLeft - box.left).toFixed(4)),
+      20.7188,
+      `用错朝向必须差 136 native × 0.15234375 = 20.7188 CSS（实际 ${Math.abs(wrongLeft - box.left)}）`,
+    );
+    return anchorRight.x;
+  };
+
+  assert.equal(assertRightFacingAnchor('run'), 836, 'run 右向锚 836（美术实测）');
+  assert.equal(assertRightFacingAnchor('jump'), 836, 'jump 右向锚 836（美术实测）');
+
+  // 金丝雀：同一批的左向帧必须用左向锚（否则"按朝向取"这件事没被真正区分开）
+  const run = drafts.run as unknown as PoseBatch;
+  const left = Object.values(run.frames).find((frame) => frame.facing === -1);
+  assert.ok(left, 'run 必须有左向帧');
+  const leftBox = poseBoxOf(run, left, scale, PET_POSES.align);
+  assert.equal(
+    Number(leftBox.left.toFixed(6)),
+    Number((point.x - run.bodyAnchor.byFacing['-1'].x * scale.nativeToCss).toFixed(6)),
+    '左向帧必须用左向锚（700）',
+  );
+});
+
 test('G-06 金丝雀 ②：lie / sleep 的基线差 > 0.35 CSS（"anchor.y/2 冒充接地线"只在这两批暴露）', () => {
   const scale = PET_POSES.scale;
   const drafts = adaptAll({ repoRoot: REPO_ROOT, accepted: ['lie', 'sleep'] }).drafts;

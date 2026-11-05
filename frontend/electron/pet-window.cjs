@@ -229,11 +229,85 @@ function pickDisplay(rect, displays) {
 }
 
 /**
- * 解算桌宠窗口的启动位置。
+ * 启动时的"跨版本布局迁移"：把存档里的窗口左上角换算成**当前布局**下的等价位置。
+ *
+ * <p><b>只做 artOrigin 补偿，别的什么都不做</b>（不判可见性、不夹取、不决定默认落点）。
+ * 这条边界是本模块头号历史 bug 的分界线：</p>
+ *
+ * <ul>
+ *   <li>用户记住的是"桌宠看起来在屏幕哪块"，不是"窗口左上角在哪"。特效边距一变
+ *       （D-01：左右 20 → 56），窗口左上角就得反向挪同样的量，否则升级后宠物凭空跳位。
+ *       新状态文件带 `artOrigin`；老文件没有，按 {@link LEGACY_ART_ORIGIN} 反算一次。</li>
+ *   <li><b>反例（必须记）</b>：`reclampIntoDisplays` 曾经把"实时 bounds"喂给这个函数当存档，
+ *       于是每次显示器事件都被当成"老存档"补偿一次 `(16−56, 88−96) = (−40, −8)`，
+ *       插拔显示器/改分辨率时桌宠向左上累积漂移（QA D-02，5 次事件 −200/−40）。
+ *       实时 bounds 的立绘原点**就是**当前 `ART_ORIGIN`，补偿量理应为 0——
+ *       所以"夹回可见区"必须走 {@link clampIntoWorkArea}，不是这里。</li>
+ * </ul>
+ *
+ * @param saved 上次持久化的状态（可为 null；只读 `x` / `y` / `artOrigin`）
+ * @param size 目标尺寸 { width, height }
+ * @returns 迁移后的矩形；存档里没有可用坐标时返回 `null`（由调用方决定默认落点）
+ */
+function migrateSavedBounds(saved, size) {
+  const width = normalizeDimension(size && size.width, PET_WIDTH);
+  const height = normalizeDimension(size && size.height, PET_HEIGHT);
+  const savedX = saved ? Number(saved.x) : Number.NaN;
+  const savedY = saved ? Number(saved.y) : Number.NaN;
+  if (!Number.isFinite(savedX) || !Number.isFinite(savedY)) return null;
+  const savedOrigin =
+    saved && saved.artOrigin && Number.isFinite(Number(saved.artOrigin.x)) && Number.isFinite(Number(saved.artOrigin.y))
+      ? { x: Number(saved.artOrigin.x), y: Number(saved.artOrigin.y) }
+      : LEGACY_ART_ORIGIN;
+  return {
+    x: Math.round(savedX + (savedOrigin.x - ART_ORIGIN.x)),
+    y: Math.round(savedY + (savedOrigin.y - ART_ORIGIN.y)),
+    width,
+    height,
+  };
+}
+
+/**
+ * 纯夹取：把一个矩形**只**拉回某块工作区内（零补偿、零跨版本语义）。
+ *
+ * <p>调用方两处：启动解算（先 {@link migrateSavedBounds} 再夹）与显示器变化后的
+ * `reclampIntoDisplays`（只夹、不迁移）。两个职责分开之后，"传错参数就漂移"这条
+ * 事故路径在结构上不存在了——`reclamp` 里根本没有补偿可误用。</p>
+ *
+ * <p>判据与启动路径一致：可见面积占比低于 {@link MIN_VISIBLE_RATIO}（屏幕真的没了）
+ * 才回默认角落，否则夹到该屏工作区内。</p>
+ *
+ * @param rect 待夹取的矩形（宽度/高度非法时取窗口默认值）
+ * @param displays 显示器信息数组（来自 `screen.getAllDisplays()`）
+ * @param primaryArea 主显示器工作区（兜底落点用）
+ * @returns 完全落在某块工作区内的矩形
+ */
+function clampIntoWorkArea(rect, displays, primaryArea) {
+  const width = normalizeDimension(rect && rect.width, PET_WIDTH);
+  const height = normalizeDimension(rect && rect.height, PET_HEIGHT);
+  const wanted = { width, height };
+  const x = rect ? Number(rect.x) : Number.NaN;
+  const y = rect ? Number(rect.y) : Number.NaN;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return defaultRect(wanted, primaryArea);
+  }
+  const candidate = { x: Math.round(x), y: Math.round(y), width, height };
+  const { display, visibleRatio } = pickDisplay(candidate, displays);
+  if (!display || visibleRatio < MIN_VISIBLE_RATIO) {
+    return defaultRect(wanted, primaryArea);
+  }
+  return clampRectToWorkArea(candidate, display.workArea);
+}
+
+/**
+ * 解算桌宠窗口的启动位置（**只给"启动读存档"用**：迁移 + 夹取两步的组合）。
  *
  * <p>三种情况：没存过 / 存的是脏数据 → 默认角落；存过但已经越界（屏幕被拔掉、分辨率变小）
  * → 默认角落；仍在某块屏上有足够可见面积 → 夹进那块屏。**永远返回一个完全可见的位置**，
  * 因为一个跑到屏幕外的桌宠用户没法用鼠标找回来（它还不进任务栏）。</p>
+ *
+ * <p>运行时（窗口已存在、位置已生效）**不许**调它——那条路径用 {@link clampIntoWorkArea}，
+ * 否则实时 bounds 会被当成老存档再补偿一次（D-02）。</p>
  *
  * @param options.saved 上次持久化的状态（可为 null）
  * @param options.size 目标尺寸 { width, height }
@@ -242,32 +316,17 @@ function pickDisplay(rect, displays) {
  * @returns 完全落在某块工作区内的矩形
  */
 function resolveInitialBounds({ saved, size, displays, primaryArea }) {
-  const width = normalizeDimension(size && size.width, PET_WIDTH);
-  const height = normalizeDimension(size && size.height, PET_HEIGHT);
-  const wanted = { width, height };
-  const savedX = saved ? Number(saved.x) : Number.NaN;
-  const savedY = saved ? Number(saved.y) : Number.NaN;
-  if (!Number.isFinite(savedX) || !Number.isFinite(savedY)) {
-    return defaultRect(wanted, primaryArea);
+  const migrated = migrateSavedBounds(saved, size);
+  if (migrated === null) {
+    return defaultRect(
+      {
+        width: normalizeDimension(size && size.width, PET_WIDTH),
+        height: normalizeDimension(size && size.height, PET_HEIGHT),
+      },
+      primaryArea,
+    );
   }
-  // 视觉位置补偿：用户记住的是"桌宠看起来在屏幕哪块"，不是"窗口左上角在哪"。
-  // 特效边距一变，窗口左上角就得反向挪同样的量，否则升级后桌宠会凭空跳位。
-  // 新状态文件带 artOrigin；老文件没有，按 LEGACY_ART_ORIGIN 反算（M4 即 x-4 / y-8）。
-  const savedOrigin =
-    saved && saved.artOrigin && Number.isFinite(Number(saved.artOrigin.x)) && Number.isFinite(Number(saved.artOrigin.y))
-      ? { x: Number(saved.artOrigin.x), y: Number(saved.artOrigin.y) }
-      : LEGACY_ART_ORIGIN;
-  const rect = {
-    x: Math.round(savedX + (savedOrigin.x - ART_ORIGIN.x)),
-    y: Math.round(savedY + (savedOrigin.y - ART_ORIGIN.y)),
-    width,
-    height,
-  };
-  const { display, visibleRatio } = pickDisplay(rect, displays);
-  if (!display || visibleRatio < MIN_VISIBLE_RATIO) {
-    return defaultRect(wanted, primaryArea);
-  }
-  return clampRectToWorkArea(rect, display.workArea);
+  return clampIntoWorkArea(migrated, displays, primaryArea);
 }
 
 // ---------------------------------------------------------------- 状态文件
@@ -544,20 +603,27 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
     }, SAVE_THROTTLE_MS);
   }
 
-  /** 把窗口拉回可见区（显示器增减 / 分辨率变化后调用）。 */
+  /**
+   * 把窗口拉回可见区（显示器增减 / 分辨率变化后调用）。
+   *
+   * <p><b>这里只许夹取，不许做跨版本迁移</b>（QA D-02）：实时 bounds 的立绘原点就是当前
+   * `ART_ORIGIN`，补偿量恒为 0；一旦误用 {@link resolveInitialBounds}，每次显示器事件都会
+   * 按 `LEGACY_ART_ORIGIN` 补偿 `(−40, −8)` 并累积（实测 5 次 −200/−40）。</p>
+   *
+   * <p>夹完必须 `flushSave()`：否则下次启动仍读旧位置，等于这次夹取白做（用户看到的是
+   * "位置这次对了、重启又跑偏"）。位置没变时也落盘——顺手把缺 `artOrigin` 的老状态
+   * 文件补正，杜绝"每次启动都补一次偏移"。</p>
+   */
   function reclampIntoDisplays() {
     const bounds = captureBounds();
     if (!bounds) return;
     const { screen } = electron();
-    const target = resolveInitialBounds({
-      saved: bounds,
-      size: bounds,
-      displays: screen.getAllDisplays(),
-      primaryArea: screen.getPrimaryDisplay().workArea,
-    });
-    if (target.x !== bounds.x || target.y !== bounds.y) {
+    const target = clampIntoWorkArea(bounds, screen.getAllDisplays(), screen.getPrimaryDisplay().workArea);
+    const moved = target.x !== bounds.x || target.y !== bounds.y;
+    if (moved) {
       win.setPosition(target.x, target.y, false);
     }
+    flushSave();
   }
 
   /** 挂显示器变化监听：屏幕被拔掉时桌宠不能留在看不见的地方。 */
@@ -625,6 +691,17 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
       size,
       displays: screen.getAllDisplays(),
       primaryArea: screen.getPrimaryDisplay().workArea,
+    });
+    // 迁移结果立刻落盘（带 artOrigin）：老状态文件缺 artOrigin 时，上面按 LEGACY_ART_ORIGIN
+    // 补偿了一次；不写回去的话**每次启动都会再补一次**，等于把单次迁移变成持续漂移。
+    // 这里写的是"接下来窗口真实所在的位置 + 当前立绘原点"，所以第二次启动的补偿量恒为 0。
+    writeState(resolvedStatePath, {
+      x: initial.x,
+      y: initial.y,
+      width: initial.width,
+      height: initial.height,
+      artOrigin: ART_ORIGIN,
+      updatedAt: new Date().toISOString(),
     });
 
     const entry = resolveEntry();
@@ -877,11 +954,15 @@ module.exports = {
   normalizeDimension,
   intersectArea,
   clampRectToWorkArea,
+  clampIntoWorkArea,
   defaultRect,
   pickDisplay,
+  migrateSavedBounds,
   resolveInitialBounds,
   readState,
   writeState,
+  ART_ORIGIN,
+  LEGACY_ART_ORIGIN,
   PET_WIDTH,
   PET_HEIGHT,
   ART_WIDTH,

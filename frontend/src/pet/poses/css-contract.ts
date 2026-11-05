@@ -95,6 +95,16 @@ export interface PoseVisibilityMatch {
   readonly rootPrefixedRules: number;
   /** 用 `opacity` 藏层的规则（错误形态，非空即失败）。 */
   readonly opacityHides: readonly string[];
+  /**
+   * 裸 `.pet-pose` 基规则是否自带 `display: none`（**第三态兜底**）。
+   *
+   * <p>前三条断言都只认 `#pet-root…` 前缀规则，覆盖的是两态：`stand` 与「非 stand」。
+   * 可 DOM 初始化时 `data-posture` **还没写**（`buildDom()` 之后、`writePosture()` 之前，
+   * 以及 JSDoc 里明写的"首帧不闪"），那一刻只有这条裸规则在管——删掉它，
+   * 姿态层会在首帧按 `position: absolute` 铺满整窗盖住立绘（QA 盲区 B-2，
+   * 变异实证：删掉该行，585 全绿 + `gate:pet` 依旧 0）。</p>
+   */
+  readonly bareBaseRuleHides: boolean;
 }
 
 /**
@@ -108,12 +118,16 @@ export function matchPoseVisibility(css: string): PoseVisibilityMatch {
   const stand = new Set<string>();
   const opacityHides: string[] = [];
   let rootPrefixedRules = 0;
+  let bareBaseRuleHides = false;
   for (const rule of parseCssRules(css)) {
     const selectors = rule.selector.split(',').map((item) => item.trim());
     const isRootPrefixed = selectors.some((selector) => selector.startsWith('#pet-root'));
     if (isRootPrefixed && /data-posture/.test(rule.selector)) rootPrefixedRules += 1;
     const hidesByDisplay = /display\s*:\s*none/i.test(rule.declarations);
     const hidesByOpacity = /opacity\s*:\s*0(?![.\d])/i.test(rule.declarations);
+    // 第三态兜底：裸 `.pet-pose` 基规则（不带 `#pet-root` 前缀、不带 `data-posture`）必须
+    // 自带 `display: none`。这一条与下面三条互斥规则管的是不同状态位，缺一条就有一帧裸奔。
+    if (hidesByDisplay && selectors.includes(`.${POSE_LAYER_CLASS_NAME}`)) bareBaseRuleHides = true;
     if (!hidesByDisplay && !hidesByOpacity) continue;
     for (const selector of selectors) {
       if (!selector.startsWith('#pet-root')) continue;
@@ -134,6 +148,7 @@ export function matchPoseVisibility(css: string): PoseVisibilityMatch {
     standHides: [...stand].sort(),
     rootPrefixedRules,
     opacityHides,
+    bareBaseRuleHides,
   };
 }
 
@@ -169,6 +184,14 @@ export function poseVisibilityProblems(css: string): string[] {
     problems.push(
       `用 opacity 藏层：${matched.opacityHides.join('; ')}` +
         '（必须用 display:none —— opacity:0 仍参与合成与 drop-shadow，会叠出双影）',
+    );
+  }
+  if (!matched.bareBaseRuleHides) {
+    problems.push(
+      `缺少规则「.${POSE_LAYER_CLASS_NAME} { … display: none; }」（基规则的默认隐藏）` +
+        '：它管的是**第三态**——`data-posture` 还没写的那一刻（`buildDom()` 与 `writePosture()` 之间、' +
+        '以及"首帧不闪"）。只有两态规则时，首帧姿态层会按 absolute 铺满整窗盖住立绘；' +
+        `这一条与 ${POSTURE_ATTRIBUTE} 的两态规则不重叠，缺了就是真缺（QA 盲区 B-2）`,
     );
   }
   return problems;

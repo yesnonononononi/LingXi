@@ -367,6 +367,104 @@ test('暂停/恢复按剩余时长继续，不重算已流逝时间（拖拽场�
   assert.deepEqual(log.frames, ['l1', 'l2'], '恢复后必须按剩余 70ms 继续，不能从头计时');
 });
 
+test('D-03：单帧静止 + return-stand，pause→resume 绝不许触发 onClipEnd（暂停是透明操作）', () => {
+  // 现状（修复前）：单帧静止片段的 remainingMs 在 emitCurrentFrame 时就是 0，
+  // 老 resume() 见 <=0 直接 advance() ⇒ 到末尾 ⇒ onClipEnd('return-stand') 被误触发。
+  // QA 实测：不暂停 [A] 的 ends=[]，pause→resume [B] 的 ends=["hold"] —— 暂停改变了播放结果。
+  const STATIC_RETURN_STAND: PoseClip = {
+    id: 'hold',
+    facing: -1,
+    frames: ['sit_neutral'],
+    loop: false,
+    frameMs: [0],
+    onEnd: 'return-stand',
+  };
+
+  // [A] 基线：不暂停
+  const clockA = new FakeClock();
+  const portsA = makePorts(clockA);
+  const playerA = new PosePlayer(portsA.ports);
+  playerA.play(STATIC_RETURN_STAND, 0);
+  clockA.advance(10000);
+  assert.deepEqual(portsA.log.ends, [], '[A] 单帧静止片段本来就不会"自然播完"，不许上报收尾');
+
+  // [B] 对照：pause → resume（拖拽一次，甚至多次）
+  const clockB = new FakeClock();
+  const portsB = makePorts(clockB);
+  const playerB = new PosePlayer(portsB.ports);
+  playerB.play(STATIC_RETURN_STAND, 0);
+  for (let round = 0; round < 3; round += 1) {
+    playerB.pause();
+    clockB.advance(50);
+    playerB.resume();
+    clockB.advance(50);
+  }
+  assert.deepEqual(
+    portsB.log.ends,
+    portsA.log.ends,
+    '[B] 拖拽 3 次后的收尾轨迹必须与不暂停一致（暂停不许改变播放结果）',
+  );
+  assert.deepEqual(portsB.log.frames, portsA.log.frames, '上屏帧也必须一致');
+  assert.deepEqual(playerB.current, { clipId: 'hold', frameIndex: 0, frameId: 'sit_neutral' });
+  assert.equal(clockB.pending, 0, '静止帧恢复后仍不许排程（排了就是 rAF 空转）');
+  assert.equal(playerB.isPlaying, true, '恢复后仍在播放（不是"播完了"）');
+});
+
+test('D-03 反向守护：自然播完仍必须上报恰好一次（别把缺陷修成另一个缺陷）', () => {
+  // 判据 2：不暂停的一次性片段，播完必须 onClipEnd 一次，且只一次
+  const clock = new FakeClock();
+  const { ports, log } = makePorts(clock);
+  const player = new PosePlayer(ports);
+  player.play(JUMP_ONCE, 0);
+  clock.advance(130);
+  clock.advance(130);
+  assert.deepEqual(log.ends, ['once'], '自然播完必须上报一次');
+  clock.advance(10000);
+  assert.deepEqual(log.ends, ['once'], '收尾只许一次');
+  assert.equal(clock.pending, 0);
+});
+
+test('D-03 反向守护：多帧片段中途 pause/resume，帧序不跳不重复', () => {
+  // 判据 3：多帧片段（每帧 110ms）在第 2 帧中途暂停 40ms 再恢复
+  const clock = new FakeClock();
+  const { ports, log } = makePorts(clock);
+  const player = new PosePlayer(ports);
+  player.play(WALK_CYCLE, 0);
+  assert.deepEqual(log.frames, ['l1']);
+  clock.advance(110);
+  assert.deepEqual(log.frames, ['l1', 'l2'], '推进到第 2 帧');
+  clock.advance(40); // 第 2 帧已过 40ms（剩余 70ms）
+  player.pause();
+  clock.advance(9999); // 暂停期间时间飞逝，不许推进
+  assert.deepEqual(log.frames, ['l1', 'l2'], '暂停期间不许换帧');
+  player.resume();
+  clock.advance(69);
+  assert.deepEqual(log.frames, ['l1', 'l2'], '剩余 70ms 未走完前不许换帧');
+  clock.advance(1);
+  assert.deepEqual(log.frames, ['l1', 'l2', 'l3'], '恢复后必须从第 3 帧继续，不跳帧');
+  clock.advance(110);
+  assert.deepEqual(log.frames, ['l1', 'l2', 'l3', 'l1'], '循环照常回环，不重复');
+  assert.deepEqual(log.ends, [], '循环片段永不上报收尾');
+});
+
+test('D-03 边界：整帧在暂停期间走完 ⇒ 从当前帧重开一个完整时长，不推进索引', () => {
+  // pause() 里 remaining = max(0, remaining − elapsed)：若 elapsed 已经吃掉整帧，
+  // remaining 归零。此时**不许 advance()**（那会让手势吃掉一帧），而是重开当前帧计时。
+  const clock = new FakeClock();
+  const { ports, log } = makePorts(clock);
+  const player = new PosePlayer(ports);
+  player.play(WALK_CYCLE, 0);
+  clock.advance(109); // 第 1 帧还没走完（剩 1ms）
+  player.pause();
+  clock.advance(1); // 恰好把剩余 1ms 耗光 ⇒ remaining = 0
+  assert.deepEqual(log.frames, ['l1'], '暂停期间不许换帧');
+  player.resume();
+  assert.deepEqual(log.frames, ['l1'], '恢复不许先推一帧');
+  assert.equal(player.current?.frameIndex, 0, '索引必须仍是第 1 帧');
+  clock.advance(110);
+  assert.deepEqual(log.frames, ['l1', 'l2'], '重开一个完整 frameMs 后才推进');
+});
+
 test('seek 与"按起始时间轴起播"：跨批切朝向时对齐相位', () => {
   const clock = new FakeClock();
   const { ports, log } = makePorts(clock);
@@ -435,7 +533,32 @@ test('G-01 变异：删掉任一条互斥规则、或把 display:none 换成 opa
   );
 });
 
+test('B-2：裸 .pet-pose 基规则必须自带 display:none（"data-posture 未设置"第三态兜底）', () => {
+  // 前三条 G-01 断言只认 `#pet-root…[data-posture…]` 前缀规则，覆盖 stand 与非 stand 两态。
+  // 第三态（DOM 刚建好、`writePosture()` 还没调）只有裸 `.pet-pose` 基规则在管：
+  // 缺了它，首帧姿态层会按 `position: absolute` 铺满整窗盖住立绘（QA 盲区 B-2）。
+  const matched = matchPoseVisibility(PET_CSS);
+  assert.equal(matched.bareBaseRuleHides, true, '.pet-pose 基规则必须含 display:none');
+  assert.deepEqual(poseVisibilityProblems(PET_CSS), [], '真实 pet.css 必须满足含第三态在内的全部契约');
+
+  // 变异点：只删掉**基规则**里那一行 `display: none;`（两态规则原样保留）⇒ 必须红
+  // 用非全局 replace：文件里第一处 `.pet-pose {` 就是基规则（前面只有注释提到它）
+  const withoutBaseHide = PET_CSS.replace(/(\.pet-pose\s*\{[^}]*?)\n {2}display: none;/, '$1');
+  assert.notEqual(withoutBaseHide.length, PET_CSS.length, '变异没生效（找不到基规则的 display:none）');
+  const mutated = matchPoseVisibility(withoutBaseHide);
+  assert.equal(mutated.bareBaseRuleHides, false, '删掉后必须识别为"第三态无兜底"');
+  // 两态规则仍在 ⇒ 证明这条判据不是靠"反正有别的规则"混过去的
+  assert.deepEqual(mutated.standHides, ['pet-pose'], '站姿规则不该被这次变异影响（区分开才说明判据独立）');
+  const problems = poseVisibilityProblems(withoutBaseHide);
+  assert.ok(problems.length > 0, '删掉基规则默认隐藏却仍然绿：B-2 守卫失效');
+  assert.ok(
+    problems.some((line) => line.includes('基规则') || line.includes('第三态')),
+    `报错必须点明缺的是"基规则 / 第三态兜底"，实际：\n${problems.join('\n')}`,
+  );
+});
+
 /**
+ * 造一份**多帧**的清单副本：把 sit 的 hold 换成 3 帧 80ms 的片段。/**
  * 造一份**多帧**的清单副本：把 sit 的 hold 换成 3 帧 80ms 的片段。
  *
  * <p>真实清单（切片 1）只有单帧，但 G-03 的判据是"换帧只改 src"，
