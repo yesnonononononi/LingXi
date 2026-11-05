@@ -146,7 +146,7 @@
     {
         "id":  "read_image",
         "name":  "read_image",
-        "description":  "Load one image from the workspace into your context so you can actually see it.\nThe pixels are not inside this result: you get image metadata now, and the image itself\narrives as a separate user message on your next turn, still within this same task.\nImages consume model input tokens; one execution may receive at most 15 distinct images.\nOnly PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.\n",
+        "description":  "Load one image from the workspace into your context so you can actually see it.\nThe pixels are not inside this result: you get image metadata now, and the image itself\narrives as a separate user message on your next turn, still within this same task.\nImages consume model input tokens.\nOnly PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.\n",
         "schema":  {
                        "type":  "object",
                        "properties":  {
