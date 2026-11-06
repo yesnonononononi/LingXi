@@ -15,7 +15,6 @@ import com.summit.dp.toolcall.infrastructure.persistence.po.ToolCallPO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -230,8 +229,6 @@ public class ToolCallRepositoryImpl
         if (toolCallId == null || sessionMessageId == null) return;
         toolCallMapper.update(null, Wrappers.<ToolCallPO>lambdaUpdate()
                 .set(ToolCallPO::getSessionMessageId, sessionMessageId)
-                // 领域方法 bindSessionMessage 会刷新 updated_at，窄更新保持同一语义。
-                .set(ToolCallPO::getUpdatedAt, Instant.now())
                 .setSql("version = version + 1")
                 .eq(ToolCallPO::getId, toolCallId)
                 .and(w -> w.isNull(ToolCallPO::getSessionMessageId)

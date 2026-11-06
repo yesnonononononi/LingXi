@@ -72,7 +72,7 @@ class ToolCallBindSessionMessageNarrowUpdateTest {
     }
 
     @Test
-    @DisplayName("回填锚点：UPDATE 只写 session_message_id/updated_at/version，不含任何 CLOB 列")
+    @DisplayName("回填锚点：UPDATE 只写 session_message_id 与 version 自增，不含 CLOB 列、不动 updated_at")
     void bindUpdatesOnlyNarrowColumns() {
         assertHeavyClobsPresent();
 
@@ -86,6 +86,8 @@ class ToolCallBindSessionMessageNarrowUpdateTest {
             assertFalse(sql.contains(clob), "锚点回填的 SQL 不得命中 CLOB 列 " + clob + "，实际: " + sql);
         }
         assertTrue(sql.contains("session_message_id"), "必须写入锚点列，实际: " + sql);
+        // 明确任务只允许改 session_message_id 并自增 version：不得顺手刷新 updated_at。
+        assertFalse(sql.contains("updated_at"), "只允许更新 session_message_id 与 version，不得更新 updated_at，实际: " + sql);
         // 版本号自增不能退化成「写死某个版本值」：那会让旧快照的冲突检测失效。
         assertTrue(sql.contains("version = version + 1"), "必须保留 version 自增，实际: " + sql);
         // 原实现的第一步是 findById（读 4 个 CLOB），窄更新不应再发这条查询。
