@@ -109,37 +109,183 @@ export function checkEnvelope(batch, geometry, align) {
 }
 
 /**
- * 校验一个批次的剪片段时序。
+ * 帧时长的**窄豁免**参数（"动作开始前的静止等待"）。
+ *
+ * <p><b>为什么需要它：</b>{@link FRAME_MS_RANGE} 的上限 2400 ms 守的是"连续帧不许长到像卡住"，
+ * 而美术 `supplemental/gif-v1/manifest.json` 的 `clips.sit_blink` 第一帧是 **2600 ms**
+ * ——语义是"坐定之后先静止 2.6 秒，然后眨两下眼"。这不是时序错误，也不是卡住。</p>
+ *
+ * <p><b>为什么不改上限、不拆帧：</b>把 2400 抬高等于给**所有**片段开后门（任何片段都能塞
+ * 5 秒的帧）；把 2600 拆成两帧同图等于**造假帧**——正是 G-P14 要防的"多帧同图假动画"变体。
+ * 所以正确做法是：全局上限不动，另开一条**窄到只能用一次的**豁免，条件必须同时成立。</p>
+ *
+ * <p><b>五条同时成立才放行（缺一条即红）：</b></p>
+ * <ol>
+ *   <li>每个片段**至多 1 帧**超上限；</li>
+ *   <li>超限帧必须是**片段第 0 帧**（语义 = "动作开始前的静止等待"），且 ≤ {@link FRAME_MS_EXEMPTION.maxOverMs}；</li>
+ *   <li>该片段至少 {@link FRAME_MS_EXEMPTION.minDistinctContentIds} 个 distinct `contentId`
+ *       （G-P14 仍要**独立**成立，豁免只是帧时长的例外，不是"在动"的例外）；</li>
+ *   <li>该片段总时长 ≤ {@link FRAME_MS_EXEMPTION.maxClipTotalMs}（长等待不能把一个循环拖到十几秒）；</li>
+ *   <li>**单帧片段禁止豁免**（单帧就是静态，静态该用 `hold-last`/静态片段表达，不许用长帧凑时间）。</li>
+ * </ol>
+ *
+ * <p><b>放行时必须点名</b>：门禁 `notes` 里会写清"哪个片段、第几帧、多少 ms、依据哪条"，
+ * 否则下次读日志的人会以为 2400 是假的。</p>
+ */
+export const FRAME_MS_EXEMPTION = Object.freeze({
+  /** 超限帧自己的上限（ms）：再长就不像"入静"，像卡死。 */
+  maxOverMs: 6000,
+  /** 用了豁免的片段总时长上限（ms）。 */
+  maxClipTotalMs: 9000,
+  /** 只认片段第 0 帧（"动作开始前的静止等待"）。 */
+  frameIndex: 0,
+  /** 片段必须至少这么多 distinct `contentId`（"真的在动"）。 */
+  minDistinctContentIds: 2,
+});
+
+/**
+ * 取一个片段所用帧的"是不是同一张画"证据。
+ *
+ * <p><b>优先 `contentId`</b>（母版 PNG `sha256` 前 16 位，见 `build-pet-poses.mjs` 的
+ * `contentIdOf`）——它是"这两帧是不是同一张画"的权威答案。转码前的 adapter **草稿**
+ * 还没有 `files`，此时退到 `sourceFile`（母版路径）：两者等价（`contentId` 本来就是母版的摘要），
+ * 但清单里只要有 `contentId` 就以它为准。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @param {{frames?: string[]}} clip 片段
+ * @returns {{ids: Set<string>, missing: string[], basis: 'contentId'|'sourceFile'}} 证据
+ */
+export function clipIdentityOf(batch, clip) {
+  const frames = batch && batch.frames && typeof batch.frames === 'object' ? batch.frames : {};
+  const frameIds = Array.isArray(clip && clip.frames) ? clip.frames : [];
+  const ids = new Set();
+  const missing = [];
+  const values = [];
+  for (const frameId of frameIds) {
+    const frame = frames[frameId];
+    const file = frame && frame.files ? frame.files['1x'] : undefined;
+    const contentId = file ? file.contentId : undefined;
+    if (typeof contentId === 'string' && CONTENT_ID_PATTERN.test(contentId)) {
+      values.push({ value: contentId, basis: 'contentId' });
+      continue;
+    }
+    const sourceFile = frame ? frame.sourceFile : undefined;
+    if (typeof sourceFile === 'string' && sourceFile.length > 0) {
+      values.push({ value: `file:${sourceFile}`, basis: 'sourceFile' });
+      continue;
+    }
+    missing.push(frameId);
+  }
+  const basis = values.some((item) => item.basis === 'sourceFile') ? 'sourceFile' : 'contentId';
+  for (const item of values) ids.add(item.value);
+  return { ids, missing, basis };
+}
+
+/**
+ * 校验一个批次的剪片段时序（**含 {@link FRAME_MS_EXEMPTION} 窄豁免**）。
+ *
+ * <p>返回 `problems` 与 `notes` 两份：`problems` 非空即门禁红；`notes` 只用于**点名豁免**
+ * ——放行一条超限帧这件事本身必须留下痕迹，静默放行会让"2400 上限"变成一句空话。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {{problems: string[], notes: string[]}} 校验结果
+ */
+export function checkTimingReport(batch) {
+  const problems = [];
+  const notes = [];
+  const clips = Array.isArray(batch.clips) ? batch.clips : [];
+  if (clips.length === 0) {
+    problems.push(`[${batch.posture}] 没有 clips：没有可播片段就不是可播资产`);
+    return { problems, notes };
+  }
+  for (const clip of clips) {
+    const frames = Array.isArray(clip.frames) ? clip.frames : [];
+    const frameMs = Array.isArray(clip.frameMs) ? clip.frameMs : [];
+    const label = `[${batch.posture}#${clip.id}]`;
+    if (frames.length !== frameMs.length) {
+      problems.push(`${label} frameMs 长度 ${frameMs.length} ≠ 帧数 ${frames.length}`);
+      continue;
+    }
+    const singleHold = frames.length === 1 && frameMs[0] === 0;
+    if (singleHold) continue;
+    // 低于下限**永不豁免**：太快读成跳帧，和"入静等待"是两回事。
+    for (const [index, ms] of frameMs.entries()) {
+      if (!Number.isFinite(ms) || ms < FRAME_MS_RANGE.min) {
+        problems.push(
+          `${label} 第 ${index} 帧时长 ${ms}ms 不在 [${FRAME_MS_RANGE.min}, ${FRAME_MS_RANGE.max}]` +
+            '（单帧静止姿态允许 0；其余填 0 会让 rAF 空转）',
+        );
+      }
+    }
+    const overIndexes = frameMs
+      .map((ms, index) => (Number.isFinite(ms) && ms > FRAME_MS_RANGE.max ? index : -1))
+      .filter((index) => index >= 0);
+    if (overIndexes.length === 0) continue;
+    if (overIndexes.length > 1) {
+      problems.push(
+        `${label} 有 ${overIndexes.length} 帧超过 ${FRAME_MS_RANGE.max}ms（第 ${overIndexes.join('、')} 帧）：` +
+          'FRAME_MS_EXEMPTION 每个片段**至多 1 帧**可豁免，多帧超限说明这不是"一次入静等待"而是时序写错了',
+      );
+      continue;
+    }
+    const index = overIndexes[0];
+    const ms = frameMs[index];
+    const reasons = [];
+    if (index !== FRAME_MS_EXEMPTION.frameIndex) {
+      reasons.push(
+        `超限帧是第 ${index} 帧，豁免只认第 ${FRAME_MS_EXEMPTION.frameIndex} 帧` +
+          '（语义是"动作开始前的静止等待"，片段中段的长帧就是卡住）',
+      );
+    }
+    if (!(ms <= FRAME_MS_EXEMPTION.maxOverMs)) {
+      reasons.push(`第 ${index} 帧 ${ms}ms 超过豁免上限 ${FRAME_MS_EXEMPTION.maxOverMs}ms`);
+    }
+    if (frames.length === 1) {
+      reasons.push(
+        '单帧片段禁止使用豁免（单帧就是静态，静态该用 hold-last/静态片段表达，不许用长帧凑时间）',
+      );
+    }
+    const identity = clipIdentityOf(batch, clip);
+    if (identity.missing.length > 0) {
+      reasons.push(
+        `帧 ${identity.missing.join('、')} 既没有 contentId 也没有 sourceFile：` +
+          '无法证明该片段在动（G-P14 不许被豁免吃掉）',
+      );
+    } else if (identity.ids.size < FRAME_MS_EXEMPTION.minDistinctContentIds) {
+      reasons.push(
+        `该片段只有 ${identity.ids.size} 个 distinct ${identity.basis}：豁免的前提是片段"真的在动"` +
+          `（G-P14 要 ≥ ${FRAME_MS_EXEMPTION.minDistinctContentIds}），长等待 + 单张画 = 一张静止的画`,
+      );
+    }
+    const totalMs = frameMs.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+    if (!(totalMs <= FRAME_MS_EXEMPTION.maxClipTotalMs)) {
+      reasons.push(`片段总时长 ${totalMs}ms 超过 ${FRAME_MS_EXEMPTION.maxClipTotalMs}ms`);
+    }
+    if (reasons.length > 0) {
+      for (const reason of reasons) {
+        problems.push(
+          `${label} 第 ${index} 帧时长 ${ms}ms 超过 ${FRAME_MS_RANGE.max}ms 且不满足 FRAME_MS_EXEMPTION：${reason}`,
+        );
+      }
+      continue;
+    }
+    notes.push(
+      `FRAME_MS_EXEMPTION 放行 ${label} 第 ${index} 帧 ${ms}ms（> ${FRAME_MS_RANGE.max}ms）：` +
+        `片段共 ${frames.length} 帧 / ${totalMs}ms / ${identity.ids.size} 个 distinct ${identity.basis}；` +
+        '依据「至多 1 帧超限、只认第 0 帧、≤ 6000ms、≥ 2 个 distinct contentId、片段总时长 ≤ 9000ms、非单帧片段」',
+    );
+  }
+  return { problems, notes };
+}
+
+/**
+ * 校验一个批次的剪片段时序（只返回问题，供既有调用方与测试使用）。
  *
  * @param {Record<string, any>} batch 批次
  * @returns {string[]} 问题列表
  */
 export function checkTiming(batch) {
-  const problems = [];
-  const clips = Array.isArray(batch.clips) ? batch.clips : [];
-  if (clips.length === 0) {
-    problems.push(`[${batch.posture}] 没有 clips：没有可播片段就不是可播资产`);
-    return problems;
-  }
-  for (const clip of clips) {
-    const frames = Array.isArray(clip.frames) ? clip.frames : [];
-    const frameMs = Array.isArray(clip.frameMs) ? clip.frameMs : [];
-    if (frames.length !== frameMs.length) {
-      problems.push(`[${batch.posture}#${clip.id}] frameMs 长度 ${frameMs.length} ≠ 帧数 ${frames.length}`);
-      continue;
-    }
-    const singleHold = frames.length === 1 && frameMs[0] === 0;
-    for (const [index, ms] of frameMs.entries()) {
-      if (singleHold) break;
-      if (!Number.isFinite(ms) || ms < FRAME_MS_RANGE.min || ms > FRAME_MS_RANGE.max) {
-        problems.push(
-          `[${batch.posture}#${clip.id}] 第 ${index} 帧时长 ${ms}ms 不在 [${FRAME_MS_RANGE.min}, ${FRAME_MS_RANGE.max}]` +
-            '（单帧静止姿态允许 0；其余填 0 会让 rAF 空转）',
-        );
-      }
-    }
-  }
-  return problems;
+  return checkTimingReport(batch).problems;
 }
 
 /**
@@ -718,6 +864,100 @@ export function checkPickOrderDrift(options = {}) {
 }
 
 /**
+ * **单真源对账：帧时长窄豁免在运行时与门禁两侧必须逐条同构。**
+ *
+ * <p><b>为什么必须有这条（真实事故）：</b>"每帧时长上界 2400ms"曾经有**两份真源**
+ * ——门禁的 {@link FRAME_MS_RANGE} 与播放器的 `FRAME_MS_MAX`。给 `sit` 的眨眼接入
+ * {@link FRAME_MS_EXEMPTION} 时只在门禁侧加了豁免，运行时仍然抛 `RangeError` ⇒
+ * `PoseController.setPosture('sit')` 每次都回 `stand`，而坐姿的画、时序、体积、去重
+ * **门禁一条都不红**。用户侧表现就是"坐着不会眨眼"，日志里只有一句"播放失败"。</p>
+ *
+ * <p><b>为什么用文本对账而不是共享常量：</b>跨语言 import 走不通（门禁是 node ESM，
+ * 播放器是被 vite 打包的 TS）。所以沿用本仓库既有先例（{@link checkPickOrderDrift}）：
+ * 解析另一侧源码，断言两侧的数值与条件结构一致。任一侧单独改动 ⇒ 这里红。</p>
+ *
+ * <p><b>断言五件事：</b></p>
+ * <ol>
+ *   <li>`player.ts` 的 `FRAME_MS_MAX` 数值 === 门禁的 `FRAME_MS_RANGE.max`；</li>
+ *   <li>四个豁免门槛逐值相等：`maxOverMs` / `maxClipTotalMs` / `frameIndex` / `minDistinctFrames`
+ *       （门禁侧名叫 `minDistinctContentIds`，因为门禁读得到 `contentId`）；</li>
+ *   <li>播放器代码**真的引用**了这四个字段（不是写了一份没人读的常量）；</li>
+ *   <li>"片段内 distinct frame id 作 contentId 代理 + 真判据由 G-P14 独占"这句话必须写在源码里
+ *       （代理关系是本豁免最容易被悄悄放大的地方，注释被删就等于口径被删）；</li>
+ *   <li>播放器的豁免只在"超过上限"时生效（低于下界永不豁免），且单帧片段天然被排除
+ *       （靠 `frames.length < minDistinctFrames`）。</li>
+ * </ol>
+ *
+ * @param {object} [options] 选项
+ * @param {string} [options.playerPath] `player.ts` 路径（测试可注入）
+ * @returns {string[]} 问题列表
+ */
+export function checkPlayerExemptionDrift(options = {}) {
+  const playerPath =
+    options.playerPath ??
+    resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'pet', 'poses', 'player.ts');
+  if (!existsSync(playerPath)) {
+    return [`豁免对账失败：找不到运行时播放器 ${playerPath}（FRAME_MS 的单真源对账依赖它）`];
+  }
+  const raw = readFileSync(playerPath, 'utf8');
+  const source = stripSourceComments(raw);
+  const problems = [];
+  /** 从源码里抠一个数值常量（注释已剥离，避免读到注释里的示例数字）。 */
+  const numberOf = (pattern, label) => {
+    const match = pattern.exec(source);
+    if (match === null) {
+      problems.push(`豁免对账失败：player.ts 里找不到 ${label}（改名/删除都必须同批改本判据）`);
+      return null;
+    }
+    const value = Number(match[1]);
+    if (!Number.isFinite(value)) {
+      problems.push(`豁免对账失败：player.ts 的 ${label} 不是数值（实际 ${JSON.stringify(match[1])}）`);
+      return null;
+    }
+    return value;
+  };
+  const pairs = [
+    ['FRAME_MS_MAX', /export const FRAME_MS_MAX = (\d+)/, FRAME_MS_RANGE.max, '每帧时长上界'],
+    ['FRAME_MS_EXEMPTION.maxOverMs', /maxOverMs:\s*(\d+)/, FRAME_MS_EXEMPTION.maxOverMs, '超限帧自身上限'],
+    ['FRAME_MS_EXEMPTION.maxClipTotalMs', /maxClipTotalMs:\s*(\d+)/, FRAME_MS_EXEMPTION.maxClipTotalMs, '片段总时长上限'],
+    ['FRAME_MS_EXEMPTION.frameIndex', /frameIndex:\s*(\d+)/, FRAME_MS_EXEMPTION.frameIndex, '只认的帧序号'],
+    ['FRAME_MS_EXEMPTION.minDistinctFrames', /minDistinctFrames:\s*(\d+)/, FRAME_MS_EXEMPTION.minDistinctContentIds, 'distinct 下限'],
+  ];
+  for (const [label, pattern, expected, human] of pairs) {
+    const actual = numberOf(pattern, label);
+    if (actual === null) continue;
+    if (actual !== expected) {
+      problems.push(
+        `豁免对账失败：${human}（${label}）在 player.ts 里是 ${actual}，门禁侧是 ${expected}：` +
+          '同一判据两份真源 ⇒ 门禁放行的片段运行时会抛 RangeError（或反之放行坏数据），必须同批对齐',
+      );
+    }
+  }
+  for (const field of ['frameIndex', 'maxOverMs', 'maxClipTotalMs', 'minDistinctFrames']) {
+    if (!source.includes(`FRAME_MS_EXEMPTION.${field}`)) {
+      problems.push(
+        `豁免对账失败：player.ts 的豁免实现没有引用 FRAME_MS_EXEMPTION.${field}：` +
+          '常量写了却没人读，等于口径只存在于注释里（这正是"空门禁"的老毛病）',
+      );
+    }
+  }
+  if (!source.includes('new Set(frames)')) {
+    problems.push(
+      '豁免对账失败：player.ts 的豁免没有用 `new Set(frames)` 判 distinct frame id：' +
+        '"长等待 + 同一张画"会被当成合法片段放行（G-P14 的运行时代理缺失）',
+    );
+  }
+  // 代理关系必须写在源码注释里（剥注释后的代码看不出"为什么是 frame id 而不是 contentId"）
+  if (!(raw.includes('G-P14') && raw.includes('distinct frame id'))) {
+    problems.push(
+      '豁免对账失败：player.ts 里缺少"以 distinct frame id 代理 contentId、真判据由 G-P14 独占"的说明：' +
+        '代理关系被删掉后，下一个人会以为运行时也验了 contentId（而它拿不到）',
+    );
+  }
+  return problems;
+}
+
+/**
  * 渲染层里**禁止出现**的镜像变换（G-P12）。
  *
  * <p>静态姿态（`sit`/`lie`/`sleep`）只有左向画稿。缺右向时的正确做法是**用左向原样播**
@@ -1012,9 +1252,12 @@ export async function runPoseGate(options = {}) {
   problems.push(...checkUnknownKeys(manifest));
 
   for (const [posture, batch] of Object.entries(manifest.batches ?? {})) {
+    // 时序判据要分两路取：`problems` 让门禁红，`notes` 只用于**点名豁免**
+    // （FRAME_MS_EXEMPTION 放行的超限帧必须留下痕迹，静默放行等于 2400 上限不作数）。
+    const timing = checkTimingReport(batch);
     const batchProblems = [
       ...checkDomains(batch),
-      ...checkTiming(batch),
+      ...timing.problems,
       ...checkEnvelope(batch, geometry, align),
       ...checkClips(batch),
       // G-P14 需要 `contentId`（母版摘要，转码之后才有），所以它只能跑在**清单级**，
@@ -1026,6 +1269,7 @@ export async function runPoseGate(options = {}) {
       log(`[gate:pet:poses] ${posture}：${batchProblems.length === 0 ? 'OK' : `${batchProblems.length} 个问题`}`);
     }
     problems.push(...batchProblems);
+    notes.push(...timing.notes);
   }
   problems.push(...checkVolume(manifest).filter((line) => !line.includes(']')));
   // G-P9 / G-P10 是**清单级**判据（不属于某个批次），所以不参与上面的按批分流。
@@ -1037,6 +1281,9 @@ export async function runPoseGate(options = {}) {
   // G-P11 的对账项：门禁持有的候选序必须与 controller.pickClip 的真实现一致，
   // 否则"谁遮住谁"的结论会跟着实现漂移而判据不自知。
   problems.push(...checkPickOrderDrift());
+  // 单真源对账：帧时长窄豁免在运行时（player.ts）与门禁两侧必须逐条同构。
+  // 没有这条，"门禁放行、运行时抛 RangeError"那种事故会以"功能静默消失"的形式复活。
+  problems.push(...checkPlayerExemptionDrift());
   // G-P12：静态扫描渲染层，禁止用 scaleX(-1) 之类的镜像凑出"右向"。
   problems.push(...checkNoMirrorRender());
   problems.push(...checkNoPng(outDir));

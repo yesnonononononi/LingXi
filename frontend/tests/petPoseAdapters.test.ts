@@ -11,7 +11,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import {
@@ -21,6 +21,7 @@ import {
   DEFERRED_REASONS,
   FRAME_TIMING,
   PoseAdapterError,
+  SUPPLEMENTAL_FRAMES,
   adaptAll,
   adaptBatch,
   detectAdapter,
@@ -96,12 +97,33 @@ test('accepted 是显式登记：切片 3 起六批全部可播，adapter 归属
   });
   // 金丝雀：6 批都在登记表里（少登记一批 ⇒ adaptAll 永远不会碰它，等于静默丢掉一批资产）
   assert.equal(Object.keys(mapping).length, 6);
-  // 时序也必须逐批登记（美术 6 批里 0 个时序字段，速度归工程侧）
+  // 时序也必须逐批有真源：要么工程侧 `FRAME_TIMING` 登记，要么由美术补充 manifest 声明
+  // （`sit` 的眨眼时序 7 帧 / 6.61 s 只存在于 `supplemental/gif-v1/manifest.json`
+  // 的 `clips.sit_blink` 里——工程侧再抄一份就是第二份真源，美术一调节奏就静默漂移）
   for (const posture of Object.keys(mapping)) {
+    const engineering = (FRAME_TIMING as Record<string, Record<string, number>>)[posture];
+    const supplemental = (SUPPLEMENTAL_FRAMES as Record<string, any>)[posture];
     assert.ok(
-      (FRAME_TIMING as Record<string, Record<string, number>>)[posture] !== undefined,
-      `${posture} 没有登记帧时长`,
+      engineering !== undefined || supplemental !== undefined,
+      `${posture} 既没有工程侧帧时长（FRAME_TIMING）也没有补充时序真源（SUPPLEMENTAL_FRAMES）：时长从哪来？`,
     );
+    assert.ok(
+      !(engineering !== undefined && supplemental !== undefined),
+      `${posture} 同时登记了 FRAME_TIMING 与 SUPPLEMENTAL_FRAMES：帧时长有了两个出处，` +
+        '美术调一次节奏就会静默脱钩（同一个问题只会有一个真源）',
+    );
+    if (supplemental !== undefined) {
+      assert.equal(
+        typeof supplemental.manifestPath,
+        'string',
+        `${posture} 的补充时序必须写明 manifestPath（缺了就"读不到"=没有时长）`,
+      );
+      assert.equal(
+        typeof supplemental.clipKey,
+        'string',
+        `${posture} 的补充时序必须写明 clipKey（否则不知道该读 manifest 的哪条片段）`,
+      );
+    }
   }
   const result = adaptEverything();
   assert.deepEqual(result.missing, [], `有批次资产缺失：${result.missing.join(', ')}`);
@@ -248,6 +270,14 @@ test('G-12：--check 在未改动时通过；改任一被消费字段 ⇒ 必须
     for (const entry of sitManifest.files) {
       copyFileSync(resolve(POSE_SOURCE_ROOT, 'sit', entry.file), resolve(sitDir, entry.file));
     }
+    // `sit` 从本切片起不再是单帧静姿：它的帧序与逐帧时长在 `supplemental/gif-v1/manifest.json` 里，
+    // 眨眼帧的母版也在那里（`frames/sit_blink@2x.png`）。所以临时仓库必须连补充包一起搬，
+    // 否则构建会**按设计硬失败**（"读取要有硬失败，不许静默回落到默认值"）。
+    cpSync(
+      resolve(REPO_ROOT, 'docs', 'assets', 'desktop-pet', 'supplemental', 'gif-v1'),
+      resolve(tmpRoot, 'docs', 'assets', 'desktop-pet', 'supplemental', 'gif-v1'),
+      { recursive: true },
+    );
 
     // ① 首次构建：应成功且能二次 --check 通过（证明 adapter 是确定性的）
     const build = await runBuild({ repoRoot: tmpRoot, outDir, posesJsonPath });

@@ -42,14 +42,21 @@ const POSE_RUNTIME_DIR = resolve(FRONTEND_ROOT, 'public', 'live2d', 'pet-poses')
 /** lie 去重后的真实字节数（= 未去重 1,185,506 − 重复 677,018）：美术真数据的金丝雀。 */
 const LIE_DEDUPED_BYTES = 508488;
 
-/** 四批现状（切片 2 的 `totals`）：去重对它们必须**零影响**。 */
-const FOUR_BATCH_TOTALS = Object.freeze({ frames: 31, bytes1x: 1299144, bytes2x: 4096820, distinctFiles: 62 });
+/** 四批现状（切片 4 起：sit 从"单帧静姿"变成"坐着眨眼"）：去重对它们必须**零影响**。 */
+const FOUR_BATCH_TOTALS = Object.freeze({ frames: 32, bytes1x: 1330782, bytes2x: 4195830, distinctFiles: 64 });
 
 /** 四批名单（`D7` 的"零变化"判据只针对它们：lie/sleep 是切片 3 才接进来的）。 */
 const FOUR_BATCHES = Object.freeze(['sit', 'walk', 'run', 'jump']);
 
-/** 六批现状（切片 3 翻 accepted 之后的真实 `totals`）：lie 508,488 + sleep 665,748 各按 distinct 文件计。 */
-const SIX_BATCH_TOTALS = Object.freeze({ frames: 42, bytes1x: 1581892, bytes2x: 4988308, distinctFiles: 76 });
+/**
+ * 六批现状（切片 4 翻 sit 眨眼之后的真实 `totals`）。
+ *
+ * <p><b>相对上一版（42 帧 / 76 个文件 / 6,570,200 B）的差量来源</b>：`sit` 不再是单帧静姿，
+ * 而是 `supplemental/gif-v1` 的 7 帧 / 6.61 s 眨眼循环 ⇒ 帧位 +1（`sit_blink`）、
+ * distinct 文件 +2（`sit_blink@1x.webp` 31,638 B + `sit_blink@2x.webp` 99,010 B = **130,648 B**）。
+ * 其余五批逐字节未变，`sit_neutral@1x/2x` 也逐字节未变（31,846 / 100,182）。</p>
+ */
+const SIX_BATCH_TOTALS = Object.freeze({ frames: 43, bytes1x: 1613530, bytes2x: 5087318, distinctFiles: 78 });
 
 /**
  * sleep 去重后的真实字节数。
@@ -484,7 +491,7 @@ test('D6 canonical 幂等：同一输入连导两次 ⇒ 清单与每个 webp �
   }
 });
 
-test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 个 webp / 5,395,964 B），六批合计 6,570,200 B', async () => {
+test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（64 个 webp / 5,526,612 B），六批合计 6,700,848 B', async () => {
   const { build, gate } = await loadModules();
   const manifest = readJson(POSES_JSON_PATH);
 
@@ -519,17 +526,18 @@ test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 �
       assert.strictEqual(frame.files['1x'].contentId, frame.files['2x'].contentId, '同一帧两档必须同一个 contentId');
     }
   }
-  assert.strictEqual(frameCount, 31, '四批必须还是 31 帧');
-  assert.strictEqual(paths.size, 62, '四批必须还是 62 个不同路径（没有可去重的重复像素）');
-  assert.strictEqual(contentIds.size, 31, '四批 31 帧必须是 31 张不同的画（有重复就说明这批不该共用文件）');
+  assert.strictEqual(frameCount, 32, '四批必须还是 32 帧（sit 的眨眼帧位 +1）');
+  assert.strictEqual(paths.size, 64, '四批必须还是 64 个不同路径（没有可去重的重复像素）');
+  assert.strictEqual(contentIds.size, 32, '四批 32 帧必须是 32 张不同的画（有重复就说明这批不该共用文件）');
 
   // 四批的字节小计也必须逐值不变（金丝雀：去重对它们零影响）
   const sitFrame = manifest.batches.sit.frames.sit_neutral;
   assert.strictEqual(sitFrame.files['1x'].bytes, 31846, 'sit@1x 字节数不该变');
   assert.strictEqual(sitFrame.files['2x'].bytes, 100182, 'sit@2x 字节数不该变');
 
-  // 盘上 76 个 webp、总字节 6,570,200（逐字节与 totals 吻合；去重不许多写也不许少写文件）
-  // 由 78 / 6,688,760 降下来的唯一原因是 sleep 的 `curled` 停止导出（−2 个文件、−118,560 B）：
+  // 盘上 78 个 webp、总字节 6,700,848（逐字节与 totals 吻合；去重不许多写也不许少写文件）
+  // 相对切片 3 的 76 / 6,570,200 只多了 sit 的眨眼帧位（+2 个文件、+130,648 B）；
+  // 更早那次 78 → 76 的减少是 sleep 的 `curled` 停止导出（−2 个文件、−118,560 B）：
   // 它既不在任何片段里，也不该占运行体积 —— 留着就是 G-P4 孤儿帧 + G-P10 磁盘反向孤儿。
   const onDisk = listWebp(POSE_RUNTIME_DIR);
   assert.strictEqual(onDisk.length, SIX_BATCH_TOTALS.distinctFiles, `盘上应有 ${SIX_BATCH_TOTALS.distinctFiles} 个 webp，实际 ${onDisk.length}`);

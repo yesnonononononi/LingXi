@@ -54,16 +54,27 @@
       },
       "clips": [
         {
-          "id": "hold",
+          "id": "cycle",
           "facing": -1,
           "frames": [
+            "sit_neutral",
+            "sit_blink",
+            "sit_neutral",
+            "sit_blink",
+            "sit_neutral",
+            "sit_blink",
             "sit_neutral"
           ],
-          "loop": false,
+          "loop": true,
           "frameMs": [
-            0
-          ],
-          "onEnd": "hold-last"
+            2600,
+            110,
+            1800,
+            90,
+            100,
+            110,
+            1800
+          ]
         }
       ],
       "frames": {
@@ -104,6 +115,44 @@
           },
           "airborneGapNative": 0,
           "supportFootX": 512
+        },
+        "sit_blink": {
+          "id": "sit_blink",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sit/sit_blink@1x.webp",
+              "url": "lxa://pet-poses/sit/sit_blink@1x.webp",
+              "width": 156,
+              "height": 234,
+              "bytes": 31638,
+              "sha256": "874de597d699ed3edba33fd3e8ef84f343b6c2f3d84b734081bdac1016141258",
+              "format": "webp-lossless",
+              "contentId": "da7c6cfcca74ed55"
+            },
+            "2x": {
+              "file": "poses/sit/sit_blink@2x.webp",
+              "url": "lxa://pet-poses/sit/sit_blink@2x.webp",
+              "width": 312,
+              "height": 468,
+              "bytes": 99010,
+              "sha256": "25953a3cfce1332fb30d2708a23689f8bd951ab56438a60cbc32647bc2fd8faa",
+              "format": "webp-lossless",
+              "contentId": "da7c6cfcca74ed55"
+            }
+          },
+          "anchorNative": {
+            "x": 474,
+            "y": 1454
+          },
+          "inkNative": {
+            "left": 105,
+            "top": 375,
+            "right": 918.5,
+            "bottom": 1454.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": 512
         }
       },
       "provenance": {
@@ -117,7 +166,9 @@
           "bodyAnchor.y",
           "files[].file",
           "files[].bbox",
-          "contactPoints.foot"
+          "contactPoints.foot",
+          "docs/assets/desktop-pet/supplemental/gif-v1/manifest.json#clips.sit_blink.frames",
+          "docs/assets/desktop-pet/supplemental/gif-v1/manifest.json#clips.sit_blink.frameMs"
         ],
         "aliasesResolved": []
       }
@@ -2170,9 +2221,9 @@
     "no-blink"
   ],
   "totals": {
-    "frames": 42,
-    "bytes1x": 1581892,
-    "bytes2x": 4988308,
-    "distinctFiles": 76
+    "frames": 43,
+    "bytes1x": 1613530,
+    "bytes2x": 5087318,
+    "distinctFiles": 78
   }
 }

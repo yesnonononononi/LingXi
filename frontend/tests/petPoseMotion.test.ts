@@ -118,16 +118,24 @@ test('G-P14 变异：把 sleep 呼吸 cycle 的帧全塞成同一个 contentId �
   assert.match(problems[0], /有 3 帧但只有 1 个 distinct contentId/);
 });
 
-test('G-P14 单帧豁免的边角：sit 只有 1 帧且 frameMs=[0]，判据必须放行而不是"碰巧没遍历到"', () => {
-  const sit = MANIFEST.batches.sit;
-  const hold = (sit.clips as any[])[0];
-  assert.equal(hold.frames.length, 1, 'sit 的 hold 就是单帧静止姿态');
-  assert.deepEqual(hold.frameMs, [0], '静止片段的帧时长是 0（不推进）');
-  assert.deepEqual(checkClipMotion(sit), [], '单帧片段必须显式豁免');
+test('G-P14 单帧豁免的边角：单帧 + frameMs=[0] 必须放行而非"碰巧没遍历到"，复制成两帧同图立刻变假动画', () => {
+  // **前提变化说明（切片 4）**：`sit` 不再是单帧静姿，而是 7 帧 / 6.61 s 的眨眼循环
+  // （美术 `supplemental/gif-v1/manifest.json` 的 `clips.sit_blink`），真清单里已没有
+  // "单帧 hold"样本。所以这条"单帧显式豁免"的判据改用**合成批次**守——判据形状一个字未改，
+  // 只是样本从真数据换成合成数据（真数据里同一条豁免另有 `sleep.exit` 单帧样本可依）。
+  const contentId = '0123456789abcdef';
+  const synthetic = {
+    posture: 'synthetic-hold',
+    frames: {
+      still: { id: 'still', facing: -1, files: { '1x': { contentId }, '2x': { contentId } } },
+    },
+    clips: [{ id: 'hold', facing: -1, frames: ['still'], loop: false, frameMs: [0], onEnd: 'hold-last' }],
+  };
+  assert.deepEqual(checkClipMotion(synthetic), [], '单帧片段必须显式豁免（不是靠循环没走到）');
   // 反向：给它复制成两帧同图 ⇒ 立刻变成"假动画"必须红
   const faked = {
-    ...sit,
-    clips: [{ ...hold, frames: [hold.frames[0], hold.frames[0]], frameMs: [0, 0] }],
+    ...synthetic,
+    clips: [{ ...synthetic.clips[0], frames: ['still', 'still'], frameMs: [0, 0] }],
   };
   const problems = checkClipMotion(faked);
   assert.equal(problems.length, 1, '两帧同图必须判红（哪怕帧时长是 0）');

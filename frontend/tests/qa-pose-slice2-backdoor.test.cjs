@@ -58,8 +58,10 @@ test('D-1 采样时刻按片段真实时长算：真清单四批逐一核对（�
     ['run', 1, 'cycle', 540, true, 270],
     ['jump', -1, 'once', 650, false, 260],
     ['jump', 1, 'once', 650, false, 260],
-    // sit 是单帧 0ms 的 hold ⇒ clipMs 0 ⇒ 立即采样（不等待）
-    ['sit', -1, 'hold', 0, false, 0],
+    // sit 从切片 4 起是 7 帧眨眼循环（supplemental/gif-v1 的 clips.sit_blink）：
+    // 2600+110+1800+90+100+110+1800 = 6610ms 循环 ⇒ 循环采样 = min(6610/2, 300) = 300。
+    // 前提变了（旧期望是"单帧 hold ⇒ clipMs 0 ⇒ 立即采样"），期望值随真数据更新，判据未动。
+    ['sit', -1, 'cycle', 6610, true, 300],
   ];
   for (const [posture, facing, clipId, clipMs, loop, delay] of cases) {
     const time = clipTimingOf(PET_POSES, posture, facing, clipId);

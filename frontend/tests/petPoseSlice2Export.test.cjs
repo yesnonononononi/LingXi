@@ -303,7 +303,7 @@ test('T01-12 P13：totals.bytes1x + totals.bytes2x 必须 ≤ POSE_TOTAL_MAX_BYT
   // 三批真跑一遍后的预算也要在册（用 adapter 真数据 + 不落盘）
   const drafts = adapters.adaptAll({ repoRoot: REPO_ROOT, accepted: ['sit', 'walk', 'run', 'jump'] }).drafts;
   const frames = Object.values(drafts).reduce((sum, draft) => sum + Object.keys(draft.frames).length, 0);
-  assert.strictEqual(frames, 31, 'sit 1 + walk 8 + run 12 + jump 10 = 31 帧（§E.4 的 T01 判据）');
+  assert.strictEqual(frames, 32, 'sit 2（中性 + 眨眼）+ walk 8 + run 12 + jump 10 = 32 帧（§E.4 的 T01 判据；sit 从切片 4 起是眨眼循环）');
 });
 
 test('T01-13 P9a：buildPosesManifest 同输入跑两次 ⇒ 清单逐字节相等（无时间戳）', async () => {
@@ -374,7 +374,9 @@ test('T02-3 G-P8：真清单每帧的 1x/2x 都是 webp-lossless（U1 裁定的"
     assert.deepStrictEqual(gate.checkFrameEncoding(batch), [], `${posture} 出现了非无损编码`);
   }
   // 金丝雀：确实有帧被判过（否则"全绿"可能只是因为一个帧都没遍历到）。
-  // 切片 3 起六批共 42 个帧位（sit 1 + lie 7 + sleep 4 + walk 8 + run 12 + jump 10）；
+  // 切片 4 起六批共 43 个帧位（sit 2 + lie 7 + sleep 4 + walk 8 + run 12 + jump 10）；
+  // sit 由 1 升成 2 是因为坐姿不再是单帧静姿，而是 `supplemental/gif-v1` 的 7 帧眨眼循环
+  // （帧位只有两个 distinct 内容：sit_neutral / sit_blink，其余 5 个帧位是它们的重复引用）。
   // sleep 由 5 降成 4 是因为 `curled` 停止导出（深睡阶段将来再接，母版留在原处）。
   // 数字变了必须同批改这里，不许改成"大于 0 就算过"。
   let frameCount = 0;
@@ -388,7 +390,7 @@ test('T02-3 G-P8：真清单每帧的 1x/2x 都是 webp-lossless（U1 裁定的"
       }
     }
   }
-  assert.strictEqual(frameCount, 42);
+  assert.strictEqual(frameCount, 43);
 });
 
 test('T02-4 G-P8 变异：把某帧 format 改成 "webp" ⇒ 必红（体积断言拦不住这条旁路）', async () => {

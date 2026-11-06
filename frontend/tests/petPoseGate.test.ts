@@ -184,9 +184,14 @@ test('G-P14 变异：四帧同图 ⇒ 判红（帧数不是"在动"的证据）�
   assert.match(problems[0], /distinct contentId/);
   assert.match(problems[0], /假动画/);
 
-  // 单帧片段（sit 的 hold）显式豁免：它本来就该是静止的
-  assert.deepEqual(checkClipMotion(MANIFEST.batches.sit), [], '单帧 hold 必须被豁免，不许判红');
-  assert.equal(MANIFEST.batches.sit.clips[0].frames.length, 1, '前置：sit 的 hold 就是单帧');
+  // 单帧片段显式豁免：它本来就该是静止的。
+  // 切片 4 起 `sit` 不再是单帧静姿（坐姿 = 7 帧眨眼循环，见 supplemental/gif-v1 的 clips.sit_blink），
+  // 所以这条豁免的样本改用**真清单里仍然单帧**的片段（sleep.exit = 单帧 startle×300），
+  // 并把 sit 单帧的说法换成"sleep 的 exit 就是单帧"——前提变了，判据本身一个字没放宽。
+  assert.deepEqual(checkClipMotion(MANIFEST.batches.sleep), [], '单帧 exit 必须被豁免，不许判红');
+  const sleepExit = (MANIFEST.batches.sleep.clips as any[]).find((clip) => clip.id === 'exit');
+  assert.ok(sleepExit, '前置：sleep 必须有 exit');
+  assert.equal(sleepExit.frames.length, 1, '前置：sleep 的 exit 就是单帧');
 
   // 缺 contentId ⇒ 判红（"无法判断是否在动"与"在动"是两句不同的话）
   const noContentId = {

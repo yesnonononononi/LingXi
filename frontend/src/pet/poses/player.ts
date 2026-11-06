@@ -26,6 +26,64 @@ export const FRAME_MS_MIN = 80;
 /** 每帧时长的合法上界（毫秒）。超过 2.4s 读成"卡住不动"（帧没坏，但表现像坏了）。 */
 export const FRAME_MS_MAX = 2400;
 
+/**
+ * 帧时长的**窄豁免**（"动作开始前的静止等待"）——运行时侧。
+ *
+ * <p><b>为什么运行时也要这一条：</b>坐姿从切片 4 起不是单帧静姿，而是美术
+ * `supplemental/gif-v1/manifest.json` 的 `clips.sit_blink`（7 帧 / 6.61 s）：
+ * 第 0 帧 **2600 ms** 的语义是"坐定之后先静止 2.6 秒，然后眨两下眼"。把全局上限
+ * {@link FRAME_MS_MAX} 抬高等于给所有片段开后门；把 2600 拆成两帧同图等于造假帧
+ * （G-P14 正是防这个）。所以只开一条窄到只能用一次的豁免。</p>
+ *
+ * <p><b>单真源纪律（这条比豁免本身重要）：</b>构建门禁 `scripts/check-pet-poses.mjs` 里有
+ * 同名同义的 `FRAME_MS_EXEMPTION`。跨语言 import 走不通（门禁是 node ESM，本文件被 vite 打包），
+ * 所以按仓库既有先例做**文本对账**：门禁的 `checkPlayerExemptionDrift()` 会解析本文件，
+ * 断言这里的四个数值与门禁侧逐值相等、且本函数真的引用了这四个字段——
+ * **任一侧改动而另一侧未同步 ⇒ 门禁直接红**。（历史教训：同一条 2400 上限曾经有两份真源，
+ * 结果是"门绿了运行时抛出 RangeError"，坐姿永远回站姿而门禁一条不红。）</p>
+ *
+ * <p><b>代理关系（已批准的口径）：</b>运行时拿不到 `contentId`（那是母版摘要，只在清单里），
+ * 所以"真的在动"在这里降级为**片段内 distinct frame id ≥ 2**。真 `contentId` 判据（**G-P14**）
+ * 由构建门禁独占把关，本函数只是运行时的下限守卫：它保证"长等待 + 同一张画"不会被放过去。
+ * 门禁的对账判据会断言本文件确实写着这句代理关系（不许悄悄删掉注释后仍靠代码混过）。</p>
+ */
+export const FRAME_MS_EXEMPTION = Object.freeze({
+  /** 超限帧自身的上限（ms）：再长就不像"入静"，像卡死。 */
+  maxOverMs: 6000,
+  /** 用了豁免的片段总时长上限（ms）。 */
+  maxClipTotalMs: 9000,
+  /** 只认片段第 0 帧（"动作开始前的静止等待"）。 */
+  frameIndex: 0,
+  /** 片段内 distinct frame id 的下限（= 门禁侧 distinct contentId 的运行时代理）。 */
+  minDistinctFrames: 2,
+});
+
+/**
+ * 判断某一帧能否走 {@link FRAME_MS_EXEMPTION}（只对"超过上限"的帧调用）。
+ *
+ * <p>五条同时成立才放行：第 0 帧 / 片段至少 {@link FRAME_MS_EXEMPTION.minDistinctFrames} 帧
+ * （单帧片段天然被排除）/ 该帧 ≤ {@link FRAME_MS_EXEMPTION.maxOverMs} / 片段总时长
+ * ≤ {@link FRAME_MS_EXEMPTION.maxClipTotalMs} / 片段内 distinct frame id ≥ 2。</p>
+ *
+ * @param frames 片段帧 id 列表
+ * @param durations 片段逐帧时长（与 `frames` 等长）
+ * @param index 当前帧序号
+ * @returns 是否放行
+ */
+function frameMsExemptionApplies(
+  frames: readonly string[],
+  durations: readonly number[],
+  index: number,
+): boolean {
+  if (index !== FRAME_MS_EXEMPTION.frameIndex) return false;
+  if (frames.length < FRAME_MS_EXEMPTION.minDistinctFrames) return false;
+  const ms = durations[index] ?? 0;
+  if (!(ms <= FRAME_MS_EXEMPTION.maxOverMs)) return false;
+  const total = durations.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+  if (!(total <= FRAME_MS_EXEMPTION.maxClipTotalMs)) return false;
+  return new Set(frames).size >= FRAME_MS_EXEMPTION.minDistinctFrames;
+}
+
 /** 单帧静止姿态的时长（`hold` 用 0 表示"不推进"，不是"立刻结束"）。 */
 export const SINGLE_FRAME_HOLD_MS = 0;
 
@@ -89,6 +147,9 @@ export function validatePoseClip(clip: PoseClip): string[] {
     }
     if (singleHold && ms === SINGLE_FRAME_HOLD_MS) continue;
     if (ms < FRAME_MS_MIN || ms > FRAME_MS_MAX) {
+      // 窄豁免（与门禁 FRAME_MS_EXEMPTION 单真源对账，见该常量注释）：
+      // 只放行"多帧片段第 0 帧的长等待"，且片段必须真的在动。低于下界永不豁免。
+      if (ms > FRAME_MS_MAX && frameMsExemptionApplies(frames, frameMs, index)) continue;
       problems.push(
         `片段 ${clip.id} 第 ${index} 帧时长 ${ms}ms 不在 [${FRAME_MS_MIN}, ${FRAME_MS_MAX}]` +
           '（单帧静止姿态允许 0；多帧片段的 0 会让调度器空转）',

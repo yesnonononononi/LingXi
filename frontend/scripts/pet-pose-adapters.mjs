@@ -32,7 +32,8 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** 美术源根（相对仓库根，排障用；引擎不读）。 */
 export const SOURCE_ROOT = 'docs/assets/desktop-pet/poses';
@@ -71,20 +72,182 @@ export const BATCH_SPECS = Object.freeze([
  * 帧时长（毫秒）**由工程侧拥有**：美术 6 批里 0 个时序字段（`duration|frameMs|fps|timing|loop`
  * 全部未命中），任务书 §8 明确"速度/停留时长属配置，交工程侧"。
  *
- * <p>`sit` 是**单帧静止姿态**，时长为 0（不推进），但绝不为"看起来像动画"加假帧（D-03 口径）。</p>
+ * <p><b>`sit` 从本切片起没有条目</b>：坐姿不再是"单帧静止"，而是 gif-v1 的**眨眼循环**
+ * （7 个帧位 / 合计 6.61 s）。它的帧序与逐帧时长由美术 `supplemental/gif-v1/manifest.json`
+ * 的 `clips.sit_blink` 直接声明，见 {@link SUPPLEMENTAL_FRAMES}。工程侧若再写一份
+ * `hold: 0` 或把 7 个数字抄进来，就是**第二份时序真源**——美术一调眨眼节奏，
+ * 两处必然漂移，而"到底按哪个播"没有答案。所以 sit 的条目随眨眼接入一起删掉，
+ * `petPoseAdapters.test.ts` 的金丝雀改成"每批要么有工程侧时序、要么有补充时序来源"。</p>
  *
  * <p><b>`lie` 从切片 3 起没有 `hold` 项</b>：趴下过程与趴着不动在**构建期合并**成单条 `enter`
  * （设计 §4.2 方案 B），`hold` 片段不再产出。留着 `hold: 0` 会变成一个"没有任何消费者"的常量
  * ——门禁里每一条没有真实读者的常量最后都会腐化成谎话，所以它随合并一起删掉。</p>
  */
 export const FRAME_TIMING = Object.freeze({
-  sit: Object.freeze({ hold: 0 }),
   lie: Object.freeze({ enter: 120, exit: 120 }),
   sleep: Object.freeze({ cycle: 1800, exit: 300 }),
   walk: Object.freeze({ cycle: 110 }),
   run: Object.freeze({ cycle: 90 }),
   jump: Object.freeze({ once: 130 }),
 });
+
+/**
+ * 补充资产根（相对仓库根）：`supplemental/gif-v1` 是坐姿眨眼的**母版与逐帧时长的唯一真源**。
+ *
+ * <p>它不在 `docs/assets/desktop-pet/poses/` 下——那里是 6 个姿态批的目录，每批一个
+ * `manifest.json`。gif-v1 是**跨批次的补充包**（坐姿眨眼 / 坐姿抱云 / 靠近互动 / 云朵反馈），
+ * manifest 结构与 6 批不同，所以单独登记，而不是塞进 sit 的 manifest
+ * （`docs/assets/**` 一个字节都不许改）。</p>
+ */
+export const SUPPLEMENTAL_ROOT = 'docs/assets/desktop-pet/supplemental/gif-v1';
+
+/**
+ * **补充帧 / 补充片段计划**：美术 `supplemental/` 下的资产如何落进**已有姿态批次**。
+ *
+ * <p><b>为什么需要这张表：</b>`sit` 是切片 1 的单帧静姿交付，而"坐着"应该会眨眼。
+ * 眨眼母版（`supplemental/gif-v1/frames/sit_blink@2x.png`，2048×3072，与 sit 批的母版域逐像素同尺寸）
+ * 和逐帧时序都在 gif-v1 里，**但 gif-v1 没说"落进哪个运行时片段"**——这层映射是工程裁决，
+ * 必须显式写下来并被测试钉住，不许在 adapter 里靠字符串猜。</p>
+ *
+ * <p><b>帧序和逐帧时长不在这里写死</b>：`clips[].frameMs` 由构建期从
+ * `manifestPath` + `clipKey` 指向的美术 manifest 读取（见 {@link readSupplementalClip}）。
+ * 硬编码一份"看起来一样"的数字 = 第二份真源，美术调一次眨眼节奏就会静默脱钩。</p>
+ *
+ * <p><b>为什么 `inkNative` 是"继承而不是测量"：</b>美术 `sourceMode` 原文是
+ * "仅采纳声明区域，原图轮廓、alpha、脚底与区域外像素保持不变"，而 `sit_blink` 的声明区域
+ * （眼部两片蒙版：x 326~620 / y 748~845 native）**严格落在 `sit_neutral` 的墨迹框内部**
+ * （105~918 / 375~1455）⇒ "眨眼帧的墨迹包围盒与坐姿中性帧逐值相同"是**可证明的推论**，
+ * 不是猜测（`tests/petPoseAdapters.test.ts` 有包含性断言，区域一越界就红）。</p>
+ *
+ * <p><b>为什么片段叫 `cycle` 并且要 `replaces: 'hold'`：</b>`PoseController.pickClip` 的候选序是
+ * `hold → cycle → once → enter`。两者并存时 `hold` 永远先命中 ⇒ 眨眼**永远不会播**，
+ * 而数据、体积、时序全部合法、门禁一条都不红（G-P11 正是为这类死片段设的判据）。
+ * 所以这里**替换**掉 `hold`：坐姿从"一张静止画"变成"坐着眨眼（7 帧 / 6.61 s 循环）"。</p>
+ */
+export const SUPPLEMENTAL_FRAMES = Object.freeze({
+  sit: Object.freeze({
+    /** 补充时序真源（相对仓库根）：帧序与逐帧时长的**唯一**出处。 */
+    manifestPath: `${SUPPLEMENTAL_ROOT}/manifest.json`,
+    /** gif manifest 里对应的片段键。 */
+    clipKey: 'sit_blink',
+    /** 补充帧（合并进本批 `frames`）。`masterFile` 相对**批次目录**。 */
+    frames: Object.freeze([
+      Object.freeze({
+        id: 'sit_blink',
+        masterFile: '../../supplemental/gif-v1/frames/sit_blink@2x.png',
+        /** 墨迹 bbox / 锚点 / 支撑脚都继承这个帧（理由见上方注释）。 */
+        inkFrom: 'sit_neutral',
+        /** 美术 manifest 的 `masks` 键（包含性断言用，见 petPoseAdapters.test.ts）。 */
+        proofKey: 'sit_blink',
+      }),
+    ]),
+    /** 补充片段：**替换**同名旧片段（`replaces`），替换后旧片段不再产出。 */
+    clips: Object.freeze([
+      Object.freeze({
+        id: 'cycle',
+        replaces: 'hold',
+        /** 帧序/时长从 `manifestPath` 的 `clips.clipKey` 读，这里不重复。 */
+        timingFrom: 'manifest',
+        loop: true,
+        onEnd: null,
+      }),
+    ]),
+  }),
+});
+
+/**
+ * 定位仓库根。
+ *
+ * <p>优先用调用方给的 `repoRoot`（`build-pet-poses.mjs` 与测试都传），缺省时从本模块位置上两级推：
+ * `&lt;repo&gt;/frontend/scripts/` → `&lt;repo&gt;`。**不做启发式搜索**（往上找 git 目录在多
+ * worktree 场景下会指错树），并要求 `docs/assets/desktop-pet` 真的存在——推错树时立刻硬失败，
+ * 而不是读到一个"恰好也有 supplemental"的别处。</p>
+ *
+ * @param {{repoRoot?: string}} [options] 选项
+ * @param {string} batch 批次名（报错用）
+ * @returns {string} 仓库根绝对路径
+ */
+function repoRootOf(options, batch) {
+  if (options && typeof options.repoRoot === 'string' && options.repoRoot.length > 0) {
+    return resolve(options.repoRoot);
+  }
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  if (!existsSync(resolve(repoRoot, 'docs', 'assets', 'desktop-pet'))) {
+    throw new PoseAdapterError(
+      `无法定位仓库根：${repoRoot} 下没有 docs/assets/desktop-pet（补充资产的根）。请显式传 repoRoot`,
+      batch,
+    );
+  }
+  return repoRoot;
+}
+
+/**
+ * 读取补充时序真源（gif manifest 的 `clips.<clipKey>`）。
+ *
+ * <p>**缺文件即硬失败**：坐姿眨眼的帧序与逐帧时长只存在于这份 manifest 里，读不到就没有
+ * "退化成静止"这种选项——那会静默丢掉一整个用户可见的功能（坐着不会眨眼了），
+ * 而所有既有判据仍然全绿。</p>
+ *
+ * @param {{manifestPath: string, clipKey: string}} plan {@link SUPPLEMENTAL_FRAMES} 的一项
+ * @param {string} batch 批次名
+ * @param {{repoRoot?: string}} [options] 选项
+ * @returns {{frames: string[], frameMs: number[], loop: boolean, manifestSha256: string}} 时序
+ */
+function readSupplementalClip(plan, batch, options = {}) {
+  const repoRoot = repoRootOf(options, batch);
+  const manifestPath = resolve(repoRoot, plan.manifestPath);
+  if (!existsSync(manifestPath)) {
+    throw new PoseAdapterError(
+      `补充时序真源不存在：${plan.manifestPath}（${plan.clipKey} 的帧序与逐帧时长只在这里）`,
+      batch,
+    );
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const clip = manifest?.clips?.[plan.clipKey];
+  if (clip === null || typeof clip !== 'object') {
+    throw new PoseAdapterError(
+      `补充 manifest 里没有 clips.${plan.clipKey}（SUPPLEMENTAL_FRAMES 的登记过期了）`,
+      batch,
+    );
+  }
+  const frames = requireArray(clip.frames, `clips.${plan.clipKey}.frames`, batch).map((id) =>
+    requireString(id, `clips.${plan.clipKey}.frames[]`, batch),
+  );
+  const frameMs = requireArray(clip.frameMs, `clips.${plan.clipKey}.frameMs`, batch).map((ms) =>
+    requireNumber(ms, `clips.${plan.clipKey}.frameMs[]`, batch),
+  );
+  if (frames.length !== frameMs.length) {
+    throw new PoseAdapterError(
+      `clips.${plan.clipKey} 的 frames=${frames.length} 与 frameMs=${frameMs.length} 不等长：` +
+        '少一个时长就等于给某一帧编了个数',
+      batch,
+    );
+  }
+  if (frames.length === 0) {
+    throw new PoseAdapterError(`clips.${plan.clipKey} 没有任何帧位`, batch);
+  }
+  for (const [index, ms] of frameMs.entries()) {
+    if (!(ms > 0)) {
+      throw new PoseAdapterError(
+        `clips.${plan.clipKey}.frameMs[${index}]=${JSON.stringify(ms)} 不是正数：循环片段里填 0 等于永不推进`,
+        batch,
+      );
+    }
+  }
+  if (clip.loop !== true) {
+    throw new PoseAdapterError(
+      `clips.${plan.clipKey}.loop=${JSON.stringify(clip.loop)}：坐姿眨眼必须是循环片段` +
+        '（非循环会播完就停，而坐姿没有"播完该去哪"的语义）',
+      batch,
+    );
+  }
+  return {
+    frames,
+    frameMs,
+    loop: true,
+    manifestSha256: sha256OfFile(manifestPath),
+  };
+}
 
 /**
  * `frames-nested-v3` 批次的**片段计划**（哪些帧进哪一条片段、哪些帧**明确不导出**）。
@@ -463,13 +626,22 @@ export function buildClips(id, frames, loop, frameMs, onEnd) {
 }
 
 /**
- * 归一化 `legacy-v1`（`sit`）：`files[]` 扁平条目 + 单帧静姿。
+ * 归一化 `legacy-v1`（`sit`）：`files[]` 扁平条目 + 单帧静姿 **+ 补充帧/补充片段**。
+ *
+ * <p><b>本切片的形态：</b>`sit` 不再是"一张静止画"，而是"坐着眨眼（7 帧 / 6.61 s 循环）"。
+ * 眨眼那 3 个节拍用的母版在 `supplemental/gif-v1/` 下（美术另一条交付线的产物，只读），
+ * 由 {@link SUPPLEMENTAL_FRAMES} 显式登记；帧序与逐帧时长则**构建期从美术 manifest 读**，
+ * 工程侧不留第二份数字。</p>
+ *
+ * <p><b>覆盖率纪律</b>：`frames` 里的每一帧都必须被某条片段引用（否则是孤儿帧，白占体积、
+ * 永远不播），补充片段引用的每一帧也必须在帧表里（否则永远播不出来）。两侧都硬失败。</p>
  *
  * @param {Record<string, unknown>} manifest 美术 manifest
  * @param {string} batch 批次名
+ * @param {{repoRoot?: string}} [options] 选项（补充时序真源要定位到仓库根）
  * @returns {Record<string, unknown>} 归一后的批次草稿
  */
-function adaptLegacyV1(manifest, batch) {
+function adaptLegacyV1(manifest, batch, options = {}) {
   const canvas = requireObject(manifest.canvas, 'canvas', batch);
   const nativeCanvas = requireObject(manifest.nativeSourceCanvas, 'nativeSourceCanvas', batch);
   const factor = masterScaleOf(manifest.masterScale, batch);
@@ -492,15 +664,100 @@ function adaptLegacyV1(manifest, batch) {
       supportFootX: Number.isFinite(foot) ? foot / factor : null,
     };
   }
-  const timing = FRAME_TIMING[batch];
+  const supplemental = SUPPLEMENTAL_FRAMES[batch];
+  // 补充帧：墨迹/锚点/支撑脚从 `inkFrom` 那一帧继承（理由见 SUPPLEMENTAL_FRAMES 的注释）
+  for (const extra of supplemental?.frames ?? []) {
+    if (frames[extra.id] !== undefined) {
+      throw new PoseAdapterError(`补充帧 ${extra.id} 与 manifest 里的同名帧冲突（两处定义同一帧 id）`, batch);
+    }
+    const base = frames[extra.inkFrom];
+    if (base === undefined) {
+      throw new PoseAdapterError(
+        `补充帧 ${extra.id} 要继承 ${extra.inkFrom} 的墨迹，但本批没有那一帧（继承链断了就不能猜）`,
+        batch,
+      );
+    }
+    frames[extra.id] = {
+      id: extra.id,
+      facing,
+      sourceFile: requireString(extra.masterFile, `SUPPLEMENTAL_FRAMES.${batch}.${extra.id}.masterFile`, batch),
+      inkNative: { ...base.inkNative },
+      anchorNative: { ...base.anchorNative },
+      airborneGapNative: base.airborneGapNative,
+      supportFootX: base.supportFootX,
+      /** 溯源：这一帧的几何是从哪一帧继承的（不进清单，排障用）。 */
+      inheritedFrom: base.id,
+    };
+  }
   const frameIds = Object.keys(frames);
-  if (frameIds.length !== 1) {
+  if (supplemental === undefined && frameIds.length !== 1) {
     throw new PoseAdapterError(
-      `legacy-v1 只支持单帧静姿批，实际有 ${frameIds.length} 帧（多帧请改用显式 adapter）`,
+      `legacy-v1 只支持单帧静姿批（未登记补充帧时），实际有 ${frameIds.length} 帧：` +
+        '多帧请在 SUPPLEMENTAL_FRAMES 里显式登记（并说明每帧的墨迹从哪来）',
       batch,
     );
   }
-  const holdMs = Number.isFinite(timing?.hold) ? timing.hold : 0;
+  // 片段：有补充片段就按它们产出（`replaces` 指定的旧片段不再产出），否则退回单帧 hold
+  const supplementalClips = supplemental?.clips ?? [];
+  const clips =
+    supplementalClips.length > 0
+      ? supplementalClips.map((clip) => {
+          // 帧序与逐帧时长**从美术 manifest 读**（唯一真源），本表只登记"落进哪条片段"。
+          const timing = readSupplementalClip(
+            { manifestPath: supplemental.manifestPath, clipKey: supplemental.clipKey },
+            batch,
+            options,
+          );
+          for (const frameId of timing.frames) {
+            if (frames[frameId] === undefined) {
+              throw new PoseAdapterError(
+                `补充片段 ${clip.id} 引用了不存在的帧 ${frameId}（帧表里没有它就永远播不出来；` +
+                  '请把它登记到 SUPPLEMENTAL_FRAMES 的 frames 里）',
+                batch,
+              );
+            }
+          }
+          return {
+            id: clip.id,
+            facing,
+            frames: [...timing.frames],
+            loop: clip.loop === true,
+            frameMs: [...timing.frameMs],
+            ...(clip.onEnd === null || clip.onEnd === undefined ? {} : { onEnd: clip.onEnd }),
+          };
+        })
+      : [
+          {
+            id: 'hold',
+            facing,
+            frames: frameIds,
+            loop: false,
+            frameMs: frameIds.map(() => {
+              const timing = FRAME_TIMING[batch];
+              return Number.isFinite(timing?.hold) ? timing.hold : 0;
+            }),
+            onEnd: 'hold-last',
+          },
+        ];
+  // 覆盖率：替换掉旧片段后，帧表里不许留下"没有片段引用"的孤儿（白占体积、永远不播）
+  const referenced = new Set(clips.flatMap((clip) => clip.frames));
+  const orphans = frameIds.filter((id) => !referenced.has(id));
+  if (orphans.length > 0) {
+    throw new PoseAdapterError(
+      `帧 ${orphans.join('、')} 没有被任何片段引用（孤儿帧）：要么让它进片段，要么把补充帧登记删掉`,
+      batch,
+    );
+  }
+  // `replaces` 的语义校验：它必须真的替换掉一条**旧片段**（否则这条登记是空话）
+  for (const clip of supplementalClips) {
+    if (clip.replaces !== undefined && clips.some((item) => item.id === clip.replaces)) {
+      throw new PoseAdapterError(
+        `补充片段 ${clip.id} 声明替换 ${clip.replaces}，但替换后 ${clip.replaces} 仍在产出：` +
+          '两条主选择器候选会并存（G-P11 的死片段）',
+        batch,
+      );
+    }
+  }
   return {
     posture: batch,
     assetId: requireString(manifest.assetId, 'assetId', batch),
@@ -518,8 +775,21 @@ function adaptLegacyV1(manifest, batch) {
       maxDeviationNative: anchor.maxDeviationNative,
     },
     frames,
-    clips: [{ id: 'hold', facing, frames: frameIds, loop: false, frameMs: [holdMs], onEnd: 'hold-last' }],
-    consumedKeys: ['canvas', 'nativeSourceCanvas', 'masterScale.factor', 'bodyAnchor.x', 'bodyAnchor.y', 'files[].file', 'files[].bbox', 'contactPoints.foot'],
+    clips,
+    consumedKeys: supplemental === undefined
+      ? ['canvas', 'nativeSourceCanvas', 'masterScale.factor', 'bodyAnchor.x', 'bodyAnchor.y', 'files[].file', 'files[].bbox', 'contactPoints.foot']
+      : [
+          'canvas',
+          'nativeSourceCanvas',
+          'masterScale.factor',
+          'bodyAnchor.x',
+          'bodyAnchor.y',
+          'files[].file',
+          'files[].bbox',
+          'contactPoints.foot',
+          `${SUPPLEMENTAL_ROOT}/manifest.json#clips.${supplemental.clipKey}.frames`,
+          `${SUPPLEMENTAL_ROOT}/manifest.json#clips.${supplemental.clipKey}.frameMs`,
+        ],
     aliasesResolved: [],
     warnings: anchor.warnings,
   };
@@ -865,9 +1135,10 @@ function adaptFramesNestedV3(manifest, batch) {
  *
  * @param {Record<string, unknown>} manifest 美术 manifest
  * @param {{posture: string, adapter: string}} spec 登记项
+ * @param {{repoRoot?: string}} [options] 选项（`legacy-v1` 的补充时序真源要定位仓库根）
  * @returns {Record<string, unknown>} 归一后的批次草稿
  */
-export function adaptBatch(manifest, spec) {
+export function adaptBatch(manifest, spec, options = {}) {
   const batch = spec.posture;
   const detected = detectAdapter(manifest, batch);
   if (detected !== spec.adapter) {
@@ -881,7 +1152,7 @@ export function adaptBatch(manifest, spec) {
   if (declaredBatch !== undefined && declaredBatch !== batch) {
     throw new PoseAdapterError(`manifest.batch=${String(declaredBatch)} 与目录名 ${batch} 不一致`, batch);
   }
-  if (spec.adapter === 'legacy-v1') return adaptLegacyV1(manifest, batch);
+  if (spec.adapter === 'legacy-v1') return adaptLegacyV1(manifest, batch, options);
   if (spec.adapter === 'files-sequences-v2') return adaptFilesSequencesV2(manifest, batch);
   return adaptFramesNestedV3(manifest, batch);
 }
@@ -928,7 +1199,7 @@ export function adaptAll(options = {}) {
     }
     try {
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      const draft = adaptBatch(manifest, spec);
+      const draft = adaptBatch(manifest, spec, { repoRoot });
       draft.provenance = {
         adapter: spec.adapter,
         manifestSha256: sha256OfFile(manifestPath),
