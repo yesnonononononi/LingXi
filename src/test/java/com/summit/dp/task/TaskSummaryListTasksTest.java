@@ -149,9 +149,10 @@ class TaskSummaryListTasksTest {
             task.finish(TaskStatus.SUCCESS, id == 52L ? "输出正文".repeat(2000) : "", 0, false);
             repository.save(task);
         }
-        assertEquals(String.valueOf(LONG_COMMAND_LENGTH),
-                database.queryString("SELECT LENGTH(command_text) FROM task WHERE id = 52"));
-        assertTrue(Integer.parseInt(database.queryString("SELECT LENGTH(`output`) FROM task WHERE id = 52")) > 256,
+        // 前提校验走仓储整行读回（不直接查业务表），随后各用例自己 clear 再量被测调用。
+        Task latest = repository.findById(52L).orElseThrow();
+        assertEquals(LONG_COMMAND_LENGTH, latest.getCommand().length(), "前提：命令文本要够长才会被截断");
+        assertTrue(latest.getOutput() != null && latest.getOutput().length() > 256,
                 "前提：最新一条的输出必须超过行内阈值，否则「没读 CLOB」的断言没有意义");
     }
 }

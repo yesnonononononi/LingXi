@@ -22,6 +22,12 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -130,13 +136,61 @@ class ToolCallBindSessionMessageNarrowUpdateTest {
         assertEquals(ToolCallStatus.IN_PROGRESS, current.getStatus(), "旧快照的结论也不能落库");
     }
 
+    @Test
+    @DisplayName("独立读写方确定协调：写入方 bind 推进版本后，持有旧版本的读取方 updateById 必冲突")
+    void staleWriterConflictsAgainstCommittedBind() throws Exception {
+        // 读取方先把整行读成旧快照（version=1）——它与写入方是两个独立持有者。
+        ToolCall staleSnapshot = repository.findById(TOOL_CALL_ID).orElseThrow();
+        assertEquals(1L, staleSnapshot.getVersion(), "前提：旧快照版本为 1");
+
+        CyclicBarrier start = new CyclicBarrier(2);
+        CountDownLatch bound = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> writer = pool.submit(() -> {
+                awaitStart(start);
+                repository.bindSessionMessage(TOOL_CALL_ID, SESSION_MESSAGE_ID);
+                bound.countDown();
+                return null;
+            });
+            Future<?> staleWriter = pool.submit(() -> {
+                awaitStart(start);
+                // 确定性协调：不是赌竞态，而是等写入方确实提交后再用旧版本落库。
+                assertTrue(bound.await(10, TimeUnit.SECONDS), "写入方必须先推进版本");
+                staleSnapshot.complete("{\"outcome\":\"APPROVED\"}");
+                assertThrows(ClientException.class, () -> repository.updateById(staleSnapshot),
+                        "版本已被回填推进，旧快照的整行更新必须撞乐观锁");
+                return null;
+            });
+            staleWriter.get(20, TimeUnit.SECONDS);
+            writer.get(20, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        ToolCall current = repository.findById(TOOL_CALL_ID).orElseThrow();
+        assertEquals(SESSION_MESSAGE_ID, current.getSessionMessageId(), "锚点不能被旧快照覆盖");
+        assertEquals(2L, current.getVersion(), "回填必须把版本推进 1");
+        assertEquals(ToolCallStatus.IN_PROGRESS, current.getStatus(), "旧快照的结论也不能落库");
+    }
+
+    /** 两方在栅栏上对齐起跑；超时说明协调本身坏了，直接失败而不是继续赌。 */
+    private static void awaitStart(CyclicBarrier start) {
+        try {
+            start.await(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("并发用例起跑协调失败", e);
+        }
+    }
+
     /** 前提校验：这一行确实带着超过行内阈值的大 CLOB，否则「没碰 CLOB」的断言没有意义。 */
     private void assertHeavyClobsPresent() {
-        String lengths = database.queryString(
-                "SELECT LENGTH(raw_output) || '/' || LENGTH(content) || '/' || LENGTH(raw_input)"
-                        + " || '/' || LENGTH(meta_data) FROM tool_call WHERE id = '" + TOOL_CALL_ID + "'");
-        for (String length : lengths.split("/")) {
-            assertTrue(Integer.parseInt(length) > 256, "前提：四个 CLOB 都必须超过 256 字节，实际: " + lengths);
+        // 用仓储整行读回（不直接查业务表）；调用方随后会 clear 再量被测调用自己发的语句。
+        ToolCall stored = repository.findById(TOOL_CALL_ID).orElseThrow();
+        for (String value : List.of(stored.getRawOutput(), stored.getContent(),
+                stored.getRawInput(), stored.getMetaData())) {
+            assertTrue(value != null && value.length() > 256,
+                    "前提：四个 CLOB 都必须超过 256 字节，实际长度: " + (value == null ? null : value.length()));
         }
     }
 

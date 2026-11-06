@@ -70,11 +70,11 @@ class ToolCallFindForBlockUpsertClobTest {
     @DisplayName("投影 SQL 含 raw_output，不含 content/raw_input/meta_data；投影里对应的 CLOB 为 null")
     void projectionSkipsUnusedClobs() {
         // 前提：三列在库里确实有大内容，否则「读出来是 null」可能只是因为库里本来就没有。
-        for (String column : List.of("content", "raw_input", "meta_data")) {
-            assertTrue(Integer.parseInt(database.queryString(
-                            "SELECT LENGTH(" + column + ") FROM tool_call WHERE id = '" + TOOL_CALL_ID + "'")) > 256,
-                    "前提：" + column + " 必须超过 256 字节");
-        }
+        // 用仓储整行读回证明（不直接查业务表），随后 clear 再单独量被测调用。
+        ToolCall stored = repository.findById(TOOL_CALL_ID).orElseThrow();
+        assertTrue(stored.getContent().length() > 256, "前提：content 必须超过 256 字节");
+        assertTrue(stored.getRawInput().length() > 256, "前提：raw_input 必须超过 256 字节");
+        assertTrue(stored.getMetaData().length() > 256, "前提：meta_data 必须超过 256 字节");
 
         capture.clear();
         Optional<ToolCallBlockView> projection = repository.findForBlockUpsert(TOOL_CALL_ID);

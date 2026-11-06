@@ -67,8 +67,9 @@ class ToolCallExistsByIdClobTest {
     @DisplayName("存在性判定走 COUNT(*)：SQL 不含 content/raw_input/raw_output/meta_data")
     void existsByIdNeverSelectsClobColumns() {
         // 前提：这一行确实带着大 CLOB —— 否则「没读 CLOB」的断言可能是空的。
-        assertTrue(Integer.parseInt(database.queryString(
-                        "SELECT LENGTH(raw_output) FROM tool_call WHERE id = '" + EXISTING_ID + "'")) > 256,
+        // 用仓储整行读回（不直接查业务表），随后 clear 再把被测调用单独量一遍。
+        ToolCall stored = repository.findById(EXISTING_ID).orElseThrow();
+        assertTrue(stored.getRawOutput().length() > 256,
                 "前提：raw_output 必须超过 H2 的行内阈值，否则不会触发临时 LOB");
 
         capture.clear();
