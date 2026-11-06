@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/build-pet-sequences.mjs",
+  "sourceRoot": "docs/assets/desktop-pet/supplemental/gif-v1",
+  "scale": {
+    "stageToCss": 0.15234375
+  },
+  "stage": {
+    "width": 1280,
+    "height": 1536
+  },
+  "layers": [
+    {
+      "id": "companion",
+      "kind": "sequence-frames",
+      "canvas": {
+        "width": 400,
+        "height": 400
+      },
+      "sourceCanvas": {
+        "width": 512,
+        "height": 512
+      },
+      "anchor": {
+        "x": 256,
+        "y": 470
+      },
+      "grip": {
+        "x": 256,
+        "y": 333
+      }
+    }
+  ],
+  "scenes": {
+    "cloud_react": {
+      "loop": true,
+      "onEnd": null,
+      "steps": [
+        {
+          "ms": 1000,
+          "frames": {
+            "companion": "neutral"
+          },
+          "companionDy": 0
+        },
+        {
+          "ms": 80,
+          "frames": {
+            "companion": "neutral"
+          },
+          "companionDy": -4
+        },
+        {
+          "ms": 80,
+          "frames": {
+            "companion": "neutral"
+          },
+          "companionDy": -9
+        },
+        {
+          "ms": 160,
+          "frames": {
+            "companion": "happy"
+          },
+          "companionDy": -14
+        },
+        {
+          "ms": 80,
+          "frames": {
+            "companion": "happy"
+          },
+          "companionDy": -9
+        },
+        {
+          "ms": 80,
+          "frames": {
+            "companion": "happy"
+          },
+          "companionDy": -4
+        },
+        {
+          "ms": 700,
+          "frames": {
+            "companion": "happy"
+          },
+          "companionDy": 0
+        },
+        {
+          "ms": 1000,
+          "frames": {
+            "companion": "neutral"
+          },
+          "companionDy": 0
+        }
+      ]
+    }
+  },
+  "frames": {
+    "cloud_react/neutral@1x.webp": {
+      "layer": "companion",
+      "slot": "neutral",
+      "width": 61,
+      "height": 61,
+      "bytes": 1522,
+      "sha256": "bcfdbc8dde4a4943bcb4c4767de40fbb0438875e56acc3b5a29851ac71450cbe",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/cloud_react/neutral@1x.webp"
+    },
+    "cloud_react/neutral@2x.webp": {
+      "layer": "companion",
+      "slot": "neutral",
+      "width": 122,
+      "height": 122,
+      "bytes": 3860,
+      "sha256": "3be9a6c61e90368883e152a21bb19a20815adbe5a4531470a3928bbd9f2072fc",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/cloud_react/neutral@2x.webp"
+    },
+    "cloud_react/happy@1x.webp": {
+      "layer": "companion",
+      "slot": "happy",
+      "width": 61,
+      "height": 61,
+      "bytes": 1544,
+      "sha256": "3e1373b9c1c0061f299f4637a1eab6c6fd7724e79001f1eee31abfcb1b390d6f",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/cloud_react/happy@1x.webp"
+    },
+    "cloud_react/happy@2x.webp": {
+      "layer": "companion",
+      "slot": "happy",
+      "width": 122,
+      "height": 122,
+      "bytes": 3906,
+      "sha256": "9f5a6c89837788d9659cc6224a6076aae818ff76d1748ca8a99a7920e458c638",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/cloud_react/happy@2x.webp"
+    }
+  },
+  "totals": {
+    "scenes": 1,
+    "steps": 8,
+    "bytes1x": 3066,
+    "bytes2x": 7766,
+    "durationMs": 3180
+  },
+  "provenance": {
+    "adapter": "gif-v1-steps",
+    "manifestSha256": "0f732ee41a83b4c892347c14f8b4980dae03ec82d9bfd712a2c827759f6ab3e5",
+    "consumedKeys": [
+      "nativeCanvas",
+      "anchors",
+      "placement",
+      "baseReferences",
+      "clips",
+      "files"
+    ]
+  },
+  "deferred": [
+    {
+      "scene": "play_cloud",
+      "reason": "双角色编排（主角三帧 + 伙伴 + 手掌层 + 握持点 G-S2 + 叠放序）属 B2；B1 只验\"序列资产能跑通\""
+    },
+    {
+      "scene": "sit_blink",
+      "reason": "主角帧序列（帧只存 id、经 PoseController.showFrame 上屏）属 B2；pose 域本轮禁改"
+    }
+  ]
+}

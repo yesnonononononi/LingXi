@@ -28,6 +28,9 @@ import {
   postureOf,
 } from './behavior/state-machine';
 import type { PetDebugHandle, PoseDebugSnapshot } from './debug/types';
+// 只引类型（`import type` 在产物里被完全擦除）：序列运行时本体只在 DEV 分支动态 import，
+// 生产构建不会因此产出 `sequences/*` 的 chunk。
+import type { SequenceDebugHandle } from './sequences/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { faceTileUrls as faceTileUrlMap, isFaceDegraded } from './assets/face-tiles';
@@ -879,7 +882,7 @@ function mountDevTools(): void {
   const machine = behavior;
   if (!host || !machine) return;
   void import('./debug/dev-backdoor').then((module) => {
-    module.installDevBackdoor({
+    const installed = module.installDevBackdoor({
       behavior: machine,
       dispatch: (op) => dispatchOp(op),
       dispatchEntry: (ops, label) => dispatchEntryOps(ops, label),
@@ -905,7 +908,80 @@ function mountDevTools(): void {
       host,
       onPoke: () => hintBar?.poke(),
     });
+    mountSequenceBackdoor(installed.handle);
   });
+}
+
+/**
+ * 序列通道（T05/B1）：把 `petDebug.sequence.play('cloud_react')` / `.stop()` 挂到后门句柄上。
+ *
+ * <p><b>只做三件事</b>：建伙伴层元素、建导演、把动画循环接到 `director.tick(now)`。
+ * 触发方式只有后门——**生产态一行都不执行**（本函数只被 `mountDevTools` 调用，而后者在
+ * `import.meta.env.DEV` 恒假时整段被摇掉）。生产态行为因此与 B1 之前逐字节一致：
+ * `petFacing` 恒 `-1`、没有任何自动触发的序列。</p>
+ *
+ * <p><b>为什么 `sequence` 这个键是"事后"挂上去的：</b>`PetDebugHandle` 的形状由
+ * `debug/types.ts` 定义，而本批文件白名单不允许改它（并行的 pose 工作正在同域改动）。
+ * 这里用交叉类型就地补一个可选键，键名只出现在本 DEV 分支里——生产产物搜不到
+ * `sequence` 这个后门键。</p>
+ *
+ * @param handle `installDevBackdoor` 返回的调试句柄（与 `window.petDebug` 同一个对象）
+ */
+function mountSequenceBackdoor(handle: PetDebugHandle): void {
+  const host = rootElement;
+  if (!host) return;
+  void Promise.all([import('./sequences/manifest'), import('./sequences/director')]).then(
+    ([manifestModule, directorModule]) => {
+      const sequences = manifestModule.PET_SEQUENCES;
+      const layer = new directorModule.DomSequenceLayer({
+        doc: document,
+        host: host as unknown as ElementLike,
+        layerId: 'companion',
+        density: POSE_DENSITY,
+        log: (message) => console.debug(message),
+      });
+      // B1 只验 dy：伙伴的舞台基准取美术 `play_cloud` 第 0 步的静止位置
+      // （`companionCenterX=1080, companionFootY=1454`，gif-v1 manifest 原文），
+      // 不自己编坐标。B2 起逐 step 的坐标会写进清单，这个基准就不再需要。
+      const director = new directorModule.SequenceDirector({
+        sequences,
+        clock: { now: () => Date.now() },
+        layers: { companion: layer },
+        base: { centerX: 1080, footY: 1454 },
+        onSceneEnd: (sceneId, onEnd) => console.debug(`[pet] 场景 ${sceneId} 结束：${onEnd}`),
+        log: (message) => console.debug(message),
+      });
+
+      let frameHandle = 0;
+      const loop = (): void => {
+        director.tick(Date.now());
+        frameHandle = director.isPlaying ? window.requestAnimationFrame(loop) : 0;
+      };
+      const stopLoop = (): void => {
+        if (frameHandle !== 0) window.cancelAnimationFrame(frameHandle);
+        frameHandle = 0;
+      };
+      const sequenceHandle: SequenceDebugHandle = {
+        play: (sceneId) => {
+          const report = director.play(sceneId);
+          stopLoop();
+          frameHandle = window.requestAnimationFrame(loop);
+          return report;
+        },
+        stop: () => {
+          stopLoop();
+          director.stop();
+        },
+        snapshot: () => director.snapshot(),
+        scenes: () => manifestModule.sceneIdsOf(sequences),
+      };
+      (handle as PetDebugHandle & { sequence?: SequenceDebugHandle }).sequence = sequenceHandle;
+      window.addEventListener('pagehide', () => {
+        stopLoop();
+        director.stop();
+      });
+    },
+  );
 }
 
 /**
