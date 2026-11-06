@@ -6,7 +6,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.domain.model.Task;
-import com.summit.dp.task.domain.model.TaskPage;
+import com.summit.dp.task.domain.model.TaskSummary;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
@@ -290,8 +290,18 @@ class BackgroundTaskConcurrencyTest {
         Task task = Task.builder().id(id).sessionId(10L).turnId(20L).command("controlled").build();
         records.add(task);
         when(repository.findById(id)).thenReturn(Optional.of(task));
-        when(repository.queryPageBySessionId(1, 50, 10L)).thenAnswer(invocation -> new TaskPage(1, 50, records.size(), List.copyOf(records)));
-        when(repository.findActiveBySessionId(10L)).thenReturn(List.of());
+        // 列表走只读摘要（不读 output CLOB）：按内存记录即时映射，语义与旧的全列分页一致。
+        when(repository.queryPageSummaryBySessionId(1, 50, 10L))
+                .thenAnswer(invocation -> records.stream()
+                        .map(BackgroundTaskConcurrencyTest::summaryOf).toList());
+        when(repository.findActiveSummaryBySessionId(10L)).thenReturn(List.of());
         manager.registerBackendProcess(new BackendProcess(task, handle));
+    }
+
+    /** 只读摘要：字段与列表展示所需的列一致（不含 output）。 */
+    private static TaskSummary summaryOf(Task task) {
+        return new TaskSummary(task.getId(), task.getSessionId(), task.getTurnId(), task.getCommand(),
+                task.getIntention(), task.getStatus(), task.getExitCode(), task.isTruncated(),
+                task.getCreateAt(), task.getCompleteAt());
     }
 }
