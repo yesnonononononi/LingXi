@@ -15,6 +15,7 @@ import com.summit.dp.toolcall.infrastructure.persistence.po.ToolCallPO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -180,15 +181,28 @@ public class ToolCallRepositoryImpl
                 .in(ToolCallPO::getExecutionId, executionIds));
     }
 
+    /**
+     * 回填 TOOL 行锚点：只写 {@code session_message_id} 并推进版本号，不读也不写任何 CLOB。
+     *
+     * <p><b>为什么不走全量 {@code updateById}</b>：那条路要先 {@code findById} 读出 4 个 CLOB，
+     * 再把它们原样写回，一次绑定在 H2 上就变成「4 次 CLOB 读 + 4 次临时 LOB 写」。
+     * 锚点回填只关心一列，条件更新即可。</p>
+     *
+     * <p><b>版本号自增必须保留</b>：其他持有旧模型的写入方靠 {@code version} 条件失败来发现冲突，
+     * 窄更新若不推进版本，一个持有旧快照的 {@code updateById} 就会把锚点抹掉。
+     * 条件里带上「值未等于目标值」，重复绑定同一消息不会产生实际变更。</p>
+     */
     @Override
     public void bindSessionMessage(String toolCallId, Long sessionMessageId) {
         if (toolCallId == null || sessionMessageId == null) return;
-        findById(toolCallId).ifPresent(call -> {
-            if (!sessionMessageId.equals(call.getSessionMessageId())) {
-                call.bindSessionMessage(sessionMessageId);
-                updateById(call);
-            }
-        });
+        toolCallMapper.update(null, Wrappers.<ToolCallPO>lambdaUpdate()
+                .set(ToolCallPO::getSessionMessageId, sessionMessageId)
+                // 领域方法 bindSessionMessage 会刷新 updated_at，窄更新保持同一语义。
+                .set(ToolCallPO::getUpdatedAt, Instant.now())
+                .setSql("version = version + 1")
+                .eq(ToolCallPO::getId, toolCallId)
+                .and(w -> w.isNull(ToolCallPO::getSessionMessageId)
+                        .or().ne(ToolCallPO::getSessionMessageId, sessionMessageId)));
     }
 
     @Override
