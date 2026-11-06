@@ -144,9 +144,19 @@ public class ToolCallRepositoryImpl
                 .eq(ToolCallPO::getStatus, ToolCallStatus.PENDING.dbValue()));
     }
 
+    /**
+     * 存在性判定只关心「有没有这一行」，因此走 {@code COUNT(*)}。
+     *
+     * <p>不能退回 {@code selectById}：它会把 4 个 CLOB 列一并读出来，H2 对每个超过 256 字节的
+     * CLOB 都要在 {@code copyLob} 里做临时 LOB 写放大，登记器的幂等预检每轮都会踩一次。</p>
+     */
     @Override
     public boolean existsById(String id) {
-        return id != null && toolCallMapper.selectById(id) != null;
+        if (id == null) {
+            return false;
+        }
+        return toolCallMapper.selectCount(Wrappers.<ToolCallPO>lambdaQuery()
+                .eq(ToolCallPO::getId, id)) > 0;
     }
 
     @Override
