@@ -111,8 +111,160 @@ export function isPetBehaviorDebugState(value: unknown): value is PetBehaviorDeb
   return typeof value === 'string' && (PET_BEHAVIOR_DEBUG_STATES as readonly string[]).includes(value);
 }
 
-/** 外部事件。 */
+/** 外部事件（用户输入侧）。 */
 export type PetBehaviorEvent = 'tap' | 'drag-start' | 'drag-end' | 'pet-end';
+
+/**
+ * 运动事件（主进程侧，M3 / T03）。
+ *
+ * <p><b>为什么运动走事件、而不是直接下发姿态：</b>姿态的唯一派生点是
+ * {@link postureOf}（M2 的裁决）。主进程**不知道姿态**，它只知道"我在往哪走、多快"，
+ * 所以它下发事实（`phase` / `gait` / `facing`），由渲染层派生成行为状态、再派生成姿态。
+ * 一旦让主进程直接下发 `posture`，姿态就有了第二个派生点，M2 刚收敛掉的那条纪律立刻作废
+ * （设计 §13.1 把"让主进程决定姿态"列为**被拒绝的方案**）。</p>
+ *
+ * <p><b>三条事件都绝不写 `lastInteractionAt`</b>（§5.3 的判据级要求）：
+ * 自主移动不是用户交互，空闲计时必须继续走。`P-M13` 守这一条。</p>
+ */
+export type PetMotionEvent = 'move-start' | 'move-gait' | 'move-end';
+
+/**
+ * 步态（与 `pet:command{type:'motion'}` 的 `gait` 同值域）。
+ *
+ * <p>`none` 只出现在"停止/到达"那一条上：主进程按 `phase:'arrived'` 收尾时带
+ * `gait:'none'`。渲染层把它当 `move-end` 处理（见 {@link PetBehaviorStateMachine.handle}）。</p>
+ */
+export type MotionGait = 'none' | 'walk' | 'run';
+
+/**
+ * 运动事件的上下文。
+ *
+ * <p>只有 `gait` 有用，`reason` 仅用于排障日志（`'arrived'` / `'aborted'` / `'stale'`）。
+ * **这里刻意没有速度、没有半径、没有坐标**——那些判定权全在主进程（门禁 G-M6 守它）。</p>
+ */
+export interface MotionContext {
+  /** 步态（`move-start` / `move-gait` 用；`move-end` 忽略）。 */
+  readonly gait: MotionGait;
+  /** 排障原因串（`'arrived'` / `'aborted'` / `'stale'` …）；缺省不记。 */
+  readonly reason?: string;
+}
+
+/** 运动事件的默认上下文：按走路起步（与主进程的初始档位一致）。 */
+export const DEFAULT_MOTION_CONTEXT: MotionContext = Object.freeze({ gait: 'walk' });
+
+/**
+ * 把不可信的上下文归一成 {@link MotionContext}。
+ *
+ * <p>调用方是 `main.ts` 的 IPC 路由，值来自主进程（跨进程边界 = 不可信）。非法 `gait`
+ * 一律降级成默认的 `walk` 而不是抛错：运动事实是**高频且可丢**的，为一条畸形包把渲染层
+ * 炸掉，用户看到的是"桌宠消失"，代价远大于"这一步按走处理"。要区分的是
+ * **`tap` 的 `TapContext`** 被误传进来这种情况——它没有 `gait` 字段，同样降级成默认。</p>
+ *
+ * @param ctx 任意上下文
+ * @returns 归一后的运动上下文
+ */
+function asMotionContext(ctx: TapContext | MotionContext): MotionContext {
+  const raw = ctx as Partial<MotionContext> | null | undefined;
+  const gait = raw?.gait;
+  if (gait !== 'walk' && gait !== 'run' && gait !== 'none') return DEFAULT_MOTION_CONTEXT;
+  const reason = typeof raw?.reason === 'string' && raw.reason.length > 0 ? raw.reason : undefined;
+  return reason === undefined ? { gait } : { gait, reason };
+}
+
+/**
+ * 运动意图的三种模式（与 `pet:motion-intent` 的 `mode` 同值域，§8.1）。
+ *
+ * <p><b>载荷里没有坐标</b>：意图表达的是"要不要动、为什么"，几何由主进程独占。
+ * 这是 §1.1 铁律（唯一位置写入者）在渲染层的延伸。</p>
+ */
+export type MotionMode = 'off' | 'follow' | 'roam';
+
+/** 运动意图的原因（§8.1 的枚举，四值固定）。 */
+export type MotionIntentReason = 'prefs' | 'idle-chain' | 'interaction' | 'dev';
+
+/** 运动意图的接收方（`main.ts` 的 `LocomotionBridge` 满足它；测试里用桩）。 */
+export interface MotionRequestPort {
+  /**
+   * 请求切换运动模式。
+   *
+   * @param mode 目标模式
+   * @param reason 原因（排障与去重都用它）
+   * @returns 是否真的下发（`false` = 被本地策略拦下，例如窗口隐藏 / 减少动态）
+   */
+  requestMode: (mode: MotionMode, reason: MotionIntentReason) => boolean;
+}
+
+/**
+ * 姿态 → 运动意图：**趴着/睡着不许再走**（§5 注释 2，判据 P-M15）。
+ *
+ * <p>为什么判据在渲染层而不是主进程：主进程不知道姿态（它只知道速度），
+ * 所以"该不该撤销运动"只能由渲染层在派生完姿态之后回答。</p>
+ *
+ * <p>判据照抄设计原文（`desired !== 'stand' && desired !== 'walk' && desired !== 'run'`）：
+ * 站姿、走路、奔跑是"可以动"的三态，坐/趴/睡/跳一律撤销运动。
+ * 传进来的是**姿态**（`postureOf` 的产物），不是行为状态——降级之后的真实形态才是
+ * 用户看到的东西（`sleeping` 在睡姿资产缺失时派生到 `lie`，两者都必须撤销运动）。</p>
+ *
+ * @param posture 当前姿态
+ * @returns `'off'`（必须撤销运动）或 `null`（允许运动）
+ */
+export function motionIntentForPosture(posture: PostureId): 'off' | null {
+  if (posture === 'stand' || posture === 'walk' || posture === 'run') return null;
+  return 'off';
+}
+
+/**
+ * 把"姿态 → 运动意图"的判定**落到端口上**（幂等）。
+ *
+ * <p>为什么不直接在调用点写 `if (posture === 'lie') requestMode(...)`：姿态同步每 250ms
+ * 跑一次，无条件下发会让 `pet:motion-intent` 每拍发一条（IPC 打满、日志刷屏，而"off 又 off"
+ * 本身不带信息）。所以这里用 `previous` 记住**上一次已请求过的模式**，只在"该 off 而当前
+ * 还不是 off"时下发一次。</p>
+ *
+ * @param posture 当前姿态
+ * @param port 运动意图端口（测试里传桩）
+ * @param previous 上一次已经请求过的模式（`null` = 还没请求过）
+ * @returns 请求之后的"已请求模式"（调用方存回去做下一次的 `previous`）
+ */
+export function applyMotionPolicy(
+  posture: PostureId,
+  port: MotionRequestPort,
+  previous: MotionMode | null,
+): MotionMode | null {
+  const intent = motionIntentForPosture(posture);
+  if (intent === null) return previous;
+  if (previous === 'off') return previous;
+  port.requestMode(intent, 'idle-chain');
+  return intent;
+}
+
+/**
+ * **朝向只在走/跑时生效**（§7.1 第二条，G-M7）。
+ *
+ * <p>为什么必须有这道前置条件：`setFacing` 在非站姿姿态下会重排播放（朝向敏感的批要重新
+ * 选片段），如果站着/坐着时也被运动事实翻一次朝向，用户会看到"坐着坐着突然转身"——而它
+ * 其实一动不动。竖直为主的行进不翻朝向这条判据由主进程的滞回决定器负责
+ * （`pet-motion.cjs` 的 `decideFacing` + `MOTION.facingFlipHysteresisDip`），
+ * 渲染层**不复制那份数值**（理由写在 `main.ts` 的 `LocomotionBridge` 注释里）。</p>
+ *
+ * @param posture 当前姿态（`poseController.posture`）
+ * @param facing 目标朝向（来自主进程的 `pet:command{type:'motion'}`）
+ * @param setFacing 朝向写入器（生产态是 `applyPoseFacing`，测试里是计数桩）
+ * @returns 是否真的写了朝向
+ * @throws {TypeError} 朝向不是 `-1` / `1`（不可信输入必须炸，不许静默）
+ */
+export function applyFacingIfMoving(
+  posture: PostureId,
+  facing: Facing,
+  setFacing: (next: Facing) => void,
+): boolean {
+  if (facing !== -1 && facing !== 1) {
+    throw new TypeError(`[pet] 运动朝向只能是 -1 或 1，实际为 ${JSON.stringify(facing)}`);
+  }
+  if (posture !== 'walk' && posture !== 'run') return false;
+  setFacing(facing);
+  return true;
+}
 
 /**
  * 一次点击的上下文（**判定结果由调用方算好再传进来**，行为层不做坐标运算）。
@@ -151,6 +303,22 @@ export const MULTI_TAP_THRESHOLD = 3;
 
 /** 无交互多久后进入睡眠（毫秒）。 */
 export const SLEEP_AFTER_IDLE_MS = 90000;
+
+/**
+ * **空闲链的三档前提**（M3 / T03，设计 §5.3）。
+ *
+ * <p>`tick()` 里 20s / 60s / 90s 三处升级的**前提**从"状态叫 `idle`"放宽为"当前没有被人
+ * 交互打断"，集合就是这三个状态。这样做的理由只有一条：自主移动**不是交互**
+ * （§5.3 的判据级要求：运动事件绝不写 `lastInteractionAt`），所以猫一边走一边照样
+ * 该在 20s 到点坐下、60s 犯困、90s 睡着。</p>
+ *
+ * <p><b>阈值常量一个都没改</b>：`SIT_AFTER_IDLE_MS` / `SLEEPY_AFTER_IDLE_MS` /
+ * `SLEEP_AFTER_IDLE_MS` 仍是 20000 / 60000 / 90000。这里换的只是"允许升级的状态集合"。</p>
+ *
+ * <p><b>这是唯一的开关</b>：把它改回 `['idle']` 就退回 M2 的行为（漫游与空闲链互斥），
+ * 是设计 §13.2 R1 登记的回退手段。测试 `petBehaviorMotion.test.ts` 的 P-M14 守它。</p>
+ */
+export const IDLE_CHAIN_STATES: readonly PetBehaviorState[] = Object.freeze(['idle', 'walk', 'run']);
 
 /**
  * 松手后静置多久**坐下**（毫秒，M2 切片 1 新增）。
@@ -446,6 +614,16 @@ export class PetBehaviorStateMachine {
   }
 
   /**
+   * 是否在自主移动（`walk` / `run`）。
+   *
+   * <p>渲染层的运动看门狗用它判断"姿态还写着在走，但主进程已经不再报位移了"（§7 的
+   * 自愈要求）。**它不读时间、不做判定**——只是把状态机自己的事实透出来。</p>
+   */
+  get isMoving(): boolean {
+    return this.stateValue === 'walk' || this.stateValue === 'run';
+  }
+
+  /**
    * 当前正在持续的动作（状态型；`null` = 没有）。
    *
    * <p>调试与测试用它断言"睡眠确实是一次下发的持续动作"，而不是每拍重下发。</p>
@@ -460,17 +638,103 @@ export class PetBehaviorStateMachine {
   }
 
   /**
-   * 处理一次用户事件。
+   * 处理一次事件（**用户事件与运动事件共用这一个入口**，与设计 §3.4.1 的
+   * `R->>S: handle('move-start'|'move-gait')` / `handle('move-end', reason:'arrived')` 一致）。
    *
-   * @param event 事件（`tap` / `drag-start` / `drag-end` / `pet-end`）
-   * @param ctx 点击上下文（`profile` + `holdMs`）；非 `tap` 事件忽略
+   * <p>两组事件是**互斥的来源**：用户事件刷新 `lastInteractionAt`（既有语义，不改），
+   * 运动事件**一个字都不写**它（§5.3）。所以在同一个方法里按事件名分派，而不是给运动另开
+   * 一个入口——「谁在驱动行为」只有一处答案。</p>
+   *
+   * @param event 事件（`tap` / `drag-start` / `drag-end` / `pet-end`，或
+   *   `move-start` / `move-gait` / `move-end`）
+   * @param ctx 上下文：用户事件是 {@link TapContext}（非 `tap` 忽略）；
+   *   运动事件是 {@link MotionContext}（缺省按走路起步）
    * @returns 需要下发的指令（可能为空）
    */
-  handle(event: PetBehaviorEvent, ctx: TapContext = DEFAULT_TAP_CONTEXT): PresentationOp[] {
+  handle(event: PetMotionEvent, ctx?: MotionContext): PresentationOp[];
+  handle(event: PetBehaviorEvent, ctx?: TapContext): PresentationOp[];
+  handle(
+    event: PetBehaviorEvent | PetMotionEvent,
+    ctx: TapContext | MotionContext = DEFAULT_TAP_CONTEXT,
+  ): PresentationOp[] {
+    if (event === 'move-start') return this.startMove(asMotionContext(ctx));
+    if (event === 'move-gait') return this.gaitMove(asMotionContext(ctx));
+    if (event === 'move-end') return this.finishMove(asMotionContext(ctx));
+    const tapCtx = ctx as TapContext;
     if (event === 'drag-start') return this.startDrag();
     if (event === 'drag-end') return this.endDrag();
     if (event === 'pet-end') return this.endPet();
-    return this.tap(ctx);
+    return this.tap(tapCtx);
+  }
+
+  /**
+   * 起步（`move-start`）：进入 `walk` / `run`。
+   *
+   * <p><b>不产生任何 `PresentationOp`</b>：走/跑是**姿态**（`postureOf` 派生），姿态走独立
+   * 通道（`PoseController.setPosture`），动作与表情在姿态态本来就被 CSS 藏起来
+   * （`.pet-action` / `.pet-layers` 是 `display:none`）。返回空数组是**正确**的，
+   * 与 `enterSit` 同一口径。</p>
+   *
+   * <p><b>三种"不接"的情形</b>：①拖拽中（位置写入权在 `drag`，运动事实是残留）；
+   * ②已经睡着/困倦（趴着走 = 穿模，§5 注释 2；此时渲染层应当已下发 `mode:'off'`，
+   * 迟到的运动事实必须忽略而不是把猫叫起来）；③`gait:'none'`（主进程的停止帧，走
+   * {@link finishMove}，这是自愈路径，不许当起步）。</p>
+   *
+   * @param ctx 运动上下文
+   * @returns 空数组（姿态不产生表现层指令）
+   */
+  private startMove(ctx: MotionContext): PresentationOp[] {
+    if (ctx.gait === 'none') return this.finishMove(ctx);
+    if (this.dragging || this.stateValue === 'drag') return [];
+    if (!IDLE_CHAIN_STATES.includes(this.stateValue)) {
+      // 坐着 / 趴着 / 睡着 / 正在播动作的时候收到运动事实：一律忽略并说出来。
+      // 两种来源都会造成它：①主进程的 off 请求还在路上（竞态）；②迟到的高频包。
+      // 不忽略的后果就是"趴着走"（§5 注释 2 的穿模）或"坐着平移"。
+      this.log(`[pet] 行为：${this.stateValue} 不允许发起移动（${ctx.reason ?? 'move-start'}），忽略`);
+      return [];
+    }
+    const next: PetBehaviorState = ctx.gait === 'run' ? 'run' : 'walk';
+    if (this.stateValue === next) return [];
+    // `enter()` 会清 `bridgeUntil` 与 `sustained`（离开持久态），这正是"开始移动"该做的事；
+    // **`lastInteractionAt` 一个字都不写**（P-M13 守这一条）
+    this.enter(next, null);
+    this.log(`[pet] 行为：${next}（gait=${ctx.gait}${ctx.reason === undefined ? '' : ` / ${ctx.reason}`}）`);
+    return [];
+  }
+
+  /**
+   * 步态切换（`move-gait`）：`walk ↔ run`。
+   *
+   * <p><b>为什么它同时兼任"起步的自愈"</b>：主进程每拍只发字段变化的包，起步那一拍若
+   * 恰好丢了（IPC 抖动、渲染层刚加载），后面的 `move-gait` 会先到。此时若只做"切换"就会
+   * 出现"有位移但姿态是 stand"的原地滑行。所以状态不在走/跑时按 {@link startMove} 处理。</p>
+   *
+   * @param ctx 运动上下文
+   * @returns 空数组（姿态不产生表现层指令）
+   */
+  private gaitMove(ctx: MotionContext): PresentationOp[] {
+    return this.startMove(ctx);
+  }
+
+  /**
+   * 停下（`move-end`）：回到 `idle`，**空闲计时不清零**。
+   *
+   * <p><b>为什么不立刻坐下</b>：坐下由 20s 空闲链决定（§6.1）。`move-end` 只把状态退回
+   * `idle`；下一拍 `tick()` 若发现 `now - lastInteractionAt >= SIT_AFTER_IDLE_MS` 就自然
+   * 进入 `sit`——"到达即停 → 站定 → 坐下"是**合法且预期**的顺序，不是 bug。</p>
+   *
+   * <p><b>为什么返回空数组</b>：走/跑期间没有任何表现层指令落地（见 {@link startMove}），
+   * 所以回 `idle` 不需要补发。若这里凭空发一条 `idle` op，会把用户上一次点击留下的未到期
+   * 动作从 base 层顶掉（观感是"走到目的地后表情抖一下"）。</p>
+   *
+   * @param ctx 运动上下文（只用 `reason` 记日志）
+   * @returns 空数组
+   */
+  private finishMove(ctx: MotionContext): PresentationOp[] {
+    if (this.stateValue !== 'walk' && this.stateValue !== 'run') return [];
+    this.enter('idle', null);
+    this.log(`[pet] 行为：停止移动（${ctx.reason ?? 'move-end'}），空闲计时不清零`);
+    return [];
   }
 
   /**
@@ -525,15 +789,15 @@ export class PetBehaviorStateMachine {
       return this.idleOps(2, 'behavior:idle:bridge', IDLE_BRIDGE_MS);
     }
 
-    if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) {
+    if (IDLE_CHAIN_STATES.includes(this.stateValue) && now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) {
       return this.enterSleeping();
     }
     // 先困倦（60s）再真睡（90s）：顺序不能反，否则 60s 那条永远到不了
-    if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) {
+    if (IDLE_CHAIN_STATES.includes(this.stateValue) && now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) {
       return this.enterSleepy();
     }
     // 落座（20s，M2）：必须排在 60s / 90s 之后，否则会把困倦与睡眠两档全吃掉
-    if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SIT_AFTER_IDLE_MS) {
+    if (IDLE_CHAIN_STATES.includes(this.stateValue) && now - this.lastInteractionAt >= SIT_AFTER_IDLE_MS) {
       return this.enterSit();
     }
     return [];

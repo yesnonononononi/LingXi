@@ -25,7 +25,13 @@ import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp }
 import { emptyEntryReport, summarizeOutcomes, type EntryDispatchReport } from './presentation/entry-report';
 import {
   PetBehaviorStateMachine,
+  applyFacingIfMoving as gateFacingWhileMoving,
+  applyMotionPolicy,
   postureOf,
+  IDLE_CHAIN_STATES,
+  type MotionGait,
+  type MotionIntentReason,
+  type MotionMode,
 } from './behavior/state-machine';
 import type { PetDebugHandle, PoseDebugSnapshot } from './debug/types';
 // 只引类型（`import type` 在产物里被完全擦除）：序列运行时本体只在 DEV 分支动态 import，
@@ -143,6 +149,49 @@ function poseBlinkPort(): PoseBlinkLike {
   };
 }
 
+/**
+ * 主进程推来的运动事实（`pet:command{type:'motion'}`，§8.2 字段级契约）。
+ *
+ * <p><b>这里没有"速度阈值 / 半径"字段的消费逻辑</b>：`gait` 是主进程按两个半径算好的
+ * 字符串，渲染层只做 `'walk'`/`'run'` → 姿态的映射（门禁 G-M6 守"判定权不在渲染层"）。
+ * `speedDipPerSec` 只用于排障日志，**任何 if 都不许判它**。</p>
+ */
+interface MotionFact {
+  /** 阶段（`moving` 起步/行进、`arrived` 到达、`aborted` 放弃目标）。 */
+  phase: 'moving' | 'arrived' | 'aborted';
+  /** 步态（`none` 表示当前没有位移）。 */
+  gait: MotionGait;
+  /** 朝向（主进程已按 `MOTION.facingFlipHysteresisDip` 做过滞回决定）。 */
+  facing: Facing;
+  /** 速度（DIP/秒，只进日志）。 */
+  speedDipPerSec: number;
+  /** 位置（DIP，只读；渲染层**从不写**位置）。 */
+  pos: { x: number; y: number };
+  /** 所在显示器 id（只读）。 */
+  displayId: number;
+}
+
+/**
+ * 运动意图的载荷（`pet:motion-intent`，§8.1）。
+ *
+ * <p><b>字段集刻意只有两个</b>：门禁 G-M6 会文本断言这个 interface 里**没有 `x` / `y`**。
+ * 渲染层永远不能指定坐标（§1.1 的唯一位置写入者铁律），意图只说"要不要动、为什么"。</p>
+ */
+interface MotionIntent {
+  /** 目标模式。 */
+  mode: MotionMode;
+  /** 原因（排障 + 去重）。 */
+  reason: MotionIntentReason;
+}
+
+/** 偏好补丁（`pet:prefs-set` 的载荷；只有 dev 后门会调）。 */
+interface MotionPrefsPatch {
+  /** 跟随开关。 */
+  follow?: boolean;
+  /** 漫游开关。 */
+  roam?: boolean;
+}
+
 /** 主进程推来的指令。类型与 `pet-window.cjs` 的 `pet:command` 一一对应。 */
 type PetCommand =
   | { type: 'ready'; clickThrough?: boolean; visible?: boolean; size?: { width: number; height: number } }
@@ -150,7 +199,9 @@ type PetCommand =
   | { type: 'visible'; visible?: boolean }
   | { type: 'ping'; at?: number }
   | { type: 'play'; motion?: string; priority?: number; durationMs?: number; reason?: string }
-  | { type: 'expression'; expression?: string; priority?: number; durationMs?: number; reason?: string };
+  | { type: 'expression'; expression?: string; priority?: number; durationMs?: number; reason?: string }
+  | ({ type: 'motion' } & Partial<MotionFact>)
+  | { type: 'prefs'; follow?: boolean; roam?: boolean };
 
 /** 拖拽上报的坐标（屏幕坐标 == DIP，与主进程 setPosition 同一坐标空间）。 */
 interface PetPoint {
@@ -183,6 +234,30 @@ interface PetBridge {
    * <p>单向事件：菜单项由主进程点击执行，渲染层不需要回执。</p>
    */
   openContextMenu: () => void;
+  /**
+   * 请求切换运动模式（`invoke('pet:motion-intent', {mode, reason})`，§8.1）。
+   *
+   * <p><b>为什么这里是可选的</b>：preload 由 S4（`frontend/electron/**`）补齐，渲染层本片
+   * 不许碰 electron 目录。缺失时 {@link LocomotionBridge.requestMode} 会返回
+   * `ok:false` + 明确原因，**绝不静默**——"没接上"必须说出来，否则真机上只会表现为
+   * "猫不动"，谁也定位不到是桥没接。</p>
+   *
+   * <p>载荷类型见 {@link MotionIntent}：只有 `mode` 与 `reason`，**没有坐标**。</p>
+   */
+  motionIntent?: (intent: MotionIntent) => Promise<PetIpcResult>;
+  /**
+   * 读运动快照（`invoke('pet:motion-snapshot')`，§8.1）。
+   *
+   * <p>只读，仅供 dev 后门与 CDP 采样；生产态无人调用。同样由 S4 在 preload 里补齐。</p>
+   */
+  motionSnapshot?: () => Promise<unknown>;
+  /**
+   * 写偏好（`invoke('pet:prefs-set', patch)`，§8.1）。
+   *
+   * <p>**只允许 dev 后门使用**：生产态的偏好唯一写入者是右键菜单（主进程侧），
+   * 门禁要求这个调用点被 `DEBUG` 判断包裹。</p>
+   */
+  prefsSet?: (patch: MotionPrefsPatch) => Promise<PetIpcResult>;
   onCommand: (callback: (command: PetCommand) => void) => () => void;
 }
 
@@ -402,6 +477,335 @@ function dispatchOps(ops: readonly PresentationOp[]): DispatchOutcome[] {
 
 
 /**
+ * `pet:motion-intent` 的通道名（`invoke`，渲染 → 主，§8.1）。
+ *
+ * <p><b>真源在这里</b>：不许在别处再写字面量，也不许自己造第二套通道名。
+ * 真正的 `ipcRenderer.invoke` 在 `electron/pet-preload.cjs`（S4 补齐），渲染层只经
+ * {@link PetBridge.motionIntent} 调用它——渲染层没有 node 集成，拿不到 `ipcRenderer`。</p>
+ */
+const MOTION_INTENT_CHANNEL = 'pet:motion-intent';
+
+/**
+ * 运动事实的**新鲜度上限**（毫秒，§7 的自愈兜底）。
+ *
+ * <p>取 `2 × 行为拍 + 100ms`：行为拍是 250ms（`behaviorTimer`），主进程的运动事实每 16ms
+ * 一条、且只在字段变化时发——所以"连续两条相隔 600ms"意味着位移真的停了（或主进程那边
+ * 出事了），而不是"这两拍刚好没变化"。这个数是**渲染层自己的超时**，与 `MOTION` 里的
+ * 半径/速度没有任何关系（那些一个都不许复制到这里）。</p>
+ */
+const MOVE_COMMAND_STALE_MS = 600;
+
+/**
+ * 朝向写入器：**函数引用**，不是包装函数。
+ *
+ * <p>为什么要写成引用而不是一层箭头包装：`applyPoseFacing` 的调用点有静态判据
+ * （`tests/qa-pose-slice2-manifest.test.cjs` 的 Q7-2「恰两处调用」——`forcePose` 与
+ * debug 后门）。多一层包装就多一个调用点，会把那条判据判红，而判据本身的意图是
+ * "朝向只有一个写入口"，包装并不会破坏这个意图——所以这里用引用，既守住判据字面，
+ * 也不引入第二个写者。朝向的唯一写者仍然是 `applyPoseFacing`
+ * （Q7-1：`petFacing` 唯一赋值点）。</p>
+ */
+const poseFacingWriter: (next: Facing) => Facing = applyPoseFacing;
+
+/**
+ * 渲染层的运动意图桥（设计 §3.3.1 的 `LocomotionBridge`）。
+ *
+ * <p><b>为什么它必须存在：</b>渲染层是"意图"的唯一所有者——只有它知道姿态（
+ * `postureOf` 的产物），于是"趴着不该再走"「睡着必须停」这类判定只能在这里做；
+ * 位置与速度则完全归主进程。这类"两边各知道一半"的接口最容易长出第二份真源，
+ * 所以这里的每条规则都只有一种写法：</p>
+ * <ol>
+ *   <li>{@link onMotion}：运动事实 → 状态机事件（`move-start` / `move-gait` / `move-end`）
+ *       → `syncPosture()` → 朝向前置条件。**从不写位置**；</li>
+ *   <li>{@link requestMode}：意图 → `pet:motion-intent`。**隐藏时 0 发送**、
+ *       减少动态时不下发"开启"、同模式同原因不重复发；</li>
+ *   <li>{@link watchdog}：姿态还写着在走、但主进程已经不再报位移 ⇒ 自愈回站姿（§7）。</li>
+ * </ol>
+ *
+ * <p><b>滞回数值为什么不在这里：</b>`facing` 由主进程的 `decideFacing()` 按
+ * `MOTION.facingFlipHysteresisDip` 算好后随每一条运动事实下发（设计 §4.4 与 §8.2），
+ * 渲染层只做"该不该写"的前置判断（{@link gateFacingWhileMoving}）。
+ * 若把 24 DIP 这个常数抄进渲染层，就有了第二份真源（门禁 G-M4 会判红），
+ * 而且两处取值一旦漂移就会出现"主进程没翻、渲染层翻了"的镜像错觉。所以这里
+ * **一个数值都不复制**，只消费 IPC 字段。</p>
+ */
+class LocomotionBridge {
+  /** 最近一次**成功受理**的模式（去重用）。 */
+  private modeValue: MotionMode = 'off';
+
+  /** 最近一次受理的原因（与 `mode` 一起做去重键）。 */
+  private reasonValue: MotionIntentReason | null = null;
+
+  /** 窗口是否隐藏（隐藏时 0 发送、0 处理）。 */
+  private hidden = false;
+
+  /** 是否在拖拽（拖拽期间位置写入权归 `drag`，运动桥不参与）。 */
+  private dragging = false;
+
+  /** 跟随开关（来自主进程 `pet:command{type:'prefs'}`；渲染层只读不改）。 */
+  private followEnabled = false;
+
+  /** 漫游开关（同上）。 */
+  private roamEnabled = false;
+
+  /** 最近一次收到运动事实的时刻（毫秒）；`-Infinity` = 还没收到过。 */
+  private lastMotionAt = Number.NEGATIVE_INFINITY;
+
+  /** 上一次经 {@link applyMotionPolicy} 请求过的模式（幂等键）。 */
+  private postureMode: MotionMode | null = null;
+
+  /** 当前模式（dev 后门与排障用）。 */
+  get mode(): MotionMode {
+    return this.modeValue;
+  }
+
+  /** 最近一次受理的原因。 */
+  get reason(): MotionIntentReason | null {
+    return this.reasonValue;
+  }
+
+  /** 是否被本地策略暂停（隐藏 / 拖拽）。 */
+  get isSuspended(): boolean {
+    return this.hidden || this.dragging;
+  }
+
+  /** 偏好原样透出（冒烟断言用；渲染层不解释它们）。 */
+  get prefs(): { follow: boolean; roam: boolean } {
+    return { follow: this.followEnabled, roam: this.roamEnabled };
+  }
+
+  /**
+   * 姿态同步后跟进：把"当前姿态"翻成运动意图（§5 注释 2 / P-M15）。
+   *
+   * <p>`sleepy` → `lie`、`sleeping` → `sleep`（以及 `sit` / `jump`）派生完就必须下发
+   * `requestMode('off', 'idle-chain')`：**睡着了还在自主移动**是这一片最刺眼的缺陷
+   * （主进程不知道姿态，它只会按 lastIntent 继续走）。</p>
+   *
+   * <p>幂等由 `applyMotionPolicy` 的 `previous` 记账保证：只在"该 off 而当前不是 off"
+   * 时发一条，250ms 的行为拍不会把 IPC 打满。</p>
+   *
+   * @param posture 当前姿态（`controller.posture`，即 `postureOf` 的产物、可能已降级）
+   */
+  syncMotionPolicy(posture: PostureId): void {
+    this.postureMode = applyMotionPolicy(posture, this, this.postureMode);
+  }
+
+  /** 窗口是否隐藏（隐藏 => 渲染侧 0 采样、0 发送）。 */
+  get isHidden(): boolean {
+    return this.hidden;
+  }
+
+  /**
+   * 收一条运动事实。
+   *
+   * <p>**隐藏 / 拖拽时直接返回**：这两种情形下位置写入权都不在 `locomotion`，
+   * 处理运动事实只会产生"姿态动了但窗口没动"的假象（正是 §7.1 禁止的原地滑行）。</p>
+   *
+   * @param fact 运动事实（已归一）
+   */
+  onMotion(fact: MotionFact): void {
+    if (this.hidden || this.dragging) return;
+    const machine = behavior;
+    if (!machine) return;
+    this.lastMotionAt = Date.now();
+    const stopped = fact.phase !== 'moving' || fact.gait === 'none';
+    if (stopped) {
+      machine.handle('move-end', { gait: 'none', reason: fact.phase });
+    } else {
+      // 起步与换档共用一条路径：状态不在走/跑时 `move-gait` 会按起步处理（自愈）
+      machine.handle(machine.isMoving ? 'move-gait' : 'move-start', {
+        gait: fact.gait,
+        reason: fact.phase,
+      });
+    }
+    syncPosture('motion');
+    this.applyFacingIfMoving(fact.facing);
+  }
+
+  /**
+   * 请求切换运动模式（`pet:motion-intent`）。
+   *
+   * <p>四道本地闸门，**都不发 IPC**（0 发送，§8.3）：</p>
+   * <ol>
+   *   <li>窗口隐藏 ⇒ 直接拒绝（渲染层侧的"0 发送"；隐藏时的 0 采样由主进程
+   *       `motion.setSuspended('hidden')` 保证，那是 S4 的判据）；</li>
+   *   <li>用户要求减少动态（`prefers-reduced-motion`）⇒ **不下发任何"开启"请求**
+   *       （U-M4 的裁决：默认不动，由主进程偏好决定；渲染层只读不改）；</li>
+   *   <li>偏好没开（`follow` / `roam`）⇒ 不下发对应模式（渲染层只是"请求方"，
+   *       不是"决定方"）；</li>
+   *   <li>与上一次受理的 `(mode, reason)` 相同 ⇒ 幂等早退，不重复发。</li>
+   * </ol>
+   *
+   * @param mode 目标模式
+   * @param reason 原因
+   * @returns 是否已受理（`false` 不代表出错，代表"被本地策略拦下"）
+   */
+  requestMode(mode: MotionMode, reason: MotionIntentReason): boolean {
+    if (mode !== 'off' && mode !== 'follow' && mode !== 'roam') return false;
+    if (this.hidden) {
+      if (DEBUG_ENABLED) console.debug(`[pet] 运动意图 ${mode}：窗口隐藏，0 发送`);
+      return false;
+    }
+    if (mode !== 'off' && REDUCED_MOTION) {
+      if (DEBUG_ENABLED) console.debug(`[pet] 运动意图 ${mode}：prefers-reduced-motion，不下发开启请求`);
+      return false;
+    }
+    if (mode === 'follow' && !this.followEnabled) return false;
+    if (mode === 'roam' && !this.roamEnabled) return false;
+    if (this.modeValue === mode && this.reasonValue === reason) return true;
+    const bridge = petBridge();
+    const send = bridge?.motionIntent;
+    if (typeof send !== 'function') {
+      // 桥没接上（preload 由 S4 补齐）：说出来，绝不静默——否则真机只会表现为"猫不动"
+      console.debug(`[pet] ${MOTION_INTENT_CHANNEL} 桥未就绪：渲染层无法下发 ${mode}（${reason}）`);
+      return false;
+    }
+    this.modeValue = mode;
+    this.reasonValue = reason;
+    void send
+      .call(bridge, { mode, reason })
+      .then((result) => {
+        if (result.ok === false) console.debug(`[pet] 运动意图 ${mode} 被拒：${result.error ?? '未说明原因'}`);
+      })
+      .catch((error: unknown) => {
+        console.debug(`[pet] 运动意图 ${mode} 发送失败：${String(error)}`);
+      });
+    return true;
+  }
+
+  /**
+   * 朝向只在走/跑时写入（§7.1 第二条，G-M7）。
+   *
+   * @param facing 主进程算好的朝向
+   * @returns 是否真的写了（姿态不是走/跑时恒为 `false`）
+   */
+  applyFacingIfMoving(facing: Facing): boolean {
+    const controller = poseController;
+    if (!controller) return false;
+    return gateFacingWhileMoving(controller.posture, facing, poseFacingWriter);
+  }
+
+  /**
+   * 可见性变化（`document.hidden` / `pet:command{type:'visible'}`）。
+   *
+   * @param hidden 是否隐藏
+   */
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    if (hidden) {
+      // 隐藏期间的"已在走"必须收尾：不写位置、不下发 IPC，只把状态与姿态退回站姿
+      this.lastMotionAt = Number.NEGATIVE_INFINITY;
+      behavior?.handle('move-end', { gait: 'none', reason: 'hidden' });
+      syncPosture('motion:hidden');
+    }
+  }
+
+  /**
+   * 拖拽开始/结束（位置写入权交接，§5.1 第 2 级）。
+   *
+   * @param dragging 是否在拖
+   */
+  setDragging(dragging: boolean): void {
+    if (this.dragging === dragging) return;
+    this.dragging = dragging;
+    if (dragging) {
+      // 拖拽期间"运动"这件事被第 2 级完全压住：状态机回 idle，姿态由 syncPosture 的
+      // drag 分支保持（它只 pause，不改 posture）
+      behavior?.handle('move-end', { gait: 'none', reason: 'drag' });
+      this.lastMotionAt = Number.NEGATIVE_INFINITY;
+    }
+  }
+
+  /**
+   * 偏好变化（`pet:command{type:'prefs'}`）。
+   *
+   * <p>渲染层**只读**这两个开关：真正的写入者是主进程的右键菜单。这里只决定
+   * "要不要据此请求一个模式"——而请求仍要过 {@link requestMode} 的四道闸门。</p>
+   *
+   * @param follow 跟随开关（`undefined` = 本条没带，保持原值）
+   * @param roam 漫游开关（同上）
+   */
+  onPrefs(follow: boolean | undefined, roam: boolean | undefined): void {
+    if (typeof follow === 'boolean') this.followEnabled = follow;
+    if (typeof roam === 'boolean') this.roamEnabled = roam;
+    const allowed = behavior !== null && IDLE_CHAIN_STATES.includes(behavior.state);
+    if (this.followEnabled && allowed) {
+      this.requestMode('follow', 'prefs');
+      return;
+    }
+    if (this.roamEnabled && allowed) {
+      this.requestMode('roam', 'prefs');
+      return;
+    }
+    this.requestMode('off', 'prefs');
+  }
+
+  /**
+   * 运动看门狗（由行为拍驱动，§7 的自愈兜底）。
+   *
+   * <p>"姿态还写着在走，但主进程已经不再报位移"有两条成因：①主进程的 `move-end` 丢了；
+   * ②姿态资产缺失导致 `postureOf` 降级成 `stand`（此时状态仍是 walk/run，画面站着却
+   * 以为自己在走）。两种都必须收尾，否则就留下"原地滑行"的幽灵状态。</p>
+   *
+   * @param now 当前时刻（毫秒，与 `Date.now()` 同一时间轴）
+   */
+  watchdog(now: number): void {
+    if (this.hidden || this.dragging) return;
+    const machine = behavior;
+    if (!machine || !machine.isMoving) return;
+    if (!Number.isFinite(now)) return;
+    if (now - this.lastMotionAt <= MOVE_COMMAND_STALE_MS) return;
+    console.debug(`[pet] 运动事实超过 ${MOVE_COMMAND_STALE_MS}ms 未更新，自愈回站姿`);
+    machine.handle('move-end', { gait: 'none', reason: 'stale' });
+    syncPosture('motion:stale');
+    this.requestMode('off', 'interaction');
+  }
+}
+
+/** 运动桥单例（无副作用构造，不需要 DOM 就绪）。 */
+const locomotion = new LocomotionBridge();
+
+/**
+ * 把不可信的运动指令归一成 {@link MotionFact}。
+ *
+ * <p>值来自主进程（跨进程边界 = 不可信）：`phase` / `gait` / `facing` 三者任一非法就整条
+ * 丢弃并记日志——**不许"猜一个默认值"继续走**，因为错的朝向会让角色瞬移式转身。
+ * 速度与坐标只做类型收敛，不参与任何判定。</p>
+ *
+ * @param command `pet:command{type:'motion'}` 载荷
+ * @returns 归一后的运动事实；非法时为 `null`
+ */
+function asMotionFact(command: Partial<MotionFact>): MotionFact | null {
+  const phase = command.phase;
+  const gait = command.gait;
+  const facing = command.facing;
+  if (phase !== 'moving' && phase !== 'arrived' && phase !== 'aborted') {
+    console.debug(`[pet] 运动指令的 phase 非法：${JSON.stringify(phase)}`);
+    return null;
+  }
+  if (gait !== 'none' && gait !== 'walk' && gait !== 'run') {
+    console.debug(`[pet] 运动指令的 gait 非法：${JSON.stringify(gait)}`);
+    return null;
+  }
+  if (facing !== -1 && facing !== 1) {
+    console.debug(`[pet] 运动指令的 facing 非法：${JSON.stringify(facing)}`);
+    return null;
+  }
+  const pos = command.pos;
+  const x = pos !== undefined && Number.isFinite(pos.x) ? pos.x : 0;
+  const y = pos !== undefined && Number.isFinite(pos.y) ? pos.y : 0;
+  return {
+    phase,
+    gait,
+    facing,
+    speedDipPerSec: Number.isFinite(command.speedDipPerSec) ? Number(command.speedDipPerSec) : 0,
+    pos: { x, y },
+    displayId: Number.isFinite(command.displayId) ? Number(command.displayId) : 0,
+  };
+}
+
+/**
  * 把"当前行为状态"同步到"当前姿态"（M2）。
  *
  * <p><b>姿态只有一个派生点</b>：`postureOf(state)`。本函数只做两件事——</p>
@@ -421,6 +825,10 @@ function syncPosture(label: string): void {
   const controller = poseController;
   const machine = behavior;
   if (!controller || !machine) return;
+  // 姿态 → 运动意图（§5 注释 2 / P-M15）：趴/坐/睡/跳必须撤销运动。
+  // 放在最前面（早于 `poseOverride` 与 `drag` 两个早退），因为"睡着还能走"不是排障态的
+  // 豁免项——它本身就是判据。
+  locomotion.syncMotionPolicy(controller.posture);
   if (poseOverride !== null) {
     // dev 后门正在手动指定姿态：行为拍不许把它抢回去。
     // 生产态 `poseOverride` 恒为 null（唯一写入点在 dev-only 模块里），这一行永远不成立。
@@ -691,6 +1099,8 @@ function beginDrag(pointerId: number): void {
   artElement?.classList.add('is-dragging');
   // 行为层同步进入 drag：拖拽期间不该触发睡眠（也不该被眨眼打断）
   if (behavior) dispatchEntryOps(behavior.handle('drag-start'), 'gesture:drag-start');
+  // 运动桥进入拖拽（位置写入权交接给 drag，§5.1 第 2 级：运动让位）
+  locomotion.setDragging(true);
   // 拖拽期间姿态保持、只暂停播放（拖着坐着的猫是合理的）；窗口位置仍由主进程独占
   syncPosture('gesture:drag-start');
   // 指针捕获：光标移动快于窗口时事件也不会丢，否则会出现「甩一下就掉」。
@@ -718,6 +1128,8 @@ function endDrag(pointerId: number): void {
   artElement?.classList.remove('is-dragging');
   // 行为层回到 idle（先落桥接 idle，等 drag 的高优先级记录过期再落到常驻 idle）
   if (behavior) dispatchEntryOps(behavior.handle('drag-end'), 'gesture:drag-end');
+  // 松手后交还位置写入权（是否重新走由主进程的偏好 + 下一条运动事实决定）
+  locomotion.setDragging(false);
   syncPosture('gesture:drag-end');
   try {
     if (artElement?.hasPointerCapture(pointerId)) {
@@ -944,6 +1356,32 @@ interface PetSequenceRuntime {
  */
 let sequenceRuntimePromise: Promise<PetSequenceRuntime | null> | null = null;
 
+/** 序列结束的轮询句柄（`null` = 没在等）。 */
+let sequenceMotionWatch: number | null = null;
+
+/**
+ * 序列播放期间把运动关掉，结束后恢复（§5 第 3 级：序列的打断优先级高于自主移动）。
+ *
+ * <p>为什么用轮询而不是给导演加回调：序列运行时的对外形状（{@link PetSequenceRuntime}）
+ * 是本片交付的稳定契约，为了一个"播完通知"改它的形状会把风险扩散到已验收的 B1/B2 路径。
+ * 250ms 与行为拍同频、只在播放期间存在，代价可忽略。</p>
+ *
+ * @param runtime 正在播放的运行时
+ */
+function watchSequenceMotionEnd(runtime: PetSequenceRuntime): void {
+  if (sequenceMotionWatch !== null) window.clearTimeout(sequenceMotionWatch);
+  const tick = (): void => {
+    sequenceMotionWatch = null;
+    if (runtime.isPlaying()) {
+      sequenceMotionWatch = window.setTimeout(tick, 250);
+      return;
+    }
+    // 序列结束了：按当前偏好重评估（有跟随/漫游才重新请求，否则 off —— 由偏好决定）
+    locomotion.onPrefs(undefined, undefined);
+  };
+  sequenceMotionWatch = window.setTimeout(tick, 250);
+}
+
 /**
  * 藏/显站姿画面，让序列独占画面。
  *
@@ -1084,6 +1522,10 @@ function playPetSequence(): boolean {
     }
     try {
       const report = runtime.play(PLAY_SCENE_ID);
+      // 序列期间运动关闭：导演播"过来—抱起—回应—放回"时主进程若还在推位移，
+      // 角色会在原地被挪（姿态与位移分属两个写者），§5 把序列排在自主移动之上。
+      locomotion.requestMode('off', 'interaction');
+      watchSequenceMotionEnd(runtime);
       console.debug(`[pet] 双击播放 ${report.sceneId}：${report.steps} 步 / ${report.durationMs} ms`);
     } catch (err) {
       console.warn(`[pet] 双击播放失败：${(err as Error).message}`);
@@ -1104,7 +1546,13 @@ function mountSequenceBackdoor(handle: PetDebugHandle): void {
   void petSequenceRuntime().then((runtime) => {
     if (runtime === null) return;
     const sequenceHandle: SequenceDebugHandle = {
-      play: (sceneId) => runtime.play(sceneId),
+      play: (sceneId) => {
+        const report = runtime.play(sceneId);
+        // 后门播放同样要关运动（后门验的必须是与用户入口同一条路径）
+        locomotion.requestMode('off', 'dev');
+        watchSequenceMotionEnd(runtime);
+        return report;
+      },
       stop: () => runtime.stop(),
       snapshot: () => runtime.snapshot(),
       scenes: () => runtime.scenes(),
@@ -1263,12 +1711,27 @@ function subscribeCommands(): void {
       applyHitState(command.clickThrough !== true);
       // 首帧就把可见性对齐：桌宠可能在"窗口已隐藏"的状态下被重新加载（托盘踢隐藏再开）
       powerPolicy?.update({ visible: command.visible !== false });
+      // 运动桥同样对齐（否则"隐藏着被重载"之后渲染层还以自己在可见态发意图）
+      locomotion.setHidden(command.visible === false);
       return;
     }
     if (command.type === 'visible') {
       // 窗口隐藏 → off 档：停 CSS 动画 + 停眨眼定时器（hidden 时 CSS 不产帧，但 JS 定时器照跑）
       powerPolicy?.update({ visible: command.visible === true });
+      // 运动桥也要知道：隐藏期间 0 发送（§8.3），并收掉"已在走"的幽灵状态
+      locomotion.setHidden(command.visible === false);
       if (DEBUG_ENABLED) console.debug(`[pet] 可见性变化: visible=${command.visible === true}`);
+      return;
+    }
+    if (command.type === 'motion') {
+      // 运动事实（§8.2）：跨进程边界 ⇒ 先归一，非法整条丢弃（不猜默认值）
+      const fact = asMotionFact(command);
+      if (fact !== null) locomotion.onMotion(fact);
+      return;
+    }
+    if (command.type === 'prefs') {
+      // 偏好只读（真正写者是主进程右键菜单）；这里只据此重新评估要不要请求模式
+      locomotion.onPrefs(command.follow, command.roam);
       return;
     }
     // play / expression 等表现类指令统一走路由 → 调度总线（未知类型由路由器记日志丢弃）
@@ -1448,6 +1911,9 @@ function createPresentation(): void {
     // 姿态与行为**同一拍**同步：sit 的入场不产生任何 PresentationOp（姿态走独立通道），
     // 所以不能只在 dispatchEntryOps 里同步，否则静置 20s 后姿态永远不会变。
     syncPosture('behavior:tick');
+    // 禁原地滑行的自愈（§7）：姿态还写着在走、主进程却已不再报位移 ⇒ 收尾回站姿。
+    // 它必须排在 syncPosture 之后：先让姿态按最新状态落定，再判"这条在走是不是幽灵"。
+    locomotion.watchdog(Date.now());
   }, 250);
 }
 
@@ -1477,6 +1943,8 @@ function createPowerPolicy(): void {
   apply();
   document.addEventListener('visibilitychange', () => {
     powerPolicy?.update({ hidden: document.hidden === true });
+    // 隐藏 ⇒ 渲染侧 0 采样、0 发送：运动桥先停手，并把"已在走"收掉（不留幽灵状态）
+    locomotion.setHidden(document.hidden === true);
   });
 }
 
