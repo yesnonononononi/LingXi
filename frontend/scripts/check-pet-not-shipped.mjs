@@ -39,6 +39,11 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { FRONTEND_ROOT, readJsonFile } from './build-pet-geometry.mjs';
+// pose 运行资产的体积上限**只有一个真源**：`scripts/pet-budget.mjs`（裁决 D-02，8 MiB）。
+// D-02 否决了"把 pose 资产排除出安装包"的方案，改为 **留在包里但设总量上限**：
+// 资产留在包里才能保证开发态与打包态走同一条 `lxa://` 路径；设上限是为了让"美术顺手塞
+// 一堆 @4x 母版"这种事故在门禁阶段就红，而不是等安装包膨胀到用户投诉。
+import { POSE_TOTAL_MAX_BYTES } from './pet-budget.mjs';
 
 /** 桌宠入口页文件名（与 `electron/pet-dev-endpoint.cjs` 的 `entryPage` 同值；此处不 import 以免耦合 dev 侧）。 */
 export const PET_ENTRY_FILE = 'pet.html';
@@ -57,15 +62,6 @@ export const FORBIDDEN_BUILD_FILES = Object.freeze([
   'pet-poses.json',
   PET_ENTRY_FILE,
 ]);
-
-/**
- * pose 运行资产的体积预算（裁决 D-02，8 MiB）。
- *
- * <p>D-02 否决了"把 pose 资产排除出安装包"的方案，改为<b>留在包里但设总量上限</b>：
- * 资产留在包里才能保证开发态与打包态走同一条 `lxa://` 路径；设上限是为了让"美术顺手塞
- * 一堆 @4x 母版"这种事故在门禁阶段就红，而不是等安装包膨胀到用户投诉。</p>
- */
-export const POSE_RUNTIME_MAX_BYTES = 8 * 1024 * 1024;
 
 /** pose 运行资产目录（相对 `frontend/`）：开发态 `public/live2d/pet-poses`，打包后 `dist/live2d/pet-poses`。 */
 export const POSE_RUNTIME_DIR_SEGMENTS = Object.freeze(['live2d', 'pet-poses']);
@@ -380,19 +376,19 @@ export function runNotShippedChecks(options = {}) {
     } else {
       record('pose-png', true, `${id} 侧 pose 运行目录无 PNG（${stats.webpFiles} 个 webp）`);
     }
-    if (stats.bytes > POSE_RUNTIME_MAX_BYTES) {
+    if (stats.bytes > POSE_TOTAL_MAX_BYTES) {
       record(
         'pose-budget',
         false,
         `${id} 侧 pose 运行资产合计 ${(stats.bytes / 1024 / 1024).toFixed(2)} MiB > 预算 ` +
-          `${(POSE_RUNTIME_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
+          `${(POSE_TOTAL_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
       );
     } else {
       record(
         'pose-budget',
         true,
         `${id} 侧 pose 运行资产 ${(stats.bytes / 1024).toFixed(1)} KiB ≤ ` +
-          `${(POSE_RUNTIME_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
+          `${(POSE_TOTAL_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
       );
     }
   }
@@ -446,12 +442,12 @@ export function selftest() {
   try {
     const nested = join(probeRoot, 'sit');
     mkdirSync(nested, { recursive: true });
-    writeFileSync(join(nested, 'fake@2x.webp'), Buffer.alloc(POSE_RUNTIME_MAX_BYTES + 4096, 0x00));
+    writeFileSync(join(nested, 'fake@2x.webp'), Buffer.alloc(POSE_TOTAL_MAX_BYTES + 4096, 0x00));
     writeFileSync(join(nested, 'master.png'), Buffer.alloc(16, 0x89));
     const stats = scanPoseRuntimeDir(probeRoot);
     if (!stats.exists) problems.push('自检失败：pose 扫描器没认出存在的目录');
     if (stats.pngFiles.length !== 1) problems.push('自检失败：pose 扫描器没抓到 PNG');
-    if (stats.bytes <= POSE_RUNTIME_MAX_BYTES) problems.push('自检失败：pose 扫描器没算对体积（预算判据会空转）');
+    if (stats.bytes <= POSE_TOTAL_MAX_BYTES) problems.push('自检失败：pose 扫描器没算对体积（预算判据会空转）');
     const tiny = scanPoseRuntimeDir(join(probeRoot, 'not-there'));
     if (tiny.exists || tiny.bytes !== 0) problems.push('自检失败：pose 扫描器把不存在的目录当成存在');
   } finally {

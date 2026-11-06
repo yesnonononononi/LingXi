@@ -28,13 +28,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GEOMETRY_PATH, readJsonFile } from './build-pet-geometry.mjs';
-import {
-  DEFAULT_POSE_OUT_DIR,
-  FRAME_2X_MAX_BYTES,
-  POSE_TOTAL_MAX_BYTES,
-  POSES_JSON_PATH,
-  runBuild,
-} from './build-pet-poses.mjs';
+import { DEFAULT_POSE_OUT_DIR, POSES_JSON_PATH, runBuild } from './build-pet-poses.mjs';
+// 体积预算的真源是 `pet-budget.mjs`（**不再**从 build-pet-poses 转手拿：转手就是二道贩子，
+// 迟早有人以为"这里改一下也行"）。build-pet-poses 与本脚本读的是同一个常量。
+import { FRAME_2X_MAX_BYTES, POSE_TOTAL_MAX_BYTES } from './pet-budget.mjs';
 import { checkUnknownKeys } from './pet-poses-schema.mjs';
 
 /** 包络的安全余量（CSS px）：两侧各留 2px 吸收半透明羽化边缘。 */

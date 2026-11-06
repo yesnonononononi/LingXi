@@ -28,11 +28,11 @@ import {
   sha256OfFile,
 } from '../scripts/pet-pose-adapters.mjs';
 import {
-  FRAME_2X_MAX_BYTES,
-  POSE_TOTAL_MAX_BYTES,
   POSES_JSON_PATH,
   runBuild,
 } from '../scripts/build-pet-poses.mjs';
+// 体积预算的真源（**不**再经 build-pet-poses 转手）：`scripts/pet-budget.mjs`。
+import { FRAME_2X_MAX_BYTES, POSE_TOTAL_MAX_BYTES } from '../scripts/pet-budget.mjs';
 import { checkDomains } from '../scripts/check-pet-poses.mjs';
 import { FRONTEND_ROOT } from '../scripts/build-pet-geometry.mjs';
 
@@ -355,7 +355,7 @@ test('G-15：体积预算与 aliases 去重（lie 7 个帧位只有 3 张不同�
   );
   assert.equal(hashes.size, 3, '三张源文件的 sha256 出现重复，去重口径需要重新确认');
 
-  // 体积：单帧 @2x ≤ 400 KiB，全量 ≤ 6 MiB（真实运行清单）
+  // 体积：单帧 @2x ≤ 400 KiB，全量 ≤ 8 MiB（真实运行清单；上限真源见 scripts/pet-budget.mjs）
   for (const [posture, batch] of Object.entries(POSES_MANIFEST.batches) as Array<[string, any]>) {
     for (const [frameId, frame] of Object.entries(batch.frames) as Array<[string, any]>) {
       assert.ok(

@@ -39,6 +39,9 @@ import {
   SOURCE_ROOT,
   adaptAll,
 } from './pet-pose-adapters.mjs';
+// 体积预算**只有一个真源**（`scripts/pet-budget.mjs`）：这里不再定义自己的副本。
+// 曾经的 6 MiB 与发布侧的 8 MiB 并存，属于纯漂移（详见该模块的注释）。
+import { FRAME_2X_MAX_BYTES, POSE_TOTAL_MAX_BYTES } from './pet-budget.mjs';
 
 /** 运行时清单路径（唯一真源）。 */
 export const POSES_JSON_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'pet-poses.json');
@@ -54,12 +57,6 @@ export const DEFAULT_POSE_OUT_DIR = resolve(
 
 /** `lxa://` 的 host（小写：standard scheme 会把 host 转小写）。 */
 export const POSE_URL_HOST = 'pet-poses';
-
-/** 单帧 `@2x` 体积上限（400 KiB：按分层件面积外推 172 KiB 的 2.3 倍留白）。 */
-export const FRAME_2X_MAX_BYTES = 400 * 1024;
-
-/** 全 pose 运行资产体积上限（6 MiB；切片后每片 ≤ 2 MiB）。 */
-export const POSE_TOTAL_MAX_BYTES = 6 * 1024 * 1024;
 
 /**
  * 站姿对齐点（native 域）——**一个实测出来的数据值，不是代码**。
@@ -384,6 +381,30 @@ function assertSourceSize(absolutePath, batch) {
 }
 
 /**
+ * 判一份 `totals` 是否超 pose 运行资产总量预算（**不接收上限参数**）。
+ *
+ * <p>为什么故意不给 `limit` 形参：给了就等于允许调用方塞第二个数，漂移会从后门回来。
+ * 这个函数只认 `scripts/pet-budget.mjs` 的 `POSE_TOTAL_MAX_BYTES`，
+ * 发布侧 `check-pet-not-shipped.mjs` 读的是**同一个常量**——所以"构建侧说超了、发布侧说没超"
+ * 这种自相矛盾在结构上不可能出现。</p>
+ *
+ * @param {{bytes1x?: number, bytes2x?: number}} totals 清单里的体积合计（缺字段按 0 处理）
+ * @returns {string[]} 问题列表（空数组 = 未超限）
+ */
+export function poseVolumeProblems(totals) {
+  const source = totals && typeof totals === 'object' ? totals : {};
+  const bytes1x = Number.isFinite(source.bytes1x) ? source.bytes1x : 0;
+  const bytes2x = Number.isFinite(source.bytes2x) ? source.bytes2x : 0;
+  const totalBytes = bytes1x + bytes2x;
+  if (totalBytes > POSE_TOTAL_MAX_BYTES) {
+    return [
+      `pose 运行资产合计 ${totalBytes} 字节超过预算 ${POSE_TOTAL_MAX_BYTES} 字节（${(totalBytes / 1024 / 1024).toFixed(2)} MiB）`,
+    ];
+  }
+  return [];
+}
+
+/**
  * 构建（或校验）pose 运行资产。
  *
  * @param {object} [options] 选项
@@ -530,14 +551,9 @@ export async function runBuild(options = {}) {
     ...(acceptedOverride ? { accepted: acceptedOverride } : {}),
   });
 
-  // 体积守卫（与 `check-pet-not-shipped` 的 ≤8 MiB 是两道独立闸门：
-  // 这里拦"生成时就超预算"，那里拦"进包后总量超上限"）
-  const totalBytes = manifest.totals.bytes1x + manifest.totals.bytes2x;
-  if (totalBytes > POSE_TOTAL_MAX_BYTES) {
-    problems.push(
-      `pose 运行资产合计 ${totalBytes} 字节超过预算 ${POSE_TOTAL_MAX_BYTES} 字节（${(totalBytes / 1024 / 1024).toFixed(2)} MiB）`,
-    );
-  }
+  // 体积守卫（与 `check-pet-not-shipped` 的进包总量是两道独立闸门：
+  // 这里拦"生成时就超预算"，那里拦"进包后总量超上限"；但两处**读同一个上限**）
+  problems.push(...poseVolumeProblems(manifest.totals));
   for (const [posture, batch] of Object.entries(manifest.batches)) {
     for (const [frameId, frame] of Object.entries(batch.frames)) {
       if (frame.files['2x'].bytes > FRAME_2X_MAX_BYTES) {
@@ -633,7 +649,7 @@ export async function runBuild(options = {}) {
     log(
       `[pet-poses] 已写出 ${relative(repoRoot, posesJsonPath) || posesJsonPath}：` +
         `${Object.keys(manifest.batches).length} 批 / ${manifest.totals.frames} 帧 / ` +
-        `${(totalBytes / 1024).toFixed(0)} KiB`,
+        `${((manifest.totals.bytes1x + manifest.totals.bytes2x) / 1024).toFixed(0)} KiB`,
     );
   }
 

@@ -279,9 +279,14 @@ test('T01-11 G-P6：jump 的 once 只留 land 一帧 + return-stand ⇒ 红', as
 });
 
 test('T01-12 P13：totals.bytes1x + totals.bytes2x 必须 ≤ POSE_TOTAL_MAX_BYTES', async () => {
-  const { adapters, build, gate } = await loadModules();
-  const limit = build.POSE_TOTAL_MAX_BYTES;
-  assert.strictEqual(limit, 6 * 1024 * 1024, '上限是 6 MiB（护栏，不许改）');
+  const { adapters, gate } = await loadModules();
+  // 上限的真源：scripts/pet-budget.mjs（**不再**经 build-pet-poses 转手）
+  const { POSE_TOTAL_MAX_BYTES } = await import('../scripts/pet-budget.mjs');
+  const limit = POSE_TOTAL_MAX_BYTES;
+  // 2026-11-05 主理人裁决：pose 运行资产总量上限从 6 MiB 抬到 8 MiB（对齐发布侧 D-02，
+  // 因为构建侧 6 MiB 才是漂着的那个，"切片后每片 ≤ 2 MiB"已被切片 2 的 5.15 MiB 实测证伪）。
+  // 这行是**随裁决更新**，不是为让断言变绿而放宽：判据形状（=limit 放行 / limit+1 必红）逐字未动。
+  assert.strictEqual(limit / 1024 / 1024, 8, '上限是 8 MiB（D-02 对齐后的裁决值，改它必须有新的算账依据）');
 
   const over = gate.checkVolume({ batches: {}, totals: { bytes1x: limit, bytes2x: 1 } });
   assert.strictEqual(over.length, 1, '超一个字节就必须红');

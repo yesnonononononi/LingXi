@@ -253,13 +253,15 @@ test('反例：pose 运行目录里出现 PNG 母版 → 守卫必须红（D-02 
 });
 
 test('反例：pose 运行资产合计超过 8 MiB → 守卫必须红（D-02 体积预算）', async () => {
-  const { runNotShippedChecks, POSE_RUNTIME_MAX_BYTES } = await import('../scripts/check-pet-not-shipped.mjs');
+  const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
+  // 上限的真源：scripts/pet-budget.mjs（本用例断言的是"守卫按真源值拦"，不自己写死 8 MiB）
+  const { POSE_TOTAL_MAX_BYTES } = await import('../scripts/pet-budget.mjs');
   const root = makeFixture({});
   try {
     const poseDir = path.join(root, 'public', 'live2d', 'pet-poses', 'walk');
     fs.mkdirSync(poseDir, { recursive: true });
     // 预算 +4 KiB：跨过阈值的形状（不是"随便写个大数"，越界幅度越小越能证明比较符号没写错）
-    fs.writeFileSync(path.join(poseDir, 'walk_a@2x.webp'), Buffer.alloc(POSE_RUNTIME_MAX_BYTES + 4096, 0x52));
+    fs.writeFileSync(path.join(poseDir, 'walk_a@2x.webp'), Buffer.alloc(POSE_TOTAL_MAX_BYTES + 4096, 0x52));
     const result = runNotShippedChecks({ frontendRoot: root, distDir: path.join(root, 'no-dist') });
     assert.equal(result.ok, false, 'pose 资产超预算却仍然绿：守卫失效');
     assert.ok(
@@ -272,9 +274,11 @@ test('反例：pose 运行资产合计超过 8 MiB → 守卫必须红（D-02 �
 });
 
 test('真实仓库：public 侧 pose 运行资产满足 D-02（无 PNG 且 ≤ 8 MiB）', async () => {
-  const { runNotShippedChecks, POSE_RUNTIME_DIR_SEGMENTS, POSE_RUNTIME_MAX_BYTES, scanPoseRuntimeDir } = await import(
+  const { runNotShippedChecks, POSE_RUNTIME_DIR_SEGMENTS, scanPoseRuntimeDir } = await import(
     '../scripts/check-pet-not-shipped.mjs'
   );
+  // 上限的真源：scripts/pet-budget.mjs
+  const { POSE_TOTAL_MAX_BYTES } = await import('../scripts/pet-budget.mjs');
   const publicPoseDir = path.join(FRONTEND_ROOT, 'public', ...POSE_RUNTIME_DIR_SEGMENTS);
   const stats = scanPoseRuntimeDir(publicPoseDir);
   if (!stats.exists) {
@@ -284,8 +288,8 @@ test('真实仓库：public 侧 pose 运行资产满足 D-02（无 PNG 且 ≤ 8
   assert.deepEqual(stats.pngFiles, [], '运行目录里不许出现 PNG 母版');
   assert.ok(stats.webpFiles >= 1, '运行目录里至少要有 1 个 webp（sit 单帧也算可播放内容，D-03）');
   assert.ok(
-    stats.bytes <= POSE_RUNTIME_MAX_BYTES,
-    `运行资产 ${(stats.bytes / 1024 / 1024).toFixed(2)} MiB 超过 D-02 预算 ${POSE_RUNTIME_MAX_BYTES / 1024 / 1024} MiB`,
+    stats.bytes <= POSE_TOTAL_MAX_BYTES,
+    `运行资产 ${(stats.bytes / 1024 / 1024).toFixed(2)} MiB 超过 D-02 预算 ${POSE_TOTAL_MAX_BYTES / 1024 / 1024} MiB`,
   );
   const result = runNotShippedChecks({});
   assert.ok(result.checks.some((item) => item.id === 'pose-budget'), '缺少 pose-budget 判据');
