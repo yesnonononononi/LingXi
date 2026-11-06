@@ -476,62 +476,52 @@ export function runNotShippedChecks(options = {}) {
     }
   }
 
-  // 判据 6 / 7：pose 运行资产（D-02：留在包里，但禁 PNG 且总量 ≤ 8 MiB）
+  // 判据 6 / 7：pose 运行资产**只在 public 侧**校验（禁 PNG + 总量 ≤ 8 MiB）。
   // 清单存在 ⇒ 运行资产"应该有"，目录缺失就必须说出来；清单不存在（切片 1 之前 / 干净样本）⇒ 静默跳过。
   //
-  // 口径变化（M2 线A任务 2，**不是放宽**）：生产构建已隔离桌宠静态资产 ⇒ `dist` 侧这个目录
-  // **本来就该不存在**，于是"检查它里面的 PNG/体积"没有对象了。替代它的是一条更严的判据
-  // （上面的 `dist-pet-static-*`：目录本身不许存在）。`public` 侧的 PNG/体积判据一字未改。
+  // 口径变更（M3 死代码清理，**删掉的是重复判据，不是守卫**）：生产构建已隔离桌宠静态资产
+  // （`pet-asset-isolation.mjs` 在 `closeBundle` 删 `dist/live2d/pet-*`，由 `dist-pet-static-*` 三条判据守），
+  // 所以 `dist/live2d/pet-poses` **按设计就不该存在**——原来这里还有一份 `dist` 侧的 PNG/体积判据，
+  // 它唯一的可能命中场景是"dist-pet-static-dirs 已经红了"，属于同一件事的第二份真相：
+  // 既不能更早发现，也不会更精确，只会在排障时多说一句废话。故删除，`public` 侧一字未改。
   const poseManifestPath = resolve(root, 'pet-poses.json');
   const poseAssetsClaimed = existsSync(poseManifestPath);
-  const poseDirs = [
-    { id: 'public', dir: resolve(root, 'public', ...POSE_RUNTIME_DIR_SEGMENTS) },
-    { id: 'dist', dir: resolve(distDir, ...POSE_RUNTIME_DIR_SEGMENTS) },
-  ];
+  const poseDir = resolve(root, 'public', ...POSE_RUNTIME_DIR_SEGMENTS);
+  const poseStats = scanPoseRuntimeDir(poseDir);
   let poseChecked = 0;
-  for (const { id, dir } of poseDirs) {
-    const stats = scanPoseRuntimeDir(dir);
-    if (!stats.exists) {
-      if (!poseAssetsClaimed) continue;
-      notes.push(
-        id === 'dist'
-          ? `dist 侧 pose 运行目录不存在 —— 这是**期望状态**（生产构建已隔离桌宠静态资产，见 dist-pet-static-* 判据），` +
-            `本项 PNG/体积判据因此无实测对象：${dir}`
-          : `public 侧 pose 运行目录不存在，已跳过该项（请先跑 npm run build:pet-poses）：${dir}`,
-      );
-      continue;
+  if (!poseStats.exists) {
+    if (poseAssetsClaimed) {
+      notes.push(`public 侧 pose 运行目录不存在，已跳过该项（请先跑 npm run build:pet-poses）：${poseDir}`);
     }
+  } else {
     poseChecked += 1;
-    if (stats.pngFiles.length > 0) {
+    if (poseStats.pngFiles.length > 0) {
       record(
         'pose-png',
         false,
-        `${id} 侧 pose 运行目录里出现 PNG（母版只许留在 docs/assets/desktop-pet）：${stats.pngFiles.join(', ')}`,
+        `public 侧 pose 运行目录里出现 PNG（母版只许留在 docs/assets/desktop-pet）：${poseStats.pngFiles.join(', ')}`,
       );
     } else {
-      record('pose-png', true, `${id} 侧 pose 运行目录无 PNG（${stats.webpFiles} 个 webp）`);
+      record('pose-png', true, `public 侧 pose 运行目录无 PNG（${poseStats.webpFiles} 个 webp）`);
     }
-    if (stats.bytes > POSE_TOTAL_MAX_BYTES) {
+    if (poseStats.bytes > POSE_TOTAL_MAX_BYTES) {
       record(
         'pose-budget',
         false,
-        `${id} 侧 pose 运行资产合计 ${(stats.bytes / 1024 / 1024).toFixed(2)} MiB > 预算 ` +
-          `${(POSE_TOTAL_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
+        `public 侧 pose 运行资产合计 ${(poseStats.bytes / 1024 / 1024).toFixed(2)} MiB > 预算 ` +
+          `${(POSE_TOTAL_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${poseStats.files} 个文件）`,
       );
     } else {
       record(
         'pose-budget',
         true,
-        `${id} 侧 pose 运行资产 ${(stats.bytes / 1024).toFixed(1)} KiB ≤ ` +
-          `${(POSE_TOTAL_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${stats.files} 个文件）`,
+        `public 侧 pose 运行资产 ${(poseStats.bytes / 1024).toFixed(1)} KiB ≤ ` +
+          `${(POSE_TOTAL_MAX_BYTES / 1024 / 1024).toFixed(0)} MiB（${poseStats.files} 个文件）`,
       );
     }
   }
   if (poseChecked === 0 && poseAssetsClaimed) {
-    notes.push(
-      '清单里声明了 pose 运行资产，但 public 侧运行目录也不存在：体积与 PNG 判据本轮没有实测对象' +
-        '（dist 侧不存在是期望状态，不算缺口）',
-    );
+    notes.push('清单里声明了 pose 运行资产，但 public 侧运行目录也不存在：体积与 PNG 判据本轮没有实测对象');
   }
 
   return { ok: problems.length === 0, problems, notes, checks };

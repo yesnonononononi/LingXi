@@ -92,54 +92,43 @@ test('B-2 三处口径一致（行为断言）：两个消费方必须按同一�
   assert.equal(buildOver.length, 1, 'limit + 1 必须报错（判据是 ≤，不是 <）');
   assert.match(buildOver[0], /超过预算/);
 
-  // ── 消费方 2：发布侧门禁（真跑 runNotShippedChecks，喂一个临时 dist） ──
+  // ── 消费方 2：发布侧门禁（真跑 runNotShippedChecks，喂一个临时 frontend 根） ──
+  // M3 起 dist 侧的 pose 体积/PNG 判据已删除（生产构建隔离后 `dist/live2d/pet-poses` 按设计不存在，
+  // 由 `dist-pet-static-*` 三条判据守），所以本条只能拿临时 frontend 根去实测 **public 侧**这一路。
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kou-pet-budget-'));
-  const distPoseDir = path.join(tmp, ...notShipped.POSE_RUNTIME_DIR_SEGMENTS);
-  fs.mkdirSync(distPoseDir, { recursive: true });
-  const probe = path.join(distPoseDir, 'probe@2x.webp');
+  const publicPoseDir = path.join(tmp, 'public', ...notShipped.POSE_RUNTIME_DIR_SEGMENTS);
+  fs.mkdirSync(publicPoseDir, { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'pet-poses.json'), JSON.stringify({ batches: {}, totals: {} }), 'utf8');
+  const probe = path.join(publicPoseDir, 'probe@2x.webp');
   try {
-    // = limit ⇒ 两侧的 pose-budget 判据都必须绿
+    // = limit ⇒ public 侧的 pose-budget 必须绿
     fs.writeFileSync(probe, Buffer.alloc(limit));
-    const atLimit = notShipped.runNotShippedChecks({ distDir: tmp });
+    const atLimit = notShipped.runNotShippedChecks({ frontendRoot: tmp, distDir: path.join(tmp, 'dist') });
     const atLimitEntries = atLimit.checks.filter((item) => item.id === 'pose-budget');
-    assert.equal(atLimitEntries.length, 2, 'public 侧 + dist 侧各一条 pose-budget 判据');
+    assert.equal(
+      atLimitEntries.length,
+      1,
+      'M3 起只剩 public 侧一条 pose-budget 判据（dist 侧已随死代码清理删除，不许悄悄长回来）',
+    );
     assert.deepEqual(
       atLimitEntries.filter((item) => !item.ok).map((item) => item.detail),
       [],
       `= limit 时不许有 pose-budget 报错：\n${atLimit.problems.join('\n')}`,
     );
-    // ── 口径变化（M2 线A任务 2，前提变了不是放宽）──
-    // 本用例原来的收尾断言是 `atLimit.ok === true`（整轮全绿）。前提已经变了：生产构建现在
-    // 要求 dist 里**根本不许有**桌宠静态资产（`dist-pet-static-*`），而本用例为了测 pose 体积
-    // 恰恰手工造了一个"dist 里有 pet-poses"的世界 —— 那个世界如今按设计就是红的。
-    // 所以改成逐族点账：pose-budget 族必须全绿（B-2 的主题没变），并且**必须**恰好只有
-    // dist-pet-static-* 族红（否则说明有其他判据被连坐，或新判据根本没生效）。
     assert.deepEqual(
-      atLimit.problems.filter((problem) => !/产物里出现桌宠/.test(problem)),
+      atLimit.checks.filter((item) => item.detail.includes('dist 侧')).map((item) => item.id),
       [],
-      `= limit 时除了"dist 不许含桌宠静态资产"这一族，不应有别的红：\n${atLimit.problems.join('\n')}`,
-    );
-    const staticFamily = atLimit.checks.filter((item) => item.id.startsWith('dist-pet-static-'));
-    assert.equal(staticFamily.length, 3, 'dist-pet-static-dirs / -paths / -media 三条子判据必须都在');
-    assert.deepEqual(
-      staticFamily.filter((item) => item.ok).map((item) => item.id),
-      [],
-      '手工造的 dist 里就摆着 pet-poses ⇒ 三条静态资产判据必须全红（新判据真的接上了，不是空转）',
+      'dist 侧 pose 判据必须彻底消失（删死代码时不许留半条）',
     );
 
-    // limit + 1 ⇒ dist 侧必须红
+    // limit + 1 ⇒ public 侧必须红，且点名"预算"
     fs.writeFileSync(probe, Buffer.alloc(limit + 1));
-    const over = notShipped.runNotShippedChecks({ distDir: tmp });
+    const over = notShipped.runNotShippedChecks({ frontendRoot: tmp, distDir: path.join(tmp, 'dist') });
     const overEntries = over.checks.filter((item) => item.id === 'pose-budget');
-    const distOver = overEntries.filter((item) => item.detail.includes('dist 侧'));
-    assert.equal(distOver.length, 1, 'dist 侧必须有一条 pose-budget 判据');
-    assert.equal(distOver[0].ok, false, 'limit + 1 必须报错');
-    assert.match(distOver[0].detail, /预算/, '报错要点名"预算"');
+    assert.equal(overEntries.length, 1, 'limit + 1 时仍只有一条 public 侧 pose-budget 判据');
+    assert.equal(overEntries[0].ok, false, 'limit + 1 必须报错');
+    assert.match(overEntries[0].detail, /预算/, '报错要点名"预算"');
     assert.equal(over.ok, false, '整轮守卫必须红');
-    // 另一侧（真实 public 目录）不许被连坐
-    const publicOver = overEntries.filter((item) => item.detail.includes('public 侧'));
-    assert.equal(publicOver.length, 1);
-    assert.equal(publicOver[0].ok, true, 'public 侧体积没变，不许连坐打红');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
