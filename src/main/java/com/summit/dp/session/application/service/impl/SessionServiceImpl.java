@@ -22,6 +22,7 @@ import com.summit.dp.shared.vo.*;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
@@ -179,11 +180,16 @@ public class SessionServiceImpl implements SessionService {
         Long revision = sessionAggregateService.requireOwned(rootId).getHistoryRevision();
 
         CursorResult<SessionMessage> slice = sessionAggregateService.messageSlice(sessionId, cursor, size);
+        List<SessionMessage> pageMessages = slice.records();
 
-        // 转换 + 一次 IN 批量挂载工具调用（单页 tool_call 查询恒为 1 次）。
+        // 单页 tool_call 只查一次：这一批权威工具调用既用于挂载消息 VO，也用于按轮装配块。
+        // 两处各查一次就是同一批 CLOB 读两遍 —— 这正是历史读路径上最大的写放大来源。
+        Map<String, ToolCall> toolCalls = turnViewService.loadToolCalls(pageMessages);
+
+        // 转换 + 按已装载的字典挂载工具调用（本方法内不再查库）。
         // 归属直接从消息行的 turn_id 读出，**不需要再做「执行 ID → 轮次」映射** ——
         // 这正是把归属落到消息行自己的收益。
-        SessionMessageQueryService.SessionMessageQueryResult loaded = messageQueryService.query(slice.records());
+        SessionMessageQueryService.SessionMessageQueryResult loaded = messageQueryService.query(pageMessages, toolCalls);
 
         // 一次 IN 批量装配本页涉及的轮次字典（含会话归属校验）。
         Map<Long, ChatTurn> ownedTurns = resolveOwnedTurns(sessionId,
@@ -200,7 +206,7 @@ public class SessionServiceImpl implements SessionService {
                 .records(loaded.records())
                 .toolCallCount(loaded.toolCallCount())
                 .turns(buildTurnViews(ownedTurns, now))
-                .turnViews(buildBlockViews(ownedSession, ownedTurns, slice.records()))
+                .turnViews(buildBlockViews(ownedSession, ownedTurns, pageMessages, toolCalls))
                 .historyRevision(revision)
                 .messageCursor(slice.nextCursor())
                 .nextCursor(slice.nextCursor())
@@ -218,10 +224,13 @@ public class SessionServiceImpl implements SessionService {
      *
      * <p>{@code viewVersion} 用轮次自身的版本（{@code chat_turn.version} 快照）：
      * 历史是「已落定的批次」，前端拿到更小的批次号（乱序的旧帧）应丢弃。</p>
+     *
+     * @param toolCalls 本页已装载的工具调用字典，与消息 VO 挂载共用（同一批只读一次）
      */
     private Map<String, TurnViewVO> buildBlockViews(Session session, Map<Long, ChatTurn> ownedTurns,
-                                                    List<SessionMessage> pageMessages) {
-        return turnViewService.assembleTurnViews(session, ownedTurns.values(), pageMessages);
+                                                    List<SessionMessage> pageMessages,
+                                                    Map<String, ToolCall> toolCalls) {
+        return turnViewService.assembleTurnViews(session, ownedTurns.values(), pageMessages, toolCalls);
     }
 
     /** 收集本页去重后的轮次 ID，用于一次 IN 批量装配轮次字典。 */

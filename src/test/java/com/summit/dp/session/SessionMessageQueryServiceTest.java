@@ -1,6 +1,5 @@
 package com.summit.dp.session;
 
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.session.application.convert.SessionMessageViewAssembler;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
@@ -12,72 +11,72 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 /**
- * 读路径「转换 + 一次批量装载」查询服务单测（对应 PRD C1 / P0-4 / P2-1，评审 P1-③）。
+ * 读路径「转换 + 按给定字典挂载」查询服务单测（PRD C1 / P0-4 / P2-1，评审 P1-③）。
  *
- * <p>证明设计 §7.1 的「单页 {@code tool_call} 查询恒为 1 次」不变式：一页含多处工具调用，
- * {@link SessionMessageQueryService#query} 内部只触发**一次**批量 {@code IN} 查询（先对 callId 去重）；
- * 并证明「{@code tool_call} 缺行时消息不丢、不抛异常、{@code toolCall} 为 null」的诚实降级。
- * 转换与装载显式串联在一个方法内，杜绝漏调。</p>
+ * <p>本类只验证<b>挂载与降级</b>：工具调用由调用方一次性装载好传进来（见
+ * {@code TurnViewService#loadToolCalls}），本服务不再查库。查询次数的不变式由
+ * {@code SessionMessagesBlockViewsTest}（真实 H2 SQL）与 {@code TurnViewServiceBatchAssemblyTest} 钉住。</p>
  */
 class SessionMessageQueryServiceTest {
 
-    private CountingToolCallRepository repository;
+    private final ObjectMapper mapper = new ObjectMapper();
     private SessionMessageQueryService queryService;
 
     @BeforeEach
     void setup() {
-        ObjectMapper mapper = new ObjectMapper();
-        repository = new CountingToolCallRepository();
-        SessionMessageViewAssembler assembler = new SessionMessageViewAssembler(mapper, new ToolCallConverter(mapper));
-        queryService = new SessionMessageQueryService(assembler, repository, new ToolCallConverter(mapper),
+        queryService = new SessionMessageQueryService(
+                new SessionMessageViewAssembler(mapper, new ToolCallConverter(mapper)),
+                new ToolCallConverter(mapper),
                 // 本测试只走 query 路径，findByMessageId 用不到，给一个占位实现即可。
                 mock(SessionMessageRepositoryImpl.class));
     }
 
     @Test
-    void queryIssuesExactlyOneBatchQueryForAPageWithManyToolCalls() {
+    @DisplayName("重复 callId 各自命中同一行：toolCallCount 按 TOOL 行计，不按去重后的 id 计")
+    void duplicateCallIdsEachMountTheSameRow() {
         List<SessionMessage> page = new ArrayList<>();
-        int distinctCalls = 20;
-        for (int i = 0; i < distinctCalls; i++) {
+        Map<String, ToolCall> toolCalls = new LinkedHashMap<>();
+        for (int i = 0; i < 20; i++) {
             String callId = "call_" + i;
             page.add(toolMessage(1000L + i, callId));
-            repository.save(toolCall(callId, 7L, 70L));
+            toolCalls.put(callId, toolCall(callId, 7L));
         }
-        // 页尾再重复两个已出现的 callId，验证装载前先去重再查询。
         page.add(toolMessage(2000L, "call_0"));
         page.add(toolMessage(2001L, "call_1"));
 
-        SessionMessageQueryService.SessionMessageQueryResult result = queryService.query(page);
+        SessionMessageQueryService.SessionMessageQueryResult result = queryService.query(page, toolCalls);
 
-        assertEquals(1, repository.listByIdsInvocations, "单页 tool_call 批量查询次数必须恒为 1");
-        assertEquals(distinctCalls, repository.lastRequestedIds.size(), "查询前必须对 callId 去重");
-        assertEquals(distinctCalls + 2, result.toolCallCount(), "重复 callId 仍各自命中同一 tool_call 行");
-        assertEquals(distinctCalls + 2, result.records().size(), "转换与装载必须串联（每条消息都产出 VO）");
+        assertEquals(22, result.toolCallCount(), "重复 callId 仍各自命中同一 tool_call 行");
+        assertEquals(22, result.records().size(), "每条消息都产出 VO");
         for (SessionMessageVO vo : result.records()) {
             assertNotNull(vo.getToolCall());
         }
     }
 
     @Test
+    @DisplayName("缺行诚实降级：toolCall 为 null，消息不丢、不抛异常")
     void missingToolCallRowDegradesHonestlyWithoutDroppingMessages() {
         List<SessionMessage> page = List.of(
                 toolMessage(3001L, "call_present"),
                 toolMessage(3002L, "call_absent"));
-        repository.save(toolCall("call_present", 7L, 70L));
+        Map<String, ToolCall> toolCalls = Map.of("call_present", toolCall("call_present", 7L));
 
         SessionMessageQueryService.SessionMessageQueryResult result =
-                assertDoesNotThrow(() -> queryService.query(page));
+                assertDoesNotThrow(() -> queryService.query(page, toolCalls));
 
         assertEquals(2, result.records().size(), "消息不因 tool_call 缺行而丢失");
         assertEquals(1, result.toolCallCount());
@@ -88,24 +87,32 @@ class SessionMessageQueryServiceTest {
     }
 
     @Test
-    void querySkipsBatchQueryWhenNoToolRowPresent() {
-        List<SessionMessage> page = List.of(
-                plainMessage(1L, SessionMessageType.USER, "你好"),
-                plainMessage(2L, SessionMessageType.SYSTEM, "系统"));
+    @DisplayName("无 TOOL 行或空字典：toolCallCount 为 0，VO 照常产出")
+    void noToolRowSkipsAttachEntirely() {
+        SessionMessageQueryService.SessionMessageQueryResult noToolRow = queryService.query(
+                List.of(plainMessage(1L, SessionMessageType.USER, "你好"),
+                        plainMessage(2L, SessionMessageType.SYSTEM, "系统")),
+                Map.of("call_x", toolCall("call_x", 7L)));
+        assertEquals(0, noToolRow.toolCallCount());
+        assertEquals(2, noToolRow.records().size());
 
-        SessionMessageQueryService.SessionMessageQueryResult result = queryService.query(page);
-
-        assertEquals(0, result.toolCallCount());
-        assertEquals(2, result.records().size());
-        assertEquals(0, repository.listByIdsInvocations, "无 TOOL 行时不得发起 tool_call 查询");
+        SessionMessageQueryService.SessionMessageQueryResult emptyDictionary = queryService.query(
+                List.of(toolMessage(3L, "call_y")), Map.of());
+        assertEquals(0, emptyDictionary.toolCallCount(), "空字典时不得假装挂上");
+        assertNull(emptyDictionary.records().getFirst().getToolCall());
     }
 
     @Test
-    void queryHandlesNullSlice() {
-        SessionMessageQueryService.SessionMessageQueryResult result =
-                assertDoesNotThrow(() -> queryService.query(null));
-        assertEquals(0, result.toolCallCount());
-        assertEquals(0, result.records().size());
+    @DisplayName("null 切片与 null 字典都不抛异常")
+    void nullInputsAreTolerated() {
+        SessionMessageQueryService.SessionMessageQueryResult nullSlice =
+                assertDoesNotThrow(() -> queryService.query(null, null));
+        assertEquals(0, nullSlice.toolCallCount());
+        assertEquals(0, nullSlice.records().size());
+
+        SessionMessageQueryService.SessionMessageQueryResult nullDictionary =
+                assertDoesNotThrow(() -> queryService.query(List.of(toolMessage(4L, "call_z")), null));
+        assertEquals(0, nullDictionary.toolCallCount());
     }
 
     private static SessionMessage plainMessage(long id, SessionMessageType type, String text) {
@@ -122,154 +129,20 @@ class SessionMessageQueryServiceTest {
         return plainMessage(id, SessionMessageType.TOOL, callId);
     }
 
-    private static ToolCall toolCall(String id, long conversationId, long executionId) {
+    private static ToolCall toolCall(String id, long conversationId) {
         return ToolCall.builder()
                 .id(id)
                 .conversationId(conversationId)
-                .executionId(executionId)
+                .executionId(conversationId * 10)
                 .toolName("read_file")
                 .type(ToolCallType.EXECUTE)
                 .status(ToolCallStatus.COMPLETED)
+                .content("{\"kind\":\"PLAN\"}")
+                .rawInput("{\"args\":{}}")
                 .rawOutput("{\"outcome\":\"SUCCEEDED\",\"output\":\"ok\"}")
+                .metaData("{\"_meta\":{\"schemaVersion\":1}}")
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-    }
-
-    /** 计数假仓储：记录 {@code listByIds} 调用次数与实际请求的 id 集合。 */
-    private static final class CountingToolCallRepository implements ToolCallRepository {
-
-        private final Map<String, ToolCall> rows = new LinkedHashMap<>();
-        private int listByIdsInvocations;
-        private Set<String> lastRequestedIds = Set.of();
-
-        @Override
-        public Optional<ToolCall> findById(String id) {
-            return Optional.ofNullable(rows.get(id));
-        }
-
-        @Override
-        public void save(ToolCall model) {
-            rows.put(model.getId(), model);
-        }
-
-        @Override
-        public void delete(ToolCall model) {
-            rows.remove(model.getId());
-        }
-
-        @Override
-        public void updateById(ToolCall model) {
-            rows.put(model.getId(), model);
-        }
-
-        @Override
-        public void update(Collection<ToolCall> models) {
-            models.forEach(this::updateById);
-        }
-
-        @Override
-        public IPage<ToolCall> queryByPage(int current, int size) {
-            return null;
-        }
-
-        @Override
-        public List<ToolCall> listByIds(Collection<String> ids) {
-            listByIdsInvocations++;
-            lastRequestedIds = new HashSet<>(ids);
-            List<ToolCall> found = new ArrayList<>();
-            for (String id : ids) {
-                ToolCall row = rows.get(id);
-                if (row != null) {
-                    found.add(row);
-                }
-            }
-            return found;
-        }
-
-        @Override
-        public List<ToolCall> listByConversationId(Long conversationId) {
-            return rows.values().stream().filter(row -> row.getConversationId().equals(conversationId)).toList();
-        }
-
-        @Override
-        public Optional<ToolCall> findForBlockUpsert(String id) {
-            return Optional.ofNullable(rows.get(id));
-        }
-
-        @Override
-        public List<ToolCall> listUnresolvedByConversationIds(Collection<Long> conversationIds) {
-            return rows.values().stream()
-                    .filter(row -> conversationIds.contains(row.getConversationId()))
-                    .filter(ToolCall::isUnresolved).toList();
-        }
-
-        @Override
-        public List<ToolCall> listByExecutionId(Long executionId) {
-            return rows.values().stream().filter(row -> row.getExecutionId().equals(executionId)).toList();
-        }
-
-        @Override
-        public List<ToolCall> listActionableByExecutionId(Long executionId) {
-            return listByExecutionId(executionId).stream().filter(ToolCall::isApprovalPending).toList();
-        }
-
-        @Override
-        public List<Long> listUnresolvedExecutionIds() { return List.of(); }
-
-        @Override
-        public List<ToolCall> listPendingByExecutionId(Long executionId) {
-            return rows.values().stream()
-                    .filter(row -> row.getExecutionId().equals(executionId)
-                            && row.getStatus() == ToolCallStatus.PENDING)
-                    .toList();
-        }
-
-        @Override
-        public List<ToolCall> listPendingByConversationId(Long conversationId) {
-            return rows.values().stream()
-                    .filter(row -> row.getConversationId().equals(conversationId)
-                            && row.getStatus() == ToolCallStatus.PENDING)
-                    .toList();
-        }
-
-        @Override
-        public boolean existsById(String id) {
-            return rows.containsKey(id);
-        }
-
-        @Override
-        public long countByConversationId(Long conversationId) {
-            return listByConversationId(conversationId).size();
-        }
-
-        @Override
-        public int deleteByConversationIds(Collection<Long> conversationIds) {
-            List<String> doomed = rows.values().stream()
-                    .filter(row -> conversationIds.contains(row.getConversationId()))
-                    .map(ToolCall::getId)
-                    .toList();
-            doomed.forEach(rows::remove);
-            return doomed.size();
-        }
-
-        @Override
-        public int deleteByExecutionIds(Collection<Long> executionIds) {
-            List<String> doomed = rows.values().stream()
-                    .filter(row -> row.getExecutionId() != null
-                            && executionIds.contains(row.getExecutionId()))
-                    .map(ToolCall::getId)
-                    .toList();
-            doomed.forEach(rows::remove);
-            return doomed.size();
-        }
-
-        @Override
-        public void bindSessionMessage(String toolCallId, Long sessionMessageId) {
-            ToolCall row = rows.get(toolCallId);
-            if (row != null && sessionMessageId != null) {
-                rows.put(toolCallId, row.toBuilder().sessionMessageId(sessionMessageId).build());
-            }
-        }
     }
 }

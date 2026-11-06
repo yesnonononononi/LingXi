@@ -240,29 +240,54 @@ public class TurnViewAssembler {
             return ids;
         }
         for (SessionMessage message : messages) {
-            if (!turnId.equals(message.getTurnId())) {
-                continue;
-            }
-            if (message.getType() == SessionMessageType.TOOL) {
-                // TOOL 行的 content 即 call_id（设计 §7.3）。
-                if (message.getText() != null && !message.getText().isBlank()) {
-                    ids.add(message.getText().trim());
-                }
-                continue;
-            }
-            if (message.getType() == SessionMessageType.AI) {
-                AiMessageEntity aiMessage = parse(message.getText());
-                if (aiMessage == null || aiMessage.getToolCalls() == null) {
-                    continue;
-                }
-                for (ToolCallRequest request : aiMessage.getToolCalls()) {
-                    if (request != null && request.id() != null && !request.id().isBlank()) {
-                        ids.add(request.id());
-                    }
-                }
+            if (message != null && turnId.equals(message.getTurnId())) {
+                collectToolCallIds(message, ids);
             }
         }
         return ids;
+    }
+
+    /**
+     * 页级并集：<b>不按轮次过滤</b>（历史分页一次装载用）。
+     *
+     * <p>与 {@link #collectToolCallIds(Long, List)} 唯一的差别就是不过滤 {@code turnId}：
+     * {@code turn_id} 为 null 的孤儿 TOOL 行也要能挂上卡片，按轮次过滤会把它们漏掉。</p>
+     */
+    public Set<String> collectToolCallIds(List<SessionMessage> messages) {
+        Set<String> ids = new LinkedHashSet<>();
+        if (messages == null) {
+            return ids;
+        }
+        for (SessionMessage message : messages) {
+            collectToolCallIds(message, ids);
+        }
+        return ids;
+    }
+
+    /** 单行贡献的 id：TOOL 行的 content 即 call_id；AI 行的 toolCalls 即模型请求。 */
+    private void collectToolCallIds(SessionMessage message, Set<String> ids) {
+        if (message == null) {
+            return;
+        }
+        if (message.getType() == SessionMessageType.TOOL) {
+            // TOOL 行的 content 即 call_id（设计 §7.3）。
+            if (message.getText() != null && !message.getText().isBlank()) {
+                ids.add(message.getText().trim());
+            }
+            return;
+        }
+        if (message.getType() != SessionMessageType.AI) {
+            return;
+        }
+        AiMessageEntity aiMessage = parse(message.getText());
+        if (aiMessage == null || aiMessage.getToolCalls() == null) {
+            return;
+        }
+        for (ToolCallRequest request : aiMessage.getToolCalls()) {
+            if (request != null && request.id() != null && !request.id().isBlank()) {
+                ids.add(request.id());
+            }
+        }
     }
 
     /** 解析 AI 行载荷；失败降级为空（正文回退为原始文本）。 */

@@ -70,7 +70,7 @@ public class TurnViewService {
         // 曾用 findBySessionId（无 LIMIT）读回整个会话再在内存里过滤 —— 代价随会话总长线性增长，
         // 而实时链路每个工具收尾都要装配一次，长会话下会成为主成本。
         List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turn.getId()));
-        Map<String, ToolCall> toolCalls = loadToolCalls(messages, turn.getId());
+        Map<String, ToolCall> toolCalls = loadToolCallsForTurn(messages, turn.getId());
         return Optional.of(buildView(session, turn, viewVersion, messages, toolCalls));
     }
 
@@ -128,12 +128,30 @@ public class TurnViewService {
      */
     public Map<String, TurnViewVO> assembleTurnViews(Session session, Collection<ChatTurn> turns,
                                                      List<SessionMessage> pageMessages) {
+        if (turns == null || turns.isEmpty()) {
+            // 无轮次就不必装载工具调用：省一次查询，也让「空页零查询」这条不变量成立。
+            return new LinkedHashMap<>();
+        }
+        return assembleTurnViews(session, turns, pageMessages, loadToolCalls(pageMessages));
+    }
+
+    /**
+     * 批量装配一页内多个轮次，<b>工具调用字典由调用方提供</b>（已装载的那一批）。
+     *
+     * <p>历史消息读路径上，同一批权威 {@code ToolCall} 既用于消息 VO 的挂载、又用于块装配。
+     * 两个入口各查一次等于同一批 CLOB 读两遍，所以字典只装载一次、由调用方传进来。</p>
+     *
+     * @param toolCalls 已装载的工具调用字典（可为空字典，表示本页没有工具调用）
+     * @return {@code turnId} 的字符串形态 → 该轮视图；顺序与 {@code turns} 的迭代顺序一致
+     */
+    public Map<String, TurnViewVO> assembleTurnViews(Session session, Collection<ChatTurn> turns,
+                                                     List<SessionMessage> pageMessages,
+                                                     Map<String, ToolCall> toolCalls) {
         Map<String, TurnViewVO> views = new LinkedHashMap<>();
         if (turns == null || turns.isEmpty()) {
             return views;
         }
         Map<Long, List<SessionMessage>> messagesByTurn = groupByTurnId(pageMessages);
-        Map<String, ToolCall> toolCalls = loadPageToolCalls(turns, messagesByTurn);
         for (ChatTurn turn : turns) {
             if (turn == null || turn.getId() == null || turn.getSessionId() == null) {
                 continue;
@@ -190,18 +208,18 @@ public class TurnViewService {
         return grouped;
     }
 
-    /** 本页全部轮次涉及的工具调用 id 并集后一次 {@code IN} 装载。 */
-    private Map<String, ToolCall> loadPageToolCalls(Collection<ChatTurn> turns,
-                                                    Map<Long, List<SessionMessage>> messagesByTurn) {
-        Set<String> ids = new LinkedHashSet<>();
-        for (ChatTurn turn : turns) {
-            if (turn == null || turn.getId() == null) {
-                continue;
-            }
-            ids.addAll(turnViewAssembler.collectToolCallIds(turn.getId(),
-                    messagesByTurn.getOrDefault(turn.getId(), List.of())));
-        }
-        return loadToolCalls(ids);
+    /**
+     * 页级装载：把当页所有消息涉及的 {@code toolCallId} 取并集后<b>一次</b> {@code IN} 查回。
+     *
+     * <p>历史消息读路径只发这一次 {@code tool_call} 查询 —— 结果同时供消息 VO 挂载与块装配使用。
+     * 并集里既包含 TOOL 行（{@code content}=call_id，含 {@code turn_id} 为 null 的孤儿行），
+     * 也包含 AI 行的模型请求（工具尚未出结果、甚至尚未落库时也要能装出块）。</p>
+     *
+     * @param pageMessages 当页消息（可为 {@code null}）
+     * @return {@code toolCallId} → 权威工具调用；无 id 时返回空字典（不发查询）
+     */
+    public Map<String, ToolCall> loadToolCalls(List<SessionMessage> pageMessages) {
+        return toToolCallDictionary(turnViewAssembler.collectToolCallIds(pageMessages));
     }
 
     /**
@@ -227,12 +245,12 @@ public class TurnViewService {
      * 与「TOOL 行引用的 id」的并集，正好覆盖「工具块按模型请求顺序展开」的需求
      * （含尚未出结果、甚至尚未落库的调用）。</p>
      */
-    private Map<String, ToolCall> loadToolCalls(List<SessionMessage> messages, Long turnId) {
-        return loadToolCalls(turnViewAssembler.collectToolCallIds(turnId, messages));
+    private Map<String, ToolCall> loadToolCallsForTurn(List<SessionMessage> messages, Long turnId) {
+        return toToolCallDictionary(turnViewAssembler.collectToolCallIds(turnId, messages));
     }
 
     /** 已收集好的 id 集合 → 字典；空集合不发查询。 */
-    private Map<String, ToolCall> loadToolCalls(Set<String> ids) {
+    private Map<String, ToolCall> toToolCallDictionary(Set<String> ids) {
         if (ids.isEmpty()) {
             return Map.of();
         }

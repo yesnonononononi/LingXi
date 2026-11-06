@@ -85,7 +85,7 @@ class SessionMessagePageTurnsTest {
 
         SessionMessageVO vo = SessionMessageVO.builder()
                 .id(9001L).turnId(turnId).type("USER").text("你好").build();
-        when(messageQueryService.query(any()))
+        when(messageQueryService.query(any(), any()))
                 .thenReturn(new SessionMessageQueryService.SessionMessageQueryResult(List.of(vo), 0));
     }
 
