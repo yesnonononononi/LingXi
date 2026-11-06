@@ -337,6 +337,7 @@ function normalizeStep(
   sceneId: string,
   layerIds: readonly string[],
   frames: Readonly<Record<string, SequenceFrameFile>>,
+  poseFrameLayers: ReadonlySet<string>,
 ): SequenceStep {
   const record = requireObject(value, path);
   assertKnownKeys(record, SEQUENCE_SCHEMA_KEYS.step ?? [], path);
@@ -357,6 +358,13 @@ function normalizeStep(
       continue;
     }
     const slotName = requireString(slot, `${path}.frames.${key}`);
+    if (poseFrameLayers.has(key)) {
+      // `pose-frames` 层的像素不归序列清单管：slot 是 `pet-poses.json` 的帧 id，
+      // 只能由 `PoseController.showFrame` 解析。这里**不查本清单的帧表**——
+      // 查了就等于把"姿态帧"复制成"序列帧"，两份数据迟早漂移。
+      refs[key as SequenceLayerId] = slotName;
+      continue;
+    }
     for (const density of SEQUENCE_DENSITIES) {
       const frameKey = `${sceneId}/${slotName}@${density}.webp`;
       if (frames[frameKey] === undefined) {
@@ -406,6 +414,7 @@ function normalizeScene(
   sceneId: string,
   layerIds: readonly string[],
   frames: Readonly<Record<string, SequenceFrameFile>>,
+  poseFrameLayers: ReadonlySet<string>,
 ): SequenceScene {
   const path = `pet-sequences.scenes.${sceneId}`;
   const record = requireObject(value, path);
@@ -431,7 +440,7 @@ function normalizeScene(
   const steps: SequenceStep[] = [];
   let elapsed = 0;
   for (const [index, raw] of stepsRaw.entries()) {
-    const step = normalizeStep(raw, `${path}.steps[${index}]`, sceneId, layerIds, frames);
+    const step = normalizeStep(raw, `${path}.steps[${index}]`, sceneId, layerIds, frames, poseFrameLayers);
     // 时序单调递增：ms 必须为正（已在 normalizeStep 卡住），这里再独立复算一遍累加，
     // 保证"清单里的时长"与"逐步累加"不会因为将来的字段改动而悄悄分叉
     if (elapsed + step.ms <= elapsed) {
@@ -489,6 +498,9 @@ export function normalizePetSequences(raw: unknown, geometry: PetGeometry = PET_
   if (frameKeys.length === 0) {
     throw new TypeError('[pet-sequences] frames 不能为空：本切片的核心产物就是这些运行帧');
   }
+  // `pose-frames` 层的 slot 是 `pet-poses.json` 的帧 id，不登记在本清单的帧表里，
+  // 所以校验 step 引用前要先把这些层挑出来（否则"合法的姿态帧引用"会被判成查不到的帧）。
+  const poseFrameLayerIds = new Set(layers.filter((layer) => layer.kind === 'pose-frames').map((layer) => layer.id));
   const frames: Record<string, SequenceFrameFile> = {};
   for (const key of frameKeys) {
     const file = normalizeFrameFile(framesRaw[key], key);
@@ -505,7 +517,7 @@ export function normalizePetSequences(raw: unknown, geometry: PetGeometry = PET_
   }
   const scenes: Record<string, SequenceScene> = {};
   for (const sceneId of sceneIds) {
-    scenes[sceneId] = normalizeScene(scenesRaw[sceneId], sceneId, layerIds, frames);
+    scenes[sceneId] = normalizeScene(scenesRaw[sceneId], sceneId, layerIds, frames, poseFrameLayerIds);
   }
 
   const totalsRaw = requireObject(source.totals, 'pet-sequences.totals');
@@ -698,6 +710,52 @@ export interface CompanionBoxOptions {
   readonly origin?: SequencePoint;
   /** 几何真源（缺省 `PET_GEOMETRY`，测试可注入）。 */
   readonly geometry?: PetGeometry;
+}
+
+/**
+/** {@link alignedLayerBoxOf} 的入参。 */
+export interface AlignedLayerBoxOptions {
+  /** 层（必须有 `canvas` 与 `anchor`）。 */
+  readonly layer: SequenceLayer;
+  /** 清单（读比例契约）。 */
+  readonly sequences: PetSequences;
+  /** 站姿对齐点（native 域；来自 `pet-poses.json` 的 `align`）。 */
+  readonly align: SequencePoint;
+  /** 立绘箱原点（CSS px；缺省取几何真源）。 */
+  readonly origin?: SequencePoint;
+  /** 几何真源（缺省 `PET_GEOMETRY`，测试可注入）。 */
+  readonly geometry?: PetGeometry;
+}
+
+/**
+ * 算"与坐姿画布同域"的层（主角 / 手掌）在这一步的 CSS 盒子（**位置计算的唯一入口**）。
+ *
+ * <p>公式与 pose 的 `poseBoxOf` **逐字符同构**（这不是巧合，是刻意的）：
+ * `left = origin.x + (align.x − anchor.x) × stageToCss`、
+ * `top = origin.y + (align.y − anchor.y) × stageToCss`，尺寸 = `canvas × stageToCss`。
+ * 于是"序列里的主角帧"与"姿态层的坐姿帧"落在同一个像素盒里 —— 手掌层要长在手腕上，
+ * 靠的正是这条同构（美术 `sit_hug_hands_native.png` 与坐姿母版同画布同锚点）。</p>
+ *
+ * <p>`stageToCss`（舞台域 → CSS）与 pose 的 `nativeToCss` 是**同一个数**（0.15234375），
+ * 由清单的 `scale.stageToCss` 给出，源码里不许出现字面量。</p>
+ *
+ * @param options 入参
+ * @returns CSS 盒子；层缺 canvas/anchor 时 null
+ */
+export function alignedLayerBoxOf(options: AlignedLayerBoxOptions): SequenceCssBox | null {
+  const layer = options.layer;
+  const canvas = layer.canvas;
+  const anchor = layer.anchor;
+  if (canvas === undefined || anchor === undefined) return null;
+  const scale = options.sequences.scale;
+  const geometry = options.geometry ?? PET_GEOMETRY;
+  const origin = options.origin ?? ART_ORIGIN(geometry);
+  return {
+    left: origin.x + stageToCssOf(options.align.x - anchor.x, scale),
+    top: origin.y + stageToCssOf(options.align.y - anchor.y, scale),
+    width: stageToCssOf(canvas.width, scale),
+    height: stageToCssOf(canvas.height, scale),
+  };
 }
 
 /**

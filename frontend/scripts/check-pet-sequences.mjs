@@ -387,6 +387,71 @@ export function checkScenes(manifest) {
 }
 
 /**
+ * G-S1b / G-S2b：帧注册表与编排**互相**对账（B2 新增，`play_cloud` 三层场景逼出来的两条）。
+ *
+ * <p><b>为什么 `checkFrameRegistry` 与 `checkScenes` 各自全绿还不够：</b>它们是两份清单
+ * 各自的自证——前者只看"登记表内部自洽"，后者只看"编排引用的键存在"。两份都绿的时候，
+ * 仍然有两种只有真机会看见的静默错：</p>
+ * <ol>
+ *   <li><b>孤儿帧</b>：登记了、构建了、进了 `public/`，但没有任何一步引用它。
+ *       白占体积（`play_cloud` 的一个坐姿帧 @2x 就有 100 KB 级），而且"我明明导出了
+ *       为什么画面里没有"这种问题会先耗掉半天；</li>
+ *   <li><b>层归属不一致</b>：某步写 `frames.hands = 'hug'`，而登记表里
+ *       `play_cloud/hug@2x.webp` 的 `layer` 是 `companion`。门禁的分支各自都合法
+ *       （键存在、layer 在 layers 里），但运行期 `frameFileOf(scene, layer, slot, density)`
+ *       是按 `(scene, layer, slot, density)` **四元组**查表的，查不到就"这一层保持上一帧"——
+ *       真机表现是"手掌这一步没动静"，日志里只有一行"查不到"。</li>
+ * </ol>
+ *
+ * @param {Record<string, any>} manifest 清单
+ * @returns {string[]} 问题列表
+ */
+export function checkFrameUsage(manifest) {
+  const problems = [];
+  const scenes = isPlainObject(manifest.scenes) ? manifest.scenes : {};
+  const frames = isPlainObject(manifest.frames) ? manifest.frames : {};
+  /** 被引用过的 `<scene>/<slot>`（两档都算一次引用）。 */
+  const referenced = new Set();
+  for (const [sceneId, scene] of Object.entries(scenes)) {
+    const steps = isPlainObject(scene) && Array.isArray(scene.steps) ? scene.steps : [];
+    for (const [index, step] of steps.entries()) {
+      const frameRefs = isPlainObject(step) && isPlainObject(step.frames) ? step.frames : {};
+      for (const [layerId, slot] of Object.entries(frameRefs)) {
+        if (typeof slot !== 'string' || slot.length === 0) continue;
+        referenced.add(`${sceneId}/${slot}`);
+        for (const density of DENSITIES) {
+          const key = `${sceneId}/${slot}@${density}.webp`;
+          const frame = frames[key];
+          if (!isPlainObject(frame)) continue;
+          // 层归属必须与引用它的那一层一致：否则运行期按四元组查不到，静默保持上一帧
+          if (String(frame.layer) !== layerId) {
+            problems.push(
+              `scenes.${sceneId}.steps[${index}].frames.${layerId}=${JSON.stringify(slot)} 引用的 ${key} ` +
+                `登记在 layer=${JSON.stringify(frame.layer)} 上：` +
+                '运行期按 (scene, layer, slot, density) 查不到这一帧，该层会静默保持上一帧',
+            );
+          }
+        }
+      }
+    }
+  }
+  for (const key of Object.keys(frames)) {
+    const match = /^([^/]+)\/([^/@]+)@(1x|2x)\.webp$/.exec(key);
+    if (!match) continue;
+    const pair = `${match[1]}/${match[2]}`;
+    if (!referenced.has(pair)) {
+      problems.push(`帧 ${key} 没有被任何场景的任何一步引用（孤儿帧）：要么让它进编排，要么别导出`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * G-S3：预算与元信息自证。
+ *
+ * @param {Record<string, any>} manifest 清单
+ * @returns {string[]} 问题列表
+ *//**
  * G-S3：预算与元信息自证。
  *
  * @param {Record<string, any>} manifest 清单
@@ -505,6 +570,7 @@ export async function runSequenceGate(options = {}) {
     ['G-S2/layers', () => checkLayers(record)],
     ['G-S1/registry', () => checkFrameRegistry(record)],
     ['G-S2/scenes', () => checkScenes(record)],
+    ['G-S1b/frame-usage', () => checkFrameUsage(record)],
     ['G-S3/budget', () => checkVolume(record)],
     ['G-S1/no-png', () => checkNoPng(outDir)],
   ];

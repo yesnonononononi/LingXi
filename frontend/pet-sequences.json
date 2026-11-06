@@ -11,6 +11,22 @@
   },
   "layers": [
     {
+      "id": "protagonist",
+      "kind": "sequence-frames",
+      "canvas": {
+        "width": 1024,
+        "height": 1536
+      },
+      "sourceCanvas": {
+        "width": 1024,
+        "height": 1536
+      },
+      "anchor": {
+        "x": 474,
+        "y": 1454
+      }
+    },
+    {
       "id": "companion",
       "kind": "sequence-frames",
       "canvas": {
@@ -28,6 +44,22 @@
       "grip": {
         "x": 256,
         "y": 333
+      }
+    },
+    {
+      "id": "hands",
+      "kind": "sequence-frames",
+      "canvas": {
+        "width": 1024,
+        "height": 1536
+      },
+      "sourceCanvas": {
+        "width": 1024,
+        "height": 1536
+      },
+      "anchor": {
+        "x": 474,
+        "y": 1454
       }
     }
   ],
@@ -93,6 +125,166 @@
           "companionDy": 0
         }
       ]
+    },
+    "play_cloud": {
+      "loop": true,
+      "onEnd": null,
+      "steps": [
+        {
+          "ms": 700,
+          "frames": {
+            "protagonist": "sit_neutral",
+            "companion": "neutral"
+          },
+          "companionCenterX": 1080,
+          "companionFootY": 1454,
+          "phase": "approach"
+        },
+        {
+          "ms": 160,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 1010,
+          "companionFootY": 1444,
+          "phase": "approach"
+        },
+        {
+          "ms": 120,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 930,
+          "companionFootY": 1418,
+          "phase": "approach"
+        },
+        {
+          "ms": 120,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 850,
+          "companionFootY": 1454,
+          "phase": "approach"
+        },
+        {
+          "ms": 120,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 770,
+          "companionFootY": 1420,
+          "phase": "approach"
+        },
+        {
+          "ms": 140,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 690,
+          "companionFootY": 1370,
+          "phase": "contact"
+        },
+        {
+          "ms": 140,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 600,
+          "companionFootY": 1260,
+          "phase": "contact"
+        },
+        {
+          "ms": 420,
+          "frames": {
+            "protagonist": "sit_hug",
+            "companion": "neutral",
+            "hands": "hug"
+          },
+          "companionCenterX": 475,
+          "companionFootY": 1147,
+          "phase": "contact"
+        },
+        {
+          "ms": 650,
+          "frames": {
+            "protagonist": "sit_hug",
+            "companion": "happy",
+            "hands": "hug"
+          },
+          "companionCenterX": 475,
+          "companionFootY": 1147,
+          "phase": "response"
+        },
+        {
+          "ms": 160,
+          "frames": {
+            "protagonist": "sit_hug",
+            "companion": "happy",
+            "hands": "hug"
+          },
+          "companionCenterX": 475,
+          "companionFootY": 1141,
+          "phase": "response"
+        },
+        {
+          "ms": 650,
+          "frames": {
+            "protagonist": "sit_hug",
+            "companion": "happy",
+            "hands": "hug"
+          },
+          "companionCenterX": 475,
+          "companionFootY": 1147,
+          "phase": "response"
+        },
+        {
+          "ms": 160,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "happy"
+          },
+          "companionCenterX": 600,
+          "companionFootY": 1260,
+          "phase": "end"
+        },
+        {
+          "ms": 160,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 770,
+          "companionFootY": 1400,
+          "phase": "end"
+        },
+        {
+          "ms": 160,
+          "frames": {
+            "protagonist": "sit_welcome",
+            "companion": "neutral"
+          },
+          "companionCenterX": 930,
+          "companionFootY": 1454,
+          "phase": "end"
+        },
+        {
+          "ms": 1000,
+          "frames": {
+            "protagonist": "sit_neutral",
+            "companion": "neutral"
+          },
+          "companionCenterX": 1080,
+          "companionFootY": 1454,
+          "phase": "end"
+        }
+      ]
     }
   },
   "frames": {
@@ -135,14 +327,134 @@
       "sha256": "9f5a6c89837788d9659cc6224a6076aae818ff76d1748ca8a99a7920e458c638",
       "format": "webp-lossless",
       "url": "lxa://pet-sequences/cloud_react/happy@2x.webp"
+    },
+    "play_cloud/sit_neutral@1x.webp": {
+      "layer": "protagonist",
+      "slot": "sit_neutral",
+      "width": 156,
+      "height": 234,
+      "bytes": 31864,
+      "sha256": "4b88baada0cdc66b844a1e9329b06875cad3da935a45d7fde248387e1e188e20",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/sit_neutral@1x.webp"
+    },
+    "play_cloud/sit_neutral@2x.webp": {
+      "layer": "protagonist",
+      "slot": "sit_neutral",
+      "width": 312,
+      "height": 468,
+      "bytes": 101020,
+      "sha256": "e2b0bdd8f5594458df9b7e019e010ba1ff2765d99589b3213d48d7a000cb466a",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/sit_neutral@2x.webp"
+    },
+    "play_cloud/neutral@1x.webp": {
+      "layer": "companion",
+      "slot": "neutral",
+      "width": 61,
+      "height": 61,
+      "bytes": 1522,
+      "sha256": "bcfdbc8dde4a4943bcb4c4767de40fbb0438875e56acc3b5a29851ac71450cbe",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/neutral@1x.webp"
+    },
+    "play_cloud/neutral@2x.webp": {
+      "layer": "companion",
+      "slot": "neutral",
+      "width": 122,
+      "height": 122,
+      "bytes": 3860,
+      "sha256": "3be9a6c61e90368883e152a21bb19a20815adbe5a4531470a3928bbd9f2072fc",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/neutral@2x.webp"
+    },
+    "play_cloud/sit_welcome@1x.webp": {
+      "layer": "protagonist",
+      "slot": "sit_welcome",
+      "width": 156,
+      "height": 234,
+      "bytes": 32420,
+      "sha256": "f01bd92e99ba651ad25459c9dfffb6f3c8119cec1fd6574639589431b2fddd77",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/sit_welcome@1x.webp"
+    },
+    "play_cloud/sit_welcome@2x.webp": {
+      "layer": "protagonist",
+      "slot": "sit_welcome",
+      "width": 312,
+      "height": 468,
+      "bytes": 101140,
+      "sha256": "c6891194d75a51b71a15922fe59bb56ad1198cbb706cace7ac5185b58d56c431",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/sit_welcome@2x.webp"
+    },
+    "play_cloud/sit_hug@1x.webp": {
+      "layer": "protagonist",
+      "slot": "sit_hug",
+      "width": 156,
+      "height": 234,
+      "bytes": 32188,
+      "sha256": "6f3c4df09d468a68a6a47a1d881c792d8e2677b0837b868b966118a40116852c",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/sit_hug@1x.webp"
+    },
+    "play_cloud/sit_hug@2x.webp": {
+      "layer": "protagonist",
+      "slot": "sit_hug",
+      "width": 312,
+      "height": 468,
+      "bytes": 100604,
+      "sha256": "45be44f0794eabc4644bcc2d2878a434d7e65a38cbd3b073b560057cd1ec68ec",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/sit_hug@2x.webp"
+    },
+    "play_cloud/hug@1x.webp": {
+      "layer": "hands",
+      "slot": "hug",
+      "width": 156,
+      "height": 234,
+      "bytes": 1502,
+      "sha256": "525024d44279471208c4510bc0ab8f9997ebb9f17cb1e4cfad7bcc1dd55b6735",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/hug@1x.webp"
+    },
+    "play_cloud/hug@2x.webp": {
+      "layer": "hands",
+      "slot": "hug",
+      "width": 312,
+      "height": 468,
+      "bytes": 4564,
+      "sha256": "07454607e2b6ba83ea2e07700d90a9936e341a29520fda9f5ca48ea4b8e819e6",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/hug@2x.webp"
+    },
+    "play_cloud/happy@1x.webp": {
+      "layer": "companion",
+      "slot": "happy",
+      "width": 61,
+      "height": 61,
+      "bytes": 1544,
+      "sha256": "3e1373b9c1c0061f299f4637a1eab6c6fd7724e79001f1eee31abfcb1b390d6f",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/happy@1x.webp"
+    },
+    "play_cloud/happy@2x.webp": {
+      "layer": "companion",
+      "slot": "happy",
+      "width": 122,
+      "height": 122,
+      "bytes": 3906,
+      "sha256": "9f5a6c89837788d9659cc6224a6076aae818ff76d1748ca8a99a7920e458c638",
+      "format": "webp-lossless",
+      "url": "lxa://pet-sequences/play_cloud/happy@2x.webp"
     }
   },
   "totals": {
-    "scenes": 1,
-    "steps": 8,
-    "bytes1x": 3066,
-    "bytes2x": 7766,
-    "durationMs": 3180
+    "scenes": 2,
+    "steps": 23,
+    "bytes1x": 104106,
+    "bytes2x": 322860,
+    "durationMs": 8040
   },
   "provenance": {
     "adapter": "gif-v1-steps",
@@ -156,14 +468,5 @@
       "files"
     ]
   },
-  "deferred": [
-    {
-      "scene": "play_cloud",
-      "reason": "双角色编排（主角三帧 + 伙伴 + 手掌层 + 握持点 G-S2 + 叠放序）属 B2；B1 只验\"序列资产能跑通\""
-    },
-    {
-      "scene": "sit_blink",
-      "reason": "主角帧序列（帧只存 id、经 PoseController.showFrame 上屏）属 B2；pose 域本轮禁改"
-    }
-  ]
+  "deferred": []
 }

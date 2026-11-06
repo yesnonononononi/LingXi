@@ -16,9 +16,11 @@
  *   <li><b>CSS 域</b>：窗口视口。换算只许经 `manifest.ts` 的 `stageToCssOf` / `companionBoxOf`。</li>
  * </ul>
  *
- * <p><b>本轮（T05/B1）只交付 companion 单层单场景</b>（`cloud_react`）。`protagonist` / `hands`
- * 的类型与 `kind` 已经登记好，但没有任何场景使用它们——"没做"在 `deferred` 里写明，
- * 而不是靠"类型里没有"来表达。</p>
+ * <p><b>B2 的形态：</b>`cloud_react`（伙伴单层）+ `play_cloud`（主角 / 伙伴 / 手掌三层）。
+ * `play_cloud` 的三层都是 `sequence-frames`：它的主角帧（`sit_welcome` / `sit_hug` / 坐姿中性）
+ * 是**演出帧**，不属于任何姿态片段——塞进 `pet-poses.json` 会触发 G-P4 孤儿帧判据，
+ * 唯一"绕过"办法是编一条永不选中的片段（拿数据撒谎）。`pose-frames` 这条 kind 仍然保留：
+ * 将来若有场景要借用真正的姿态帧，`PoseController.showFrame` 就是它的窄接口。</p>
  *
  * @module pet/sequences/types
  */
@@ -228,13 +230,12 @@ export interface PetSequences {
  * 主角层的**窄接口**（`pose-frames` 层唯一的写入方式）。
  *
  * <p><b>单写者纪律（设计 §7.4）：</b>序列导演**不许**直接写主角的 `<img>.src`，
- * 只能调 `showFrame(frameId)`，由 `PoseController.handleFrame` 走同一条 `applyBox()`，
+ * 只能调 `showFrame(frameId)`，由 `PoseController` 走同一条 `applyBox()`，
  * 于是"落点公式"只有一份 ⇒ 播完之后不会跳脚。</p>
  *
- * <p><b>为什么本轮没有它的实现：</b>`PoseController` 目前**没有** `showFrame`，
- * 而 `src/pet/poses/**` 在本批是禁改文件（并行的 T02 正在改同目录）。
- * 所以 B1 只定义契约、并由 `SequenceDirector` 在"某步真的引用了主角帧"时**明确报错**，
- * 而不是静默丢帧。B2 给 `PoseController` 加窄接口时，把这个端口接上去即可。</p>
+ * <p><b>B2 起它已经落地</b>（`PoseController.showFrame` / `clearSequenceFrame`）：
+ * 序列期间 `posture` / `facing` **一个字都不改**，画面靠 `.pet-pose` 的行内
+ * `display` 临时显形，收尾把行内样式撤掉即回到"由 `data-posture` 说了算"的常态。</p>
  */
 export interface SequenceProtagonistPort {
   /**
@@ -243,6 +244,17 @@ export interface SequenceProtagonistPort {
    * @param frameId 姿态帧 id（如 `sit_welcome`）
    */
   showFrame: (frameId: string) => void;
+  /**
+   * 把序列临时借用过的画面**收干净**（可选；缺省时导演不调它）。
+   *
+   * <p>为什么需要它：`showFrame` 只负责"画上去"，而序列结束（或被 `stop()` 打断）时
+   * 那一帧必须消失。收尾如果留给调用方，就会有人忘——忘掉的形态是"云走了，猫还保持着
+   * 抱的姿势"（`PoseController` 的 `posture` 明明还是 `stand`，画面却停在抱姿）。</p>
+   *
+   * <p><b>它不许改姿态主状态</b>：`posture` / `facing` 的唯一主人仍是 `setPosture` /
+   * `setFacing`，这条纪律对 `clear()` 同样成立（实现见 `PoseController.clearSequenceFrame`）。</p>
+   */
+  clear?: () => void;
 }
 
 /** 伙伴/手掌层的端口（DOM 实现在 `director.ts` 的 `DomSequenceLayer`）。 */

@@ -30,7 +30,7 @@ import {
 import type { PetDebugHandle, PoseDebugSnapshot } from './debug/types';
 // 只引类型（`import type` 在产物里被完全擦除）：序列运行时本体只在 DEV 分支动态 import，
 // 生产构建不会因此产出 `sequences/*` 的 chunk。
-import type { SequenceDebugHandle } from './sequences/types';
+import type { SequenceDebugHandle, SequenceLayerId, SequenceLayerPort, SequenceSnapshot } from './sequences/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { faceTileUrls as faceTileUrlMap, isFaceDegraded } from './assets/face-tiles';
@@ -913,42 +913,108 @@ function mountDevTools(): void {
 }
 
 /**
- * 序列通道（T05/B1）：把 `petDebug.sequence.play('cloud_react')` / `.stop()` 挂到后门句柄上。
+ * 用户入口播放的场景（双击宠物 = 让小云酱过来玩一次）。
  *
- * <p><b>只做三件事</b>：建伙伴层元素、建导演、把动画循环接到 `director.tick(now)`。
- * 触发方式只有后门——**生产态一行都不执行**（本函数只被 `mountDevTools` 调用，而后者在
- * `import.meta.env.DEV` 恒假时整段被摇掉）。生产态行为因此与 B1 之前逐字节一致：
- * `petFacing` 恒 `-1`、没有任何自动触发的序列。</p>
- *
- * <p><b>为什么 `sequence` 这个键是"事后"挂上去的：</b>`PetDebugHandle` 的形状由
- * `debug/types.ts` 定义，而本批文件白名单不允许改它（并行的 pose 工作正在同域改动）。
- * 这里用交叉类型就地补一个可选键，键名只出现在本 DEV 分支里——生产产物搜不到
- * `sequence` 这个后门键。</p>
- *
- * @param handle `installDevBackdoor` 返回的调试句柄（与 `window.petDebug` 同一个对象）
+ * <p>选 `play_cloud` 是因为它是唯一**双角色**的场景：单看主角动没人知道"这是在跟谁玩"，
+ * 而 `cloud_react` 只有云朵自己跳，作为用户入口的反馈太弱（后门里留着够用了）。</p>
  */
-function mountSequenceBackdoor(handle: PetDebugHandle): void {
+const PLAY_SCENE_ID = 'play_cloud';
+
+/** 序列运行时的对外形状（用户入口与 DEV 后门共用同一份实现）。 */
+interface PetSequenceRuntime {
+  /** 播一个场景（非法 id 抛错，不静默）。 */
+  play: (sceneId: string) => { readonly sceneId: string; readonly steps: number; readonly durationMs: number };
+  /** 停播并撤掉所有序列层。 */
+  stop: () => void;
+  /** 当前快照。 */
+  snapshot: () => SequenceSnapshot;
+  /** 全部可播场景 id。 */
+  scenes: () => string[];
+  /** 是否在播。 */
+  isPlaying: () => boolean;
+}
+
+/**
+ * 序列运行时单例（**第一次真正用到时才动态 import**）。
+ *
+ * <p>与 B1 的差别：B1 只在 `import.meta.env.DEV` 分支里 import 序列模块（生产产物里没有
+ * `sequences/*` 的 chunk）。B2 起序列有了**用户可达入口**，生产构建里必须有这些模块，
+ * 所以改成"挂到第一次触发时再 import"——首帧不为它多付一次解析/下载，
+ * 用户不双击就永远不加载。</p>
+ */
+let sequenceRuntimePromise: Promise<PetSequenceRuntime | null> | null = null;
+
+/**
+ * 藏/显站姿画面，让序列独占画面。
+ *
+ * <p>序列演的是"坐着抱云"，而站姿立绘（`.pet-action` 里的压平帧与层栈）在
+ * `data-posture='stand'` 下仍然可见。两层同时可见 = 一只猫叠在另一只猫身上。
+ * 所以序列期间把 `.pet-action` 用**行内** `display:none` 藏起来，结束时撤掉行内值
+ * （不写死 `block`，交还给 CSS）。姿态层 `.pet-pose` 挂在 `#pet-root` 上、不是它的子节点，
+ * 因此不受影响——它由 `PoseController.showFrame` 的行内 `display` 负责显形。</p>
+ *
+ * @param hidden 是否隐藏
+ */
+function setStandArtHidden(hidden: boolean): void {
+  if (!actionElement) return;
+  actionElement.style.display = hidden ? 'none' : '';
+}
+
+/**
+ * 建（并缓存）序列运行时。
+ *
+ * @returns 运行时；没有 `#pet-root` 时为 null
+ */
+function petSequenceRuntime(): Promise<PetSequenceRuntime | null> {
+  if (sequenceRuntimePromise !== null) return sequenceRuntimePromise;
   const host = rootElement;
-  if (!host) return;
-  void Promise.all([import('./sequences/manifest'), import('./sequences/director')]).then(
+  if (!host) return Promise.resolve(null);
+  sequenceRuntimePromise = Promise.all([import('./sequences/manifest'), import('./sequences/director')]).then(
     ([manifestModule, directorModule]) => {
       const sequences = manifestModule.PET_SEQUENCES;
-      const layer = new directorModule.DomSequenceLayer({
-        doc: document,
-        host: host as unknown as ElementLike,
-        layerId: 'companion',
-        density: POSE_DENSITY,
-        log: (message) => console.debug(message),
-      });
-      // B1 只验 dy：伙伴的舞台基准取美术 `play_cloud` 第 0 步的静止位置
-      // （`companionCenterX=1080, companionFootY=1454`，gif-v1 manifest 原文），
-      // 不自己编坐标。B2 起逐 step 的坐标会写进清单，这个基准就不再需要。
+      /**
+       * 非姿态层的 DOM 端口。**按清单的 layers 顺序建**：数组下标即 z 序（0 最底），
+       * 而 `DomSequenceLayer` 是"构造即 append"，所以建完就天然是"后的压在前面的上面"。
+       * 手掌层因此必须排在伙伴层之后（否则手会被云盖住 = 抱在云下面）。
+       */
+      const layers: Partial<Record<SequenceLayerId, SequenceLayerPort>> = {};
+      for (const layer of sequences.layers) {
+        if (layer.kind === 'pose-frames') continue;
+        layers[layer.id] = new directorModule.DomSequenceLayer({
+          doc: document,
+          host: host as unknown as ElementLike,
+          layerId: layer.id,
+          density: POSE_DENSITY,
+          log: (message) => console.debug(message),
+        });
+      }
       const director = new directorModule.SequenceDirector({
         sequences,
         clock: { now: () => Date.now() },
-        layers: { companion: layer },
+        layers,
+        // 主角层的像素只经这条窄接口上屏（单写者纪律）。姿态主状态一个字都不改。
+        protagonist: {
+          showFrame: (frameId: string) => {
+            poseController?.showFrame(frameId);
+          },
+          clear: () => {
+            poseController?.clearSequenceFrame();
+          },
+        },
+        // 主角/手掌层与坐姿姿态层同一个落点公式 ⇒ 必须用同一份对齐点。
+        // 形状桥接：`pet-poses.json` 的 `align` 是美术契约 `AlignContract`
+        // （`{xNative, yNative, xSource}`），序列侧要的是 native 域的 `SequencePoint`（`{x, y}`）。
+        // 这里**只做字段改名、不做任何数值推导**：`xNative` / `yNative` 就是对齐点本身，
+        // 若在此处引入换算（乘 stageToCss、翻半张画布之类）就会与 `.pet-pose` 的落点分叉，
+        // 表现是"序列期间角色横跳几个像素"。换算只许留在 `alignedLayerBoxOf` 一处。
+        align: { x: PET_POSES.align.xNative, y: PET_POSES.align.yNative },
+        // cloud_react 的步只给 dy，不给绝对坐标；基准取美术 play_cloud 第 0 步的静止位置
+        // （`companionCenterX=1080, companionFootY=1454`，gif-v1 manifest 原文），不自己编坐标。
         base: { centerX: 1080, footY: 1454 },
-        onSceneEnd: (sceneId, onEnd) => console.debug(`[pet] 场景 ${sceneId} 结束：${onEnd}`),
+        onSceneEnd: (sceneId, onEnd) => {
+          console.debug(`[pet] 场景 ${sceneId} 结束：${onEnd}`);
+          setStandArtHidden(false);
+        },
         log: (message) => console.debug(message),
       });
 
@@ -961,9 +1027,10 @@ function mountSequenceBackdoor(handle: PetDebugHandle): void {
         if (frameHandle !== 0) window.cancelAnimationFrame(frameHandle);
         frameHandle = 0;
       };
-      const sequenceHandle: SequenceDebugHandle = {
+      const runtime: PetSequenceRuntime = {
         play: (sceneId) => {
           const report = director.play(sceneId);
+          setStandArtHidden(true);
           stopLoop();
           frameHandle = window.requestAnimationFrame(loop);
           return report;
@@ -971,17 +1038,79 @@ function mountSequenceBackdoor(handle: PetDebugHandle): void {
         stop: () => {
           stopLoop();
           director.stop();
+          setStandArtHidden(false);
         },
         snapshot: () => director.snapshot(),
         scenes: () => manifestModule.sceneIdsOf(sequences),
+        isPlaying: () => director.isPlaying,
       };
-      (handle as PetDebugHandle & { sequence?: SequenceDebugHandle }).sequence = sequenceHandle;
       window.addEventListener('pagehide', () => {
         stopLoop();
         director.stop();
       });
+      return runtime;
     },
   );
+  return sequenceRuntimePromise;
+}
+
+/**
+ * 用户可达的播放入口（**双击宠物**）。
+ *
+ * <p><b>用户怎么点到：</b>把光标移到桌宠身上，<b>在同一位置双击</b>（`dblclick`）。
+ * 选双击而不是右键菜单：右键菜单归主进程（`pet:context-menu`），改它要动
+ * `electron/**`（本批文件边界外）；而双击在渲染层就能接住，且不与既有手势冲突——
+ * 关闭已经收敛到右键菜单（D-B2/O3），双击今天**没有**任何语义。</p>
+ *
+ * <p><b>三条纪律：</b></p>
+ * <ol>
+ *   <li><b>幂等</b>：播放中再双击直接忽略（不重启、不叠加，画面不会闪回第 0 步）；</li>
+ *   <li><b>不重入</b>：运行时是单例、层只建一次，第二次进入走的是同一个导演；</li>
+ *   <li><b>不搞乱姿态主状态</b>：`posture` / `facing` 由 `setPosture` / `setFacing` 独占，
+ *       入口一个字都不写（主角帧经 `PoseController.showFrame` 借用画面）。</li>
+ * </ol>
+ *
+ * @returns 是否真的开始播（`false` = 被幂等门挡下或运行时未就绪）
+ */
+function playPetSequence(): boolean {
+  void petSequenceRuntime().then((runtime) => {
+    if (runtime === null) {
+      console.debug('[pet] 序列运行时未就绪（没有 #pet-root），双击播放被跳过');
+      return;
+    }
+    if (runtime.isPlaying()) {
+      console.debug('[pet] 序列已在播放，双击不再重入');
+      return;
+    }
+    try {
+      const report = runtime.play(PLAY_SCENE_ID);
+      console.debug(`[pet] 双击播放 ${report.sceneId}：${report.steps} 步 / ${report.durationMs} ms`);
+    } catch (err) {
+      console.warn(`[pet] 双击播放失败：${(err as Error).message}`);
+    }
+  });
+  return true;
+}
+
+/**
+ * 把序列通道挂到 DEV 后门句柄上（`petDebug.sequence.play('play_cloud')` 等）。
+ *
+ * <p>与 B1 的差别只有一处：不再自己建层/导演，而是复用用户入口那一个运行时
+ * ——后门验的就是用户真会看到的东西，两条独立的实例化路径只会让"后门绿、真机红"。</p>
+ *
+ * @param handle `installDevBackdoor` 返回的调试句柄
+ */
+function mountSequenceBackdoor(handle: PetDebugHandle): void {
+  void petSequenceRuntime().then((runtime) => {
+    if (runtime === null) return;
+    const sequenceHandle: SequenceDebugHandle = {
+      play: (sceneId) => runtime.play(sceneId),
+      stop: () => runtime.stop(),
+      snapshot: () => runtime.snapshot(),
+      scenes: () => runtime.scenes(),
+    };
+    (handle as PetDebugHandle & { sequence?: SequenceDebugHandle }).sequence = sequenceHandle;
+  });
 }
 
 /**
@@ -1096,6 +1225,17 @@ function wireEvents(): void {
 
   // 鼠标进到桌宠身上就把提示行淡回来（3 秒没动作再自己走）
   artElement.addEventListener('pointerenter', () => hintBar?.poke());
+
+  // 双击 → 播一次 `play_cloud`（**用户可达的序列入口**，见 `playPetSequence` 的注释）。
+  // 为什么是双击：右键菜单归主进程（改它要动 `electron/**`，本批边界外），
+  // 而双击在渲染层就能接住、且今天没有任何既有语义（关闭已收敛到右键菜单，O3/D-B2）。
+  // 命中判定与 pointerdown 同一道二道门：点在透明留白上不算数。
+  artElement.addEventListener('dblclick', (event) => {
+    if (!(hitTester?.test(event.clientX, event.clientY) ?? false)) return;
+    event.preventDefault();
+    hintBar?.poke();
+    playPetSequence();
+  });
 
   // 右键 → 原生菜单（显隐 / 关闭 / 退出）。这是**唯一**的关闭入口，
   // 不再有双击关闭（D-B2）也不再有一常一悬的 × 按钮（O3）。

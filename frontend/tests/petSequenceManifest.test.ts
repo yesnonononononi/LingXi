@@ -48,7 +48,7 @@ import {
 } from '../src/pet/sequences/manifest';
 import { SequenceDirector, DomSequenceLayer, sceneDurationOf, stepIndexAt } from '../src/pet/sequences/director';
 import type { PetSequences, SequenceFrameFile, SequenceLayerPort, SequenceScene, SequenceSceneEnd } from '../src/pet/sequences/types';
-import { SEQUENCE_SCHEMA_KEYS as BUILD_SCHEMA_KEYS, runSequenceGate } from '../scripts/check-pet-sequences.mjs';
+import { SEQUENCE_SCHEMA_KEYS as BUILD_SCHEMA_KEYS, checkFrameUsage, runSequenceGate } from '../scripts/check-pet-sequences.mjs';
 import { DEFAULT_SEQUENCE_OUT_DIR, SEQUENCES_JSON_PATH } from '../scripts/build-pet-sequences.mjs';
 import { SEQUENCE_TOTAL_MAX_BYTES } from '../scripts/pet-budget.mjs';
 
@@ -130,21 +130,42 @@ function makeDirector(options: { base?: { centerX: number; footY: number } | nul
   return { clock, layer, director };
 }
 
-test('S-01 已提交清单的自证：1 场景 / 8 步 / 3180 ms / 4 个 webp', () => {
+test('S-01 已提交清单的自证：2 场景 / 23 步 / 8040 ms / 12 个 webp', () => {
   const sequences = PET_SEQUENCES;
-  assert.deepEqual(sceneIdsOf(sequences), ['cloud_react'], 'B1 只有 cloud_react 一个场景');
+  assert.deepEqual(
+    sceneIdsOf(sequences).sort(),
+    ['cloud_react', 'play_cloud'],
+    'B2 起恰好是 cloud_react 与 play_cloud 两个场景（多一个少一个都要在这里改名）',
+  );
   const scene = sceneOf(sequences, 'cloud_react');
   assert.ok(scene !== null, 'cloud_react 必须存在');
   assert.equal(scene.steps.length, 8, 'cloud_react 是 8 步（美术 gif-v1 manifest 原文）');
   assert.equal(sceneDurationOf(scene), 3180, '总时长 3.18 s（设计 §7.7 的验收判据）');
+  const playScene = sceneOf(sequences, 'play_cloud');
+  assert.ok(playScene !== null, 'play_cloud 必须存在（B2 的核心交付）');
+  assert.equal(playScene.steps.length, 15, 'play_cloud 是 15 步（美术 gif-v1 manifest 原文）');
+  assert.equal(sceneDurationOf(playScene), 4860, '总时长 4.86 s（美术 README 与 manifest 同步声明）');
   assert.deepEqual(Object.keys(sequences.frames).sort(), [
     'cloud_react/happy@1x.webp',
     'cloud_react/happy@2x.webp',
     'cloud_react/neutral@1x.webp',
     'cloud_react/neutral@2x.webp',
+    'play_cloud/happy@1x.webp',
+    'play_cloud/happy@2x.webp',
+    'play_cloud/hug@1x.webp',
+    'play_cloud/hug@2x.webp',
+    'play_cloud/neutral@1x.webp',
+    'play_cloud/neutral@2x.webp',
+    'play_cloud/sit_hug@1x.webp',
+    'play_cloud/sit_hug@2x.webp',
+    'play_cloud/sit_neutral@1x.webp',
+    'play_cloud/sit_neutral@2x.webp',
+    'play_cloud/sit_welcome@1x.webp',
+    'play_cloud/sit_welcome@2x.webp',
   ]);
-  assert.equal(sequences.totals.steps, 8);
-  assert.equal(sequences.totals.durationMs, 3180);
+  assert.equal(sequences.totals.scenes, 2);
+  assert.equal(sequences.totals.steps, 23);
+  assert.equal(sequences.totals.durationMs, 8040);
   const bytes = sequences.totals.bytes1x + sequences.totals.bytes2x;
   assert.ok(bytes > 0 && bytes < SEQUENCE_TOTAL_MAX_BYTES, `合计 ${bytes} B 必须落在预算内`);
   // 设计 §7.6 实测：cloud_happy @2x = 3,906 B（逐字节对上，证明无损口径与 pose 同源）
@@ -329,7 +350,8 @@ test('S-12 导演：dy −14 舞台 = −2.13 CSS（设计 §7.7 判据 ②）',
 
 test('S-13 导演：非法场景名 ⇒ TypeError（不许静默返回）', () => {
   const { director } = makeDirector();
-  assert.throws(() => director.play('play_cloud'), TypeError, 'play_cloud 属 B2：清单里没有它就必须炸');
+  assert.throws(() => director.play('sit_blink'), TypeError, 'sit_blink 是 sit 姿态的一条片段，不是序列：清单里没有就必须炸');
+  assert.throws(() => director.play('nope-not-a-scene'), TypeError);
   assert.throws(() => director.play(''), TypeError);
 });
 
@@ -560,14 +582,47 @@ test('S-19 G-S2 判别力：时序倒流 / 帧引用不存在，各造一个坏�
   }
 });
 
+test('S-26 G-S1b 判别力：孤儿帧 / 层归属不一致，各造一个坏样本必须红', () => {
+  // 干净样本：已提交清单必须零问题（否则新判据本身是噪声源）
+  assert.deepEqual(checkFrameUsage(rawSequences()), [], '已提交清单在 G-S1b 下必须干净');
+
+  // ① 孤儿帧：把 play_cloud 的 hands/hug 从第 7–10 步的编排里摘掉，帧仍在注册表里
+  const orphan = rawSequences();
+  for (const step of orphan.scenes.play_cloud.steps) {
+    if (step.frames.hands !== undefined) delete step.frames.hands;
+  }
+  const orphanProblems = checkFrameUsage(orphan);
+  assert.ok(
+    orphanProblems.some((line: string) => line.includes('孤儿帧')),
+    `摘掉 hands 引用后必须点名孤儿帧，实际：\n${orphanProblems.join('\n')}`,
+  );
+
+  // ② 层归属不一致：登记帧说自己在 companion 上，编排却把它当 hands 用
+  const mismatch = rawSequences();
+  for (const density of ['1x', '2x']) {
+    mismatch.frames[`play_cloud/hug@${density}.webp`].layer = 'companion';
+  }
+  const mismatchProblems = checkFrameUsage(mismatch);
+  assert.ok(
+    mismatchProblems.some((line: string) => line.includes('静默保持上一帧')),
+    `层归属不一致必须点名"查不到就静默保持上一帧"，实际：\n${mismatchProblems.join('\n')}`,
+  );
+});
+
 test('S-20 加载器单例即校验：loadPetSequences() 与 PET_SEQUENCES 同源', () => {
   const reloaded = loadPetSequences();
   assert.deepEqual(reloaded.totals, PET_SEQUENCES.totals);
   assert.equal(reloaded.provenance.manifestSha256, PET_SEQUENCES.provenance.manifestSha256);
   assert.equal(PET_SEQUENCES.provenance.adapter, 'gif-v1-steps');
+  assert.deepEqual(
+    PET_SEQUENCES.deferred,
+    [],
+    'deferred 必须是空表：play_cloud 已落成序列，sit_blink 落成 sit 姿态的片段——' +
+      '"没做"与"放错了域"是两句不同的话，两者都不该留在 deferred 里',
+  );
   assert.ok(
-    PET_SEQUENCES.deferred.some((item) => item.scene === 'play_cloud'),
-    'play_cloud 必须在 deferred 里（"没做"要说出来，不是靠类型里没有它）',
+    sceneIdsOf(PET_SEQUENCES).includes('play_cloud') && sceneIdsOf(PET_SEQUENCES).includes('cloud_react'),
+    'deferred 为空的前提是两个场景都真的在清单里（不许靠删场景来让 deferred 变空）',
   );
   assert.equal(resolve(FRONTEND_ROOT, 'pet-sequences.json'), SEQUENCES_JSON_PATH, '清单路径只有一处定义');
 });

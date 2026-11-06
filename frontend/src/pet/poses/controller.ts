@@ -116,6 +116,17 @@ export class PoseController {
   /** 已写过 placement 的帧 id（同一帧重复上屏时不重复写样式）。 */
   private placedFrameId: string | null = null;
 
+  /**
+   * 序列是否正借用姿态层（`showFrame` 置真、`clearSequenceFrame` 置假）。
+   *
+   * <p>只有它是真的时候，行内 `display` 才会被写/被撤；平时这一层完全由 `data-posture`
+   * 与 CSS 决定，与 B1 之前逐字节一致。</p>
+   */
+  private sequenceFrameActive = false;
+
+  /** 序列借画面时暂停了姿态片段吗（收尾要接上，否则坐着眨眼的循环会永远停住）。 */
+  private resumeAfterSequence = false;
+
   /** 当前朝向（选项缺省为 `-1`；非法值在构造时抛错，不在选片段时才发现）。 */
   private facingValue: Facing;
 
@@ -364,6 +375,126 @@ export class PoseController {
   /** 停止播放并回到站姿（销毁/降级用）。 */
   reset(): void {
     this.leavePose('reset');
+  }
+
+  /**
+   * 让序列把某一帧**临时画到姿态层**（`SequenceProtagonistPort` 的唯一实现）。
+   *
+   * <p><b>它守的三条（每条都有单测）：</b></p>
+   * <ol>
+   *   <li><b>不动姿态主状态</b>：`posture` / `facing` 一个字都不写，`player` 不启动、
+   *       `clip` 不动。姿态的唯一主人仍是 {@link setPosture} / {@link setFacing}，
+   *       所以"序列演完姿态错乱"在结构上不可能发生；</li>
+   *   <li><b>像素只走同一条落点公式</b>：换图与 {@link handleFrame} 共用 `image.src` +
+   *       {@link applyBox}，序列自己**绝不**写主角的 `img.src`（单写者纪律）；</li>
+   *   <li><b>收尾干净</b>：显形靠 `.pet-pose` 的**行内** `display`，由
+   *       {@link clearSequenceFrame} 撤掉行内值，画面随即回到"由 `data-posture` 说了算"。</li>
+   * </ol>
+   *
+   * <p><b>必须破例的地方（写清理由）：</b>姿态层平时由 CSS 规则
+   * `#pet-root[data-posture='stand'] .pet-pose { display: none }` 藏起来，"站姿时画一帧坐姿"
+   * 就必然被这条规则吃掉。不许改 `pet.css`（本批文件边界），也不许改 `data-posture`
+   * （那正是"唯一主人"要守的东西），所以只能在**本层**写行内 `display`——
+   * 行内样式胜过作者样式表，且它只影响这一层、只在这段序列期间存在。</p>
+   *
+   * @param frameId 帧 id（`pet-poses.json` 里任意批次的帧）
+   * @returns 是否真的画上去了（`false` = 拒绝，且已记日志，调用方不许当成功）
+   */
+  showFrame(frameId: string): boolean {
+    if (typeof frameId !== 'string' || frameId.length === 0) {
+      this.log(`序列请求的姿态帧 id 非法：${JSON.stringify(frameId)}`);
+      return false;
+    }
+    if (this.pendingStand) {
+      // 起身链（exit）正在跑：这时候换画面会让 `handleClipEnd` 的收尾读到半截状态，
+      // 结果就是"站起来了但姿态还写着 lie"。序列这一步不接，等它自己播完。
+      this.log(`起身链进行中，拒绝序列借用画面（帧 ${frameId}）`);
+      return false;
+    }
+    if (this.player.isPlaying) {
+      // 姿态片段正在播（例如坐着眨眼）：**暂停**而不是拒绝。拒绝的后果是"坐着的时候
+      // 双击宠物什么都看不到"——入口明明可达、画面却是空的，比不接这个功能更糟。
+      // 暂停只动播放器（不换片段、不写 posture、不碰 pendingStand），收尾时 resume 接上。
+      this.player.pause();
+      this.resumeAfterSequence = true;
+    }
+    const found = this.findFrame(frameId);
+    if (found === null) {
+      this.log(`序列引用了不存在的姿态帧 ${frameId}（保持原画面）`);
+      return false;
+    }
+    const file = found.frame.files[this.options.density] ?? found.frame.files['1x'];
+    this.image.src = file.url;
+    this.image.hidden = false;
+    this.frameIdValue = frameId;
+    // 序列帧与姿态片段交替出现时，"同一帧不重写盒子"的早退会让位置停在上一帧：清掉它
+    this.placedFrameId = null;
+    this.setLayerDisplayOverride(true);
+    this.applyBox(found.batch, found.frame, 0);
+    this.sequenceFrameActive = true;
+    return true;
+  }
+
+  /**
+   * 收干净序列借用的画面（`SequenceProtagonistPort.clear` 的实现）。
+   *
+   * <p><b>幂等</b>：没借过就什么都不做；连调两次与调一次完全相同。它**只**撤行内显示与图，
+   * 不碰 `posture` / `facing` / `pendingStand` / `clip` —— 于是"序列结束"与"姿态结束"
+   * 是两件互不干扰的事，谁也不会替对方收尾。</p>
+   */
+  clearSequenceFrame(): void {
+    if (!this.sequenceFrameActive) return;
+    this.sequenceFrameActive = false;
+    this.image.hidden = true;
+    this.frameIdValue = null;
+    this.placedFrameId = null;
+    this.setLayerDisplayOverride(false);
+    if (this.resumeAfterSequence) {
+      this.resumeAfterSequence = false;
+      // 只接回被自己暂停的那条片段；姿态若已回站姿（leavePose 期间）就没有可接的
+      if (this.clip !== null && this.postureValue !== STAND_POSTURE) this.player.resume();
+    }
+  }
+
+  /** 序列是否正借用着姿态层（排障与后门断言用）。 */
+  get isSequenceFrameActive(): boolean {
+    return this.sequenceFrameActive;
+  }
+
+  /**
+   * 写/撤 `.pet-pose` 的行内 `display`（**序列借画面时唯一破例的写入面**）。
+   *
+   * @param visible `true` = 强制显示；`false` = 撤掉行内值，交还给 CSS
+   */
+  private setLayerDisplayOverride(visible: boolean): void {
+    const style = (this.layer as unknown as {
+      style?: { setProperty: (name: string, value: string) => void; removeProperty?: (name: string) => void };
+    }).style;
+    if (style === undefined || typeof style.setProperty !== 'function') return;
+    if (visible) {
+      style.setProperty('display', 'block');
+      return;
+    }
+    if (typeof style.removeProperty === 'function') {
+      style.removeProperty('display');
+      return;
+    }
+    // 没有 `removeProperty` 的假元素（单测的最小 DOM 替身）：空值即"移除"
+    style.setProperty('display', '');
+  }
+
+  /**
+   * 按帧 id 在全部批次里找一帧（帧 id 在当前美术资产里是全局唯一的）。
+   *
+   * @param frameId 帧 id
+   * @returns 批次与帧；找不到时 null
+   */
+  private findFrame(frameId: string): { batch: PoseBatch; frame: PoseFrame } | null {
+    for (const batch of Object.values(this.options.poses.batches)) {
+      const frame = frameOf(batch, frameId);
+      if (frame !== null) return { batch, frame };
+    }
+    return null;
   }
 
   /**

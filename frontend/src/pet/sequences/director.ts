@@ -24,14 +24,16 @@
 
 import type { DocumentLike, ElementLike } from '../presentation/layered-presentation';
 import { PET_GEOMETRY, type PetGeometry } from '../layout';
-import { companionBoxOf, frameFileOf, layerOf, sceneOf, sceneIdsOf, type SequenceStageAnchor } from './manifest';
+import { alignedLayerBoxOf, companionBoxOf, frameFileOf, layerOf, sceneOf, sceneIdsOf, type SequenceStageAnchor } from './manifest';
 import type {
   PetSequences,
   SequenceCssBox,
   SequenceDensity,
   SequenceFrameFile,
+  SequenceLayer,
   SequenceLayerId,
   SequenceLayerPort,
+  SequencePoint,
   SequenceProtagonistPort,
   SequenceScene,
   SequenceSceneEnd,
@@ -63,8 +65,15 @@ export interface SequenceDirectorOptions {
   readonly clock: SequenceClockPort;
   /** 各层的端口（缺层 = 该层不显示；本轮只有 `companion`）。 */
   readonly layers: Readonly<Partial<Record<SequenceLayerId, SequenceLayerPort>>>;
-  /** 主角层的窄接口（本轮缺省为空，见模块注释）。 */
+  /** 主角层的窄接口（`pose-frames` 层唯一的写入方式；缺省 = 该层不显示）。 */
   readonly protagonist?: SequenceProtagonistPort | null;
+  /**
+   * 坐姿对齐点（native 域，缺省从 `pet-poses.json` 的 `align` 取）。
+   *
+   * <p>主角 / 手掌层的落点与姿态层**同构**（见 `alignedLayerBoxOf`），所以必须有站姿对齐点；
+   * 注入它而不是在序列侧再存一份 `(479.7, 1454)`，是为了让"换姿不跳脚"只有一个真源。</p>
+   */
+  readonly align?: SequencePoint | null;
   /** 本步没写坐标时的伙伴基准位置（舞台域）。 */
   readonly base?: SequenceStageAnchor | null;
   /**
@@ -128,6 +137,14 @@ export class SequenceDirector {
   private elapsedMsValue = 0;
 
   /**
+   * 本场景内**当前真的亮着**的层 id。
+   *
+   * <p>用途：某一步的 `frames` 里没提到某层时，只有"它上一帧亮着"才需要撤
+   * （见 {@link applyStep} 末尾的收尾循环）。`play()`/`stop()` 都会清空。</p>
+   */
+  private readonly shownLayerIds = new Set<SequenceLayerId>();
+
+  /**
    * 构造导演（不启动任何东西；`play()` 才会推第一步）。
    *
    * @param options 依赖
@@ -182,6 +199,7 @@ export class SequenceDirector {
     this.stepIndexValue = -1;
     this.startedAtMs = this.options.clock.now();
     this.elapsedMsValue = 0;
+    this.shownLayerIds.clear();
     this.applyStep(scene, 0);
     this.log(`播放场景 ${sceneId}：${scene.steps.length} 步 / ${sceneDurationOf(scene)} ms`);
     return { sceneId, steps: scene.steps.length, durationMs: sceneDurationOf(scene) };
@@ -208,17 +226,24 @@ export class SequenceDirector {
     this.sceneIdValue = null;
     this.stepIndexValue = -1;
     this.elapsedMsValue = 0;
+    this.shownLayerIds.clear();
   }
 
   /**
    * 让所有已接线的层把画面撤掉（`stop()` 与场景自然收尾共用这一个出口）。
    *
-   * <p>层没接线时跳过（缺层 = 该层本来就不显示，见 {@link SequenceDirectorOptions.layers}）。</p>
+   * <p>层没接线时跳过（缺层 = 该层本来就不显示，见 {@link SequenceDirectorOptions.layers}）。
+   * 主角层走端口自己的 `clear()`（如果它提供）：序列不许自己动主角的 `<img>`，
+   * 但"演完了要收干净"同样不许留给调用方去猜。</p>
    */
   private hideAllLayers(): void {
     const layers = this.options.layers;
     for (const layerId of Object.keys(layers) as SequenceLayerId[]) {
       layers[layerId]?.stop();
+    }
+    const protagonist = this.options.protagonist;
+    if (protagonist !== null && protagonist !== undefined && typeof protagonist.clear === 'function') {
+      protagonist.clear();
     }
   }
 
@@ -296,8 +321,15 @@ export class SequenceDirector {
     const sceneId = this.sceneIdValue;
     if (step === undefined || sceneId === null) return;
     this.stepIndexValue = index;
+    const written = new Set<SequenceLayerId>();
     for (const [layerId, slot] of Object.entries(step.frames) as [SequenceLayerId, string | null][]) {
-      if (layerId === 'protagonist') {
+      written.add(layerId);
+      const layer = layerOf(this.options.sequences, layerId);
+      if (layer === null) {
+        this.log(`第 ${index} 步引用了未在 layers 里声明的层 ${layerId}`);
+        continue;
+      }
+      if (layer.kind === 'pose-frames') {
         this.applyProtagonist(sceneId, slot);
         continue;
       }
@@ -310,6 +342,7 @@ export class SequenceDirector {
       if (slot === null) {
         port.setFrame(null);
         port.stop();
+        this.shownLayerIds.delete(layerId);
         continue;
       }
       const density = this.density();
@@ -319,8 +352,79 @@ export class SequenceDirector {
         continue;
       }
       port.setFrame(file);
-      if (layerId === 'companion') port.setPlacement(this.companionBox(step));
+      port.setPlacement(this.layerBox(layer, step));
+      this.shownLayerIds.add(layerId);
     }
+    // **本步没提到、但上一帧还亮着的层，必须收掉。**
+    //
+    // <p>每一步描述的是"这一瞬间整幅画面"的层引用，不是"只改动这些层"。play_cloud 的
+    // 第 11 步起 `frames` 里不再有 `hands`（手掌松开、离开画面）：如果只按 `step.frames`
+    // 遍历，手掌层会**一直亮着第 10 步的那张 `hug`**，真机表现是一只悬空的手掌跟着小云酱
+    // 走到画面边缘——数据全合法、门禁全绿、单测全绿，只有用户看得见。</p>
+    for (const layer of this.options.sequences.layers) {
+      if (written.has(layer.id)) continue;
+      if (!this.shownLayerIds.has(layer.id)) continue;
+      this.clearLayer(layer);
+    }
+  }
+
+  /**
+   * 撤掉某一层（本步未提及的层收尾用）。
+   *
+   * <p>主角类层走端口自己的 `clear()`/`setFrame(null)`，绝不自己动 `<img>.src`（单写者纪律）。</p>
+   *
+   * @param layer 层
+   */
+  private clearLayer(layer: SequenceLayer): void {
+    if (layer.kind === 'pose-frames') {
+      const protagonist = this.options.protagonist;
+      if (protagonist !== null && protagonist !== undefined && typeof protagonist.clear === 'function') {
+        protagonist.clear();
+      }
+      this.shownLayerIds.delete(layer.id);
+      return;
+    }
+    const port = this.options.layers[layer.id];
+    if (port === undefined) {
+      this.shownLayerIds.delete(layer.id);
+      return;
+    }
+    port.setFrame(null);
+    port.stop();
+    this.shownLayerIds.delete(layer.id);
+  }
+
+  /**
+   * 算某一层本步的 CSS 盒子。
+   *
+   * <p>两种层两套公式，**都只有一个入口**：伙伴层走"中心 x + 脚底线 y"（`companionBoxOf`），
+   * 主角/手掌层走"站姿对齐点 − 锚点"（`alignedLayerBoxOf`，与 pose 的盒子同构）。</p>
+   *
+   * @param layer 层
+   * @param step 本步
+   * @returns 盒子；算不出来时 null（调用方保持上一帧位置）
+   */
+  private layerBox(layer: SequenceLayer, step: SequenceStep): SequenceCssBox | null {
+    if (layer.id === 'companion') {
+      return companionBoxOf({
+        step,
+        layer,
+        sequences: this.options.sequences,
+        base: this.options.base ?? null,
+        geometry: this.options.geometry ?? PET_GEOMETRY,
+      });
+    }
+    const align = this.options.align ?? null;
+    if (align === null) {
+      this.log(`层 ${layer.id} 需要站姿对齐点才能算盒子，但没接线（该层保持上一帧位置）`);
+      return null;
+    }
+    return alignedLayerBoxOf({
+      layer,
+      sequences: this.options.sequences,
+      align,
+      geometry: this.options.geometry ?? PET_GEOMETRY,
+    });
   }
 
   /**
@@ -330,35 +434,25 @@ export class SequenceDirector {
    * @param slot 帧 id（`pose-frames` 层里就是 `pet-poses.json` 的帧 id）
    */
   private applyProtagonist(sceneId: string, slot: string | null): void {
-    if (slot === null) return;
     const port = this.options.protagonist;
     if (port === null || port === undefined) {
-      this.log(
-        `场景 ${sceneId} 引用了主角帧 ${slot}，但 PoseController.showFrame 窄接口尚未接线（B2）：` +
-          '不许由序列自己写主角的 img.src（单写者纪律）',
-      );
+      if (slot !== null) {
+        this.log(
+          `场景 ${sceneId} 引用了主角帧 ${slot}，但主角端口没接线：` +
+            '不许由序列自己写主角的 img.src（单写者纪律）',
+        );
+      }
+      return;
+    }
+    if (slot === null) {
+      // 本步不显示主角：走端口的 clear（没有 clear 就交给调用方收尾，并说出来）
+      if (typeof port.clear === 'function') port.clear();
+      else this.log(`场景 ${sceneId} 本步不显示主角，但端口没有 clear()：收尾交给调用方`);
       return;
     }
     port.showFrame(slot);
   }
 
-  /**
-   * 算伙伴层本步的 CSS 盒子。
-   *
-   * @param step 本步
-   * @returns 盒子；算不出来时 null（调用方保持上一帧位置）
-   */
-  private companionBox(step: SequenceStep): SequenceCssBox | null {
-    const layer = layerOf(this.options.sequences, 'companion');
-    if (layer === null) return null;
-    return companionBoxOf({
-      step,
-      layer,
-      sequences: this.options.sequences,
-      base: this.options.base ?? null,
-      geometry: this.options.geometry ?? PET_GEOMETRY,
-    });
-  }
 
   /**
    * 当前密度档（层端口自带；缺省 `1x`）。
