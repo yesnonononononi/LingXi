@@ -27,6 +27,15 @@
  * 被隐藏的窗口里定时器照常跑（主进程显式关了 `backgroundThrottling`），
  * 所以停表必须发生在这里，不能指望渲染层的功耗档位。</p>
  *
+ * <p><b>它是全主进程唯一的定频 ticker（M3 §4.1 的 L1）：</b>运动控制（`MotionController`）
+ * **不自己起时钟**，而是用 {@link HitPoller#onSample} 订阅这一拍。于是"两个定时器抢写位置"
+ * 这个前提被**物理删除**（第二个定时器根本不存在），而不是靠 `if` 分先后。
+ * 为了让"同一拍被触发两次"（定时器一拍 + 渲染层的 hover-hint 一拍）不会让运动积分两遍，
+ * 每条采样都带**单调递增的 `tickId`**，订阅者可以据此做幂等去重（运动层就是这么用的）。</p>
+ *
+ * <p>订阅是**纯增量**：不改变任何既有语义（`poll()` 的返回值、`samples` 计数、
+ * `onHitChange` 的跃迁时机全都逐字节不变），只是多了一条"采样发生了"的旁路通知。</p>
+ *
  * @module electron/pet-hit-poller
  */
 
@@ -98,6 +107,22 @@ class HitPoller {
     this.timer = NONE;
     /** 实际采样次数（诊断 + 停表用例的判据）。 */
     this.samples = 0;
+    /**
+     * 单调递增的拍号（**每一拍定时器到点 +1**，与 `poll()` 被调用的次数无关）。
+     *
+     * <p>它存在的原因：`poll()` 既可能被定时器叫醒，也可能被渲染层的 `pet:hover-hint` 叫醒。
+     * 同一条拍里被叫醒两次时，两次通知带着**同一个** `tickId`，订阅者（运动层）
+     * 只接受严格递增的 `tickId`，于是"一拍积分两次"在结构上不可能发生。</p>
+     */
+    this.tickId = 0;
+    /**
+     * 采样订阅者（运动控制挂这里）。
+     *
+     * <p>用集合而不是单槽：将来若再加一个订阅者（例如诊断探针），不会互相覆盖；
+     * 而且"拖拽开始时把自己的回调从集合里删掉"就是 L3 要求的**结构性解除**——
+     * 回调表里根本没有那一项，不需要任何 `if` 守卫。</p>
+     */
+    this.sampleListeners = new Set();
   }
 
   /**
@@ -220,9 +245,66 @@ class HitPoller {
       this.samples += 1;
       this.inside = this.testPoint({ x: Number(point.x), y: Number(point.y) }, this.bounds, this.inside) === true;
       this.sampled = this.inside;
+      // 采样真的发生了才通知订阅者（停表 / 强制 / 无窗口三种早退路径一次都不通知）
+      this.notifySample({ x: Number(point.x), y: Number(point.y) });
     }
     this.converge();
     return this.hit;
+  }
+
+  /**
+   * 订阅"拍到了"这件事（运动控制的唯一时钟来源）。
+   *
+   * <p><b>为什么订阅而不是让运动层自己起定时器：</b>那会制造第二个 ticker，
+   * 于是"两个定时器同时写窗口位置"就成为可能（设计 §4.1 的 L1 就是来删掉这个前提的）。
+   * 本方法是**纯增量**：不改变 `poll()` 的行为，只是在采样成功后多发一条通知。</p>
+   *
+   * @param {(sample: {tickId: number, point: {x: number, y: number},
+   *   inside: boolean, hit: boolean}) => void} listener 订阅者（抛错只影响自己）
+   * @returns {() => void} 取消订阅（幂等：重复调用返回 `false`，不抛）
+   * @throws {TypeError} 不是函数
+   */
+  onSample(listener) {
+    if (typeof listener !== 'function') {
+      throw new TypeError('HitPoller.onSample: 订阅者必须是函数');
+    }
+    this.sampleListeners.add(listener);
+    let active = true;
+    return () => {
+      if (!active) return false;
+      active = false;
+      return this.sampleListeners.delete(listener);
+    };
+  }
+
+  /**
+   * 把一次成功的采样分发给订阅者。
+   *
+   * <p>三种防御：①没有订阅者时立刻返回（零分配）；②快照订阅者列表再遍历
+   * （订阅者在回调里退订不许打断本次分发）；③单个订阅者抛错**不许**让定时器回调炸掉
+   * ——那会让整个命中轮询停摆（桌宠从此不再可交互），代价远大于一条被吞掉的异常。</p>
+   *
+   * @param {{x: number, y: number}} point 本拍读到的光标位置（DIP）
+   * @returns {number} 实际投递的订阅者数量（诊断用）
+   */
+  notifySample(point) {
+    if (this.sampleListeners.size === 0) return 0;
+    const sample = {
+      tickId: this.tickId,
+      point: { x: Number(point.x), y: Number(point.y) },
+      inside: this.inside,
+      hit: this.hit,
+    };
+    let delivered = 0;
+    for (const listener of [...this.sampleListeners]) {
+      try {
+        listener(sample);
+        delivered += 1;
+      } catch {
+        // 订阅者自己的问题（运动层有完整参数校验），不许连累命中判定
+      }
+    }
+    return delivered;
   }
 
   /** 开始计时（重复调用无副作用）。 */
@@ -254,6 +336,9 @@ class HitPoller {
   startTimer() {
     if (this.timer !== NONE) return;
     this.timer = this.clock.setInterval(() => {
+      // 拍号只在这里 +1：定时器是唯一的时钟来源，hint / setForced 只是"提前看一眼"，
+      // 不推进拍号 ⇒ 同一拍内被多次叫醒时订阅者看到的是同一个 tickId（可去重）。
+      this.tickId += 1;
       this.poll();
     }, this.intervalMs);
     if (this.timer && typeof this.timer.unref === 'function') this.timer.unref();

@@ -188,6 +188,26 @@ function makeFakeElectron(state) {
       this.emitter.emit('move');
     }
 
+    /**
+     * 设窗口矩形（**生产代码的唯一位移出口**：`pet-window.cjs` 的 `applyPetPosition`）。
+     *
+     * <p>与 `setPosition` 一样记账到 `state.moves`：本测试脚手架要回答的问题是
+     * "窗口被移动了几次"，而不是"用了哪个 API"。宽度/高度按传入值写回
+     * （生产代码总是传当前宽高，所以尺寸不变）。</p>
+     *
+     * @param {{x: number, y: number, width?: number, height?: number}} rect 目标矩形
+     * @returns {void}
+     */
+    setBounds(rect) {
+      const next = rect && typeof rect === 'object' ? rect : {};
+      this.bounds.x = Number(next.x) || 0;
+      this.bounds.y = Number(next.y) || 0;
+      if (Number.isFinite(Number(next.width))) this.bounds.width = Number(next.width);
+      if (Number.isFinite(Number(next.height))) this.bounds.height = Number(next.height);
+      state.moves.push({ x: this.bounds.x, y: this.bounds.y });
+      this.emitter.emit('move');
+    }
+
     isDestroyed() {
       return this.destroyed;
     }
@@ -251,6 +271,18 @@ function makeFakeElectron(state) {
       quit() {
         state.quitCalled = true;
       },
+    },
+    systemPreferences: {
+      /**
+       * 假"动画设置"（`detectReducedMotion` 的探针来源）。
+       *
+       * <p>默认 `shouldRenderRichAnimation: true`（正常机器）；测试把
+       * `state.shouldRenderRichAnimation = false` 就是在模拟"用户在系统里关掉了动画效果"。
+       * </p>
+       *
+       * @returns {{shouldRenderRichAnimation: boolean}} 设置
+       */
+      getAnimationSettings: () => ({ shouldRenderRichAnimation: state.shouldRenderRichAnimation !== false }),
     },
     screen: {
       getAllDisplays: () => ONE_SCREEN,
@@ -321,6 +353,8 @@ function makeStage(savedState) {
     cursorReads: 0,
     cursorThrows: false,
     sendThrows: false,
+    /** 假系统动画设置（`false` = 用户关闭了动画效果 ⇒ reduced-motion）。 */
+    shouldRenderRichAnimation: true,
     menuPopups: [],
     menuTemplate: null,
     windows: [],
@@ -411,11 +445,14 @@ const FAKE_IPC_MAIN = makeFakeIpcMain().main;
  *
  * @param {object} stage `makeStage()` 的返回值
  * @param {(context: object) => *} run 用例主体（拿到 controller / win / ipc / clock / state）
+ * @param {{prefs?: object, menu?: object}} [extra] 额外注入（偏好端口 / 菜单构建器；
+ *   不传时窗口层用它的兜底端口，与旧用例行为一致）
  * @returns {*} 用例返回值
  */
-function withPetWindow(stage, run) {
+function withPetWindow(stage, run, extra) {
   const { fake, screenHandlers } = makeFakeElectron(stage.state);
   const ipc = makeFakeIpcMain();
+  const injected = extra && typeof extra === 'object' ? extra : {};
   return withFakeElectron(fake, () => {
     const controller = petWindow.registerPetWindow({
       ipcMain: ipc.main,
@@ -423,6 +460,8 @@ function withPetWindow(stage, run) {
       frontendRoot: FRONTEND_ROOT,
       statePath: stage.statePath,
       clock: stage.clock,
+      prefs: injected.prefs === undefined ? null : injected.prefs,
+      menu: injected.menu === undefined ? null : injected.menu,
     });
     const win = controller.create();
     try {

@@ -28,6 +28,12 @@
  * 托付给渲染层、又没有即时触发器，才是桌宠点击拖动全失灵的成因。`forward` 现在只是
  * `HIT_FORWARD` 常量：它决定穿透态下 hint 通道还能不能被叫醒（体验），
  * 命中正确性**不依赖它**（8ms 安全网 + 主进程自己的光标读取兜底）。</p>
+ *
+ * <p><b>唯一位置写入者（M3 §4.1，本文件的关键约束）：</b>本文件里**没有任何一处**直接调
+ * 窗口定位 API —— 全部位置写入都收敛到 `applyPetPosition`，而它**只由** `MotionController`
+ * （`pet-motion.cjs`）的私有 `applyPosition` 调用。于是"位置写入者"是结构上唯一的
+ * （`gate:pet` 的 G-M1 断言本文件里按坐标设置窗口的调用出现 0 次）。本文件只提供"受控的写口"，
+ * 不提供"第二条写路径"。</p>
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -41,6 +47,23 @@ const path = require('node:path');
 const PET_DEV_ENDPOINT = require('./pet-dev-endpoint.cjs');
 
 /**
+ * 菜单 spec 构建器（**文案与结构的唯一真源**，零 Electron 依赖）。
+ *
+ * <p>右键菜单的模板从这里出：本文件不再写任何 `label` 字面量（G-M9）。它与托盘菜单共用
+ * 同一份 `buildToggleItems`，所以"两处菜单同源"是事实上成立的，不是靠两处手抄得像。</p>
+ */
+const petMenu = require('./pet-menu.cjs');
+
+/**
+ * 偏好纯模块（schema / 降级 / 探针，零 Electron 依赖）。
+ *
+ * <p>这里只用它两件东西：①`defaultPrefs()`——未注入偏好端口时的兜底快照；
+ * ②`detectReducedMotion()`——运行期"用户要求减少动态就拒绝开启自主运动"的判据
+ * （与 U-M4 的默认值口径共用**同一个**探针，不另写一份）。</p>
+ */
+const petPrefs = require('./pet-prefs.cjs');
+
+/**
  * 命中区域（纯几何 + 滞回）与命中轮询器（注入时钟）。
  *
  * <p>两者都不 `require('electron')`，所以能在纯 node 里逐值断言——这是"命中归主进程"之后
@@ -48,6 +71,26 @@ const PET_DEV_ENDPOINT = require('./pet-dev-endpoint.cjs');
  */
 const { deriveHitRect, toScreenRect, resolveInside } = require('./pet-hit-region.cjs');
 const { createHitPoller } = require('./pet-hit-poller.cjs');
+
+/** 运动模块的懒加载缓存（`null` = 还没装载过）。 */
+let motionApiCache = null;
+
+/**
+ * 运动控制器模块（`pet-motion.cjs`）的**延迟 + 条件**装载（H6 / G-M11）。
+ *
+ * <p><b>为什么不在文件顶层 require：</b>与 `pet-geometry.json` 同构的打包不变式——主进程对
+ * `./pet-window.cjs` 的 require 本来就是条件式的（只有桌宠开闸/开发态才装载），所以
+ * "打包版里这段代码根本不会执行"。这里再收一道：**只有真正要建窗口时才装载运动模块**，
+ * 于是"门禁关闭 ⇒ 运动模块连加载都不发生"是结构事实，而不是注释里的承诺。</p>
+ *
+ * @returns {object} 运动模块（`MOTION` / `MotionController` / 纯函数）
+ */
+function motionApi() {
+  if (motionApiCache === null) {
+    motionApiCache = require('./pet-motion.cjs');
+  }
+  return motionApiCache;
+}
 
 /**
  * 延迟取 electron 运行时。
@@ -522,13 +565,79 @@ function resolveEntrySpec({ isDev, frontendRoot, rawUrl }) {
 }
 
 /**
- * 注册桌宠窗口（窗口参数 + IPC + 显隐与持久化）。
+ * 兜底偏好快照（未注入端口时）。
+ *
+ * @returns {{version: number, follow: boolean, roam: boolean}} 偏好
+ */
+function fallbackPrefs() {
+  const defaults = petPrefs.defaultPrefs();
+  return { version: defaults.version, follow: defaults.follow === true, roam: defaults.roam !== false };
+}
+
+/**
+ * 归一偏好端口（**注入式**：`main.cjs` 传 `petPrefsPort`，测试传内存桩）。
+ *
+ * <p>为什么必须有兜底端口：`registerPetWindow` 也被纯窗口用例直接调用（只关心位置与命中），
+ * 那些用例不该被迫构造一个偏好仓库。兜底端口的行为是"只读默认值 + 写入一律不受理"，
+ * 而且**不触盘**——与"门禁关闭"时 main.cjs 传 `store:null` 的语义一致。</p>
+ *
+ * @param {object|null} port 注入的端口（`{getPrefs, setPrefs, onPrefsChange}`）
+ * @returns {{getPrefs: Function, setPrefs: Function, onPrefsChange: Function}} 归一后的端口
+ */
+function normalizePrefsPort(port) {
+  if (
+    port &&
+    typeof port === 'object' &&
+    typeof port.getPrefs === 'function' &&
+    typeof port.setPrefs === 'function'
+  ) {
+    return {
+      getPrefs: () => {
+        const current = port.getPrefs();
+        const snapshot = current && typeof current === 'object' ? current : fallbackPrefs();
+        return {
+          version: Number.isFinite(snapshot.version) ? Number(snapshot.version) : 1,
+          follow: snapshot.follow === true,
+          roam: snapshot.roam !== false,
+        };
+      },
+      setPrefs: (patch) => {
+        const result = port.setPrefs(patch);
+        if (result && typeof result === 'object') return result;
+        return { prefs: fallbackPrefs(), ok: false, problems: [], changed: false };
+      },
+      onPrefsChange: (listener) =>
+        typeof port.onPrefsChange === 'function' ? port.onPrefsChange(listener) : () => {},
+    };
+  }
+  return {
+    getPrefs: () => fallbackPrefs(),
+    setPrefs: () => ({ prefs: fallbackPrefs(), ok: false, problems: [], changed: false }),
+    onPrefsChange: () => () => {},
+  };
+}
+
+/**
+ * 注册桌宠窗口（窗口参数 + IPC + 显隐与持久化 + 运动控制接线）。
  *
  * @param options 依赖注入
+ * @param {object} options.ipcMain Electron 的 `ipcMain`（主进程传真实对象，测试传桩）
+ * @param {boolean} options.isDev 是否开发态（决定入口 URL 还是打包文件）
+ * @param {string} options.frontendRoot 前端根目录（解析入口用）
+ * @param {string} [options.statePath] 位置状态文件（默认落在 userData）
+ * @param {object} [options.clock] 时钟（命中轮询用；测试注入手动时钟）
+ * @param {object} [options.prefs] 偏好端口 `{getPrefs, setPrefs, onPrefsChange}`（来自 `main.cjs`）
+ * @param {object} [options.menu] 菜单构建器（默认就是 `pet-menu.cjs`）
  * @returns 窗口控制器
  */
-function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = globalThis }) {
+function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = globalThis, prefs = null, menu = null }) {
   const resolvedStatePath = statePath || path.join(electron().app.getPath('userData'), STATE_FILE_NAME);
+  /** 偏好端口（右键菜单勾选态、`pet:prefs-set`、运动层的 reduced-motion 判据都读它）。 */
+  const prefsPort = normalizePrefsPort(prefs);
+  /** 菜单构建器：只接受"有构建能力"的注入，否则用本仓唯一真源。 */
+  const menuBuilder = menu && typeof menu.buildContextMenuItems === 'function' ? menu : petMenu;
+  /** 系统"减少动态"探针结果（懒求值一次；同一进程内不会变）。 */
+  let reducedMotionMemo = null;
 
   /**
    * 命中矩形（窗口坐标，DIP）。
@@ -545,6 +654,13 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
   /** 命中轮询器（窗口存在时必有；随窗口销毁置空）。 */
   let poller = null;
   /**
+   * 运动控制器（**全仓唯一会移动窗口的组件**；随窗口创建，随窗口销毁置空）。
+   *
+   * <p>它只在 `create()` 里建（那一刻桌宠开闸已确定），所以"门禁关闭 ⇒ 运动模块不被加载"
+   * 是结构事实。窗口不存在时它必须是 `null`——所有调用点都写 `motion?.` 或先判空。</p>
+   */
+  let motion = null;
+  /**
    * 是否正在自定义拖拽。
    *
    * <p>注意这里**没有** `lastInside`：滞回状态由轮询器自己持有并回传给 `testPoint`
@@ -557,6 +673,8 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
   let saveTimer = null;
   /** 可见性变化订阅者（托盘要跟着刷新勾选状态）。 */
   const visibilityListeners = new Set();
+  /** 偏好变化订阅的退订函数（`null` = 还没订阅；窗口重建时不重复订阅）。 */
+  let prefsUnsubscribe = null;
   /** 屏幕变化监听是否已挂（screen 只能在 app ready 之后用，故延迟到首次创建）。 */
   let displayListenersBound = false;
 
@@ -602,7 +720,7 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
    *
    * <p><b>两个收件人，缺一不可：</b></p>
    * <ol>
-   *   <li>主进程订阅者（托盘据此刷新"显示桌宠"的勾选）——一直是这么用的；</li>
+   *   <li>主进程订阅者（托盘据此刷新桌宠开关项的勾选态）——一直是这么用的；</li>
    *   <li><b>渲染层</b>（M6-b 补上）：渲染层的功耗策略里 `off` 档的判据是 `visible === false`，
    *       而在此之前**没有任何代码把可见性下发给渲染层**，于是 `off` 是一条死分支：
    *       桌宠被藏起来以后只落到 `low`（动画时长 ×2，仍在跑合成器 + 眨眼定时器照常）。
@@ -705,6 +823,108 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     poller.start();
   }
 
+  /**
+   * **受控的位置写口**（本文件唯一会移动窗口的地方，且只由 `MotionController` 调）。
+   *
+   * <p><b>为什么用 `setBounds` 而不是按坐标设置位置的那个 API：</b>语义上等价（宽高原样带回去，
+   * 尺寸不变、只有位置变），但它让"位置写入点"在全仓**只有一个**（G-M1：本文件里
+   * 按坐标设置窗口的调用出现 0 次）。这样"谁在写位置"可以用一次文本搜索回答，而不是靠人读代码——
+   * 单写者是结构事实，不是纪律。</p>
+   *
+   * <p>写完必须同步命中矩形的屏幕原点（`windowBoundsChanged`）：否则窗口动了、命中判定还停在
+   * 旧坐标上，用户看到的是"猫走到别处了，但点击还认原来那块地方"。</p>
+   *
+   * @param {number} x 目标 X（整数 DIP）
+   * @param {number} y 目标 Y（整数 DIP）
+   * @returns {boolean} 是否真的写了（窗口不存在 ⇒ false）
+   */
+  function applyPetPosition(x, y) {
+    if (!win || win.isDestroyed()) return false;
+    const bounds = win.getBounds();
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width: bounds.width, height: bounds.height }, false);
+    windowBoundsChanged();
+    return true;
+  }
+
+  /**
+   * 系统"减少动态"的当前值（与 U-M4 的默认值口径共用 `pet-prefs.cjs` 的同一个探针）。
+   *
+   * <p>它在这里的用途**只是运行期拒绝**（用户要求减少动态 ⇒ 拒绝开启自主运动），
+   * 不参与"默认值覆盖"——那是接线层的事，本文件不重复判。</p>
+   *
+   * @returns {boolean} 是否要求减少动态
+   */
+  function readReducedMotion() {
+    if (reducedMotionMemo !== null) return reducedMotionMemo;
+    let result = { reducedMotion: false };
+    try {
+      const api = electron();
+      result = petPrefs.detectReducedMotion({ systemPreferences: api.systemPreferences, app: api.app });
+    } catch {
+      // 探针拿不到 electron（纯 node 用例）：按"不做默认值覆盖"的同一口径处理
+      result = { reducedMotion: false };
+    }
+    reducedMotionMemo = result.reducedMotion === true;
+    return reducedMotionMemo;
+  }
+
+  /**
+   * 运动层看到的偏好（**唯一来源是注入的偏好端口 + 探针**）。
+   *
+   * @returns {{follow: boolean, roam: boolean, reducedMotion: boolean}} 运动相关偏好
+   */
+  function readMotionPrefs() {
+    const current = prefsPort.getPrefs();
+    return {
+      follow: current.follow === true,
+      roam: current.roam !== false,
+      reducedMotion: readReducedMotion(),
+    };
+  }
+
+  /**
+   * 建运动控制器并接线（**窗口存在时才建**，所以它天然在门禁开启路径上）。
+   *
+   * <p>注入的七件东西就是"运动层需要的外部能力"全集：时钟（只排漫游时间表）、光标、
+   * 工作区（每拍重读）、唯一写口、偏好、下发通道、每拍订阅。运动层自己**不注册定时器**，
+   * 唯一的时钟就是命中轮询器那一拍（§4.1 L1）。</p>
+   *
+   * @returns {void}
+   */
+  function createMotionForWindow() {
+    const { MotionController } = motionApi();
+    const bounds = captureBounds() || { x: 0, y: 0, width: PET_WIDTH, height: PET_HEIGHT };
+    motion = new MotionController({
+      // 唯一窗口移动出口（本函数之外没有任何地方移动窗口）
+      setWindowPosition: (x, y) => applyPetPosition(x, y),
+      // 唯一时钟：命中轮询器那一拍（它也负责"隐藏时停表"）
+      subscribeSample: (listener) => (poller ? poller.onSample(listener) : () => {}),
+      // 工作区每拍现算（跨屏 / 分辨率变化下一拍就生效，不许跨拍缓存）
+      workArea: (point) => resolveWorkArea(point),
+      displayId: (point) => {
+        try {
+          return screenApi().getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) }).id;
+        } catch {
+          return 0;
+        }
+      },
+      size: { width: PET_WIDTH, height: PET_HEIGHT },
+      artOrigin: { ...ART_ORIGIN },
+      artSize: { width: ART_WIDTH, height: ART_HEIGHT },
+      initial: { x: bounds.x, y: bounds.y },
+      cursor: () => screenApi().getCursorScreenPoint(),
+      prefs: () => readMotionPrefs(),
+      send: (command) => {
+        safeSend('pet:command', command);
+      },
+      clock: { now: () => (typeof clock.now === 'function' ? clock.now() : Date.now()) },
+      // 写完之后把命中矩形的屏幕原点也刷新（applyPetPosition 里已做，这里再挂一次回调是为了
+      // 让"写口"与"写后钩子"在运动层的视角里也是同一件事：onAfterWrite）
+      afterWrite: () => windowBoundsChanged(),
+    });
+    motion.start();
+  }
+
   /** 取窗口当前几何；窗口不存在时返回 null。 */
   function captureBounds() {
     if (!win || win.isDestroyed()) return null;
@@ -751,8 +971,10 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     const { screen } = electron();
     const target = clampIntoWorkArea(bounds, screen.getAllDisplays(), screen.getPrimaryDisplay().workArea);
     const moved = target.x !== bounds.x || target.y !== bounds.y;
-    if (moved) {
-      win.setPosition(target.x, target.y, false);
+    if (moved && motion) {
+      // 位置写入权交给运动层（**唯一写点**）：它按同一份 clampIntoWorkArea 的结果落位，
+      // 顺带把它自己的浮点累加器对齐（否则下一拍会朝旧位置走）。
+      motion.reclampNow(target);
     }
     flushSave();
     // 位置变了 ⇒ 命中矩形的屏幕平移量也要跟着变（否则"夹回可见区"之后命中判在旧坐标上）
@@ -787,6 +1009,10 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
 
   /** 关闭并销毁窗口（退出时用）。 */
   function destroy() {
+    // 先停运动（它还握着一份订阅），再停轮询器：顺序反了会在"订阅者还在、定时器已停"的
+    // 中间态里调 poll()，虽然无害但没必要留这个窗口期。
+    motion?.stop();
+    motion = null;
     poller?.stop();
     poller = null;
     if (saveTimer) {
@@ -813,6 +1039,8 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     if (!win || win.isDestroyed()) return;
     flushSave();
     poller?.setSuspended('hidden', true);
+    // 运动层也要停表：窗口藏起来之后"猫在哪儿"没有任何意义，0 采样 0 写入（§8.3）
+    motion?.setSuspended('hidden', true);
     win.hide();
     notifyVisibility();
   }
@@ -888,6 +1116,22 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     ignoring = true;
     // 命中归主进程：起轮询器（这一刻起"鼠标在不在宠物身上"不再需要任何窗口事件）
     createHitPollerForWindow();
+    // 运动控制：订阅**上面那个**轮询器的每一拍（不新起定时器），并独占位置写入权
+    createMotionForWindow();
+    // 偏好变化 → ①广播给渲染层（`pet:command{type:'prefs'}`）②收回不允许的运动
+    if (prefsUnsubscribe === null) {
+      prefsUnsubscribe = prefsPort.onPrefsChange((next) => {
+        const snapshot = {
+          follow: next && next.follow === true,
+          roam: next && next.roam !== false,
+        };
+        // 两种写法都给：渲染层读扁平字段（`main.ts` 的 `locomotion.onPrefs(follow, roam)`），
+        // 设计 §8.2 的载荷形状是 `{follow, roam}`；嵌套的 `prefs` 供 CDP/排障直接看结构。
+        safeSend('pet:command', { type: 'prefs', follow: snapshot.follow, roam: snapshot.roam, prefs: snapshot });
+        const stopped = motion ? motion.applyPrefs({ ...snapshot, reducedMotion: readReducedMotion() }) : false;
+        if (stopped) poller?.poll();
+      });
+    }
 
     // 桌宠窗口不该导航、不该开新窗（内容里将来可能混入模型资源）
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -905,7 +1149,7 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     win.webContents.once('did-finish-load', () => {
       if (!win || win.isDestroyed()) return;
       // renderer 若在加载完成后立刻崩掉，这条 ready 会被 safeSend 安全跳过（不抛 Render frame was disposed）
-      safeSend('pet:command', {
+      const readySent = safeSend('pet:command', {
         type: 'ready',
         clickThrough: ignoring,
         // 首帧就带上可见性：桌宠可能在"窗口已隐藏"的前提下被重新加载，
@@ -913,12 +1157,22 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
         visible: win.isVisible(),
         size: { width: initial.width, height: initial.height },
       });
+      // 偏好也要补一条（§8.2：`ready` 之后 1 条）：渲染层据此决定"允不允许请求跟随/漫游"。
+      // 不补的话，文档重载后渲染层会以为两个开关都是关的（它默认 follow=false），
+      // 于是用户明明勾了跟随开关，猫也永远不动。
+      //
+      // **只有 ready 真的发出去了才发**：渲染层不可达时再发一条只会多刷一条无意义的告警
+      // （E2 用例守着"一次失败只 warn 一次"），信息也不会被任何人收到。
+      if (!readySent) return;
+      const current = prefsPort.getPrefs();
+      const snapshot = { follow: current.follow === true, roam: current.roam !== false };
+      safeSend('pet:command', { type: 'prefs', follow: snapshot.follow, roam: snapshot.roam, prefs: snapshot });
     });
 
     // 渲染层崩了不能把一个空黑框留在桌面上；顺手解掉拖拽的强制可交互
     // （否则窗口"强制可交互 + 已隐藏"会一直挂着，直到下次 create）
     win.webContents.on('render-process-gone', () => {
-      console.warn('[pet] 渲染进程退出，隐藏桌宠');
+      console.warn('[pet] 渲染进程退出，收起桌宠窗口');
       poller?.setForced('drag', false);
       hide();
     });
@@ -931,11 +1185,13 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     // 不能指望渲染层的功耗档位——那是视觉档，不是 CPU 判据）
     win.on('show', () => {
       poller?.setSuspended('hidden', false);
+      motion?.setSuspended('hidden', false);
       poller?.poll();
       notifyVisibility();
     });
     win.on('hide', () => {
       poller?.setSuspended('hidden', true);
+      motion?.setSuspended('hidden', true);
       notifyVisibility();
     });
     // 例外②的兜底：原生菜单会夺焦，失焦说明菜单已经收了（某些 Windows 版本不回调 callback）
@@ -947,6 +1203,8 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     win.on('closed', () => {
       // 例外①的第三条解除路径：窗口没了，拖拽的强制可交互必须一起清掉
       poller?.setForced('drag', false);
+      motion?.stop();
+      motion = null;
       poller?.stop();
       poller = null;
       dragging = false;
@@ -963,7 +1221,7 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
   }
 
   /**
-   * 显示桌宠（不存在就创建）。
+   * 把桌宠窗口显示出来（不存在就创建）。
    *
    * @returns BrowserWindow 实例
    */
@@ -1008,6 +1266,10 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     dragOffset = { x: Math.round(originX) - bounds.x, y: Math.round(originY) - bounds.y };
     dragging = true;
     poller?.setForced('drag', true);
+    // L3：把运动层**从定时器的订阅表里摘掉**（不是"回调里判一下 owner 就跳过"）。
+    // 从这一拍起，定时器碰不到位置写入，于是 `pet:drag-move` 与自主移动在任何时刻
+    // 只有一个写者——这是结构保证，不是时序运气。
+    motion?.beginDrag();
     return { ok: true };
   });
 
@@ -1019,7 +1281,6 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
   ipcMain.on('pet:drag-move', (event, payload) => {
     if (!isFromPet(event)) return;
     if (!dragging || !win || win.isDestroyed()) return;
-    const bounds = win.getBounds();
     let cursorX = Number(payload && payload.cursorX);
     let cursorY = Number(payload && payload.cursorY);
     if (!Number.isFinite(cursorX) || !Number.isFinite(cursorY)) {
@@ -1027,19 +1288,15 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
       cursorX = cursor.x;
       cursorY = cursor.y;
     }
-    const area = resolveWorkArea({ x: cursorX - dragOffset.x, y: cursorY - dragOffset.y });
-    const target = clampRectToWorkArea({
-      x: Math.round(cursorX) - dragOffset.x,
-      y: Math.round(cursorY) - dragOffset.y,
-      width: bounds.width,
-      height: bounds.height,
-    }, area);
-    if (target.x !== bounds.x || target.y !== bounds.y) {
-      win.setPosition(target.x, target.y, false);
-      scheduleSave();
-      // 拖拽中窗口在动：命中矩形的屏幕原点必须跟着走，否则松手瞬间判定还停在起点
-      windowBoundsChanged();
+    // 拖拽的位置写入也走运动层的唯一写点（`applyPosition` 的 `drag` 令牌那一支）：
+    // 本文件里没有任何一处自己移动窗口，否则"唯一写者"就只是句口号。
+    if (motion) {
+      const wrote = motion.dragTo(cursorX, cursorY, dragOffset.x, dragOffset.y);
+      if (wrote) scheduleSave();
+      return;
     }
+    // 窗口存在但运动层没建起来（理论不可达：两者都在 create() 里成对创建）——
+    // 宁可这一帧不动，也不在这里开第二条写路径。
   });
 
   /** 渲染层：松开左键，结束拖拽并立即落盘。 */
@@ -1048,6 +1305,8 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     dragging = false;
     // 解除强制可交互并**立即**收敛：光标可能已经在窗外，等下一拍会让用户先看到 16ms 的可交互
     poller?.setForced('drag', false);
+    // 写入权还给运动（若还有运动）——这一步同时把 onSample 订阅接回来
+    motion?.endDrag();
     flushSave();
     return { ok: true };
   });
@@ -1097,30 +1356,88 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
   ipcMain.on('pet:context-menu', (event) => {
     if (!isFromPet(event)) return;
     const { Menu } = electron();
-    const menu = Menu.buildFromTemplate([
-      {
-        label: isVisible() ? '隐藏桌宠' : '显示桌宠',
-        click: () => toggle(),
-      },
-      {
-        // 显式给一个"关掉画面但留着入口"的中间档：桌宠是常驻件，误点退出代价太高
-        label: '关闭桌宠（可从托盘恢复）',
-        click: () => hide(),
-      },
-      { type: 'separator' },
-      {
-        label: '退出 LX',
-        click: () => electron().app.quit(),
-      },
-    ]);
+    // 模板**只有一个来源**：`pet-menu.cjs`（与托盘菜单共用开关段与文案常量）。
+    // 本文件里不许再出现任何菜单文案字面量（G-M9），勾选态一律从偏好现读。
+    const template = menuBuilder.buildContextMenuItems({
+      prefs: prefsPort.getPrefs(),
+      isVisible: isVisible(),
+      actions: createMenuActions(),
+    });
+    const menu = Menu.buildFromTemplate(template);
     // 先置强制再弹：弹出那一刻光标已经在菜单上，晚一步就会被切回穿透
     poller?.setForced('menu', true);
+    // 菜单打开期间猫停住（§8.3）：它不需要移开，移动反而让菜单"追不到宿主"
+    motion?.setSuspended('menu', true);
     menu.popup({
       window: win || undefined,
       callback: () => {
         poller?.setForced('menu', false);
+        motion?.setSuspended('menu', false);
       },
     });
+  });
+
+  /**
+   * 右键菜单的动作表（**全部落到本文件已有的能力上**，不新造写路径）。
+   *
+   * <p>两个开关动作只做一件事：把"取反后的值"交给偏好端口——落盘 / 广播 / 重建菜单
+   * 由 `pet-prefs-wiring.cjs` 按固定顺序完成（先落盘 → 广播 → 重建）。本文件不碰文件，
+   * 也不自己记一份偏好。</p>
+   *
+   * @returns {Record<string, Function>} 动作表
+   */
+  function createMenuActions() {
+    return {
+      toggleVisible: () => toggle(),
+      toggleFollow: () => {
+        const current = prefsPort.getPrefs();
+        prefsPort.setPrefs({ follow: current.follow !== true });
+      },
+      toggleRoam: () => {
+        const current = prefsPort.getPrefs();
+        prefsPort.setPrefs({ roam: current.roam !== true });
+      },
+      closePet: () => hide(),
+      quitApp: () => electron().app.quit(),
+    };
+  }
+
+  /**
+   * 渲染层：请求切换运动模式（§8.1，`invoke`）。
+   *
+   * <p><b>载荷里没有坐标</b>（意图不含几何）：渲染层永远不能指定位置。受理结果原样回给
+   * 渲染层——"被拒"必须说出来（真机上"猫不动"要有原因可查），不许静默。</p>
+   *
+   * <p><b>载荷里的可选 `behavior` 是"上报"不是"命令"</b>（S4.1 纵深防御）：主进程把它记进
+   * `MotionController#behavior`，之后自己用它做闸——行为态为 `sleeping` / `sleep` / `drag`
+   * 时 `trySetMode('roam'|'follow')` 会被主进程拒绝（`reason:'behavior-blocked'`），
+   * 且若此刻正在动会立刻停下。**顺序固定：先记录上报、再判意图**，否则同一次 invoke 里
+   * "刚要睡 + 开漫游"会被放过去。</p>
+   */
+  ipcMain.handle('pet:motion-intent', (event, payload) => {
+    if (!isFromPet(event)) return { ok: false, error: '来源未授权' };
+    if (!motion) return { ok: false, error: '桌宠窗口不存在' };
+    const safePayload = payload && typeof payload === 'object' ? payload : {};
+    if (typeof safePayload.behavior === 'string') motion.reportBehavior(safePayload.behavior);
+    return motion.trySetMode(safePayload.mode, safePayload.reason);
+  });
+
+  /** 渲染层/排障：读运动快照（只读，§8.1）。 */
+  ipcMain.handle('pet:motion-snapshot', (event) => {
+    if (!isFromPet(event)) return { ok: false, error: '来源未授权' };
+    return motion ? motion.snapshot() : null;
+  });
+
+  /**
+   * 渲染层：写偏好（§8.1，**只有 dev 后门会调**；生产态唯一写入者是右键菜单）。
+   *
+   * <p>一件容易搞错的事：这里**不做任何字段校验**。类型过滤、未知键忽略、原子写、
+   * 广播、重建菜单全在偏好端口里（唯一路径），本文件只转发。自己再判一遍就等于
+   * 制造第二个判据，早晚与端口不一致。</p>
+   */
+  ipcMain.handle('pet:prefs-set', (event, payload) => {
+    if (!isFromPet(event)) return { ok: false, error: '来源未授权' };
+    return prefsPort.setPrefs(payload);
   });
 
   return {
@@ -1141,6 +1458,32 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
       visibilityListeners.add(listener);
       return () => visibilityListeners.delete(listener);
     },
+    /**
+     * 当前偏好（右键菜单与托盘共用同一个来源）。
+     *
+     * @returns {{version: number, follow: boolean, roam: boolean}} 偏好快照
+     */
+    getPrefs: () => prefsPort.getPrefs(),
+    /**
+     * 写偏好（**唯一路径**：落盘 → 广播 → 重建菜单，全在偏好端口里）。
+     *
+     * @param {{follow?: boolean, roam?: boolean}} patch 补丁
+     * @returns {{prefs: object, ok: boolean, problems: string[], changed: boolean}} 结果
+     */
+    setPrefs: (patch) => prefsPort.setPrefs(patch),
+    /**
+     * 订阅偏好变化（托盘据此刷新勾选态）。
+     *
+     * @param {(prefs: object) => void} listener 回调
+     * @returns {() => void} 取消订阅
+     */
+    onPrefsChange: (listener) => prefsPort.onPrefsChange(listener),
+    /**
+     * 运动快照（只读；dev 后门与 CDP 采样用）。窗口不存在时为 `null`。
+     *
+     * @returns {object|null} 快照
+     */
+    motionSnapshot: () => (motion ? motion.snapshot() : null),
     /** 状态文件路径（排障用：用户报「位置记不住」时直接看这个文件）。 */
     statePath: resolvedStatePath,
   };

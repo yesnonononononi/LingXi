@@ -20,12 +20,41 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, ipcMain, Tray, Menu, dialog } = require('electron');
+const { app, ipcMain, Tray, Menu, dialog, systemPreferences } = require('electron');
 
 const { resolveLauncherConfig } = require('./pet-launcher-config.cjs');
 const { probePetDevServer } = require('./pet-dev-probe.cjs');
 const { registerPetWindow } = require('./pet-window.cjs');
 const lx = require('./lx-protocol.cjs');
+
+/**
+ * 偏好（schema / 原子写 / 逐字段降级 / reduced-motion 探针）。
+ *
+ * <p><b>为什么启动器也要这一层：</b>M3 的漫游/跟随开关由主进程持有，偏好必须落盘——
+ * 否则"在预览里勾上跟随，重启就忘了"，而用户手动验收 M3 用的正是这个启动器。
+ * 与主应用 `main.cjs` 用的是**同一个模块**（`createPrefsStore`），不复制实现。</p>
+ */
+const petPrefsModule = require('./pet-prefs.cjs');
+
+/**
+ * 偏好-菜单**接线层**（纯逻辑，可单测）。
+ *
+ * <p>上一轮预览启动器与生产 `main.cjs` 分裂成了两条路：生产走"先落盘 → 广播 → 重建菜单"，
+ * 预览却在 `registerPetWindow` 里**不传 `prefs`**，于是接线层拿到 `store === null`——
+ * `window.petAPI.prefsSet({roam:true})` 返回 `ok:false`、磁盘上从来没有 `pet-prefs.json`、
+ * 渲染层永远收不到偏好广播，**漫游/跟随在开发预览里根本打不开**。这就是那个缺陷的成因，
+ * 现在收敛成与生产完全相同的一条链。</p>
+ */
+const petPrefsWiringModule = require('./pet-prefs-wiring.cjs');
+
+/**
+ * 菜单 spec 构建器（**文案与结构的唯一真源**，零 Electron 依赖）。
+ *
+ * <p>启动器原来自己内联了一份 `Menu.buildFromTemplate([...])` 模板（含英文菜单文案），
+ * 与 `pet-menu.cjs` 形成第二份真源（生产已经同源、开发反而没有）。现在托盘只经
+ * `pet-menu.cjs` 的 `buildTrayItems`，本文件里**一个菜单文案字面量都不留**。</p>
+ */
+const petMenu = require('./pet-menu.cjs');
 
 /** 解析后的启动器配置（路径 + origin + 入口地址）。 */
 const CONFIG = resolveLauncherConfig({ dirname: __dirname, env: process.env });
@@ -47,6 +76,35 @@ let quitting = false;
 let tray = null;
 /** 桌宠窗口管理器句柄。 */
 let pet = null;
+/** 偏好-菜单接线器（`startPetWindow()` 里建；托盘重建与开关点击都走它）。 */
+let petPrefsWiring = null;
+
+/**
+ * 偏好文件路径（**落启动器自己的 userData**，不污染真 userData）。
+ *
+ * <p>为什么不能直接用 `app.getPath('userData')`：启动器已经把 `userData` 改到
+ * `<repo>/.lingxi/tmp/<profile>`（`app.setPath` 在前），但这里**显式用 `CONFIG.userDataDir`**
+ * 有三种好处：①单测可以静态核对路径来源；②`PET_USER_DATA` 覆盖时行为可预期；
+ * ③读代码的人不必去追 `app.setPath` 那一行才知道文件落在哪。</p>
+ *
+ * @returns {string} `pet-prefs.json` 的绝对路径
+ */
+function resolvePrefsFilePath() {
+  return path.join(CONFIG.userDataDir, 'pet-prefs.json');
+}
+
+/**
+ * 重建托盘菜单（**勾选态与事实对齐的唯一入口**）。
+ *
+ * <p>模板来自 `petPrefsWiring.rebuildTray()` → `pet-menu.cjs` 的 `buildTrayItems`，
+ * 本文件不写任何文案。托盘可能还没建出来（`setPrefs` 的调用点都在托盘之后，但保持防御）。</p>
+ *
+ * @returns {void}
+ */
+function rebuildTrayMenu() {
+  if (!petPrefsWiring) return;
+  petPrefsWiring.rebuildTray();
+}
 
 /**
  * 建窗口 + 托盘。
@@ -60,30 +118,76 @@ function startPetWindow() {
     extraBases: [path.join(CONFIG.frontendRoot, 'public', 'live2d')],
   });
 
-  pet = registerPetWindow({ ipcMain, isDev: true, frontendRoot: CONFIG.frontendRoot });
+  // ---------------------------------------------------------------- 偏好（与 main.cjs 同一条链）
+  const prefsFilePath = resolvePrefsFilePath();
+  // 首次运行 profile 目录可能还不存在：`pet-prefs.cjs` 只做原子写、不建目录
+  // （它把"目录归谁"留给调用方）。不建目录的后果是写盘静默失败 —— 正是要修的那个缺陷。
+  try {
+    fs.mkdirSync(CONFIG.userDataDir, { recursive: true });
+  } catch (err) {
+    console.warn(`[pet-launcher] userData 目录创建失败（偏好将无法落盘）：${(err && err.message) || err}`);
+  }
+  const prefsStore = petPrefsModule.createPrefsStore({ filePath: prefsFilePath });
+  // 与主应用共用同一个探针（U-M4）：口径只有一处，不在这里另判一遍
+  const reducedMotionProbe = petPrefsModule.detectReducedMotion({ app, systemPreferences });
 
-  const buildMenu = () =>
-    Menu.buildFromTemplate([
-      {
-        label: 'Show pet',
-        type: 'checkbox',
-        checked: pet.isVisible(),
-        click: () => pet.toggle(),
+  petPrefsWiring = petPrefsWiringModule.createPrefsWiring({
+    store: prefsStore,
+    prefersReducedMotion: reducedMotionProbe.reducedMotion,
+    builder: petMenu,
+    // 启动器恒为开发态：桌宠段永远在（`includePet: true` 就是门禁语义）
+    includePet: true,
+    isVisible: () => (pet ? pet.isVisible() : false),
+    warn: (message) => console.warn(message),
+    actions: {
+      /** 托盘第一项（应用级主界面项）：预览只有桌宠一个窗口，所以它就是把宠物窗口提上来。 */
+      showMain: () => {
+        if (pet) pet.show();
       },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        click: () => {
-          quitting = true;
-          app.quit();
-        },
+      /** 显隐项：托盘勾选项与右键菜单里的显隐项是**同一项**（同一份 spec 派生）。 */
+      toggleVisible: () => {
+        if (pet) pet.toggle();
       },
-    ]);
+      /** 应用级退出项（托盘最后一项）。 */
+      quitApp: () => {
+        quitting = true;
+        app.quit();
+      },
+    },
+    rebuildTray: (spec) => {
+      if (!tray) return;
+      tray.setContextMenu(Menu.buildFromTemplate(spec));
+    },
+  });
+
+  /**
+   * 偏好端口（传给 `registerPetWindow` 的三件套）。
+   *
+   * <p>与 `main.cjs` 的 `petPrefsPort` **逐字段同形**：菜单点击、右键菜单、
+   * `pet:prefs-set` 三条入口必须走同一条落盘路径，否则会出现"托盘保存了、右键没保存"。</p>
+   */
+  const petPrefsPort = {
+    getPrefs: () => petPrefsWiring.getPrefs(),
+    setPrefs: (patch) => petPrefsWiring.setPrefs(patch),
+    onPrefsChange: (listener) => petPrefsWiring.onChange(listener),
+  };
+
+  // 与生产完全相同的接线：偏好端口 + 菜单构建器一起传下去。
+  // 少传任何一个都会退化成"渲染层点了没反应、磁盘上什么都没有"（S4.1 修的就是这个）。
+  pet = registerPetWindow({
+    ipcMain,
+    isDev: true,
+    frontendRoot: CONFIG.frontendRoot,
+    prefs: petPrefsPort,
+    menu: petMenu,
+  });
+  console.log(`[pet-launcher] 偏好文件：${prefsFilePath}（来源：${reducedMotionProbe.source}）`);
 
   tray = new Tray(path.join(CONFIG.frontendRoot, 'electron', 'resources', 'icon.ico'));
   tray.setToolTip('LX pet preview');
-  tray.setContextMenu(buildMenu());
-  pet.onVisibilityChange(() => tray.setContextMenu(buildMenu()));
+  // 初始菜单与后续重建走**同一条**路径（与 `main.cjs` 的 setupTray 同构）
+  rebuildTrayMenu();
+  pet.onVisibilityChange(() => rebuildTrayMenu());
 
   pet.show();
   console.log(`[pet-launcher] 桌宠窗口已显示：${CONFIG.entryUrl}（右键托盘图标可切换/退出）`);

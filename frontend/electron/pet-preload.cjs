@@ -14,8 +14,12 @@ const { contextBridge, ipcRenderer } = require('electron');
  * <p><b>新增 type 必须在这里加一条</b>，否则渲染层永远收不到（被静默丢弃）。
  * 这条坑很容易踩：主进程发了、渲染层代码也写了，就是不动——因为白名单在 preload 这层拦掉了。
  * `tests/petPresentation.test.ts` 会交叉检查「路由器认得的类型」与「本清单」是否一致。</p>
+ *
+ * <p>M3 §8.2 新增两个：`motion`（运动事实，主进程按拍下发）与 `prefs`（偏好广播）。
+ * 清单里**不写行内注释**：`petPresentation.test.ts` 是按 `,` 切分这个数组的，
+ * 行内注释会被当成一个"类型名"，让"清单与路由器一致"这条断言读起来莫名其妙。</p>
  */
-const KNOWN_COMMAND_TYPES = ['ready', 'hit-state', 'visible', 'ping', 'play', 'expression'];
+const KNOWN_COMMAND_TYPES = ['ready', 'hit-state', 'visible', 'ping', 'play', 'expression', 'motion', 'prefs'];
 
 /**
  * 归一化一条拖拽坐标。
@@ -102,5 +106,50 @@ contextBridge.exposeInMainWorld('petAPI', {
     };
     ipcRenderer.on('pet:command', listener);
     return () => ipcRenderer.removeListener('pet:command', listener);
+  },
+  /**
+   * 请求切换运动模式（`invoke('pet:motion-intent')`，M3 §8.1）。
+   *
+   * <p><b>载荷只有 `{mode, reason}`，没有坐标</b>：渲染层永远不能指定位置
+   * （"唯一位置写入者"铁律）。主进程还会再校验一次枚举与偏好——这里不做判定，
+   * 只做形状收敛，判定权在主进程。</p>
+   *
+   * <p>渲染层把它当**可选桥**用：缺失时它自己会打一条明确日志并返回 false，
+   * 所以本方法存在与否只影响"能不能动"，不影响加载。</p>
+   *
+   * @param {{mode: string, reason: string}} intent 运动意图
+   * @returns Promise<{ ok: boolean, error?: string }>
+   */
+  motionIntent: (intent) => {
+    const source = intent && typeof intent === 'object' ? intent : {};
+    const payload = {};
+    if (typeof source.mode === 'string') payload.mode = source.mode;
+    if (typeof source.reason === 'string') payload.reason = source.reason;
+    return ipcRenderer.invoke('pet:motion-intent', payload);
+  },
+  /**
+   * 读运动快照（`invoke('pet:motion-snapshot')`，只读，M3 §8.1）。
+   *
+   * <p>仅供 dev 后门与 CDP 采样；生产态无人调用。返回主进程的只读快照，
+   * 渲染层**不许**据此反推位置再自己写（那会立刻破坏单写者）。</p>
+   *
+   * @returns Promise<object|null>
+   */
+  motionSnapshot: () => ipcRenderer.invoke('pet:motion-snapshot'),
+  /**
+   * 写偏好（`invoke('pet:prefs-set')`，M3 §8.1）。
+   *
+   * <p><b>只给 dev 后门用</b>：生产态的偏好唯一写入者是主进程的右键/托盘菜单。
+   * 这里只做布尔收敛（非布尔字段直接丢掉），落盘与广播全在主进程的偏好端口里。</p>
+   *
+   * @param {{follow?: boolean, roam?: boolean}} patch 偏好补丁
+   * @returns Promise<{ prefs: object, ok: boolean, problems: string[], changed: boolean }>
+   */
+  prefsSet: (patch) => {
+    const source = patch && typeof patch === 'object' ? patch : {};
+    const payload = {};
+    if (typeof source.follow === 'boolean') payload.follow = source.follow;
+    if (typeof source.roam === 'boolean') payload.roam = source.roam;
+    return ipcRenderer.invoke('pet:prefs-set', payload);
   },
 });
