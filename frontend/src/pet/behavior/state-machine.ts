@@ -709,6 +709,22 @@ export class PetBehaviorStateMachine {
   /** 本次拖拽的开始时刻（毫秒）；null = 没在拖。长拖拽判定（≥{@link SAD_DRAG_MS}）用它。 */
   private dragStartedAt: number | null = null;
 
+  /** 跟随偏好（渲染层透传，只用于 {@link isActiveMode} 判定）。 */
+  private followPref = false;
+
+  /** 漫游偏好（同上）。 */
+  private roamPref = false;
+
+  /**
+   * 上一次 `tick()` 是否处在"活跃模式抑制"下。
+   *
+   * <p><b>为什么需要它</b>：抑制放开的那一拍必须**从第一档重新走**（先坐、不许一下跳到
+   * `sleepy` / `sleeping`）。而 `tick()` 里三档的判定顺序是 90s → 60s → 20s，
+   * 若不留这个记忆，一只"被漫游按着 3 分钟不许坐"的猫在用户关掉开关的瞬间会**直接睡过去**
+   * ——用户看见的是"刚才还活蹦乱跳，一关开关就倒地"。有了它，放开的那一拍只看 20s 档。</p>
+   */
+  private idleChainHeld = false;
+
   /** 头部连点计数（相邻间隔 < {@link PET_DOUBLE_TAP_MS} 才累加）。 */
   private petStreak = 0;
 
@@ -810,6 +826,40 @@ export class PetBehaviorStateMachine {
   /** 是否在拖拽。 */
   get isDragging(): boolean {
     return this.dragging;
+  }
+
+  /**
+   * 同步偏好（跟随 / 漫游），**唯一用途是判定"活跃模式"**。
+   *
+   * <p>"跟随或漫游任一开启"= 用户明确要求它动起来，此时空闲链**不许**把它推进到休息态：
+   * 否则就会出现真机实测的第三个形态——**坐着平移**（`state=sit` 却被漫游推着走
+   * 96/238 DIP/s）。这是设计层面的两条规则打架（自主移动不刷新空闲计时 ⇒ 20s 必坐；
+   * 而漫游优先级又高于"空闲坐"），裁决是把休息态**压到自主移动之下**：活跃模式下保持
+   * 站立/可动状态。</p>
+   *
+   * <p><b>这不是重置计时</b>：`lastInteractionAt` 一个字都不动，只是"不因到点而进休息态"。
+   * 两个开关都关掉之后，用**既有**的 `now - lastInteractionAt` 判断，该坐就立刻坐
+   * （不需要重新等 20s，也不会立刻跳过三档——见 {@link idleChainHeld}）。</p>
+   *
+   * <p>渲染层只做透传（`pet:command{type:'prefs'}`），判定与推进全在 {@link tick} 内部，
+   * 这样"活跃模式"是一条**结构保证**，而不是散落在渲染层的约定。</p>
+   *
+   * @param follow 跟随开关
+   * @param roam 漫游开关
+   */
+  setMotionPrefs(follow: boolean, roam: boolean): void {
+    this.followPref = follow === true;
+    this.roamPref = roam === true;
+  }
+
+  /**
+   * 是否处于**活跃模式**（跟随或漫游开着）。
+   *
+   * <p>活跃模式下 {@link tick} 不推进空闲链（不坐、不困倦、不睡），但用户主动交互
+   * （点击 / 抚摸 / 拖拽）**照常打断**，`drag` 也仍然是休息态。</p>
+   */
+  get isActiveMode(): boolean {
+    return this.followPref || this.roamPref;
   }
 
   /**
@@ -985,6 +1035,12 @@ export class PetBehaviorStateMachine {
     if (this.sustained !== null) return [];
     const now = this.now();
 
+    // ---- 活跃模式（跟随 / 漫游任一开启）抑制空闲链推进（设计 §5 的裁决） ----
+    // 记下"上一拍是否被抑制"：放开的那一拍必须从第一档重新走（先坐，不许一下睡过去）。
+    const suppressed = this.isActiveMode;
+    const heldBefore = this.idleChainHeld;
+    this.idleChainHeld = suppressed;
+
     // 抚摸结束（shy 到期）→ 回礼 wink（E02 / E06 的退出路径）
     if (this.stateValue === 'pet') {
       const petUntil = this.stateUntil;
@@ -995,6 +1051,9 @@ export class PetBehaviorStateMachine {
     // 坐姿（M2）：坐是一个**没有 TTL** 的驻留态，所以它自己决定下一步去困倦还是继续坐。
     // 这里只处理"更久没动"的两档，不重复判断 20s（已经坐在那儿了）。
     if (this.stateValue === 'sit') {
+      // 活跃模式下**不再往困倦/睡眠推进**（但它不会主动站起来：起身是偏好事件的职责，
+      // 见 `resumeFromRest`——那里写 lastInteractionAt 是合法的用户交互，tick 里不许写）
+      if (suppressed) return [];
       if (now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) return this.enterSleeping();
       if (now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) return this.enterSleepy();
       return [];
@@ -1002,6 +1061,7 @@ export class PetBehaviorStateMachine {
 
     // 困倦（sleepy）到点 → 真睡（E08：60s 犯困、90s 睡着）
     if (this.stateValue === 'sleepy') {
+      if (suppressed) return [];
       const sleepyUntil = this.stateUntil;
       if (sleepyUntil !== null && now >= sleepyUntil) return this.enterSleeping();
       return [];
@@ -1021,16 +1081,20 @@ export class PetBehaviorStateMachine {
       return this.idleOps(2, 'behavior:idle:bridge', IDLE_BRIDGE_MS);
     }
 
-    if (IDLE_CHAIN_STATES.includes(this.stateValue) && now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) {
-      return this.enterSleeping();
-    }
-    // 先困倦（60s）再真睡（90s）：顺序不能反，否则 60s 那条永远到不了
-    if (IDLE_CHAIN_STATES.includes(this.stateValue) && now - this.lastInteractionAt >= SLEEPY_AFTER_IDLE_MS) {
-      return this.enterSleepy();
-    }
-    // 落座（20s，M2）：必须排在 60s / 90s 之后，否则会把困倦与睡眠两档全吃掉
-    if (IDLE_CHAIN_STATES.includes(this.stateValue) && now - this.lastInteractionAt >= SIT_AFTER_IDLE_MS) {
-      return this.enterSit();
+    // 空闲链三档（阈值 20000 / 60000 / 90000 一个都没改，顺序 90s → 60s → 20s 也没改）。
+    // 活跃模式下整条链不推进：自主移动**不刷新**空闲计时，所以此时若照常推进，
+    // 20s 一到它就会在漫游中被按成 `sit`，于是"坐着平移"（真机第三个断点）。
+    if (!suppressed && IDLE_CHAIN_STATES.includes(this.stateValue)) {
+      const idleMs = now - this.lastInteractionAt;
+      if (heldBefore) {
+        // 刚从活跃模式放开：只认第一档（20s），不许跳过 `sit` 直接 `sleepy` / `sleeping`
+        return idleMs >= SIT_AFTER_IDLE_MS ? this.enterSit() : [];
+      }
+      if (idleMs >= SLEEP_AFTER_IDLE_MS) return this.enterSleeping();
+      // 先困倦（60s）再真睡（90s）：顺序不能反，否则 60s 那条永远到不了
+      if (idleMs >= SLEEPY_AFTER_IDLE_MS) return this.enterSleepy();
+      // 落座（20s，M2）：必须排在 60s / 90s 之后，否则会把困倦与睡眠两档全吃掉
+      if (idleMs >= SIT_AFTER_IDLE_MS) return this.enterSit();
     }
     return [];
   }

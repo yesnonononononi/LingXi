@@ -799,6 +799,9 @@ class LocomotionBridge {
   onPrefs(follow: boolean | undefined, roam: boolean | undefined): void {
     if (typeof follow === 'boolean') this.followEnabled = follow;
     if (typeof roam === 'boolean') this.roamEnabled = roam;
+    // 活跃模式抑制（"坐着平移"的裁决）：判定与推进全在状态机的 `tick()` 内部，
+    // 渲染层只把两个开关**透传**过去——否则又是一处"约定"而不是结构保证。
+    behavior?.setMotionPrefs(this.followEnabled, this.roamEnabled);
     const state = behavior === null ? null : behavior.state;
     const decision = decidePrefsMotion(this.followEnabled, this.roamEnabled, state);
     if (decision.resumeFromRest && behavior !== null) {

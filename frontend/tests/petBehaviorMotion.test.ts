@@ -799,6 +799,179 @@ test('真机回归⑤：进、睡、出三个方向都不许刷新 lastInteracti
   assert.equal(behavior.idleElapsedMs(), afterWakeTap, '离开休息态的重评估不许顺手刷新空闲计时');
 });
 
+/* ------------------------------------------------------------------------------------
+ * 活跃模式抑制空闲链（裁决：follow / roam 任一开启 ⇒ 不推进到 sit / sleepy / sleeping）
+ *
+ * <p>真机第三个形态：`posture=sit` 却被漫游推着走（walk 96 / run 238）。成因是设计层面
+ * 两条规则打架：规则 A「自主移动不刷新空闲计时」⇒ 20s 必坐；规则 B「自主漫游优先级高于
+ * 空闲坐」。两条同时成立时实现只能挑一条。裁决：**活跃模式下休息态让位于自主移动**。</p>
+ *
+ * <p>纪律：抑制**不是重置计时**（`lastInteractionAt` 一个字不动），且必须在状态机内部。</p>
+ * ---------------------------------------------------------------------------------- */
+
+/**
+ * 跑一段"每拍 tick"的仿真（250ms 一拍），记录出现过的状态。
+ *
+ * @param behavior 状态机
+ * @param clock 时钟
+ * @param fromMs 起始绝对时刻
+ * @param toMs 结束绝对时刻
+ * @returns 依次出现过的状态（含中间态）
+ */
+function runBeats(
+  behavior: PetBehaviorStateMachine,
+  clock: Clock,
+  fromMs: number,
+  toMs: number,
+): PetBehaviorState[] {
+  const seen: PetBehaviorState[] = [];
+  const step = 250;
+  for (let at = fromMs; at <= toMs; at += step) {
+    clock.goTo(at);
+    behavior.tick();
+    seen.push(behavior.state);
+  }
+  return seen;
+}
+
+test('活跃模式①：roam:true 且 60s 无交互 ⇒ 不许进 sit / sleepy / sleeping（保持 idle）', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  behavior.setMotionPrefs(false, true);
+  assert.equal(behavior.isActiveMode, true);
+
+  const seen = runBeats(behavior, clock, 0, 60000);
+  for (const state of seen) {
+    assert.ok(
+      state === 'idle' || state === 'walk' || state === 'run',
+      `活跃模式下 60s 内出现了休息态 ${state}：它会在漫游中被按成 sit，于是"坐着平移"`,
+    );
+  }
+  assert.equal(behavior.state, 'idle');
+  // 姿态也不许是坐/趴/睡（真机判据直接看 posture）
+  const posture = postureOf(behavior.state, PET_POSES, 1);
+  assert.ok(posture === 'stand' || posture === 'walk' || posture === 'run', `posture=${posture}`);
+});
+
+test('活跃模式②：follow:true 且 60s 无交互 ⇒ 同样不许进休息态', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  behavior.setMotionPrefs(true, false);
+
+  const seen = runBeats(behavior, clock, 0, 60000);
+  for (const state of seen) {
+    assert.ok(state === 'idle' || state === 'walk' || state === 'run', `follow 开启后出现了休息态 ${state}`);
+  }
+  // 90s 也不许睡（再往后跑 40s）
+  const later = runBeats(behavior, clock, 60250, 100000);
+  for (const state of later) {
+    assert.ok(state === 'idle' || state === 'walk' || state === 'run', `follow 开启后 100s 出现了休息态 ${state}`);
+  }
+});
+
+test('活跃模式③：两个开关都关 ⇒ 既有 20s / 60s / 90s 三档照旧生效（没被抑制误伤）', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  behavior.setMotionPrefs(false, false);
+  assert.equal(behavior.isActiveMode, false);
+
+  clock.goTo(SIT_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sit', '20s 必须仍然坐下');
+  clock.goTo(SLEEPY_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleepy', '60s 必须仍然困倦');
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleeping', '90s 必须仍然睡');
+  // 阈值常量一个都没改
+  assert.equal(SIT_AFTER_IDLE_MS, 20000);
+  assert.equal(SLEEPY_AFTER_IDLE_MS, 60000);
+  assert.equal(SLEEP_AFTER_IDLE_MS, 90000);
+});
+
+test('活跃模式④：关掉开关的瞬间，若已 ≥20s 无交互 ⇒ 下一拍直接进 sit（不等待、也不跳过）', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  behavior.setMotionPrefs(false, true);
+  // 被漫游按着跑了 70s（已经 ≥ 20s，甚至 ≥ 60s）
+  runBeats(behavior, clock, 0, 70000);
+  assert.equal(behavior.state, 'idle', '活跃模式下应当一直是 idle');
+
+  // 用户关掉开关：下一拍就必须坐下（用既有 now - lastInteractionAt 判断，不必重新等 20s）
+  behavior.setMotionPrefs(false, false);
+  clock.goTo(70250);
+  behavior.tick();
+  assert.equal(behavior.state, 'sit', '关掉开关的下一拍必须直接进 sit（不许再等一轮）');
+  assert.ok(SIT_AFTER_IDLE_MS <= 70250, '这里的时刻确实已经 ≥ 20s');
+
+  // 且不许一跳到底：紧接着的一拍不能已经在 sleeping（跳过 sit 是另一种错误）
+  clock.goTo(70500);
+  behavior.tick();
+  assert.notEqual(behavior.state, 'sleeping', '放开的第一拍不许直接睡着（要从第一档重新走）');
+});
+
+test('活跃模式⑤：抑制期间 lastInteractionAt 一个字不动（不是重置计时）', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  behavior.setMotionPrefs(false, true);
+
+  runBeats(behavior, clock, 0, 30000);
+  assert.equal(behavior.idleElapsedMs(), 30000, '抑制不许改计时起点：30s 就该算出 30000');
+  runBeats(behavior, clock, 30250, 120000);
+  assert.equal(behavior.idleElapsedMs(), 120000, '被按了 2 分钟，空闲计时仍应如实累计到 120000');
+  assert.equal(behavior.state, 'idle');
+
+  // 反向：抑制只影响"要不要进休息态"，不影响计时本身
+  behavior.setMotionPrefs(false, false);
+  clock.goTo(120250);
+  behavior.tick();
+  assert.equal(behavior.state, 'sit', '计时没被重置 ⇒ 关掉开关立刻能坐下');
+});
+
+test('活跃模式⑥（真机回归）：**先开 roam 走起来**、再静置 60s ⇒ 全程 posture 不许是 sit / lie / sleep', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  const postures: PostureId[] = [];
+
+  // 先开 roam，并让它真的走起来（起步 + 换档 + 到达停下）
+  behavior.setMotionPrefs(false, true);
+  behavior.handle('move-start', { gait: 'walk', reason: 'prefs' });
+  assert.equal(behavior.state, 'walk');
+  postures.push(postureOf(behavior.state, PET_POSES, 1));
+  behavior.handle('move-gait', { gait: 'run', reason: 'prefs' });
+  assert.equal(behavior.state, 'run');
+  postures.push(postureOf(behavior.state, PET_POSES, 1));
+  behavior.handle('move-end', { gait: 'none', reason: 'arrived' });
+  assert.equal(behavior.state, 'idle');
+
+  // 再静置 60s：每拍都记账姿态（这是真机采样的等价物）
+  for (let at = 250; at <= 60000; at += 250) {
+    clock.goTo(at);
+    behavior.tick();
+    postures.push(postureOf(behavior.state, PET_POSES, 1));
+  }
+  for (const posture of postures) {
+    assert.ok(
+      posture !== 'sit' && posture !== 'lie' && posture !== 'sleep',
+      `出现休息姿态 ${posture}：漫游中会被推着走（真机 sit + walk 96 的现场）`,
+    );
+  }
+  assert.equal(behavior.state, 'idle');
+});
+
+test('静态：抑制由状态机内部承担，渲染层只透传（不许用外部 if 兜）', () => {
+  const machineSource = codeOf(readSource('src/pet/behavior/state-machine.ts'));
+  const tickBody = sliceBetween(machineSource, 'tick(): PresentationOp[]', 'private enterSit');
+  assert.ok(tickBody.length > 0, 'tick 必须能切出来');
+  assert.ok(tickBody.includes('this.isActiveMode'), 'tick 内部必须自己判定活跃模式（结构保证）');
+  assert.ok(tickBody.includes('!suppressed'), '空闲链三档必须被 !suppressed 挡住');
+  // 透传点存在且只有一处（渲染层不许自己再写一份抑制逻辑）
+  const main = codeOf(readSource('src/pet/main.ts'));
+  assert.ok(main.includes('behavior?.setMotionPrefs(this.followEnabled, this.roamEnabled);'), '渲染层必须把偏好透传给状态机');
+  assert.equal(main.includes('IDLE_CHAIN_STATES.includes'), false, '渲染层不许自己再判一遍空闲链（那就是两处约定）');
+});
+
 test('静态：行为拍里接了 `syncRestMotion`，且它不读时钟、不写 lastInteractionAt', () => {
   const main = codeOf(readSource('src/pet/main.ts'));
   assert.ok(main.includes('locomotion.syncRestMotion();'), '行为拍里缺少休息态同步（两个真机 bug 的共同修复点）');
