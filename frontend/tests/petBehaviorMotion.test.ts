@@ -39,6 +39,7 @@ import {
   postureOf,
   type MotionIntentReason,
   type MotionMode,
+  type MotionReportPort,
   type MotionRequestPort,
   type PetBehaviorState,
 } from '../src/pet/behavior/state-machine';
@@ -603,6 +604,211 @@ test('静态：序列播放期间不许发起自主移动（§5 第 3 级）', (
   assert.ok(request.includes('sequencePlaying'), 'requestMode 缺少"序列播放中不许开启"的闸门');
   assert.ok(source.includes('setSequencePlaying(true)'), '播放路径必须置上序列标志');
   assert.ok(source.includes('setSequencePlaying(false)'), '序列结束时必须撤掉序列标志');
+});
+
+/* ------------------------------------------------------------------------------------
+ * 休息态进出双向同步（`syncRestMotion`）—— 两条真机 bug 的回归用例
+ *
+ * <p>真机采样（70s）暴露了两个方向的问题，它们必须一起闭环：</p>
+ * <ol>
+ *   <li><b>进入休息态后没停</b>：猫在用户打开漫游**之前**就已经是 `lie`，随后进入
+ *       `sleeping`，`mode` 仍是 `roam`，一路睡姿平移（1229,313 → 307,347）。根因是
+ *       触发点挂在"姿态变化事件"上，而不是行为态本身。</li>
+ *   <li><b>离开休息态没恢复</b>：点醒之后 `mode` 永远 `off`（且主进程 `behavior` 卡在
+ *       陈旧的 `sleeping`），用户必须再点一次菜单才恢复漫游。</li>
+ * </ol>
+ * 两个方向都**不许**刷新 `lastInteractionAt`（否则空闲链断掉）。
+ * ---------------------------------------------------------------------------------- */
+
+/** 记录"带行为态"的意图（`MotionReportPort` 的桩，也是本组判据的观测点）。 */
+class RecordingReportPort implements MotionReportPort {
+  /** 收到的全部意图（按到达顺序）。 */
+  readonly calls: Array<{ mode: MotionMode; reason: MotionIntentReason; behavior: string }> = [];
+
+  /**
+   * 记录一次意图（桩不模拟主进程的行为态闸门，闸门由渲染层的 `requestMode` 守）。
+   *
+   * @param mode 模式
+   * @param reason 原因
+   * @param behavior 行为态
+   * @returns 恒为 `true`
+   */
+  requestMode(mode: MotionMode, reason: MotionIntentReason, behavior: string): boolean {
+    this.calls.push({ mode, reason, behavior });
+    return true;
+  }
+
+  /** 最后一条意图（没有时为 `null`）。 */
+  get last(): { mode: MotionMode; reason: MotionIntentReason; behavior: string } | null {
+    return this.calls.length === 0 ? null : this.calls[this.calls.length - 1];
+  }
+
+  /** 所有"开启类"意图（`mode !== 'off'`）。 */
+  get opened(): Array<{ mode: MotionMode; reason: MotionIntentReason; behavior: string }> {
+    return this.calls.filter((call) => call.mode !== 'off');
+  }
+}
+
+test('真机回归①：先让 roam 生效、再推进到 sleeping ⇒ 立刻下发 off，且此后不再发 roam', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  const port = new RecordingReportPort();
+
+  // 真机采样起点就是 mode=roam（用户在猫已经趴着时打开了自由漫游）
+  port.requestMode('roam', 'prefs', 'idle');
+  // 首次同步发生在可动态：不产生任何下发（`null`）
+  assert.equal(behavior.syncRestMotion(false, true, port), null);
+  assert.equal(port.calls.length, 1, '可动状态下同步不该发任何意图');
+
+  // 60s 犯困（此时姿态早就不是 stand 了：判据绝不能挂在"姿态有没有变"上）
+  clock.goTo(SLEEPY_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleepy', '静置 60s 应当已经困倦');
+  const sleepyExit = behavior.syncRestMotion(false, true, port);
+  assert.notEqual(sleepyExit, null, '进入困倦必须下发');
+  assert.deepEqual(port.last, { mode: 'off', reason: 'idle-chain', behavior: 'sleepy' });
+
+  // 90s 真睡：**休息态内部互转也必须重发**（`sleepy` 主进程不拦，`sleeping` 才拦）
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleeping');
+  const sleepingExit = behavior.syncRestMotion(false, true, port);
+  assert.notEqual(sleepingExit, null, 'sleepy→sleeping 必须再下发一次（否则主进程停在 sleepy，闸门不生效）');
+  assert.deepEqual(port.last, { mode: 'off', reason: 'idle-chain', behavior: 'sleeping' });
+
+  // 睡着之后连续 40 拍（10 秒）都**不许**再出现任何开启类意图
+  for (let i = 0; i < 40; i += 1) {
+    clock.advance(250);
+    behavior.tick();
+    behavior.syncRestMotion(false, true, port);
+  }
+  assert.equal(behavior.state, 'sleeping', '睡着期间不该自己醒');
+  assert.deepEqual(
+    port.opened.filter((call) => call.behavior === 'sleeping' || call.behavior === 'sleepy'),
+    [],
+    '睡眠期间出现了开启类意图：猫会在床上滑行（真机 1229,313 → 307,347 就是这个 bug）',
+  );
+});
+
+test('真机回归②：sleeping 期间无论偏好怎么变，任何意图都只能是 off', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  const port = new RecordingReportPort();
+
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleeping');
+  behavior.syncRestMotion(false, true, port);
+  const baseline = port.calls.length;
+  assert.ok(baseline >= 1, '进入睡眠必须至少下发一次');
+
+  // 睡眠期间偏好反复变化 + 反复行为拍：全部只能是 off（`requestMode` 的第 5 道闸门）
+  for (const [follow, roam] of [[true, true], [true, false], [false, true], [false, false]] as const) {
+    behavior.syncRestMotion(follow, roam, port);
+    clock.advance(250);
+    behavior.tick();
+    behavior.syncRestMotion(follow, roam, port);
+  }
+  const after = port.calls.slice(baseline);
+  assert.deepEqual(
+    after.filter((call) => call.mode !== 'off'),
+    [],
+    '睡眠期间出现了开启类意图',
+  );
+  // 且上报的行为态没有退回 idle（把 sleeping 丢了等于闸门失效）
+  assert.equal(port.last?.behavior, 'sleeping');
+});
+
+test('真机回归③：sleeping → 醒来（roam 仍开着）⇒ 重新下发 roam，behavior 为当前态', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  const port = new RecordingReportPort();
+
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleeping');
+  behavior.syncRestMotion(false, true, port);
+  assert.equal(port.last?.mode, 'off');
+
+  // 点醒：sleeping → wake（真实入口在 `tap` 里，与点击分区无关）
+  clock.advance(1000);
+  behavior.handle('tap');
+  assert.equal(behavior.state, 'wake', '睡眠中被点击应当惊醒');
+  const wakeExit = behavior.syncRestMotion(false, true, port);
+  assert.notEqual(wakeExit, null, '离开休息态必须重评估并下发');
+  assert.equal(port.last?.mode, 'roam', '醒来后必须自动恢复漫游（真机上是永久 off）');
+  assert.equal(port.last?.reason, 'prefs');
+  assert.equal(port.last?.behavior, behavior.state, 'behavior 必须是当前行为态（不许留陈旧 sleeping）');
+
+  // 只发一次：后续拍里 same (mode, reason, behavior) 幂等，不把 IPC 打满
+  const count = port.calls.length;
+  for (let i = 0; i < 8; i += 1) {
+    clock.advance(250);
+    behavior.tick();
+    behavior.syncRestMotion(false, true, port);
+  }
+  assert.ok(port.calls.length - count <= 1, '醒来后不该反复重发同一意图');
+});
+
+test('真机回归④：两个开关都关时，醒来也要发一次 off（把陈旧的 behavior 刷掉）', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  const port = new RecordingReportPort();
+
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  behavior.syncRestMotion(false, false, port);
+  assert.deepEqual(port.last, { mode: 'off', reason: 'idle-chain', behavior: 'sleeping' });
+
+  clock.advance(1000);
+  behavior.handle('tap');
+  const exit = behavior.syncRestMotion(false, false, port);
+  assert.notEqual(exit, null, '开关都关也必须发一条：主进程的 behavior 还停在 sleeping，必须刷新');
+  assert.equal(port.last?.mode, 'off');
+  assert.equal(port.last?.reason, 'prefs');
+  assert.equal(port.last?.behavior, behavior.state);
+  assert.notEqual(port.last?.behavior, 'sleeping', '不许再把陈旧的 sleeping 报上去');
+});
+
+test('真机回归⑤：进、睡、出三个方向都不许刷新 lastInteractionAt', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  const port = new RecordingReportPort();
+
+  behavior.syncRestMotion(false, true, port);
+  const atIdle = behavior.idleElapsedMs();
+
+  clock.goTo(SLEEPY_AFTER_IDLE_MS);
+  behavior.tick();
+  const atSleepy = behavior.idleElapsedMs();
+  assert.equal(atSleepy, atIdle + SLEEPY_AFTER_IDLE_MS, 'tick 到困倦本身不改计时');
+  behavior.syncRestMotion(false, true, port);
+  assert.equal(behavior.idleElapsedMs(), atSleepy, '进入困倦的同步不许刷新空闲计时');
+
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  const atSleeping = behavior.idleElapsedMs();
+  behavior.syncRestMotion(false, true, port);
+  assert.equal(behavior.idleElapsedMs(), atSleeping, '睡眠中的同步不许刷新空闲计时');
+
+  // 醒来是**真实交互**，计时起点允许被 tap 拉回（那是 `tap` 的职责，不是同步的）
+  clock.advance(1000);
+  behavior.handle('tap');
+  const afterWakeTap = behavior.idleElapsedMs();
+  behavior.syncRestMotion(false, true, port);
+  assert.equal(behavior.idleElapsedMs(), afterWakeTap, '离开休息态的重评估不许顺手刷新空闲计时');
+});
+
+test('静态：行为拍里接了 `syncRestMotion`，且它不读时钟、不写 lastInteractionAt', () => {
+  const main = codeOf(readSource('src/pet/main.ts'));
+  assert.ok(main.includes('locomotion.syncRestMotion();'), '行为拍里缺少休息态同步（两个真机 bug 的共同修复点）');
+  const machineSource = codeOf(readSource('src/pet/behavior/state-machine.ts'));
+  const body = sliceBetween(machineSource, 'syncRestMotion(follow: boolean', 'get isSleeping()');
+  assert.ok(body.length > 0, 'syncRestMotion 必须存在于状态机');
+  assert.equal(body.includes('lastInteractionAt'), false, '休息态同步里出现了 lastInteractionAt（空闲链会断）');
+  assert.equal(body.includes('this.now()'), false, '休息态同步不许读时钟：它只做意图下发');
+  // 判据必须挂在行为态上（真机根因是挂在姿态变化上）
+  assert.ok(body.includes('MOTION_REST_STATES.includes(current)'), '判据必须是行为态，不能改成"姿态有没有变"');
 });
 
 test('静态：渲染层没有 scaleX(-1) 镜像（P-M20），朝向只走 applyPoseFacing', () => {

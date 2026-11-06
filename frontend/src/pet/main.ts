@@ -559,6 +559,17 @@ class LocomotionBridge {
   /** 最近一次受理的原因（与 `mode` 一起做去重键）。 */
   private reasonValue: MotionIntentReason | null = null;
 
+  /**
+   * 最近一次**上报给主进程**的行为态（去重键的第三段）。
+   *
+   * <p><b>为什么它必须在去重键里</b>：主进程的行为闸门只认载荷里的 `behavior`，
+   * 而行为态会在"模式完全没变"的情况下改变（`off/idle-chain/sleeping` →
+   * `off/idle-chain/idle`）。只按 `(mode, reason)` 去重就会把后一条吞掉，于是主进程
+   * 一直拿着陈旧的 `sleeping` 挡着用户手动发起的意图——真机现场正是"醒来后必须再点
+   * 一次菜单才恢复"。</p>
+   */
+  private behaviorValue: string | null = null;
+
   /** 窗口是否隐藏（隐藏时 0 发送、0 处理）。 */
   private hidden = false;
 
@@ -651,7 +662,7 @@ class LocomotionBridge {
   /**
    * 请求切换运动模式（`pet:motion-intent`）。
    *
-   * <p>四道本地闸门，**都不发 IPC**（0 发送，§8.3）：</p>
+   * <p><b>六道本地闸门</b>，**都不发 IPC**（0 发送，§8.3）：</p>
    * <ol>
    *   <li>窗口隐藏 ⇒ 直接拒绝（渲染层侧的"0 发送"；隐藏时的 0 采样由主进程
    *       `motion.setSuspended('hidden')` 保证，那是 S4 的判据）；</li>
@@ -661,14 +672,17 @@ class LocomotionBridge {
    *       不是"决定方"）；</li>
    *   <li>序列播放中 ⇒ 拒绝任何"开启"请求（§5 第 3 级：序列的打断优先级高于自主移动，
    *       播"过来—抱起—放回"时窗口一起平移会把角色从怀里甩出去）；</li>
-   *   <li>与上一次受理的 `(mode, reason)` 相同 ⇒ 幂等早退，不重复发。</li>
+   *   <li>行为态自己不许动（困倦 / 睡着 / 趴着 / 被拖）⇒ 拒绝任何"开启"请求；</li>
+   *   <li>与上一次受理的 `(mode, reason, behavior)` 相同 ⇒ 幂等早退，不重复发。</li>
    * </ol>
    *
    * @param mode 目标模式
    * @param reason 原因
+   * @param behaviorHint 行为态（省略时按行为状态机的当前状态派生）。只有
+   *   {@link syncRestMotion} 会显式传入——它要上报的是**刚刚推出的那个状态**
    * @returns 是否已受理（`false` 不代表出错，代表"被本地策略拦下"）
    */
-  requestMode(mode: MotionMode, reason: MotionIntentReason): boolean {
+  requestMode(mode: MotionMode, reason: MotionIntentReason, behaviorHint?: string): boolean {
     if (mode !== 'off' && mode !== 'follow' && mode !== 'roam') return false;
     if (this.hidden) {
       if (DEBUG_ENABLED) console.debug(`[pet] 运动意图 ${mode}：窗口隐藏，0 发送`);
@@ -693,7 +707,10 @@ class LocomotionBridge {
       }
       return false;
     }
-    if (this.modeValue === mode && this.reasonValue === reason) return true;
+    const reported = typeof behaviorHint === 'string' && behaviorHint.length > 0
+      ? behaviorHint
+      : behaviorReportOf(behavior?.state ?? null);
+    if (this.modeValue === mode && this.reasonValue === reason && this.behaviorValue === reported) return true;
     const bridge = petBridge();
     const send = bridge?.motionIntent;
     if (typeof send !== 'function') {
@@ -703,9 +720,10 @@ class LocomotionBridge {
     }
     this.modeValue = mode;
     this.reasonValue = reason;
+    this.behaviorValue = reported;
     // 行为态**在同一次下发里**带上（不是另开一条通道、也不是每拍补发）：
     // 主进程的闸门只认这条载荷里的 `behavior`，缺一次它就退回默认 idle 放行一次。
-    const payload: MotionIntent = { mode, reason, behavior: behaviorReportOf(behavior?.state ?? null) };
+    const payload: MotionIntent = { mode, reason, behavior: reported };
     void send
       .call(bridge, payload)
       .then((result) => {
@@ -790,12 +808,36 @@ class LocomotionBridge {
   }
 
   /**
+   * 休息态进出双向同步（行为拍驱动，§5：睡着必须停、醒来必须恢复）。
+   *
+   * <p>判据与决策全在 {@link PetBehaviorStateMachine.syncRestMotion}（纯逻辑、可单测），
+   * 这里只做两件事：①隐藏时**不进**（隐藏态 0 发送，§8.3）；②把结论打到日志里，
+   * 真机上"为什么它不动/为什么它还在动"必须能一眼查到。</p>
+   *
+   * <p><b>为什么挂在 250ms 的行为拍上而不是姿态变化事件上</b>：真机回归现场是
+   * "猫在用户打开漫游之前就已经是 `lie`，随后进入 `sleeping` 时 `mode` 仍是 `roam`，
+   * 一路睡姿平移"。姿态早就变了、行为态才刚变，只挂姿态事件就会整夜漏掉。
+   * 行为拍每秒 4 次、只在状态真的变化时下发一条，代价可忽略。</p>
+   */
+  syncRestMotion(): void {
+    if (this.hidden || this.dragging) return;
+    const machine = behavior;
+    if (machine === null) return;
+    const exit = machine.syncRestMotion(this.followEnabled, this.roamEnabled, this);
+    if (exit === null) return;
+    if (DEBUG_ENABLED) {
+      console.debug(
+        `[pet] 休息态同步：${exit.from} → ${exit.to} ⇒ ${exit.mode}（behavior=${exit.behavior}）`,
+      );
+    }
+  }
+
+  /**
    * 序列开始/结束（§5 第 3 级：序列播放期间不许发起自主移动）。
    *
    * @param playing 是否在播
    */
-  setSequencePlaying(playing: boolean): void {
-    if (this.sequencePlaying === playing) return;
+  setSequencePlaying(playing: boolean): void {    if (this.sequencePlaying === playing) return;
     this.sequencePlaying = playing;
     if (!playing) {
       // 播完按当前偏好重评估（有开关才重新请求；否则 off）——由 onPrefs 统一出口决定
@@ -1988,6 +2030,10 @@ function createPresentation(): void {
     // 姿态与行为**同一拍**同步：sit 的入场不产生任何 PresentationOp（姿态走独立通道），
     // 所以不能只在 dispatchEntryOps 里同步，否则静置 20s 后姿态永远不会变。
     syncPosture('behavior:tick');
+    // 休息态进出双向同步（§5）：进入 sleepy/sleeping/lie/drag ⇒ 立刻 off + 新行为态；
+    // 醒来/拖完回到可动状态 ⇒ 按当前偏好重新评估（否则用户必须再点一次菜单才恢复漫游）。
+    // 判据是**行为态本身**，不依赖姿态是否变化——真机上"趴着滑行"就是挂错触发点的后果。
+    locomotion.syncRestMotion();
     // 禁原地滑行的自愈（§7）：姿态还写着在走、主进程却已不再报位移 ⇒ 收尾回站姿。
     // 它必须排在 syncPosture 之后：先让姿态按最新状态落定，再判"这条在走是不是幽灵"。
     locomotion.watchdog(Date.now());

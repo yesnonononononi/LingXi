@@ -396,6 +396,42 @@ export interface MotionPrefsDecision {
 }
 
 /**
+ * **带行为态的**意图下发端口（`pet:motion-intent` 的真实形状）。
+ *
+ * <p>与 {@link MotionRequestPort} 的差别只有第三条：这里要求调用方把"当前行为态"一起
+ * 交出去。分成两个接口而不是把第三条加进老接口，是为了让 @8 那条"行为态闸门"的
+ * <b>上报责任</b>显式化：**凡是能触发运动意图的地方，都必须能说清此刻猫是什么状态**，
+ * 否则主进程的 `BLOCKED_BEHAVIORS` 判定就会拿着旧值空转（真机上表现为"睡着还在平移窗口"、
+ * 或"醒来后漫游再也不恢复"）。</p>
+ */
+export interface MotionReportPort {
+  /**
+   * 请求切换运动模式，并顺带上报行为态。
+   *
+   * @param mode 目标模式
+   * @param reason 原因
+   * @param behavior 当前行为态（见 {@link behaviorReportOf}）
+   * @returns 是否已受理
+   */
+  requestMode(mode: MotionMode, reason: MotionIntentReason, behavior: string): boolean;
+}
+
+/**
+ * 休息态退出的重评估结果（只用于日志与单测断言，不参与判定）。
+ */
+export interface MotionRestExit {
+  /** 离开的休息态（`sleepy` / `sleeping` / `lie` / `drag` 之一）。 */
+  from: PetBehaviorState;
+  /** 到达的可动状态。 */
+  to: PetBehaviorState;
+  /** 实际下发的模式。 */
+  mode: MotionMode;
+  /** 实际上报的行为态字符串。 */
+  behavior: string;
+}
+
+
+/**
  * 上报给主进程**行为闸门**的行为态（`pet:motion-intent` 载荷的 `behavior` 字段）。
  *
  * <p><b>为什么是"原样透传 + idle 兜底"而不是一张映射表：</b>主进程的
@@ -660,6 +696,16 @@ export class PetBehaviorStateMachine {
   /** 是否在拖拽。 */
   private dragging = false;
 
+  /**
+   * 上一次"运动意图同步"看到的行为态（`null` = 还没同步过）。
+   *
+   * <p>它是 {@link syncRestMotion} 的**状态记忆**：只有"状态真的变了"才评估一次，
+   * 250ms 的行为拍不会把 IPC 打满。注意它记的是**行为态**而不是姿态——真机上"趴着滑行"
+   * 的根因正是把触发点挂在姿态变化上：猫在用户打开漫游**之前**就已经是 `lie` 了，
+   * 之后进入 `sleeping` 时如果只看"姿态有没有变"，就可能整整一夜都不下发 `off`。</p>
+   */
+  private motionReportState: PetBehaviorState | null = null;
+
   /** 本次拖拽的开始时刻（毫秒）；null = 没在拖。长拖拽判定（≥{@link SAD_DRAG_MS}）用它。 */
   private dragStartedAt: number | null = null;
 
@@ -696,6 +742,64 @@ export class PetBehaviorStateMachine {
   /** 当前状态。 */
   get state(): PetBehaviorState {
     return this.stateValue;
+  }
+
+  /**
+   * **运动意图的进出双向同步**（M3 §5：休息态必须停、离开休息态要恢复）。
+   *
+   * <p>判据只有一条：**看行为态本身**，不看姿态是否变化。两个方向都要闭环：</p>
+   * <ol>
+   *   <li><b>进入/停留在休息态</b>（`sleepy` / `sleeping` / `lie` / `drag`）⇒ 无条件下发
+   *       `{mode:'off', reason:'idle-chain', behavior:<新状态>}`。真机回归现场是
+   *       "猫在用户打开漫游之前就是 `lie`，随后进入 `sleeping`，`mode` 仍是 `roam`，
+   *       一路从 (1229,313) 滑到 (307,347)"——根因就是把触发点挂在姿态变化事件上。
+   *       所以在休息态内部互转（`sleepy → sleeping`）也必须重发一次：`sleepy` 不被主进程
+   *       拦截，`sleeping` 才拦，不重发就等于没拦住。</li>
+   *   <li><b>离开休息态</b>（回到 `idle` / `walk` / `run` / `wake` …）⇒ 按当前偏好重走一次
+   *       {@link decidePrefsMotion} 并下发。真机现场是"点醒之后 `mode` 永远 `off`，
+   *       用户必须再点一次菜单才恢复"。</li>
+   * </ol>
+   *
+   * <p><b>两个方向都绝不写 `lastInteractionAt`</b>：自主移动与睡眠都是"没有用户参与"的
+   * 状态推进，一旦在这里刷新空闲计时，空闲链就断了（猫永远不会坐下/睡着，或者醒来后
+   * 永不重新计时）。这也是本方法没有 `this.now()` 的原因——**它不读时钟**，从结构上保证
+   * 不可能污染计时。</p>
+   *
+   * @param follow 跟随开关（来自主进程偏好广播，渲染层只读）
+   * @param roam 漫游开关（同上）
+   * @param port 带行为态的意图端口（渲染层的运动桥）
+   * @returns 本次真的下发了什么（没下发时为 `null`，供日志/断言）
+   */
+  syncRestMotion(follow: boolean, roam: boolean, port: MotionReportPort): MotionRestExit | null {
+    const current = this.stateValue;
+    const previous = this.motionReportState;
+    if (previous === current) return null;
+    this.motionReportState = current;
+
+    const isRest = MOTION_REST_STATES.includes(current);
+    const wasRest = previous !== null && MOTION_REST_STATES.includes(previous);
+
+    if (isRest) {
+      const restMode: MotionMode = 'off';
+      const restBehavior = behaviorReportOf(current);
+      port.requestMode(restMode, 'idle-chain', restBehavior);
+      this.log(`[pet] 行为：进入休息态 ${current}，下发 off（离开者：${previous ?? '未知'}）`);
+      return { from: previous ?? current, to: current, mode: restMode, behavior: restBehavior };
+    }
+
+    // 本来就可动（或第一次同步）⇒ 什么都不用做：自主移动由偏好/运动事实驱动
+    if (!wasRest) return null;
+
+    // 还在过渡动作里（理论上 rest 已排除，这里只是防御）：等落到可动状态再评估
+    if (!isMotionAllowed(current)) return null;
+
+    const decision = decidePrefsMotion(follow, roam, current);
+    // 坐着/趴着时"要动"不能照发（会把猫原地平移到别处）：只把陈旧行为态刷成 off
+    const mode: MotionMode = decision.resumeFromRest ? 'off' : decision.mode;
+    const behavior = behaviorReportOf(current);
+    port.requestMode(mode, 'prefs', behavior);
+    this.log(`[pet] 行为：离开休息态 ${previous} → ${current}，重评估运动意图 ${mode}`);
+    return { from: previous, to: current, mode, behavior };
   }
 
   /** 是否处于睡眠（供眨眼调度抑制）。 */
