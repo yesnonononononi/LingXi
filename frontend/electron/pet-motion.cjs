@@ -1226,6 +1226,10 @@ class MotionController {
       this.velocity = 0;
       this.gait = 'none';
       this.arrived = true;
+      // 相位也要落到 `arrived`：只把 `arrived` 置真而留着 `chase` 会让快照显示
+      // "一直在追"（距离 129 落在滞回带 96–220 内，`decideFollowPhase` 是"带内保持"），
+      // 排查时会被自己骗——本项目今天的几次返工都源于"看着对、语义错"。
+      this.phase = 'arrived';
       this.emit('arrived');
       return true;
     }

@@ -563,6 +563,7 @@ test('跟随也夹工作区：光标贴屏幕边缘时，整窗仍留在 workAre
   assert.equal(after.x, frozen.x, '贴边后仍在横向抖动：位置又变了');
   assert.equal(after.y, frozen.y, '贴边后仍在纵向抖动：位置又变了');
   assert.equal(after.arrived, true, '贴边（再也靠近不了）必须视为到达，否则渲染层永远收不到 move-end');
+  assert.equal(after.phase, 'arrived', '贴边后相位必须落到 arrived：留着 chase 会让快照显示"一直在追"而实际不动');
 });
 
 test('跟随夹取不误伤：光标在工作区内部时，照样能追到停止半径内并停下', () => {
