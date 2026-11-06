@@ -48,8 +48,19 @@ const FOUR_BATCH_TOTALS = Object.freeze({ frames: 31, bytes1x: 1299144, bytes2x:
 /** 四批名单（`D7` 的"零变化"判据只针对它们：lie/sleep 是切片 3 才接进来的）。 */
 const FOUR_BATCHES = Object.freeze(['sit', 'walk', 'run', 'jump']);
 
-/** 六批现状（切片 3 翻 accepted 之后的真实 `totals`）：lie 508,488 + sleep 784,308 各按 distinct 文件计。 */
-const SIX_BATCH_TOTALS = Object.freeze({ frames: 43, bytes1x: 1610116, bytes2x: 5078644, distinctFiles: 78 });
+/** 六批现状（切片 3 翻 accepted 之后的真实 `totals`）：lie 508,488 + sleep 665,748 各按 distinct 文件计。 */
+const SIX_BATCH_TOTALS = Object.freeze({ frames: 42, bytes1x: 1581892, bytes2x: 4988308, distinctFiles: 76 });
+
+/**
+ * sleep 去重后的真实字节数。
+ *
+ * <p><b>相对上一版的差量来源</b>（6,688,760 → 6,570,200 B，共 −118,560 B）：sleep 的
+ * `curled`（蜷缩成团 = 深睡阶段的姿态）不再进入任何片段、也不再导出运行资产
+ * （`NESTED_CLIP_PLANS.sleep.dropped`），于是少了 `curled@1x.webp` 28,224 B +
+ * `curled@2x.webp` 90,336 B = **118,560 B**。其余五批逐字节未变，sleep 的另外 4 帧
+ * （neutral / breathIn / breathOut / startle）也逐字节未变。</p>
+ */
+const SLEEP_DEDUPED_BYTES = 665748;
 
 /** 模块缓存（三份脚本只 import 一次）。 */
 let modulesPromise = null;
@@ -473,7 +484,7 @@ test('D6 canonical 幂等：同一输入连导两次 ⇒ 清单与每个 webp �
   }
 });
 
-test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 个 webp / 5,395,964 B），六批合计 6,688,760 B', async () => {
+test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 个 webp / 5,395,964 B），六批合计 6,570,200 B', async () => {
   const { build, gate } = await loadModules();
   const manifest = readJson(POSES_JSON_PATH);
 
@@ -517,11 +528,29 @@ test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 �
   assert.strictEqual(sitFrame.files['1x'].bytes, 31846, 'sit@1x 字节数不该变');
   assert.strictEqual(sitFrame.files['2x'].bytes, 100182, 'sit@2x 字节数不该变');
 
-  // 盘上 78 个 webp、总字节 6,688,760（逐字节与 totals 吻合；去重不许多写也不许少写文件）
+  // 盘上 76 个 webp、总字节 6,570,200（逐字节与 totals 吻合；去重不许多写也不许少写文件）
+  // 由 78 / 6,688,760 降下来的唯一原因是 sleep 的 `curled` 停止导出（−2 个文件、−118,560 B）：
+  // 它既不在任何片段里，也不该占运行体积 —— 留着就是 G-P4 孤儿帧 + G-P10 磁盘反向孤儿。
   const onDisk = listWebp(POSE_RUNTIME_DIR);
   assert.strictEqual(onDisk.length, SIX_BATCH_TOTALS.distinctFiles, `盘上应有 ${SIX_BATCH_TOTALS.distinctFiles} 个 webp，实际 ${onDisk.length}`);
   const diskBytes = onDisk.reduce((sum, relativePath) => sum + statSync(join(POSE_RUNTIME_DIR, relativePath)).size, 0);
   assert.strictEqual(diskBytes, SIX_BATCH_TOTALS.bytes1x + SIX_BATCH_TOTALS.bytes2x, '盘上字节必须等于 totals');
+
+  // sleep 单批金丝雀：665,748 B（= 旧 784,308 − curled 的 118,560），且只剩 4 帧 / 8 个文件。
+  // 这条同时守住"curl 真的没被导出"：帧表里出现 curled 会让字节数立刻对不上。
+  const sleepBatch = manifest.batches.sleep;
+  assert.deepStrictEqual(Object.keys(sleepBatch.frames).sort(), ['breathIn', 'breathOut', 'neutral', 'startle'],
+    'sleep 只导出呼吸三帧 + startle；curled 不导出（深睡阶段将来再接）');
+  let sleepBytes = 0;
+  for (const frame of Object.values(sleepBatch.frames)) {
+    sleepBytes += frame.files['1x'].bytes + frame.files['2x'].bytes;
+  }
+  assert.strictEqual(sleepBytes, SLEEP_DEDUPED_BYTES, 'sleep 去重后必须正好 665,748 B = 784,308 − 118,560（curled 停止导出）');
+  assert.deepStrictEqual(
+    listWebp(join(POSE_RUNTIME_DIR, 'sleep')).sort(),
+    ['breathIn@1x.webp', 'breathIn@2x.webp', 'breathOut@1x.webp', 'breathOut@2x.webp', 'neutral@1x.webp', 'neutral@2x.webp', 'startle@1x.webp', 'startle@2x.webp'],
+    'sleep 运行目录里不许再有 curled@1x/@2x.webp（孤儿文件白占体积且永远不播）',
+  );
 
   // contentId 的来源可复算：母版 PNG 的 sha256 前 16 位（不是转码后的 webp 摘要）
   const sitSource = resolve(REPO_ROOT, 'docs/assets/desktop-pet/poses/sit/sit_neutral@2x.png');

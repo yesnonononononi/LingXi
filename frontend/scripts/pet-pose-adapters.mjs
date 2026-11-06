@@ -50,7 +50,8 @@ export const SOURCE_ROOT = 'docs/assets/desktop-pet/poses';
  * 会被门禁直接判红。</p>
  *
  * <p><b>切片 3 起的形态：</b>再加 `lie`（单条 `enter` = 趴下过程 + 趴着不动，`hold-last`；
- * 加单条 `exit` = 起身，`return-stand`）与 `sleep`（单条 `cycle`，5 帧 × 1800 ms）。
+ * 加单条 `exit` = 起身，`return-stand`）与 `sleep`（**两条片段**：`cycle` = 呼吸三帧 × 1800 ms
+ * 循环，`exit` = 单帧 `startle` × 300 ms 回站姿；`curled` 明确不导出，见 `NESTED_CLIP_PLANS`）。
  * 两批都是**单朝向静态批**：`isFacingSensitive()` 从数据算出它们不按朝向分流，
  * 运行时忽略 `facing` 参数（设计 §4.3 裁决 Ⅰ + Ⅲ）。</p>
  */
@@ -79,10 +80,61 @@ export const BATCH_SPECS = Object.freeze([
 export const FRAME_TIMING = Object.freeze({
   sit: Object.freeze({ hold: 0 }),
   lie: Object.freeze({ enter: 120, exit: 120 }),
-  sleep: Object.freeze({ cycle: 1800 }),
+  sleep: Object.freeze({ cycle: 1800, exit: 300 }),
   walk: Object.freeze({ cycle: 110 }),
   run: Object.freeze({ cycle: 90 }),
   jump: Object.freeze({ once: 130 }),
+});
+
+/**
+ * `frames-nested-v3` 批次的**片段计划**（哪些帧进哪一条片段、哪些帧**明确不导出**）。
+ *
+ * <p><b>为什么 sleep 需要这张表：</b>sleep 的 5 帧不是"一条动画的 5 个节拍"，而是
+ * **两种语义混在一起**——呼吸三帧（`neutral`/`breathIn`/`breathOut`）是睡着时的循环，
+ * `startle`（睁眼惊醒）是**睡→醒的过渡**、`curled`（蜷缩成团）是**深睡阶段**的姿态。
+ * 按"整批帧进同一条 `cycle`"归一时，用户看到的是**每 9 秒睁一次眼再缩成一团**，
+ * 而这条循环由 `SLEEPY_AFTER_IDLE_MS=60000` **自动触发** —— 观感缺陷是必然的，不是偶然。</p>
+ *
+ * <p>所以 sleep 的编排在这里**显式表达**（而不是在运行时加分支）：</p>
+ * <ol>
+ *   <li>`cycle` = 呼吸三帧 × 1800 ms、`loop:true`（5.4 秒一轮，只有呼吸）；</li>
+ *   <li>`exit` = `['startle']` 单帧 × 300 ms、`loop:false`、`onEnd:'return-stand'`
+ *       ——睡→醒时先睁一次眼（300 ms 是"一个睁眼该被看见的长度"），再起身。
+ *       这样 sleep 不再是"没有 exit 只能硬切"（`pendingStand` 的降级路径仍然保留，
+ *       给真正没有 exit 的批次用）；</li>
+ *   <li>`curled` **不进入任何片段、也不导出运行资产**（见 `dropped`）：它属于将来的
+ *       "深睡阶段"，母版 `docs/assets/desktop-pet/poses/sleep/sleep_curled@2x.png`
+ *       一个字节都不动、留在原处。把它留在帧表里而不进片段会立刻变成 G-P4 孤儿帧
+ *       （帧存在、没被任何 clip 引用 ⇒ 白占体积且永远不播）。</li>
+ * </ol>
+ *
+ * <p>**覆盖率纪律**：manifest 里出现、但既没被片段引用、也没登记到 `dropped` 的帧会让构建
+ * **硬失败**——将来美术给 sleep 补帧时，必须显式决定"播"还是"不播"，不许静默丢弃
+ * （静默丢弃 = 美术的活永远没人看见；静默保留 = 孤儿帧）。</p>
+ */
+export const NESTED_CLIP_PLANS = Object.freeze({
+  sleep: Object.freeze({
+    clips: Object.freeze([
+      Object.freeze({
+        id: 'cycle',
+        frames: Object.freeze(['neutral', 'breathIn', 'breathOut']),
+        loop: true,
+        onEnd: null,
+      }),
+      Object.freeze({
+        id: 'exit',
+        frames: Object.freeze(['startle']),
+        loop: false,
+        onEnd: 'return-stand',
+      }),
+    ]),
+    dropped: Object.freeze([
+      Object.freeze({
+        id: 'curled',
+        reason: '蜷缩成团 = 深睡阶段的姿态，混进睡着循环会变成"每 5.4 秒缩成一团"（用户可见缺陷）；母版保留，将来接"深睡阶段"',
+      }),
+    ]),
+  }),
 });
 
 /**
@@ -704,11 +756,89 @@ function adaptFramesNestedV3(manifest, batch) {
   }
   const timing = FRAME_TIMING[batch];
   if (!timing) throw new PoseAdapterError(`没有为批次 ${batch} 定义帧时长（FRAME_TIMING 缺项）`, batch);
-  const ids = Object.keys(timing);
-  if (ids.length !== 1) throw new PoseAdapterError(`frames-nested-v3 期望单一片段，实际 ${ids.join(',')}`, batch);
-  const clipId = ids[0];
-  const loop = batch === 'walk' || batch === 'run' || batch === 'sleep';
-  const onEnd = batch === 'jump' ? 'return-stand' : 'hold-last';
+  /**
+   * 取某片段的帧时长并校验（**必须为正的有限数**：`0` 会让推进逻辑停在原地，表现成"假动画"）。
+   *
+   * @param {string} clipId 片段 id（`cycle` / `exit` / `once`）
+   * @returns {number} 帧时长（毫秒）
+   */
+  const frameMsOf = (clipId) => {
+    const ms = timing[clipId];
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || !(ms > 0)) {
+      throw new PoseAdapterError(
+        `FRAME_TIMING.${batch}.${clipId} 必须是正的有限数，实际为 ${JSON.stringify(ms)}`,
+        batch,
+      );
+    }
+    return ms;
+  };
+  const plan = NESTED_CLIP_PLANS[batch] ?? null;
+  /** 导出的帧表（方案批次会剔除 `dropped` 的帧 ⇒ 不转码、不落盘 ⇒ 不会变成 G-P4 孤儿帧）。 */
+  let exportFrames = frames;
+  /** 该批的片段列表。 */
+  let clips;
+  if (plan === null) {
+    // 单片段批次（walk / run / jump）：整批帧按 manifest 顺序进同一条片段，再按 facing 分组
+    const ids = Object.keys(timing);
+    if (ids.length !== 1) {
+      throw new PoseAdapterError(
+        `frames-nested-v3 单片段路径期望 FRAME_TIMING 只有一个键，实际 ${ids.join(',')}：` +
+          '多片段批次必须在 NESTED_CLIP_PLANS 里显式登记"哪几帧进哪条片段"',
+        batch,
+      );
+    }
+    const clipId = ids[0];
+    const loop = batch === 'walk' || batch === 'run';
+    const onEnd = batch === 'jump' ? 'return-stand' : 'hold-last';
+    clips = buildClips(clipId, ordered, loop, frameMsOf(clipId), loop ? undefined : onEnd);
+  } else {
+    /** 已被某条片段引用的帧 id（顺序 = 计划里的出现顺序，保证导出确定性）。 */
+    const referenced = new Set();
+    const planned = [];
+    for (const clip of plan.clips) {
+      const clipFrames = clip.frames.map((id) => {
+        const frame = frames[id];
+        if (frame === undefined) {
+          throw new PoseAdapterError(
+            `NESTED_CLIP_PLANS.${batch} 的片段 ${clip.id} 引用了 manifest 里没有的帧 ${id}`,
+            batch,
+          );
+        }
+        if (referenced.has(id)) {
+          throw new PoseAdapterError(`帧 ${id} 被多个片段同时引用：同一张画不能既在循环里又做起身`, batch);
+        }
+        referenced.add(id);
+        return frame;
+      });
+      planned.push(
+        ...buildClips(clip.id, clipFrames, clip.loop, frameMsOf(clip.id), clip.onEnd === null ? undefined : clip.onEnd),
+      );
+    }
+    const droppedIds = new Set(plan.dropped.map((item) => item.id));
+    const staleDropped = [...droppedIds].filter((id) => frames[id] === undefined);
+    if (staleDropped.length > 0) {
+      throw new PoseAdapterError(
+        `NESTED_CLIP_PLANS.${batch}.dropped 登记的帧 ${staleDropped.join('、')} 在 manifest 里不存在：` +
+          '配置过期了，删掉这一项（否则这张表会慢慢与真数据脱节）',
+        batch,
+      );
+    }
+    const conflicting = [...droppedIds].filter((id) => referenced.has(id));
+    if (conflicting.length > 0) {
+      throw new PoseAdapterError(`帧 ${conflicting.join('、')} 既在片段里又被登记为 dropped：两处自相矛盾`, batch);
+    }
+    const unplanned = ordered.map((frame) => frame.id).filter((id) => !referenced.has(id) && !droppedIds.has(id));
+    if (unplanned.length > 0) {
+      throw new PoseAdapterError(
+        `帧 ${unplanned.join('、')} 既不在任何片段里，也没登记到 dropped：新增帧必须显式决定"播"还是"不播"` +
+          '（静默丢弃 = 美术的活永远没人看见；静默保留 = G-P4 孤儿帧）',
+        batch,
+      );
+    }
+    exportFrames = {};
+    for (const id of referenced) exportFrames[id] = frames[id];
+    clips = planned;
+  }
   return {
     posture: batch,
     assetId: requireString(manifest.assetId, 'assetId', batch),
@@ -722,8 +852,8 @@ function adaptFramesNestedV3(manifest, batch) {
       spreadNative: anchor.spreadNative,
       maxDeviationNative: anchor.maxDeviationNative,
     },
-    frames,
-    clips: buildClips(clipId, ordered, loop, timing[clipId], loop ? undefined : onEnd),
+    frames: exportFrames,
+    clips,
     consumedKeys: ['canvas', 'nativeSourceCanvas', 'masterScale', 'bodyAnchor.x', 'bodyAnchor.y', 'bodyAnchor.byFacing', 'frames[].id', 'frames[].facing', 'frames[].file', 'frames[].master.bbox', 'frames[].native.bbox', 'frames[].contactPoints.airborneGap', 'frames[].contactPoints.support.centerX'],
     aliasesResolved: [],
     warnings: anchor.warnings,

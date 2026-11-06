@@ -284,13 +284,54 @@ test('P-13 exit 播完 ⇒ 回站姿 + 图隐藏 + 停播 + 门复位（下一�
   assert.equal(controller.clipId, 'exit', '第二轮起身必须同样先播 exit');
 });
 
-test('sleep 没有 exit 片段 ⇒ 走旧路径硬切站姿（一帧都不播，行为与切片 2 相同）', () => {
-  const { controller, frames } = makeController();
+/**
+ * 造一份"sleep 没有 `exit` 片段"的合成清单。
+ *
+ * <p>真数据里 sleep 从切片 4 起**有** `exit`（`startle` 单帧 300 ms），所以"没有 exit 才走硬切站姿"
+ * 这条旧路径不能用真数据守了——但那条路径本身**仍然必须有人守**（将来任何一批没交过渡片段
+ * 都会走它）。做法是把真清单深拷一份、把 sleep 的 `exit` 摘掉：判据从"这一批恰好没有 exit"
+ * 变成"任何一批没有 exit 时的行为"，比原来更严（不再依赖某个批次的巧合）。</p>
+ *
+ * @returns 合成清单
+ */
+function posesWithoutSleepExit(): PetPoses {
+  const clone = structuredClone(PET_POSES) as any;
+  const sleep = clone.batches.sleep;
+  assert.ok(sleep, '真清单里必须有 sleep，否则本助手无事可做');
+  const kept = sleep.clips.filter((clip: any) => clip.id !== 'exit');
+  assert.ok(kept.length < sleep.clips.length, '前置：真清单的 sleep 里确实有 exit（否则这个合成本身没意义）');
+  sleep.clips = kept;
+  return clone as PetPoses;
+}
+
+test('sleep 有 exit ⇒ 睡→醒先播 startle（单帧 300ms，睁一次眼）再回站姿', () => {
+  const { controller, clock, frames } = makeController();
   controller.setPosture('sleep');
   assert.equal(controller.posture, 'sleep');
+  assert.equal(controller.clipId, 'cycle', '睡着时播的是呼吸循环 cycle');
+  const before = frames.length;
+
+  controller.setPosture('stand');
+  assert.equal(controller.posture, 'sleep', '起身期间姿态仍是 sleep（exit 是过渡片段，不是新姿态）');
+  assert.equal(controller.clipId, 'exit', 'sleep 有 exit ⇒ 先播 exit，不再硬切站姿');
+  assert.deepEqual(frames.slice(before), ['startle'], 'exit 的第 0 帧就是那一帧"睁眼惊醒"');
+
+  // exit = 单帧 300ms（一个"睁眼"该被看见的长度）
+  clock.advance(300);
+  assert.equal(controller.posture, 'stand', 'exit 播完必须回站姿（onEnd: return-stand 的收尾）');
+  assert.equal(controller.clipId, null, '不许留着 exit 片段（"看不见但还在播"的幽灵）');
+  assert.equal(controller.isPlaying, false, '必须停播');
+  assert.equal(countOf(frames, 'startle'), 1, `睁眼只该出现一次（重复 = 一帧内连播两次 exit）：${JSON.stringify(frames)}`);
+});
+
+test('没有 exit 的批次仍走旧路径硬切站姿（一帧都不播）—— 用合成清单守，不依赖某个批次的巧合', () => {
+  const { controller, frames } = makeController({ poses: posesWithoutSleepExit() });
+  controller.setPosture('sleep');
+  assert.equal(controller.posture, 'sleep');
+  assert.equal(controller.clipId, 'cycle', '前置：睡着时仍在播呼吸循环');
   const before = frames.length;
   controller.setPosture('stand');
-  assert.equal(controller.posture, 'stand', 'sleep 没有起身过渡 ⇒ 立刻回站姿');
+  assert.equal(controller.posture, 'stand', '没有起身过渡 ⇒ 立刻回站姿');
   assert.equal(controller.clipId, null);
   assert.equal(controller.isPlaying, false);
   assert.equal(frames.length, before, '硬切不许上屏任何新帧（不会"闪一下 exit"）');

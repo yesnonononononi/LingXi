@@ -395,24 +395,45 @@ test('P-04 / P-05（切片 3）：lie 只产出 `enter`(4 帧，末帧 = neutral
   );
 });
 
-test('P-07（切片 3）：sleep 是单条 cycle、loop:true、5 帧 × 1800ms、没有 onEnd', () => {
+test('P-07（切片 3 起，切片 4 修订）：sleep 是两条片段 —— 呼吸 cycle(3×1800, loop) + 起身 exit(单帧 startle×300, return-stand)', () => {
   const runtimeSleep = POSES_MANIFEST.batches.sleep;
   assert.ok(runtimeSleep, '运行清单里必须有 sleep（切片 3 起 accepted）');
   const clips = runtimeSleep.clips as any[];
-  assert.equal(clips.length, 1, `sleep 只该有一条片段，实际 ${clips.length}`);
-  const clip = clips[0];
-  assert.equal(clip.id, 'cycle', 'sleep 的片段 id 必须是 cycle（pickClip 第一轮就命中）');
-  assert.equal(clip.loop, true, 'sleep 必须循环');
-  assert.equal(clip.onEnd, undefined, '循环片段的 onEnd 必须缺省（写了也不会被调用，是假配置）');
-  assert.equal(clip.frames.length, 5, `sleep 必须 5 帧，实际 ${clip.frames.length}`);
-  assert.deepEqual(clip.frameMs, [1800, 1800, 1800, 1800, 1800], 'sleep 每帧 1800ms');
+  assert.equal(clips.length, 2, `sleep 该有两条片段（cycle + exit），实际 ${clips.length}`);
+
+  const cycle = clips.find((clip) => clip.id === 'cycle');
+  assert.ok(cycle, 'sleep 必须有 cycle（睡着时的呼吸循环，pickClip 第一轮就命中）');
+  assert.equal(cycle.loop, true, 'sleep 的呼吸循环必须循环');
+  assert.equal(cycle.onEnd, undefined, '循环片段的 onEnd 必须缺省（写了也不会被调用，是假配置）');
+  // 修订要点：cycle **只留呼吸三帧**。`startle`（睁眼惊醒）与 `curled`（蜷缩成团）不是"睡着的节拍"，
+  // 留在循环里就是用户真机看到的"每 9 秒睁一次眼、再缩成一团"。
+  assert.deepEqual(cycle.frames, ['neutral', 'breathIn', 'breathOut'], 'cycle 只许呼吸三帧（顺序即呼吸节奏）');
+  assert.deepEqual(cycle.frameMs, [1800, 1800, 1800], 'sleep 每帧 1800ms');
   assert.equal(
-    clip.frameMs.reduce((sum: number, ms: number) => sum + ms, 0),
-    9000,
-    'sleep 一个循环必须正好 9 秒（5 × 1800）',
+    (cycle.frameMs as number[]).reduce((sum: number, ms: number) => sum + ms, 0),
+    5400,
+    '呼吸循环一轮必须正好 5.4 秒（3 × 1800）',
   );
-  // 单朝向静态批：只有一条 facing:-1
-  assert.equal(clip.facing, -1);
+  assert.equal(cycle.facing, -1, '单朝向静态批：只有 facing:-1');
+
+  const exit = clips.find((clip) => clip.id === 'exit');
+  assert.ok(exit, 'sleep 必须有 exit（睡→醒先睁一次眼，再起身）——没有它就只能硬切站姿');
+  assert.equal(exit.loop, false, 'exit 是一次性片段');
+  assert.equal(exit.onEnd, 'return-stand', 'exit 播完必须回站姿（pendingStand 的收尾路径靠它）');
+  assert.deepEqual(exit.frames, ['startle'], 'exit 就是那一帧"睁眼惊醒"');
+  assert.deepEqual(exit.frameMs, [300], '单帧 300ms：一个"睁眼"该被看见的长度（不许改成 0/闪一下）');
+  assert.equal(exit.facing, -1, 'exit 与 cycle 同朝向');
+
+  // `curled`（蜷缩成团 = 深睡阶段）既不在任何片段里，也不在帧表里 ——
+  // 留在帧表里而不进片段会立刻变成 G-P4 孤儿帧（白占体积 + 永远不播）。
+  const frameIds = Object.keys(runtimeSleep.frames);
+  assert.deepEqual(frameIds.sort(), ['breathIn', 'breathOut', 'neutral', 'startle'], 'sleep 只导出 4 帧：呼吸三帧 + startle');
+  assert.ok(!('curled' in runtimeSleep.frames), 'curled 不许出现在运行帧表里（母版留在 docs/assets 原处）');
+  for (const clip of clips) {
+    assert.ok(!(clip.frames as string[]).includes('curled'), `${clip.id} 不许引用 curled`);
+  }
+
+  // 单朝向静态批：两条片段都是 facing:-1，`isFacingSensitive` 从数据算出"不按朝向分流"
   assert.equal(new Set(clips.map((item) => item.facing)).size, 1, 'sleep 是单朝向批');
 });
 

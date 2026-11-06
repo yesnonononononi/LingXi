@@ -525,18 +525,26 @@
           "frames": [
             "neutral",
             "breathIn",
-            "breathOut",
-            "startle",
-            "curled"
+            "breathOut"
           ],
           "loop": true,
           "frameMs": [
             1800,
             1800,
-            1800,
-            1800,
             1800
           ]
+        },
+        {
+          "id": "exit",
+          "facing": -1,
+          "frames": [
+            "startle"
+          ],
+          "loop": false,
+          "frameMs": [
+            300
+          ],
+          "onEnd": "return-stand"
         }
       ],
       "frames": {
@@ -688,44 +696,6 @@
             "top": 646,
             "right": 1523,
             "bottom": 1468
-          },
-          "airborneGapNative": 0,
-          "supportFootX": null
-        },
-        "curled": {
-          "id": "curled",
-          "facing": -1,
-          "files": {
-            "1x": {
-              "file": "poses/sleep/curled@1x.webp",
-              "url": "lxa://pet-poses/sleep/curled@1x.webp",
-              "width": 234,
-              "height": 234,
-              "bytes": 28224,
-              "sha256": "cbee93820b57510a7a65350dc2fdada43fec7de369a499565dc3376d68f6866a",
-              "format": "webp-lossless",
-              "contentId": "e22452d23bf49651"
-            },
-            "2x": {
-              "file": "poses/sleep/curled@2x.webp",
-              "url": "lxa://pet-poses/sleep/curled@2x.webp",
-              "width": 468,
-              "height": 468,
-              "bytes": 90336,
-              "sha256": "3b4203cc40e14f6bdef89a611bde048b3e0851deaf6c67faa847ccbbb86a864b",
-              "format": "webp-lossless",
-              "contentId": "e22452d23bf49651"
-            }
-          },
-          "anchorNative": {
-            "x": 732,
-            "y": 1468
-          },
-          "inkNative": {
-            "left": 44,
-            "top": 863,
-            "right": 1493,
-            "bottom": 1467
           },
           "airborneGapNative": 0,
           "supportFootX": null
@@ -2200,9 +2170,9 @@
     "no-blink"
   ],
   "totals": {
-    "frames": 43,
-    "bytes1x": 1610116,
-    "bytes2x": 5078644,
-    "distinctFiles": 78
+    "frames": 42,
+    "bytes1x": 1581892,
+    "bytes2x": 4988308,
+    "distinctFiles": 76
   }
 }

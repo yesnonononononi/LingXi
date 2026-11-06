@@ -62,13 +62,19 @@ test('P-06 lie 的 enter 必须真的在动（distinct contentId = 3 ≥ 2），
   assert.deepEqual(checkClipMotion(lie), []);
 });
 
-test('P-06 sleep 的 cycle 5 帧必须是 5 张不同的画（呼吸循环不能靠复制帧）', () => {
+test('P-06 sleep 的呼吸 cycle 3 帧必须是 3 张不同的画（呼吸循环不能靠复制帧）；单帧 exit 显式豁免', () => {
   const sleep = MANIFEST.batches.sleep;
-  const cycle = (sleep.clips as any[])[0];
-  assert.equal(cycle.id, 'cycle');
-  assert.equal(cycle.frames.length, 5);
-  assert.equal(distinctContentIdsOf(sleep, cycle), 5, 'sleep 的 5 帧必须是 5 个 distinct contentId');
-  assert.deepEqual(checkClipMotion(sleep), []);
+  const cycle = (sleep.clips as any[]).find((clip: any) => clip.id === 'cycle');
+  assert.ok(cycle, 'sleep 必须有 cycle');
+  // 修订要点：cycle 只剩呼吸三帧（`startle` 是睡→醒的过渡、`curled` 是深睡阶段，都不在循环里）
+  assert.deepEqual(cycle.frames, ['neutral', 'breathIn', 'breathOut']);
+  assert.equal(cycle.frames.length, 3);
+  assert.equal(distinctContentIdsOf(sleep, cycle), 3, 'sleep 的呼吸 3 帧必须是 3 个 distinct contentId');
+  // `exit` 只有 1 帧（`startle`）：单帧片段由判据显式豁免，不是"碰巧没遍历到"
+  const exit = (sleep.clips as any[]).find((clip: any) => clip.id === 'exit');
+  assert.ok(exit, 'sleep 必须有 exit');
+  assert.equal(exit.frames.length, 1, 'exit 是单帧（睁眼惊醒）');
+  assert.deepEqual(checkClipMotion(sleep), [], 'sleep 的两条片段都不该被判红（cycle 3 张画；exit 单帧豁免）');
 });
 
 test('P-06 动作批逐条：walk/run/jump 的每个片段 distinct contentId 都 ≥ 2', () => {
@@ -83,9 +89,10 @@ test('P-06 动作批逐条：walk/run/jump 的每个片段 distinct contentId �
   }
 });
 
-test('G-P14 变异：把 sleep 的 5 帧全塞成同一个 contentId ⇒ 必红（帧数骗不过判据）', () => {
+test('G-P14 变异：把 sleep 呼吸 cycle 的帧全塞成同一个 contentId ⇒ 必红（帧数骗不过判据）', () => {
   const sleep = MANIFEST.batches.sleep;
-  const cycle = (sleep.clips as any[])[0];
+  const cycle = (sleep.clips as any[]).find((clip: any) => clip.id === 'cycle');
+  assert.ok(cycle, 'sleep 必须有 cycle');
   const firstId = cycle.frames[0] as string;
   const shared = sleep.frames[firstId].files['1x'].contentId as string;
   const mutated = {
@@ -105,9 +112,10 @@ test('G-P14 变异：把 sleep 的 5 帧全塞成同一个 contentId ⇒ 必红�
   };
   assert.equal(distinctContentIdsOf(mutated, cycle), 1, '前置：变异后只剩 1 个 contentId');
   const problems = checkClipMotion(mutated);
+  // cycle 有 3 帧却只有 1 张画 ⇒ 必红；exit 是单帧 ⇒ 豁免，所以正好一条
   assert.equal(problems.length, 1, `必须正好红一条，实际：${JSON.stringify(problems)}`);
   assert.match(problems[0], /G-P14/);
-  assert.match(problems[0], /有 5 帧但只有 1 个 distinct contentId/);
+  assert.match(problems[0], /有 3 帧但只有 1 个 distinct contentId/);
 });
 
 test('G-P14 单帧豁免的边角：sit 只有 1 帧且 frameMs=[0]，判据必须放行而不是"碰巧没遍历到"', () => {

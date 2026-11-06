@@ -374,7 +374,8 @@ test('T02-3 G-P8：真清单每帧的 1x/2x 都是 webp-lossless（U1 裁定的"
     assert.deepStrictEqual(gate.checkFrameEncoding(batch), [], `${posture} 出现了非无损编码`);
   }
   // 金丝雀：确实有帧被判过（否则"全绿"可能只是因为一个帧都没遍历到）。
-  // 切片 3 起六批共 43 个帧位（sit 1 + walk 8 + run 8 + jump 10 + lie 7 + sleep 5 + …）；
+  // 切片 3 起六批共 42 个帧位（sit 1 + lie 7 + sleep 4 + walk 8 + run 12 + jump 10）；
+  // sleep 由 5 降成 4 是因为 `curled` 停止导出（深睡阶段将来再接，母版留在原处）。
   // 数字变了必须同批改这里，不许改成"大于 0 就算过"。
   let frameCount = 0;
   for (const batch of Object.values(manifest.batches)) {
@@ -387,7 +388,7 @@ test('T02-3 G-P8：真清单每帧的 1x/2x 都是 webp-lossless（U1 裁定的"
       }
     }
   }
-  assert.strictEqual(frameCount, 43);
+  assert.strictEqual(frameCount, 42);
 });
 
 test('T02-4 G-P8 变异：把某帧 format 改成 "webp" ⇒ 必红（体积断言拦不住这条旁路）', async () => {

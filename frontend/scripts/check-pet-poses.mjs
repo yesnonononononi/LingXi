@@ -516,13 +516,32 @@ export function checkOrphanFrames(batch) {
 }
 
 /**
+ * `onEnd:'return-stand'` 片段的**总可见时长**下限（毫秒）。
+ *
+ * <p>300 ms 是"一个能被看见的节拍"：低于它，用户侧读成"卡了一下"而不是"做了一个动作"。
+ * 真数据里 `sleep.exit` 正是单帧 `startle` × 300 ms（睡→醒先睁一次眼）。</p>
+ */
+export const MIN_RETURN_STAND_MS = 300;
+
+/**
  * 校验 clip 的播放语义（**G-P5 / G-P6**）。
  *
  * <p><b>G-P5</b>：`loop:true` 的 clip 里 `frameMs` 全项必须 `> 0`。填 0 的循环片段 =
  * 永不推进的假动画（rAF 空转、画面静止），与 D-03 是同类坑。</p>
  *
- * <p><b>G-P6</b>：`onEnd:'return-stand'` 的 clip 帧数必须 `≥ 2`。1 帧 + `return-stand`
- * 的观感是"闪一下就回站姿"（用户侧读成"卡了一下"），而这个形态在单测里完全合法。</p>
+ * <p><b>G-P6</b>：`onEnd:'return-stand'` 的片段**总可见时长必须 ≥ {@link MIN_RETURN_STAND_MS}**。</p>
+ *
+ * <p><b>为什么判据从"帧数 ≥ 2"改成"总时长"（这是一次口径修正，不是放宽）：</b>
+ * 真实要防的是"闪一下就回站姿"，而帧数只是它的**代理指标**，两个方向都会判错：</p>
+ * <ul>
+ *   <li><b>它冤枉合法形态</b>：`sleep.exit` = 单帧 `startle` × 300 ms（睡→醒先睁一次眼）
+ *       只有 1 帧但看得清，旧判据直接判红；</li>
+ *   <li><b>它放过更糟的形态</b>：`2 帧 × 40 ms`（合计 80 ms，闪得比单帧 300 ms 厉害得多）
+ *       旧判据判绿。</li>
+ * </ul>
+ * <p>换成"总时长"后两个方向都对了：`2 帧 × 40 ms` 从**绿变红**（收紧），
+ * 单帧 130 ms（`tests/petPoseSlice2Export.test.cjs` 的 T01-11）仍然红。
+ * 帧数不再参与判定——"能不能被看见"本来就是时间问题，不是帧数问题。</p>
  *
  * @param {Record<string, any>} batch 批次
  * @returns {string[]} 问题列表
@@ -543,11 +562,14 @@ export function checkClipSemantics(batch) {
         );
       }
     }
-    if (clip && clip.onEnd === 'return-stand' && ids.length < 2) {
-      problems.push(
-        `${label} onEnd:return-stand 但只有 ${ids.length} 帧：` +
-          '单帧 + 回到站姿的观感是"闪一下就消失"（G-P6）',
-      );
+    if (clip && clip.onEnd === 'return-stand') {
+      const totalMs = frameMs.reduce((sum, ms) => sum + Number(ms), 0);
+      if (!Number.isFinite(totalMs) || totalMs < MIN_RETURN_STAND_MS) {
+        problems.push(
+          `${label} onEnd:return-stand 但总时长 ${JSON.stringify(frameMs)}（${ids.length} 帧，合计 ${totalMs} ms）` +
+            `短于 ${MIN_RETURN_STAND_MS} ms：用户侧读成"闪一下就回站姿/卡了一下"，不是"做了一个动作"（G-P6）`,
+        );
+      }
     }
   }
   return problems;
