@@ -8,6 +8,7 @@ import com.summit.dp.task.application.service.TaskRuntimeService;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
+import com.summit.dp.task.domain.model.TaskSummary;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -126,20 +127,27 @@ public class BackendProcessManager implements TaskRuntimeService {
         return toView(task, task.getOutput());
     }
 
+    /**
+     * 会话内的后台任务列表。
+     *
+     * <p>只装摘要（不含 {@code output} CLOB）：列表从不展示输出全文，而一次 50 行的分页
+     * 若带上它，就要为每行付一次 H2 临时 LOB 写放大。运行中的任务仍以内存句柄为准 ——
+     * 库里的行还没收尾。</p>
+     */
     public List<TaskVO> listTasks(Long sessionId) {
         throwIf(sessionId == null, "会话标识不能为空");
-        Map<Long, Task> tasks = new LinkedHashMap<>();
-        repository.queryPageBySessionId(1, 50, sessionId).records().forEach(task -> tasks.put(task.getId(), task));
+        Map<Long, TaskSummary> summaries = new LinkedHashMap<>();
+        repository.queryPageSummaryBySessionId(1, 50, sessionId).forEach(summary -> summaries.put(summary.id(), summary));
         // 旧的长任务不能被最近 50 条历史挤掉，否则界面运行计数会漏报。
-        repository.findActiveBySessionId(sessionId).forEach(task -> tasks.put(task.getId(), task));
+        repository.findActiveSummaryBySessionId(sessionId).forEach(summary -> summaries.put(summary.id(), summary));
         List<TaskVO> result = new ArrayList<>();
-        for (Task task : tasks.values()) {
-            BackendProcess process = processes.get(task.getId());
-            TaskVO summary;
-            if (process == null) summary = toView(task, null);
-            else synchronized (process) { summary = toView(process.getTask(), null); }
-            if (summary.getCommand().length() > 256) summary.setCommand(summary.getCommand().substring(0, 256) + "…");
-            result.add(summary);
+        for (TaskSummary summary : summaries.values()) {
+            BackendProcess process = processes.get(summary.id());
+            TaskVO view;
+            if (process == null) view = toView(summary, null);
+            else synchronized (process) { view = toView(process.getTask(), null); }
+            if (view.getCommand().length() > 256) view.setCommand(view.getCommand().substring(0, 256) + "…");
+            result.add(view);
         }
         return result;
     }
@@ -241,6 +249,23 @@ public class BackendProcessManager implements TaskRuntimeService {
                 .truncated(task.isTruncated())
                 .createAt(task.getCreateAt())
                 .completeAt(task.getCompleteAt())
+                .build();
+    }
+
+    /** 摘要 → 视图：{@code output} 恒为 null（摘要里本来就没有这一列）。 */
+    private TaskVO toView(TaskSummary summary, String output) {
+        return TaskVO.builder()
+                .id(summary.id())
+                .sessionId(summary.sessionId())
+                .turnId(summary.turnId())
+                .command(summary.command())
+                .status(summary.status().name())
+                .output(output)
+                .intention(summary.intention())
+                .exitCode(summary.exitCode())
+                .truncated(summary.truncated())
+                .createAt(summary.createAt())
+                .completeAt(summary.completeAt())
                 .build();
     }
     private void throwIf(boolean condition, String err) { if (condition) throw new ClientException(err); }

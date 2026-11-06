@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.TaskPage;
+import com.summit.dp.task.domain.model.TaskSummary;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.persistence.po.TaskPO;
@@ -85,5 +86,41 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
         return mapper.selectList(new LambdaQueryWrapper<TaskPO>().eq(TaskPO::getSessionId, sessionId)
                         .eq(TaskPO::getExecutionId, executionId).orderByAsc(TaskPO::getId))
                 .stream().map(this::toModel).toList();
+    }
+
+    /**
+     * 摘要分页：投影除 {@code output} 外的展示列。
+     *
+     * <p>分页仍走项目既有的 {@code selectPage} + H2 方言拦截器；列裁剪只作用在 SELECT 列表上，
+     * count 语句由框架自己生成，不受影响。</p>
+     */
+    @Override
+    public List<TaskSummary> queryPageSummaryBySessionId(int current, int size, long sessionId) {
+        IPage<TaskPO> page = mapper.selectPage(new Page<TaskPO>(current, size),
+                summaryColumns().eq(TaskPO::getSessionId, sessionId).orderByDesc(TaskPO::getId));
+        return page.getRecords().stream().map(this::toSummary).toList();
+    }
+
+    @Override
+    public List<TaskSummary> findActiveSummaryBySessionId(long sessionId) {
+        return mapper.selectList(summaryColumns()
+                        .eq(TaskPO::getSessionId, sessionId)
+                        .in(TaskPO::getStatus, "PENDING", "RUNNING")
+                        .orderByDesc(TaskPO::getId))
+                .stream().map(this::toSummary).toList();
+    }
+
+    /** 列表展示列（不含 {@code output}）：裁剪口径只在这一处定义，两个摘要查询共用。 */
+    private static LambdaQueryWrapper<TaskPO> summaryColumns() {
+        return new LambdaQueryWrapper<TaskPO>().select(
+                TaskPO::getId, TaskPO::getSessionId, TaskPO::getTurnId,
+                TaskPO::getCommand, TaskPO::getIntention, TaskPO::getStatus,
+                TaskPO::getExitCode, TaskPO::isTruncated, TaskPO::getCreateAt, TaskPO::getCompleteAt);
+    }
+
+    private TaskSummary toSummary(TaskPO po) {
+        return new TaskSummary(po.getId(), po.getSessionId(), po.getTurnId(), po.getCommand(),
+                po.getIntention(), Task.TaskStatus.valueOf(po.getStatus()), po.getExitCode(),
+                po.isTruncated(), po.getCreateAt(), po.getCompleteAt());
     }
 }
