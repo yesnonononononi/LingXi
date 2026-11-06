@@ -192,18 +192,26 @@ public class ToolCallRepositoryImpl
      * 单块推送用的只读投影：只选装配工具块真正用到的列。
      *
      * <p>{@code content} / {@code raw_input} / {@code meta_data} 是 CLOB，单块推送一个都用不到，
-     * 读它们等于给每次工具收尾加一次临时 LOB 写放大。返回的模型字段不完整，
+     * 读它们等于给每次工具收尾加一次临时 LOB 写放大。返回的{@link ToolCallBlockView}字段不完整，
      * <b>只能装配块，禁止 updateById</b>。</p>
      */
     @Override
-    public Optional<ToolCall> findForBlockUpsert(String id) {
+    public Optional<ToolCallBlockView> findForBlockUpsert(String id) {
         if (id == null) return Optional.empty();
         return toolCallMapper.selectList(Wrappers.<ToolCallPO>lambdaQuery()
                         .select(ToolCallPO::getId, ToolCallPO::getConversationId, ToolCallPO::getToolName,
                                 ToolCallPO::getType, ToolCallPO::getStatus, ToolCallPO::getRawOutput,
                                 ToolCallPO::getVersion)
                         .eq(ToolCallPO::getId, id))
-                .stream().findFirst().map(this::toModel);
+                .stream().findFirst().map(this::toBlockView);
+    }
+
+    /** 只读投影的映射：只搬被 select 出来的列，其余字段一律不假装有值。 */
+    private ToolCallBlockView toBlockView(ToolCallPO po) {
+        if (po == null) return null;
+        return new ToolCallBlockView(po.getId(), po.getConversationId(), po.getToolName(),
+                po.getType() == null ? null : ToolCallType.valueOf(po.getType()),
+                ToolCallStatus.parse(po.getStatus()), po.getRawOutput(), po.getVersion());
     }
 
     /**

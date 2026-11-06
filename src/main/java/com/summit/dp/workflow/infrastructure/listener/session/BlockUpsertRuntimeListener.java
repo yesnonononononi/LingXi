@@ -4,8 +4,6 @@ import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.core.tool.ToolCallStatus;
-import com.summit.dp.toolcall.domain.model.ToolCall;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
@@ -27,7 +25,6 @@ import org.springframework.stereotype.Component;
 public class BlockUpsertRuntimeListener implements RuntimeListener {
 
     private final TurnViewBroadcaster turnViewBroadcaster;
-    private final ToolCallRepository toolCallRepository;
     private final ChatTurnRepository chatTurnRepository;
 
     @Override
@@ -50,12 +47,9 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
             return;
         }
         try {
-            // 工具行上有会话归属；轮次靠执行 ID 反查（工具事件只带 executionId，不带 turnId）。
-            // 用单块投影而非 findById：这里只取会话归属，没必要连带读 4 个 CLOB。
-            ToolCall toolCall = toolCallRepository.findForBlockUpsert(toolCallId).orElse(null);
-            if (toolCall == null || toolCall.getConversationId() == null) {
-                return;
-            }
+            // 轮次靠执行 ID 反查（工具事件只带 executionId，不带 turnId）。
+            // 这里<b>不读工具行</b>：归属判断不需要它，读一次就是白白多读一次 raw_output CLOB；
+            // 工具行由单块装配路径按需取一次只读投影。
             Long numericExecutionId = ExecutionIdentity.numericOrNull(executionId);
             if (numericExecutionId == null) {
                 return;

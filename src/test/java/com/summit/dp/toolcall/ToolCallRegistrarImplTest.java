@@ -195,8 +195,13 @@ class ToolCallRegistrarImplTest {
         }
 
         @Override
-        public Optional<ToolCall> findForBlockUpsert(String id) {
-            return Optional.ofNullable(rows.get(id));
+        public Optional<ToolCallBlockView> findForBlockUpsert(String id) {
+            ToolCall row = rows.get(id);
+            if (row == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new ToolCallBlockView(row.getId(), row.getConversationId(), row.getToolName(),
+                    row.getType(), row.getStatus(), row.getRawOutput(), row.getVersion()));
         }
 
         @Override

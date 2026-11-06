@@ -259,7 +259,16 @@ public class ToolCallConverter {
      * @return 结论；载荷缺失或不可识别时返回 {@code null}（调用方决定降级语义）
      */
     public ToolCallOutcome readOutcome(ToolCall toolCall) {
-        JsonNode output = parse(toolCall == null ? null : toolCall.getRawOutput());
+        return readOutcome(toolCall == null ? null : toolCall.getRawOutput());
+    }
+
+    /**
+     * 从 {@code raw_output} 文本读回结论（只读投影路径用，避免为此造一个领域实体）。
+     *
+     * @return 结论；载荷缺失或不可识别时返回 {@code null}
+     */
+    public ToolCallOutcome readOutcome(String rawOutput) {
+        JsonNode output = parse(rawOutput);
         if (output == null || !output.isObject() || !output.hasNonNull(ToolCallKeys.OUTCOME)) {
             return null;
         }

@@ -40,12 +40,28 @@ public class ToolBlockStatusResolver {
      *         （宁可显示为失败，也不假装成功）
      */
     public String resolve(ToolCall toolCall) {
-        if (toolCall == null || toolCall.getStatus() == null) {
+        if (toolCall == null) {
+            return resolve((ToolCallStatus) null, null);
+        }
+        return resolve(toolCall.getStatus(), toolCall.getRawOutput());
+    }
+
+    /**
+     * 与 {@link #resolve(ToolCall)} 同一映射，入参换成「状态 + 原始输出」。
+     *
+     * <p>单块推送只持有只读投影（{@code ToolCallBlockView}），不必为解析状态去造一个
+     * 字段不完整的领域实体；两条入口共用同一份判定，避免「历史一套、增量一套」。</p>
+     *
+     * @param lifecycle 生命周期状态（可为 {@code null}，按未知处理）
+     * @param rawOutput {@code raw_output} 原文（结论来源）
+     * @return 恒定非 {@code null}：无法识别时回退 {@link BlockStatus#TOOL_FAILED}
+     */
+    public String resolve(ToolCallStatus lifecycle, String rawOutput) {
+        if (lifecycle == null) {
             return BlockStatus.TOOL_FAILED;
         }
-        ToolCallStatus lifecycle = toolCall.getStatus();
         if (lifecycle == ToolCallStatus.COMPLETED) {
-            return resolveFromOutcome(toolCallConverter.readOutcome(toolCall));
+            return resolveFromOutcome(toolCallConverter.readOutcome(rawOutput));
         }
         if (lifecycle == ToolCallStatus.IN_PROGRESS) {
             return BlockStatus.TOOL_STARTED;

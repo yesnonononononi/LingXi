@@ -11,6 +11,8 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.*;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
+import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import lombok.RequiredArgsConstructor;
@@ -144,28 +146,100 @@ public class TurnViewAssembler {
                 continue;
             }
             ToolCall toolCall = toolCalls == null ? null : toolCalls.get(request.id());
-            blocks.add(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()), request, toolCall));
+            blocks.add(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()), request,
+                    ToolFacts.of(toolCall)));
         }
     }
 
     /**
-     * 构造工具块。
+     * 只构造<b>目标那一个</b>工具块（BLOCK_UPSERT 单块推送用）。
+     *
+     * <p>不再走「整轮装配 → 过滤」：那等于为了一个块把整轮所有兄弟工具调用的 CLOB 全读一遍。
+     * 定位口径与 {@link #assembleBlocks} 完全一致 —— 按消息顺序找第一处
+     * {@code AI 行 → 工具请求 id} 匹配，因此结果与「整轮装配后按 blockId 过滤」逐字段相等。</p>
+     *
+     * <p>工具行缺失（尚未落库的实时窗口）时按「已开始」造块，与整轮路径同一规则。</p>
+     *
+     * @param turnId     目标轮次
+     * @param messages   该轮消息（VO 元数据与请求原文都来自它们）
+     * @param toolCallId 目标工具调用 ID
+     * @param toolCall   只读投影（可为 {@code null}，表示行还没落库）
+     * @return 该块；该轮没有任何 AI 行请求过它时返回空（对应「空则跳过」的推送语义）
+     * @throws ClientException 目标 AI 行的响应身份不可解析（与整轮路径同一条拒绝规则）
+     */
+    public Optional<Block> buildSingleToolBlock(Long turnId, List<SessionMessage> messages,
+                                               String toolCallId, ToolCallBlockView toolCall) {
+        if (turnId == null || messages == null || toolCallId == null || toolCallId.isBlank()) {
+            return Optional.empty();
+        }
+        for (SessionMessage message : messages) {
+            if (message == null || !turnId.equals(message.getTurnId())
+                    || message.getType() != SessionMessageType.AI) {
+                continue;
+            }
+            AiMessageEntity aiMessage = parse(message.getText());
+            if (aiMessage == null || aiMessage.getToolCalls() == null) {
+                continue;
+            }
+            for (ToolCallRequest request : aiMessage.getToolCalls()) {
+                if (request == null || !toolCallId.equals(request.id())) {
+                    continue;
+                }
+                String responseId = message.getResponseId();
+                if (responseId == null || !responseId.matches("[0-9]+")) {
+                    throw new ClientException("历史模型响应缺少框架身份，请重新开始会话");
+                }
+                return Optional.of(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()),
+                        request, ToolFacts.of(toolCall)));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 构造工具块（<b>块字段映射的唯一来源</b>）。
      *
      * <p>工具块身份来自 {@code toolCallId}，{@code responseId} 用于确定所属模型响应的位置。
      * 状态来自权威工具视图；工具调用行缺失（尚未落库的实时窗口）时按「已开始」展示，
      * 因为此刻它确实已被模型请求、只是还没有结论。</p>
      */
-    private ToolBlock buildToolBlock(String responseId, int order, ToolCallRequest request, ToolCall toolCall) {
+    private ToolBlock buildToolBlock(String responseId, int order, ToolCallRequest request, ToolFacts facts) {
         String toolCallId = request.id();
-        if (toolCall == null) {
+        if (facts == null) {
             return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                     BlockStatus.TOOL_STARTED, toolCallId, request.name(), request.arguments(),
                     null, null, null, null);
         }
         return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
-                toolBlockStatusResolver.resolve(toolCall), toolCallId,
-                toolCall.getToolName() == null ? request.name() : toolCall.getToolName(),
-                request.arguments(), toolCall.getRawOutput(), null, null, toolCall.getVersion());
+                toolBlockStatusResolver.resolve(facts.status(), facts.rawOutput()), toolCallId,
+                facts.toolName() == null ? request.name() : facts.toolName(),
+                request.arguments(), facts.rawOutput(), null, null, facts.version());
+    }
+
+    /**
+     * 工具块需要的权威事实：整轮路径来自领域实体、单块路径来自只读投影。
+     *
+     * <p>两条路径共用 {@link #buildToolBlock} 的同一份字段映射，避免「历史一套、增量一套」。</p>
+     */
+    private record ToolFacts(String toolName, ToolCallStatus status, String rawOutput, Long version) {
+
+        /** 领域实体 → 事实；{@code null} 表示行尚未落库。 */
+        static ToolFacts of(ToolCall toolCall) {
+            if (toolCall == null) {
+                return null;
+            }
+            return new ToolFacts(toolCall.getToolName(), toolCall.getStatus(),
+                    toolCall.getRawOutput(), toolCall.getVersion());
+        }
+
+        /** 只读投影 → 事实；{@code null} 表示行尚未落库。 */
+        static ToolFacts of(ToolCallBlockView toolCall) {
+            if (toolCall == null) {
+                return null;
+            }
+            return new ToolFacts(toolCall.toolName(), toolCall.status(),
+                    toolCall.rawOutput(), toolCall.version());
+        }
     }
 
     /**

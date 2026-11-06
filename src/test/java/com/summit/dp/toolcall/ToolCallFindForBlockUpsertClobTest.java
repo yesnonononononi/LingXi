@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.support.SqlCaptureInterceptor;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
@@ -76,7 +77,7 @@ class ToolCallFindForBlockUpsertClobTest {
         }
 
         capture.clear();
-        Optional<ToolCall> projection = repository.findForBlockUpsert(TOOL_CALL_ID);
+        Optional<ToolCallBlockView> projection = repository.findForBlockUpsert(TOOL_CALL_ID);
 
         assertTrue(projection.isPresent(), "已存在的调用必须能投影出来");
         assertEquals(1, capture.queries().size(), "只应下发一条查询，实际: " + capture.queries());
@@ -86,17 +87,14 @@ class ToolCallFindForBlockUpsertClobTest {
             assertFalse(sql.contains(clob), "投影不得命中 " + clob + "，实际: " + sql);
         }
 
-        ToolCall row = projection.get();
-        assertNull(row.getContent(), "未投影的列必须是 null，绝不假装读到了空内容");
-        assertNull(row.getRawInput());
-        assertNull(row.getMetaData());
-        assertNotNull(row.getRawOutput(), "raw_output 必须读到：工具块的成败状态由它决定");
-        assertEquals(TOOL_CALL_ID, row.getId());
-        assertEquals(7L, row.getConversationId());
-        assertEquals("read_file", row.getToolName());
-        assertEquals(ToolCallType.EXECUTE, row.getType());
-        assertEquals(ToolCallStatus.COMPLETED, row.getStatus());
-        assertEquals(4L, row.getVersion());
+        ToolCallBlockView row = projection.get();
+        assertNotNull(row.rawOutput(), "raw_output 必须读到：工具块的成败状态由它决定");
+        assertEquals(TOOL_CALL_ID, row.id());
+        assertEquals(7L, row.conversationId());
+        assertEquals("read_file", row.toolName());
+        assertEquals(ToolCallType.EXECUTE, row.type());
+        assertEquals(ToolCallStatus.COMPLETED, row.status());
+        assertEquals(4L, row.version());
     }
 
     @Test

@@ -6,9 +6,9 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.vo.block.Block;
-import com.summit.dp.shared.vo.block.ToolBlock;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
@@ -80,9 +80,10 @@ public class TurnViewService {
      * <p>BLOCK_UPSERT 原先走整轮装配再过滤 —— 一次工具收尾就要把整轮所有工具调用的
      * content/raw_input/raw_output/meta_data 读一遍。这里消息仍按本轮取（VO 的状态、提问、
      * 用量等元数据都来自该轮消息与 session），工具调用只取目标那一个，
-     * 且用只读投影省掉三个不需要的 CLOB 列。</p>
+     * 且用只读投影省掉三个不需要的 CLOB 列；块本身由
+     * {@link TurnViewAssembler#buildSingleToolBlock} 用与整轮完全相同的字段映射构造。</p>
      *
-     * <p>返回的投影<b>只用于装配块</b>，字段是不完整的，绝不能拿去 {@code updateById}。</p>
+     * <p>返回的视图<b>只用于推送</b>，其中的工具事实来自只读投影，绝不能拿去 {@code updateById}。</p>
      *
      * @param toolCallId 目标工具调用；块身份规则是 {@code tool:<toolCallId>}
      * @return 只含该块的视图；该块此刻不存在时返回空（对应「空则跳过」的推送语义）
@@ -93,21 +94,12 @@ public class TurnViewService {
                 || toolCallId == null || toolCallId.isBlank()) {
             return Optional.empty();
         }
+        // 消息仍要装载：VO 的状态 / 提问 / 图片 / 补录 / 用量都来自该轮消息。
         List<SessionMessage> messages = messageRepository.findByTurnIds(turn.getSessionId(), List.of(turn.getId()));
-        Map<String, ToolCall> toolCalls = toolCallRepository.findForBlockUpsert(toolCallId)
-                .map(toolCall -> Map.of(toolCall.getId(), toolCall))
-                .orElseGet(Map::of);
-        TurnViewVO view = buildView(session, turn, viewVersion, messages, toolCalls);
-        String blockId = ToolBlock.identity(toolCallId);
-        List<Block> filtered = view.blocks().stream()
-                .filter(block -> blockId.equals(block.getBlockId()))
-                .toList();
-        if (filtered.isEmpty()) {
-            return Optional.empty();
-        }
-        return Optional.of(new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
-                view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(),
-                view.resumeSupplements(), view.parentTurnId()));
+        // 目标工具行只查一次，且是只读投影（不读 content / raw_input / meta_data）。
+        ToolCallBlockView toolCall = toolCallRepository.findForBlockUpsert(toolCallId).orElse(null);
+        Optional<Block> block = turnViewAssembler.buildSingleToolBlock(turn.getId(), messages, toolCallId, toolCall);
+        return block.map(single -> buildViewFromBlocks(session, turn, viewVersion, messages, List.of(single)));
     }
 
     /**
@@ -171,8 +163,20 @@ public class TurnViewService {
      */
     private TurnViewVO buildView(Session session, ChatTurn turn, long viewVersion,
                                  List<SessionMessage> messages, Map<String, ToolCall> toolCalls) {
+        List<Block> blocks = turnViewAssembler.assembleBlocks(turn.getId(), messages, toolCalls,
+                turn.getStatus());
+        return buildViewFromBlocks(session, turn, viewVersion, messages, blocks);
+    }
+
+    /**
+     * 「元数据 + 块列表」的组装（VO 字段的唯一来源）。
+     *
+     * <p>整轮装配传入 {@code assembleBlocks} 的结果，单块推送传入只含一个块的列表 ——
+     * 两条入口的元数据映射完全相同，块的身份 / 顺序 / 状态也都来自 {@link TurnViewAssembler}。</p>
+     */
+    private TurnViewVO buildViewFromBlocks(Session session, ChatTurn turn, long viewVersion,
+                                           List<SessionMessage> messages, List<Block> blocks) {
         Long turnId = turn.getId();
-        List<Block> blocks = turnViewAssembler.assembleBlocks(turnId, messages, toolCalls, turn.getStatus());
         return new TurnViewVO(
                 turn.getSessionId(),
                 turnId,

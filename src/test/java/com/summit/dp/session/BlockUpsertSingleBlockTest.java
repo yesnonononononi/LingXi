@@ -19,6 +19,7 @@ import com.summit.dp.shared.vo.block.ToolBlock;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -67,15 +68,17 @@ class BlockUpsertSingleBlockTest {
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
     private final ExecutionLocator executionLocator = mock(ExecutionLocator.class);
+    /** 用 spy 盯住「单块路径不得整轮装配」：只断言「最终只剩一个块」是抓不到整轮装配的。 */
+    private final TurnViewAssembler turnViewAssembler = spy(new TurnViewAssembler(json,
+            new ToolBlockStatusResolver(new ToolCallConverter(json))));
     private final TurnViewService service = new TurnViewService(
-            messageRepository, chatTurnRepository, toolCallRepository,
-            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+            messageRepository, chatTurnRepository, toolCallRepository, turnViewAssembler);
 
     @Test
     @DisplayName("等价性：单块结果 == 整轮装配后过滤出的同一块（含全部 VO 字段）")
     void singleBlockMatchesFilteredFullView() {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
-        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(fullToolCall(TARGET)));
+        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of(fullToolCall(TARGET), fullToolCall(SIBLING)));
 
         TurnViewVO single = service.assembleToolBlockView(session(), turn(), turn().getVersion(), TARGET).orElseThrow();
@@ -117,7 +120,7 @@ class BlockUpsertSingleBlockTest {
     @DisplayName("广播器走单块构造：一次增量推送不装载兄弟工具")
     void broadcasterUsesSingleBlockAssembly() {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
-        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(fullToolCall(TARGET)));
+        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(turn()));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
         when(executionLocator.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
@@ -144,10 +147,10 @@ class BlockUpsertSingleBlockTest {
     }
 
     @Test
-    @DisplayName("单块路径不装载兄弟工具：findForBlockUpsert 一次、listByIds 零次")
+    @DisplayName("单块路径不装载兄弟工具：findForBlockUpsert 一次、listByIds 零次、整轮装配零次")
     void singleBlockPathNeverLoadsSiblings() {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
-        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(fullToolCall(TARGET)));
+        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
 
         service.assembleToolBlockView(session(), turn(), 1L, TARGET);
 
@@ -159,6 +162,25 @@ class BlockUpsertSingleBlockTest {
         verify(messageRepository, never()).findBySessionId(anyLong());
         // 该轮消息仍要装载一次（VO 的状态/提问/用量来自它们），但只此一次、不逐工具循环。
         verify(messageRepository, times(1)).findByTurnIds(SESSION_ID, List.of(TURN_ID));
+        // 关键守卫：整轮装配一次都不许调 —— 只要回退成 buildView→assembleBlocks 再过滤，这条立刻红。
+        verify(turnViewAssembler, never()).assembleBlocks(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("广播器走单块构造时也不整轮装配：不装载兄弟工具、不调 assembleBlocks")
+    void broadcasterPathNeverAssemblesWholeTurn() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
+        when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(turn()));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
+        when(executionLocator.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+        TurnViewBroadcaster broadcaster = new TurnViewBroadcaster(
+                service, chatTurnRepository, sessionRepository, sseEventPublisher, executionLocator);
+
+        broadcaster.broadcastBlockUpsert(TURN_ID, TARGET);
+
+        verify(turnViewAssembler, never()).assembleBlocks(any(), any(), any(), any());
+        verify(toolCallRepository, never()).listByIds(any());
     }
 
     /** 测试侧的独立过滤实现：不复用待测类的私有方法，避免「用实现验证实现」。 */
@@ -194,6 +216,13 @@ class BlockUpsertSingleBlockTest {
                 .version(3L)
                 .createdAt(Instant.now()).updatedAt(Instant.now())
                 .build();
+    }
+
+    /** 只读投影：与 {@link #fullToolCall} 装配块所需的那几个字段一致（含大 raw_output）。 */
+    private static ToolCallBlockView blockView(String id) {
+        ToolCall full = fullToolCall(id);
+        return new ToolCallBlockView(full.getId(), full.getConversationId(), full.getToolName(),
+                full.getType(), full.getStatus(), full.getRawOutput(), full.getVersion());
     }
 
     private static Session session() {
