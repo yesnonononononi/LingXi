@@ -27,19 +27,21 @@ class BlockUpsertRuntimeListenerTest {
     void approvedCommandStartBroadcastsPersistedBlockBeforeCompletion() {
         ToolCall tool = ToolCall.builder().id("command").conversationId(7L).build();
         ChatTurn turn = ChatTurn.accept(900L, 7L, null, TurnModelSnapshot.of("model", "provider", null));
-        when(tools.findById("command")).thenReturn(Optional.of(tool));
+        when(tools.findForBlockUpsert("command")).thenReturn(Optional.of(tool));
         when(turns.findByExecutionId(800L)).thenReturn(Optional.of(turn));
 
         listener.onToolCall(new ToolCallStartEvent("command", "800", "execute_command", "{}", "101", null, 0));
 
         verify(broadcaster).broadcastBlockUpsert(900L, "command");
+        // 只是拿会话归属，不该为此把整行（含 4 个 CLOB）读出来。
+        verify(tools, never()).findById(anyString());
     }
 
     @Test
     void completionStillBroadcastsPersistedBlock() {
         ToolCall tool = ToolCall.builder().id("command").conversationId(7L).build();
         ChatTurn turn = ChatTurn.accept(900L, 7L, null, TurnModelSnapshot.of("model", "provider", null));
-        when(tools.findById("command")).thenReturn(Optional.of(tool));
+        when(tools.findForBlockUpsert("command")).thenReturn(Optional.of(tool));
         when(turns.findByExecutionId(800L)).thenReturn(Optional.of(turn));
 
         listener.onToolCallOutput(new ToolCallEndEvent("command", "800", "101", "execute_command",

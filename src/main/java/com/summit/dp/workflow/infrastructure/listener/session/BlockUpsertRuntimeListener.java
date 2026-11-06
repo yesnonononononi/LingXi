@@ -51,7 +51,8 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
         }
         try {
             // 工具行上有会话归属；轮次靠执行 ID 反查（工具事件只带 executionId，不带 turnId）。
-            ToolCall toolCall = toolCallRepository.findById(toolCallId).orElse(null);
+            // 用单块投影而非 findById：这里只取会话归属，没必要连带读 4 个 CLOB。
+            ToolCall toolCall = toolCallRepository.findForBlockUpsert(toolCallId).orElse(null);
             if (toolCall == null || toolCall.getConversationId() == null) {
                 return;
             }

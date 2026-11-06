@@ -193,6 +193,11 @@ class SessionMessageQueryServiceTest {
         }
 
         @Override
+        public Optional<ToolCall> findForBlockUpsert(String id) {
+            return Optional.ofNullable(rows.get(id));
+        }
+
+        @Override
         public List<ToolCall> listUnresolvedByConversationIds(Collection<Long> conversationIds) {
             return rows.values().stream()
                     .filter(row -> conversationIds.contains(row.getConversationId()))

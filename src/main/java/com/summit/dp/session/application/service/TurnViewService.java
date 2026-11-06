@@ -6,6 +6,7 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.vo.block.Block;
+import com.summit.dp.shared.vo.block.ToolBlock;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -71,6 +72,42 @@ public class TurnViewService {
         List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turn.getId()));
         Map<String, ToolCall> toolCalls = loadToolCalls(messages, turn.getId());
         return Optional.of(buildView(session, turn, viewVersion, messages, toolCalls));
+    }
+
+    /**
+     * 单块装配：只构造目标工具块，不装载兄弟工具的全量 CLOB。
+     *
+     * <p>BLOCK_UPSERT 原先走整轮装配再过滤 —— 一次工具收尾就要把整轮所有工具调用的
+     * content/raw_input/raw_output/meta_data 读一遍。这里消息仍按本轮取（VO 的状态、提问、
+     * 用量等元数据都来自该轮消息与 session），工具调用只取目标那一个，
+     * 且用只读投影省掉三个不需要的 CLOB 列。</p>
+     *
+     * <p>返回的投影<b>只用于装配块</b>，字段是不完整的，绝不能拿去 {@code updateById}。</p>
+     *
+     * @param toolCallId 目标工具调用；块身份规则是 {@code tool:<toolCallId>}
+     * @return 只含该块的视图；该块此刻不存在时返回空（对应「空则跳过」的推送语义）
+     */
+    public Optional<TurnViewVO> assembleToolBlockView(Session session, ChatTurn turn, long viewVersion,
+                                                      String toolCallId) {
+        if (turn == null || turn.getId() == null || turn.getSessionId() == null
+                || toolCallId == null || toolCallId.isBlank()) {
+            return Optional.empty();
+        }
+        List<SessionMessage> messages = messageRepository.findByTurnIds(turn.getSessionId(), List.of(turn.getId()));
+        Map<String, ToolCall> toolCalls = toolCallRepository.findForBlockUpsert(toolCallId)
+                .map(toolCall -> Map.of(toolCall.getId(), toolCall))
+                .orElseGet(Map::of);
+        TurnViewVO view = buildView(session, turn, viewVersion, messages, toolCalls);
+        String blockId = ToolBlock.identity(toolCallId);
+        List<Block> filtered = view.blocks().stream()
+                .filter(block -> blockId.equals(block.getBlockId()))
+                .toList();
+        if (filtered.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
+                view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(),
+                view.resumeSupplements(), view.parentTurnId()));
     }
 
     /**

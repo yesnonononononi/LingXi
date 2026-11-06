@@ -64,4 +64,15 @@ public interface ToolCallRepository extends RepositoryTemplate<ToolCall, String>
 
     /** 尽力回填 TOOL 行锚点：设置 {@code session_message_id}。 */
     void bindSessionMessage(String toolCallId, Long sessionMessageId);
+
+    /**
+     * 单块推送用的只读投影：只取 {@code id/conversationId/toolName/type/status/raw_output/version}。
+     *
+     * <p><b>字段是不完整的</b>（缺 content / raw_input / meta_data），<b>只允许用来装配块</b>，
+     * 严禁流入 {@code updateById} —— 方法名与注释都把这条约束写在调用处。</p>
+     *
+     * @param id 工具调用 ID
+     * @return 投影；行不存在返回空
+     */
+    Optional<ToolCall> findForBlockUpsert(String id);
 }

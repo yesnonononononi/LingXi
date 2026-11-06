@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /** 状态由领域方法推进，持久化按版本条件更新，避免旧决策覆盖新锚点。 */
@@ -185,6 +186,24 @@ public class ToolCallRepositoryImpl
         if (executionIds == null || executionIds.isEmpty()) return 0;
         return toolCallMapper.delete(Wrappers.<ToolCallPO>lambdaQuery()
                 .in(ToolCallPO::getExecutionId, executionIds));
+    }
+
+    /**
+     * 单块推送用的只读投影：只选装配工具块真正用到的列。
+     *
+     * <p>{@code content} / {@code raw_input} / {@code meta_data} 是 CLOB，单块推送一个都用不到，
+     * 读它们等于给每次工具收尾加一次临时 LOB 写放大。返回的模型字段不完整，
+     * <b>只能装配块，禁止 updateById</b>。</p>
+     */
+    @Override
+    public Optional<ToolCall> findForBlockUpsert(String id) {
+        if (id == null) return Optional.empty();
+        return toolCallMapper.selectList(Wrappers.<ToolCallPO>lambdaQuery()
+                        .select(ToolCallPO::getId, ToolCallPO::getConversationId, ToolCallPO::getToolName,
+                                ToolCallPO::getType, ToolCallPO::getStatus, ToolCallPO::getRawOutput,
+                                ToolCallPO::getVersion)
+                        .eq(ToolCallPO::getId, id))
+                .stream().findFirst().map(this::toModel);
     }
 
     /**

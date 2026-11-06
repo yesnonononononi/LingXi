@@ -60,22 +60,11 @@ public class TurnViewBroadcaster {
      *                      {@code null} 表示整轮（{@code TURN_SNAPSHOT} 用）
      */
     public void broadcastTurn(Long turnId, String eventName, String blockIdFilter) {
-        if (turnId == null) {
+        BroadcastTarget target = resolveTarget(turnId);
+        if (target == null) {
             return;
         }
-        ChatTurn turn = chatTurnRepository.findById(turnId).orElse(null);
-        if (turn == null || turn.getSessionId() == null) {
-            log.debug("推送块视图跳过：轮次或归属缺失: turnId={}", turnId);
-            return;
-        }
-        Long rootSessionId = executionLocator.resolveRootSessionIdOrNull(turn.getSessionId());
-        if (rootSessionId == null) {
-            log.debug("推送块视图跳过：根会话无法解析: sessionId={}", turn.getSessionId());
-            return;
-        }
-        Session session = sessionRepository.findById(turn.getSessionId()).orElse(null);
-        long viewVersion = turn.getVersion() == null ? 0L : turn.getVersion();
-        Optional<TurnViewVO> view = turnViewService.assembleTurnView(session, turn, viewVersion);
+        Optional<TurnViewVO> view = turnViewService.assembleTurnView(target.session(), target.turn(), target.viewVersion());
         if (view.isEmpty()) {
             return;
         }
@@ -87,8 +76,42 @@ public class TurnViewBroadcaster {
             // AI 块的轮次块列表本就为空，跳过会让它的 status 永远推不出去。
             return;
         }
-        sseEventPublisher.publishBusiness(rootSessionId, eventName,
-                new BlockEventType.BlockEventPayload(turn.getSessionId(), turnId, viewVersion, payloadView));
+        publish(target, eventName, payloadView);
+    }
+
+    /**
+     * 解析推送目标（轮次、会话、路由用的根会话、展示版本号）。
+     *
+     * <p>解析失败一律静默跳过（记一条 debug）：推送是**旁路观测**动作，拿不到归属只说明实体
+     * 尚未落库或已被清理，不该把「一次模型调用」顶成 500。</p>
+     */
+    private BroadcastTarget resolveTarget(Long turnId) {
+        if (turnId == null) {
+            return null;
+        }
+        ChatTurn turn = chatTurnRepository.findById(turnId).orElse(null);
+        if (turn == null || turn.getSessionId() == null) {
+            log.debug("推送块视图跳过：轮次或归属缺失: turnId={}", turnId);
+            return null;
+        }
+        Long rootSessionId = executionLocator.resolveRootSessionIdOrNull(turn.getSessionId());
+        if (rootSessionId == null) {
+            log.debug("推送块视图跳过：根会话无法解析: sessionId={}", turn.getSessionId());
+            return null;
+        }
+        Session session = sessionRepository.findById(turn.getSessionId()).orElse(null);
+        long viewVersion = turn.getVersion() == null ? 0L : turn.getVersion();
+        return new BroadcastTarget(turn, session, rootSessionId, viewVersion);
+    }
+
+    private void publish(BroadcastTarget target, String eventName, TurnViewVO view) {
+        sseEventPublisher.publishBusiness(target.rootSessionId(), eventName,
+                new BlockEventType.BlockEventPayload(target.turn().getSessionId(), target.turn().getId(),
+                        target.viewVersion(), view));
+    }
+
+    /** 一次推送的路由与版本号；块内容的归属仍是 {@code TurnViewVO.sessionId}（轮次自身）。 */
+    private record BroadcastTarget(ChatTurn turn, Session session, Long rootSessionId, long viewVersion) {
     }
 
     /**
@@ -135,12 +158,26 @@ public class TurnViewBroadcaster {
     /**
      * 单块增量：只下发指定 blockId 的那一个块。
      *
+     * <p><b>走单块构造</b>：整轮装配再过滤等于为了一个块把所有兄弟工具调用的 4 个 CLOB 全读一遍，
+     * 工具越多越亏。单块路径只取目标那一个调用（且只取需要的列），VO 元数据仍来自该轮消息，
+     * 形状与整轮快照一致，前端只需一套 upsert 逻辑。</p>
+     *
      * @param toolCallId 变化的工具块身份；工具块的 blockId 规则是 {@code tool:<toolCallId>}
      */
     public void broadcastBlockUpsert(Long turnId, String toolCallId) {
         if (toolCallId == null || toolCallId.isBlank()) {
             return;
         }
-        broadcastTurn(turnId, BlockEventType.BLOCK_UPSERT, ToolBlock.identity(toolCallId));
+        BroadcastTarget target = resolveTarget(turnId);
+        if (target == null) {
+            return;
+        }
+        Optional<TurnViewVO> view = turnViewService.assembleToolBlockView(
+                target.session(), target.turn(), target.viewVersion(), toolCallId);
+        if (view.isEmpty()) {
+            // 该块此刻还不存在（尚未落库的实时窗口）：推空块会被前端读成「该块被清空了」。
+            return;
+        }
+        publish(target, BlockEventType.BLOCK_UPSERT, view.get());
     }
 }
