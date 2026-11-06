@@ -104,6 +104,12 @@ public class ToolCallRepositoryImpl
     }
 
     @Override
+    public List<ToolCall> listUnresolvedByConversationIds(Collection<Long> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) return List.of();
+        return orderByCreatedAt(unresolved().in(ToolCallPO::getConversationId, conversationIds));
+    }
+
+    @Override
     public List<ToolCall> listByIds(Collection<String> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
         // 不按状态过滤：这里的唯一调用方是消息分页装配（SessionMessageQueryService），

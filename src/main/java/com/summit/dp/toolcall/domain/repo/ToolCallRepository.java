@@ -33,6 +33,15 @@ public interface ToolCallRepository extends RepositoryTemplate<ToolCall, String>
         return listByExecutionId(executionId).stream().filter(ToolCall::isUnresolved).toList();
     }
 
+    /**
+     * 一次 {@code IN} 取多个会话下的未决卡片。
+     *
+     * <p>bootstrap 原先按会话树节点逐个 {@link #listByConversationId} 再在内存里过滤，
+     * 卡片查询次数等于会话数。谓词与 {@code ToolCall#isUnresolved} 等价（PROMISE 且非 COMPLETED），
+     * 下推到 SQL 后一次查完。空集合返回空列表。</p>
+     */
+    List<ToolCall> listUnresolvedByConversationIds(Collection<Long> conversationIds);
+
     List<ToolCall> listActionableByExecutionId(Long executionId);
 
     List<Long> listUnresolvedExecutionIds();

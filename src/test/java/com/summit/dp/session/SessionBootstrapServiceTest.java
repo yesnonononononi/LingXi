@@ -88,7 +88,7 @@ class SessionBootstrapServiceTest {
     }
 
     private void stubNoCardsNoTurnsNoExecutions() {
-        when(toolCallRepository.listByConversationId(any())).thenReturn(List.of());
+        when(toolCallRepository.listUnresolvedByConversationIds(any())).thenReturn(List.of());
         when(chatTurnService.findActiveBySessionIds(any())).thenReturn(List.of());
         when(executionQueryService.activeBySession(any())).thenReturn(List.of());
     }
@@ -110,17 +110,16 @@ class SessionBootstrapServiceTest {
     }
 
     @Test
-    @DisplayName("未决卡片：只保留未决、gate 从批量执行摘要映射、逐卡不回查执行")
+    @DisplayName("未决卡片：一次 IN 取回，gate 从批量执行摘要映射、逐卡不回查执行")
     void unresolvedCardsGateComesFromBatchSummaries() {
         ToolCall suspended = promise("c-suspended", ROOT_ID, 1001L, ToolCallStatus.PENDING);
         ToolCall running = promise("c-running", ROOT_ID, 1002L, ToolCallStatus.PENDING);
         ToolCall missing = promise("c-missing", CHILD_ID, 1003L, ToolCallStatus.PENDING);
         ToolCall terminal = promise("c-terminal", CHILD_ID, 1004L, ToolCallStatus.PENDING);
-        // 已收尾的卡片（status=COMPLETED）：isUnresolved()=false，必须被过滤掉。
-        ToolCall completed = promise("c-completed", ROOT_ID, 1005L, ToolCallStatus.COMPLETED);
 
-        when(toolCallRepository.listByConversationId(ROOT_ID)).thenReturn(List.of(suspended, running, completed));
-        when(toolCallRepository.listByConversationId(CHILD_ID)).thenReturn(List.of(missing, terminal));
+        // 未决过滤已下推到 SQL（谓词 unresolved()），仓储只会返回未决槽位。
+        when(toolCallRepository.listUnresolvedByConversationIds(any()))
+                .thenReturn(List.of(suspended, running, missing, terminal));
         when(executionQueryService.summariesByIds(any())).thenReturn(Map.of(
                 1001L, summary(1001L, "SUSPENDED"),
                 1002L, summary(1002L, "RUNNING"),
@@ -133,7 +132,16 @@ class SessionBootstrapServiceTest {
 
         SessionBootstrapVO vo = service.bootstrap(ROOT_ID);
 
-        assertEquals(4, vo.getToolCalls().size(), "已收尾卡片必须被过滤");
+        assertEquals(4, vo.getToolCalls().size());
+
+        // 关键不变量：卡片只查一次（会话树有两个节点，逐会话回查会变成 2 次）。
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Collection<Long>> sessionsCaptor =
+                ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(toolCallRepository, times(1)).listUnresolvedByConversationIds(sessionsCaptor.capture());
+        assertEquals(List.of(ROOT_ID, CHILD_ID), List.copyOf(sessionsCaptor.getValue()),
+                "一次 IN 必须覆盖整棵会话树的 id");
+        verify(toolCallRepository, never()).listByConversationId(any());
 
         // 一次批量取摘要，且只取未决卡片涉及的执行 id。
         @SuppressWarnings("unchecked")
@@ -156,7 +164,7 @@ class SessionBootstrapServiceTest {
     @Test
     @DisplayName("进行中轮次：一次批量取，转为视图下发")
     void activeTurnsAreBatched() {
-        when(toolCallRepository.listByConversationId(any())).thenReturn(List.of());
+        when(toolCallRepository.listUnresolvedByConversationIds(any())).thenReturn(List.of());
         ChatTurn active = ChatTurn.accept(TURN_ID, ROOT_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         when(chatTurnService.findActiveBySessionIds(any())).thenReturn(List.of(active));
         when(executionQueryService.activeBySession(any())).thenReturn(List.of());
@@ -172,7 +180,7 @@ class SessionBootstrapServiceTest {
     @Test
     @DisplayName("执行状态带 executionId：前端据此判 §8.1 退出路径 2")
     void executionStatesCarryExecutionIdentity() {
-        when(toolCallRepository.listByConversationId(any())).thenReturn(List.of());
+        when(toolCallRepository.listUnresolvedByConversationIds(any())).thenReturn(List.of());
         when(chatTurnService.findActiveBySessionIds(any())).thenReturn(List.of());
         when(executionQueryService.activeBySession(any())).thenReturn(List.of(
                 new ExecutionQueryService.ActiveExecution(EXECUTION_ID, ROOT_ID, "SUSPENDED",

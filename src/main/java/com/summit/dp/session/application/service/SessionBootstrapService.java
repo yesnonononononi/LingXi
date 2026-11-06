@@ -28,7 +28,7 @@ import java.util.*;
  *
  * <p><b>未决卡片的执行闸门必须批量算</b>：逐卡调用
  * {@code CardAvailabilityPolicy.resolveExecutionGate(String)} 会对每张卡各查一次执行（§7 要删除的
- * N+1）。这里改为一次 {@code listByConversationId} + 一次 {@code summariesByIds}，
+ * N+1）。这里改为一次 {@code listUnresolvedByConversationIds} + 一次 {@code summariesByIds}，
  * 在内存里把执行摘要状态映射成闸门。</p>
  */
 @Slf4j
@@ -109,29 +109,23 @@ public class SessionBootstrapService {
     }
 
     /**
-     * 全部未决卡片：按会话树 id 逐个 {@code listByConversationId}（卡片读路径本来就按会话查），
-     * 过滤 {@code isUnresolved()}，收集执行 id 后<b>一次</b>批量取摘要算闸门。
+     * 全部未决卡片：一次 {@code IN} 按会话树 id 取回全部未决槽位（谓词在 SQL 里），
+     * 收集执行 id 后<b>一次</b>批量取摘要算闸门。
      *
-     * <p>卡片查询按会话树 id 各一次、执行摘要一次 —— 查询次数 = 会话数 + 1，不随卡片数量增长，
-     * 与「逐卡回查执行」的 N+1 是两回事。</p>
+     * <p>查询次数恒为 2（卡片 1 次 + 执行摘要 1 次），与会话树节点数无关 ——
+     * 原先按会话逐个 {@code listByConversationId} 再内存过滤，会话树有几个节点就查几次。</p>
      */
     private List<ToolCallVO> resolveUnresolvedCards(List<Long> sessionIds) {
-        List<ToolCall> unresolved = new ArrayList<>();
+        List<ToolCall> unresolved = toolCallRepository.listUnresolvedByConversationIds(sessionIds);
         Set<Long> executionIds = new LinkedHashSet<>();
-        for (Long sessionId : sessionIds) {
-            for (ToolCall tool : toolCallRepository.listByConversationId(sessionId)) {
-                if (tool != null && tool.isUnresolved()) {
-                    unresolved.add(tool);
-                    if (tool.getExecutionId() != null) {
-                        executionIds.add(tool.getExecutionId());
-                    }
-                }
+        for (ToolCall tool : unresolved) {
+            if (tool != null && tool.getExecutionId() != null) {
+                executionIds.add(tool.getExecutionId());
             }
         }
         if (unresolved.isEmpty()) {
             return List.of();
         }
-        // 一次批量取执行摘要（§7：绝不对每张卡单独回查执行）。
         Map<Long, ExecutionQueryService.ExecutionSummary> summaries = executionQueryService.summariesByIds(executionIds);
         List<ToolCallVO> cards = new ArrayList<>(unresolved.size());
         for (ToolCall tool : unresolved) {

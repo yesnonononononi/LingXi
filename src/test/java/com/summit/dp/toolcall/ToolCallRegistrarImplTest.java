@@ -195,6 +195,13 @@ class ToolCallRegistrarImplTest {
         }
 
         @Override
+        public List<ToolCall> listUnresolvedByConversationIds(Collection<Long> conversationIds) {
+            return rows.values().stream()
+                    .filter(row -> conversationIds.contains(row.getConversationId()))
+                    .filter(ToolCall::isUnresolved).toList();
+        }
+
+        @Override
         public List<ToolCall> listByExecutionId(Long executionId) {
             return rows.values().stream().filter(row -> row.getExecutionId().equals(executionId)).toList();
         }
