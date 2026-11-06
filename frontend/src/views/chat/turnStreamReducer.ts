@@ -49,6 +49,7 @@ export class TurnStreamReducer {
   private getMessages: () => ChatMessage[];
   private currentTurnId: string | null = null;
   private activeBubbleId: string | null = null;
+  private contextUsageBubbleId?: string;
   private onScrollFollow?: () => void;
   private onContextUsageUpdate?: (sessionId: string, usage: ContextUsageData) => void;
   private onResolveCard?: (toolCallId: string) => Promise<ToolCallVO | null>;
@@ -248,6 +249,7 @@ export class TurnStreamReducer {
     if (!payload) return;
     const bubble = upsertTurnViewIntoMessages(this.getMessages(), payload.view);
     if (!bubble) return;
+    if (bubble.isComplete) this.clearCompression(bubble);
     this.activeBubbleId = bubble.id;
     this.requestBlockCards(bubble);
     this.onScrollFollow?.();
@@ -392,6 +394,7 @@ export class TurnStreamReducer {
     message?: string;
   }): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    if (bubble.isComplete && event.phase === 'SQUEEZE_STARTED') return;
     // 「压缩中」样式的消费权按档位决定：PRUNE 是毫秒级本地剪枝（无模型调用），每个 checkpoint 都会跑
     // 一对 SQUEEZE_STARTED/COMPLETED，照旧渲染会让指示器反复跳变；只有 SUMMARY（深度压缩）才置位。
     // 事件不带档位时保持原行为（!== 'PRUNE' 视为可消费），透传链路丢字段不至于让样式失效。
@@ -413,7 +416,20 @@ export class TurnStreamReducer {
         message: event.message
       };
       bubble.contextUsage = usageData;
+      this.contextUsageBubbleId = bubble.id;
       this.onContextUsageUpdate?.(this.sessionId, usageData);
+    }
+  }
+
+  /** 执行终结后压缩也已结束，迟到的旧轮次终态只清理自己的提示。 */
+  private clearCompression(bubble: ChatMessage): void {
+    bubble.isCompressingContext = false;
+    const usage = bubble.contextUsage;
+    if (usage?.phase !== 'SQUEEZE_STARTED') return;
+    const settledUsage = { ...usage, phase: undefined, band: undefined, message: undefined };
+    bubble.contextUsage = settledUsage;
+    if (this.contextUsageBubbleId === bubble.id) {
+      this.onContextUsageUpdate?.(this.sessionId, settledUsage);
     }
   }
 
@@ -450,6 +466,7 @@ export class TurnStreamReducer {
 
   private handleExecutionCompleted(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    this.clearCompression(bubble);
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -466,6 +483,7 @@ export class TurnStreamReducer {
 
   private handleExecutionFailed(errMsg: string | undefined, tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    this.clearCompression(bubble);
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -489,6 +507,7 @@ export class TurnStreamReducer {
 
   private handleExecutionCancelled(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    this.clearCompression(bubble);
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;

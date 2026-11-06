@@ -1,12 +1,62 @@
 import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type {ChatMessage, ChatSession} from '../src/types/chat';
+import type {ChatMessage, ChatSession, ContextUsageData} from '../src/types/chat';
 import type {AgentEvent} from '../src/types/Event';
 import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
 import {StreamSessionRouter} from '../src/views/chat/streamSessionRouter';
 
 import {AgentToolName} from '../src/utils/toolNames';
+
+for (const type of ['EXECUTION_COMPLETED', 'EXECUTION_FAILED', 'EXECUTION_CANCELLED'] as const) {
+  test(`${type} 清除仍在压缩的提示并保留用量`, () => {
+    const messages: ChatMessage[] = [];
+    const sessionUsage: ContextUsageData[] = [];
+    const reducer = new TurnStreamReducer(messages, {
+      sessionId: 'session-1',
+      onContextUsageUpdate: (_, usage) => sessionUsage.push(usage)
+    });
+    const identity = { executionId: 'execution-1', timestamp: '', metaData: { turnId: 'turn-1' } };
+    const usage = { tokenCount: 500, maxTokens: 1000, ratio: 0.5 };
+    reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
+    assert.equal(messages[0].isCompressingContext, true);
+    assert.equal(sessionUsage.at(-1)?.phase, 'SQUEEZE_STARTED');
+
+    reducer.consume({ ...identity, type });
+
+    assert.equal(messages[0].isCompressingContext, false);
+    assert.equal(messages[0].contextUsage?.phase, undefined);
+    assert.equal(sessionUsage.at(-1)?.phase, undefined);
+    assert.equal(sessionUsage.at(-1)?.tokenCount, usage.tokenCount);
+
+    reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
+    assert.equal(messages[0].isCompressingContext, false);
+    assert.equal(sessionUsage.at(-1)?.phase, undefined);
+  });
+}
+
+test('旧轮次的终态快照只清除本轮的压缩提示', () => {
+  const messages: ChatMessage[] = [];
+  const sessionUsage: ContextUsageData[] = [];
+  const sessionId = 'session-1';
+  const reducer = new TurnStreamReducer(messages, { sessionId, onContextUsageUpdate: (_, usage) => sessionUsage.push(usage) });
+  for (const [turnId, tokenCount] of [['1', 500], ['2', 600]] as const) {
+    reducer.consume({
+      type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY',
+      executionId: turnId, timestamp: '', metaData: { turnId },
+      usage: { tokenCount, maxTokens: 1000, ratio: tokenCount / 1000 }
+    });
+  }
+  reducer.consume({
+    type: 'TURN_SNAPSHOT', sessionId, turnId: '1', viewVersion: '1', executionId: '1', timestamp: '',
+    view: { sessionId, turnId: '1', status: 'CANCELLED', viewVersion: '1', blocks: [] }
+  });
+
+  assert.equal(messages.find(message => message.turnId === '1')?.isCompressingContext, false);
+  assert.equal(messages.find(message => message.turnId === '2')?.isCompressingContext, true);
+  assert.equal(sessionUsage.at(-1)?.phase, 'SQUEEZE_STARTED');
+  assert.equal(sessionUsage.at(-1)?.tokenCount, 600);
+});
 
 function assertPendingText(bubble: ChatMessage, responseId: string, text: string): void {
   assert.equal(bubble.content, '', '用途未确认不能进入正文');
