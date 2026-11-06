@@ -180,6 +180,46 @@ test('N07 · 入参校验：缺 prefs / 开关非布尔 / isVisible 非布尔 / 
   assert.throws(() => findItemById(null, MENU_IDS.FOLLOW), TypeError);
 });
 
+test('N09 · includePet=false（安装版）：托盘零桌宠项，只剩「显示界面 / 彻底退出」', () => {
+  const spec = buildTrayItems({ prefs: { follow: true, roam: true }, isVisible: true, includePet: false });
+  const ids = spec.map((item) => item.id).filter(Boolean);
+  assert.deepEqual(ids, [MENU_IDS.TRAY_SHOW_MAIN, MENU_IDS.TRAY_QUIT_APP], '安装版托盘只许有两个可点项');
+  for (const petOnly of [MENU_IDS.TRAY_TOGGLE_PET, MENU_IDS.FOLLOW, MENU_IDS.ROAM]) {
+    assert.equal(ids.includes(petOnly), false, `安装版不许出现桌宠项：${petOnly}`);
+  }
+  // 分隔线只剩一条（不许留孤立的空行）
+  assert.equal(spec.filter((item) => item.type === 'separator').length, 1);
+  assert.equal(spec.some((item) => item.type === 'checkbox'), false, '安装版不许有任何勾选项');
+  // 文案仍来自同一份真源（不是第二套字面量）
+  for (const label of collectLabels(spec)) {
+    assert.ok(Object.values(MENU_LABELS).includes(label), `安装版菜单出现未知文案：${label}`);
+  }
+});
+
+test('N10 · 两处菜单同源：includePet=true 时开关段与右键逐项相等（id/文案/勾选态）', () => {
+  for (const prefs of [
+    { follow: false, roam: true },
+    { follow: true, roam: false },
+    { follow: true, roam: true },
+  ]) {
+    const tray = buildTrayItems({ prefs, isVisible: true, includePet: true });
+    const context = buildContextMenuItems({ prefs, isVisible: true });
+    const pickToggles = (items) =>
+      items
+        .filter((item) => item.type === 'checkbox' && item.id !== MENU_IDS.TRAY_TOGGLE_PET)
+        .map((item) => [item.id, item.label, item.checked]);
+    assert.deepEqual(pickToggles(tray), pickToggles(context), `prefs=${JSON.stringify(prefs)} 时两处开关段不一致`);
+  }
+});
+
+test('N11 · includePet 只接受布尔（缺省 true）；非布尔立刻 TypeError', () => {
+  const base = { prefs: { follow: false, roam: true }, isVisible: true };
+  assert.equal(buildTrayItems(base).some((item) => item.id === MENU_IDS.TRAY_TOGGLE_PET), true, '缺省必须包含桌宠项');
+  assert.throws(() => buildTrayItems({ ...base, includePet: 'no' }), TypeError);
+  assert.throws(() => buildTrayItems({ ...base, includePet: 0 }), TypeError);
+  assert.throws(() => buildTrayItems({ ...base, includePet: null }), TypeError);
+});
+
 test('N08 · buildToggleItems 与两个菜单里的开关段是**同一份**（id/文案/勾选态全等）', () => {
   const prefs = { follow: true, roam: true };
   const standalone = buildToggleItems({ prefs, actions: {} });

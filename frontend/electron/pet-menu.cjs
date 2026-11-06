@@ -95,11 +95,14 @@ function requireBoolean(value, name) {
  * `{prefs, isVisible, actions}`。**替身只有一个**——内部统一成 `{prefs, isVisible, actions}`，
  * 避免出现两份构建逻辑。</p>
  *
+ * <p>`includePet` 决定托盘是否包含桌宠相关项（**安装版必须为 false**）：
+ * 它只切"有没有这一段"，段的内部结构仍然只有一份（{@link buildToggleItems}）。</p>
+ *
  * @param {{prefs?: object, isVisible?: boolean, state?: {isVisible?: boolean},
- *   actions?: object}} input 入参
+ *   actions?: object, includePet?: boolean}} input 入参
  * @returns {{prefs: {follow: boolean, roam: boolean}, isVisible: boolean,
- *   actions: Record<string, Function>}} 归一结果
- * @throws {TypeError} 缺 `prefs` / 开关不是布尔 / `actions` 不是对象
+ *   actions: Record<string, Function>, includePet: boolean}} 归一结果
+ * @throws {TypeError} 缺 `prefs` / 开关不是布尔 / `actions` 不是对象 / `includePet` 不是布尔
  */
 function normalizeMenuInput(input) {
   if (input === null || typeof input !== 'object') {
@@ -117,6 +120,10 @@ function normalizeMenuInput(input) {
   if (actions === null || typeof actions !== 'object') {
     throw new TypeError('[pet-menu] actions 必须是对象（回调由调用方注入）');
   }
+  const includePet = input.includePet === undefined ? true : input.includePet;
+  if (typeof includePet !== 'boolean') {
+    throw new TypeError(`[pet-menu] includePet 必须是布尔，实际为 ${JSON.stringify(includePet)}`);
+  }
   return {
     prefs: {
       follow: requireBoolean(prefs.follow, 'prefs.follow'),
@@ -124,6 +131,7 @@ function normalizeMenuInput(input) {
     },
     isVisible: requireBoolean(isVisible, 'isVisible'),
     actions: /** @type {Record<string, Function>} */ (actions),
+    includePet,
   };
 }
 
@@ -209,19 +217,35 @@ function buildContextMenuItems(input) {
  * <p>内容（设计 §9.3）：显示界面 → 显示桌宠（勾选态 = 当前可见）→ 分隔线 →
  * 跟随鼠标 ☑ → 自由漫游 ☑ → 分隔线 → 彻底退出。</p>
  *
+ * <p><b>`includePet === false`（安装版）</b>：只保留"显示界面 / 彻底退出"两项，
+ * <b>零桌宠菜单项</b>（用户硬约束 #3）。仍然走同一份文案常量与同一份模板函数，
+ * 所以"两处菜单同源"在安装版下也成立——只是桌宠段整体不出现。</p>
+ *
  * @param {{prefs: object, isVisible?: boolean, state?: {isVisible?: boolean},
- *   actions?: object}} input 入参
+ *   actions?: object, includePet?: boolean}} input 入参
  * @returns {Array<object>} `Menu.buildFromTemplate` 模板
  * @throws {TypeError} 入参非法
  */
 function buildTrayItems(input) {
-  const { prefs, isVisible, actions } = normalizeMenuInput(input);
+  const { prefs, isVisible, actions, includePet } = normalizeMenuInput(input);
+  /** 主窗口入口（两个版本都有）。 */
+  const showMainItem = {
+    id: MENU_IDS.TRAY_SHOW_MAIN,
+    label: MENU_LABELS.trayShowMain,
+    click: actionOf(actions, 'showMain'),
+  };
+  /** 退出入口（两个版本都有；必须是最后一项）。 */
+  const quitItem = {
+    id: MENU_IDS.TRAY_QUIT_APP,
+    label: MENU_LABELS.trayQuitApp,
+    click: actionOf(actions, 'quitApp'),
+  };
+  if (!includePet) {
+    // 安装版：桌宠项整体不出现（连分隔线也不留，避免出现孤立的一条横线）
+    return [showMainItem, { type: /** @type {const} */ ('separator') }, quitItem];
+  }
   return [
-    {
-      id: MENU_IDS.TRAY_SHOW_MAIN,
-      label: MENU_LABELS.trayShowMain,
-      click: actionOf(actions, 'showMain'),
-    },
+    showMainItem,
     {
       id: MENU_IDS.TRAY_TOGGLE_PET,
       label: MENU_LABELS.trayShowPet,
@@ -232,11 +256,7 @@ function buildTrayItems(input) {
     { type: /** @type {const} */ ('separator') },
     ...buildToggleItems({ prefs, actions }),
     { type: /** @type {const} */ ('separator') },
-    {
-      id: MENU_IDS.TRAY_QUIT_APP,
-      label: MENU_LABELS.trayQuitApp,
-      click: actionOf(actions, 'quitApp'),
-    },
+    quitItem,
   ];
 }
 

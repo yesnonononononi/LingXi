@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
@@ -6,6 +6,10 @@ const { registerFilePreview } = require('./file-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
 const { createDisabledPet, resolvePetExposure } = require('./pet-feature-gate.cjs');
+// M3 T04：偏好与菜单的单一真源（两个都是纯 CJS、零数据文件依赖，随包安全）。
+const petPrefsModule = require('./pet-prefs.cjs');
+const petMenu = require('./pet-menu.cjs');
+const petPrefsWiringModule = require('./pet-prefs-wiring.cjs');
 
 const { createUpdater } = require('./updater.cjs');
 
@@ -73,6 +77,44 @@ const notifications = registerNotificationWindow({
 const petExposure = resolvePetExposure({ isPackaged: app.isPackaged });
 
 /**
+ * 偏好端口（**给 S4 的 `registerPetWindow` 用**：右键菜单与 `pet:prefs-set` 都要它）。
+ *
+ * <p>为什么提前定义（在 `pet` 注册之前）：`registerPetWindow` 的入参里就要把它传下去，
+ * 而接线器要到下面（偏好块）才能建起来。方法体内引用 `petPrefsWiring`，**调用时机都在
+ * `app.whenReady()` 之后**（IPC / 菜单点击），那时它早已初始化，不存在 TDZ 问题。</p>
+ *
+ * <p>为什么只暴露这一个对象：菜单点击、右键菜单、将来渲染层的 `pet:prefs-set` 必须走
+ * **同一条**落盘路径（`setPrefs`：先落盘 → 广播 → 重建菜单），否则会出现
+ * "托盘保存了、右键没保存"这种幽灵 bug。</p>
+ *
+ * <p><b>S4 接法</b>：`registerPetWindow({ ..., prefs: petPrefsPort, menu: petMenu })`，
+ * 然后在 `ipcMain.on('pet:context-menu')` 里把内联模板换成
+ * `petMenu.buildContextMenuItems({ prefs: prefs.getPrefs(), isVisible: isVisible(), actions })`。</p>
+ */
+const petPrefsPort = {
+  /**
+   * 读当前偏好（渲染层与右键菜单的勾选态来源）。
+   *
+   * @returns {{version: number, follow: boolean, roam: boolean}} 偏好快照
+   */
+  getPrefs: () => petPrefsWiring.getPrefs(),
+  /**
+   * 应用一次偏好变更（先落盘 → 广播 → 重建菜单）。
+   *
+   * @param {{follow?: boolean, roam?: boolean}} patch 只接受布尔
+   * @returns {{prefs: object, ok: boolean, problems: string[], changed: boolean}} 结果
+   */
+  setPrefs: (patch) => petPrefsWiring.setPrefs(patch),
+  /**
+   * 订阅偏好变更（渲染层广播挂这里）。
+   *
+   * @param {(prefs: object) => void} listener 回调
+   * @returns {() => void} 取消订阅函数
+   */
+  onPrefsChange: (listener) => petPrefsWiring.onChange(listener),
+};
+
+/**
  * 桌宠窗口管理器（阶段一：透明置顶 + 点击穿透 + 自定义拖拽 + 位置持久化）。
  *
  * <p>与通知窗口一样在这里注册：它需要 isDev / frontendRoot 解析入口页面，
@@ -82,7 +124,7 @@ const petExposure = resolvePetExposure({ isPackaged: app.isPackaged });
  * 下游 `pet.show()` / `pet.isVisible()` / `pet.destroy()` 等调用零分叉。</p>
  */
 const pet = petExposure.enabled
-  ? require('./pet-window.cjs').registerPetWindow({ ipcMain, isDev, frontendRoot })
+  ? require('./pet-window.cjs').registerPetWindow({ ipcMain, isDev, frontendRoot, prefs: petPrefsPort, menu: petMenu })
   : createDisabledPet();
 
 /**
@@ -103,6 +145,74 @@ if (lxProtocol) lxProtocol.registerLxSchemePrivileges();
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
 const userDataDir = app.getPath('userData');
 const backendLogPath = path.join(userDataDir, 'logs', 'backend.log');
+
+// ------------------------------------------------------------ 桌宠偏好（M3 T04）
+
+/**
+ * 桌宠偏好文件路径（设计 §9.2）。
+ *
+ * <p><b>为什么与位置文件分开</b>：`pet-window-state.json` 坏掉只影响下次落点，
+ * 偏好文件坏掉只影响两个开关的默认值，互不连坐（`pet-prefs.json` 是这个模块独占的文件）。</p>
+ */
+const petPrefsFilePath = path.join(userDataDir, 'pet-prefs.json');
+
+/**
+ * 偏好仓库（门禁关闭时为 `null`：安装版不读不写偏好文件）。
+ *
+ * <p>路径在这里算（`app.getPath('userData')` 只有主进程能拿），仓库本身在
+ * `electron/pet-prefs.cjs` 里，原子写与逐字段降级都由它保证。</p>
+ */
+const petPrefsStore = petExposure.enabled
+  ? petPrefsModule.createPrefsStore({ filePath: petPrefsFilePath })
+  : null;
+
+/**
+ * 系统"减少动态效果"探针结果（U-M4）。
+ *
+ * <p>探针是纯函数（`pet-prefs.cjs` 的 `detectReducedMotion`），这里只负责把 Electron
+ * 侧可能存在的两个接口喂进去；<b>接口不可用时它是"不动"</b>（不覆盖默认值），
+ * 理由与翻转方法写在那边的文档注释里。</p>
+ */
+const reducedMotionProbe = petPrefsModule.detectReducedMotion({ app, systemPreferences });
+
+/**
+ * 偏好-菜单接线器（**全部纯逻辑在它里面**，见 `electron/pet-prefs-wiring.cjs`）。
+ *
+ * <p>`main.cjs` 只提供四个 Electron 侧适配器：偏好仓库、可见性、门禁、菜单重建。
+ * 这样"点击开关 → 先落盘 → 广播 → 重建菜单 → 勾选态"这条链在 node 里可以真跑
+ * （`tests/petPrefsWiring.test.cjs` 的 W 系列用例就是手摇它）。</p>
+ */
+const petPrefsWiring = petPrefsWiringModule.createPrefsWiring({
+  store: petPrefsStore,
+  prefersReducedMotion: reducedMotionProbe.reducedMotion,
+  builder: petMenu,
+  isVisible: () => pet.isVisible(),
+  includePet: petExposure.enabled,
+  warn: (message) => console.warn(message),
+  actions: {
+    /** 显示主窗口（托盘第一项）。 */
+    showMain: () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    },
+    /** 显示/隐藏桌宠（托盘勾选项 + 右键菜单同一项）。 */
+    toggleVisible: () => {
+      pet.toggle();
+    },
+    /** 彻底退出（托盘最后一项）。 */
+    quitApp: () => {
+      isQuiting = true;
+      app.quit();
+    },
+  },
+  rebuildTray: (spec) => {
+    // tray 可能还没建出来（setupTray 之前不会有 setPrefs 调用，但保持防御）
+    if (!tray) return;
+    tray.setContextMenu(Menu.buildFromTemplate(spec));
+  },
+});
 
 // ---------------------------------------------------------------- 更新器日志
 
@@ -331,29 +441,9 @@ function setupTray() {
   const iconPath = path.join(__dirname, 'resources/icon.ico');
   tray = new Tray(iconPath);
   tray.setToolTip('LX ');
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: '显示界面',
-      click: () => {
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: '彻底退出',
-      click: () => {
-        isQuiting = true;
-        app.quit();
-      },
-    },
-  ]);
-
-  tray.setContextMenu(contextMenu);
+  // 初始菜单与后续重建走**同一条**路径：模板全部来自 `pet-menu.cjs`，
+  // 本文件不再出现任何 label 字面量（"托盘与右键同源"的唯一实现方式）。
+  petPrefsWiring.rebuildTray();
 
   // 鼠标左键点击托盘图标：智能切换 显示 / 隐藏
   tray.on('click', () => {
@@ -373,55 +463,22 @@ function setupTray() {
 }
 
 /**
- * 构建托盘菜单。
+ * 重建托盘菜单（勾选态与事实对齐的唯一入口）。
  *
- * <p>抽成函数是因为「显示桌宠」是勾选项：桌宠被自己的按钮或双击关掉时，
- * 菜单里的勾必须跟着变，否则用户会看到一个和事实矛盾的菜单。</p>
+ * <p>三个触发点：托盘的 `pet.onVisibilityChange`、偏好变更（接线器内部）、
+ * 以及未来的任何需要刷新的时机。**这是上一轮悬空引用的正确定义**：
+ * 菜单点击 → `petPrefsPort.setPrefs()` → 接线器 → 注入的 `rebuildTray(spec)` →
+ * `tray.setContextMenu`，全程没有任何"被调用但没有定义"的名字。</p>
  *
- * @returns 新的菜单实例
+ * @returns {void}
  */
-function buildTrayMenu() {
-  return Menu.buildFromTemplate([
-    {
-      label: '显示界面',
-      click: () => {
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    },
-    // 桌宠菜单项只在门禁开启时拼装：安装版不得出现桌宠入口（用户硬约束 #3）。
-    // 用展开而不是 `visible: false`：后者在部分平台仍留一条不可点的空行。
-    ...(petExposure.enabled
-      ? [
-          {
-            label: '显示桌宠',
-            type: 'checkbox',
-            checked: pet.isVisible(),
-            click: () => {
-              pet.toggle();
-            },
-          },
-        ]
-      : []),
-    { type: 'separator' },
-    {
-      label: '彻底退出',
-      click: () => {
-        isQuiting = true;
-        app.quit();
-      },
-    },
-  ]);
+function rebuildTrayMenu() {
+  petPrefsWiring.rebuildTray();
 }
 
 // 桌宠可见性变化时重建托盘菜单，保证勾选状态与事实一致
 pet.onVisibilityChange(() => {
-  if (tray) {
-    tray.setContextMenu(buildTrayMenu());
-  }
+  rebuildTrayMenu();
 });
 
 // 原生按钮与页面主题同步，避免深色页面顶部仍出现浅色背景。

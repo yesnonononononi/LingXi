@@ -194,10 +194,22 @@ test('静态扫描：pet-window / lx-protocol / 托盘「显示桌宠」都只�
   assert.ok(protocol.hits.length > 0, 'main.cjs 里找不到 require(\'./lx-protocol.cjs\')：结构已变，请同步本测试');
   assert.deepEqual(protocol.offenders, [], `lxa:// 协议被无条件 require：\n${protocol.offenders.join('\n')}`);
 
-  // 托盘项的展开式让它离门禁判断有 4 行间距，所以窗口取 6
-  const tray = findUngatedOccurrences(source, '显示桌宠', 6, 'petExposure.enabled');
-  assert.ok(tray.hits.length > 0, 'main.cjs 里找不到托盘「显示桌宠」：结构已变，请同步本测试');
-  assert.deepEqual(tray.offenders, [], `托盘「显示桌宠」没有门禁条件：安装版会出现桌宠入口\n${tray.offenders.join('\n')}`);
+  // 前提变了（M3 T04）：托盘菜单的文案与勾选态搬到了 electron/pet-menu.cjs，
+  // main.cjs 不再持有任何 label 字面量。所以这条从"文案要出现在门禁分支里"
+  // 改成**更严**的两条：① main.cjs 代码里不许再有桌宠菜单文案（单一真源）；
+  // ② 桌宠段的出现与否必须由门禁变量绑定（`includePet: petExposure.enabled`），
+  //    安装版靠这条得到"零桌宠菜单项"（行为断言见 tests/petPrefsWiring.test.cjs W12）。
+  for (const label of ['显示桌宠', '跟随鼠标', '自由漫游']) {
+    assert.equal(
+      stripComments(source).includes(label),
+      false,
+      `main.cjs 代码里出现了菜单文案「${label}」：文案必须只有 pet-menu.cjs 一份（M3 T04 的单一真源）`,
+    );
+  }
+  const includePet = findUngatedOccurrences(source, 'includePet:', 3, 'petExposure.enabled');
+  assert.ok(includePet.hits.length > 0, 'main.cjs 里找不到 includePet 绑定：结构已变，请同步本测试');
+  assert.deepEqual(includePet.offenders, [], `桌宠菜单段没有绑定门禁：安装版会出现桌宠入口\n${includePet.offenders.join('\n')}`);
+  assert.match(source, /builder:\s*petMenu/, '托盘 spec 必须由 pet-menu.cjs（唯一构建器）产出');
 
   // 门禁关闭时必须真的用空对象兜底（否则 pet 会是 undefined，下游 5 处调用全崩）
   assert.match(

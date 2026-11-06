@@ -58,6 +58,10 @@ const PREF_PROBLEMS = Object.freeze({
   CORRUPT_RENAMED: 'prefs-corrupt-renamed',
   WRITE_FAILED: 'prefs-write-failed',
   BAD_INPUT: 'prefs-bad-input',
+  /** 系统偏好探针不可用（信息码：不是失败，只说明"没做任何降级覆盖"）。 */
+  MOTION_PROBE_UNAVAILABLE: 'prefs-reduced-motion-unavailable',
+  /** 首次无偏好文件且系统要求减少动态效果（信息码：默认关掉两个开关，仍可手动开启）。 */
+  REDUCED_MOTION_DEFAULTS: 'prefs-reduced-motion-defaults',
 });
 
 /**
@@ -353,15 +357,250 @@ function createPrefsStore(options) {
   };
 }
 
+/**
+ * 读系统"减少动态效果"偏好（**探针，永不抛**；拿不到就"不动"）。
+ *
+ * <p><b>U-M4 的口径（主理人裁定）：</b>`prefers-reduced-motion` 为真时，<b>首次</b>
+ * 无偏好文件 ⇒ 默认 `roam:false`、`follow:false`；<b>已有偏好文件时一律以文件为准</b>。</p>
+ *
+ * <p><b>探针顺序（Electron 没有一等公民的 reduced-motion API，所以必须防御式探测）：</b></p>
+ * <ol>
+ *   <li>`systemPreferences.getAnimationSettings()` 的 `shouldRenderRichAnimation === false`
+ *       —— Windows 上"关闭动画效果"会同时关掉它，这是最接近的可用信号；</li>
+ *   <li>`app.getSystemPreferences?.()` —— 某些 Electron 版本/平台若提供，按
+ *       `{reducedMotion}` 或 `{prefersReducedMotion}` 读；</li>
+ *   <li><b>都拿不到 ⇒ 降级为「不动」</b>：即<b>不做任何随之而来的默认值覆盖</b>
+ *       （`reducedMotion:false`、`source:'unavailable-fallback-no-override'`）。
+ *       理由：把"探测不到"当成"用户要求减少动效"，会让每台机器的首启
+ *       `roam/follow` 都被静默关掉（桌宠永远不动），与 U-M2「`roam` 默认开」直接冲突。
+ *       <b>要翻转这个判断只需改这一处返回值</b>，并在 `petPrefs.test.cjs` 的 P13 同步改期望。</li>
+ * </ol>
+ *
+ * @param {{app?: object, systemPreferences?: object}} [electronApi] Electron 侧的可用接口
+ *   （测试注入假对象；本模块**不** require electron）
+ * @returns {{reducedMotion: boolean, source: string}} 结果与来源（来源用于日志与断言）
+ */
+function detectReducedMotion(electronApi) {
+  const api = electronApi && typeof electronApi === 'object' ? electronApi : {};
+  try {
+    const systemPreferences = api.systemPreferences;
+    if (systemPreferences && typeof systemPreferences.getAnimationSettings === 'function') {
+      const settings = systemPreferences.getAnimationSettings();
+      if (settings && typeof settings.shouldRenderRichAnimation === 'boolean') {
+        return {
+          reducedMotion: settings.shouldRenderRichAnimation === false,
+          source: 'systemPreferences.getAnimationSettings',
+        };
+      }
+    }
+  } catch {
+    /* 探针失败不阻塞启动：落到下一档 */
+  }
+  try {
+    const app = api.app;
+    if (app && typeof app.getSystemPreferences === 'function') {
+      const value = app.getSystemPreferences();
+      if (value && typeof value === 'object') {
+        if (typeof value.reducedMotion === 'boolean') {
+          return { reducedMotion: value.reducedMotion, source: 'app.getSystemPreferences.reducedMotion' };
+        }
+        if (typeof value.prefersReducedMotion === 'boolean') {
+          return {
+            reducedMotion: value.prefersReducedMotion,
+            source: 'app.getSystemPreferences.prefersReducedMotion',
+          };
+        }
+      }
+    }
+  } catch {
+    /* 同上 */
+  }
+  // 见函数文档第 3 条：探测不到 ⇒ 不动（不覆盖默认值）
+  return { reducedMotion: false, source: 'unavailable-fallback-no-override' };
+}
+
+/**
+ * 把 `problems[]` 拼成**一条**给人看的日志（主进程只 `console.warn` 一次）。
+ *
+ * <p>为什么拼成一条：读一次偏好文件可能同时触发"版本不识别 + 某字段类型错"，
+ * 分多条 warn 会在启动日志里刷屏，而用户只需要知道"哪几个字段被降级了"。</p>
+ *
+ * @param {string[]} problems 原因码列表
+ * @returns {string} 单行文案（空列表返回空串）
+ */
+function formatPrefsProblems(problems) {
+  if (!Array.isArray(problems) || problems.length === 0) return '';
+  return problems.join('; ');
+}
+
+/**
+ * 调一次 warn（**只调一次**；`warn` 不是函数时静默跳过，绝不反过来把启动搞崩）。
+ *
+ * @param {Function|undefined} warn 日志函数（通常是 `console.warn`）
+ * @param {string} message 文案
+ * @returns {void}
+ */
+function warnOnce(warn, message) {
+  if (typeof warn !== 'function' || typeof message !== 'string' || message.length === 0) return;
+  try {
+    warn(message);
+  } catch {
+    /* 日志失败不许影响主流程 */
+  }
+}
+
+/**
+ * 启动时装载偏好（**U-M4 的两条路径都在这里，且只在这里**）。
+ *
+ * <p>规则（顺序即优先级）：</p>
+ * <ol>
+ *   <li>读文件；<b>只要文件存在</b>（`status !== 'missing'`，含坏 JSON / 版本更高 /
+ *       字段类型错的降级结果）⇒ <b>一律以文件（或它的逐字段降级结果）为准</b>，
+ *       `reducedMotion` 只作为日志信息，<b>绝不改写用户选择</b>；</li>
+ *   <li>文件不存在（首次运行）+ `prefersReducedMotion === true` ⇒ `roam:false`、`follow:false`，
+ *       `source:'reduced-motion-default'`（用户之后手动勾选照样能开，不是永久禁用）；</li>
+ *   <li>文件不存在 + 未要求减少动效 ⇒ U-M2 默认（`follow:false` / `roam:true`）。</li>
+ * </ol>
+ *
+ * <p>读失败（坏 JSON / 字段类型错 / 读不动）时**记一条 warn**：不许静默吞掉
+ * （"为什么我的设置没了"必须能在日志里找到答案）。文件缺失是正常状态，不 warn。</p>
+ *
+ * @param {{store: {read: () => object}, prefersReducedMotion?: boolean,
+ *   warn?: Function}} options 选项
+ * @returns {{prefs: {version: number, follow: boolean, roam: boolean}, problems: string[],
+ *   status: string, writable: boolean, source: 'file'|'default'|'reduced-motion-default',
+ *   appliedReducedMotion: boolean}} 装载结果
+ * @throws {TypeError} `store` 不可用（编程错误）
+ */
+function loadInitialPrefs(options) {
+  if (options === null || typeof options !== 'object') {
+    throw new TypeError('[pet-prefs] loadInitialPrefs 需要 {store, prefersReducedMotion?, warn?} 对象');
+  }
+  const store = options.store;
+  if (!store || typeof store.read !== 'function') {
+    throw new TypeError('[pet-prefs] loadInitialPrefs.store 必须是 createPrefsStore() 的返回物');
+  }
+  const warn = options.warn;
+  const read = store.read();
+
+  // ① 文件存在：以文件为准（绝不因为系统偏好静默改写用户选择）
+  if (read.status !== 'missing') {
+    // 只有真出问题时才 warn（健康的 'ok' 文件不该在启动日志里刷一条"降级"）
+    if (read.problems.length > 0) {
+      warnOnce(
+        warn,
+        `[pet-prefs] 偏好文件读取降级（status=${read.status}）：${formatPrefsProblems(read.problems)}` +
+          `；已逐字段回落到默认值，文件保留原样（坏 JSON 会改名为 .corrupt）`,
+      );
+    }
+    return {
+      prefs: read.prefs,
+      problems: read.problems,
+      status: read.status,
+      writable: read.writable,
+      source: 'file',
+      appliedReducedMotion: false,
+    };
+  }
+
+  // ② 首次无文件 + 系统要求减少动效：默认两项都关
+  if (options.prefersReducedMotion === true) {
+    return {
+      prefs: defaultPrefs({ prefersReducedMotion: true }),
+      problems: [...read.problems, PREF_PROBLEMS.REDUCED_MOTION_DEFAULTS],
+      status: read.status,
+      writable: read.writable,
+      source: 'reduced-motion-default',
+      appliedReducedMotion: true,
+    };
+  }
+
+  // ③ 首次无文件：U-M2 默认（follow=false / roam=true）
+  return {
+    prefs: read.prefs,
+    problems: read.problems,
+    status: read.status,
+    writable: read.writable,
+    source: 'default',
+    appliedReducedMotion: false,
+  };
+}
+
+/**
+ * 应用一次偏好变更（**菜单点击的唯一路径**：先落盘，再交给调用方重建菜单）。
+ *
+ * <p>设计 §9.1 的顺序纪律：<b>先落盘 → 再广播给渲染层 → 最后重建托盘</b>。
+ * 本函数只负责第一步（落盘）并返回新值；后两步由 `main.cjs` 按顺序做
+ * （任何一步失败都不影响另两步，最坏是"菜单勾选与行为不同步一笔"，下次点击即纠正）。</p>
+ *
+ * <p>写盘失败**必须记一条 warn**（不许静默吞掉：用户点了勾却没保存，日志里要能查到）；
+ * 同时仍然把新值返回给调用方——本轮菜单照常反映用户刚点的状态，下一次成功写入即对齐。</p>
+ *
+ * @param {{store: {write: (prefs: object) => object}, prefs: object, patch: object,
+ *   warn?: Function}} options 选项
+ * @returns {{prefs: {version: number, follow: boolean, roam: boolean}, ok: boolean,
+ *   problems: string[], changed: boolean}} 新偏好与写入结果
+ * @throws {TypeError} `store` / `prefs` / `patch` 不可用（编程错误）
+ */
+function applyPrefsPatch(options) {
+  if (options === null || typeof options !== 'object') {
+    throw new TypeError('[pet-prefs] applyPrefsPatch 需要 {store, prefs, patch} 对象');
+  }
+  const store = options.store;
+  if (!store || typeof store.write !== 'function') {
+    throw new TypeError('[pet-prefs] applyPrefsPatch.store 必须是 createPrefsStore() 的返回物');
+  }
+  const current = options.prefs;
+  if (current === null || typeof current !== 'object') {
+    throw new TypeError('[pet-prefs] applyPrefsPatch.prefs 必须是对象');
+  }
+  const patch = options.patch === null || options.patch === undefined ? {} : options.patch;
+  if (typeof patch !== 'object') {
+    throw new TypeError('[pet-prefs] applyPrefsPatch.patch 必须是对象');
+  }
+  const next = {
+    version: PREFS_VERSION,
+    follow: current.follow === true,
+    roam: current.roam !== false,
+  };
+  if (typeof current.updatedAt === 'string' && current.updatedAt.length > 0) {
+    next.updatedAt = current.updatedAt;
+  }
+  const before = `${next.follow}|${next.roam}`;
+  // 只接受布尔：其它类型（含 undefined）一律忽略，前向兼容（未知键静默忽略）
+  if (typeof patch.follow === 'boolean') next.follow = patch.follow;
+  if (typeof patch.roam === 'boolean') next.roam = patch.roam;
+  const changed = `${next.follow}|${next.roam}` !== before;
+
+  const written = store.write(next);
+  if (!written || written.ok !== true) {
+    warnOnce(
+      options.warn,
+      `[pet-prefs] 偏好写入失败（本轮只在内存生效，重启后会回到上一次成功保存的值）：` +
+        `${formatPrefsProblems(written && written.problems)}`,
+    );
+  }
+  return {
+    prefs: next,
+    ok: Boolean(written && written.ok),
+    problems: (written && written.problems) || [],
+    changed,
+  };
+}
+
 module.exports = {
   PREFS_VERSION,
   DEFAULT_PREFS,
   KNOWN_FIELDS,
   PREF_PROBLEMS,
   defaultPrefs,
+  detectReducedMotion,
   normalizePrefs,
   toPersistedPrefs,
   readPrefs,
   writePrefs,
   createPrefsStore,
+  formatPrefsProblems,
+  loadInitialPrefs,
+  applyPrefsPatch,
 };

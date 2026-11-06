@@ -26,11 +26,15 @@ const {
   KNOWN_FIELDS,
   PREF_PROBLEMS,
   defaultPrefs,
+  detectReducedMotion,
   normalizePrefs,
   toPersistedPrefs,
   readPrefs,
   writePrefs,
   createPrefsStore,
+  formatPrefsProblems,
+  loadInitialPrefs,
+  applyPrefsPatch,
 } = prefsModule;
 
 /**
@@ -286,6 +290,181 @@ test('P11 · update：只接受布尔补丁，未知键忽略；先落盘再返�
   } finally {
     temp.dispose();
   }
+});
+
+test('P13 · detectReducedMotion：探针优先级 + 接口不可用时"不动"（不覆盖默认值）', () => {
+  // ① 首选 systemPreferences.getAnimationSettings().shouldRenderRichAnimation
+  assert.deepEqual(
+    detectReducedMotion({ systemPreferences: { getAnimationSettings: () => ({ shouldRenderRichAnimation: false }) } }),
+    { reducedMotion: true, source: 'systemPreferences.getAnimationSettings' },
+  );
+  assert.deepEqual(
+    detectReducedMotion({ systemPreferences: { getAnimationSettings: () => ({ shouldRenderRichAnimation: true }) } }),
+    { reducedMotion: false, source: 'systemPreferences.getAnimationSettings' },
+  );
+
+  // ② 次选 app.getSystemPreferences?.()：只认布尔字段（含两种命名）
+  assert.deepEqual(
+    detectReducedMotion({ app: { getSystemPreferences: () => ({ reducedMotion: true }) } }),
+    { reducedMotion: true, source: 'app.getSystemPreferences.reducedMotion' },
+  );
+  assert.deepEqual(
+    detectReducedMotion({ app: { getSystemPreferences: () => ({ prefersReducedMotion: true }) } }),
+    { reducedMotion: true, source: 'app.getSystemPreferences.prefersReducedMotion' },
+  );
+
+  // ③ 两个接口都没有 ⇒ **不动**（reducedMotion:false）——这是 U-M4 的降级口径：
+  //    把"探测不到"当成"用户要求减少动效"，会让每台机器首启都变成"猫一动不动"。
+  assert.deepEqual(detectReducedMotion({}), { reducedMotion: false, source: 'unavailable-fallback-no-override' });
+  assert.deepEqual(detectReducedMotion(null), { reducedMotion: false, source: 'unavailable-fallback-no-override' });
+  assert.deepEqual(
+    detectReducedMotion({ systemPreferences: {} }),
+    { reducedMotion: false, source: 'unavailable-fallback-no-override' },
+  );
+
+  // ④ 探针抛错不许把启动搞崩（降级到下一档/兜底）
+  assert.doesNotThrow(() =>
+    detectReducedMotion({
+      systemPreferences: {
+        getAnimationSettings: () => {
+          throw new Error('boom');
+        },
+      },
+      app: { getSystemPreferences: () => ({ reducedMotion: true }) },
+    }),
+  );
+  assert.deepEqual(
+    detectReducedMotion({
+      systemPreferences: {
+        getAnimationSettings: () => {
+          throw new Error('boom');
+        },
+      },
+      app: { getSystemPreferences: () => ({ reducedMotion: true }) },
+    }),
+    { reducedMotion: true, source: 'app.getSystemPreferences.reducedMotion' },
+  );
+  // 字段类型不对时同样落到兜底（不许把 undefined 当真值用）
+  assert.deepEqual(
+    detectReducedMotion({ app: { getSystemPreferences: () => ({ reducedMotion: 'yes' }) } }),
+    { reducedMotion: false, source: 'unavailable-fallback-no-override' },
+  );
+});
+
+test('P14 · loadInitialPrefs：文件存在 ⇒ 以文件为准（reduced-motion 不许改写用户选择）', () => {
+  const temp = makeTempDir('load-file');
+  try {
+    fs.writeFileSync(temp.file, JSON.stringify({ version: 1, follow: true, roam: true }), 'utf8');
+    const warns = [];
+    const result = loadInitialPrefs({
+      store: createPrefsStore({ filePath: temp.file }),
+      prefersReducedMotion: true,
+      warn: (message) => warns.push(message),
+    });
+    assert.deepEqual(result.prefs, { version: 1, follow: true, roam: true });
+    assert.equal(result.source, 'file');
+    assert.equal(result.appliedReducedMotion, false);
+    assert.deepEqual(warns, [], '健康的文件不该在启动日志里刷"降级"');
+  } finally {
+    temp.dispose();
+  }
+});
+
+test('P15 · loadInitialPrefs：无文件 + reduced-motion ⇒ 两个开关默认全关；无文件未要求 ⇒ U-M2 默认', () => {
+  const reducedTemp = makeTempDir('load-reduced');
+  const plainTemp = makeTempDir('load-plain');
+  try {
+    const reduced = loadInitialPrefs({
+      store: createPrefsStore({ filePath: reducedTemp.file }),
+      prefersReducedMotion: true,
+    });
+    assert.deepEqual(reduced.prefs, { version: 1, follow: false, roam: false });
+    assert.equal(reduced.source, 'reduced-motion-default');
+    assert.equal(reduced.appliedReducedMotion, true);
+    assert.ok(reduced.problems.includes(PREF_PROBLEMS.REDUCED_MOTION_DEFAULTS), '必须留一条可断言的信息码');
+
+    const plain = loadInitialPrefs({ store: createPrefsStore({ filePath: plainTemp.file }) });
+    assert.deepEqual(plain.prefs, { version: 1, follow: false, roam: true });
+    assert.equal(plain.source, 'default');
+    assert.equal(plain.appliedReducedMotion, false);
+  } finally {
+    reducedTemp.dispose();
+    plainTemp.dispose();
+  }
+});
+
+test('P16 · loadInitialPrefs：读失败记**一条** warn（含原因码），缺失文件不 warn', () => {
+  const temp = makeTempDir('load-warn');
+  const missingTemp = makeTempDir('load-nofile');
+  try {
+    fs.writeFileSync(temp.file, JSON.stringify({ version: 1, follow: 'yes', roam: true }), 'utf8');
+    const warns = [];
+    const degraded = loadInitialPrefs({
+      store: createPrefsStore({ filePath: temp.file }),
+      warn: (message) => warns.push(message),
+    });
+    assert.equal(warns.length, 1, `降级只许 warn 一条，实际 ${warns.length} 条`);
+    assert.ok(warns[0].includes(`${PREF_PROBLEMS.BAD_FIELD}:follow`), `warn 必须点名字段：${warns[0]}`);
+    assert.equal(degraded.prefs.roam, true, '其它字段照用（逐字段降级）');
+
+    const quiet = [];
+    loadInitialPrefs({ store: createPrefsStore({ filePath: missingTemp.file }), warn: (m) => quiet.push(m) });
+    assert.deepEqual(quiet, [], '首次运行没有文件是正常状态，不该 warn');
+  } finally {
+    temp.dispose();
+    missingTemp.dispose();
+  }
+});
+
+test('P17 · applyPrefsPatch：只吃布尔、changed 如实、写失败 warn 且仍返回新值', () => {
+  const temp = makeTempDir('apply');
+  try {
+    const store = createPrefsStore({ filePath: temp.file });
+    const first = applyPrefsPatch({ store, prefs: { version: 1, follow: false, roam: true }, patch: { follow: true } });
+    assert.equal(first.ok, true);
+    assert.equal(first.changed, true);
+    assert.deepEqual(first.prefs, { version: 1, follow: true, roam: true });
+    assert.equal(JSON.parse(fs.readFileSync(temp.file, 'utf8')).follow, true, '必须真落盘');
+
+    // 非布尔补丁忽略；未知键忽略
+    const ignored = applyPrefsPatch({
+      store,
+      prefs: first.prefs,
+      patch: { follow: 'no', roam: undefined, teleport: true },
+    });
+    assert.equal(ignored.changed, false);
+    assert.equal(ignored.prefs.follow, true);
+
+    // 写失败：warn 一条，但仍返回新值（本轮内存生效）
+    const warns = [];
+    const failing = { write: () => ({ ok: false, problems: [`${PREF_PROBLEMS.WRITE_FAILED}:EACCES`] }) };
+    const failed = applyPrefsPatch({
+      store: failing,
+      prefs: first.prefs,
+      patch: { roam: false },
+      warn: (message) => warns.push(message),
+    });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.prefs.roam, false, '写失败也要返回新值');
+    assert.equal(warns.length, 1);
+    assert.ok(warns[0].includes(PREF_PROBLEMS.WRITE_FAILED));
+
+    // 入参校验
+    assert.throws(() => applyPrefsPatch({ store, prefs: null, patch: {} }), TypeError);
+    assert.throws(() => applyPrefsPatch({ store: null, prefs: { follow: true, roam: true }, patch: {} }), TypeError);
+    assert.throws(() => loadInitialPrefs({ store: null }), TypeError);
+  } finally {
+    temp.dispose();
+  }
+});
+
+test('P18 · formatPrefsProblems：一次读完只拼一条；空列表返回空串', () => {
+  assert.equal(formatPrefsProblems([]), '');
+  assert.equal(formatPrefsProblems(null), '');
+  assert.equal(
+    formatPrefsProblems([PREF_PROBLEMS.BAD_JSON, `${PREF_PROBLEMS.BAD_FIELD}:follow`]),
+    `${PREF_PROBLEMS.BAD_JSON}; ${PREF_PROBLEMS.BAD_FIELD}:follow`,
+  );
 });
 
 test('P12 · 入参校验：没给路径 / 没给偏好 ⇒ 立刻 TypeError（编程错误不该被吞）', () => {
