@@ -541,6 +541,43 @@ test('单写者结构：非当前写权持有者的写入一律被拒（令牌�
   assert.equal(harness.controller.applyPosition(OWNER_TOKENS.LOCOMOTION, 1200, 600), false);
   assert.equal(harness.controller.applyPosition(OWNER_TOKENS.DRAG, 1200, 600), true);
 });
+test('跟随也夹工作区：光标贴屏幕边缘时，整窗仍留在 workArea 内（Q-M5 口径：整窗不许越界）', () => {
+  // 工作区 0..1920、窗口宽 268 ⇒ 中心偏移 134 ⇒ 窗口左缘最小 0 ⇒ 中心最小 134。
+  // 光标放到 x=5（比窗口能到达的最左中心还左 129 DIP > 停止半径 96）。
+  const harness = makeHarness();
+  assert.deepEqual(harness.controller.trySetMode('follow', 'dev'), { ok: true });
+  harness.state.cursor = { x: 5, y: harness.center().y };
+  harness.tickMany(400);
+
+  const snap = harness.controller.snapshot();
+  assert.ok(snap.x >= 0, `窗口左缘越界：x=${snap.x}（必须 ≥ workArea.x = 0）`);
+  assert.ok(
+    snap.x + harness.controller.size.width <= 1920,
+    `窗口右缘越界：x+width=${snap.x + harness.controller.size.width} > 1920`,
+  );
+
+  // **贴边之后不许抖**：再跑 200 拍，位置必须一毫米都不再变。
+  const frozen = { x: snap.x, y: snap.y };
+  harness.tickMany(200);
+  const after = harness.controller.snapshot();
+  assert.equal(after.x, frozen.x, '贴边后仍在横向抖动：位置又变了');
+  assert.equal(after.y, frozen.y, '贴边后仍在纵向抖动：位置又变了');
+  assert.equal(after.arrived, true, '贴边（再也靠近不了）必须视为到达，否则渲染层永远收不到 move-end');
+});
+
+test('跟随夹取不误伤：光标在工作区内部时，照样能追到停止半径内并停下', () => {
+  const harness = makeHarness();
+  assert.deepEqual(harness.controller.trySetMode('follow', 'dev'), { ok: true });
+  harness.state.cursor = cursorRightOf(harness, 500);
+  harness.tickMany(600);
+  const snap = harness.controller.snapshot();
+  assert.equal(snap.arrived, true, '工作区内的光标必须能追到');
+  const centerX = snap.x + harness.controller.size.width / 2;
+  assert.ok(
+    Math.abs(harness.state.cursor.x - centerX) <= MOTION.followStopRadiusDip + 2,
+    `没追到停止半径内：距光标 ${Math.abs(harness.state.cursor.x - centerX)} DIP > ${MOTION.followStopRadiusDip}`,
+  );
+});
 
 
 // ---------------------------------------------------------------- 行为状态闸门（S4.1 纵深防御）

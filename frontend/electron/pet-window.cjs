@@ -966,6 +966,11 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
    * 文件补正，杜绝"每次启动都补一次偏移"。</p>
    */
   function reclampIntoDisplays() {
+    // 拖拽期间不许抢写：位置写入权在手指那边（`dragTo` 持有 `drag` 令牌）。
+    // 显示器事件（拔屏 / 混合 DPI 下把桌宠拖过屏界 / 分辨率变化）会在拖拽中触发，
+    // 若这里也写一次，下一帧 `dragTo` 再用旧 offset 拽回去 ⇒ 窗口在手指下往返跳
+    // （真机实测 500→0→500）。松手后的 `endDrag` 会照常处理边界，不必在这里抢。
+    if (dragging) return;
     const bounds = captureBounds();
     if (!bounds) return;
     const { screen } = electron();
@@ -1291,7 +1296,16 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath, clock = gl
     // 拖拽的位置写入也走运动层的唯一写点（`applyPosition` 的 `drag` 令牌那一支）：
     // 本文件里没有任何一处自己移动窗口，否则"唯一写者"就只是句口号。
     if (motion) {
-      const wrote = motion.dragTo(cursorX, cursorY, dragOffset.x, dragOffset.y);
+      // 兜住 `dragTo` 的入参/派生校验错误：拖拽是高频 `send`，一次畸形载荷
+      // 不该让未捕获异常打崩主进程（Q-M1）。异常照旧抛出（契约不变），
+      // 但边界处必须吞掉并说出来——静默 = 下一个排查的人要重走一遍我今天的路。
+      let wrote = false;
+      try {
+        wrote = motion.dragTo(cursorX, cursorY, dragOffset.x, dragOffset.y);
+      } catch (err) {
+        console.warn(`[pet] 拖拽坐标被拒绝: ${(err && err.message) || err}`);
+        return;
+      }
       if (wrote) scheduleSave();
       return;
     }

@@ -1017,6 +1017,16 @@ class MotionController {
     const offX = requireFiniteNumber(offsetX, 'dragTo.offsetX');
     const offY = requireFiniteNumber(offsetY, 'dragTo.offsetY');
     const candidate = { x: cursorX - offX, y: cursorY - offY };
+    // 派生值必须再校验一次：入参各自有限并不代表差有限
+    // （`1e308 - (-1e308) = Infinity`）。这里**抛**而不是静默返回 false——
+    // 与本方法其余入参校验保持同一契约，且"静默吞掉"会掩盖渲染层的计算错误
+    // （本项目已被静默吞错坑过多次）。调用方 `pet:drag-move` 监听器负责兜住（Q-M1）。
+    if (!Number.isFinite(candidate.x)) {
+      throw new TypeError(`[pet-motion] dragTo 派生坐标溢出：screenX(${cursorX}) - offsetX(${offX}) 不是有限数值`);
+    }
+    if (!Number.isFinite(candidate.y)) {
+      throw new TypeError(`[pet-motion] dragTo 派生坐标溢出：screenY(${cursorY}) - offsetY(${offY}) 不是有限数值`);
+    }
     const area = this.readWorkArea(this.centerOf(candidate));
     if (area === null) return false;
     const target = clampTargetToWorkArea({
@@ -1055,6 +1065,12 @@ class MotionController {
    * @returns {boolean} 是否真的写了窗口位置（位置没变 ⇒ false，不许白写）
    */
   reclampNow(candidate) {
+    // 拖拽期间**结构上拒写**：位置写入权在手指那边（`drag` 令牌）。
+    // 显示器事件（拔屏 / 混合 DPI 拖过屏界 / 分辨率变化）会在拖拽中触发，
+    // 若这里抢写一次，下一帧 `dragTo` 再用旧 offset 拽回去 ⇒ 窗口在手指下往返跳
+    // （真机实测 500→0→500）。窗口层也加了 `dragging` 早退（外层），这里是内层——
+    // 两道独立守卫，而不是靠调用方自觉（Q-M3）。
+    if (this.owner === OWNER_TOKENS.DRAG) return false;
     const from = candidate === undefined ? this.position : requirePoint(candidate, 'reclampNow.candidate');
     const area = this.readWorkArea(this.centerOf(from));
     if (area === null) return false;
@@ -1178,8 +1194,41 @@ class MotionController {
     });
     this.velocity = step.speed;
     this.arrived = false;
-    this.position = { x: step.x, y: step.y };
-    this.applyPosition(OWNER_TOKENS.LOCOMOTION, step.x, step.y);
+
+    // 整窗必须留在工作区内（§6.1）：跟随同样要夹，否则光标贴到屏幕边缘时
+    // 窗口会有一半探出屏外（实测 x=-36，用户只能看见半只猫）。
+    const area = this.readWorkArea(this.centerOf(step));
+    if (area === null) {
+      this.position = { x: step.x, y: step.y };
+      this.applyPosition(OWNER_TOKENS.LOCOMOTION, step.x, step.y);
+      this.emit('moving');
+      return true;
+    }
+    const clamped = clampTargetToWorkArea({
+      workArea: area,
+      windowSize: this.size,
+      target: { x: step.x, y: step.y },
+      marginDip: 0,
+    });
+    const clampedCenter = this.centerOf(clamped);
+    const clampedDistance = Math.hypot(point.x - clampedCenter.x, point.y - clampedCenter.y);
+
+    // **贴边即到达**：判据是"夹取有没有真的改变位置"，不是"这一拍有没有前进"。
+    // （后者会误伤加速起步——首拍只走 0.12 DIP，任何按位移量设的容差都会把它判成贴边。）
+    // 夹取确实把它挡住了、且仍够不到停止半径 ⇒ 光标在屏幕边缘外，再追只会在边界上抖
+    // （滞回带救不了，因为每拍目标都在动）。这时按"已到达极限位置"收尾。
+    const wasClamped = clamped.x !== step.x || clamped.y !== step.y;
+    const stuckAtEdge = wasClamped && clampedDistance > MOTION.followStopRadiusDip;
+
+    this.position = { x: clamped.x, y: clamped.y };
+    this.applyPosition(OWNER_TOKENS.LOCOMOTION, clamped.x, clamped.y);
+    if (stuckAtEdge) {
+      this.velocity = 0;
+      this.gait = 'none';
+      this.arrived = true;
+      this.emit('arrived');
+      return true;
+    }
     this.emit('moving');
     return true;
   }
