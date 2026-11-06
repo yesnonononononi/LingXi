@@ -324,6 +324,50 @@ test('sleep 有 exit ⇒ 睡→醒先播 startle（单帧 300ms，睁一次眼�
   assert.equal(countOf(frames, 'startle'), 1, `睁眼只该出现一次（重复 = 一帧内连播两次 exit）：${JSON.stringify(frames)}`);
 });
 
+test('sleep 起身同样走幂等门：syncPosture 每 250ms 重算也只播一次 startle（lie/sleep 两路都守）', () => {
+  const { controller, clock, frames } = makeController();
+  controller.setPosture('sleep');
+  assert.equal(controller.clipId, 'cycle', '前置：睡着时播呼吸循环');
+  const before = frames.length;
+  controller.setPosture('stand');
+  assert.equal(controller.clipId, 'exit', 'sleep 起身先播 exit（睁眼）');
+  assert.deepEqual(frames.slice(before), ['startle'], 'exit 的第 0 帧是 startle');
+
+  // 第一拍 250ms 仍**落在 exit 的 300ms 窗口内**：此时重算 desired 还是 'stand'，
+  // 没有幂等门就会再进一次 exit ⇒ startle 上屏两次（醒来时抽一下再抽一下）。
+  for (let tick = 0; tick < 4; tick += 1) {
+    clock.advance(250);
+    controller.setPosture('stand');
+  }
+  assert.equal(
+    countOf(frames, 'startle'),
+    1,
+    `startle 只许出现一次（幂等门失效会连播两次醒来）：${JSON.stringify(frames)}`,
+  );
+  assert.equal(controller.posture, 'stand', 'exit 播完（300ms）必须回站姿');
+});
+
+test('困倦持续期间姿态同值必须早退：反复 setPosture(lie) 不许重播 enter（sleepy 是持续态）', () => {
+  const { controller, clock, frames } = makeController();
+  controller.setPosture('lie');
+  assert.equal(controller.clipId, 'enter', '进 lie 播 enter（4 帧 × 120ms，hold-last）');
+  clock.advance(480);
+  assert.equal(controller.currentFrameId, 'lie_neutral', 'enter 播完停在末帧');
+
+  // 真实主循环每 250ms 重算一次 `postureOf(state)`：困倦期间它恒为 'lie'，
+  // 于是 `syncPosture` 会以同值反复调 `setPosture('lie')`。若同值不早退，
+  // 趴下动画会每 250ms 从第 0 帧重播一遍——用户看到的是"抽个不停"。
+  const before = frames.length;
+  for (let tick = 0; tick < 8; tick += 1) {
+    clock.advance(250);
+    controller.setPosture('lie');
+  }
+  assert.equal(frames.length, before, `同值 setPosture 不许上屏任何新帧：${JSON.stringify(frames)}`);
+  assert.equal(countOf(frames, 'lie_down_01_neutral'), 1, 'enter 的第 0 帧只许出现一次（重播会连播两次趴下）');
+  assert.equal(controller.currentFrameId, 'lie_neutral', '仍停在末帧');
+  assert.equal(controller.posture, 'lie');
+});
+
 test('没有 exit 的批次仍走旧路径硬切站姿（一帧都不播）—— 用合成清单守，不依赖某个批次的巧合', () => {
   const { controller, frames } = makeController({ poses: posesWithoutSleepExit() });
   controller.setPosture('sleep');

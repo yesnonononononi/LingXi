@@ -206,18 +206,39 @@ function makeController(clock: Clock): { controller: PoseController; blink: Fake
  * 所以用合成清单继续守住它：摘掉批次 + 从 `accepted` 移除 ⇒ 必须降级 stand。</p>
  *
  * @param posture 要摘掉的姿态
+ * @param base 起点清单（缺省真清单；链式摘多批时把上一轮结果传进来）
  * @returns 假清单
  */
-function posesWithout(posture: PosePostureId): PetPoses {
-  assert.ok(PET_POSES.batches[posture], `真实清单里必须有 ${posture} 批次（否则本用例无意义）`);
-  const batches = { ...PET_POSES.batches };
+function posesWithout(posture: PosePostureId, base: PetPoses = PET_POSES): PetPoses {
+  assert.ok(base.batches[posture], `清单里必须有 ${posture} 批次（否则本用例无意义）`);
+  const batches = { ...base.batches };
   delete batches[posture];
   return {
-    ...PET_POSES,
+    ...base,
     batches,
-    accepted: PET_POSES.accepted.filter((item) => item !== posture),
+    accepted: base.accepted.filter((item) => item !== posture),
   };
 }
+
+/**
+ * "摘掉某一批之后该派生什么"的**第二份表达**（与实现里的 `POSTURE_FALLBACK_CHAINS` 互为交叉校验）。
+ *
+ * <p>为什么测试里还要再写一份：如果测试只调 `postureOf` 与实现共用同一张表，那"把表改错"
+ * 这件事就永远抓不到。降级方向是**用户可见**的口径（睡觉 → 退成趴着 → 退成坐着 → 站直），
+ * 必须有人用独立的写法钉住它。</p>
+ */
+const DEGRADED_EXPECTATION: Record<PosePostureId, PostureId> = {
+  // 坐着没有"更弱的半坐"，摘掉就只能站直（切片 1 的既有语义）
+  sit: 'stand',
+  // 趴着缺资产 ⇒ 坐着（同一个"低能量"家族里更弱的一级）
+  lie: 'sit',
+  // 睡着缺资产 ⇒ 趴着（用户读到"没睡沉"，不是"突然站起来"）
+  sleep: 'lie',
+  // 位移姿态没有降级目标：缺向就是不可播
+  walk: 'stand',
+  run: 'stand',
+  jump: 'stand',
+};
 
 test('SIT_AFTER_IDLE_MS 边界：19999ms 仍站着，20000ms 恰好坐下（且姿态不下发 PresentationOp）', () => {
   const clock = new Clock();
@@ -358,7 +379,7 @@ test('兼容点 ②：身体连点 3 次仍然生气（sit 的加入没有吃掉
   assert.equal(postureOf(sm.state, PET_POSES), 'stand', '生气是动作，不改姿态');
 });
 
-test('兼容点 ③：无 sleep 资产时 sleeping 的指令与姿态逐项不变', () => {
+test('兼容点 ③：无 sleep 资产时 sleeping 的**指令**逐项不变，姿态按降级链退到 lie（不是空白窗口）', () => {
   const clock = new Clock();
   const sm = machine(clock);
   clock.advance(SLEEPY_AFTER_IDLE_MS);
@@ -375,16 +396,23 @@ test('兼容点 ③：无 sleep 资产时 sleeping 的指令与姿态逐项不�
   assert.equal(expression?.id, 'blink', '睡眠表情仍是闭眼贴片（不是困倦的半闭眼）');
   assert.equal(expression?.layer, 'base');
   assert.equal(expression?.durationMs, undefined);
-  // 切片 3 起 sleep 已 accepted ⇒ 真清单会切 sleep；"没资产就降级"这条路径改用合成清单守
+  // 切片 3 起 sleep 已 accepted ⇒ 真清单会切 sleep；"没资产"这条路径改用合成清单守
   // （`posesWithout('sleep')`），否则它会因为真数据补齐而**静默失效**——那正是"资产丢了变空白窗口"的入口。
+  // 切片 4（线A任务 1）起降级不再是"直接 stand"：趴睡两档共用 `sleep → lie → sit → stand` 这条链，
+  // 所以摘掉 sleep 后落到 **lie**（用户读到"没睡沉"），而不是突然站直。
   assert.equal(postureOf('sleeping', PET_POSES), 'sleep', '切片 3 起睡眠有自己的姿态资产');
-  assert.equal(postureOf('sleeping', posesWithout('sleep')), 'stand', '没有 sleep 资产时必须降级 stand');
+  assert.equal(
+    postureOf('sleeping', posesWithout('sleep')),
+    'lie',
+    '没有 sleep 资产时必须按降级链退到 lie（不是 stand、更不是空白窗口）',
+  );
 });
 
-test('六批全部 accepted 时每个姿态态都返回自己；摘掉任一批次都降级 stand（降级判据不是硬编码）', () => {
+test('六批全部 accepted 时每个姿态态都返回自己；摘掉任一批次都按降级链退化（降级判据不是硬编码）', () => {
   // 真清单：六批全 accepted ⇒ sleep 也返回自己（切片 3 前这里只能断言 stand）
   assert.equal(postureOf('sleeping', PET_POSES), 'sleep');
-  assert.equal(postureOf('sleeping', posesWithout('sleep')), 'stand', '摘掉 sleep 批次必须降级');
+  // 摘掉 sleep ⇒ 降级链的第一跳是 lie（切片 4 起，不再是 stand）
+  assert.equal(postureOf('sleeping', posesWithout('sleep')), 'lie', '摘掉 sleep 批次必须退到 lie');
   // 切片 2 起 sit/walk/run/jump 已登记：真数据下它们必须返回**自己**（不是 stand）
   for (const posture of POSTURE_IDS) {
     if (posture === 'stand') continue;
@@ -397,12 +425,16 @@ test('六批全部 accepted 时每个姿态态都返回自己；摘掉任一批�
       expected,
       `${posture}（状态 ${state}）在真清单下应派生为 ${expected}（accepted 决定可播性）`,
     );
-    // 摘掉批次 ⇒ 必须降级 stand（真清单六批都在，所以每一批都能被这条守住）
+    // 摘掉批次 ⇒ 必须按 `POSTURE_FALLBACK_CHAINS` 退化（真清单六批都在，所以每一批都能被这条守住）。
+    // 期望值写在这里是**故意的第二份表达**：本表与实现里的链互为交叉校验，
+    // 谁把 sleep 的降级改成 stand、或把 lie 的降级删掉，这里都会红。
+    const expectedAfterRemoval = DEGRADED_EXPECTATION[posture];
     if (PET_POSES.batches[posture]) {
       assert.equal(
         postureOf(state, posesWithout(posture as PosePostureId)),
-        'stand',
-        `${posture} 摘掉批次后必须降级为 stand（否则"资产丢了"会表现成空白窗口）`,
+        expectedAfterRemoval,
+        `${posture} 摘掉批次后必须降级为 ${expectedAfterRemoval}` +
+          `（否则"资产丢了"会表现成空白窗口或错误的形态）`,
       );
     } else {
       assert.fail(`真清单里缺 ${posture} 批次：切片 3 之后六批必须都在`);
@@ -427,11 +459,12 @@ test('postureOf 对全部状态都有定义，且只有姿态态才返回非 sta
     'jump',
   ];
   // 切片 3 起六批全部 accepted ⇒ 六个姿态态都返回自己
+  // 切片 4（线A任务 1）起 `sleepy` 也参与派生：它是**趴着**（lie），不再是 stand
   const expected: Record<PetBehaviorState, PostureId> = {
     idle: 'stand',
     tap: 'stand',
     angry: 'stand',
-    sleepy: 'stand',
+    sleepy: 'lie',
     sleeping: 'sleep',
     wake: 'stand',
     drag: 'stand',
@@ -456,6 +489,102 @@ test('postureOf 对全部状态都有定义，且只有姿态态才返回非 sta
       assert.equal(PET_POSES.accepted.includes(state as PostureId), true, `${state} 未 accepted，本表却写 ${derived}`);
     }
   }
+});
+
+test('真实用户时间轴 20s→sit / 60s→lie / 90s→sleep：三个时间点都用假时钟逐点派生', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+
+  // t = 0：站着（刚构造，`lastInteractionAt` = 0）
+  assert.equal(sm.state, 'idle');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', '0ms 必须站着');
+
+  // t = 19999ms：还是站着（边界前一毫秒，防止把 >= 写成 >）
+  clock.advance(SIT_AFTER_IDLE_MS - 1);
+  sm.tick();
+  assert.equal(sm.state, 'idle', '19999ms 还不该坐');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', '19999ms 仍是站姿');
+
+  // t = 20000ms：坐下
+  clock.advance(1);
+  sm.tick();
+  assert.equal(sm.state, 'sit', '20000ms 必须坐下');
+  assert.equal(postureOf(sm.state, PET_POSES), 'sit', '20s 派生 sit');
+
+  // t = 59999ms：仍坐着（困倦还没到）
+  clock.advance(SLEEPY_AFTER_IDLE_MS - SIT_AFTER_IDLE_MS - 1);
+  sm.tick();
+  assert.equal(sm.state, 'sit', '59999ms 仍坐着（20s 那档不许把 60s 吃掉）');
+  assert.equal(postureOf(sm.state, PET_POSES), 'sit', '59999ms 仍是 sit');
+
+  // t = 60000ms：困倦 ⇒ 趴下
+  clock.advance(1);
+  sm.tick();
+  assert.equal(sm.state, 'sleepy', '60000ms 必须进困倦');
+  assert.equal(postureOf(sm.state, PET_POSES), 'lie', '60s 犯困 ⇒ 派生 lie（本切片的用户可见新增）');
+
+  // t = 89999ms：仍趴着（真睡还差 1ms）
+  clock.advance(SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS - 1);
+  sm.tick();
+  assert.equal(sm.state, 'sleepy', '89999ms 仍困倦（不许提前睡）');
+  assert.equal(postureOf(sm.state, PET_POSES), 'lie', '89999ms 仍趴在 lie');
+
+  // t = 90000ms：真睡
+  clock.advance(1);
+  sm.tick();
+  assert.equal(sm.state, 'sleeping', '90000ms 必须睡着');
+  assert.equal(postureOf(sm.state, PET_POSES), 'sleep', '90s 派生 sleep');
+});
+
+test('夜间交互链：困倦/睡着期间点击必须打断姿态回 stand（走既有 tap 路径，不重造）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+
+  // ① 困倦：点击 ⇒ 派生回 stand（`postureOf('tap')` = stand，姿态链不参与）
+  clock.advance(SLEEPY_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.state, 'sleepy');
+  assert.equal(postureOf(sm.state, PET_POSES), 'lie');
+  sm.handle('tap');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', '困倦期间点击必须立刻回站姿');
+
+  // ② 再闲到 90s ⇒ 真睡（两拍：第一拍落桥接 idle，第二拍入睡）
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  sm.tick();
+  sm.tick();
+  assert.equal(sm.state, 'sleeping', '前置：再闲 90s 必须睡着');
+  assert.equal(postureOf(sm.state, PET_POSES), 'sleep');
+
+  // ③ 睡眠中点击 ⇒ 惊醒（wake 是动作态，姿态派生 stand），且持续动作必须解除
+  sm.handle('tap');
+  assert.notEqual(sm.state, 'sleeping', '睡眠中点击必须惊醒（不许还睡着）');
+  assert.equal(postureOf(sm.state, PET_POSES), 'stand', '惊醒后必须回站姿');
+  assert.equal(sm.sustainedMotion, null, '惊醒必须解除持续动作（否则睡眠动作会挡住醒来的动画）');
+});
+
+test('姿态降级链：sleep 缺 ⇒ lie，lie 缺 ⇒ sit，都缺 ⇒ stand（合成清单，不靠真数据的巧合）', () => {
+  // ① 真清单：三级都在 ⇒ 各派生自己
+  assert.equal(postureOf('sleeping', PET_POSES), 'sleep');
+  assert.equal(postureOf('sleepy', PET_POSES), 'lie');
+
+  // ② 摘掉 sleep：睡着退到 lie（用户读到"没睡沉"），困倦仍 lie
+  const noSleep = posesWithout('sleep');
+  assert.equal(postureOf('sleeping', noSleep), 'lie', 'sleep 不可播 ⇒ 降级 lie');
+  assert.equal(postureOf('sleepy', noSleep), 'lie', '困倦本来就在 lie，摘掉 sleep 不影响它');
+
+  // ③ 再摘掉 lie：睡着退到 sit，困倦也退到 sit
+  const noSleepNoLie = posesWithout('lie', noSleep);
+  assert.equal(postureOf('sleeping', noSleepNoLie), 'sit', 'sleep + lie 都不可播 ⇒ 降级 sit');
+  assert.equal(postureOf('sleepy', noSleepNoLie), 'sit', 'lie 不可播 ⇒ 困倦降级 sit');
+
+  // ④ 三级全摘：只剩 stand 兜底（绝不空白窗口）
+  const onlySit = posesWithout('sit', noSleepNoLie);
+  assert.equal(postureOf('sleeping', onlySit), 'stand', 'sleep/lie/sit 全不可播 ⇒ stand 兜底');
+  assert.equal(postureOf('sleepy', onlySit), 'stand', 'lie/sit 全不可播 ⇒ stand 兜底');
+
+  // ⑤ 降级链是**方向性**的：链里没有 walk/run/jump 这类位移姿态
+  //    （否则"趴着"会退成"走着"，那是错的方向，不是更弱的一级形态）
+  assert.equal(postureOf('sleepy', posesWithout('lie', posesWithout('sit', PET_POSES))), 'stand');
 });
 
 test('postureOf 的朝向语义：只有朝向敏感批次才按朝向过滤，单朝向静态批忽略 facing', () => {

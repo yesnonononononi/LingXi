@@ -1120,16 +1120,56 @@ function hasPlayablePose(assets: PetPoses, posture: PosePostureId, facing?: Faci
 }
 
 /**
+ * **姿态降级链**（`postureOf` 的唯一数据源，本切片新增）。
+ *
+ * <p>为什么把降级写成数据表、而不是在 `switch` 里各写一行三元表达式：
+ * 趴与睡是同一件事的两级强度（趴着闭眼 = 睡，趴着 = 困倦，坐着 = 早期），
+ * 写成表之后"某个资产缺失退到哪一级"只有一处答案，两个状态不可能各退各的。</p>
+ *
+ * <p>口径（逐条可查，`petPoseStateMachine.test.ts` 有对应单测）：</p>
+ * <ul>
+ *   <li>`sleeping`：`sleep → lie → sit` ⇒ 睡姿缺失时退**趴**（用户读到"没睡沉"），
+ *       再缺退**坐**，最后才是 `stand`（兜底，绝不空白窗口）；</li>
+ *   <li>`sleepy`：`lie → sit`（困倦本来就是趴着）；</li>
+ *   <li>`lie`：`lie → sit`（调试后门 / 直达状态下的 `lie` 同样按此降级）；</li>
+ *   <li>`sit`：只有 `sit`（切片 1 的既有语义，**不改**——坐着没有更弱的"半坐"）；</li>
+ *   <li>`walk`/`run`/`jump`：只有自己（朝向敏感的位移姿态没有降级目标，
+ *       缺向就是不可播，由 `isPlayable` 的 facing 过滤挡住）。</li>
+ * </ul>
+ *
+ * <p>表里没列的状态（`idle`/`tap`/`angry`/`wake`/`drag`/`pet` 等动作态）一律 `stand`：
+ * 姿态只由"身体形态"决定，动作不影响形态。</p>
+ */
+export const POSTURE_FALLBACK_CHAINS: Readonly<
+  Partial<Record<PetBehaviorState, readonly PosePostureId[]>>
+> = Object.freeze({
+  sleeping: Object.freeze(['sleep', 'lie', 'sit'] as const),
+  sleepy: Object.freeze(['lie', 'sit'] as const),
+  sit: Object.freeze(['sit'] as const),
+  lie: Object.freeze(['lie', 'sit'] as const),
+  walk: Object.freeze(['walk'] as const),
+  run: Object.freeze(['run'] as const),
+  jump: Object.freeze(['jump'] as const),
+});
+
+/**
  * 由行为状态派生**姿态**（唯一派生点，M2）。
  *
  * <p><b>姿态不是状态</b>（§A1.5.3）：动作（tap/happy/angry…）与姿态正交——动作决定
  * "身体怎么抖"，姿态决定"身体是什么形态"。所以姿态只在这里派生，任何地方都不许写
  * `posture` 字段，也不许把它塞进 `MotionId` 枚举。</p>
  *
- * <p><b>没有资产就优雅降级为 `stand`</b>：切片 3 起六批（`sit`/`walk`/`run`/`jump`/`lie`/`sleep`）
+ * <p><b>没有资产就优雅降级</b>：切片 3 起六批（`sit`/`walk`/`run`/`jump`/`lie`/`sleep`）
  * 全部登记可播，所以上表六个状态都会返回自己；但降级路径**必须继续存在**——
- * 它是"资产未交付/被摘出 accepted"时唯一的兜底，表现成站姿而不是空白窗口。
+ * 它是"资产未交付/被摘出 accepted"时唯一的兜底，最坏也要表现成站姿而不是空白窗口。
  * （`petPoseStateMachine.test.ts` 用合成清单摘掉某一批继续守这条路径，不靠真清单的时机。）</p>
+ *
+ * <p><b>趴睡两档共用一条<b>姿态降级链</b></b>（本切片的新口径）：
+ * `sleep` → `lie` → `sit` → `stand`。理由不是"凑数"，而是三者是同一件事的三级强度：
+ * 睡着（趴着闭眼）→ 趴着（困倦）→ 坐着。任何一级资产缺失时退到下一级，
+ * 用户的观感是"它没睡那么沉"，而不是"猫突然站直了"。
+ * 顺序由 {@link POSTURE_FALLBACK_CHAIN} 声明，**不许在 case 里各写一套**——
+ * 那样 `sleepy` 与 `sleeping` 的降级方向迟早会不一致（一个退 `sit`、一个退 `stand`）。</p>
  *
  * <p><b>朝向只在朝向敏感批次上生效</b>：单朝向静态批（`sit`/`lie`/`sleep`）忽略 `facing`，
  * 否则"光标在右侧 ⇒ 永远不坐/不趴"（设计 §4.3 的裁决Ⅰ，判据见 {@link isFacingSensitive}）。</p>
@@ -1158,20 +1198,13 @@ export function postureOf(state: PetBehaviorState, assets: PetPoses, facing?: Fa
    */
   const playable = (posture: PosePostureId): boolean =>
     hasPlayablePose(assets, posture, isFacingSensitive(assets, posture) ? facing : undefined);
-  switch (state) {
-    case 'sleeping':
-      return playable('sleep') ? 'sleep' : 'stand';
-    case 'sit':
-      return playable('sit') ? 'sit' : 'stand';
-    case 'lie':
-      return playable('lie') ? 'lie' : 'stand';
-    case 'walk':
-      return playable('walk') ? 'walk' : 'stand';
-    case 'run':
-      return playable('run') ? 'run' : 'stand';
-    case 'jump':
-      return playable('jump') ? 'jump' : 'stand';
-    default:
-      return 'stand';
+
+  // 降级链是**数据**不是控制流：一条链按顺序取第一个可播的姿态，全不可播 ⇒ stand。
+  // 这样 `sleepy` 与 `sleeping` 共用同一套方向（趴→坐→站），不会各退各的。
+  const chain = POSTURE_FALLBACK_CHAINS[state];
+  if (chain === undefined) return 'stand';
+  for (const posture of chain) {
+    if (playable(posture)) return posture;
   }
+  return 'stand';
 }
