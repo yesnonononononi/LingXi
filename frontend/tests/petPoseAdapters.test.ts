@@ -77,10 +77,10 @@ function readSourceManifest(posture: string): Record<string, any> {
   return JSON.parse(readFileSync(resolve(POSE_SOURCE_ROOT, posture, 'manifest.json'), 'utf8')) as Record<string, any>;
 }
 
-test('accepted 是显式登记：切片 2 起 sit/walk/run/jump 可播，adapter 归属逐批写死（改一处必须改本测试）', () => {
+test('accepted 是显式登记：切片 3 起六批全部可播，adapter 归属逐批写死（改一处必须改本测试）', () => {
   assert.deepEqual(
     [...ACCEPTED_BATCHES],
-    ['sit', 'walk', 'run', 'jump'],
+    ['sit', 'walk', 'run', 'jump', 'lie', 'sleep'],
     'ACCEPTED_BATCHES 变了：这是"工程接受"的唯一开关，必须同步改测试',
   );
   const mapping = Object.fromEntries(
@@ -107,9 +107,10 @@ test('accepted 是显式登记：切片 2 起 sit/walk/run/jump 可播，adapter
   assert.deepEqual(result.missing, [], `有批次资产缺失：${result.missing.join(', ')}`);
   assert.deepEqual(
     Object.keys(result.drafts).sort(),
-    ['jump', 'run', 'sit', 'walk'],
-    '草稿里应当只有 accepted 的四批（lie/sleep 仍 deferred）',
+    ['jump', 'lie', 'run', 'sit', 'sleep', 'walk'],
+    '草稿里应当有全部六批（切片 3 起 lie/sleep 也 accepted）；少一批说明 accepted 与真资产脱节',
   );
+  assert.deepEqual(result.deferred ?? [], [], '六批全部 accepted ⇒ 不许再有任何 deferred 批次');
   // 幽灵守卫：已 accepted 的批次不许还留着 deferred 理由（"已可播却仍说未导出"）
   for (const posture of ACCEPTED_BATCHES) {
     assert.equal(
@@ -339,6 +340,80 @@ test('G-14：jump 的腾空相位（anticipate/land 贴地，其余腾空，apex
       `jump/${frameId} 的腾空高度与 adapter 草稿不一致（导出管线把值改坏了）`,
     );
   }
+});
+
+test('P-04 / P-05（切片 3）：lie 只产出 `enter`(4 帧，末帧 = neutral) + `exit`(3 帧)，**没有 hold**；7 个帧位只有 3 个 distinct contentId', () => {
+  const all = adaptAll({ repoRoot: REPO_ROOT, accepted: [...BATCH_SPECS.map((spec: any) => spec.posture)] }).drafts;
+  const lie = all.lie;
+  assert.ok(lie, 'lie 草稿缺失');
+
+  // ① 片段形态：enter + exit，没有 hold（方案 B 构建期合并，设计 §4.2(1)）
+  const clipIds = lie.clips.map((clip: any) => clip.id).sort();
+  assert.deepEqual(clipIds, ['enter', 'exit'], `lie 只该有 enter + exit，实际 ${clipIds.join(',')}`);
+  assert.equal(
+    lie.clips.some((clip: any) => clip.id === 'hold'),
+    false,
+    'lie 不许再产出 hold：候选序里 hold 在 enter 之前，enter 会被永久遮住（G-P11）',
+  );
+  const enter = lie.clips.find((clip: any) => clip.id === 'enter');
+  assert.ok(enter, 'lie 必须有 enter 片段');
+  assert.equal(enter.frames.length, 4, `enter 必须是 down(3) + neutral(1) = 4 帧，实际 ${enter.frames.length}`);
+  assert.equal(enter.frames[3], 'lie_neutral', 'enter 的末帧必须是"趴着不动"那张（动画与静止是同一片段的结尾）');
+  assert.deepEqual(enter.frameMs, [120, 120, 120, 120], 'enter 的 frameMs 必须全 120 且全 > 0');
+  assert.equal(enter.loop, false);
+  assert.equal(enter.onEnd, 'hold-last', 'enter 播完必须停在末帧（不是回到别的片段）');
+  const exit = lie.clips.find((clip: any) => clip.id === 'exit');
+  assert.ok(exit, 'lie 必须有 exit 片段');
+  assert.equal(exit.frames.length, 3, `exit 必须是 up 的 3 帧，实际 ${exit.frames.length}`);
+  assert.deepEqual(exit.frameMs, [120, 120, 120]);
+  assert.equal(exit.onEnd, 'return-stand', 'exit 播完必须回站姿（pendingStand 的收尾靠它）');
+
+  // ② 帧位与像素：7 个帧位、3 个不同源文件（aliases 必须真的生效）
+  assert.equal(Object.keys(lie.frames).length, 7, 'lie 必须还是 7 个帧位（合并片段不许删帧）');
+  const distinctSources = new Set(Object.values(lie.frames).map((frame: any) => frame.sourceFile));
+  assert.equal(distinctSources.size, 3, `lie 的 7 个帧位只对应 3 张不同像素，实际 ${distinctSources.size}`);
+
+  // ③ 运行清单侧的 contentId：7 个帧位落到 3 个 distinct contentId（P-04 的运行时口径）
+  const runtimeLie = POSES_MANIFEST.batches.lie;
+  assert.ok(runtimeLie, '运行清单里必须有 lie（切片 3 起 accepted）');
+  assert.equal(Object.keys(runtimeLie.frames).length, 7);
+  const contentIds = new Set(
+    Object.values(runtimeLie.frames).map((frame: any) => frame.files['1x'].contentId as string),
+  );
+  assert.equal(contentIds.size, 3, `lie 的 distinctContentId 必须是 3（去重口径），实际 ${contentIds.size}`);
+  const runtimeClipIds = (runtimeLie.clips as any[]).map((clip) => clip.id).sort();
+  assert.deepEqual(runtimeClipIds, ['enter', 'exit'], '运行清单里 lie 也只能有 enter + exit');
+
+  // ④ 守卫：帧引用不许悬空（enter 与 exit 加起来正好覆盖 7 个帧位，一个不多一个不少）
+  const referenced = new Set<string>([
+    ...(runtimeLie.clips as any[]).flatMap((clip) => clip.frames as string[]),
+  ]);
+  assert.deepEqual(
+    [...referenced].sort(),
+    Object.keys(runtimeLie.frames).sort(),
+    'lie 的片段引用集合必须与帧集合完全相同（多 = 悬空引用，少 = 孤儿帧）',
+  );
+});
+
+test('P-07（切片 3）：sleep 是单条 cycle、loop:true、5 帧 × 1800ms、没有 onEnd', () => {
+  const runtimeSleep = POSES_MANIFEST.batches.sleep;
+  assert.ok(runtimeSleep, '运行清单里必须有 sleep（切片 3 起 accepted）');
+  const clips = runtimeSleep.clips as any[];
+  assert.equal(clips.length, 1, `sleep 只该有一条片段，实际 ${clips.length}`);
+  const clip = clips[0];
+  assert.equal(clip.id, 'cycle', 'sleep 的片段 id 必须是 cycle（pickClip 第一轮就命中）');
+  assert.equal(clip.loop, true, 'sleep 必须循环');
+  assert.equal(clip.onEnd, undefined, '循环片段的 onEnd 必须缺省（写了也不会被调用，是假配置）');
+  assert.equal(clip.frames.length, 5, `sleep 必须 5 帧，实际 ${clip.frames.length}`);
+  assert.deepEqual(clip.frameMs, [1800, 1800, 1800, 1800, 1800], 'sleep 每帧 1800ms');
+  assert.equal(
+    clip.frameMs.reduce((sum: number, ms: number) => sum + ms, 0),
+    9000,
+    'sleep 一个循环必须正好 9 秒（5 × 1800）',
+  );
+  // 单朝向静态批：只有一条 facing:-1
+  assert.equal(clip.facing, -1);
+  assert.equal(new Set(clips.map((item) => item.facing)).size, 1, 'sleep 是单朝向批');
 });
 
 test('G-15：体积预算与 aliases 去重（lie 7 个帧位只有 3 张不同像素）', () => {

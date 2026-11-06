@@ -168,9 +168,10 @@ test('G-11 accepted 名字与批次键不一致（幻影姿态 / 键名拼错）
   const { checkAcceptedAnchorSource } = await gate();
   const raw = rawPoses();
 
-  // (a) accepted 里多了一个没有批次的姿态
+  // (a) accepted 里登记了一个没有批次的姿态（切片 3 起 lie 有批次了，所以把批次整个删掉来造这个形态）
   const phantom = JSON.parse(JSON.stringify(raw));
-  phantom.accepted = [...phantom.accepted, 'lie'];
+  delete phantom.batches.lie;
+  assert.ok(phantom.accepted.includes('lie'), '前置：lie 仍在 accepted 里（有登记、没资产）');
   assert.deepEqual(checkAcceptedAnchorSource(phantom), [], 'G-P7 对"accepted 有、batches 没有"直接跳过（静默）');
 
   // (b) 批次键拼错（walk → walk2，但 posture 字段仍是 walk）

@@ -874,6 +874,86 @@ export function isPlayable(poses: PetPoses, posture: PostureId, facing?: Facing)
 }
 
 /**
+ * 取一个批次里出现过的**朝向集合**（升序，来自 `clips[].facing`）。
+ *
+ * <p>这是"朝向敏感度"的唯一数据源：不写姿态名字表，新批次自动归位。</p>
+ *
+ * @param batch 批次
+ * @returns 朝向集合（空批次返回空数组）
+ */
+export function clipFacingsOf(batch: PoseBatch): readonly Facing[] {
+  const facings = new Set<Facing>();
+  for (const clip of batch.clips) facings.add(clip.facing);
+  return [...facings].sort((a, b) => a - b);
+}
+
+/**
+ * 该批次是否**按朝向分流**（= 批内出现过的 `facing` 集合大小 > 1）。
+ *
+ * <p><b>判据从数据算，不写名字表</b>（设计 §4.3 裁决）。写成 `['walk','run','jump']` 会立刻腐化：
+ * 将来美术交一批"左右各一条"的新姿态，名字表没改 ⇒ 它被当成单朝向批 ⇒ `postureOf` 不再透传
+ * `facing` ⇒ 那一侧缺片段也判"可播" ⇒ 播到反朝向的片段上（角色突然翻转）。</p>
+ *
+ * @param batch 批次
+ * @returns 是否需要按朝向精确匹配
+ */
+export function isBatchFacingSensitive(batch: PoseBatch): boolean {
+  return clipFacingsOf(batch).length > 1;
+}
+
+/**
+ * 取某批次的**唯一**朝向（仅当整批单朝向时有意义）。
+ *
+ * @param batch 批次
+ * @returns 唯一朝向；批内出现多个朝向（或没有片段）时 `null`
+ */
+export function soleFacingOfBatch(batch: PoseBatch): Facing | null {
+  const facings = clipFacingsOf(batch);
+  return facings.length === 1 ? (facings[0] ?? null) : null;
+}
+
+/**
+ * 该姿态的片段是否**按朝向分流**（= 批次内出现过的 `facing` 集合大小 > 1）。
+ *
+ * <p><b>语义分工（两层纵深防御，不是一处 bug 的两种写法）：</b></p>
+ * <ul>
+ *   <li>{@link isPlayable} 判"这个姿态**在这一朝向下**能不能播"（给 `facing` 时按朝向过滤）；</li>
+ *   <li>本函数判"这个姿态**该不该**按朝向过滤"——单朝向静态批（`sit`/`lie`/`sleep`，全仓只有
+ *       `facing:-1` 一条片段）忽略 `facing` 参数，否则"光标在右侧就永远不坐、也不趴"。</li>
+ * </ul>
+ *
+ * <p><b>单朝向批的 `facing` 语义是"忽略"，不是"镜像"</b>：缺右向就用左向原样播，
+ * 任何 `scaleX(-1)` 式镜像渲染都在 G-P12 判红（设计 §4.3 方案 Ⅲ）。</p>
+ *
+ * @param poses 清单
+ * @param posture 姿态 id
+ * @returns 是否需要按朝向精确匹配；`stand` 或批次不存在时为 `false`（没有片段可分流）
+ */
+export function isFacingSensitive(poses: PetPoses, posture: PostureId): boolean {
+  if (posture === 'stand') return false;
+  const batch = batchOf(poses, posture);
+  if (batch === null) return false;
+  return isBatchFacingSensitive(batch);
+}
+
+/**
+ * 取某姿态的**唯一**朝向（仅当整批单朝向时有意义）。
+ *
+ * <p>`pickClip` 的单朝向回退要用它：先按 `(id, facing)` 双键找，找不到且整批只有一条朝向时，
+ * 才允许回退到那条唯一朝向（有可判定的前提，因此不是旧实现那种"取第一条"的静默猜测）。</p>
+ *
+ * @param poses 清单
+ * @param posture 姿态 id
+ * @returns 唯一朝向；批次不存在或批内出现多个朝向时 `null`
+ */
+export function soleFacingOf(poses: PetPoses, posture: PostureId): Facing | null {
+  if (posture === 'stand') return null;
+  const batch = batchOf(poses, posture);
+  if (batch === null) return null;
+  return soleFacingOfBatch(batch);
+}
+
+/**
  * 按 DPR 挑密度档（`>= 1.5` 用 `@2x`，与既有 `plan.density` 口径一致）。
  *
  * <p><b>DPR 只决定挑文件，不参与任何几何换算</b>：窗口尺寸单位是 DIP，CSS px 即 DIP。

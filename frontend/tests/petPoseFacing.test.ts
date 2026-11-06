@@ -18,7 +18,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PET_POSES, isPlayable } from '../src/pet/poses/manifest';
+import { PET_POSES, isFacingSensitive, isPlayable, soleFacingOfBatch } from '../src/pet/poses/manifest';
 import { PoseController, type PoseBlinkLike } from '../src/pet/poses/controller';
 import {
   buildPoseHandle,
@@ -245,14 +245,20 @@ function posesWith(mutate: (draft: PetPoses) => PetPoses): PetPoses {
 test('F01 isPlayable 缺省语义与旧实现逐字节相同（4 个既有调用点的前提）', () => {
   // stand 永远可播（它是回落目标）
   assert.equal(isPlayable(PET_POSES, 'stand'), true);
-  // sit 已 accepted 且帧齐全 ⇒ 可播；lie/sleep 属切片 3 ⇒ 不可播
+  // 切片 3 起六批全部 accepted 且帧齐全 ⇒ 都可播
   assert.equal(isPlayable(PET_POSES, 'sit'), true);
-  assert.equal(isPlayable(PET_POSES, 'lie'), false);
-  assert.equal(isPlayable(PET_POSES, 'sleep'), false);
-  // 切片 2 起三批都进了 accepted ⇒ 缺省判据（"存在某一条可播片段"）为真
+  assert.equal(isPlayable(PET_POSES, 'lie'), true, 'lie 已 accepted（切片 3）');
+  assert.equal(isPlayable(PET_POSES, 'sleep'), true, 'sleep 已 accepted（切片 3）');
+  // 缺省判据（"存在某一条可播片段"）对六批全为真
   for (const posture of POSE_MATRIX_POSTURES) {
     assert.equal(isPlayable(PET_POSES, posture), true, `${posture} 已 accepted，缺省判据必须为真`);
   }
+  // 合成：摘掉 accepted 里的登记 ⇒ 立刻不可播（证明"可播"由 accepted 决定，不是"有资产就算"）
+  const acceptedWithoutLie: PetPoses = {
+    ...PET_POSES,
+    accepted: PET_POSES.accepted.filter((item) => item !== 'lie'),
+  };
+  assert.equal(isPlayable(acceptedWithoutLie, 'lie'), false, 'accepted 摘掉后即使有资产也必须不可播');
   // 不给 facing 时**不按朝向过滤**：把 walk 的右向片段摘掉，缺省判据仍为真
   const leftOnly = posesWith((draft) => {
     const walk = draft.batches.walk;
@@ -361,25 +367,64 @@ test('F07 setFacing：正在播姿态时用新朝向重播，且从第 0 帧开�
   assert.equal(controller.currentFrameId, 'r2', '重播后按 110ms 正常推进');
 });
 
-test('F08 setFacing：新朝向没有片段 ⇒ 降级站姿，绝不回落到另一朝向', () => {
-  // 合成：walk 只留左向片段
-  const leftOnly = posesWith((draft) => {
-    const walk = draft.batches.walk;
-    assert.ok(walk, '真清单里必须有 walk');
+test('F08 setFacing：多朝向批缺该朝向的主片段 ⇒ 降级站姿；单朝向批 ⇒ 原样播那条（不镜像、不冒充）', () => {
+  // (a) 多朝向批（批内出现 2 个朝向）缺右向的**主选择器候选**片段 ⇒ 必须降级，
+  //     绝不回落到左向那条。造法是给右向留一条 `exit`（不在 pickClip 候选序里），
+  //     这样批次仍然有 2 个朝向，回退规则的"整批单朝向"前提不成立。
+  const walk = PET_POSES.batches.walk;
+  assert.ok(walk, '真清单里必须有 walk');
+  const leftCycleRightExit = posesWith((draft) => {
+    const batch = draft.batches.walk;
+    assert.ok(batch, '真清单里必须有 walk');
+    const leftCycle = batch.clips.filter((clip) => clip.facing === -1 && clip.id === 'cycle');
+    assert.ok(leftCycle.length > 0, 'walk 必须有左向 cycle');
+    const rightExit = {
+      id: 'exit',
+      facing: 1 as const,
+      frames: leftCycle[0].frames,
+      loop: false,
+      frameMs: leftCycle[0].frameMs,
+      onEnd: 'return-stand' as const,
+    };
     return {
       ...draft,
-      batches: { ...draft.batches, walk: { ...walk, clips: walk.clips.filter((clip) => clip.facing !== 1) } },
+      batches: { ...draft.batches, walk: { ...batch, clips: [...leftCycle, rightExit] } },
     };
   });
-  const { controller, root } = makeController({ facing: -1, poses: leftOnly });
-  controller.setPosture('walk');
-  assert.equal(controller.posture, 'walk');
+  const multi = makeController({ facing: -1, poses: leftCycleRightExit });
+  multi.controller.setPosture('walk');
+  assert.equal(multi.controller.posture, 'walk');
+  multi.controller.setFacing(1);
+  assert.equal(multi.controller.posture, 'stand', '多朝向批缺右向主片段必须降级站姿');
+  assert.equal(multi.root.getAttribute('data-posture'), 'stand', '`data-posture` 必须同步回 stand');
+  assert.equal(multi.controller.clipFacing, null, '不许留着左向片段继续播（那就是"回落"）');
+  assert.equal(multi.controller.isPlaying, false);
 
-  controller.setFacing(1);
-  assert.equal(controller.posture, 'stand', '右向缺片段必须降级站姿');
-  assert.equal(root.getAttribute('data-posture'), 'stand', '`data-posture` 必须同步回 stand');
-  assert.equal(controller.clipFacing, null, '不许留着左向片段继续播（那就是"回落"）');
-  assert.equal(controller.isPlaying, false);
+  // (b) 单朝向批（整批只有 `facing:-1`）：请求右向时**用那条原样播**，而不是降级、更不是镜像。
+  //     这就是切片 3 的 `pickClip` 单朝向回退（设计 §4.3 落地项 2）：
+  //     前提 `batchFacings.size === 1` 可判定，所以它不是旧的"取第一条"静默猜测。
+  const leftOnlyWalk = posesWith((draft) => {
+    const batch = draft.batches.walk;
+    assert.ok(batch, '真清单里必须有 walk');
+    return {
+      ...draft,
+      batches: { ...draft.batches, walk: { ...batch, clips: batch.clips.filter((clip) => clip.facing !== 1) } },
+    };
+  });
+  const single = makeController({ facing: -1, poses: leftOnlyWalk });
+  single.controller.setPosture('walk');
+  single.controller.setFacing(1);
+  assert.equal(single.controller.facing, 1, '朝向本身必须真的改了（渲染层不做镜像）');
+  assert.equal(single.controller.posture, 'walk', '单朝向批忽略朝向，继续播');
+  assert.equal(single.controller.clipFacing, -1, '播的就是那条唯一片段（内容仍是左向画稿，绝不镜像）');
+
+  // (c) 单朝向静态批（sit）：本来就只有左向一条，任何朝向都必须能坐
+  for (const facing of [-1, 1] as const) {
+    const sit = makeController({ facing });
+    sit.controller.setPosture('sit');
+    assert.equal(sit.controller.posture, 'sit', `sit 在朝向 ${facing} 下必须能坐（单朝向批忽略 facing）`);
+    assert.equal(sit.controller.clipFacing, -1);
+  }
 });
 
 test('F09 setFacing：站姿下只记朝向、不播；非法值抛 TypeError', () => {
@@ -397,6 +442,97 @@ test('F09 setFacing：站姿下只记朝向、不播；非法值抛 TypeError', 
     );
   }
   assert.equal(controller.facing, 1, '非法值不许改掉朝向');
+});
+
+test('P-08 isFacingSensitive：判据从 clips 的朝向集合算，不写姿态名字表', () => {
+  // 真数据：三个静态批单朝向、三个动作批左右各一条
+  assert.equal(isFacingSensitive(PET_POSES, 'sit'), false, 'sit 只有一条 hold@-1');
+  assert.equal(isFacingSensitive(PET_POSES, 'lie'), false, 'lie 只有 enter@-1 + exit@-1（同朝向）');
+  assert.equal(isFacingSensitive(PET_POSES, 'sleep'), false, 'sleep 只有一条 cycle@-1');
+  assert.equal(isFacingSensitive(PET_POSES, 'walk'), true, 'walk 左右各一条 cycle');
+  assert.equal(isFacingSensitive(PET_POSES, 'run'), true, 'run 左右各一条 cycle');
+  assert.equal(isFacingSensitive(PET_POSES, 'jump'), true, 'jump 左右各一条 once');
+  assert.equal(isFacingSensitive(PET_POSES, 'stand'), false, '站姿没有批次，也就不存在"朝向敏感"');
+  // 批次不存在：不是敏感（存在性由 isPlayable 管，两件事不许混在一起）
+  const withoutSleep: PetPoses = {
+    ...PET_POSES,
+    accepted: PET_POSES.accepted.filter((item) => item !== 'sleep'),
+  };
+  assert.equal(isFacingSensitive(withoutSleep, 'sleep'), false);
+
+  // 反名字表：给 lie 补一条右向片段 ⇒ 它**立刻**变成朝向敏感（判据跟着数据走）
+  const lie = PET_POSES.batches.lie;
+  assert.ok(lie, '真清单里必须有 lie');
+  const twoFacingLie: PetPoses = {
+    ...PET_POSES,
+    batches: {
+      ...PET_POSES.batches,
+      lie: {
+        ...lie,
+        clips: [
+          ...lie.clips,
+          { id: 'enter', facing: 1 as const, frames: ['lie_neutral'], loop: false, frameMs: [120], onEnd: 'hold-last' as const },
+        ],
+      },
+    },
+  };
+  assert.equal(isFacingSensitive(twoFacingLie, 'lie'), true, 'lie 一旦有左右两条就必须变敏感');
+  // 同理反向：把 walk 的右向片段摘掉 ⇒ 它变成单朝向批（这是"整批单朝向"的可判定前提）
+  const walk = PET_POSES.batches.walk;
+  assert.ok(walk, '真清单里必须有 walk');
+  const leftOnlyWalk = {
+    ...walk,
+    clips: walk.clips.filter((clip) => clip.facing !== 1),
+  };
+  assert.equal(soleFacingOfBatch(walk), null, 'walk 有两条朝向 ⇒ 没有"唯一朝向"');
+  assert.equal(soleFacingOfBatch(leftOnlyWalk), -1, '只剩左向 ⇒ 唯一朝向是 -1（pickClip 回退的前提）');
+  assert.equal(soleFacingOfBatch(PET_POSES.batches.sit!), -1, 'sit 的唯一朝向是 -1');
+});
+
+test('P-10 / P-11 setFacing：单朝向批不许把坐着的猫赶起来，多朝向批缺向必须降级', () => {
+  // P-10：正在播 sit 时改朝向 —— 单朝向批忽略朝向，**不许** leavePose（用户只是移动了鼠标）
+  const sit = makeController({ facing: -1 });
+  sit.controller.setPosture('sit');
+  assert.equal(sit.controller.posture, 'sit');
+  sit.controller.setFacing(1);
+  assert.equal(sit.controller.posture, 'sit', 'setFacing 不许把正在坐的猫赶起来');
+  assert.equal(sit.controller.clipFacing, -1, '播的还是那条唯一片段（原样播，不镜像）');
+  assert.equal(sit.root.getAttribute('data-posture'), 'sit', 'data-posture 必须仍是 sit');
+
+  // 同理 lie（要求"趴着不动"也不被朝向变化打断；重播与否见 T04 的用例）
+  const lie = makeController({ facing: -1 });
+  lie.controller.setPosture('lie');
+  assert.equal(lie.controller.posture, 'lie');
+  lie.controller.setFacing(1);
+  assert.equal(lie.controller.posture, 'lie', 'setFacing 不许把趴着的猫赶起来');
+
+  // P-11：多朝向批缺该朝向的主片段 ⇒ 降级 stand（绝不回落到另一朝向）
+  const walk = PET_POSES.batches.walk;
+  assert.ok(walk, '真清单里必须有 walk');
+  const leftCycleRightExit = posesWith((draft) => {
+    const batch = draft.batches.walk;
+    assert.ok(batch, '真清单里必须有 walk');
+    const leftCycle = batch.clips.filter((clip) => clip.facing === -1 && clip.id === 'cycle');
+    assert.ok(leftCycle.length > 0, 'walk 必须有左向 cycle');
+    return {
+      ...draft,
+      batches: {
+        ...draft.batches,
+        walk: {
+          ...batch,
+          clips: [
+            ...leftCycle,
+            { id: 'exit', facing: 1 as const, frames: leftCycle[0].frames, loop: false, frameMs: leftCycle[0].frameMs, onEnd: 'return-stand' as const },
+          ],
+        },
+      },
+    };
+  });
+  const multi = makeController({ facing: -1, poses: leftCycleRightExit });
+  multi.controller.setPosture('walk');
+  multi.controller.setFacing(1);
+  assert.equal(multi.controller.posture, 'stand', '多朝向批缺右向主片段必须降级站姿');
+  assert.equal(multi.controller.clipFacing, null, '不许留着左向片段继续播');
 });
 
 test('F10 runPoseMatrix：一条命令验完 6 个组合（真控制器 + 假时钟）', async () => {

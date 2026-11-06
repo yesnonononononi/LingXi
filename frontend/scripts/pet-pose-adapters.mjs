@@ -48,8 +48,13 @@ export const SOURCE_ROOT = 'docs/assets/desktop-pet/poses';
  * （`run` 是 `{1:836, -1:700}`、`jump` 同值），没有任何一条走画布镜像推导——
  * 这是 G-P7 的判据，不是本文件的承诺：`byFacingSource === 'mirror-derived'` 的 accepted 批次
  * 会被门禁直接判红。</p>
+ *
+ * <p><b>切片 3 起的形态：</b>再加 `lie`（单条 `enter` = 趴下过程 + 趴着不动，`hold-last`；
+ * 加单条 `exit` = 起身，`return-stand`）与 `sleep`（单条 `cycle`，5 帧 × 1800 ms）。
+ * 两批都是**单朝向静态批**：`isFacingSensitive()` 从数据算出它们不按朝向分流，
+ * 运行时忽略 `facing` 参数（设计 §4.3 裁决 Ⅰ + Ⅲ）。</p>
  */
-export const ACCEPTED_BATCHES = Object.freeze(['sit', 'walk', 'run', 'jump']);
+export const ACCEPTED_BATCHES = Object.freeze(['sit', 'walk', 'run', 'jump', 'lie', 'sleep']);
 
 /** 每批的 adapter 归属（显式登记，不做启发式猜测；检测结果与它不符即硬失败）。 */
 export const BATCH_SPECS = Object.freeze([
@@ -65,12 +70,15 @@ export const BATCH_SPECS = Object.freeze([
  * 帧时长（毫秒）**由工程侧拥有**：美术 6 批里 0 个时序字段（`duration|frameMs|fps|timing|loop`
  * 全部未命中），任务书 §8 明确"速度/停留时长属配置，交工程侧"。
  *
- * <p>`sit` 与 `lie` 的 `hold` 是**单帧静止姿态**，时长为 0（不推进），
- * 但绝不为"看起来像动画"加假帧（D-03 口径）。</p>
+ * <p>`sit` 是**单帧静止姿态**，时长为 0（不推进），但绝不为"看起来像动画"加假帧（D-03 口径）。</p>
+ *
+ * <p><b>`lie` 从切片 3 起没有 `hold` 项</b>：趴下过程与趴着不动在**构建期合并**成单条 `enter`
+ * （设计 §4.2 方案 B），`hold` 片段不再产出。留着 `hold: 0` 会变成一个"没有任何消费者"的常量
+ * ——门禁里每一条没有真实读者的常量最后都会腐化成谎话，所以它随合并一起删掉。</p>
  */
 export const FRAME_TIMING = Object.freeze({
   sit: Object.freeze({ hold: 0 }),
-  lie: Object.freeze({ enter: 120, hold: 0, exit: 120 }),
+  lie: Object.freeze({ enter: 120, exit: 120 }),
   sleep: Object.freeze({ cycle: 1800 }),
   walk: Object.freeze({ cycle: 110 }),
   run: Object.freeze({ cycle: 90 }),
@@ -83,12 +91,11 @@ export const FRAME_TIMING = Object.freeze({
  * <p><b>纪律：`ACCEPTED_BATCHES` 里有的批次，这里就不许有理由。</b>
  * "已 accepted 却仍写着 deferred 原因"会造出一个幽灵：门禁的提醒行会继续对用户说
  * "walk 未导出"，而它其实每一拍都在播。所以切片 2 翻 accepted 的**同一批**里
- * 删掉了 walk/run/jump 三条（不是"以后清理"）。</p>
+ * 删掉了 walk/run/jump 三条，切片 3 翻 `lie`/`sleep` 的**同一批**里也删掉了它们的理由
+ * ——现在这里必须是**空表**（6 批全部 accepted）。空表不是"暂时没人填"，
+ * 而是"当前没有任何未导出批次"这条事实本身；将来新增批次时按同一纪律先登记理由。</p>
  */
-export const DEFERRED_REASONS = Object.freeze({
-  lie: '切片 3（卧姿语义）：运行资产未导出',
-  sleep: '切片 3（卧姿语义）：运行资产未导出',
-});
+export const DEFERRED_REASONS = Object.freeze({});
 
 /** 姿态态下显式交付的降级（"没做"与"做坏了"必须是两句不同的话）。 */
 export const POSE_DEGRADATIONS = Object.freeze(['no-face-overlay', 'no-blink']);
@@ -472,6 +479,22 @@ function adaptLegacyV1(manifest, batch) {
  * <p>`aliases` 是权威的等价关系（7 个帧位只有 3 张不同像素），必须真的用上：
  * 否则导出量凭空翻一倍（省 57%）。这里把被别名的帧指向目标文件的像素。</p>
  *
+ * <p><b>片段形态（设计 §4.2 方案 B，构建期合并）：</b>产出**两条**片段——</p>
+ * <ul>
+ *   <li>`enter` = `sequences.down` + `sequences.neutral` 首尾相连（`down_01/down_02/down_03/neutral`，
+ *       4 帧 × 120 ms，`loop:false` + `onEnd:'hold-last'`）⇒ 播完停在末帧，而末帧恰好就是
+ *       "趴着不动"的静止画面，所以**动画与静止是同一个片段的结尾**，不存在"播完要接哪条"的问题；</li>
+ *   <li>`exit` = `sequences.up`（3 帧 × 120 ms，`loop:false` + `onEnd:'return-stand'`）⇒ 起身。</li>
+ * </ul>
+ *
+ * <p><b>不再产出 `hold`。</b>`pickClip` 的候选序里 `hold` 在 `enter` 之前，两者并存会让
+ * `enter` 永远被遮住（数据全合法、门禁全绿、用户看不到趴下动画）。所以合并只留 `enter`，
+ * 并用 G-P11 把"同姿态同朝向出现两条主选择器候选片段"判红，防止有人再把它加回来。</p>
+ *
+ * <p>`down_03` 与 `neutral` 是同一份像素（美术用 `aliases` 声明的等价），合并后时间轴上
+ * 出现"连续两帧同内容" = 视觉上停顿 120 ms。这是"用时长表达停留"的正确形态，
+ * 不是跳帧，也不需要把它压成 1 帧（那会丢掉 120 ms 的停留）。</p>
+ *
  * @param {Record<string, unknown>} manifest 美术 manifest
  * @param {string} batch 批次名
  * @returns {Record<string, unknown>} 归一后的批次草稿
@@ -529,31 +552,76 @@ function adaptFilesSequencesV2(manifest, batch) {
     };
   }
   const sequences = requireObject(manifest.sequences, 'sequences', batch);
-  const clipSpecs = [
-    { sequence: 'down', clip: 'enter', onEnd: 'hold-last' },
-    { sequence: 'neutral', clip: 'hold', onEnd: 'hold-last' },
-    { sequence: 'up', clip: 'exit', onEnd: 'return-stand' },
-  ];
-  const clips = [];
-  for (const spec of clipSpecs) {
-    const list = sequences[spec.sequence];
-    if (list === undefined) continue;
-    const names = requireArray(list, `sequences.${spec.sequence}`, batch);
-    const frameIds = names.map((item) => {
-      const id = frameIdOf(requireString(item, `sequences.${spec.sequence}[]`, batch));
+  const timing = FRAME_TIMING[batch];
+  if (!timing) throw new PoseAdapterError(`没有为批次 ${batch} 定义帧时长（FRAME_TIMING 缺项）`, batch);
+  /**
+   * 把 `sequences.<name>` 解析成帧 id 列表（每个 id 必须已存在于 `files` 里）。
+   *
+   * @param {string} name 序列名（`down` / `neutral` / `up`）
+   * @returns {string[]} 帧 id 列表；序列缺失时返回空数组（由调用方决定这算不算错）
+   */
+  const resolveSequence = (name) => {
+    const list = sequences[name];
+    if (list === undefined) return [];
+    const names = requireArray(list, `sequences.${name}`, batch);
+    return names.map((item) => {
+      const id = frameIdOf(requireString(item, `sequences.${name}[]`, batch));
       if (!frames[id]) {
-        throw new PoseAdapterError(`sequences.${spec.sequence} 引用了 files 里没有的帧 ${id}`, batch);
+        throw new PoseAdapterError(`sequences.${name} 引用了 files 里没有的帧 ${id}`, batch);
       }
       return id;
     });
-    const ms = FRAME_TIMING[batch]?.[spec.clip] ?? 120;
+  };
+  /**
+   * 取某片段的帧时长并校验（**必须为正数**：`0` 会让推进逻辑停在原地，表现成"假动画"）。
+   *
+   * @param {string} clipId 片段 id（`enter` / `exit`）
+   * @returns {number} 帧时长（毫秒）
+   */
+  const frameMsOf = (clipId) => {
+    const ms = timing[clipId];
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || !(ms > 0)) {
+      throw new PoseAdapterError(
+        `FRAME_TIMING.${batch}.${clipId} 必须是正的有限数，实际为 ${JSON.stringify(ms)}`,
+        batch,
+      );
+    }
+    return ms;
+  };
+
+  const clips = [];
+  // 方案 B（设计 §4.2(1)）：`down`（趴下过程）与 `neutral`（趴着不动）在**构建期**合并成
+  // 单条 `enter`，帧序 = [down_01, down_02, down_03, neutral]、`hold-last` ⇒ 播完停在末帧
+  // （= 静止趴姿），**不再产出 `hold`**。
+  //
+  // 为什么不产出 hold：`pickClip` 的候选序是 `['hold','cycle','once','enter']`，
+  // 两者并存时 `enter` 会被 `hold` 永久遮住——而门禁一条都不会红（两条片段各自都合法）。
+  // 那是"数据合法但一半永不可达"的设计缺陷，靠 G-P11 守，不靠这里"顺手也产一条 hold"。
+  const enterFrames = [...resolveSequence('down'), ...resolveSequence('neutral')];
+  if (enterFrames.length === 0) {
+    throw new PoseAdapterError('sequences.down 与 sequences.neutral 都是空的：没有"进入姿态"可播', batch);
+  }
+  const enterMs = frameMsOf('enter');
+  clips.push({
+    id: 'enter',
+    facing,
+    frames: enterFrames,
+    loop: false,
+    frameMs: enterFrames.map(() => enterMs),
+    onEnd: 'hold-last',
+  });
+  // 离开姿态（起身）：`up` 序列。缺 `up` 时不产出 `exit`（起身退化成硬切站姿，
+  // 由 `pendingStand` 的既有降级路径承担），但绝不产出空的 `exit`（空片段会被判为假动画）。
+  const exitFrames = resolveSequence('up');
+  if (exitFrames.length > 0) {
+    const exitMs = frameMsOf('exit');
     clips.push({
-      id: spec.clip,
+      id: 'exit',
       facing,
-      frames: frameIds,
+      frames: exitFrames,
       loop: false,
-      frameMs: frameIds.map(() => ms),
-      onEnd: spec.onEnd,
+      frameMs: exitFrames.map(() => exitMs),
+      onEnd: 'return-stand',
     });
   }
   if (clips.length === 0) throw new PoseAdapterError('sequences 里没有可播片段（down/neutral/up 全缺）', batch);

@@ -59,9 +59,13 @@ test('Q1-1 基线自证：原始 pet-poses.json 能被 normalizePetPoses 收下�
   assert.doesNotThrow(() => normalizePetPoses(rawPoses()));
 });
 
-test('Q1-2 真实加载路径：四个 accepted 批次逐个删掉 byFacingSource ⇒ 全部 TypeError 且点名该字段', () => {
+test('Q1-2 真实加载路径：六个 accepted 批次逐个删掉 byFacingSource ⇒ 全部 TypeError 且点名该字段', () => {
   const accepted = rawPoses().accepted;
-  assert.deepEqual(accepted, ['sit', 'walk', 'run', 'jump'], 'accepted 名单变了就要重新核本用例的覆盖面');
+  assert.deepEqual(
+    accepted,
+    ['sit', 'walk', 'run', 'jump', 'lie', 'sleep'],
+    'accepted 名单变了就要重新核本用例的覆盖面',
+  );
   for (const posture of accepted) {
     const broken = rawWith((draft) => {
       delete draft.batches[posture].bodyAnchor.byFacingSource;
@@ -296,18 +300,36 @@ test('Q7-3 静态：dev 后门由 import.meta.env.DEV 闸门把守（生产构�
   assert.equal(/petFacing\s*=[^=]/.test(text.slice(0, mountStart)), true, 'petFacing 的写入点应在 mountDevTools 之前的普通函数里');
 });
 
-test('Q7-4 动态：postureOf 透传 facing 会改变生产语义 —— petFacing 一旦不是 -1，sit 会静默退化 stand', () => {
+test('Q7-4 动态：单朝向静态批忽略 facing（原样播左向），朝向敏感批按朝向判 —— petFacing 变了也不会把猫弄没', () => {
   assert.equal(postureOf('sit', PET_POSES), 'sit', '缺省（不传 facing）⇒ sit 可播');
   assert.equal(postureOf('sit', PET_POSES, -1), 'sit', '生产态 -1 ⇒ 语义与缺省一致');
   assert.equal(
     postureOf('sit', PET_POSES, 1),
-    'stand',
-    'sit 没有右向片段 ⇒ 右向必须降级 stand（这条正是"生产必须恒 -1"的理由）',
+    'sit',
+    'sit 是**单朝向静态批**（整批只有 facing:-1）⇒ 忽略 facing 参数、原样播左向那条。' +
+      '切片 3 之前这里判 stand，会让"光标在右侧 ⇒ 猫永远不坐/不趴"；改判据的是设计 §4.3 裁决Ⅰ，' +
+      '不是放宽断言——多朝向批的朝向过滤由下面三条守。',
   );
   for (const posture of ['walk', 'run', 'jump']) {
     assert.equal(postureOf(posture, PET_POSES, -1), posture, `${posture} 左向应派生自己`);
     assert.equal(postureOf(posture, PET_POSES, 1), posture, `${posture} 右向应派生自己`);
   }
-  assert.equal(postureOf('lie', PET_POSES, -1), 'stand', 'lie 未 accepted ⇒ 降级');
-  assert.equal(postureOf('sleeping', PET_POSES, -1), 'stand', 'sleep 未 accepted ⇒ 降级');
+  // 切片 3 起 lie/sleep 已 accepted，且都是单朝向静态批 ⇒ 两个朝向都派生自己
+  for (const posture of ['lie', 'sleep']) {
+    // 姿态 `sleep` 对应的行为状态叫 `sleeping`（既有命名，唯一例外）
+    const state = posture === 'sleep' ? 'sleeping' : posture;
+    assert.equal(postureOf(state, PET_POSES, -1), posture, `${posture} 左向应派生自己`);
+    assert.equal(postureOf(state, PET_POSES, 1), posture, `${posture} 是单朝向批 ⇒ 右向同样派生自己`);
+  }
+  assert.equal(postureOf('sleeping', PET_POSES, 1), 'sleep', 'sleeping 状态同样忽略朝向');
+  // 朝向敏感批的"绝不回落"仍然逐条成立：右向片段帧不齐 ⇒ 右向降级、左向不受影响。
+  // 这里直接改**已归一的**单例（不经过 normalizePetPoses：加载期会先拒掉悬空帧引用，
+  // 而本条要验的是"运行期判据按 facing 过滤"，不是加载期 schema）。
+  const broken = JSON.parse(JSON.stringify(PET_POSES));
+  broken.batches.walk.clips = broken.batches.walk.clips.map((clip) =>
+    clip.facing === 1 ? { ...clip, frames: ['不存在的帧'] } : clip,
+  );
+  assert.equal(postureOf('walk', broken, 1), 'stand', '右向不可播 ⇒ 必须降级 stand');
+  assert.equal(postureOf('walk', broken, -1), 'walk', '左向不受影响');
+  assert.equal(postureOf('walk', broken), 'walk', '缺省语义只看"有没有可播片段"');
 });

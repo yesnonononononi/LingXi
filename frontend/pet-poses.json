@@ -122,6 +122,636 @@
         "aliasesResolved": []
       }
     },
+    "lie": {
+      "posture": "lie",
+      "assetId": "lingxi-pet-m2-lie-review-v1",
+      "status": "awaiting-static-review",
+      "masterScale": 2,
+      "canvas": {
+        "width": 3072,
+        "height": 3072
+      },
+      "nativeCanvas": {
+        "width": 1536,
+        "height": 1536
+      },
+      "bodyAnchor": {
+        "byFacing": {
+          "1": {
+            "x": 733,
+            "y": 1468
+          },
+          "-1": {
+            "x": 733,
+            "y": 1468
+          }
+        },
+        "byFacingSource": "batch-single",
+        "spreadNative": 0,
+        "maxDeviationNative": 0.26
+      },
+      "envelopeCss": {
+        "left": -108.4687,
+        "right": 120.4277,
+        "top": -211.6055,
+        "bottom": 2.5137
+      },
+      "clips": [
+        {
+          "id": "enter",
+          "facing": -1,
+          "frames": [
+            "lie_down_01_neutral",
+            "lie_down_02_neutral",
+            "lie_down_03_neutral",
+            "lie_neutral"
+          ],
+          "loop": false,
+          "frameMs": [
+            120,
+            120,
+            120,
+            120
+          ],
+          "onEnd": "hold-last"
+        },
+        {
+          "id": "exit",
+          "facing": -1,
+          "frames": [
+            "lie_up_01_neutral",
+            "lie_up_02_neutral",
+            "lie_up_03_neutral"
+          ],
+          "loop": false,
+          "frameMs": [
+            120,
+            120,
+            120
+          ],
+          "onEnd": "return-stand"
+        }
+      ],
+      "frames": {
+        "lie_down_01_neutral": {
+          "id": "lie_down_01_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_01_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_01_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 43900,
+              "sha256": "123ec4f5e122955b0d37345bda78994384664cbe94cc6aabff40664117f02fdc",
+              "format": "webp-lossless",
+              "contentId": "0b33b07d0909c2f4"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_01_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_01_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 138522,
+              "sha256": "6d8f6de02631ffb840c6a072bfc67b710e1512374537cc474d7d600d83688a20",
+              "format": "webp-lossless",
+              "contentId": "0b33b07d0909c2f4"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 273,
+            "top": 79,
+            "right": 1276.5,
+            "bottom": 1455.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "lie_down_02_neutral": {
+          "id": "lie_down_02_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_02_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_02_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 38354,
+              "sha256": "3ffc91ab59543f05c1d670ffdd74686af423c6764b60888945f87486adf8cb85",
+              "format": "webp-lossless",
+              "contentId": "4033ac494ad279d4"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_02_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_02_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 119182,
+              "sha256": "ddc758752e0cfbe34988427c7ce02396fe52aa87800562be0a9c7c0c2cc62d10",
+              "format": "webp-lossless",
+              "contentId": "4033ac494ad279d4"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 273,
+            "top": 450,
+            "right": 1276.5,
+            "bottom": 1484.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "lie_down_03_neutral": {
+          "id": "lie_down_03_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_03_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_03_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 40468,
+              "sha256": "b9ced8f7c64235fbd4a079ea5d06d854614f574e03ef6c1605b2b115b5938a5c",
+              "format": "webp-lossless",
+              "contentId": "ec47a0f4f8b17609"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_03_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_03_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 128062,
+              "sha256": "5ca3e349b91406eadf379794c0f192717a23bdc4aa74a73d93f9881e0a6d0f33",
+              "format": "webp-lossless",
+              "contentId": "ec47a0f4f8b17609"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523.5,
+            "bottom": 1468.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "lie_neutral": {
+          "id": "lie_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_03_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_03_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 40468,
+              "sha256": "b9ced8f7c64235fbd4a079ea5d06d854614f574e03ef6c1605b2b115b5938a5c",
+              "format": "webp-lossless",
+              "contentId": "ec47a0f4f8b17609"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_03_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_03_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 128062,
+              "sha256": "5ca3e349b91406eadf379794c0f192717a23bdc4aa74a73d93f9881e0a6d0f33",
+              "format": "webp-lossless",
+              "contentId": "ec47a0f4f8b17609"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523.5,
+            "bottom": 1468.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "lie_up_01_neutral": {
+          "id": "lie_up_01_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_03_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_03_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 40468,
+              "sha256": "b9ced8f7c64235fbd4a079ea5d06d854614f574e03ef6c1605b2b115b5938a5c",
+              "format": "webp-lossless",
+              "contentId": "ec47a0f4f8b17609"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_03_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_03_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 128062,
+              "sha256": "5ca3e349b91406eadf379794c0f192717a23bdc4aa74a73d93f9881e0a6d0f33",
+              "format": "webp-lossless",
+              "contentId": "ec47a0f4f8b17609"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523.5,
+            "bottom": 1468.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "lie_up_02_neutral": {
+          "id": "lie_up_02_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_02_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_02_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 38354,
+              "sha256": "3ffc91ab59543f05c1d670ffdd74686af423c6764b60888945f87486adf8cb85",
+              "format": "webp-lossless",
+              "contentId": "4033ac494ad279d4"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_02_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_02_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 119182,
+              "sha256": "ddc758752e0cfbe34988427c7ce02396fe52aa87800562be0a9c7c0c2cc62d10",
+              "format": "webp-lossless",
+              "contentId": "4033ac494ad279d4"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 273,
+            "top": 450,
+            "right": 1276.5,
+            "bottom": 1484.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "lie_up_03_neutral": {
+          "id": "lie_up_03_neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/lie/lie_down_01_neutral@1x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_01_neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 43900,
+              "sha256": "123ec4f5e122955b0d37345bda78994384664cbe94cc6aabff40664117f02fdc",
+              "format": "webp-lossless",
+              "contentId": "0b33b07d0909c2f4"
+            },
+            "2x": {
+              "file": "poses/lie/lie_down_01_neutral@2x.webp",
+              "url": "lxa://pet-poses/lie/lie_down_01_neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 138522,
+              "sha256": "6d8f6de02631ffb840c6a072bfc67b710e1512374537cc474d7d600d83688a20",
+              "format": "webp-lossless",
+              "contentId": "0b33b07d0909c2f4"
+            }
+          },
+          "anchorNative": {
+            "x": 733,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 273,
+            "top": 79,
+            "right": 1276.5,
+            "bottom": 1455.5
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        }
+      },
+      "provenance": {
+        "adapter": "files-sequences-v2",
+        "manifestSha256": "b0e481488cf3bca1a13b59bb4f91b951ca5c5c4bdb42a6460b5efa5558360c45",
+        "consumedKeys": [
+          "canvas",
+          "nativeSourceCanvas",
+          "masterScale.factor",
+          "bodyAnchor.x",
+          "bodyAnchor.y",
+          "files[].file",
+          "files[].bbox",
+          "sequences.down",
+          "sequences.neutral",
+          "sequences.up",
+          "aliases"
+        ],
+        "aliasesResolved": [
+          "lie_down_03_neutral@2x.png → lie_neutral@2x.png",
+          "lie_up_01_neutral@2x.png → lie_neutral@2x.png",
+          "lie_up_02_neutral@2x.png → lie_down_02_neutral@2x.png",
+          "lie_up_03_neutral@2x.png → lie_down_01_neutral@2x.png"
+        ]
+      }
+    },
+    "sleep": {
+      "posture": "sleep",
+      "assetId": "desktop-pet/poses/sleep",
+      "status": "awaiting-static-review",
+      "masterScale": 2,
+      "canvas": {
+        "width": 3072,
+        "height": 3072
+      },
+      "nativeCanvas": {
+        "width": 1536,
+        "height": 1536
+      },
+      "bodyAnchor": {
+        "byFacing": {
+          "1": {
+            "x": 732,
+            "y": 1468
+          },
+          "-1": {
+            "x": 732,
+            "y": 1468
+          }
+        },
+        "byFacingSource": "batch-single",
+        "spreadNative": 1.75,
+        "maxDeviationNative": 1
+      },
+      "envelopeCss": {
+        "left": -108.3164,
+        "right": 120.5039,
+        "top": -125.2266,
+        "bottom": 0
+      },
+      "clips": [
+        {
+          "id": "cycle",
+          "facing": -1,
+          "frames": [
+            "neutral",
+            "breathIn",
+            "breathOut",
+            "startle",
+            "curled"
+          ],
+          "loop": true,
+          "frameMs": [
+            1800,
+            1800,
+            1800,
+            1800,
+            1800
+          ]
+        }
+      ],
+      "frames": {
+        "neutral": {
+          "id": "neutral",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sleep/neutral@1x.webp",
+              "url": "lxa://pet-poses/sleep/neutral@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39776,
+              "sha256": "cb70973254dbee7626162cf1cf691167148af95da4800e625d57171709a028e1",
+              "format": "webp-lossless",
+              "contentId": "d645872051add4af"
+            },
+            "2x": {
+              "file": "poses/sleep/neutral@2x.webp",
+              "url": "lxa://pet-poses/sleep/neutral@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 125900,
+              "sha256": "83991e02f5e18cffd267a2bfcd6e2c7763b15343b038ce6474152d06fe2f058f",
+              "format": "webp-lossless",
+              "contentId": "d645872051add4af"
+            }
+          },
+          "anchorNative": {
+            "x": 732,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523,
+            "bottom": 1468
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "breathIn": {
+          "id": "breathIn",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sleep/breathIn@1x.webp",
+              "url": "lxa://pet-poses/sleep/breathIn@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39960,
+              "sha256": "4e5d8b236ca3958a882c137a62cd6c84a8592bad2931f0f632bd510ba12399ed",
+              "format": "webp-lossless",
+              "contentId": "56eff5fb04eb62a0"
+            },
+            "2x": {
+              "file": "poses/sleep/breathIn@2x.webp",
+              "url": "lxa://pet-poses/sleep/breathIn@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 126012,
+              "sha256": "176e69daccb1c3fc8ecfc189b1c6f1146034ad416beb933cef449db1579e0116",
+              "format": "webp-lossless",
+              "contentId": "56eff5fb04eb62a0"
+            }
+          },
+          "anchorNative": {
+            "x": 732,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523,
+            "bottom": 1468
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "breathOut": {
+          "id": "breathOut",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sleep/breathOut@1x.webp",
+              "url": "lxa://pet-poses/sleep/breathOut@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 39760,
+              "sha256": "71f41f4e65b9065264bea9041f5e428b80741e8047be137b7e37ab48f6443923",
+              "format": "webp-lossless",
+              "contentId": "6124910f64a76930"
+            },
+            "2x": {
+              "file": "poses/sleep/breathOut@2x.webp",
+              "url": "lxa://pet-poses/sleep/breathOut@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 125670,
+              "sha256": "4d52cd3f963c273a13f7c6b29378dcd8ad4c3b1cd9f3711762ca014b8bc99c5d",
+              "format": "webp-lossless",
+              "contentId": "6124910f64a76930"
+            }
+          },
+          "anchorNative": {
+            "x": 732,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523,
+            "bottom": 1468
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "startle": {
+          "id": "startle",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sleep/startle@1x.webp",
+              "url": "lxa://pet-poses/sleep/startle@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 40530,
+              "sha256": "b24dc4d6d36d42cfa92199c86ba3af5dc342e10b303949943dc1950778c83361",
+              "format": "webp-lossless",
+              "contentId": "d550dc47539e5a5b"
+            },
+            "2x": {
+              "file": "poses/sleep/startle@2x.webp",
+              "url": "lxa://pet-poses/sleep/startle@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 128140,
+              "sha256": "9c41db69e019151d376e442d73598d0f6f2858a320c9a96a40a5de5a5283ca68",
+              "format": "webp-lossless",
+              "contentId": "d550dc47539e5a5b"
+            }
+          },
+          "anchorNative": {
+            "x": 732,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 21,
+            "top": 646,
+            "right": 1523,
+            "bottom": 1468
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        },
+        "curled": {
+          "id": "curled",
+          "facing": -1,
+          "files": {
+            "1x": {
+              "file": "poses/sleep/curled@1x.webp",
+              "url": "lxa://pet-poses/sleep/curled@1x.webp",
+              "width": 234,
+              "height": 234,
+              "bytes": 28224,
+              "sha256": "cbee93820b57510a7a65350dc2fdada43fec7de369a499565dc3376d68f6866a",
+              "format": "webp-lossless",
+              "contentId": "e22452d23bf49651"
+            },
+            "2x": {
+              "file": "poses/sleep/curled@2x.webp",
+              "url": "lxa://pet-poses/sleep/curled@2x.webp",
+              "width": 468,
+              "height": 468,
+              "bytes": 90336,
+              "sha256": "3b4203cc40e14f6bdef89a611bde048b3e0851deaf6c67faa847ccbbb86a864b",
+              "format": "webp-lossless",
+              "contentId": "e22452d23bf49651"
+            }
+          },
+          "anchorNative": {
+            "x": 732,
+            "y": 1468
+          },
+          "inkNative": {
+            "left": 44,
+            "top": 863,
+            "right": 1493,
+            "bottom": 1467
+          },
+          "airborneGapNative": 0,
+          "supportFootX": null
+        }
+      },
+      "provenance": {
+        "adapter": "frames-nested-v3",
+        "manifestSha256": "e25b578f97e33b05c41160fffe79206972523461d196dd665ab5d3a999194f8a",
+        "consumedKeys": [
+          "canvas",
+          "nativeSourceCanvas",
+          "masterScale",
+          "bodyAnchor.x",
+          "bodyAnchor.y",
+          "bodyAnchor.byFacing",
+          "frames[].id",
+          "frames[].facing",
+          "frames[].file",
+          "frames[].master.bbox",
+          "frames[].native.bbox",
+          "frames[].contactPoints.airborneGap",
+          "frames[].contactPoints.support.centerX"
+        ],
+        "aliasesResolved": []
+      }
+    },
     "walk": {
       "posture": "walk",
       "assetId": "desktop-pet.poses.walk",
@@ -1560,26 +2190,19 @@
     "sit",
     "walk",
     "run",
-    "jump"
+    "jump",
+    "lie",
+    "sleep"
   ],
-  "deferred": [
-    {
-      "posture": "lie",
-      "reason": "切片 3（卧姿语义）：运行资产未导出"
-    },
-    {
-      "posture": "sleep",
-      "reason": "切片 3（卧姿语义）：运行资产未导出"
-    }
-  ],
+  "deferred": [],
   "degradations": [
     "no-face-overlay",
     "no-blink"
   ],
   "totals": {
-    "frames": 31,
-    "bytes1x": 1299144,
-    "bytes2x": 4096820,
-    "distinctFiles": 62
+    "frames": 43,
+    "bytes1x": 1610116,
+    "bytes2x": 5078644,
+    "distinctFiles": 78
   }
 }

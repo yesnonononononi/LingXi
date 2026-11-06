@@ -24,7 +24,7 @@
  */
 import type { DocumentLike, ElementLike } from '../presentation/layered-presentation';
 import { POSE_FRAME_ATTRIBUTE, POSE_LAYER_CLASS_NAME, POSTURE_ATTRIBUTE } from './css-contract';
-import { batchOf, clipOf, frameOf, isPlayable } from './manifest';
+import { batchOf, clipOf, frameOf, isBatchFacingSensitive, isPlayable, soleFacingOfBatch } from './manifest';
 import { PosePlayer, type PosePlayerPorts } from './player';
 import type { Density, Facing, PetPoses, PoseBatch, PoseClip, PoseFrame, PostureId } from './types';
 
@@ -118,6 +118,17 @@ export class PoseController {
 
   /** 当前朝向（选项缺省为 `-1`；非法值在构造时抛错，不在选片段时才发现）。 */
   private facingValue: Facing;
+
+  /**
+   * 是否有一轮"起身"（`exit` 片段）正在进行 —— **幂等门**。
+   *
+   * <p><b>为什么必须有它：</b>`main.ts` 的 `syncPosture()` 每 250 ms 重算一次
+   * `postureOf(state)`。起身期间 `posture` 还是 `'lie'`（`exit` 只是过渡片段），
+   * 状态机却已经回到 `idle` ⇒ `desired === 'stand'` ⇒ 再进一次 `setPosture('stand')`
+   * ⇒ 又播一遍 `exit`。表现是"一帧内连播两次 exit"（起身动画反复抽搐）。
+   * 所以第一次进 `exit` 后置 `true`，`leavePose()` 里清回 `false`。</p>
+   */
+  private pendingStand: boolean = false;
 
   /**
    * 构造控制器：建 `.pet-pose` 与其中唯一的 `<img>`，并写入初始站姿。
@@ -227,11 +238,19 @@ export class PoseController {
   setPosture(next: PostureId): void {
     if (next === this.postureValue) return;
     if (next === (STAND_POSTURE)) {
-      this.leavePose('切回站姿');
+      // 起身链（设计 §4.2(2)）：有 `exit` 片段就先播它，`pendingStand` 保证只触发一次；
+      // 没有 `exit`（sleep 等美术没交付过渡的批次）就走旧的即时回站姿，行为与切片 2 逐字节相同。
+      this.beginStand('切回站姿');
       return;
     }
     if (!isPlayable(this.options.poses, next)) {
-      // 优雅降级：没有资产（或资产不可播）就留在站姿，并说清楚为什么
+      // 优雅降级：没有资产（或资产不可播）就留在站姿，并说清楚为什么。
+      //
+      // 两层防御里的**第一层**：这里刻意**不传 `facing`**，只判"这个姿态的批次整体能不能播"
+      // （未登记 accepted / 缺帧 / 缺少实测锚点）。原因：朝向级判据属于**第二层**
+      // （`pickClip` → `clipFor` 按 `(id, facing)` 双键精确匹配，且只有整批单朝向时才回退，
+      // 绝不回落到另一朝向）。若在这一层就按 `facing` 判红，单朝向批（sit/lie/sleep）
+      // 会因"当前朝向没有片段"被整个降级到站姿——那是把"忽略朝向"错读成"缺向不可播"。
       this.log(`姿态 ${next} 不可播（未登记 accepted 或缺帧），保持站姿`);
       this.leavePose(`姿态 ${next} 不可播`);
       return;
@@ -248,6 +267,8 @@ export class PoseController {
     }
     this.writePosture(next);
     this.postureValue = next;
+    // 进入新姿态 ⇒ 之前那轮起身作废（不许带着 `pendingStand` 进新姿态，否则下一次回站姿会被幂等门挡住）
+    this.pendingStand = false;
     this.clip = clip;
     this.stopBlink();
     try {
@@ -277,6 +298,15 @@ export class PoseController {
    *       <b>绝不回落到另一朝向</b>（拿反朝向的片段上屏比不播更糟：角色会突然翻转）。</li>
    * </ol>
    *
+   * <p><b>切片 3 追加的第 5 条（修"朝向一变就把猫踢起来"）：</b>单朝向批（`sit`/`lie`/`sleep`，
+   * 整批只有一条朝向的片段）在朝向变化时**什么都不做**——不 `leavePose`、也不重播。
+   * 旧行为是"重新 pickClip 失败 ⇒ leavePose"，于是用户只是把光标移到另一边，
+   * 正趴着的猫就被赶起来了；而重播 `lie` 的 `enter` 又会把"趴下动画"重放一遍，
+   * 同样不是用户想要的。这两件事都不是"朝向变化"该造成的，所以单朝向批取 **no-op**。</p>
+   *
+   * <p>注意 `leavePose` 只由**朝向敏感批**触发（第 4 条），它清掉的是"这一朝向没有片段"这一事实；
+   * 单朝向批永远走不到那里，所以不会误清 `pendingStand`。</p>
+   *
    * @param next 目标朝向（`-1` 左 / `1` 右）
    * @throws {TypeError} `next` 不是 `-1` / `1`
    */
@@ -294,6 +324,12 @@ export class PoseController {
     const batch = batchOf(this.options.poses, this.postureValue);
     if (batch === null) {
       this.leavePose(`姿态 ${this.postureValue} 没有批次`);
+      return;
+    }
+    if (!isBatchFacingSensitive(batch)) {
+      // 单朝向批：朝向变化不改变可播内容 ⇒ 不打断当前播放（趴着就继续趴着、坐着就继续坐着）。
+      // 绝不镜像：片段内容仍是那条唯一朝向的画稿，`facing` 只影响将来的选片段。
+      this.log(`朝向 → ${next}：${this.postureValue} 是单朝向批，保持当前片段（不重播、不镜像）`);
       return;
     }
     const clip = this.pickClip(batch);
@@ -331,12 +367,56 @@ export class PoseController {
   }
 
   /**
+   * 起身/离场：**有 `exit` 片段就先播它**，否则直接回站姿（旧行为）。
+   *
+   * <p>这条链是切片 3 的 T04：`lie` 有 `exit`（3 帧 × 120 ms，`onEnd:'return-stand'`），
+   * 而切片 2 的 `setPosture('stand')` 是"立刻站姿、没有先起身"，于是趴着的猫会瞬间站起来。
+   * 现在改成"先播 exit、播完由 `handleClipEnd` 的 `return-stand` 分支收尾"，状态机自洽。</p>
+   *
+   * <p><b>幂等门 `pendingStand`</b>：`syncPosture()` 每 250 ms 重算一次，起身期间
+   * `posture` 仍是 `'lie'` 而 `desired` 已是 `'stand'` ⇒ 本方法会被反复调用。
+   * 没有这道门就会出现"一帧内连播两次 exit"。</p>
+   *
+   * <p><b>`sleep` 没有 `exit`</b>（美术未交付过渡）⇒ 走旧路径硬切站姿：这是登记在案的已知视觉缺陷，
+   * 不是漏实现（设计 §4.2(3) 与 §10 的补资产清单都写了）。</p>
+   *
+   * @param reason 原因（日志用）
+   */
+  private beginStand(reason: string): void {
+    if (this.pendingStand) {
+      this.log(`起身已在进行（${reason}），不重复触发 exit`);
+      return;
+    }
+    const batch = this.postureValue === STAND_POSTURE ? null : batchOf(this.options.poses, this.postureValue);
+    const clip = batch === null ? null : this.clipFor(batch, 'exit');
+    if (clip === null) {
+      // 没有起身过渡：直接回站姿（切片 2 的行为，逐字节不变）
+      this.leavePose(reason);
+      return;
+    }
+    this.pendingStand = true;
+    this.clip = clip;
+    // 清掉"已写过 placement 的帧"：exit 的第 0 帧与 enter 的末帧可以同 id，
+    // 不清就会因为 `placedFrameId` 相等而**跳过姿态盒写入**（画面对、位置错）。
+    this.placedFrameId = null;
+    try {
+      this.player.play(clip, 0);
+      this.log(`起身：先播 ${clip.id}@${clip.facing}（${reason}）`);
+    } catch (err) {
+      this.log(`起身片段播放失败：${(err as Error).message}`);
+      this.leavePose(`${reason}（exit 播放失败）`);
+    }
+  }
+
+  /**
    * 收尾：停播放器、藏图、回站姿、重启眨眼。
    *
    * @param reason 原因（日志用）
    */
   private leavePose(reason: string): void {
     this.player.stop();
+    // 幂等门复位：一轮起身结束（或被别的路径打断）后，下一次回站姿必须能重新触发 exit
+    this.pendingStand = false;
     this.clip = null;
     this.frameIdValue = null;
     this.placedFrameId = null;
@@ -356,12 +436,20 @@ export class PoseController {
    * （由调用方走"没有可播片段"的降级路径），**不再退回"取第一条"**——
    * 拿反朝向的片段上屏比不播更糟（角色会突然翻转）。</p>
    *
+   * <p><b>唯一例外：整批单朝向时允许回退到那条唯一朝向</b>（设计 §4.3 落地项 2）。
+   * 单朝向静态批（`sit`/`lie`/`sleep`）全仓只有 `facing:-1` 一条片段，而运行时朝向可能已经是
+   * `1`（光标在右侧）——此时若严格按朝向找就永远找不到 ⇒ 光标一移到右边，猫连坐都不坐了。
+   * 回退有**可判定的前提**（本批出现过的朝向集合大小 === 1），所以它不是旧那种"取第一条"的
+   * 静默猜测：多朝向批（`walk`/`run`/`jump`）缺某一向就是不可播，绝不猜。</p>
+   *
+   * <p><b>绝不镜像</b>：单朝向批缺右向时用左向**原样**播，任何 `scaleX(-1)` 式镜像都在 G-P12 判红。</p>
+   *
    * @param batch 批次
-   * @returns 片段；没有当前朝向的可用片段时 null
+   * @returns 片段；当前朝向没有可用片段（且不是单朝向批）时 null
    */
   private pickClip(batch: PoseBatch): PoseClip | null {
     for (const id of ['hold', 'cycle', 'once', 'enter']) {
-      const clip = clipOf(batch, id, this.facingValue);
+      const clip = this.clipFor(batch, id);
       if (clip !== null) return clip;
     }
     const available = batch.clips.map((clip) => `${clip.id}@${clip.facing}`).join('/');
@@ -371,6 +459,30 @@ export class PoseController {
       );
     }
     return null;
+  }
+
+  /**
+   * 按片段 id 取**当前朝向**的片段；整批单朝向时回退到那条唯一朝向。
+   *
+   * <p>`pickClip` 与起身链（`exit`）共用这一处，避免"主选择器有回退、起身链没有"这种两套策略
+   * ——那会让 `lie` 在朝向 `1` 下永远起不来（`exit` 只有 `facing:-1`）。</p>
+   *
+   * @param batch 批次
+   * @param id 片段 id
+   * @returns 片段；当前朝向没有该 id 的片段（且不是单朝向批）时 null
+   */
+  private clipFor(batch: PoseBatch, id: string): PoseClip | null {
+    const exact = clipOf(batch, id, this.facingValue);
+    if (exact !== null) return exact;
+    const soleFacing = soleFacingOfBatch(batch);
+    if (soleFacing === null) return null;
+    const fallback = clipOf(batch, id, soleFacing);
+    if (fallback !== null && soleFacing !== this.facingValue) {
+      this.log(
+        `姿态 ${batch.posture} 是单朝向批（只有 ${soleFacing}），朝向 ${this.facingValue} 原样播该片段（不镜像）`,
+      );
+    }
+    return fallback;
   }
 
   /**
@@ -419,7 +531,12 @@ export class PoseController {
   }
 
   /**
-   * 一次性片段播完。
+   * 一次性片段播完（`once` 的 `jump`、`exit` 的 `lie` 起身）。
+   *
+   * <p>`onEnd === 'return-stand'` 的片段播完 ⇒ `leavePose`：它同时把 `pendingStand` 复位，
+   * 于是"起身"这一轮真正结束（姿态回 `stand`、`.pet-pose` 图隐藏、眨眼重启）。
+   * 这正是切片 3 起身链的收尾：`exit` 片段在 adapter 侧就带 `onEnd:'return-stand'`，
+   * 缺的只是"谁能选中它"（`beginStand`）。</p>
    *
    * @param clipId 片段 id
    */

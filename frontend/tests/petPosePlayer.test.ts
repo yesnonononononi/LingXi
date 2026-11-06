@@ -735,8 +735,14 @@ test('姿态盒只由 boxOf 写入（单一位置写入者的地基），不注�
 });
 
 test('不可播的姿态优雅回落站姿（没有资产不能变成空白窗口）', () => {
-  const { controller, root, frames } = makeController();
-  // lie 属切片 3（未导出 ⇒ 不在 accepted）⇒ 不可播
+  // 切片 3 起六批全部 accepted，真清单里已经**没有**"未接受的姿态"可用作样本，
+  // 所以降级路径改用合成清单守（摘掉批次 + 摘掉 accepted 才是"不可播"的完整形态）。
+  // 直接删掉这段覆盖等于放行"将来某批资产丢了会变成空白窗口"，那是这条用例存在的唯一理由。
+  const withoutLie: PetPoses = {
+    ...PET_POSES,
+    accepted: PET_POSES.accepted.filter((item) => item !== 'lie'),
+  };
+  const { controller, root, frames } = makeController({ poses: withoutLie });
   controller.setPosture('lie');
   assert.equal(controller.posture, 'stand', '不可播姿态必须回落到站姿');
   assert.equal(root.getAttribute('data-posture'), 'stand');

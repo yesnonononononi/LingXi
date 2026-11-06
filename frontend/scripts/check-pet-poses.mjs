@@ -28,7 +28,7 @@
  * @module scripts/check-pet-poses
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GEOMETRY_PATH, readJsonFile } from './build-pet-geometry.mjs';
 // 内容寻址的形状常量（`CONTENT_ID_PATTERN`）与"清单 `file` → 运行目录相对路径"的口径
@@ -598,6 +598,262 @@ export function checkFrameEncoding(batch) {
 }
 
 /**
+ * 主选择器（`PoseController.pickClip`）会依次尝试的片段 id，**顺序即优先级**。
+ *
+ * <p><b>为什么门禁要持有这份表：</b>G-P11 判的是"同一姿态同一朝向下，有没有片段会被前面的
+ * 片段永久遮住"。这个判断等价于"`pickClip` 会先把哪一条还给你"，无法只凭 `clips[]` 里的
+ * 字段算出来，必须知道候选序。所以这里持有它，并用 {@link checkPickOrderDrift} 与
+ * `src/pet/poses/controller.ts` 的真实现对账——两边一旦漂移，门禁先红，而不是等用户发现
+ * "趴下动画永远不播"。</p>
+ *
+ * <p>`exit` 刻意**不在**表内：它不由 `setPosture` 的主选择器选，而由"离开姿态"的专用路径
+ * （`pendingStand` → `clipOf(batch,'exit',facing)`）选中。把 `exit` 混进候选序会让
+ * "进姿态时若没有 enter 就顺手播起身"这种荒谬行为发生。</p>
+ */
+export const PICK_CANDIDATE_IDS = Object.freeze(['hold', 'cycle', 'once', 'enter']);
+
+/**
+ * **G-P11 片段可达性**：同一姿态、同一朝向下不许出现两条"主选择器候选"片段。
+ *
+ * <p><b>为什么这条必须存在：</b>`lie` 一旦同时产出 `hold`（趴着不动）与 `enter`（趴下过程），
+ * 因为候选序里 `hold` 在 `enter` 之前，`enter` 会被**永久遮住**：`clips[]` 两条都合法、
+ * 包络/时序/朝向全绿、体积也正常，但用户永远看不到趴下动画。这不是"少了一条断言"，
+ * 而是"数据合法但一半永不可达"的设计缺陷，只能靠显式判据守。</p>
+ *
+ * <p><b>判据按行为遍历 `batch.clips`，不写姿态名字表</b>：任何批次、任何将来新增的片段 id
+ * （只要它进了候选序）都会被同一套逻辑检查。</p>
+ *
+ * <p>合法形态有两种，都不触发本判据：单帧静止用"1 帧 + 时长"表达（`sit` 的 `hold`），
+ * 或者把"过程 + 停留"合并成一条 `enter` 并以 `hold-last` 收尾（`lie`）。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表（空数组 = 通过）
+ */
+export function checkClipReachability(batch) {
+  const problems = [];
+  const label = batch && batch.posture ? batch.posture : '(未知批次)';
+  const clips = Array.isArray(batch && batch.clips) ? batch.clips : [];
+  /** 朝向 → 该朝向下的片段列表（朝向按 `String()` 归一，`-1` 与 `"-1"` 不混）。 */
+  const byFacing = new Map();
+  for (const clip of clips) {
+    const key = String(clip && clip.facing);
+    const list = byFacing.get(key) ?? [];
+    list.push(clip);
+    byFacing.set(key, list);
+  }
+  for (const [facing, group] of byFacing) {
+    const candidates = group
+      .filter((clip) => PICK_CANDIDATE_IDS.includes(clip.id))
+      .sort((a, b) => PICK_CANDIDATE_IDS.indexOf(a.id) - PICK_CANDIDATE_IDS.indexOf(b.id));
+    if (candidates.length <= 1) continue;
+    const names = candidates.map((clip) => `${clip.id}@${facing}`);
+    problems.push(
+      `[${label}] 朝向 ${facing} 下同时存在 ${names.join(' 与 ')}：主选择器只按固定候选序 ` +
+        `（${PICK_CANDIDATE_IDS.join(' → ')}）取第一条 ⇒ ${names.slice(1).join('、')} 永远不可达（G-P11）。` +
+        '静态停留请用"单帧 + 时长"或把过程与停留合并成一条 enter（hold-last）表达，' +
+        '不要靠再加一条 hold 片段（那会让另一条静默失效而门禁全绿）',
+    );
+  }
+  return problems;
+}
+
+/**
+ * **G-P11 的对账项**：门禁持有的候选序必须与 `PoseController.pickClip` 的真实现逐项一致。
+ *
+ * <p>没有这条，G-P11 会跟着候选序一起漂移：`pickClip` 改成 `['cycle','hold',…]` 之后，
+ * "谁遮住谁"的结论就变了，而门禁还在按旧顺序判 ⇒ 判据本身变成谎话。</p>
+ *
+ * @param {object} [options] 选项
+ * @param {string} [options.controllerPath] `controller.ts` 路径（测试可注入）
+ * @returns {string[]} 问题列表
+ */
+export function checkPickOrderDrift(options = {}) {
+  const controllerPath =
+    options.controllerPath ??
+    resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'pet', 'poses', 'controller.ts');
+  if (!existsSync(controllerPath)) {
+    return [`门禁无法对账候选序：找不到 ${controllerPath}（G-P11 的判据依赖它）`];
+  }
+  const source = readFileSync(controllerPath, 'utf8');
+  const start = source.indexOf('private pickClip(');
+  if (start === -1) {
+    return ['门禁无法对账候选序：controller.ts 里找不到 `private pickClip(`（方法改名或删除了，G-P11 的判据依赖它）'];
+  }
+  const end = source.indexOf('private handleFrame(');
+  const body = source.slice(start, end === -1 ? start + 8000 : end);
+  const match = /for \(const id of \[([^\]]*)\]\)/.exec(body);
+  if (match === null) {
+    return ['门禁无法对账候选序：`pickClip` 里没有 `for (const id of [...])`（G-P11 的判据依赖它，必须显式列出候选序）'];
+  }
+  const ids = [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map((item) => item[1]);
+  if (ids.length !== PICK_CANDIDATE_IDS.length || ids.some((id, index) => id !== PICK_CANDIDATE_IDS[index])) {
+    return [
+      `门禁的候选序 [${PICK_CANDIDATE_IDS.join(', ')}] 与 controller.pickClip 的真实现 ` +
+        `[${ids.join(', ')}] 不一致：G-P11 会按错的顺序判"谁遮住谁"（改实现必须同批改 check-pet-poses.mjs）`,
+    ];
+  }
+  return [];
+}
+
+/**
+ * 渲染层里**禁止出现**的镜像变换（G-P12）。
+ *
+ * <p>静态姿态（`sit`/`lie`/`sleep`）只有左向画稿。缺右向时的正确做法是**用左向原样播**
+ * （设计 §4.3 方案 Ⅲ），而不是 `scaleX(-1)` 把画面翻过来：镜像会同时镜像**锚点**，
+ * 让落点对、内容错（而且用户看到的是一只被翻面的猫——它身上的文字/装饰全反了）。
+ * 这里覆盖 CSS 与内联样式两种写法，`scale()` / `scale3d()` 的负值同样算。</p>
+ */
+const MIRROR_PATTERNS = Object.freeze([
+  Object.freeze({ name: 'scaleX(负数)', pattern: /scaleX\(\s*-\s*[\d.]+\s*\)/ }),
+  Object.freeze({ name: 'scaleY(负数)', pattern: /scaleY\(\s*-\s*[\d.]+\s*\)/ }),
+  Object.freeze({ name: 'scale(负数,…)', pattern: /(^|[^\w-])scale\(\s*-\s*[\d.]+\s*[,)]/ }),
+  Object.freeze({ name: 'scale3d(负数,…)', pattern: /scale3d\(\s*-\s*[\d.]+\s*,/ }),
+]);
+
+/** 扫描的渲染层文件后缀（TS/Vue/CSS/HTML 都可能承载 transform）。 */
+const RENDER_SOURCE_EXTENSIONS = Object.freeze(['.ts', '.mts', '.js', '.mjs', '.css', '.scss', '.vue', '.html']);
+
+/**
+ * 去掉注释（**只去掉真注释**），避免"文档里提到 `scaleX(-1)`"被当成违规。
+ *
+ * <p>`//` 的判定要求前面不是 `:`，这样 `lxa://pet-poses/...`、`https://...` 里的双斜杠
+ * 不会被误当成注释起点（否则整行后半段会被吞掉，反而可能漏掉真正的 transform）。</p>
+ *
+ * @param {string} text 源码文本
+ * @returns {string} 去注释后的文本（行号保持可用：块注释替换成等量换行）
+ */
+export function stripSourceComments(text) {
+  const withoutBlock = text.replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ''));
+  return withoutBlock
+    .split('\n')
+    .map((line) => line.replace(/(^|\s)(?<!:)\/\/.*$/, '$1'))
+    .join('\n');
+}
+
+/**
+ * 递归收集渲染层源文件（`src/pet/**`，可选多个根）。
+ *
+ * @param {string[]} roots 根目录（缺省 = `src/pet`）
+ * @returns {Array<{path: string, text: string}>} 文件内容列表
+ */
+function collectRenderSourceFiles(roots) {
+  const collected = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        walk(full);
+        continue;
+      }
+      if (!RENDER_SOURCE_EXTENSIONS.some((ext) => entry.name.toLowerCase().endsWith(ext))) continue;
+      try {
+        collected.push({ path: full, text: readFileSync(full, 'utf8') });
+      } catch {
+        // 读不到就跳过：这不是"检查通过"，是"这个文件不参与静态扫描"（不会让任何判据变绿）
+      }
+    }
+  };
+  const list = Array.isArray(roots) && roots.length > 0
+    ? roots
+    : [resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'pet')];
+  for (const root of list) walk(root);
+  return collected;
+}
+
+/**
+ * **G-P12 禁镜像**：静态扫描渲染层，出现 `scaleX(-1)`（或等价的负向 `scale`/`scale3d`）即判红。
+ *
+ * <p>为什么必须是静态扫描而不是运行时断言：镜像渲染是**一行 CSS**，它不会让任何数据判据
+ * 变红（帧、锚点、体积全都还是对的），只有肉眼看画面才会发现"猫被翻过来了"。
+ * 代码里出现这个变换本身就足以证明有人打算用镜像凑合，所以在这一层拦。</p>
+ *
+ * @param {object} [options] 选项
+ * @param {Array<{path: string, text: string}>} [options.files] 直接给文件内容（测试注入）
+ * @param {string[]} [options.roots] 扫描根目录（缺省 = `src/pet`）
+ * @returns {string[]} 问题列表
+ */
+export function checkNoMirrorRender(options = {}) {
+  const problems = [];
+  const files = Array.isArray(options.files) ? options.files : collectRenderSourceFiles(options.roots);
+  for (const file of files) {
+    const text = typeof file.text === 'string' ? stripSourceComments(file.text) : '';
+    const lines = text.split('\n');
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      for (const { name, pattern } of MIRROR_PATTERNS) {
+        if (!pattern.test(line)) continue;
+        problems.push(
+          `${file.path}:${index + 1} 出现镜像变换 ${name}：${line.trim()} —— ` +
+            '静态姿态缺右向时**用左向原样播**，不许用镜像凑合。镜像会同时镜像锚点，' +
+            '让落点对、内容错（G-P12）',
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * **G-P14「在动」判据**：多帧片段的"在动"按 **distinct `contentId` ≥ 2** 判，**不是按帧数**。
+ *
+ * <p><b>为什么不能用帧数：</b>两帧同图会被误判成动画——`clips[].frames` 有两项、
+ * `frameMs` 有两项、时序判据全绿，但播放起来是**一张静止的画**（rAF 空转、用户看到卡住）。
+ * `contentId` 是母版摘要（"这两帧是不是同一张画"的权威答案），所以判据落在这里。</p>
+ *
+ * <p><b>单帧片段显式豁免</b>：`sit` 的 `hold` 只有 1 帧且 `frameMs:[0]`，它本来就该是静止的
+ * ——"停留"由片段类型（`hold`）表达，不由帧数表达。豁免写在代码里并给出理由，
+ * **不用"帧数 > 1 才检查"那种隐式豁免蒙过去**（那会让判据的形状随数据摇摆）。</p>
+ *
+ * @param {Record<string, any>} batch 批次
+ * @returns {string[]} 问题列表（空数组 = 通过）
+ */
+export function checkClipMotion(batch) {
+  const problems = [];
+  const label = batch && batch.posture ? batch.posture : '(未知批次)';
+  const clips = Array.isArray(batch && batch.clips) ? batch.clips : [];
+  const frames = batch && batch.frames && typeof batch.frames === 'object' ? batch.frames : {};
+  for (const clip of clips) {
+    const ids = Array.isArray(clip && clip.frames) ? clip.frames : [];
+    if (ids.length === 0) continue;
+    const contentIds = new Set();
+    const missing = [];
+    for (const frameId of ids) {
+      const file = frames[frameId] && frames[frameId].files ? frames[frameId].files['1x'] : undefined;
+      const contentId = file ? file.contentId : undefined;
+      if (typeof contentId !== 'string' || !CONTENT_ID_PATTERN.test(contentId)) {
+        missing.push(frameId);
+        continue;
+      }
+      contentIds.add(contentId);
+    }
+    if (missing.length > 0) {
+      problems.push(
+        `[${label}] ${clip.id}@${clip.facing} 的帧 ${missing.join('、')} 缺少合法的 contentId：` +
+          '无法判断这个片段是否真的在动（G-P14）',
+      );
+      continue;
+    }
+    // 单帧片段：显式豁免（静止姿态，停留由片段类型表达，不由帧数表达）
+    if (ids.length === 1) continue;
+    if (contentIds.size < 2) {
+      problems.push(
+        `[${label}] ${clip.id}@${clip.facing} 有 ${ids.length} 帧但只有 ${contentIds.size} 个 distinct contentId：` +
+          '这是"假动画"（多帧同图 = 播起来是静止的，rAF 空转、用户看到卡住）。' +
+          '要停留请用单帧 + 时长，不要靠复制同一张画凑帧数（G-P14）',
+      );
+    }
+  }
+  return problems;
+}
+
+/**
  * 校验**已 accepted 的批次**没有用镜像推导的锚点（**G-P7**）。
  *
  * <p><b>为什么这条必须存在：</b>`isPlayable` 的注释与设计 §B.1 都写"缺锚 ⇒ 该朝向不可播"，
@@ -651,7 +907,11 @@ export function checkAcceptedAnchorSource(manifest) {
 /**
  * 把剪辑相关的断言汇总成一组（`runPoseGate` 每批调用一次）。
  *
- * <p>顺序固定（域 → 覆盖 → 帧朝向 → 孤儿 → 语义 → 编码），报错行因此稳定、可 diff。</p>
+ * <p>顺序固定（域 → 覆盖 → 帧朝向 → 可达性 → 孤儿 → 语义 → 编码），报错行因此稳定、可 diff。</p>
+ *
+ * <p><b>可达性（G-P11）放在这里而不是"清单级"</b>：它只读 `batch.clips` 的 `id`/`facing`，
+ * 不需要 `contentId`（那是转码之后才有的），所以 adapter 草稿也能被同一套判据检查
+ * ——`petPoseSlice2Export.test.cjs` 正是拿草稿调用 `checkClips` 的。</p>
  *
  * @param {Record<string, any>} batch 批次
  * @returns {string[]} 问题列表
@@ -661,6 +921,7 @@ export function checkClips(batch) {
     ...checkClipFacingDomain(batch),
     ...checkClipFacingCoverage(batch),
     ...checkClipFrameFacing(batch),
+    ...checkClipReachability(batch),
     ...checkOrphanFrames(batch),
     ...checkClipSemantics(batch),
     ...checkFrameEncoding(batch),
@@ -734,6 +995,9 @@ export async function runPoseGate(options = {}) {
       ...checkTiming(batch),
       ...checkEnvelope(batch, geometry, align),
       ...checkClips(batch),
+      // G-P14 需要 `contentId`（母版摘要，转码之后才有），所以它只能跑在**清单级**，
+      // 不放进 `checkClips`（那里还要能吃 adapter 草稿）。
+      ...checkClipMotion(batch),
       ...checkVolume(manifest).filter((line) => line.includes(`[${posture}]`)),
     ];
     if (verbose) {
@@ -748,6 +1012,11 @@ export async function runPoseGate(options = {}) {
   problems.push(...checkTotalsRecompute(manifest));
   problems.push(...checkContentAddressedFiles(manifest, outDir));
   problems.push(...checkAcceptedAnchorSource(manifest));
+  // G-P11 的对账项：门禁持有的候选序必须与 controller.pickClip 的真实现一致，
+  // 否则"谁遮住谁"的结论会跟着实现漂移而判据不自知。
+  problems.push(...checkPickOrderDrift());
+  // G-P12：静态扫描渲染层，禁止用 scaleX(-1) 之类的镜像凑出"右向"。
+  problems.push(...checkNoMirrorRender());
   problems.push(...checkNoPng(outDir));
 
   // 漂移 + 盘上资产完整性（这一条会重新跑 adapter，所以美术 manifest 一改就红）

@@ -326,11 +326,11 @@ test('T01-13 P9a：buildPosesManifest 同输入跑两次 ⇒ 清单逐字节相�
   assert.ok(!/generatedAt|timestamp|time/.test(first), '清单里不许出现时间戳字段');
 });
 
-test('T02-1 G-P7：真清单的 accepted 批次（sit/walk/run/jump）没有镜像推导锚点', async () => {
+test('T02-1 G-P7：真清单的 accepted 批次（六批）没有镜像推导锚点', async () => {
   const { gate } = await loadModules();
   const manifest = JSON.parse(readFileSync(resolve(FRONTEND_ROOT, 'pet-poses.json'), 'utf8'));
-  // 金丝雀：这条断言不许空转（accepted 必须真的包含四批）
-  assert.deepStrictEqual(manifest.accepted, ['sit', 'walk', 'run', 'jump']);
+  // 金丝雀：这条断言不许空转（accepted 必须真的包含六批；切片 3 起 lie/sleep 也在内）
+  assert.deepStrictEqual(manifest.accepted, ['sit', 'walk', 'run', 'jump', 'lie', 'sleep']);
   assert.deepStrictEqual(gate.checkAcceptedAnchorSource(manifest), [], '真清单不该有 mirror-derived 批次');
   // 逐批核对来源（这就是主理人要求的"walk/run/jump 到底有没有 mirror-derived"的答案）
   const sources = Object.fromEntries(
@@ -341,6 +341,9 @@ test('T02-1 G-P7：真清单的 accepted 批次（sit/walk/run/jump）没有镜�
     walk: 'batch-single',
     run: 'measured-per-facing',
     jump: 'measured-per-facing',
+    // 切片 3 的两批都是单朝向静态批：美术没给 byFacing ⇒ 批级单值，不是镜像推导
+    lie: 'batch-single',
+    sleep: 'batch-single',
   });
 });
 
@@ -370,7 +373,9 @@ test('T02-3 G-P8：真清单每帧的 1x/2x 都是 webp-lossless（U1 裁定的"
   for (const [posture, batch] of Object.entries(manifest.batches)) {
     assert.deepStrictEqual(gate.checkFrameEncoding(batch), [], `${posture} 出现了非无损编码`);
   }
-  // 金丝雀：确实有帧被判过（否则"全绿"可能只是因为一个帧都没遍历到）
+  // 金丝雀：确实有帧被判过（否则"全绿"可能只是因为一个帧都没遍历到）。
+  // 切片 3 起六批共 43 个帧位（sit 1 + walk 8 + run 8 + jump 10 + lie 7 + sleep 5 + …）；
+  // 数字变了必须同批改这里，不许改成"大于 0 就算过"。
   let frameCount = 0;
   for (const batch of Object.values(manifest.batches)) {
     for (const [frameId, frame] of Object.entries(batch.frames)) {
@@ -382,7 +387,7 @@ test('T02-3 G-P8：真清单每帧的 1x/2x 都是 webp-lossless（U1 裁定的"
       }
     }
   }
-  assert.strictEqual(frameCount, 31);
+  assert.strictEqual(frameCount, 43);
 });
 
 test('T02-4 G-P8 变异：把某帧 format 改成 "webp" ⇒ 必红（体积断言拦不住这条旁路）', async () => {

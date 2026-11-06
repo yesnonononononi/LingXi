@@ -245,39 +245,67 @@ test('B-6 非法朝向（0 / "1" / null / NaN）抛 TypeError，且**先校验�
   }
 });
 
-test('B-7 新朝向没有片段 ⇒ 降级站姿，**绝不回落到另一朝向**（合成：walk 只留左向）', () => {
+test('B-7 多朝向批缺该朝向的主片段 ⇒ 降级站姿，**绝不回落到另一朝向**；单朝向批则原样播那条（切片 3 的单朝向回退）', () => {
+  // (a) 多朝向批：walk 仍然有两个朝向，但右向只留一条 `exit`（不在 `pickClip` 候选序里）。
+  //     这样"整批单朝向"的前提不成立 ⇒ 必须降级，绝不拿左向 cycle 顶上去。
   const poses = posesClone();
-  poses.batches.walk.clips = poses.batches.walk.clips.filter((clip) => clip.facing === -1);
-  const { controller, clock, frames, logs } = makeController({ poses });
+  const leftCycle = poses.batches.walk.clips.filter((clip) => clip.facing === -1 && clip.id === 'cycle');
+  assert.equal(leftCycle.length, 1, '前置：walk 有且只有一条左向 cycle');
+  poses.batches.walk.clips = [
+    leftCycle[0],
+    {
+      id: 'exit',
+      facing: 1,
+      frames: leftCycle[0].frames,
+      loop: false,
+      frameMs: leftCycle[0].frameMs,
+      onEnd: 'return-stand',
+    },
+  ];
+  const multi = makeController({ poses });
+  multi.controller.setPosture('walk');
+  assert.equal(multi.controller.clipFacing, -1, '前置：左向可播');
+  multi.clock.advance(110);
+  const frameCountBefore = multi.frames.length;
 
-  controller.setPosture('walk');
-  assert.equal(controller.clipFacing, -1, '前置：左向可播');
-  clock.advance(110);
-  const frameCountBefore = frames.length;
-
-  controller.setFacing(1);
-  assert.equal(controller.posture, 'stand', '没有右向片段 ⇒ 必须降级站姿');
-  assert.equal(controller.clipFacing, null, '降级后不许还挂着一个片段');
-  assert.equal(controller.isPlaying, false, '降级后必须停播');
-  assert.equal(frames.length, frameCountBefore, '降级不许再上屏任何帧（尤其不许把左向帧顶上去）');
+  multi.controller.setFacing(1);
+  assert.equal(multi.controller.posture, 'stand', '多朝向批缺右向主片段 ⇒ 必须降级站姿');
+  assert.equal(multi.controller.clipFacing, null, '降级后不许还挂着一个片段');
+  assert.equal(multi.controller.isPlaying, false, '降级后必须停播');
+  assert.equal(multi.frames.length, frameCountBefore, '降级不许再上屏任何帧（尤其不许把左向帧顶上去）');
   assert.ok(
-    logs.some((line) => /朝向 1 没有可播片段/.test(line)),
-    `降级原因必须写清楚"这个朝向没有片段"：${JSON.stringify(logs)}`,
+    multi.logs.some((line) => /朝向 1 没有可播片段/.test(line)),
+    `降级原因必须写清楚"这个朝向没有片段"：${JSON.stringify(multi.logs)}`,
   );
 
   // 之后即使时钟继续走，也不许复活
-  clock.advance(1000);
-  assert.equal(controller.posture, 'stand');
-  assert.equal(frames.length, frameCountBefore);
+  multi.clock.advance(1000);
+  assert.equal(multi.controller.posture, 'stand');
+  assert.equal(multi.frames.length, frameCountBefore);
+
+  // (b) 单朝向批（整批只剩左向）：请求右向时**用那条原样播**，不降级、更不镜像。
+  //     前提 `batchFacings.size === 1` 可判定，所以它不是旧的"取第一条"静默猜测。
+  const single = posesClone();
+  single.batches.walk.clips = single.batches.walk.clips.filter((clip) => clip.facing === -1);
+  const onlyLeft = makeController({ poses: single });
+  onlyLeft.controller.setPosture('walk');
+  onlyLeft.controller.setFacing(1);
+  assert.equal(onlyLeft.controller.posture, 'walk', '单朝向批忽略朝向，继续播');
+  assert.equal(onlyLeft.controller.clipFacing, -1, '播的就是那条唯一片段（内容仍是左向画稿，绝不镜像）');
 });
 
-test('B-8 sit 只有左向片段：站在右向时进 sit ⇒ 留在站姿并说明原因（不假装切成功）', () => {
+test('B-8 sit 是单朝向静态批：站在右向时进 sit ⇒ 照样能坐（忽略 facing），且日志说明"不镜像"', () => {
   const { controller, logs } = makeController();
   controller.setFacing(1);
   controller.setPosture('sit');
-  assert.equal(controller.posture, 'stand', 'sit 没有右向片段 ⇒ 不许假装坐到右向');
-  assert.equal(controller.clipFacing, null);
-  assert.ok(logs.some((line) => /没有朝向 1 的片段/.test(line)), `日志必须点名缺的是哪个朝向：${JSON.stringify(logs)}`);
+  // 切片 3 的口径（设计 §4.3 裁决Ⅰ）：单朝向静态批忽略 facing，缺右向就用左向原样播。
+  // 旧断言要求"降级 stand"，那会让"光标在右侧 ⇒ 猫永远不坐"，是这次要修的用户可见缺陷。
+  assert.equal(controller.posture, 'sit', 'sit 只有左向片段 ⇒ 用左向原样播，不假装"切到右向"也不降级');
+  assert.equal(controller.clipFacing, -1, '片段朝向仍是 -1（渲染层不做镜像）');
+  assert.ok(
+    logs.some((line) => /单朝向批/.test(line) && /不镜像/.test(line)),
+    `日志必须写清"单朝向批原样播、不镜像"：${JSON.stringify(logs)}`,
+  );
 });
 
 test('B-9 jump（once + return-stand）播完自己回站姿，且朝向切换不影响收尾语义', () => {

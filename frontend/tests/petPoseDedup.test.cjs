@@ -42,8 +42,14 @@ const POSE_RUNTIME_DIR = resolve(FRONTEND_ROOT, 'public', 'live2d', 'pet-poses')
 /** lie 去重后的真实字节数（= 未去重 1,185,506 − 重复 677,018）：美术真数据的金丝雀。 */
 const LIE_DEDUPED_BYTES = 508488;
 
-/** 四批现状（`pet-poses.json` 的 `totals`）：去重对它们必须**零影响**。 */
+/** 四批现状（切片 2 的 `totals`）：去重对它们必须**零影响**。 */
 const FOUR_BATCH_TOTALS = Object.freeze({ frames: 31, bytes1x: 1299144, bytes2x: 4096820, distinctFiles: 62 });
+
+/** 四批名单（`D7` 的"零变化"判据只针对它们：lie/sleep 是切片 3 才接进来的）。 */
+const FOUR_BATCHES = Object.freeze(['sit', 'walk', 'run', 'jump']);
+
+/** 六批现状（切片 3 翻 accepted 之后的真实 `totals`）：lie 508,488 + sleep 784,308 各按 distinct 文件计。 */
+const SIX_BATCH_TOTALS = Object.freeze({ frames: 43, bytes1x: 1610116, bytes2x: 5078644, distinctFiles: 78 });
 
 /** 模块缓存（三份脚本只 import 一次）。 */
 let modulesPromise = null;
@@ -467,22 +473,28 @@ test('D6 canonical 幂等：同一输入连导两次 ⇒ 清单与每个 webp �
   }
 });
 
-test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 个 webp / 5,395,964 B）', async () => {
+test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 个 webp / 5,395,964 B），六批合计 6,688,760 B', async () => {
   const { build, gate } = await loadModules();
   const manifest = readJson(POSES_JSON_PATH);
 
-  assert.deepStrictEqual(manifest.accepted, ['sit', 'walk', 'run', 'jump'], '本轮不许翻 walk/run/jump 之外的批次');
+  // 切片 3 起六批全部 accepted（lie/sleep 已翻），这里断的是**新真值**：
   assert.deepStrictEqual(
-    manifest.deferred.map((item) => item.posture).sort(),
-    ['lie', 'sleep'],
-    'lie/sleep 必须仍在 deferred（翻 accepted 是切片 3 的事）',
+    manifest.accepted,
+    ['sit', 'walk', 'run', 'jump', 'lie', 'sleep'],
+    'accepted 是工程接受的唯一开关，改它必须同批改本用例',
   );
-  assert.deepStrictEqual(manifest.totals, FOUR_BATCH_TOTALS, '四批的 totals 必须与去重前逐值相同（含新增的 distinctFiles=62）');
+  assert.deepStrictEqual(manifest.deferred, [], '六批全部 accepted ⇒ deferred 必须是空表（不许留幽灵理由）');
+  assert.deepStrictEqual(manifest.totals, SIX_BATCH_TOTALS, '六批的 totals 必须等于"按 distinct 文件重算"的结果');
 
+  // **四批零变化**这条判据原样保留（去重不该动它们的路径、字节与 contentId），只是循环范围
+  // 从"所有批次"收窄成"四批"，因为现在清单里多了 lie/sleep（它们的路径形态本就不同：去重后
+  // 多帧共享同一路径，`poses/<posture>/<frameId>@<density>.webp` 那条正则对它们不成立）。
   let frameCount = 0;
   const contentIds = new Set();
   const paths = new Set();
-  for (const [posture, batch] of Object.entries(manifest.batches)) {
+  for (const posture of FOUR_BATCHES) {
+    const batch = manifest.batches[posture];
+    assert.ok(batch, `运行清单里必须有 ${posture}`);
     for (const [frameId, frame] of Object.entries(batch.frames)) {
       frameCount += 1;
       for (const density of ['1x', '2x']) {
@@ -500,11 +512,16 @@ test('D7 四批零变化：去重对 sit/walk/run/jump 必须毫无影响（62 �
   assert.strictEqual(paths.size, 62, '四批必须还是 62 个不同路径（没有可去重的重复像素）');
   assert.strictEqual(contentIds.size, 31, '四批 31 帧必须是 31 张不同的画（有重复就说明这批不该共用文件）');
 
-  // 盘上 62 个 webp、总字节 5,395,964（逐字节与 totals 吻合）
+  // 四批的字节小计也必须逐值不变（金丝雀：去重对它们零影响）
+  const sitFrame = manifest.batches.sit.frames.sit_neutral;
+  assert.strictEqual(sitFrame.files['1x'].bytes, 31846, 'sit@1x 字节数不该变');
+  assert.strictEqual(sitFrame.files['2x'].bytes, 100182, 'sit@2x 字节数不该变');
+
+  // 盘上 78 个 webp、总字节 6,688,760（逐字节与 totals 吻合；去重不许多写也不许少写文件）
   const onDisk = listWebp(POSE_RUNTIME_DIR);
-  assert.strictEqual(onDisk.length, 62);
+  assert.strictEqual(onDisk.length, SIX_BATCH_TOTALS.distinctFiles, `盘上应有 ${SIX_BATCH_TOTALS.distinctFiles} 个 webp，实际 ${onDisk.length}`);
   const diskBytes = onDisk.reduce((sum, relativePath) => sum + statSync(join(POSE_RUNTIME_DIR, relativePath)).size, 0);
-  assert.strictEqual(diskBytes, FOUR_BATCH_TOTALS.bytes1x + FOUR_BATCH_TOTALS.bytes2x, '盘上字节必须等于 totals');
+  assert.strictEqual(diskBytes, SIX_BATCH_TOTALS.bytes1x + SIX_BATCH_TOTALS.bytes2x, '盘上字节必须等于 totals');
 
   // contentId 的来源可复算：母版 PNG 的 sha256 前 16 位（不是转码后的 webp 摘要）
   const sitSource = resolve(REPO_ROOT, 'docs/assets/desktop-pet/poses/sit/sit_neutral@2x.png');

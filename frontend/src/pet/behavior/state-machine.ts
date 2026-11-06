@@ -35,7 +35,7 @@
  * @module pet/behavior/state-machine
  */
 import type { ExpressionId, MotionId, PresentationOp, Priority } from '../presentation/types';
-import { isPlayable } from '../poses/manifest';
+import { isFacingSensitive, isPlayable } from '../poses/manifest';
 import type { Facing, PetPoses, PosePostureId, PostureId } from '../poses/types';
 import type { HitProfile } from './hit-profile';
 
@@ -1126,10 +1126,13 @@ function hasPlayablePose(assets: PetPoses, posture: PosePostureId, facing?: Faci
  * "身体怎么抖"，姿态决定"身体是什么形态"。所以姿态只在这里派生，任何地方都不许写
  * `posture` 字段，也不许把它塞进 `MotionId` 枚举。</p>
  *
- * <p><b>没有资产就优雅降级为 `stand`</b>：切片 2 起 `sit`/`walk`/`run`/`jump` 已登记可播，
- * 所以 `walk`/`run`/`jump` 会返回自己；`lie`/`sleep`（切片 3）与一切未登记姿态仍降级 stand，
- * `sleeping` 继续走既有的"闭眼表情 + sleepy 动作"。
- * 这条降级必须存在，否则"资产未交付"会表现成空白窗口。</p>
+ * <p><b>没有资产就优雅降级为 `stand`</b>：切片 3 起六批（`sit`/`walk`/`run`/`jump`/`lie`/`sleep`）
+ * 全部登记可播，所以上表六个状态都会返回自己；但降级路径**必须继续存在**——
+ * 它是"资产未交付/被摘出 accepted"时唯一的兜底，表现成站姿而不是空白窗口。
+ * （`petPoseStateMachine.test.ts` 用合成清单摘掉某一批继续守这条路径，不靠真清单的时机。）</p>
+ *
+ * <p><b>朝向只在朝向敏感批次上生效</b>：单朝向静态批（`sit`/`lie`/`sleep`）忽略 `facing`，
+ * 否则"光标在右侧 ⇒ 永远不坐/不趴"（设计 §4.3 的裁决Ⅰ，判据见 {@link isFacingSensitive}）。</p>
  *
  * <p><b>`drag` 不在特例里</b>：设计 §A1.8.2 要求"拖着坐着的猫时姿态保持"，但那是
  * **拖拽期间不重算**（`main.ts` 的 `syncPosture()` 在 drag 态直接跳过 setPosture 并
@@ -1145,19 +1148,29 @@ function hasPlayablePose(assets: PetPoses, posture: PosePostureId, facing?: Faci
  * @returns 姿态 id
  */
 export function postureOf(state: PetBehaviorState, assets: PetPoses, facing?: Facing): PostureId {
+  /**
+   * 统一的"该姿态能否派生"判据：**只有朝向敏感的批次才透传 `facing`**。
+   *
+   * <p>为什么不无条件透传：`sit`/`lie`/`sleep` 全仓只有 `facing:-1` 一条片段，无条件透传会让
+   * `postureOf('sit', poses, 1)` 变成 `false` ⇒ 光标在右侧时猫永远不坐、也不趴。而
+   * "该不该按朝向分流"是**批次的属性**（{@link isFacingSensitive} 从 `clips[].facing` 的集合算），
+   * 不是姿态名字表——新批次自动归位。</p>
+   */
+  const playable = (posture: PosePostureId): boolean =>
+    hasPlayablePose(assets, posture, isFacingSensitive(assets, posture) ? facing : undefined);
   switch (state) {
     case 'sleeping':
-      return hasPlayablePose(assets, 'sleep', facing) ? 'sleep' : 'stand';
+      return playable('sleep') ? 'sleep' : 'stand';
     case 'sit':
-      return hasPlayablePose(assets, 'sit', facing) ? 'sit' : 'stand';
+      return playable('sit') ? 'sit' : 'stand';
     case 'lie':
-      return hasPlayablePose(assets, 'lie', facing) ? 'lie' : 'stand';
+      return playable('lie') ? 'lie' : 'stand';
     case 'walk':
-      return hasPlayablePose(assets, 'walk', facing) ? 'walk' : 'stand';
+      return playable('walk') ? 'walk' : 'stand';
     case 'run':
-      return hasPlayablePose(assets, 'run', facing) ? 'run' : 'stand';
+      return playable('run') ? 'run' : 'stand';
     case 'jump':
-      return hasPlayablePose(assets, 'jump', facing) ? 'jump' : 'stand';
+      return playable('jump') ? 'jump' : 'stand';
     default:
       return 'stand';
   }
