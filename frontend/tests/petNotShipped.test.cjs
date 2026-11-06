@@ -146,6 +146,114 @@ test('反例：build.files 里加回 pet-geometry.json → 守卫必须红', asy
   }
 });
 
+test('反例：产物里残留桌宠静态资产目录（隔离失效）→ 守卫必须红（M2 线A任务 2）', async () => {
+  const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
+  const root = makeFixture({
+    dist: {
+      'index.html': '<!doctype html><div id="app"></div>',
+      'live2d/pet-poses/sit/sit_neutral@1x.webp': 'RIFF-fake-webp',
+      'live2d/pet-poses/README.md': '# not a marker',
+    },
+  });
+  try {
+    const result = runNotShippedChecks({ frontendRoot: root });
+    assert.equal(result.ok, false, '产物里躺着 pet-poses 却仍然绿：隔离判据失效');
+    assert.ok(
+      result.problems.some((problem) => problem.startsWith('dist-pet-static-dirs') && problem.includes('pet-poses')),
+      `问题列表里没有点名桌宠静态资产目录：\n${result.problems.join('\n')}`,
+    );
+    assert.ok(
+      result.problems.some((problem) => problem.startsWith('dist-pet-static-paths')),
+      `问题列表里没有点名桌宠路径段：\n${result.problems.join('\n')}`,
+    );
+    assert.ok(
+      result.problems.some((problem) => problem.startsWith('dist-pet-static-media')),
+      `问题列表里没有点名桌宠姿态 webp：\n${result.problems.join('\n')}`,
+    );
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('反例：桌宠姿态 webp 被挪到别处也要抓（按文件名前缀，不只看目录）', async () => {
+  const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
+  const root = makeFixture({
+    dist: {
+      'index.html': '<!doctype html><div id="app"></div>',
+      'assets/pet-pose-sneaky@2x.webp': 'RIFF-fake-webp',
+    },
+  });
+  try {
+    const result = runNotShippedChecks({ frontendRoot: root });
+    assert.equal(result.ok, false, '桌宠姿态 webp 藏在 assets/ 下却仍然绿：判据只看目录就会漏');
+    assert.ok(
+      result.problems.some(
+        (problem) => problem.startsWith('dist-pet-static-media') && problem.includes('pet-pose-sneaky@2x.webp'),
+      ),
+      `问题列表里没有点名那个文件：\n${result.problems.join('\n')}`,
+    );
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('非桌宠 Live2D 模型资产（live2d/<model>/texture.webp）不在禁令内 → 守卫必须绿', async () => {
+  const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
+  const root = makeFixture({
+    dist: {
+      'index.html': '<!doctype html><div id="app"></div>',
+      'live2d/hiyori/texture_00.webp': 'RIFF-fake-webp',
+      'live2d/hiyori/model3.json': '{"version":3}',
+    },
+  });
+  try {
+    const result = runNotShippedChecks({ frontendRoot: root });
+    assert.equal(
+      result.ok,
+      true,
+      `非桌宠模型资产被误判成桌宠资产（这会让守卫被放宽成"禁所有 webp"）：\n${result.problems.join('\n')}`,
+    );
+    const ids = result.checks.map((item) => item.id);
+    assert.ok(ids.includes('dist-pet-static-dirs'), '缺 dist-pet-static-dirs 判据');
+    assert.ok(ids.includes('dist-pet-static-paths'), '缺 dist-pet-static-paths 判据');
+    assert.ok(ids.includes('dist-pet-static-media'), '缺 dist-pet-static-media 判据');
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('隔离脚本自身的幂等性：没有可删的目录时不抛错，删完再删一次也不抛错', async () => {
+  const { isolatePetAssetsFromDist, listPetAssetDirs } = await import('../scripts/pet-asset-isolation.mjs');
+  const root = makeFixture({
+    dist: {
+      'index.html': '<!doctype html>',
+      'live2d/pet-poses/sit/a@1x.webp': 'x',
+      'live2d/pet-v3/face/b@1x.webp': 'yy',
+      'live2d/hiyori/texture_00.webp': 'zzz',
+    },
+  });
+  try {
+    const dist = path.join(root, 'dist');
+    const before = listPetAssetDirs(dist);
+    assert.equal(before.length, 2, `隔离前应看到 2 个 pet-* 目录：${before.join(', ')}`);
+
+    const first = isolatePetAssetsFromDist(dist);
+    assert.equal(first.removed.length, 2, '第一次隔离应删掉 2 个目录');
+    assert.ok(first.removedFiles >= 2, '必须统计到被删的文件数（日志与门禁都靠它）');
+    assert.ok(first.removedBytes > 0, '必须统计到被删的字节数');
+    assert.deepEqual(first.removed.map((item) => item.name).sort(), ['pet-poses', 'pet-v3']);
+    assert.ok(!fs.existsSync(path.join(dist, 'live2d', 'pet-poses')), 'pet-poses 必须被删掉');
+    assert.ok(fs.existsSync(path.join(dist, 'live2d', 'hiyori', 'texture_00.webp')), '非桌宠模型资产必须留下');
+
+    // 幂等：再删一次不抛错、返回空清单
+    const second = isolatePetAssetsFromDist(dist);
+    assert.deepEqual(second.removed, [], '第二次隔离没有可删的东西，必须返回空清单');
+    assert.equal(second.removedBytes, 0);
+  } finally {
+    removeFixture(root);
+  }
+});
+
 test('反例：dist 里出现 pet.html → 守卫必须红', async () => {
   const { runNotShippedChecks } = await import('../scripts/check-pet-not-shipped.mjs');
   const root = makeFixture({ dist: { 'pet.html': '<!doctype html><div id="pet-root"></div>' } });

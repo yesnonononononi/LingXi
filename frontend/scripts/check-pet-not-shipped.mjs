@@ -8,7 +8,7 @@
  * 又含 `dist/**\/*` ⇒ 装好的 LX 里 `dist/pet.html` 是一直存在的。谁哪天在 `main.cjs` 里
  * 手滑 `loadURL('pet.html')`，安装版就会冒出桌宠。所以这里对<b>产物与构建配置</b>做静态断言。</p>
  *
- * <p><b>四条判据（每条都必须能单独变红）：</b></p>
+ * <p><b>七条判据（每条都必须能单独变红）：</b></p>
  * <ol>
  *   <li>`frontend/vite.config.ts` 的 `build.rollupOptions.input` 里<b>没有</b> `pet` 键，
  *       也没有任何 `*.html` 入口的文件名等于 `pet.html`（防止换个键名绕过去）；</li>
@@ -16,11 +16,21 @@
  *       （`pet-geometry.json` / `pet-*.json` / `pet.html`）；</li>
  *   <li>`frontend/dist/pet.html` <b>不存在</b>；</li>
  *   <li>`frontend/dist` 下任何文本产物都<b>不含</b>桌宠指纹（`<div id="pet-root"` /
- *       `<meta name="lx-app" content="pet"`）。</li>
+ *       `<meta name="lx-app" content="pet"`）；</li>
+ *   <li><b>生产产物里没有桌宠静态资产</b>（M2 线A任务 2，新增三条子判据）：
+ *       ①`dist/live2d/` 下没有名为 `pet-*` 的目录；②`dist` 全树没有 `pet-poses/` / `pet-sequences/`
+ *       路径段；③没有桌宠的 `.webp` 姿态资产（**按路径段/文件名前缀精确判定**：
+ *       `live2d/hiyori/texture_00.webp` 这类非桌宠模型资产不在禁令内，一刀切禁 webp 会把它们打红）；</li>
  *   <li>`public/live2d/pet-poses` 与 `dist/live2d/pet-poses` 里<b>没有 PNG</b>（母版只许留在
  *       `docs/assets/desktop-pet/`）；</li>
  *   <li>上述两处 pose 运行资产<b>合计 ≤ 8 MiB</b>（裁决 D-02：pose 资产留在包里，改设总量上限）。</li>
  * </ol>
+ *
+ * <p><b>判据 5 与判据 6/7 的口径关系（不是放宽，是被替代）：</b>判据 6/7 原本对 `dist` 侧
+ * `live2d/pet-poses` 也做 PNG 与体积检查。引入资产隔离之后 `dist` 侧那个目录**必须不存在**，
+ * 于是"检查它里面的 PNG/体积"这件事没有对象了。替代它的是一条**更严**的判据 5：
+ * 目录本身不许存在。`public` 侧的 PNG/体积判据**一字未改、照旧执行**（开发态资产仍受 D-02 约束）。
+ * `dist` 侧目录不存在时打一条 note 说明"这是期望状态"，而不是"跳过检查"。</p>
  *
  * <p><b>dist 不存在时不算失败</b>（干净的开发树很正常），但会打印一条"请先跑 npm run build"的
  * 说明——"没检查"和"检查通过"必须是两句不同的话，否则这个守卫会退化成安慰剂。</p>
@@ -39,6 +49,9 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { FRONTEND_ROOT, readJsonFile } from './build-pet-geometry.mjs';
+// 桌宠静态资产隔离的判定真源（目录名前缀）：本脚本与 `vite.config.ts` 的构建期裁剪**共用一份**判定，
+// 避免"构建按名单删、守卫按前缀查"这种两边口径分裂（漏删的那一版永远绿）。
+import { LIVE2D_DIR_NAME, PET_ASSET_DIR_PREFIX, isPetAssetDirName } from './pet-asset-isolation.mjs';
 // pose 运行资产的体积上限**只有一个真源**：`scripts/pet-budget.mjs`（裁决 D-02，8 MiB）。
 // D-02 否决了"把 pose 资产排除出安装包"的方案，改为 **留在包里但设总量上限**：
 // 资产留在包里才能保证开发态与打包态走同一条 `lxa://` 路径；设上限是为了让"美术顺手塞
@@ -240,6 +253,74 @@ export function scanPoseRuntimeDir(poseDir) {
 }
 
 /**
+ * 扫描 `dist` 里是否存在**桌宠静态资产**（M2 线A任务 2 的核心判据）。
+ *
+ * <p>只看文件系统事实。三条子判据各自收集命中清单，由调用方逐条 record，
+ * 这样报错能点名到具体路径（"产物里有 pet-poses"比"有桌宠资产"可执行得多）。</p>
+ *
+ * <p><b>为什么按"路径段前缀 + 文件名前缀"判定、不一刀切禁 webp：</b>
+ * `dist/live2d/` 会是**非桌宠 Live2D 模型**的合法安放处（`lxa://` 协议的内置根），
+ * 那些模型自己带 `texture_00.webp`。禁掉所有 webp 会把无关资产打红，进而逼人放宽守卫。
+ * 所以规则是：路径里任一段以 `pet-` 开头、或文件名以 `pet-` 开头，才算桌宠资产。</p>
+ *
+ * @param {string} distDir dist 目录绝对路径
+ * @returns {{exists: boolean, petDirs: string[], petPathSegments: string[], petMedia: string[],
+ *   petFiles: number, petBytes: number}} 扫描结果（路径均相对 dist）
+ */
+export function scanDistPetAssets(distDir) {
+  const result = {
+    exists: false,
+    petDirs: [],
+    petPathSegments: [],
+    petMedia: [],
+    petFiles: 0,
+    petBytes: 0,
+  };
+  if (!existsSync(distDir)) return result;
+  result.exists = true;
+
+  /** 桌宠资产专属的路径段（与 {@link POSE_RUNTIME_DIR_SEGMENTS} 同源的前缀口径）。 */
+  const PET_SEGMENTS = Object.freeze([`${PET_ASSET_DIR_PREFIX}poses`, `${PET_ASSET_DIR_PREFIX}sequences`]);
+
+  /**
+   * 相对路径是否含桌宠路径段。
+   *
+   * @param {string} relative 相对 dist 的路径
+   * @returns {boolean} 是否命中
+   */
+  const hasPetSegment = (relative) =>
+    relative.split(/[\\/]+/).some((segment) => PET_SEGMENTS.includes(segment));
+
+  /** 深度优先遍历（携带"是否已在桌宠目录内"标记，避免整棵子树被跳过而漏记文件）。 */
+  const walk = (dir, relativeRoot, insidePetDir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const relative = relativeRoot === '' ? entry.name : `${relativeRoot}/${entry.name}`;
+      const absolute = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        const isPetDir = isPetAssetDirName(entry.name);
+        if (isPetDir) result.petDirs.push(relative);
+        walk(absolute, relative, insidePetDir || isPetDir);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const isPetFile = insidePetDir || isPetAssetDirName(entry.name) || hasPetSegment(relative);
+      if (!isPetFile) continue;
+      // 桌宠路径段 / 桌宠文件名 / 桌宠目录内的文件：统一进"路径段"命中清单
+      result.petPathSegments.push(relative);
+      result.petFiles += 1;
+      result.petBytes += statSync(absolute).size;
+      // 姿态资产（媒体）：只在"桌宠目录内 / 桌宠文件名"下才算违规——
+      // 非桌宠 Live2D 模型的 webp（`live2d/hiyori/texture_00.webp`）不在禁令内。
+      if (entry.name.toLowerCase().endsWith('.webp') && (insidePetDir || isPetAssetDirName(entry.name))) {
+        result.petMedia.push(relative);
+      }
+    }
+  };
+  walk(distDir, '', false);
+  return result;
+}
+
+/**
  * 执行全部产物级判据。
  *
  * @param {object} [options] 选项（测试可注入假路径）
@@ -349,10 +430,58 @@ export function runNotShippedChecks(options = {}) {
     } else {
       record('dist-markers', true, `扫描 ${texts.length} 个文本产物，无桌宠指纹`);
     }
+
+    // 判据 5：**生产产物里不许有桌宠静态资产**（M2 线A任务 2）。
+    // 三条子判据分开记，报错才能点名到具体路径；任何一条命中都是一条 FAIL。
+    const petAssets = scanDistPetAssets(distDir);
+    if (petAssets.petDirs.length > 0) {
+      record(
+        'dist-pet-static-dirs',
+        false,
+        `产物里出现桌宠静态资产目录（${petAssets.petFiles} 个文件 / ` +
+          `${(petAssets.petBytes / 1024 / 1024).toFixed(2)} MiB）：${petAssets.petDirs.join(', ')}` +
+          '。安装版不展示桌宠，这些字节纯属包体浪费；vite.config.ts 的 petAssetIsolation 插件必须在构建尾把它们裁掉',
+      );
+    } else {
+      record(
+        'dist-pet-static-dirs',
+        true,
+        `dist/${LIVE2D_DIR_NAME} 下没有 ${PET_ASSET_DIR_PREFIX}* 目录（桌宠静态资产已隔离）`,
+      );
+    }
+    if (petAssets.petPathSegments.length > 0) {
+      record(
+        'dist-pet-static-paths',
+        false,
+        `产物里出现桌宠路径段（pet-poses/ pet-sequences/ 或 pet-* 文件名）：` +
+          `${petAssets.petPathSegments.slice(0, 10).join(', ')}` +
+          `${petAssets.petPathSegments.length > 10 ? ` 等 ${petAssets.petPathSegments.length} 处` : ''}`,
+      );
+    } else {
+      record('dist-pet-static-paths', true, '产物全树没有 pet-poses/ 或 pet-sequences/ 路径，也没有 pet-* 文件名');
+    }
+    if (petAssets.petMedia.length > 0) {
+      record(
+        'dist-pet-static-media',
+        false,
+        `产物里出现桌宠姿态的 webp 资产：${petAssets.petMedia.slice(0, 10).join(', ')}` +
+          `${petAssets.petMedia.length > 10 ? ` 等 ${petAssets.petMedia.length} 个` : ''}`,
+      );
+    } else {
+      record(
+        'dist-pet-static-media',
+        true,
+        '产物里没有桌宠姿态的 webp（非桌宠 Live2D 模型的 webp 不在禁令内）',
+      );
+    }
   }
 
-  // 判据 5 / 6：pose 运行资产（D-02 替代方案：留在包里，但禁 PNG 且总量 ≤ 8 MiB）
+  // 判据 6 / 7：pose 运行资产（D-02：留在包里，但禁 PNG 且总量 ≤ 8 MiB）
   // 清单存在 ⇒ 运行资产"应该有"，目录缺失就必须说出来；清单不存在（切片 1 之前 / 干净样本）⇒ 静默跳过。
+  //
+  // 口径变化（M2 线A任务 2，**不是放宽**）：生产构建已隔离桌宠静态资产 ⇒ `dist` 侧这个目录
+  // **本来就该不存在**，于是"检查它里面的 PNG/体积"没有对象了。替代它的是一条更严的判据
+  // （上面的 `dist-pet-static-*`：目录本身不许存在）。`public` 侧的 PNG/体积判据一字未改。
   const poseManifestPath = resolve(root, 'pet-poses.json');
   const poseAssetsClaimed = existsSync(poseManifestPath);
   const poseDirs = [
@@ -363,7 +492,13 @@ export function runNotShippedChecks(options = {}) {
   for (const { id, dir } of poseDirs) {
     const stats = scanPoseRuntimeDir(dir);
     if (!stats.exists) {
-      if (poseAssetsClaimed) notes.push(`pose 运行目录不存在，已跳过该项：${dir}`);
+      if (!poseAssetsClaimed) continue;
+      notes.push(
+        id === 'dist'
+          ? `dist 侧 pose 运行目录不存在 —— 这是**期望状态**（生产构建已隔离桌宠静态资产，见 dist-pet-static-* 判据），` +
+            `本项 PNG/体积判据因此无实测对象：${dir}`
+          : `public 侧 pose 运行目录不存在，已跳过该项（请先跑 npm run build:pet-poses）：${dir}`,
+      );
       continue;
     }
     poseChecked += 1;
@@ -393,7 +528,10 @@ export function runNotShippedChecks(options = {}) {
     }
   }
   if (poseChecked === 0 && poseAssetsClaimed) {
-    notes.push('清单里声明了 pose 运行资产，但两处运行目录都不存在：体积与 PNG 判据本轮没有实测对象');
+    notes.push(
+      '清单里声明了 pose 运行资产，但 public 侧运行目录也不存在：体积与 PNG 判据本轮没有实测对象' +
+        '（dist 侧不存在是期望状态，不算缺口）',
+    );
   }
 
   return { ok: problems.length === 0, problems, notes, checks };
@@ -452,6 +590,48 @@ export function selftest() {
     if (tiny.exists || tiny.bytes !== 0) problems.push('自检失败：pose 扫描器把不存在的目录当成存在');
   } finally {
     rmSync(probeRoot, { recursive: true, force: true });
+  }
+
+  // dist 桌宠静态资产扫描器自证（M2 线A任务 2）：必须同时证明"抓得到桌宠资产"与
+  // "不会误伤非桌宠的 Live2D 模型 webp"——只证前者会让守卫退化成"禁所有 webp"。
+  const distProbe = mkdtempSync(join(tmpdir(), 'lx-pet-asset-scan-'));
+  try {
+    const petPosesDir = join(distProbe, LIVE2D_DIR_NAME, 'pet-poses', 'sit');
+    mkdirSync(petPosesDir, { recursive: true });
+    writeFileSync(join(petPosesDir, 'sit_neutral@1x.webp'), Buffer.alloc(8, 0x52));
+    // 非桌宠模型资产：必须**不放行**判据（不是违规）
+    const modelDir = join(distProbe, LIVE2D_DIR_NAME, 'hiyori');
+    mkdirSync(modelDir, { recursive: true });
+    writeFileSync(join(modelDir, 'texture_00.webp'), Buffer.alloc(8, 0x52));
+    /** 被测扫描结果。 */
+    const scanned = scanDistPetAssets(distProbe);
+    if (!scanned.exists) problems.push('自检失败：dist 扫描器没认出存在的目录');
+    if (!scanned.petDirs.some((item) => item.includes('pet-poses'))) {
+      problems.push('自检失败：dist 扫描器没抓到 pet-poses 目录（隔离判据会空转）');
+    }
+    if (!scanned.petMedia.some((item) => item.includes('sit_neutral@1x.webp'))) {
+      problems.push('自检失败：dist 扫描器没抓到桌宠姿态 webp');
+    }
+    if (scanned.petMedia.some((item) => item.includes('texture_00.webp'))) {
+      problems.push('自检失败：dist 扫描器把非桌宠 Live2D 模型 webp 误判成桌宠资产（守卫会被迫放宽）');
+    }
+    /** 干净产物：任何一条都不许命中。 */
+    const cleanProbe = mkdtempSync(join(tmpdir(), 'lx-pet-asset-clean-'));
+    try {
+      const cleanModel = join(cleanProbe, LIVE2D_DIR_NAME, 'hiyori');
+      mkdirSync(cleanModel, { recursive: true });
+      writeFileSync(join(cleanModel, 'texture_00.webp'), Buffer.alloc(8, 0x52));
+      const clean = scanDistPetAssets(cleanProbe);
+      if (clean.petDirs.length || clean.petPathSegments.length || clean.petMedia.length) {
+        problems.push('自检失败：干净产物被 dist 扫描器误判成含桌宠资产');
+      }
+    } finally {
+      rmSync(cleanProbe, { recursive: true, force: true });
+    }
+    const missing = scanDistPetAssets(join(distProbe, 'not-there'));
+    if (missing.exists) problems.push('自检失败：dist 扫描器把不存在的目录当成存在');
+  } finally {
+    rmSync(distProbe, { recursive: true, force: true });
   }
   return { ok: problems.length === 0, problems };
 }

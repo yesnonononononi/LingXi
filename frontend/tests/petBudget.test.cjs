@@ -108,7 +108,24 @@ test('B-2 三处口径一致（行为断言）：两个消费方必须按同一�
       [],
       `= limit 时不许有 pose-budget 报错：\n${atLimit.problems.join('\n')}`,
     );
-    assert.equal(atLimit.ok, true, `= limit 时整轮守卫必须全绿：\n${atLimit.problems.join('\n')}`);
+    // ── 口径变化（M2 线A任务 2，前提变了不是放宽）──
+    // 本用例原来的收尾断言是 `atLimit.ok === true`（整轮全绿）。前提已经变了：生产构建现在
+    // 要求 dist 里**根本不许有**桌宠静态资产（`dist-pet-static-*`），而本用例为了测 pose 体积
+    // 恰恰手工造了一个"dist 里有 pet-poses"的世界 —— 那个世界如今按设计就是红的。
+    // 所以改成逐族点账：pose-budget 族必须全绿（B-2 的主题没变），并且**必须**恰好只有
+    // dist-pet-static-* 族红（否则说明有其他判据被连坐，或新判据根本没生效）。
+    assert.deepEqual(
+      atLimit.problems.filter((problem) => !/产物里出现桌宠/.test(problem)),
+      [],
+      `= limit 时除了"dist 不许含桌宠静态资产"这一族，不应有别的红：\n${atLimit.problems.join('\n')}`,
+    );
+    const staticFamily = atLimit.checks.filter((item) => item.id.startsWith('dist-pet-static-'));
+    assert.equal(staticFamily.length, 3, 'dist-pet-static-dirs / -paths / -media 三条子判据必须都在');
+    assert.deepEqual(
+      staticFamily.filter((item) => item.ok).map((item) => item.id),
+      [],
+      '手工造的 dist 里就摆着 pet-poses ⇒ 三条静态资产判据必须全红（新判据真的接上了，不是空转）',
+    );
 
     // limit + 1 ⇒ dist 侧必须红
     fs.writeFileSync(probe, Buffer.alloc(limit + 1));
