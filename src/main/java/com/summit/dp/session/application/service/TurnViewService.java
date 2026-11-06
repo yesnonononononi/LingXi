@@ -14,6 +14,11 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -65,22 +70,101 @@ public class TurnViewService {
         // 而实时链路每个工具收尾都要装配一次，长会话下会成为主成本。
         List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turn.getId()));
         Map<String, ToolCall> toolCalls = loadToolCalls(messages, turn.getId());
-        List<Block> blocks = turnViewAssembler.assembleBlocks(turn.getId(), messages, toolCalls, turn.getStatus());
+        return Optional.of(buildView(session, turn, viewVersion, messages, toolCalls));
+    }
 
-        return Optional.of(new TurnViewVO(
-                sessionId,
-                turn.getId(),
+    /**
+     * 批量装配一页内多个轮次的展示视图（历史分页用）。
+     *
+     * <p><b>复用当页已查出的消息</b>：历史按轮次分页，{@code pageMessages} 就是这一页所有轮次的
+     * 全部消息（外加 {@code turn_id} 为 null 的孤儿行，分组时自然忽略），因此按 {@code turnId}
+     * 分组的结果与该轮的 {@code findByTurnIds} 完全一致。原先逐轮调用 {@link #assembleTurnView}
+     * 是 2N 次查询，改造后是 2 次。</p>
+     *
+     * <p><b>工具调用跨轮一次装载</b>：本页所有轮次的 {@code toolCallId} 取并集后一次 {@code IN}；
+     * 分轮各查会让长会话的每一页都退回 N+1。</p>
+     *
+     * @param session      会话（提供用量快照；{@code null} 时 metric 为 null）
+     * @param turns        本页轮次
+     * @param pageMessages 本页消息（可含其它轮次与孤儿行，本方法只取匹配轮次的行）
+     * @return {@code turnId} 的字符串形态 → 该轮视图；顺序与 {@code turns} 的迭代顺序一致
+     */
+    public Map<String, TurnViewVO> assembleTurnViews(Session session, Collection<ChatTurn> turns,
+                                                     List<SessionMessage> pageMessages) {
+        Map<String, TurnViewVO> views = new LinkedHashMap<>();
+        if (turns == null || turns.isEmpty()) {
+            return views;
+        }
+        Map<Long, List<SessionMessage>> messagesByTurn = groupByTurnId(pageMessages);
+        Map<String, ToolCall> toolCalls = loadPageToolCalls(turns, messagesByTurn);
+        for (ChatTurn turn : turns) {
+            if (turn == null || turn.getId() == null || turn.getSessionId() == null) {
+                continue;
+            }
+            long viewVersion = turn.getVersion() == null ? 0L : turn.getVersion();
+            views.put(String.valueOf(turn.getId()), buildView(session, turn, viewVersion,
+                    messagesByTurn.getOrDefault(turn.getId(), List.of()), toolCalls));
+        }
+        return views;
+    }
+
+    /**
+     * 单轮视图的构造（VO 字段的唯一来源）。
+     *
+     * <p>历史分页、实时快照、单块增量三条路径共用它：任何一条另写一遍字段映射，
+     * 都会让「同一条消息在两个入口长得不一样」重新出现。</p>
+     */
+    private TurnViewVO buildView(Session session, ChatTurn turn, long viewVersion,
+                                 List<SessionMessage> messages, Map<String, ToolCall> toolCalls) {
+        Long turnId = turn.getId();
+        List<Block> blocks = turnViewAssembler.assembleBlocks(turnId, messages, toolCalls, turn.getStatus());
+        return new TurnViewVO(
+                turn.getSessionId(),
+                turnId,
                 TurnViewAssembler.resolveTurnStatus(turn),
                 viewVersion,
-                turnViewAssembler.resolveUserMessage(turn.getId(), messages),
-                turnViewAssembler.resolveUserImageUrls(turn.getId(), messages),
+                turnViewAssembler.resolveUserMessage(turnId, messages),
+                turnViewAssembler.resolveUserImageUrls(turnId, messages),
                 blocks,
                 TurnViewAssembler.resolveMetric(session),
-                messages.stream().filter(message -> turn.getId().equals(message.getTurnId())
-                        && message.getType() == SessionMessageType.USER).map(SessionMessage::getId).findFirst().orElse(null),
-                turnViewAssembler.resolveResumeSupplements(turn.getId(), messages),
-                turn.getParentTurnId()
-        ));
+                messages.stream().filter(message -> turnId.equals(message.getTurnId())
+                        && message.getType() == SessionMessageType.USER)
+                        .map(SessionMessage::getId).findFirst().orElse(null),
+                turnViewAssembler.resolveResumeSupplements(turnId, messages),
+                turn.getParentTurnId());
+    }
+
+    /** 按 {@code turnId} 分组当页消息；孤儿行（{@code turnId} 为 null）不参与任何一轮。 */
+    private static Map<Long, List<SessionMessage>> groupByTurnId(List<SessionMessage> pageMessages) {
+        Map<Long, List<SessionMessage>> grouped = new LinkedHashMap<>();
+        if (pageMessages == null) {
+            return grouped;
+        }
+        for (SessionMessage message : pageMessages) {
+            if (message == null || message.getTurnId() == null) {
+                continue;
+            }
+            grouped.computeIfAbsent(message.getTurnId(), key -> new ArrayList<>()).add(message);
+        }
+        // 与 findByTurnIds 的「按主键升序」对齐：VO 的 userMessageId 取首个 USER 行，顺序变了就取错行。
+        Comparator<SessionMessage> byId = Comparator.comparing(SessionMessage::getId,
+                Comparator.nullsLast(Comparator.naturalOrder()));
+        grouped.values().forEach(rows -> rows.sort(byId));
+        return grouped;
+    }
+
+    /** 本页全部轮次涉及的工具调用 id 并集后一次 {@code IN} 装载。 */
+    private Map<String, ToolCall> loadPageToolCalls(Collection<ChatTurn> turns,
+                                                    Map<Long, List<SessionMessage>> messagesByTurn) {
+        Set<String> ids = new LinkedHashSet<>();
+        for (ChatTurn turn : turns) {
+            if (turn == null || turn.getId() == null) {
+                continue;
+            }
+            ids.addAll(turnViewAssembler.collectToolCallIds(turn.getId(),
+                    messagesByTurn.getOrDefault(turn.getId(), List.of())));
+        }
+        return loadToolCalls(ids);
     }
 
     /**
@@ -107,7 +191,11 @@ public class TurnViewService {
      * （含尚未出结果、甚至尚未落库的调用）。</p>
      */
     private Map<String, ToolCall> loadToolCalls(List<SessionMessage> messages, Long turnId) {
-        Set<String> ids = turnViewAssembler.collectToolCallIds(turnId, messages);
+        return loadToolCalls(turnViewAssembler.collectToolCallIds(turnId, messages));
+    }
+
+    /** 已收集好的 id 集合 → 字典；空集合不发查询。 */
+    private Map<String, ToolCall> loadToolCalls(Set<String> ids) {
         if (ids.isEmpty()) {
             return Map.of();
         }

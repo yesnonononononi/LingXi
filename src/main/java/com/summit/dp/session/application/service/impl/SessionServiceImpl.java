@@ -200,7 +200,7 @@ public class SessionServiceImpl implements SessionService {
                 .records(loaded.records())
                 .toolCallCount(loaded.toolCallCount())
                 .turns(buildTurnViews(ownedTurns, now))
-                .turnViews(buildBlockViews(ownedSession, ownedTurns))
+                .turnViews(buildBlockViews(ownedSession, ownedTurns, slice.records()))
                 .historyRevision(revision)
                 .messageCursor(slice.nextCursor())
                 .nextCursor(slice.nextCursor())
@@ -211,21 +211,17 @@ public class SessionServiceImpl implements SessionService {
     /**
      * 装配本页轮次的 Block 视图。
      *
-     * <p><b>复用已装载的轮次字典</b>：{@code ownedTurns} 已做过归属校验与一次 IN 装载，
-     * 这里直接用它调用装配服务，不再回查一遍轮次。历史与实时共用同一装配口径
-     * （{@link TurnViewService}），前端只需一套对账逻辑。</p>
+     * <p><b>复用当页数据</b>：{@code ownedTurns} 已做过归属校验与一次 IN 装载，
+     * 当页的 {@code session_message} 也已经在 {@code slice} 里了 —— 直接交给
+     * {@link TurnViewService#assembleTurnViews} 按 turnId 分组装配，不再逐轮回查消息与工具调用
+     * （那会把一页变成 2N 次查询）。历史与实时仍是同一装配口径。</p>
      *
      * <p>{@code viewVersion} 用轮次自身的版本（{@code chat_turn.version} 快照）：
      * 历史是「已落定的批次」，前端拿到更小的批次号（乱序的旧帧）应丢弃。</p>
      */
-    private Map<String, TurnViewVO> buildBlockViews(Session session, Map<Long, ChatTurn> ownedTurns) {
-        Map<String, TurnViewVO> result = new LinkedHashMap<>();
-        for (ChatTurn turn : ownedTurns.values()) {
-            long viewVersion = turn.getVersion() == null ? 0L : turn.getVersion();
-            turnViewService.assembleTurnView(session, turn, viewVersion)
-                    .ifPresent(view -> result.put(String.valueOf(turn.getId()), view));
-        }
-        return result;
+    private Map<String, TurnViewVO> buildBlockViews(Session session, Map<Long, ChatTurn> ownedTurns,
+                                                    List<SessionMessage> pageMessages) {
+        return turnViewService.assembleTurnViews(session, ownedTurns.values(), pageMessages);
     }
 
     /** 收集本页去重后的轮次 ID，用于一次 IN 批量装配轮次字典。 */
