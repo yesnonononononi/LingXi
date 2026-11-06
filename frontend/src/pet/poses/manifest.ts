@@ -239,6 +239,33 @@ export function assertScaleConsistent(scale: PoseScale, geometry: PetGeometry = 
 }
 
 /**
+ * `contentId` 的形状：母版 PNG `sha256` 的前 16 位小写十六进制。
+ *
+ * <p>与 `sha256`（64 位）同一套严格度：写错大小写、少一位、写成别的摘要算法都不许带病上屏——
+ * 它是"这两个帧位是同一张画"的唯一标识，读错就意味着去重口径与磁盘上的共享文件不一致。</p>
+ */
+const CONTENT_ID_PATTERN = /^[0-9a-f]{16}$/;
+
+/**
+ * 归一化内容寻址标识（可选键）。
+ *
+ * @param raw 原始值
+ * @param name 字段路径
+ * @returns 16 位小写十六进制标识；`undefined` 表示这份清单没有内容寻址信息
+ * @throws {TypeError} 出现了但不是 16 位小写十六进制
+ */
+function normalizeContentId(raw: unknown, name: string): string | undefined {
+  if (raw === undefined) return undefined;
+  const value = requireString(raw, name);
+  if (!CONTENT_ID_PATTERN.test(value)) {
+    throw new TypeError(
+      `[pet-poses] ${name} 必须是 16 位小写十六进制（母版 PNG sha256 前 16 位），实际为 ${value}`,
+    );
+  }
+  return value;
+}
+
+/**
  * 归一化一张图片条目。
  *
  * @param raw 原始值
@@ -255,6 +282,7 @@ function normalizeAssetFile(raw: unknown, name: string): PoseAssetFile {
   if (!/^[0-9a-f]{64}$/.test(sha256)) {
     throw new TypeError(`[pet-poses] ${name}.sha256 必须是 64 位小写十六进制，实际为 ${sha256}`);
   }
+  const contentId = normalizeContentId(source.contentId, `${name}.contentId`);
   return {
     file: requireString(source.file, `${name}.file`),
     url: requireString(source.url, `${name}.url`),
@@ -263,6 +291,7 @@ function normalizeAssetFile(raw: unknown, name: string): PoseAssetFile {
     bytes: requireNumber(source.bytes, `${name}.bytes`),
     sha256,
     format,
+    ...(contentId === undefined ? {} : { contentId }),
   };
 }
 

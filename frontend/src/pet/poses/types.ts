@@ -184,6 +184,18 @@ export interface PoseAssetFile {
   readonly sha256: string;
   /** 编码格式。 */
   readonly format: 'webp' | 'webp-lossless';
+  /**
+   * 内容寻址标识：母版 PNG 的 `sha256` 前 16 位小写十六进制（`/^[0-9a-f]{16}$/`）。
+   *
+   * <p><b>它的语义是"同一张画"：</b>同一 `contentId` 的两帧像素完全相同，构建期只写一份
+   * webp，两个帧位的 `file` / `url` 指向同一个磁盘文件。同 `contentId` 的引用必须
+   * `bytes` / `sha256` / `format` 全等（G-P10 判据）。</p>
+   *
+   * <p><b>为什么是可选：</b>老清单（T01 之前生成物、单测里的最小 fixture）没有这个键，
+   * 加载期把它当"没有内容寻址信息"而不是缺陷；一旦出现就必须是 16 位小写十六进制，
+   * 否则 `normalizeAssetFile` 直接抛 `TypeError`（与 `sha256` 的严格度同口径）。</p>
+   */
+  readonly contentId?: string;
 }
 
 /** 一帧（两档密度各一份文件）。 */

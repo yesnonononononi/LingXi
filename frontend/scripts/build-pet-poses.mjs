@@ -15,6 +15,12 @@
  * 逐字段比；并独立核验盘上 webp 的存在性 / 字节数 / sha256 / 编码格式。
  * "没检查"与"检查通过"永远是两句不同的话（美术目录缺失时会明确打印跳过原因）。</p>
  *
+ * <p><b>内容寻址去重（M2 T02）：</b>同一张画只写一份 webp。归组键是 `contentId`
+ * （母版 PNG `sha256` 的前 16 位），canonical 帧负责落盘，同组其余帧的
+ * `files[density].file` 指向同一路径；`totals` 按 **distinct 磁盘文件** 累加并写出
+ * `totals.distinctFiles`。`--check` 用**同一套 canonical 规则**解盘上路径——
+ * 只改一侧会让 `--check` 报"缺少运行产物"，这是本改动最容易翻车的地方。</p>
+ *
  * <p>用法：</p>
  * <pre>
  *   node scripts/build-pet-poses.mjs            # 导出 webp 并回写 pet-poses.json
@@ -57,6 +63,178 @@ export const DEFAULT_POSE_OUT_DIR = resolve(
 
 /** `lxa://` 的 host（小写：standard scheme 会把 host 转小写）。 */
 export const POSE_URL_HOST = 'pet-poses';
+/**
+ * 内容寻址标识的形状：母版 PNG 的 `sha256` **前 16 位小写十六进制**（设计 §8.3 共享知识第 5 条）。
+ *
+ * <p><b>为什么用母版而不是转码后的 webp：</b>"这两帧是不是同一张画"这个问题的权威答案在
+ * 美术交给我们的源像素上。转码后的 sha256 依赖编码器参数——改一次 `effort`、升一次 sharp
+ * 就整批变号，那时"要不要写两份文件"就再也答不上来（它正是内容寻址的唯一依据）。</p>
+ */
+export const CONTENT_ID_PATTERN = /^[0-9a-f]{16}$/;
+
+/**
+ * 算一个母版的 `contentId`（母版 PNG `sha256` 的前 16 位小写十六进制）。
+ *
+ * @param {string} absolutePath 母版 PNG 绝对路径
+ * @returns {string} 16 位小写十六进制 contentId
+ * @throws {RangeError} 文件不可读或摘要形状不合预期
+ */
+export function contentIdOf(absolutePath) {
+  if (typeof absolutePath !== 'string' || absolutePath.length === 0) {
+    throw new TypeError('[pet-poses] contentIdOf 需要母版 PNG 的路径');
+  }
+  const contentId = sha256Of(absolutePath).slice(0, 16);
+  if (!CONTENT_ID_PATTERN.test(contentId)) {
+    throw new RangeError(`[pet-poses] 从 ${absolutePath} 算出的 contentId=${contentId} 不是 16 位小写十六进制`);
+  }
+  return contentId;
+}
+
+/**
+ * 按 `contentId` 归组，给出每个帧的 **canonical 帧 id**（组内按草稿顺序的第一个）。
+ *
+ * <p><b>这是"同一张画只写一份文件"的唯一实现：</b>canonical 帧负责转码落盘，其余同组帧的
+ * `files[density].file` 直接指向它。落盘路径包含 `posture`，所以归组天然是**批内**的。</p>
+ *
+ * <p><b>为什么 canonical id 必须能在不转码的情况下重算：</b>`--check` 不许写盘、也不许假设
+ * 编码器可复现，它只能靠"输入相同 ⇒ canonical 相同"这条性质把盘上路径解出来。所以归组键用
+ * `contentId`（母版摘要），而不是转码后的 webp 摘要；两者的一一对应由
+ * {@link contentAddressingOf} 的第三条断言在构建期**证明**（同 contentId ⇒ 同字节；
+ * 异 contentId ⇒ 异字节），这样"按 contentId 归组"与"按 (density, webp sha256) 归组"
+ * 是同一套规则，`--check` 才可能与构建写出同一组路径。</p>
+ *
+ * @param {string[]} frameIds 帧 id（**必须是草稿顺序**：canonical 取组内第一个，顺序变了路径就抖）
+ * @param {Record<string, string>} contentIds `frameId → contentId`
+ * @returns {Map<string, string>} `frameId → canonical frameId`
+ * @throws {RangeError} 帧缺 contentId 或形状非法（查不到 = 判红，不许静默按帧 id 落盘）
+ */
+export function canonicalFrameIds(frameIds, contentIds) {
+  if (!Array.isArray(frameIds)) throw new TypeError('[pet-poses] canonicalFrameIds 需要帧 id 数组');
+  const source = contentIds && typeof contentIds === 'object' ? contentIds : {};
+  /** contentId → 组内第一个帧 id。 */
+  const firstOf = new Map();
+  /** frameId → canonical frameId。 */
+  const result = new Map();
+  for (const frameId of frameIds) {
+    const contentId = source[frameId];
+    if (typeof contentId !== 'string' || !CONTENT_ID_PATTERN.test(contentId)) {
+      throw new RangeError(
+        `[pet-poses] 帧 ${frameId} 缺少合法 contentId（实际 ${JSON.stringify(contentId)}）：` +
+          '内容寻址不许退化回"每个帧位各写一份"',
+      );
+    }
+    if (!firstOf.has(contentId)) firstOf.set(contentId, frameId);
+    result.set(frameId, firstOf.get(contentId));
+  }
+  return result;
+}
+
+/**
+ * 把清单里的 `file`（`poses/<posture>/<name>@<density>.webp`）解成**相对运行目录**的路径。
+ *
+ * <p>口径差与 `pet-p1` 那套同源：`file` 是相对 `lxa://pet-poses/` 的（所以带 `poses/` 一级），
+ * 而输出目录本身就是 `…/live2d/pet-poses`。直接 `resolve(outDir, file)` 会拼出
+ * `…/pet-poses/poses/sit/…`，那个 bug 只在门禁里看得见，页面上只表现为 404。</p>
+ *
+ * @param {unknown} file 清单里的相对路径
+ * @returns {string} 相对运行目录的路径（正斜杠）
+ */
+export function runtimeRelativePath(file) {
+  const normalized = String(file ?? '').replace(/\\/g, '/');
+  return normalized.startsWith('poses/') ? normalized.slice('poses/'.length) : normalized;
+}
+
+/**
+ * 校验 `assets` 的内容寻址结构，返回 `frameId → contentId`。
+ *
+ * <p>三条断言（全部是**行为**断言，不是文本匹配）：</p>
+ * <ol>
+ *   <li><b>全有或全无</b>：一批帧里"部分帧有 contentId、部分没有"直接报错——半有半无会让
+ *       "同 contentId 全等"这条判据静默失效（没 contentId 的帧永远不被比对）。</li>
+ *   <li><b>同 contentId ⇒ 同一张画</b>：`bytes / sha256 / format` 三个字段逐值全等，
+ *       否则构建失败。因为 canonical 归组只写一份文件，两帧字节不同就意味着其中一帧
+ *       会看到别的内容（用户侧表现是"某一帧突然变成另一张画"）。</li>
+ *   <li><b>异 contentId ⇒ 不许共用字节</b>：不同母版编出同一份 webp 时直接报错。
+ *       否则按 contentId 归组会多写一份一模一样的文件（去重漏了），而按字节归组又不能被
+ *       `--check` 复现。修复方向是让美术用 `aliases` 声明"这两张源文件是同一张画"
+ *       （adapter 已有校验），而不是让构建期去猜。</li>
+ * </ol>
+ *
+ * @param {string} posture 批次名（只用于报错文案）
+ * @param {string[]} frameIds 帧 id（草稿顺序）
+ * @param {Record<string, Record<string, any>>} assets `assets[posture][frameId]`
+ * @returns {Record<string, string>} `frameId → contentId`（整批没有内容寻址时是空对象）
+ * @throws {RangeError} contentId 形状非法 / 半有半无 / 同 contentId 字节不一致 / 异 contentId 共用字节
+ */
+export function contentAddressingOf(posture, frameIds, assets) {
+  const batchAssets = assets?.[posture] ?? {};
+  /** @type {Record<string, string>} */
+  const contentIds = {};
+  let known = 0;
+  for (const frameId of frameIds) {
+    const entry = batchAssets[frameId];
+    if (!entry || typeof entry !== 'object') continue;
+    const raw = entry.contentId;
+    if (raw === undefined) continue;
+    if (typeof raw !== 'string' || !CONTENT_ID_PATTERN.test(raw)) {
+      throw new RangeError(
+        `[pet-poses] ${posture}/${frameId} 的 contentId=${JSON.stringify(raw)} 不是 16 位小写十六进制` +
+          '（母版 PNG sha256 前 16 位）',
+      );
+    }
+    contentIds[frameId] = raw;
+    known += 1;
+  }
+  if (known === 0) return contentIds;
+  if (known !== frameIds.length) {
+    throw new RangeError(
+      `[pet-poses] ${posture} 的 contentId 只覆盖了 ${known}/${frameIds.length} 帧：` +
+        '"同 contentId 字节全等"这条判据在半有半无时会静默失效，所以全有或全无',
+    );
+  }
+  /** contentId → 组内第一个帧（用于报错时点名"跟谁撞了"）。 */
+  const firstOf = new Map();
+  /** `${density}|${sha256}` → 已占用它的 { frameId, contentId }。 */
+  const shaOwner = new Map();
+  for (const frameId of frameIds) {
+    const contentId = contentIds[frameId];
+    const entry = batchAssets[frameId];
+    const previous = firstOf.get(contentId);
+    if (previous === undefined) {
+      firstOf.set(contentId, { frameId, entry });
+    } else {
+      for (const density of ['1x', '2x']) {
+        const left = previous.entry?.[density];
+        const right = entry?.[density];
+        for (const field of ['bytes', 'sha256', 'format']) {
+          if (left?.[field] !== right?.[field]) {
+            throw new RangeError(
+              `[pet-poses] ${posture} 的 ${previous.frameId} 与 ${frameId} 共用 contentId ${contentId}，` +
+                `但 ${density}.${field} 不一致（${JSON.stringify(left?.[field])} ≠ ${JSON.stringify(right?.[field])}）：` +
+                '同 contentId = 同一张画，字节必须全等——否则"只写一份文件"会让其中一帧看到别的内容',
+            );
+          }
+        }
+      }
+    }
+    for (const density of ['1x', '2x']) {
+      const sha = entry?.[density]?.sha256;
+      if (typeof sha !== 'string') continue;
+      const key = `${density}|${sha}`;
+      const owner = shaOwner.get(key);
+      if (owner !== undefined && owner.contentId !== contentId) {
+        throw new RangeError(
+          `[pet-poses] ${posture} 的 ${owner.frameId} 与 ${frameId} 编出了同一份 ${density} 字节（sha256 ${sha}），` +
+            `但 contentId 不同（${owner.contentId} ≠ ${contentId}）：如果这两张源文件本来就是同一张画，` +
+            '请在美术 manifest 的 aliases 里声明（adapter 会校验）；否则它们不该字节全等',
+        );
+      }
+      if (owner === undefined) shaOwner.set(key, { frameId, contentId });
+    }
+  }
+  return contentIds;
+}
+
 
 /**
  * 站姿对齐点（native 域）——**一个实测出来的数据值，不是代码**。
@@ -181,8 +359,8 @@ export function webpFormatOf(absolutePath) {
  *
  * @param {object} options 选项
  * @param {Record<string, Record<string, unknown>>} options.drafts 已归一化的批次草稿
- * @param {Record<string, Record<string, Record<string, Record<string, {bytes:number, sha256:string, format:string}>>>>} options.assets
- *   帧文件信息：`assets[batch][frameId][density] = { bytes, sha256, format }`
+ * @param {Record<string, Record<string, Record<string, any>>>} options.assets
+ *   帧文件信息：`assets[batch][frameId] = { contentId?, canonicalId?, '1x': { bytes, sha256, format }, '2x': {...} }`
  * @param {Record<string, unknown>} options.geometry 几何真源
  * @param {Array<{posture:string, reason:string}>} options.deferred 未导出批次
  * @param {string[]} [options.accepted] 可播清单
@@ -198,20 +376,39 @@ export function buildPosesManifest(options) {
   let framesTotal = 0;
   let bytes1x = 0;
   let bytes2x = 0;
+  /**
+   * 已经计入 `totals` 的磁盘文件（`file` 路径 → 字节数）。
+   *
+   * <p><b>为什么不能按帧位求和：</b>去重后两个帧位指向同一个文件，按帧位累加会把同一份字节
+   * 数算两遍——`totals` 变成"比盘上多 677 KB 的数字"，而体积断言会因此假红/假绿。
+   * 这里按 **distinct 文件** 累加，正是设计 §6.1 G-P9 要自证的口径。</p>
+   */
+  const countedFiles = new Map();
+  let distinctFiles = 0;
   for (const [posture, draft] of Object.entries(drafts)) {
     const frames = {};
-    for (const [frameId, frame] of Object.entries(draft.frames)) {
+    const frameIds = Object.keys(draft.frames);
+    const contentIds = contentAddressingOf(posture, frameIds, assets);
+    // 整批都有 contentId 才能做内容寻址归组；整批都没有（历史上的最小单测输入）保持
+    // "一个帧位一份文件"的旧行为。半有半无已被 contentAddressingOf 判红。
+    const fullyAddressed = frameIds.every((frameId) => contentIds[frameId] !== undefined);
+    const canonicalOf = fullyAddressed
+      ? canonicalFrameIds(frameIds, contentIds)
+      : new Map(frameIds.map((frameId) => [frameId, frameId]));
+    for (const frameId of frameIds) {
+      const frame = draft.frames[frameId];
       const entry = assets[posture]?.[frameId];
       if (!entry) {
         throw new RangeError(`[pet-poses] ${posture}/${frameId} 缺少导出信息（assets 里没有该帧）`);
       }
+      const layerId = canonicalOf.get(frameId) ?? frameId;
+      const contentId = contentIds[frameId];
+      const oneX = assetFileOf(posture, layerId, '1x', entry['1x'], scale, draft, contentId);
+      const twoX = assetFileOf(posture, layerId, '2x', entry['2x'], scale, draft, contentId);
       frames[frameId] = {
         id: frame.id,
         facing: frame.facing,
-        files: {
-          '1x': assetFileOf(posture, frameId, '1x', entry['1x'], scale, draft),
-          '2x': assetFileOf(posture, frameId, '2x', entry['2x'], scale, draft),
-        },
+        files: { '1x': oneX, '2x': twoX },
         anchorNative: { x: round4(frame.anchorNative.x), y: round4(frame.anchorNative.y) },
         inkNative: {
           left: round4(frame.inkNative.left),
@@ -223,8 +420,22 @@ export function buildPosesManifest(options) {
         supportFootX: frame.supportFootX === null || frame.supportFootX === undefined ? null : round4(frame.supportFootX),
       };
       framesTotal += 1;
-      bytes1x += entry['1x'].bytes;
-      bytes2x += entry['2x'].bytes;
+      for (const [density, file] of [['1x', oneX], ['2x', twoX]]) {
+        const knownBytes = countedFiles.get(file.file);
+        if (knownBytes === undefined) {
+          countedFiles.set(file.file, file.bytes);
+          distinctFiles += 1;
+          if (density === '1x') bytes1x += file.bytes;
+          else bytes2x += file.bytes;
+          continue;
+        }
+        if (knownBytes !== file.bytes) {
+          throw new RangeError(
+            `[pet-poses] ${posture} 的 ${file.file} 被多个帧引用却有两个字节数（${knownBytes} / ${file.bytes}）：` +
+              '同一份磁盘文件不可能有两个大小',
+          );
+        }
+      }
     }
     batches[posture] = {
       posture,
@@ -266,31 +477,37 @@ export function buildPosesManifest(options) {
     accepted: accepted.filter((posture) => batches[posture] !== undefined),
     deferred: options.deferred ?? [],
     degradations: [...POSE_DEGRADATIONS],
-    totals: { frames: framesTotal, bytes1x, bytes2x },
+    totals: { frames: framesTotal, bytes1x, bytes2x, distinctFiles },
   };
 }
 
 /**
  * 造一条 `PoseAssetFile`。
  *
+ * <p>`layerId` 是 **canonical 帧 id**（同 contentId 组内第一个帧）：两个帧位共用同一张画时，
+ * 它们在这里拿到同一个 `file` / `url`，于是磁盘上只有一份 webp。</p>
+ *
  * @param {string} posture 批次
- * @param {string} frameId 帧 id
+ * @param {string} layerId canonical 帧 id（落盘文件名）
  * @param {'1x'|'2x'} density 密度档
  * @param {{bytes:number, sha256:string, format:string}} info 文件信息
  * @param {{masterToCss: number}} scale 比例契约
  * @param {Record<string, unknown>} batch 批次草稿
+ * @param {string} [contentId] 内容寻址标识（缺省表示这份输入没有内容寻址信息，不写该键）
  * @returns {Record<string, unknown>} 文件条目
  */
-function assetFileOf(posture, frameId, density, info, scale, batch) {
+function assetFileOf(posture, layerId, density, info, scale, batch, contentId) {
   const target = targetSizeOf(batch, scale, density);
   return {
-    file: `poses/${posture}/${frameId}@${density}.webp`,
-    url: `lxa://${POSE_URL_HOST}/${posture}/${frameId}@${density}.webp`,
+    file: `poses/${posture}/${layerId}@${density}.webp`,
+    url: `lxa://${POSE_URL_HOST}/${posture}/${layerId}@${density}.webp`,
     width: target.width,
     height: target.height,
     bytes: info.bytes,
     sha256: info.sha256,
     format: info.format,
+    // 追加在末尾：既有键的顺序逐字节不变，`git diff` 里只会多一行 contentId
+    ...(contentId === undefined ? {} : { contentId }),
   };
 }
 
@@ -416,7 +633,7 @@ export function poseVolumeProblems(totals) {
  * @param {string} [options.geometryPath] 几何真源路径（测试用）
  * @param {string[]} [options.accepted] 本次导出哪些批次（缺省 = {@link ACCEPTED_BATCHES}）
  * @param {(message: string) => void} [options.log] 日志出口
- * @returns {Promise<{ok: boolean, check: boolean, problems: string[], notes: string[], manifest: Record<string, unknown>|null, written: boolean, removed: string[], deferred: Array<{posture:string, reason:string, status:string|null}>, totals: {frames:number, bytes1x:number, bytes2x:number} }>}
+ * @returns {Promise<{ok: boolean, check: boolean, problems: string[], notes: string[], manifest: Record<string, unknown>|null, written: boolean, removed: string[], deferred: Array<{posture:string, reason:string, status:string|null}>, totals: {frames:number, bytes1x:number, bytes2x:number, distinctFiles:number} }>}
  *   构建结果
  */
 export async function runBuild(options = {}) {
@@ -457,8 +674,13 @@ export async function runBuild(options = {}) {
   for (const [posture, draft] of Object.entries(drafts)) {
     assets[posture] = {};
     const batchDir = resolve(repoRoot, SOURCE_ROOT, posture);
-    for (const [frameId, frame] of Object.entries(draft.frames)) {
-      assets[posture][frameId] = {};
+    const frameIds = Object.keys(draft.frames);
+    /** frameId → 源母版绝对路径。 */
+    const sourcePaths = {};
+    /** frameId → contentId（母版 PNG sha256 前 16 位）。 */
+    const contentIds = {};
+    for (const frameId of frameIds) {
+      const frame = draft.frames[frameId];
       const sourcePath = resolve(batchDir, frame.sourceFile);
       if (!existsSync(sourcePath)) {
         problems.push(`[${posture}] 源母版不存在：${sourcePath}`);
@@ -470,13 +692,29 @@ export async function runBuild(options = {}) {
         problems.push((err && err.message) || String(err));
         continue;
       }
+      sourcePaths[frameId] = sourcePath;
+      contentIds[frameId] = contentIdOf(sourcePath);
+    }
+    // canonical 归组：同 contentId 的帧里，草稿顺序的第一个负责落盘。
+    // 有帧没解析出来时只报错不归组（问题已经记下，构建会在下面早退）。
+    const fullyResolved = frameIds.every((frameId) => sourcePaths[frameId] !== undefined);
+    const canonicalOf = fullyResolved
+      ? canonicalFrameIds(frameIds, contentIds)
+      : new Map(frameIds.map((frameId) => [frameId, frameId]));
+    for (const frameId of frameIds) {
+      const sourcePath = sourcePaths[frameId];
+      if (sourcePath === undefined) continue;
+      const layerId = canonicalOf.get(frameId) ?? frameId;
+      const contentId = contentIds[frameId];
+      assets[posture][frameId] = { contentId, canonicalId: layerId };
+      const shared = layerId === frameId ? '' : `（与 ${layerId} 共用同一份文件：contentId ${contentId}）`;
       for (const density of ['1x', '2x']) {
         const target = targetSizeOf(draft, scale, density);
-        const expectedName = `${posture}/${frameId}@${density}.webp`;
-        const diskPath = resolve(outDir, posture, `${frameId}@${density}.webp`);
+        const expectedName = `${posture}/${layerId}@${density}.webp`;
+        const diskPath = resolve(outDir, posture, `${layerId}@${density}.webp`);
         if (check) {
           if (!existsSync(diskPath)) {
-            problems.push(`[${posture}] 缺少运行产物 ${expectedName}（请先跑 npm run build:pet-poses）`);
+            problems.push(`[${posture}] 缺少运行产物 ${expectedName}${shared}（请先跑 npm run build:pet-poses）`);
             continue;
           }
           const format = webpFormatOf(diskPath);
@@ -492,9 +730,12 @@ export async function runBuild(options = {}) {
           continue;
         }
         mkdirSync(dirname(diskPath), { recursive: true });
+        // 重复帧**仍然重转一次**：这样 `contentAddressingOf` 的"同 contentId 字节全等"
+        // 是拿两次真实编码的结果比的（实测），而不是靠"复用了同一个变量"（假设）。
+        // 代价是一次多余编码，收益是这条判据在构建期真的有牙。
         const result = await transcodeLayer(
           sharp,
-          { path: sourcePath, layerId: frameId, density },
+          { path: sourcePath, layerId, density },
           resolve(outDir, posture),
           target,
           {
@@ -505,7 +746,7 @@ export async function runBuild(options = {}) {
           },
         );
         if (!result.ok) {
-          problems.push(`[${posture}] ${frameId}@${density} 转码失败：${result.reason}`);
+          problems.push(`[${posture}] ${expectedName} 转码失败：${result.reason}`);
           continue;
         }
         if (result.downgraded) {
@@ -513,10 +754,10 @@ export async function runBuild(options = {}) {
           // 体积断言全绿，用户看到的却是块效应与振铃。所以这里**显式打警告**，
           // 并且 G-P8 会在门禁里判红（两道：日志让人看见，门禁让人改）。
           const warning =
-            `[${posture}] ${frameId}@${density} 超过 400 KiB，已被自动**降为有损 WebP**` +
+            `[${posture}] ${expectedName} 超过 400 KiB，已被自动**降为有损 WebP**` +
             `（${result.bytes} 字节）：字节更少所以体积断言不会红，但换姿/换朝向时会看出块效应` +
             '（transcodeLayer 的自动降级旁路；G-P8 会判红）';
-          notes.push(warning);
+          if (!notes.includes(warning)) notes.push(warning);
           log(`[pet-poses] ⚠ 有损降级：${warning}`);
         }
         if (verbose) log(`[pet-poses] 导出 ${expectedName} ${target.width}×${target.height} ${result.bytes}B ${result.format}`);
@@ -539,7 +780,7 @@ export async function runBuild(options = {}) {
       written: false,
       removed,
       deferred: adapted.deferred,
-      totals: { frames: 0, bytes1x: 0, bytes2x: 0 },
+      totals: { frames: 0, bytes1x: 0, bytes2x: 0, distinctFiles: 0 },
     };
   }
 
@@ -585,6 +826,9 @@ export async function runBuild(options = {}) {
           }
         }
       }
+      // totals 的字节两档沿用已提交值：`--check` 自己看不见"totals 本来就写错了"这件事
+      // （那是 G-P9 的活，它用 distinct 文件独立重算）。但 `distinctFiles` **不沿用**——
+      // 它是按 canonical 路径数出来的独立计数，能在这里被抓住就没必要交给别人。
       expected.totals.bytes1x = committed.totals?.bytes1x ?? expected.totals.bytes1x;
       expected.totals.bytes2x = committed.totals?.bytes2x ?? expected.totals.bytes2x;
       const diffs = [];
@@ -593,15 +837,17 @@ export async function runBuild(options = {}) {
         problems.push(`清单与美术 manifest 漂移（${diffs.length} 处）`);
         for (const line of diffs) problems.push(`   ${line}`);
       }
-      // 独立核验：盘上文件与清单记录必须逐值相等（防"清单说 4096 字节、盘上是别的"）
+      // 独立核验：盘上文件与清单记录必须逐值相等（防"清单说 4096 字节、盘上是别的"）。
+      // 路径一律**从清单里的 `file` 解**（而不是按 frameId 拼）：去重后两个帧位指向同一个
+      // 文件，按 frameId 拼出来的名字在盘上根本不存在，那样这条核验会对着自己造的空路径报错。
       for (const [posture, batch] of Object.entries(committed.batches ?? {})) {
         for (const [frameId, frame] of Object.entries(batch.frames ?? {})) {
           for (const density of ['1x', '2x']) {
             const file = frame.files?.[density];
             if (!file) continue;
-            const diskPath = resolve(outDir, posture, `${frameId}@${density}.webp`);
+            const diskPath = resolve(outDir, runtimeRelativePath(file.file));
             if (!existsSync(diskPath)) {
-              problems.push(`[${posture}] 清单登记了 ${frameId}@${density} 但盘上没有 ${diskPath}`);
+              problems.push(`[${posture}] 清单登记了 ${frameId}@${density}（${file.file}）但盘上没有 ${diskPath}`);
               continue;
             }
             const bytes = statSync(diskPath).size;
@@ -636,10 +882,15 @@ export async function runBuild(options = {}) {
     // 孤儿清理：改了帧 id 之后留下的旧 webp（分层件同一套做法）。
     // 期望集合必须来自**本次刚算出的清单**，不能来自盘上的旧清单——
     // 否则首次构建会把刚导出的文件当成孤儿删掉。
+    // 也不能按 `frameId` 拼：去重后只有 canonical 帧有实体文件，按帧 id 拼出来的名字
+    // 是盘上不存在的路径，等于把"该保留的文件"漏在期望集合外（`pruneExpectedOrphans`
+    // 只删存在的文件，所以不会误删，但会漏删真正该清的旧文件）。
     const expected = new Set();
-    for (const [posture, batch] of Object.entries(manifest.batches)) {
-      for (const [frameId] of Object.entries(batch.frames)) {
-        for (const density of ['1x', '2x']) expected.add(`${posture}/${frameId}@${density}.webp`);
+    for (const batch of Object.values(manifest.batches)) {
+      for (const frame of Object.values(batch.frames)) {
+        for (const density of ['1x', '2x']) {
+          expected.add(runtimeRelativePath(frame.files[density].file));
+        }
       }
     }
     const removedList = pruneExpectedOrphans(outDir, expected);
@@ -649,6 +900,7 @@ export async function runBuild(options = {}) {
     log(
       `[pet-poses] 已写出 ${relative(repoRoot, posesJsonPath) || posesJsonPath}：` +
         `${Object.keys(manifest.batches).length} 批 / ${manifest.totals.frames} 帧 / ` +
+        `${manifest.totals.distinctFiles} 个文件 / ` +
         `${((manifest.totals.bytes1x + manifest.totals.bytes2x) / 1024).toFixed(0)} KiB`,
     );
   }
@@ -716,11 +968,12 @@ export async function main() {
     if (check) {
       console.log(
         `✅ pet-poses 漂移检查通过：${Object.keys(result.manifest?.batches ?? {}).length} 批 / ` +
-          `${result.totals.frames} 帧 / 合计 ${((result.totals.bytes1x + result.totals.bytes2x) / 1024).toFixed(0)} KiB`,
+          `${result.totals.frames} 帧 / ${result.totals.distinctFiles} 个文件 / ` +
+          `合计 ${((result.totals.bytes1x + result.totals.bytes2x) / 1024).toFixed(0)} KiB`,
       );
     } else {
       console.log(
-        `✅ 已导出 pose 运行资产：${result.totals.frames} 帧 / 合计 ` +
+        `✅ 已导出 pose 运行资产：${result.totals.frames} 帧 / ${result.totals.distinctFiles} 个文件 / 合计 ` +
           `${((result.totals.bytes1x + result.totals.bytes2x) / 1024).toFixed(0)} KiB` +
           (result.removed.length > 0 ? `，清理孤儿 ${result.removed.length} 个` : ''),
       );

@@ -9,6 +9,9 @@
  *   <li><b>结构性越界</b>：包络超出窗口（换姿裁边）、体积超预算、时序不合法
  *       （`frameMs` 填 0 会让 rAF 空转）、清单里偷偷透传了母版 `anchor`
  *       （`anchor.y/2` 与 `bodyAnchor.y` 在 4 个直立批"碰巧"相等，透传就等于留下混用入口）。</li>
+ *   <li><b>自证缺口</b>：`totals` 必须等于"按 distinct 磁盘文件重算"的和（G-P9，防手写 totals
+ *       与"去重后仍按帧位累加"）；同一 `contentId` 的引用必须 `bytes/sha256/format` 全等，
+ *       且磁盘上不许有没人引用的 webp（G-P10，内容寻址一致 + 反向孤儿）。</li>
  * </ol>
  *
  * <p><b>包络判据用非对称式</b>（E-02）：窗口不是以对齐点为中心的，对齐点在窗口内的横坐标是
@@ -28,7 +31,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GEOMETRY_PATH, readJsonFile } from './build-pet-geometry.mjs';
-import { DEFAULT_POSE_OUT_DIR, POSES_JSON_PATH, runBuild } from './build-pet-poses.mjs';
+// 内容寻址的形状常量（`CONTENT_ID_PATTERN`）与"清单 `file` → 运行目录相对路径"的口径
+// （`runtimeRelativePath`）都**只从构建脚本拿**：门禁自己再写一份正则/再写一次前缀裁剪，
+// 就是第二份真源，迟早与生成物漂移。
+import { CONTENT_ID_PATTERN, DEFAULT_POSE_OUT_DIR, POSES_JSON_PATH, listPoseFiles, runBuild, runtimeRelativePath } from './build-pet-poses.mjs';
 // 体积预算的真源是 `pet-budget.mjs`（**不再**从 build-pet-poses 转手拿：转手就是二道贩子，
 // 迟早有人以为"这里改一下也行"）。build-pet-poses 与本脚本读的是同一个常量。
 import { FRAME_2X_MAX_BYTES, POSE_TOTAL_MAX_BYTES } from './pet-budget.mjs';
@@ -207,6 +213,176 @@ export function checkVolume(manifest) {
     problems.push('清单 totals 缺失（无法判断体积预算）');
   } else if (totalBytes > POSE_TOTAL_MAX_BYTES) {
     problems.push(`pose 运行资产合计 ${totalBytes} 字节 > 预算 ${POSE_TOTAL_MAX_BYTES}`);
+  }
+  return problems;
+}
+
+/**
+ * **G-P9：totals 自证**——用清单里 **distinct 的 `file`** 重新累加字节，必须逐值等于
+ * `totals.bytes1x` / `totals.bytes2x`（并且 `totals.frames` 等于帧位总数、
+ * `totals.distinctFiles` 等于 distinct 文件数）。
+ *
+ * <p><b>为什么必须独立重算：</b>`build-pet-poses.mjs --check` 会把**已提交的 totals 直接
+ * 覆盖到期望值上**（`--check` 不解码、不复算），所以"committed 的 totals 本来就写错了"这件事
+ * `--check` 永远看不见。手改一个数字、或去重后仍按帧位累加（同一份字节算两遍），都能一路绿到底。
+ * 这条判据是唯一从清单自身数据出发、独立于构建脚本的自证。</p>
+ *
+ * @param {Record<string, any>} manifest 清单
+ * @returns {string[]} 问题列表（空数组 = 通过）
+ */
+export function checkTotalsRecompute(manifest) {
+  const problems = [];
+  const totals = manifest && typeof manifest === 'object' ? manifest.totals : null;
+  if (!totals || typeof totals !== 'object') {
+    // 查不到 = 判红：缺 totals 时"算不出来"不许变成"跳过"
+    return ['清单缺少 totals：G-P9 无法自证（不许静默跳过）'];
+  }
+  /** `file` 路径 → `{ bytes, density, posture, frameId }`（同一份文件只记一次）。 */
+  const distinct = new Map();
+  let frameCount = 0;
+  for (const [posture, batch] of Object.entries(manifest.batches ?? {})) {
+    for (const [frameId, frame] of Object.entries(batch?.frames ?? {})) {
+      frameCount += 1;
+      for (const density of DENSITIES) {
+        const file = frame?.files?.[density];
+        if (!file || typeof file !== 'object') {
+          problems.push(`[${posture}] ${frameId}@${density} 缺少文件信息：totals 无法按 distinct 文件重算（G-P9）`);
+          continue;
+        }
+        const path = typeof file.file === 'string' && file.file.length > 0 ? file.file : null;
+        if (path === null) {
+          problems.push(`[${posture}] ${frameId}@${density} 的 file 不是非空字符串（G-P9 无法定位磁盘文件）`);
+          continue;
+        }
+        const bytes = Number(file.bytes);
+        if (!Number.isFinite(bytes)) {
+          problems.push(`[${posture}] ${frameId}@${density} 的 bytes=${JSON.stringify(file.bytes)} 不是有限数值（G-P9）`);
+          continue;
+        }
+        const known = distinct.get(path);
+        if (known === undefined) {
+          distinct.set(path, { bytes, density, posture, frameId });
+          continue;
+        }
+        if (known.bytes !== bytes) {
+          problems.push(
+            `[${posture}] ${frameId}@${density} 与 [${known.posture}] ${known.frameId} 共用同一份文件 ${path}，` +
+              `但记录的字节数不同（${bytes} ≠ ${known.bytes}）：同一份磁盘文件不可能有两个大小（G-P9）`,
+          );
+        }
+      }
+    }
+  }
+  let recomputed1x = 0;
+  let recomputed2x = 0;
+  for (const info of distinct.values()) {
+    if (info.density === '1x') recomputed1x += info.bytes;
+    else recomputed2x += info.bytes;
+  }
+  const claimed1x = Number(totals.bytes1x);
+  const claimed2x = Number(totals.bytes2x);
+  if (!Number.isFinite(claimed1x) || !Number.isFinite(claimed2x)) {
+    problems.push(`totals.bytes1x/bytes2x 不是有限数值（${JSON.stringify(totals.bytes1x)} / ${JSON.stringify(totals.bytes2x)}）：G-P9 无法对账`);
+  } else {
+    if (claimed1x !== recomputed1x) {
+      problems.push(
+        `totals.bytes1x=${claimed1x} ≠ 按 distinct 文件重算的 ${recomputed1x}（差 ${claimed1x - recomputed1x}）：` +
+          'totals 必须是 distinct 文件的和——手写、或去重后仍按帧位累加（同一份字节算两遍）都会在这里红（G-P9）',
+      );
+    }
+    if (claimed2x !== recomputed2x) {
+      problems.push(
+        `totals.bytes2x=${claimed2x} ≠ 按 distinct 文件重算的 ${recomputed2x}（差 ${claimed2x - recomputed2x}）：` +
+          'totals 必须是 distinct 文件的和——手写、或去重后仍按帧位累加（同一份字节算两遍）都会在这里红（G-P9）',
+      );
+    }
+  }
+  if (Number(totals.frames) !== frameCount) {
+    problems.push(`totals.frames=${JSON.stringify(totals.frames)} ≠ 实际帧位总数 ${frameCount}（G-P9）`);
+  }
+  if (totals.distinctFiles === undefined || totals.distinctFiles === null) {
+    problems.push('清单缺少 totals.distinctFiles：去重后必须写明 distinct 磁盘文件数，否则"有没有真的去重"无法自证（G-P9）');
+  } else if (Number(totals.distinctFiles) !== distinct.size) {
+    problems.push(
+      `totals.distinctFiles=${JSON.stringify(totals.distinctFiles)} ≠ 实际 distinct 文件数 ${distinct.size}（G-P9）`,
+    );
+  }
+  return problems;
+}
+
+/**
+ * **G-P10：内容寻址一致性 + 磁盘反向孤儿**。
+ *
+ * <ol>
+ *   <li><b>一致性</b>：同一 `(posture, contentId)` 的所有引用，`bytes` / `sha256` / `format`
+ *       必须全等。去重后两个帧位指向同一份文件，任何一项不等都意味着"其中一帧看到的内容
+ *       与它自称的不是同一张画"——用户侧表现是某一帧突然闪成另一张图。</li>
+ *   <li><b>反向孤儿</b>：磁盘上存在于运行目录却**没有被任何帧引用**的 webp 必须判红。
+ *       去重之后节点更少、更容易漏删旧文件（改 canonical 帧、改帧 id 都会留下实体文件），
+ *       而"多出来的文件"既不会被播放、也不会让任何既有断言变红。G-P4 判的是**清单内**
+ *       孤儿帧（帧没被 clip 引用），这里是**磁盘侧**的反向：文件没被帧引用，两者不重叠。</li>
+ * </ol>
+ *
+ * <p>比较范围是**批内**（按 `posture` 分组）：canonical 落盘路径包含 posture，
+ * 而目标像素尺寸由各批自己的 `canvas` / `masterScale` 决定，跨批比较字节会误报。</p>
+ *
+ * @param {Record<string, any>} manifest 清单
+ * @param {string} [outDir] 运行资产目录（默认 `public/live2d/pet-poses`）
+ * @returns {string[]} 问题列表（空数组 = 通过）
+ */
+export function checkContentAddressedFiles(manifest, outDir = DEFAULT_POSE_OUT_DIR) {
+  const problems = [];
+  /** `${posture}|${density}|${contentId}` → 首个引用。 */
+  const firstOf = new Map();
+  /** 清单引用到的相对路径（`sit/sit_neutral@1x.webp`）。 */
+  const referenced = new Set();
+  for (const [posture, batch] of Object.entries(manifest?.batches ?? {})) {
+    for (const [frameId, frame] of Object.entries(batch?.frames ?? {})) {
+      for (const density of DENSITIES) {
+        const file = frame?.files?.[density];
+        if (!file || typeof file !== 'object') continue;
+        if (typeof file.file === 'string' && file.file.length > 0) {
+          referenced.add(runtimeRelativePath(file.file));
+        }
+        const contentId = file.contentId;
+        if (contentId === undefined) {
+          problems.push(
+            `[${posture}] ${frameId}@${density} 缺少 contentId：去重后"同一份文件被几个帧位共用"这件事` +
+              '必须能从清单里读出来（否则一致性判据无处可施，G-P10）',
+          );
+          continue;
+        }
+        if (typeof contentId !== 'string' || !CONTENT_ID_PATTERN.test(contentId)) {
+          problems.push(
+            `[${posture}] ${frameId}@${density} 的 contentId=${JSON.stringify(contentId)} 不是 16 位小写十六进制（G-P10）`,
+          );
+          continue;
+        }
+        const key = `${posture}|${density}|${contentId}`;
+        const previous = firstOf.get(key);
+        if (previous === undefined) {
+          firstOf.set(key, { frameId, file });
+          continue;
+        }
+        for (const field of ['bytes', 'sha256', 'format']) {
+          if (previous.file[field] !== file[field]) {
+            problems.push(
+              `[${posture}] ${frameId}@${density} 与 ${previous.frameId}@${density} 共用 contentId ${contentId}，` +
+                `但 ${field} 不一致（${JSON.stringify(file[field])} ≠ ${JSON.stringify(previous.file[field])}）：` +
+                '同 contentId = 同一张画，只写一份文件时字节必须全等（G-P10）',
+            );
+          }
+        }
+      }
+    }
+  }
+  // ② 磁盘侧反向孤儿：存在的 webp 必须至少被一帧引用
+  for (const relativePath of listPoseFiles(outDir)) {
+    if (referenced.has(relativePath)) continue;
+    problems.push(
+      `运行目录里的 ${relativePath} 没有被任何帧引用：孤儿文件白占体积（改 canonical 帧 / 改帧 id 后` +
+        '残留的旧文件，G-P10）',
+    );
   }
   return problems;
 }
@@ -566,6 +742,11 @@ export async function runPoseGate(options = {}) {
     problems.push(...batchProblems);
   }
   problems.push(...checkVolume(manifest).filter((line) => !line.includes(']')));
+  // G-P9 / G-P10 是**清单级**判据（不属于某个批次），所以不参与上面的按批分流。
+  // 顺序有意先 P9 后 P10：totals 对不上时先说 totals，免得一屏都是"contentId 不一致"
+  // 这种下游症状（两者的根因常常是同一个：去重没落地或清单被手改）。
+  problems.push(...checkTotalsRecompute(manifest));
+  problems.push(...checkContentAddressedFiles(manifest, outDir));
   problems.push(...checkAcceptedAnchorSource(manifest));
   problems.push(...checkNoPng(outDir));
 
@@ -600,7 +781,10 @@ export async function main() {
     const result = await runPoseGate({ verbose, log: (message) => console.log(message) });
     for (const note of result.notes) console.log(`[gate:pet:poses] 注意：${note}`);
     if (result.ok) {
-      console.log('✅ gate:pet:poses 通过：清单与美术 manifest 无漂移、包络不越界、体积/时序/域均合法');
+      console.log(
+        '✅ gate:pet:poses 通过：清单与美术 manifest 无漂移、包络不越界、体积/时序/域均合法、' +
+          'totals 按 distinct 文件自证（G-P9）、内容寻址一致且无孤儿文件（G-P10）',
+      );
       return 0;
     }
     console.error('❌ gate:pet:poses 失败：');

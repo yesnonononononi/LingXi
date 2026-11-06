@@ -13,9 +13,9 @@
     "clip": ["id", "facing", "frames", "loop", "frameMs", "onEnd"],
     "frame": ["id", "facing", "files", "anchorNative", "inkNative", "airborneGapNative", "supportFootX"],
     "frame.files": ["1x", "2x"],
-    "frame.files.*": ["file", "url", "width", "height", "bytes", "sha256", "format"],
+    "frame.files.*": ["file", "url", "width", "height", "bytes", "sha256", "format", "contentId"],
     "frame.anchorNative": ["x", "y"],
     "frame.inkNative": ["left", "top", "right", "bottom"]
   },
-  "optionalKeysNote": "已知可选键（clip.onEnd、frame.airborneGapNative、frame.supportFootX）直接列在上面的层白名单里，不再单开一份 optionalKeys——两份名单会漂移，且没有任何代码会去读第二份（死数据等于没写）。"
+  "optionalKeysNote": "已知可选键（clip.onEnd、frame.airborneGapNative、frame.supportFootX、frame.files.*.contentId）直接列在上面的层白名单里，不再单开一份 optionalKeys——两份名单会漂移，且没有任何代码会去读第二份（死数据等于没写）。"
 }
