@@ -125,6 +125,10 @@ contextBridge.exposeInMainWorld('petAPI', {
     const payload = {};
     if (typeof source.mode === 'string') payload.mode = source.mode;
     if (typeof source.reason === 'string') payload.reason = source.reason;
+    // 行为状态（`sleeping` / `sleep` / `drag` …）：主进程据此做纵深防御，
+    // 睡眠 / 拖拽期间拒绝开启 roam / follow（`BLOCKED_BEHAVIORS`）。
+    // **白名单必须透传它**，否则跨进程边界会把闸门变成空转（S4.2 修复）。
+    if (typeof source.behavior === 'string') payload.behavior = source.behavior;
     return ipcRenderer.invoke('pet:motion-intent', payload);
   },
   /**

@@ -25,12 +25,16 @@ import { dirname, join } from 'node:path';
 
 import {
   IDLE_CHAIN_STATES,
+  MOTION_REST_STATES,
   PetBehaviorStateMachine,
   SIT_AFTER_IDLE_MS,
   SLEEPY_AFTER_IDLE_MS,
   SLEEP_AFTER_IDLE_MS,
   applyFacingIfMoving,
   applyMotionPolicy,
+  behaviorReportOf,
+  decidePrefsMotion,
+  isMotionAllowed,
   motionIntentForPosture,
   postureOf,
   type MotionIntentReason,
@@ -420,6 +424,185 @@ test('静态：move-* 三个方法体里没有 lastInteractionAt 赋值（P-M13 
     assert.ok(body.length > 0, '三个方法体都必须能切出来');
     assert.equal(body.includes('lastInteractionAt ='), false, 'move-* 里出现了 lastInteractionAt 赋值');
   }
+});
+
+/* ------------------------------------------------------------------------------------
+ * 行为态上报（`behavior` 字段）+ 偏好广播 → 运动意图
+ *
+ * <p>这一组守的是**真机上的空转**：主进程的运动控制器早就有"行为态闸门"
+ * （`BLOCKED_BEHAVIORS = ['sleeping','sleep','drag']`），但渲染层如果不把当前行为态
+ * 随意图报上去，主进程永远拿着默认值 `idle` 放行——实测症状就是
+ * `posture=sleep` 却在平移窗口。同理，"用户打开自由漫游"只落盘不生效，
+ * 因为渲染层没有据此重新评估意图。</p>
+ * ---------------------------------------------------------------------------------- */
+
+/**
+ * 从主进程运动真源里读出 `BLOCKED_BEHAVIORS`（**不复制清单**：复制一份就是第二真源）。
+ *
+ * @returns 主进程认定的"必须拦住"的行为态
+ */
+function readMainProcessBlockedBehaviors(): string[] {
+  const source = readSource('electron/pet-motion.cjs');
+  const match = /const BLOCKED_BEHAVIORS = Object\.freeze\(\[([^\]]*)\]\)/.exec(source);
+  assert.ok(match !== null, 'pet-motion.cjs 里找不到 BLOCKED_BEHAVIORS（主进程闸门的真源消失了）');
+  const list = match[1]
+    .split(',')
+    .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+    .filter((item) => item.length > 0);
+  assert.ok(list.length > 0, 'BLOCKED_BEHAVIORS 解析为空（门禁失效）');
+  return list;
+}
+
+test('行为态上报：值域与主进程 BLOCKED_BEHAVIORS 逐值对齐（原样透传，不重新映射）', () => {
+  const blocked = readMainProcessBlockedBehaviors();
+  assert.ok(blocked.length > 0, '主进程必须给出至少一个被拦的行为态');
+  for (const value of blocked) {
+    assert.equal(
+      behaviorReportOf(value),
+      value,
+      `上报值 ${value} 被渲染层改写成了 ${behaviorReportOf(value)}：主进程按字符串命中判定，改写即失效`,
+    );
+    assert.notEqual(behaviorReportOf(value), 'idle', `${value} 是必须拦住的行为态，绝不能报成 idle`);
+  }
+  // 兜底：状态机未就绪时报 idle（**不许报空串** —— 主进程会忽略空串并沿用旧值）
+  assert.equal(behaviorReportOf(null), 'idle');
+  assert.equal(behaviorReportOf(undefined), 'idle');
+  assert.equal(behaviorReportOf(''), 'idle');
+});
+
+test('行为态上报：真状态机走到 sleeping / drag，报上去的就是那两个值（不是 idle）', () => {
+  const clock = new Clock();
+  const sleeping = machine(clock);
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  sleeping.tick();
+  assert.equal(sleeping.state, 'sleeping');
+  assert.equal(behaviorReportOf(sleeping.state), 'sleeping', '睡着时必须上报 sleeping');
+
+  const dragged = machine(new Clock());
+  dragged.handle('drag-start');
+  assert.equal(dragged.state, 'drag');
+  assert.equal(behaviorReportOf(dragged.state), 'drag', '拖拽时必须上报 drag');
+
+  // 主进程清单里的 `sleep` 是**姿态名**：渲染层的睡姿由 postureOf 派生。
+  // 这里断言"万一上报它，也不能被改写成 idle"（值域对齐的第二半）。
+  assert.equal(behaviorReportOf('sleep'), 'sleep');
+});
+
+test('偏好 → 运动意图：roam / follow 优先级 / 全关 / 睡着不动 / 坐着先起身', () => {
+  // roam 开、行为态正常 ⇒ 请求 roam
+  assert.deepEqual(decidePrefsMotion(false, true, 'idle'), { mode: 'roam', resumeFromRest: false });
+  // 两个都开 ⇒ follow 优先（§5）
+  assert.deepEqual(decidePrefsMotion(true, true, 'idle'), { mode: 'follow', resumeFromRest: false });
+  assert.deepEqual(decidePrefsMotion(true, false, 'idle'), { mode: 'follow', resumeFromRest: false });
+  // 两个都关 ⇒ off
+  assert.deepEqual(decidePrefsMotion(false, false, 'idle'), { mode: 'off', resumeFromRest: false });
+  // 睡着 / 困倦 / 趴着 / 被拖 ⇒ 一律 off（不许发起自己会拒收的请求）
+  for (const state of MOTION_REST_STATES) {
+    assert.deepEqual(
+      decidePrefsMotion(false, true, state),
+      { mode: 'off', resumeFromRest: false },
+      `${state} 下不许发起 roam`,
+    );
+    assert.deepEqual(decidePrefsMotion(true, true, state), { mode: 'off', resumeFromRest: false });
+  }
+  // 坐着是"容许动、但得先站起来"（否则 move-* 会被状态机拒收 ⇒ 坐着平移）
+  assert.deepEqual(decidePrefsMotion(false, true, 'sit'), { mode: 'roam', resumeFromRest: true });
+  // 状态机没建好 ⇒ 不动
+  assert.deepEqual(decidePrefsMotion(false, true, null), { mode: 'off', resumeFromRest: false });
+  // 动作态与走/跑都算可动
+  for (const state of ['tap', 'angry', 'wake', 'pet', 'walk', 'run'] as const satisfies readonly PetBehaviorState[]) {
+    assert.equal(isMotionAllowed(state), true, `${state} 应当允许发起移动`);
+  }
+});
+
+test('偏好生效（行为侧）：roam 开着而猫坐着 ⇒ 起身，且起身后的运动事件仍不刷新空闲计时', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  clock.goTo(SIT_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sit', '静置 20s 应当已经坐下（这是真机上"开了漫游不动"的现场）');
+
+  const decision = decidePrefsMotion(false, true, behavior.state);
+  assert.equal(decision.mode, 'roam');
+  assert.equal(decision.resumeFromRest, true);
+
+  assert.equal(behavior.resumeFromRest(), true, '坐着时必须能起身');
+  assert.equal(behavior.state, 'idle');
+  // 起身后必须**不再立刻坐下**（空闲链重新计时），否则站起来只闪一帧
+  clock.advance(SIT_AFTER_IDLE_MS - 1);
+  behavior.tick();
+  assert.equal(behavior.state, 'idle', '起身后立刻又被按回 sit：空闲链没有重新计时');
+  // 但起身**之后**的运动事件依然一个字都不写 lastInteractionAt（P-M13 不受影响）
+  const elapsedBefore = behavior.idleElapsedMs();
+  behavior.handle('move-start', { gait: 'walk', reason: 'prefs' });
+  assert.equal(behavior.state, 'walk');
+  assert.equal(behavior.idleElapsedMs(), elapsedBefore, '运动事件不许刷新空闲计时');
+});
+
+test('偏好生效（行为侧）：睡着的猫不许被"打开漫游"叫醒', () => {
+  const clock = new Clock();
+  const behavior = machine(clock);
+  clock.goTo(SLEEP_AFTER_IDLE_MS);
+  behavior.tick();
+  assert.equal(behavior.state, 'sleeping');
+  assert.equal(behavior.resumeFromRest(), false, 'sleeping 不许被叫醒（睡眠是被动态，开漫游不是摸头）');
+  assert.equal(behavior.state, 'sleeping');
+  // 拖拽中同样不许起身（位置写入权在 drag）
+  const dragged = machine(new Clock());
+  dragged.handle('drag-start');
+  assert.equal(dragged.resumeFromRest(), false);
+  assert.equal(dragged.state, 'drag');
+});
+
+test('静态：main.ts 有 pet:command 的 prefs 分支，且同时读扁平与嵌套两种载荷', () => {
+  const source = codeOf(readSource('src/pet/main.ts'));
+  assert.ok(
+    source.includes("command.type === 'prefs'"),
+    "缺少 `command.type === 'prefs'` 分支（偏好广播没人接，开了漫游等于没开）",
+  );
+  const branch = sliceBetween(source, "if (command.type === 'prefs') {", 'return;');
+  assert.ok(branch.length > 0, 'prefs 分支必须能切出来');
+  // 载荷是超集：扁平 follow/roam 与嵌套 prefs 都要能读
+  assert.ok(branch.includes('command.prefs'), 'prefs 分支没有读嵌套的 command.prefs（超集载荷的另一半）');
+  assert.ok(branch.includes('command.follow') && branch.includes('command.roam'), 'prefs 分支没有读扁平的 follow/roam');
+  assert.ok(branch.includes('locomotion.onPrefs('), 'prefs 分支必须把开关交给运动桥重新评估');
+  // 偏好可能先于状态机到达（ready 后立刻广播）：状态机就绪时必须补一次评估，否则永远 off
+  assert.ok(
+    source.includes('if (locomotion.prefs.follow || locomotion.prefs.roam) locomotion.onPrefs('),
+    '缺少"状态机就绪后补一次偏好评估"的兜底（偏好早于状态机到达时，开关会永远不生效）',
+  );
+});
+
+test('静态：每条 motionIntent 载荷都带 behavior（键在 send 处、字段必填、来源唯一）', () => {
+  const source = codeOf(readSource('src/pet/main.ts'));
+
+  // 唯一的下发点必须把 behavior 一起带上
+  const callIndex = source.indexOf('.call(bridge');
+  assert.ok(callIndex >= 0, '找不到 bridge.motionIntent 的下发点（门禁失效）');
+  const sendSlice = source.slice(Math.max(0, callIndex - 700), callIndex + 200);
+  assert.ok(sendSlice.includes('behavior:'), '下发载荷里没有 behavior 键（主进程闸门会永远拿到 idle）');
+  assert.ok(sendSlice.includes('MotionIntent'), '下发载荷应当显式标注为 MotionIntent（防以后漏字段）');
+
+  // 接口上 behavior 是**必填**（`?` 一加就等于允许不发）
+  const intent = sliceBetween(source, 'interface MotionIntent {', '}');
+  assert.ok(intent.includes('behavior'), 'MotionIntent 必须声明 behavior');
+  assert.equal(/behavior\s*\?/.test(intent), false, 'behavior 不许是可选字段');
+
+  // 来源唯一：只许从行为状态机的 stateValue 派生，不许另起一份
+  assert.ok(
+    source.includes('behaviorReportOf(behavior?.state ?? null)'),
+    'behavior 必须来自行为状态机的 stateValue',
+  );
+  const reportCalls = source.match(/behaviorReportOf\(/g) ?? [];
+  assert.equal(reportCalls.length, 1, `behaviorReportOf 只许在唯一的下发点调用一次，实际 ${reportCalls.length} 次`);
+});
+
+test('静态：序列播放期间不许发起自主移动（§5 第 3 级）', () => {
+  const source = codeOf(readSource('src/pet/main.ts'));
+  const request = sliceBetween(source, 'requestMode(mode: MotionMode', 'applyFacingIfMoving(facing: Facing)');
+  assert.ok(request.includes('sequencePlaying'), 'requestMode 缺少"序列播放中不许开启"的闸门');
+  assert.ok(source.includes('setSequencePlaying(true)'), '播放路径必须置上序列标志');
+  assert.ok(source.includes('setSequencePlaying(false)'), '序列结束时必须撤掉序列标志');
 });
 
 test('静态：渲染层没有 scaleX(-1) 镜像（P-M20），朝向只走 applyPoseFacing', () => {

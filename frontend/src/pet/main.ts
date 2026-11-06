@@ -27,8 +27,10 @@ import {
   PetBehaviorStateMachine,
   applyFacingIfMoving as gateFacingWhileMoving,
   applyMotionPolicy,
+  behaviorReportOf,
+  decidePrefsMotion,
+  isMotionAllowed,
   postureOf,
-  IDLE_CHAIN_STATES,
   type MotionGait,
   type MotionIntentReason,
   type MotionMode,
@@ -174,14 +176,27 @@ interface MotionFact {
 /**
  * 运动意图的载荷（`pet:motion-intent`，§8.1）。
  *
- * <p><b>字段集刻意只有两个</b>：门禁 G-M6 会文本断言这个 interface 里**没有 `x` / `y`**。
- * 渲染层永远不能指定坐标（§1.1 的唯一位置写入者铁律），意图只说"要不要动、为什么"。</p>
+ * <p><b>字段集刻意只有"要不要动 / 为什么 / 我现在是什么状态"</b>：门禁 G-M6 会文本断言这个
+ * interface 里**没有 `x` / `y`**。渲染层永远不能指定坐标（§1.1 的唯一位置写入者铁律），
+ * 意图只说"要不要动、为什么"。</p>
+ *
+ * <p><b>`behavior` 是"上报"而不是"命令"</b>（主进程 `pet-window.cjs` 的 handler 原话）：
+ * 主进程把它记进 `MotionController#behavior`，之后**自己**用它做闸——行为态命中
+ * `BLOCKED_BEHAVIORS = ['sleeping','sleep','drag']` 就拒绝开启 roam/follow 并自动停车。
+ * 也就是说：这个字段缺一次，主进程那侧就退回默认的 `idle`，闸门在真机上**形同虚设**
+ * （实测症状：`posture=sleep` 却在平移窗口）。所以它是**必填**，且**每一条**载荷都带。</p>
  */
 interface MotionIntent {
   /** 目标模式。 */
   mode: MotionMode;
   /** 原因（排障 + 去重）。 */
   reason: MotionIntentReason;
+  /**
+   * 当前行为态（值域与主进程 `BLOCKED_BEHAVIORS` 对齐，见 {@link behaviorReportOf}）。
+   *
+   * <p>**必填**：取值来源只有一个——行为状态机的 `stateValue`；状态机未就绪时报 `idle`。</p>
+   */
+  behavior: string;
 }
 
 /** 偏好补丁（`pet:prefs-set` 的载荷；只有 dev 后门会调）。 */
@@ -201,7 +216,15 @@ type PetCommand =
   | { type: 'play'; motion?: string; priority?: number; durationMs?: number; reason?: string }
   | { type: 'expression'; expression?: string; priority?: number; durationMs?: number; reason?: string }
   | ({ type: 'motion' } & Partial<MotionFact>)
-  | { type: 'prefs'; follow?: boolean; roam?: boolean };
+  | {
+      type: 'prefs';
+      /** 扁平字段（主进程 `safeSend` 的同一条载荷里就有它）。 */
+      follow?: boolean;
+      /** 同上。 */
+      roam?: boolean;
+      /** **超集里的嵌套那份**（`{version, follow, roam, updatedAt}`）：两个都要能读。 */
+      prefs?: { follow?: boolean; roam?: boolean };
+    };
 
 /** 拖拽上报的坐标（屏幕坐标 == DIP，与主进程 setPosition 同一坐标空间）。 */
 interface PetPoint {
@@ -551,6 +574,9 @@ class LocomotionBridge {
   /** 最近一次收到运动事实的时刻（毫秒）；`-Infinity` = 还没收到过。 */
   private lastMotionAt = Number.NEGATIVE_INFINITY;
 
+  /** 是否正在播序列（§5 第 3 级：序列播放期间**不许**发起自主移动）。 */
+  private sequencePlaying = false;
+
   /** 上一次经 {@link applyMotionPolicy} 请求过的模式（幂等键）。 */
   private postureMode: MotionMode | null = null;
 
@@ -633,6 +659,8 @@ class LocomotionBridge {
    *       （U-M4 的裁决：默认不动，由主进程偏好决定；渲染层只读不改）；</li>
    *   <li>偏好没开（`follow` / `roam`）⇒ 不下发对应模式（渲染层只是"请求方"，
    *       不是"决定方"）；</li>
+   *   <li>序列播放中 ⇒ 拒绝任何"开启"请求（§5 第 3 级：序列的打断优先级高于自主移动，
+   *       播"过来—抱起—放回"时窗口一起平移会把角色从怀里甩出去）；</li>
    *   <li>与上一次受理的 `(mode, reason)` 相同 ⇒ 幂等早退，不重复发。</li>
    * </ol>
    *
@@ -652,6 +680,19 @@ class LocomotionBridge {
     }
     if (mode === 'follow' && !this.followEnabled) return false;
     if (mode === 'roam' && !this.roamEnabled) return false;
+    if (mode !== 'off' && this.sequencePlaying) {
+      if (DEBUG_ENABLED) console.debug(`[pet] 运动意图 ${mode}：序列播放中，不下发开启请求`);
+      return false;
+    }
+    // 第 5 道：行为态自己不许动（困倦 / 睡着 / 趴着 / 被拖）⇒ 一律不许"开启"。
+    // 这一道与 `decidePrefsMotion` 的判据同源，多设一道是刻意的纵深防御：
+    // 将来任何新调用点想开运动，都过不了这里（否则就又回到"趴着平移"）。
+    if (mode !== 'off' && !isMotionAllowed(behavior === null ? null : behavior.state)) {
+      if (DEBUG_ENABLED) {
+        console.debug(`[pet] 运动意图 ${mode}：行为态「${behavior === null ? 'null' : behavior.state}」不许动，拒绝`);
+      }
+      return false;
+    }
     if (this.modeValue === mode && this.reasonValue === reason) return true;
     const bridge = petBridge();
     const send = bridge?.motionIntent;
@@ -662,8 +703,11 @@ class LocomotionBridge {
     }
     this.modeValue = mode;
     this.reasonValue = reason;
+    // 行为态**在同一次下发里**带上（不是另开一条通道、也不是每拍补发）：
+    // 主进程的闸门只认这条载荷里的 `behavior`，缺一次它就退回默认 idle 放行一次。
+    const payload: MotionIntent = { mode, reason, behavior: behaviorReportOf(behavior?.state ?? null) };
     void send
-      .call(bridge, { mode, reason })
+      .call(bridge, payload)
       .then((result) => {
         if (result.ok === false) console.debug(`[pet] 运动意图 ${mode} 被拒：${result.error ?? '未说明原因'}`);
       })
@@ -718,10 +762,18 @@ class LocomotionBridge {
   }
 
   /**
-   * 偏好变化（`pet:command{type:'prefs'}`）。
+   * 偏好变化（`pet:command{type:'prefs'}`）⇒ **重新评估并下发运动意图**。
    *
-   * <p>渲染层**只读**这两个开关：真正的写入者是主进程的右键菜单。这里只决定
-   * "要不要据此请求一个模式"——而请求仍要过 {@link requestMode} 的四道闸门。</p>
+   * <p>这一条是"用户开了自由漫游、猫纹丝不动"的直接修复点：偏好本身由主进程落盘并广播，
+   * 渲染层**只读**，但"据此请求哪个模式"只能在这里做——否则开关开了等于没开。</p>
+   *
+   * <p>决策逻辑在 {@link decidePrefsMotion}（纯函数、可单测），这里只做三件接线活：</p>
+   * <ol>
+   *   <li>先记下开关（`undefined` = 本条没带该字段，保持原值）；</li>
+   *   <li>若结论是"要动、但得先站起来"，调 {@link PetBehaviorStateMachine.resumeFromRest}
+   *       并立刻 `syncPosture`（否则有一拍"状态已 idle、姿态还坐着"的缝）；</li>
+   *   <li>下发（`off` 也发一条：主进程需要知道"用户把开关关了"）。</li>
+   * </ol>
    *
    * @param follow 跟随开关（`undefined` = 本条没带，保持原值）
    * @param roam 漫游开关（同上）
@@ -729,16 +781,26 @@ class LocomotionBridge {
   onPrefs(follow: boolean | undefined, roam: boolean | undefined): void {
     if (typeof follow === 'boolean') this.followEnabled = follow;
     if (typeof roam === 'boolean') this.roamEnabled = roam;
-    const allowed = behavior !== null && IDLE_CHAIN_STATES.includes(behavior.state);
-    if (this.followEnabled && allowed) {
-      this.requestMode('follow', 'prefs');
-      return;
+    const state = behavior === null ? null : behavior.state;
+    const decision = decidePrefsMotion(this.followEnabled, this.roamEnabled, state);
+    if (decision.resumeFromRest && behavior !== null) {
+      if (behavior.resumeFromRest()) syncPosture('prefs:resume');
     }
-    if (this.roamEnabled && allowed) {
-      this.requestMode('roam', 'prefs');
-      return;
+    this.requestMode(decision.mode, 'prefs');
+  }
+
+  /**
+   * 序列开始/结束（§5 第 3 级：序列播放期间不许发起自主移动）。
+   *
+   * @param playing 是否在播
+   */
+  setSequencePlaying(playing: boolean): void {
+    if (this.sequencePlaying === playing) return;
+    this.sequencePlaying = playing;
+    if (!playing) {
+      // 播完按当前偏好重评估（有开关才重新请求；否则 off）——由 onPrefs 统一出口决定
+      this.onPrefs(undefined, undefined);
     }
-    this.requestMode('off', 'prefs');
   }
 
   /**
@@ -1376,8 +1438,9 @@ function watchSequenceMotionEnd(runtime: PetSequenceRuntime): void {
       sequenceMotionWatch = window.setTimeout(tick, 250);
       return;
     }
-    // 序列结束了：按当前偏好重评估（有跟随/漫游才重新请求，否则 off —— 由偏好决定）
-    locomotion.onPrefs(undefined, undefined);
+    // 序列结束了：先撤掉"播放中"标记（它会拦住开启请求），再按当前偏好重评估
+    // ——有跟随/漫游才重新请求，否则 off。两条都在 `setSequencePlaying(false)` 里收口。
+    locomotion.setSequencePlaying(false);
   };
   sequenceMotionWatch = window.setTimeout(tick, 250);
 }
@@ -1524,6 +1587,7 @@ function playPetSequence(): boolean {
       const report = runtime.play(PLAY_SCENE_ID);
       // 序列期间运动关闭：导演播"过来—抱起—回应—放回"时主进程若还在推位移，
       // 角色会在原地被挪（姿态与位移分属两个写者），§5 把序列排在自主移动之上。
+      locomotion.setSequencePlaying(true);
       locomotion.requestMode('off', 'interaction');
       watchSequenceMotionEnd(runtime);
       console.debug(`[pet] 双击播放 ${report.sceneId}：${report.steps} 步 / ${report.durationMs} ms`);
@@ -1549,6 +1613,7 @@ function mountSequenceBackdoor(handle: PetDebugHandle): void {
       play: (sceneId) => {
         const report = runtime.play(sceneId);
         // 后门播放同样要关运动（后门验的必须是与用户入口同一条路径）
+        locomotion.setSequencePlaying(true);
         locomotion.requestMode('off', 'dev');
         watchSequenceMotionEnd(runtime);
         return report;
@@ -1730,8 +1795,15 @@ function subscribeCommands(): void {
       return;
     }
     if (command.type === 'prefs') {
-      // 偏好只读（真正写者是主进程右键菜单）；这里只据此重新评估要不要请求模式
-      locomotion.onPrefs(command.follow, command.roam);
+      // 偏好只读（真正写者是主进程右键/托盘菜单）；这里据此**重新评估**要不要请求模式。
+      // 载荷是**超集**：主进程同一条 `pet:command` 里既有扁平 `follow`/`roam`，也有嵌套
+      // `prefs:{version,follow,roam,updatedAt}`（见 `pet-window.cjs` 的两处 safeSend）。
+      // 两个都要能读：扁平优先，缺失时回落到嵌套，两者都没有则视为"本条没带"（保持原值）。
+      const nested = command.prefs ?? {};
+      const follow = typeof command.follow === 'boolean' ? command.follow : nested.follow;
+      const roam = typeof command.roam === 'boolean' ? command.roam : nested.roam;
+      if (DEBUG_ENABLED) console.debug(`[pet] 偏好广播：follow=${String(follow)} roam=${String(roam)}`);
+      locomotion.onPrefs(follow, roam);
       return;
     }
     // play / expression 等表现类指令统一走路由 → 调度总线（未知类型由路由器记日志丢弃）
@@ -1842,6 +1914,11 @@ function createPresentation(): void {
     { now: () => Date.now(), rng: () => Math.random() },
     { log: (message) => console.debug(message) },
   );
+  // 偏好可能**先于**状态机到达（主进程在 renderer `ready` 后立刻广播一次 prefs，而
+  // 状态机的构建在 DOM/层栈之后）。那种时序下 `decidePrefsMotion` 只能看到 `state=null`
+  // 从而降级成 off，之后**没有人再评估**——用户看到的就是"开关是开的、猫不动"。
+  // 所以状态机一就绪就补一次评估（有开关才补，避免无谓的 off 请求）。
+  if (locomotion.prefs.follow || locomotion.prefs.roam) locomotion.onPrefs(undefined, undefined);
 
   blinkDriver = new BlinkDriver(
     (op) => dispatchOp(op),

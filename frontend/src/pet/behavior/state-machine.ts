@@ -321,6 +321,101 @@ export const SLEEP_AFTER_IDLE_MS = 90000;
 export const IDLE_CHAIN_STATES: readonly PetBehaviorState[] = Object.freeze(['idle', 'walk', 'run']);
 
 /**
+ * **自主移动必须关掉**的行为态（`sleepy` / `sleeping` / `drag` / `lie`）。
+ *
+ * <p><b>为什么需要这张表：</b>用户把"跟随/漫游"打开时，猫可能正在困倦、睡着或者被拎着。
+ * 这时若照样下发 `roam`，主进程会开始推位移，而渲染层的 {@link PetBehaviorStateMachine}
+ * 会拒收运动事实（那是 `startMove` 的"防趴着走"闸门）——结果就是
+ * **窗口在动、姿态不动**的穿模（设计 §5 注释 2）。两个判据必须同源，所以这里是唯一一份。</p>
+ *
+ * <p><b>它和主进程的 `BLOCKED_BEHAVIORS = ['sleeping','sleep','drag']` 不是同一个东西：</b>
+ * 主进程那张表用来**拒绝**已经到达的意图（纵深防御），本表用来**决定该不该发起**请求。
+ * 本表多出 `sleepy` / `lie`，因为它们在自己的姿态上同样不能移动（`postureOf` 派生到
+ * `lie`，`motionIntentForPosture('lie')` 返回 `'off'`）。宁可少发一条请求，也不许发一条
+ * 自己会拒收的请求——后者在真机上表现为"开了漫游却纹丝不动"，用户只会以为功能坏了。</p>
+ */
+export const MOTION_REST_STATES: readonly PetBehaviorState[] = Object.freeze([
+  'sleepy',
+  'sleeping',
+  'lie',
+  'drag',
+]);
+
+/**
+ * 该行为态下能否发起自主移动（`walk` / `run` / `sit` / 动作态都可以）。
+ *
+ * <p>`sit` 算"可以"，但它前面还有一步：必须先站起来（见
+ * {@link PetBehaviorStateMachine.resumeFromRest}），否则 {@link PetBehaviorStateMachine.handle}
+ * 的 `move-*` 分支会拒收（坐着不许平移）。</p>
+ *
+ * @param state 行为态（`null` = 状态机还没建好 ⇒ 一律不许动）
+ * @returns 是否允许发起移动
+ */
+export function isMotionAllowed(state: PetBehaviorState | null): boolean {
+  if (state === null) return false;
+  return !MOTION_REST_STATES.includes(state);
+}
+
+/**
+ * 把偏好翻成"该请求哪个模式"（`pet:command{type:'prefs'}` 的唯一判据，§5 优先级）。
+ *
+ * <p>三条规则，顺序固定：</p>
+ * <ol>
+ *   <li>两个都关 ⇒ `off`；</li>
+ *   <li>`follow` 优先于 `roam`（设计 §5：跟随是用户当下最直接的意图，两个都开时听跟随）；</li>
+ *   <li>要动但行为态不许动（{@link MOTION_REST_STATES}）⇒ 降级成 `off`，
+ *       并在 {@link MotionPrefsDecision.resumeFromRest} 里说明"要不要先站起来"。</li>
+ * </ol>
+ *
+ * @param follow 跟随开关
+ * @param roam 漫游开关
+ * @param state 当前行为态（`null` = 状态机未就绪）
+ * @returns `{mode, resumeFromRest}` —— `mode` 为 `off` 时 `resumeFromRest` 恒为 `false`
+ */
+export function decidePrefsMotion(
+  follow: boolean,
+  roam: boolean,
+  state: PetBehaviorState | null,
+): MotionPrefsDecision {
+  const wanted: MotionMode = follow === true ? 'follow' : roam === true ? 'roam' : 'off';
+  if (wanted === 'off') return { mode: 'off', resumeFromRest: false };
+  if (!isMotionAllowed(state)) return { mode: 'off', resumeFromRest: false };
+  // 坐着/趴着是"容许动、但得先站起来"：这一拍不站起来，运动事实就会被状态机拒收
+  const needsStand = state === 'sit' || state === 'lie';
+  return { mode: wanted, resumeFromRest: needsStand };
+}
+
+/**
+ * {@link decidePrefsMotion} 的结论。
+ */
+export interface MotionPrefsDecision {
+  /** 该请求的模式（`off` = 不动）。 */
+  mode: MotionMode;
+  /** 是否必须先让状态机离开"坐着/趴着"（否则运动事实会被拒收）。 */
+  resumeFromRest: boolean;
+}
+
+/**
+ * 上报给主进程**行为闸门**的行为态（`pet:motion-intent` 载荷的 `behavior` 字段）。
+ *
+ * <p><b>为什么是"原样透传 + idle 兜底"而不是一张映射表：</b>主进程的
+ * `BLOCKED_BEHAVIORS = ['sleeping','sleep','drag']` 是按**字符串命中**判定的，
+ * 它并不认识 `PetBehaviorState` 这个联合。只要我们把状态机的 `stateValue` 原样送过去，
+ * `sleeping` / `drag` 这两个"必须拦住"的值天然命中；任何再映射一次的实现（比如把
+ * `sleeping` 报成 `sleep`）都会引入**两份真源**，一旦两侧漂移，用户看到的就是
+ * "睡着还在平移窗口"（设计 §10.2 G-M6 与 U-M6 的裁决）。</p>
+ *
+ * <p>兜底只有一条：状态机还没建好（`null`）时报 `idle`。**不允许报空串**——主进程
+ * `reportBehavior` 会忽略空串，于是它记着上一次的旧行为态继续放行。</p>
+ *
+ * @param state 当前行为态（`null` / `undefined` = 未就绪）
+ * @returns 上报值（非空字符串）
+ */
+export function behaviorReportOf(state: PetBehaviorState | string | null | undefined): string {
+  return typeof state === 'string' && state.length > 0 ? state : 'idle';
+}
+
+/**
  * 松手后静置多久**坐下**（毫秒，M2 切片 1 新增）。
  *
  * <p>这是 `sit` 在切片 1 的**唯一真实入口**（§A1.8.3）：拖拽松手 → 静置 ≥ 20s → 坐。
@@ -621,6 +716,39 @@ export class PetBehaviorStateMachine {
    */
   get isMoving(): boolean {
     return this.stateValue === 'walk' || this.stateValue === 'run';
+  }
+
+  /**
+   * 让"坐着/趴着"让开，为**用户刚打开的**跟随/漫游做准备。
+   *
+   * <p><b>为什么必须有它：</b>坐是一个没有 TTL 的驻留态，只有"交互"能把它叫起来
+   * （见 {@link enterSit} 的注释）。而"用户在菜单里打开自由漫游"这条路径**不经过**任何
+   * 宠物身上的手势，所以状态机会一直坐在那儿；此时若照样下发 `roam`，主进程开始推位移，
+   * `startMove` 却因为 `sit` 不在 {@link IDLE_CHAIN_STATES} 里而拒收——用户看到的是
+   * **一只坐着平移的猫**（穿模），而不是"它站起来走了"。</p>
+   *
+   * <p><b>为什么它会写 `lastInteractionAt`（本文件里除用户事件外唯一的写点）：</b>
+   * 用户点菜单是**真实的用户交互**（不是自主移动）。不写的话，下一拍 `tick()` 会发现
+   * `now - lastInteractionAt ≥ SIT_AFTER_IDLE_MS` 立刻又把它按回 `sit`，站起来这件事
+   * 只会闪一帧。这条与 P-M13 不冲突：P-M13 守的是 `move-*` 三条运动事件，
+   * 而运动事件本身仍然一个字都不写（见 `startMove` / `finishMove`）。</p>
+   *
+   * <p><b>不许叫醒睡着的猫</b>：`sleeping` / `sleepy` 直接返回 `false`，由调用方降级成
+   * `off`。理由：睡眠是被动状态，"打开漫游"不是"摸它"。</p>
+   *
+   * @returns 是否真的站了起来（`false` = 本来就不在休息态，或正在睡/被拖）
+   */
+  resumeFromRest(): boolean {
+    if (this.dragging || this.stateValue === 'drag') return false;
+    if (this.stateValue !== 'sit' && this.stateValue !== 'lie') return false;
+    const now = this.now();
+    this.enter('idle', null);
+    this.sustained = null;
+    this.bridgeUntil = null;
+    // 空闲链从此刻重新计时（否则下一拍立刻又坐下，见本方法的注释）
+    this.lastInteractionAt = now;
+    this.log('[pet] 行为：用户开启了运动，起身回到 idle（空闲链重新计时）');
+    return true;
   }
 
   /**

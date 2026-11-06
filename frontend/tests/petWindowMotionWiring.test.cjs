@@ -481,3 +481,25 @@ test('行为闸门（真跑）：上报 drag 后开漫游同样被拒；回到 i
     stage.cleanup();
   }
 });
+
+test('preload 白名单必须透传 behavior（跨进程边界丢掉它 = 主进程行为闸门空转）', () => {
+  // 缺陷形态：`motionIntent` 在 preload 里**重建**了 payload 白名单，只放了 mode/reason。
+  // 渲染层再怎么老实上报 behavior，过不了这条边界，主进程 handler 的
+  // `typeof safePayload.behavior === 'string'` 就永远为假 —— 睡觉的猫照样被推着走。
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'pet-preload.cjs'), 'utf8');
+  assert.match(
+    source,
+    /payload\.behavior\s*=\s*source\.behavior/,
+    'pet-preload.cjs 的 motionIntent 必须把 behavior 透传进 payload（否则跨进程边界会把它丢掉）',
+  );
+  // 顺带钉死 order：三个字段都在 invoke 之前
+  const invokeAt = source.indexOf("ipcRenderer.invoke('pet:motion-intent'");
+  assert.ok(invokeAt > 0, '找不到 pet:motion-intent 的 invoke 点：结构已变，请同步本测试');
+  for (const key of ['payload.mode', 'payload.reason', 'payload.behavior']) {
+    const at = source.indexOf(key);
+    assert.ok(at > 0 && at < invokeAt, `${key} 必须在 invoke 之前赋值`);
+  }
+});
+
