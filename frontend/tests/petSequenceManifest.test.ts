@@ -47,7 +47,7 @@ import {
   stageToCssOf,
 } from '../src/pet/sequences/manifest';
 import { SequenceDirector, DomSequenceLayer, sceneDurationOf, stepIndexAt } from '../src/pet/sequences/director';
-import type { SequenceFrameFile, SequenceLayerPort, SequenceScene } from '../src/pet/sequences/types';
+import type { PetSequences, SequenceFrameFile, SequenceLayerPort, SequenceScene, SequenceSceneEnd } from '../src/pet/sequences/types';
 import { SEQUENCE_SCHEMA_KEYS as BUILD_SCHEMA_KEYS, runSequenceGate } from '../scripts/check-pet-sequences.mjs';
 import { DEFAULT_SEQUENCE_OUT_DIR, SEQUENCES_JSON_PATH } from '../scripts/build-pet-sequences.mjs';
 import { SEQUENCE_TOTAL_MAX_BYTES } from '../scripts/pet-budget.mjs';
@@ -571,3 +571,233 @@ test('S-20 加载器单例即校验：loadPetSequences() 与 PET_SEQUENCES 同�
   );
   assert.equal(resolve(FRONTEND_ROOT, 'pet-sequences.json'), SEQUENCES_JSON_PATH, '清单路径只有一处定义');
 });
+/**
+ * 造一个**按浏览器口径判可见**的假元素宿主。
+ *
+ * <p><b>为什么要专门做这个（而不是复用 S-15 的假元素）：</b>真浏览器里 `hidden` 属性靠
+ * UA 样式表 `[hidden] { display: none }` 生效，而**行内作者样式 `display: block` 会把它
+ * 打败**。S-15 的假元素只记 `hidden` 布尔值，于是"只写 `hidden`、从不写 `display`"的坏实现
+ * 在测试里**永远是绿的**——真机上却留着一朵云（`stop()` 后 150 ms 读到
+ * `{ src: 'neutral@1x.webp', display: 'block' }`）。这里的 {@link isVisuallyVisible} 按
+ * "行内 `display` 优先、未写才看 `hidden`"判定，与层叠规则一致。</p>
+ *
+ * @returns `doc` / `host` / 造出来的元素列表
+ */
+function makeDomHarness(): { doc: any; host: any; elements: any[] } {
+  const elements: any[] = [];
+  const doc = {
+    createElement: (tag: string): any => {
+      const element: any = {
+        tagName: tag,
+        src: '',
+        hidden: false,
+        styleValues: {} as Record<string, string>,
+        attributes: {} as Record<string, string>,
+        style: {
+          setProperty(name: string, value: string): void {
+            element.styleValues[name] = value;
+          },
+        },
+        setAttribute(name: string, value: string): void {
+          element.attributes[name] = value;
+        },
+        getAttribute(name: string): string | null {
+          return element.attributes[name] ?? null;
+        },
+        appendChild: (): unknown => null,
+      };
+      elements.push(element);
+      return element;
+    },
+  };
+  const host = {
+    appendChild: (child: any): unknown => child,
+  };
+  return { doc, host, elements };
+}
+
+/**
+ * 与浏览器同口径的可见性判定：**行内 `display` 优先**，没写过 `display` 才看 `hidden`。
+ *
+ * @param element 假元素
+ * @returns 用户是否看得见
+ */
+function isVisuallyVisible(element: any): boolean {
+  const display = element.styleValues['display'];
+  if (display === undefined) return element.hidden !== true;
+  return display !== 'none';
+}
+
+/**
+ * 可手摇时钟（序列导演不自己读时钟，这是它能被毫秒级复现的前提）。
+ *
+ * @returns 时钟 + 推进器
+ */
+function makeClock(): { now: () => number; advance: (ms: number) => number } {
+  let nowMs = 0;
+  return {
+    now: (): number => nowMs,
+    advance: (ms: number): number => {
+      nowMs += ms;
+      return nowMs;
+    },
+  };
+}
+
+/**
+ * 造一份"含一次性 `return-stand` 场景"的合成清单（验证**自然播完**的收尾路径）。
+ *
+ * <p>帧表沿用已提交的 `neutral` 那一帧，只把键与 `url` 换成新场景 id，并同步
+ * `totals`（`bytes1x/bytes2x/scenes/steps/durationMs` 必须自证）——这样合成清单仍然走
+ * **真正的** `normalizePetSequences`，而不是手搓一个"运行时并不存在"的半成品对象。</p>
+ *
+ * @returns 合成清单（`cloud_react` + `cloud_once`）
+ */
+function sequencesWithOneShot(): PetSequences {
+  const raw = rawSequences();
+  const onceMs = 200;
+  for (const density of ['1x', '2x'] as const) {
+    const source = raw.frames[`cloud_react/neutral@${density}.webp`] as Record<string, any>;
+    raw.frames[`cloud_once/neutral@${density}.webp`] = {
+      layer: source.layer,
+      slot: source.slot,
+      width: source.width,
+      height: source.height,
+      bytes: source.bytes,
+      sha256: source.sha256,
+      format: source.format,
+      url: `lxa://pet-sequences/cloud_once/neutral@${density}.webp`,
+    };
+    if (density === '1x') raw.totals.bytes1x += source.bytes;
+    else raw.totals.bytes2x += source.bytes;
+  }
+  raw.scenes.cloud_once = {
+    loop: false,
+    onEnd: 'return-stand',
+    steps: [{ ms: onceMs, frames: { companion: 'neutral' } }],
+  };
+  raw.totals.scenes += 1;
+  raw.totals.steps += 1;
+  raw.totals.durationMs += onceMs;
+  return normalizePetSequences(raw);
+}
+
+test('S-21 缺陷回归：play → stop 之后伙伴层必须从视觉上撤掉（display 必须是 none）', () => {
+  const { doc, host, elements } = makeDomHarness();
+  const layer = new DomSequenceLayer({ doc: doc as any, host: host as any, layerId: 'companion', density: '2x' });
+  const clock = makeClock();
+  const director = new SequenceDirector({
+    sequences: PET_SEQUENCES,
+    clock,
+    layers: { companion: layer },
+    base: { centerX: 1080, footY: 1454 },
+  });
+  director.play('cloud_react');
+  clock.advance(500);
+  director.tick(clock.now());
+  assert.equal(isVisuallyVisible(elements[0]), true, '反向断言：play 之后该层必须可见（见 S-24）');
+  director.stop();
+  assert.equal(
+    elements[0].styleValues['display'],
+    'none',
+    'stop 之后行内 display 必须是 none —— 只写 hidden 会被构造时的 display:block 打败（真机表现：停止后窗上留一朵云）',
+  );
+  assert.equal(elements[0].hidden, true, 'hidden 属性也要写上（语义与 display 一起走，不只靠 stylesheet）');
+  assert.equal(isVisuallyVisible(elements[0]), false, '关键判据：stop 之后用户在窗口上看不到任何序列层');
+  assert.equal(director.snapshot().playing, false, '导演自己也要回到"未播放"');
+  assert.equal(director.snapshot().sceneId, null);
+});
+
+test('S-22 幂等：连续两次 stop() 不抛错、最终仍不可见（导演与层各自都幂等）', () => {
+  const { doc, host, elements } = makeDomHarness();
+  const layer = new DomSequenceLayer({ doc: doc as any, host: host as any, layerId: 'companion', density: '1x' });
+  const clock = makeClock();
+  const director = new SequenceDirector({
+    sequences: PET_SEQUENCES,
+    clock,
+    layers: { companion: layer },
+    base: { centerX: 1080, footY: 1454 },
+  });
+  director.play('cloud_react');
+  clock.advance(400);
+  director.tick(clock.now());
+  assert.equal(isVisuallyVisible(elements[0]), true, '前置：这一轮确实在播（否则本用例证明不了"幂等"）');
+  assert.doesNotThrow(() => director.stop(), '第一次 stop 不许抛');
+  assert.doesNotThrow(() => director.stop(), '第二次 stop 不许抛（幂等门）');
+  assert.equal(isVisuallyVisible(elements[0]), false, '两次 stop 之后必须仍然不可见');
+  // 层自己也停两次：即使绕开导演直接停，也不许抛错、不许变回可见
+  assert.doesNotThrow(() => layer.stop(), '层 stop 第二次不许抛');
+  assert.doesNotThrow(() => layer.stop(), '层 stop 第三次不许抛');
+  assert.equal(isVisuallyVisible(elements[0]), false, '层反复 stop 之后仍然不可见');
+  assert.equal(elements.length, 1, 'stop 不许新建元素（新建 = 双影）');
+});
+
+test('S-23 幂等：未 play 直接 stop() 不抛错，且不会把层弄成可见', () => {
+  const { doc, host, elements } = makeDomHarness();
+  const layer = new DomSequenceLayer({ doc: doc as any, host: host as any, layerId: 'companion', density: '1x' });
+  const clock = makeClock();
+  const director = new SequenceDirector({
+    sequences: PET_SEQUENCES,
+    clock,
+    layers: { companion: layer },
+    base: { centerX: 1080, footY: 1454 },
+  });
+  assert.equal(isVisuallyVisible(elements[0]), false, '构造完就该是不可见的');
+  assert.doesNotThrow(() => director.stop(), '没 play 就 stop 不许抛');
+  assert.equal(isVisuallyVisible(elements[0]), false, '没 play 就 stop 也不许留下可见残留');
+  // 停过之后照样能正常播：状态没有被 stop 弄坏
+  director.play('cloud_react');
+  assert.equal(isVisuallyVisible(elements[0]), true, 'stop 之后 play 必须能重新显示（幂等不许把状态机搞死）');
+});
+
+test('S-24 反向断言：play 之后该层必须可见（防"永远隐藏"的坏实现骗过绿）', () => {
+  const { doc, host, elements } = makeDomHarness();
+  const layer = new DomSequenceLayer({ doc: doc as any, host: host as any, layerId: 'companion', density: '2x' });
+  const clock = makeClock();
+  const director = new SequenceDirector({
+    sequences: PET_SEQUENCES,
+    clock,
+    layers: { companion: layer },
+    base: { centerX: 1080, footY: 1454 },
+  });
+  director.play('cloud_react');
+  assert.equal(elements[0].styleValues['display'], 'block', 'play 之后行内 display 必须是 block');
+  assert.equal(elements[0].hidden, false, 'play 之后 hidden 必须是 false');
+  assert.equal(isVisuallyVisible(elements[0]), true);
+  const firstUrl = elements[0].src as string;
+  assert.equal(firstUrl, frameFileOf(PET_SEQUENCES, 'cloud_react', 'companion', 'neutral', '2x')?.url, '首帧就是清单里 neutral@2x');
+  // 换帧（第 4 步是 happy，落在 1000+80+80+160 之后的第 4 步之前的边界内）后必须仍然可见
+  clock.advance(1200);
+  director.tick(clock.now());
+  assert.equal(isVisuallyVisible(elements[0]), true, '换帧之后仍然可见');
+  assert.notEqual(elements[0].src, firstUrl, '换帧必须真的换 src（否则"永远隐藏"之外还有"永远同一帧"这种坏实现）');
+});
+
+test('S-25 收尾出口同源：一次性 return-stand 场景自然播完后，伙伴层必须不可见', () => {
+  const sequences = sequencesWithOneShot();
+  const { doc, host, elements } = makeDomHarness();
+  const layer = new DomSequenceLayer({ doc: doc as any, host: host as any, layerId: 'companion', density: '1x' });
+  const clock = makeClock();
+  const ends: string[] = [];
+  const director = new SequenceDirector({
+    sequences,
+    clock,
+    layers: { companion: layer },
+    base: { centerX: 1080, footY: 1454 },
+    onSceneEnd: (sceneId: string, onEnd: SequenceSceneEnd) => {
+      ends.push(`${sceneId}:${onEnd}`);
+    },
+  });
+  director.play('cloud_once');
+  assert.equal(isVisuallyVisible(elements[0]), true, '前置：一次性场景播放中该层必须可见');
+  clock.advance(200 + 50);
+  director.tick(clock.now());
+  assert.deepEqual(ends, ['cloud_once:return-stand'], '自然播完必须回调 onSceneEnd（收尾接线没断）');
+  assert.equal(director.snapshot().playing, false, '播完就不是"在播"了');
+  assert.equal(
+    isVisuallyVisible(elements[0]),
+    false,
+    'return-stand 收尾必须真的撤层（与 stop() 走同一出口：只写 hidden 会被 display:block 打败）',
+  );
+});
+

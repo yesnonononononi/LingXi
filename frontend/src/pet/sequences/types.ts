@@ -259,7 +259,13 @@ export interface SequenceLayerPort {
    * @param box 位置与尺寸；`null` = 位置未知（保持不动）
    */
   setPlacement: (box: SequenceCssBox | null) => void;
-  /** 停：藏起该层（不清 `src`，避免下次闪现半解码的旧帧）。 */
+  /**
+   * 停：把该层**从视觉上撤掉**（不清 `src`，避免下次闪现半解码的旧帧）。
+   *
+   * <p><b>必须是幂等的</b>：连续调两次、以及"没 `setFrame()` 就调"都不许抛错、不许留可见
+   * 残留。实现必须让"不可见"落到**行内 `display`**（只写 `hidden` 属性会被行内
+   * `display: block` 打败，见 `DomSequenceLayer.setVisible`）。</p>
+   */
   stop: () => void;
 }
 

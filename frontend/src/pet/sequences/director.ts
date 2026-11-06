@@ -188,18 +188,38 @@ export class SequenceDirector {
   }
 
   /**
-   * 停止：藏起所有层（不清帧，避免下次闪现半解码的旧图）。
+   * 停止：把所有层**从视觉上彻底撤掉**（不清帧，避免下次闪现半解码的旧图）。
+   *
+   * <p><b>幂等</b>：连续调两次、以及"没 `play()` 就 `stop()`"都必须安全——本方法只做
+   * "撤层 + 复位三个字段"，没有一次性状态，重复进入的写入完全相同。</p>
+   *
+   * <p><b>为什么不再早退</b>：过去这里有 `if (sceneId === null && stepIndex < 0) return;`，
+   * 而**自然播完的收尾路径**（`tick()` 里 `position >= total` 那段）也会把这两个字段复位成
+   * `null` / `-1`——于是"播完之后再 `stop()`"会命中早退，层永远不会被撤。配合
+   * `DomSequenceLayer` 只写 `hidden` 属性（被行内 `display:block` 打败，见该类的
+   * {@link DomSequenceLayer.setVisible}），真机表现就是：`petDebug.sequence.stop()` 之后
+   * 桌宠窗口上**一直留着一朵云**（`src` 还是停止前那一帧、`display` 仍是 `block`）。
+   * 层的 `stop()` 自身幂等，所以无条件撤层不会带来多余副作用。</p>
    */
   stop(): void {
-    if (this.sceneIdValue === null && this.stepIndexValue < 0) return;
+    const wasPlaying = this.sceneIdValue;
+    this.hideAllLayers();
+    if (wasPlaying !== null) this.log(`停止场景 ${wasPlaying}`);
+    this.sceneIdValue = null;
+    this.stepIndexValue = -1;
+    this.elapsedMsValue = 0;
+  }
+
+  /**
+   * 让所有已接线的层把画面撤掉（`stop()` 与场景自然收尾共用这一个出口）。
+   *
+   * <p>层没接线时跳过（缺层 = 该层本来就不显示，见 {@link SequenceDirectorOptions.layers}）。</p>
+   */
+  private hideAllLayers(): void {
     const layers = this.options.layers;
     for (const layerId of Object.keys(layers) as SequenceLayerId[]) {
       layers[layerId]?.stop();
     }
-    this.log(`停止场景 ${this.sceneIdValue ?? '(未播放)'}`);
-    this.sceneIdValue = null;
-    this.stepIndexValue = -1;
-    this.elapsedMsValue = 0;
   }
 
   /**
@@ -234,10 +254,11 @@ export class SequenceDirector {
       } else if (onEnd === 'return-stand') {
         this.log('onEnd: return-stand 没有接线方（本轮主角收尾由调用方负责）');
       }
-      for (const layerId of Object.keys(this.options.layers) as SequenceLayerId[]) {
-        if (onEnd === 'hold-last') break;
-        this.options.layers[layerId]?.stop();
-      }
+      // 收尾出口与 `stop()` 同源：`return-stand` 收完必须**真的看不见**（伙伴层的
+      // `hidden` 属性会被行内 `display:block` 打败，见 DomSequenceLayer.setVisible）。
+      // `hold-last` 是显式"停在末帧"语义，故意不撤层；它之后调 `stop()` 仍会撤
+      // （`stop()` 的早退已删除，不会因为 sceneId 已复位就漏擦）。
+      if (onEnd !== 'hold-last') this.hideAllLayers();
       return;
     }
     const index = stepIndexAt(scene, position);
@@ -410,16 +431,17 @@ export class DomSequenceLayer implements SequenceLayerPort {
     this.density = options.density;
     this.log = typeof options.log === 'function' ? options.log : () => {};
     const element = options.doc.createElement('img');
-    element.hidden = true;
     element.src = '';
     element.setAttribute('data-sequence-layer', options.layerId);
     const style = element.style;
     style.setProperty('position', 'absolute');
     style.setProperty('pointer-events', 'none');
     style.setProperty('z-index', '2');
-    style.setProperty('display', 'block');
     options.host.appendChild(element);
     this.element = element;
+    // 初始不可见：走同一个 setVisible（`hidden` + 行内 `display` 一起写），
+    // 否则"构造时 display:block、之后只写 hidden"就是本批修的那个缺陷。
+    this.setVisible(false);
     this.log(`[pet-sequence] 挂载层 ${options.layerId}（z-index=2、pointer-events=none，不参与命中判定）`);
   }
 
@@ -429,21 +451,47 @@ export class DomSequenceLayer implements SequenceLayerPort {
   }
 
   /**
+   * 可见性的**唯一**写入口：行内 `display` 是权威，`hidden` 属性只是补齐语义。
+   *
+   * <p><b>为什么不能只写 `hidden`：</b>`hidden` 属性靠 UA 样式表
+   * `[hidden] { display: none }` 生效，而**行内作者样式胜过 UA 样式表**。本层构造时
+   * 写过 `display: block`（序列层要参与自身布局，不能用 `<img>` 的默认 inline 基线），
+   * 所以只设 `hidden = true` 在真浏览器里是**静默失效**的：元素依旧 `display: block`
+   * 挂在屏幕上、还挂着停止前那一帧的图。真机证据：`stop()` 之后 150 ms 读到
+   * `{ src: 'neutral@1x.webp', display: 'block' }`，下一轮 `play()` 之前读到残留
+   * `{ src: 'happy@1x.webp', display: 'block' }`。</p>
+   *
+   * <p><b>为什么选"`display: none`"而不是"移除节点"：</b>①`ElementLike` 的写入面
+   * （`src` / `hidden` / `style` / `appendChild` / 属性读写）**没有 `remove()`**，
+   * 移除节点必须扩 `presentation/layered-presentation.ts` 的类型——那是序列域之外的文件，
+   * 本批禁改；②移除/重挂会让层在每次 `play()` 时重建一次，`elementHandle`（后门与诊断
+   * 断言"真的挂上去了"的句柄）会变成指向旧节点，且重挂后 `position/z-index` 等行内样式
+   * 都要重写一遍，多一条会漂移的生命周期；③`display` 翻转是**纯样式写入**，天然幂等，
+   * 没有分配、没有重挂、没有解码失效（`src` 保留意味着下次 `play()` 不会闪现半解码的旧帧）。</p>
+   *
+   * @param visible 是否可见
+   */
+  private setVisible(visible: boolean): void {
+    this.element.hidden = !visible;
+    this.element.style.setProperty('display', visible ? 'block' : 'none');
+  }
+
+  /**
    * 换帧。
    *
    * @param frame 帧文件；`null` = 本步不显示
    */
   setFrame(frame: SequenceFrameFile | null): void {
     if (frame === null) {
-      this.element.hidden = true;
       this.currentUrl = '';
+      this.setVisible(false);
       return;
     }
     if (this.currentUrl !== frame.url) {
       this.element.src = frame.url;
       this.currentUrl = frame.url;
     }
-    this.element.hidden = false;
+    this.setVisible(true);
   }
 
   /**
@@ -460,9 +508,16 @@ export class DomSequenceLayer implements SequenceLayerPort {
     style.setProperty('height', `${box.height}px`);
   }
 
-  /** 停：藏起这一层。 */
+  /**
+   * 停：把这一层**从视觉上撤掉**（`display: none` + `hidden`）。
+   *
+   * <p><b>幂等</b>：连续调两次、以及"没 `setFrame()` 就 `stop()`"都不会抛错，也不会留下
+   * 可见残留——本方法只写 `currentUrl` 与两个可见性字段，写完的状态与调一次完全相同。
+   * 刻意**不清 `src`**：清掉会让下次 `play()` 的第一帧先闪一下半解码（同一张图重复解码），
+   * 而"看不见"由 `display` 保证，不需要靠清图。</p>
+   */
   stop(): void {
-    this.element.hidden = true;
     this.currentUrl = '';
+    this.setVisible(false);
   }
 }
