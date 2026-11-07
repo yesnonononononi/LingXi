@@ -77,16 +77,15 @@ public interface EmailService {
     List<EmailMessageVO> pendingItems(Long workflowExecutionId, Long recipientAgentId);
 
     /**
-     * 按消息 id 游标取协作消息，含已被全局消费的行。
+     * 按「本邮箱下还没有投递回执」取协作消息。
      *
-     * <p>注入路径的权威去重判据是随检查点持久化的游标；这里不过滤消费状态，
-     * 是为了在「全局消费已生效、检查点没落库」的崩溃窗口里仍能重新取到输入。</p>
+     * <p>判据是回执，不是消息 {@code status}，也不是 id 游标：status 只是展示态，
+     * id 大小不代表提交顺序。两者都当判据会分别导致「窗口里丢输入」和「小 id 被永久挡住」。</p>
      *
-     * @param workflowExecutionId 邮箱归属的执行 id
+     * @param workflowExecutionId 邮箱归属的根会话 id
      * @param recipientAgentId    收件 Agent id
-     * @param afterMessageId      游标消息 id，返回 id 严格大于它的行
      */
-    List<EmailMessageVO> pendingItemsAfter(Long workflowExecutionId, Long recipientAgentId, long afterMessageId);
+    List<EmailMessageVO> pendingItemsUndelivered(Long workflowExecutionId, Long recipientAgentId);
 
     /** 只确认本批查询结果，期间新到的消息留给下一轮。 */
     void consumePendingItems(List<EmailMessageVO> items);

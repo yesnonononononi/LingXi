@@ -11,7 +11,9 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -77,16 +79,46 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
     }
 
     @Override
-    public List<EmailMessage> findByEmailIdsAfterId(Collection<Long> emailIds, long afterId) {
+    public List<EmailMessage> findUndeliveredByEmailIds(Collection<Long> emailIds) {
         if (emailIds == null || emailIds.isEmpty()) {
             return List.of();
         }
-        // 不按 status 过滤：注入判据是检查点里的游标，见接口注释。
+        // 判据是回执表（NOT EXISTS 是固定片段，无外部拼接）：与消息 status、与 id 大小顺序都无关。
         return mapper.selectList(Wrappers.<EmailMessagePO>lambdaQuery()
                         .in(EmailMessagePO::getEmailId, emailIds)
-                        .gt(EmailMessagePO::getId, afterId)
+                        .notExists("SELECT 1 FROM email_message_receipt r WHERE r.message_id = email_message.id")
+                        .orderByAsc(EmailMessagePO::getCreateAt)
                         .orderByAsc(EmailMessagePO::getId))
                 .stream().map(this::toModel).toList();
+    }
+
+    @Override
+    public Map<Long, Long> findEmailIdByIds(Collection<Long> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> emailIds = new HashMap<>();
+        for (EmailMessagePO po : mapper.selectList(Wrappers.<EmailMessagePO>lambdaQuery()
+                .select(EmailMessagePO::getId, EmailMessagePO::getEmailId)
+                .in(EmailMessagePO::getId, messageIds))) {
+            if (po.getId() != null && po.getEmailId() != null) {
+                emailIds.put(po.getId(), po.getEmailId());
+            }
+        }
+        return emailIds;
+    }
+
+    @Override
+    public int consumeByIds(Collection<Long> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return 0;
+        }
+        // 只影响展示态：仍为 PENDING 才置 CONSUMED，已消费的行不重复触碰 update_at。
+        return mapper.update(null, Wrappers.<EmailMessagePO>lambdaUpdate()
+                .set(EmailMessagePO::getStatus, EmailMessage.EMStatus.CONSUMED.name())
+                .set(EmailMessagePO::getUpdateAt, Instant.now())
+                .in(EmailMessagePO::getId, messageIds)
+                .eq(EmailMessagePO::getStatus, EmailMessage.EMStatus.PENDING.name()));
     }
 
     @Override

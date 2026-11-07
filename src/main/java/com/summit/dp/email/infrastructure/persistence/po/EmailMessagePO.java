@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.summit.dp.shared.persistence.handler.LargeTextTypeHandler;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.apache.ibatis.type.JdbcType;
 
 import java.time.Instant;
@@ -14,10 +16,15 @@ import java.time.Instant;
 /**
  * EmailMessage 持久化对象，映射 {@code email_message} 表。
  * <p>时间列命名与 DDL 对齐（create_at/update_at），主键为应用层生成的雪花 id。</p>
+ *
+ * <p>无参与全参构造器是给 MyBatis 用的：没有无参构造器时它改走「按列序匹配构造器」，
+ * 遇到列裁剪的窄查询（只选 id、email_id）会直接映射失败。</p>
  */
 @Data
-@TableName("email_message")
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@TableName("email_message")
 public class EmailMessagePO {
     @TableId(type = IdType.INPUT)
     private Long id;

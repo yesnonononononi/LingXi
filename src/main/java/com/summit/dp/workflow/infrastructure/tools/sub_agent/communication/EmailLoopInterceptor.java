@@ -68,8 +68,9 @@ public class EmailLoopInterceptor implements LoopInterceptor {
             return InterceptorResult.NONE;
         }
         context.appendMessage(channel.toModelMessages(execution, data, InputInjectionStage.LOOP));
+        // 只登记「已投递」：回执必须与检查点同一事务落库（MailReceiptFlusher），
+        // 在这里独立提交会造成「回执已落库、检查点没落库」的永久丢输入窗口。
         channel.markConsumed(execution, data);
-        channel.cleanupAfterConsume(execution, data);
         return InterceptorResult.NONE;
     }
 }

@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.harness;
 
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
+import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
@@ -55,6 +56,15 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     @Autowired
     private SessionExecutionRegistry executionRegistry = new SessionExecutionRegistry();
+
+    /**
+     * 邮件回执落库挂点：回执要与检查点在同一事务里提交（见 {@code commitCheckpoint}）。
+     *
+     * <p>用字段注入而不是构造参数：本类有大量直接 {@code new} 出来的用例，加构造参数会把它们全部打散；
+     * 字段为 {@code null} 时按「没有回执要写」处理。{@link ObjectProvider} 延迟取用，断开构造期环。</p>
+     */
+    @Autowired(required = false)
+    ObjectProvider<MailReceiptFlusher> mailReceipts;
 
     /**
      * 事务管理器：仅用于「自己拥有事务时，每次重试开一个全新事务」。
@@ -188,8 +198,29 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     /** 保存冲突只重试数据库事务；整笔失败删除新正文，提交后才回收旧正文。 */
     private ExecutionCheckpointService.SaveOutcome commitCheckpoint(Execution execution, long id, Long sessionId,
                                                                     int status, String fileId) {
-        return checkpointSaveRetryTemplate().execute(() -> checkpointService.save(id, sessionId, status, fileId,
-                execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt()));
+        return checkpointSaveRetryTemplate().execute(() -> {
+            ExecutionCheckpointService.SaveOutcome outcome = checkpointService.save(id, sessionId, status, fileId,
+                    execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt());
+            // 邮件回执必须与检查点同批提交：回执先在注入时独立落库的话，
+            // 「已注入、检查点未提交」崩一次就会因为回执存在而永久丢掉这条输入。
+            // 挂在重试动作内部，重试时两者一起重放（失败事务已回滚，不会留半条回执）。
+            flushMailReceipts(execution);
+            return outcome;
+        });
+    }
+
+    /** 回执落库的挂点：没有该协作方（直接 new 出来的用例）就跳过。 */
+    private void flushMailReceipts(Execution execution) {
+        ObjectProvider<MailReceiptFlusher> flusher = mailReceipts;
+        if (flusher == null) {
+            return;
+        }
+        // 用 getIfAvailable：这段测试/降级装配里 provider 存在但容器里没有该 bean，
+        // getObject() 会直接抛 NoSuchBeanDefinitionException，把一次保存伪报成失败。
+        MailReceiptFlusher target = flusher.getIfAvailable();
+        if (target != null) {
+            target.flush(execution);
+        }
     }
 
     /**

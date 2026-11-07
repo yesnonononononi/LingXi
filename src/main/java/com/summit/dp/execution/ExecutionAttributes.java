@@ -1,6 +1,10 @@
 package com.summit.dp.execution;
 
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Business identity carried through the framework as opaque request attributes. */
 public final class ExecutionAttributes {
@@ -16,12 +20,14 @@ public final class ExecutionAttributes {
     public static final String TEAM_ID = "lingxi.team_id";
     public static final String LAST_RESUME_SUPPLEMENT_ID = "lingxi.last_resume_supplement_id";
     /**
-     * 已注入上下文的最后一条协作邮件消息 id：注入去重的<b>权威判据</b>，随检查点持久化。
+     * 本轮已投递、但回执还没落库的协作邮件消息 id 集合。
      *
-     * <p>为什么不靠邮件的全局消费状态：消息追加进上下文之后、检查点落库之前存在崩溃窗口。
-     * 用全局状态当判据，崩溃后重启会因「库里已消费」而永远看不到这条输入。</p>
+     * <p>作用只有两个：同一轮内后续模型调用据此去重（防止同一执行反复注入同一封），
+     * 以及给检查点保存路径一个「这一批要写回执」的清单。它<b>不是</b>跨轮权威判据 ——
+     * 权威判据是 {@code email_message_receipt} 表，重启后由回执重新证明。
+     * 也正因为它跟着检查点走，回执才会和检查点在同一事务里提交。</p>
      */
-    public static final String LAST_MAIL_ID = "lingxi.last_mail_id";
+    public static final String DELIVERED_MAIL_IDS = "lingxi.delivered_mail_ids";
 
     private ExecutionAttributes() { }
 
@@ -77,6 +83,49 @@ public final class ExecutionAttributes {
     public static Long mailboxSessionId(Map<String, Object> attributes) {
         Long root = readLong(attributes, ROOT_SESSION_ID);
         return root != null ? root : readLong(attributes, SESSION_ID);
+    }
+
+    /**
+     * 读取属性并解析成 {@code Long} 列表：容忍单值、集合与逗号分隔文本三种形态。
+     *
+     * <p>为什么要容忍三种：属性会经执行快照 JSON 往返（集合可能落成数组），
+     * 也可能被手工写成一个标量。这里只负责解析，解析不出来的元素直接丢弃，由调用方决定语义。</p>
+     *
+     * @param attributes 请求/工具执行携带的不透明属性
+     * @param key        属性键，见本类常量
+     * @return 解析出的 id 列表（保持原顺序，去重）；无值返回空列表
+     */
+    public static List<Long> readLongs(Map<String, Object> attributes, String key) {
+        if (attributes == null || key == null) {
+            return List.of();
+        }
+        Object raw = attributes.get(key);
+        if (raw == null) {
+            return List.of();
+        }
+        Set<Long> values = new LinkedHashSet<>();
+        if (raw instanceof Collection<?> items) {
+            for (Object item : items) {
+                addParsed(values, item);
+            }
+            return List.copyOf(values);
+        }
+        String text = String.valueOf(raw);
+        if (text.contains(",")) {
+            for (String part : text.split(",")) {
+                addParsed(values, part);
+            }
+            return List.copyOf(values);
+        }
+        addParsed(values, text);
+        return List.copyOf(values);
+    }
+
+    private static void addParsed(Set<Long> values, Object raw) {
+        Long parsed = parseLong(raw == null ? null : String.valueOf(raw));
+        if (parsed != null) {
+            values.add(parsed);
+        }
     }
 
     /** 宽松解析：非数字（含 null、空白、雪花 ID 之外的脏值）一律返回 null，不抛异常。 */

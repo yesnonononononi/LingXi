@@ -5,10 +5,12 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 邮件通道：协作信箱里到达的消息。
@@ -18,19 +20,17 @@ import java.util.List;
  * <p>循环内注入那段带「收件对象 / 注意事项」，跨轮次续跑那段是「成员 @x 发来消息」——
  * 它们本来就是给模型看的两份不同话术，改造只许把它们收到一处，不许改写措辞。</p>
  *
- * <h2>消费判据与崩溃窗口（本通道的核心取舍）</h2>
+ * <h2>消费判据：全局回执，不是执行私有游标</h2>
  *
- * <p>改造前是「先 {@code consumePendingItems} 全局标已消费，再把消息追加进上下文」，
- * 而检查点由框架在轮末保存。于是崩溃窗口里输入永久丢失：库里已消费，重启后查不到。</p>
+ * <p>上一版把「已投递」记在执行属性（{@code LAST_MAIL_ID} 游标）。信箱是会话级共享资源、
+ * 执行每轮新建，于是新建执行 / 重发 / 旧检查点这三条真实入口都没有该属性，游标缺省 0，
+ * 整段历史邮件被重放；而且 {@code max(mailId)} 高水位并不等于提交顺序，较小 id 晚提交会被永久挡住。</p>
  *
- * <p>现在权威判据是 {@code LAST_MAIL_ID}（随检查点持久化），{@code consumePendingItems}
- * 降级为<b>尽力而为的清理</b>。两条要求不能同时满足 ——「全局消费成功」与「检查点未落库」
- * 并存时，无论怎么做都有代价 —— 本实现选择<b>不丢输入</b>：轮询按 id 游标取、
- * 不按消费状态过滤，因此那种窗口里重启会重复注入一次，而不是丢一次。
- * 重复注入的代价是多一段上下文，丢一次输入的代价是协作方的新需求被静默吞掉，
- * 后者不可接受。</p>
+ * <p>现在权威判据是 {@code email_message_receipt}：待处理 = 本邮箱下没有回执的邮件，与消息
+ * {@code status}、与 id 大小都无关。本类只把「本轮已投递」记进执行属性
+ * {@link ExecutionAttributes#DELIVERED_MAIL_IDS}（随检查点持久化），供同一轮内去重；
+ * 真正的回执由 {@link MailReceiptFlusher} 在检查点提交的同一事务里落库。</p>
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
@@ -63,9 +63,19 @@ public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
         if (mailbox == null || recipient == null) {
             return List.of();
         }
-        List<EmailMessageVO> items = emails.pendingItemsAfter(mailbox, recipient, cursor(execution));
-        // 空结果与 null 同等对待：任何一侧都不该被当成「有新邮件」。
-        return items == null ? List.of() : items;
+        List<EmailMessageVO> items = emails.pendingItemsUndelivered(mailbox, recipient);
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        // 同一轮内的去重：回执要等检查点提交才落库，这之前只能靠执行属性挡住重复注入。
+        Set<Long> deliveredInRound = new LinkedHashSet<>(ExecutionAttributes.readLongs(
+                InputAutomationPolicy.attributes(execution), ExecutionAttributes.DELIVERED_MAIL_IDS));
+        if (deliveredInRound.isEmpty()) {
+            return items;
+        }
+        return items.stream()
+                .filter(item -> item.getId() == null || !deliveredInRound.contains(item.getId()))
+                .toList();
     }
 
     @Override
@@ -76,32 +86,26 @@ public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
                 : loopText(item, recipient)).toList();
     }
 
+    /**
+     * 只登记「本轮已投递」的 id，不写库。
+     *
+     * <p>写库（回执 + 状态清理）必须与检查点同一事务，见 {@link MailReceiptFlusher}；
+     * 在这里独立提交一次会造成「回执已落库、检查点没落库」的永久丢输入窗口。</p>
+     */
     @Override
     public void markConsumed(Execution execution, List<EmailMessageVO> items) {
         if (items.isEmpty()) {
             return;
         }
-        long newest = cursor(execution);
+        Set<Long> delivered = new LinkedHashSet<>(ExecutionAttributes.readLongs(
+                InputAutomationPolicy.attributes(execution), ExecutionAttributes.DELIVERED_MAIL_IDS));
+        List<Long> merged = new ArrayList<>(delivered);
         for (EmailMessageVO item : items) {
-            if (item.getId() != null) {
-                newest = Math.max(newest, item.getId());
+            if (item.getId() != null && delivered.add(item.getId())) {
+                merged.add(item.getId());
             }
         }
-        InputAutomationPolicy.putAttribute(execution, ExecutionAttributes.LAST_MAIL_ID, newest);
-    }
-
-    @Override
-    public void cleanupAfterConsume(Execution execution, List<EmailMessageVO> items) {
-        if (items.isEmpty()) {
-            return;
-        }
-        try {
-            emails.consumePendingItems(items);
-        } catch (RuntimeException failure) {
-            // 尽力而为：清理失败只影响信箱的未读态，不影响「已注入」这一事实（判据是游标）。
-            log.warn("信箱清理失败，注入事实不受影响: executionId={}, count={}, error={}",
-                    execution.getId(), items.size(), failure.toString());
-        }
+        InputAutomationPolicy.putAttribute(execution, ExecutionAttributes.DELIVERED_MAIL_IDS, List.copyOf(merged));
     }
 
     /** 循环内话术：与改造前逐字一致，含「收件对象 / 注意事项」。 */
@@ -117,11 +121,5 @@ public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
     /** 跨轮次续跑话术：与改造前逐字一致（换行与全角冒号都不能动）。 */
     private String continuationText(EmailMessageVO item) {
         return "成员 @" + item.getSenderId() + " 发来消息：\n" + item.getContent() + "\n";
-    }
-
-    private long cursor(Execution execution) {
-        Long lastId = ExecutionAttributes.readLong(InputAutomationPolicy.attributes(execution),
-                ExecutionAttributes.LAST_MAIL_ID);
-        return lastId == null ? 0L : lastId;
     }
 }

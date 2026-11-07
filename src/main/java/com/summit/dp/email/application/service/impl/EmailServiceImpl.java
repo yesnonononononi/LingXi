@@ -174,8 +174,7 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
-    public List<EmailMessageVO> pendingItemsAfter(Long workflowExecutionId, Long recipientAgentId,
-                                                  long afterMessageId) {
+    public List<EmailMessageVO> pendingItemsUndelivered(Long workflowExecutionId, Long recipientAgentId) {
         if (workflowExecutionId == null || recipientAgentId == null) {
             return List.of();
         }
@@ -183,7 +182,7 @@ public class EmailServiceImpl implements EmailService {
         if (mailbox.isEmpty()) {
             return List.of();
         }
-        return messageRepository.findByEmailIdsAfterId(List.of(mailbox.get().getId()), afterMessageId)
+        return messageRepository.findUndeliveredByEmailIds(List.of(mailbox.get().getId()))
                 .stream().map(this::toMessageVO).toList();
     }
 
