@@ -90,7 +90,9 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         verify(subAgent, never()).execute(any(Execution.class));
 
         // 取消拦截 → 撤销待启动登记，不该去注销别人的条目，也不该兜底唤醒。
-        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
+        // 恰好一次：撤销的归属只有「交接前兜底」与「网关 onUnstarted」两处且互斥。
+        verify(registry, org.mockito.Mockito.times(1))
+                .revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         verify(registry, never()).unregisterChild(any(), any(), any());
         verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
         verify(registry, never()).beginRoot(any(), anyString());

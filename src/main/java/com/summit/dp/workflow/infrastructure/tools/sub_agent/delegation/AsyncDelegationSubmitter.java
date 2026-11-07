@@ -101,9 +101,27 @@ public class AsyncDelegationSubmitter {
      * <p><b>准入与登记撤销都在统一入口里</b>：准入是抢登记 {@code tryStartChild}，
      * 没能起步时撤销的是子登记 {@code revokeChild} —— 与根会话释放运行资格是两件事，
      * 混用会让还在跑的根被误判为「已收尾」。</p>
+     *
+     * <p><b>撤销归属按「接管」划分，任何一次提交只撤销一次</b>：</p>
+     * <ul>
+     *   <li><b>交接前</b>（启动请求还没构造出来）：网关从未看到这份启动，撤销由本类兜底；</li>
+     *   <li><b>交接后</b>（{@link ExecutionLaunchGateway#submit} 已拿到请求）：线程池拒绝与准入被拒
+     *       都由网关调 {@code onUnstarted} 撤销，本类不再兜第二遍。</li>
+     * </ul>
+     * 两段互斥，撤销动作也只有 {@link #revokeChild} 一份实现 —— 这正是之前「统一入口撤一次、
+     * 工具侧再撤一次」那个双重归属被收敛掉的地方。工具侧现在只负责把失败报回给模型。
      */
     public void submit(AsyncDelegationTask task) {
-        launchGateway().submit(childLaunchSpec(task));
+        ExecutionLaunchSpec spec;
+        try {
+            spec = childLaunchSpec(task);
+        } catch (RuntimeException specFailure) {
+            // 启动请求没构造出来 = 网关从未接管，撤销只能在这里做（交接前的唯一归属点）。
+            revokeChildQuietly(task, specFailure);
+            throw specFailure;
+        }
+        // 交接之后撤销权归网关的 onUnstarted：这里绝不再撤销第二遍。
+        launchGateway().submit(spec);
     }
 
     /**
@@ -111,22 +129,51 @@ public class AsyncDelegationSubmitter {
      * 所以提交被拒时只撤销登记，没有执行终态可收 —— 这是角色差异，不是漏实现。
      */
     private ExecutionLaunchSpec childLaunchSpec(AsyncDelegationTask task) {
-        Long rootSessionId = task.rootSessionId();
-        Long childSessionId = task.numericSubSessionId();
+        throwIf(task == null, "委派任务不能为空");
+        throwIf(task.numericSubSessionId() == null, "子会话标识不能为空");
+        throwIf(task.request() == null || task.request().getExecutionId() == null, "子执行请求缺少执行标识");
         return new ExecutionLaunchSpec(ExecutionLaunchRole.SUB_AGENT, executorService, null,
                 () -> sessionExecutionRegistry.tryStartChild(task.request().getExecutionId()),
                 () -> {
-                    sessionExecutionRegistry.revokeChild(rootSessionId, childSessionId,
-                            task.request().getExecutionId());
+                    revokeChild(task);
                     log.info("子执行未开跑（根已取消）: rootSessionId={}, subSessionId={}",
-                            rootSessionId, childSessionId);
+                            task.rootSessionId(), task.numericSubSessionId());
                 },
                 () -> runChild(task));
+    }
+
+    /** 撤销子登记的唯一实现：调用点只有「交接前兜底」与「网关 onUnstarted」两处，且互斥。 */
+    private void revokeChild(AsyncDelegationTask task) {
+        sessionExecutionRegistry.revokeChild(task.rootSessionId(), task.numericSubSessionId(),
+                task.request().getExecutionId());
+    }
+
+    /**
+     * 交接前的兜底撤销：启动请求构造失败时用。
+     *
+     * <p>标识解析不出来（例如子会话 ID 非数字）就无从撤销，只能记日志 —— 那种情况下工具侧
+     * 也走不到登记那一步，不会有残留。</p>
+     */
+    private void revokeChildQuietly(AsyncDelegationTask task, RuntimeException cause) {
+        try {
+            revokeChild(task);
+            log.warn("启动请求构造失败，已撤销待启动子登记: rootSessionId={}, subSessionId={}",
+                    task.rootSessionId(), task.numericSubSessionId(), cause);
+        } catch (RuntimeException unresolvable) {
+            log.error("启动请求构造失败且无法撤销子登记: task={}", task, cause);
+        }
     }
 
     /** 统一启动入口：与根会话共用同一个实例。 */
     private ExecutionLaunchGateway launchGateway() {
         return executionLaunchGateway;
+    }
+
+    /** 入口校验统一走私有 throwIf：参数不成立时必须在登记撤销之前就拒绝。 */
+    private static void throwIf(boolean condition, String err) {
+        if (condition) {
+            throw new IllegalArgumentException(err);
+        }
     }
 
     /**

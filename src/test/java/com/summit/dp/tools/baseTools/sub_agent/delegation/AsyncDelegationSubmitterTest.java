@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -47,6 +48,7 @@ class AsyncDelegationSubmitterTest {
     private static final long PARENT_WS_ID = 66L;
     private static final long ROOT_EXECUTION_ID = 900L;
     private static final long CHILD_AGENT_ID = 7L;
+    private static final String CHILD_EXECUTION_ID = "901";
 
     private final SubAgent subAgent = mock(SubAgent.class);
     private final SessionExecutionRegistry registry = mock(SessionExecutionRegistry.class);
@@ -152,13 +154,28 @@ class AsyncDelegationSubmitterTest {
 
         submitter.submit(task);
 
-        verify(registry).revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
+        verify(registry, org.mockito.Mockito.times(1))
+                .revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_SESSION_ID));
         verify(subSessionResolver, never()).createSubSession(any(), any(), any(), any(), any());
         verify(delegationRecorder, never()).record(any(), any(), any(), any(), any(), any(), any());
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
         verify(subExecutionLifecycle, never()).abandonChild(any(), any(), any(), any());
         verify(registry, never()).finishRoot(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("入口没能构造出启动请求时兜底撤销，且只撤销一次")
+    void unstartedEntryStillRevokesExactlyOnce() {
+        // numericSubSessionId() 解析失败 = 启动请求根本构造不出来，网关从未接管这份启动。
+        AsyncDelegationTask task = new AsyncDelegationTask(ROOT_SESSION_ID, null, null, ROOT_EXECUTION_ID, null,
+                null, null, null, AgentRequest.builder().executionId(CHILD_EXECUTION_ID).build());
+
+        assertThrows(RuntimeException.class, () -> submitter.submit(task));
+
+        verify(registry, org.mockito.Mockito.times(1)).revokeChild(eq(ROOT_SESSION_ID), any(), any());
+        verify(subAgent, never()).createExecution(any());
+        verify(subAgent, never()).execute(any(Execution.class));
     }
 
     @Test

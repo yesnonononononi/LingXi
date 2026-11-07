@@ -27,6 +27,7 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionR
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
@@ -46,6 +47,7 @@ import java.util.Objects;
  *
  * NOTICE: The task dispatched by the commander will be injected into the target context as a {@link UserMessageEntity}
  */
+@Slf4j
 @AllArgsConstructor
 @Component
 @Tool(
@@ -149,7 +151,9 @@ public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecut
      * <b>不跑子 loop</b>。
      *
      * <p>请求组装与登记都在<b>请求线程内</b>完成（只读解析，可失败即返回错误）：组装失败时尚无登记，
-     * 不产生任何痕迹；登记成功而提交失败（线程池拒绝）时撤销登记，绝不留下永不结束的幽灵条目。
+     * 不产生任何痕迹；登记成功而提交失败（线程池拒绝）时由提交方撤销登记（归属划分见
+     * {@code AsyncDelegationSubmitter#submit}），本类只把失败报回给模型，绝不留下永不结束的幽灵条目，
+     * 也不重复撤销一次。
      * 返回结构化 JSON，让指挥者立即拿回控制权继续本轮其它工作。</p>
      */
     private ToolExecuteResult executeChildAsync(ToolExecution toolExecution, CallSubAgentToolArgument argument,
@@ -175,8 +179,10 @@ public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecut
             asyncDelegationSubmitter.submit(new AsyncDelegationTask(rootSessionId, numericSubSessionId, parentWorkspaceId,
                     rootExecutionId, target, agent, argument, toolExecution, request));
         } catch (RuntimeException e) {
-            // 线程池拒绝等提交失败：撤销登记，绝不谎报已委派（否则模型以为已委派而漏做）。
-            sessionExecutionRegistry.revokeChild(rootSessionId, numericSubSessionId, request.getExecutionId());
+            // 线程池拒绝等提交失败：撤销登记由提交方负责（交接前由提交方兜底、交接后归统一入口），
+            // 这里只把失败报回给模型 —— 绝不谎报已委派（否则模型以为已委派而漏做），也不撤第二遍。
+            log.warn("委派提交失败，登记撤销由提交方负责: rootSessionId={}, subSessionId={}, executionId={}",
+                    rootSessionId, numericSubSessionId, request.getExecutionId(), e);
             return ToolExecuteResult.err("委派提交失败: " + e.getMessage());
         }
         return asyncResultRenderer.render(target.subSessionId(), agent.getId(), agent.getName());
