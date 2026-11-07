@@ -197,7 +197,7 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
     const readScrollGeometry = () => evaluate(`(() => {
       const boxes = [...document.querySelectorAll('[data-testid=process-segment-details]')];
-      return boxes.map(box => ({height:box.clientHeight, content:box.scrollHeight,
+      return boxes.map(box => ({height:box.clientHeight, content:box.scrollHeight, top:box.scrollTop,
         overflow:getComputedStyle(box).overflowY, overscroll:getComputedStyle(box).overscrollBehaviorY,
         width:document.documentElement.scrollWidth, viewport:innerWidth}));
     })()`);
@@ -206,12 +206,14 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     for (const box of boxes) {
       assert.ok(Math.abs(box.height - Math.min(480, height * 0.7)) <= 1, '固定高度充足，且适配较矮窗口：' + JSON.stringify(box));
       assert.ok(box.content > box.height * 2, '大量工具项必须在框内溢出');
+      assert.ok(Math.abs(box.content - box.height - box.top) <= 1, '展开后默认从最新过程开始');
       assert.equal(box.overflow, 'auto');
       assert.equal(box.overscroll, 'contain', '滚到边界时不带动外层对话');
       assert.ok(box.width <= box.viewport + 1, '滚动框不能撑宽窄屏');
     }
     const scrolled = await evaluate(`(() => {
       const boxes = [...document.querySelectorAll('[data-testid=process-segment-details]')];
+      boxes.forEach(box => { box.scrollTop = 0; });
       boxes[0].scrollTop = boxes[0].scrollHeight;
       const last = boxes[0].firstElementChild.lastElementChild.getBoundingClientRect();
       const bounds = boxes[0].getBoundingClientRect();
@@ -226,10 +228,21 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     const appended = await readScrollGeometry();
     assert.deepEqual(appended.map(box => box.height), boxes.map(box => box.height), '增量过程不能继续撑高展开框');
     assert.ok(appended[1].content > boxes[1].content, '增量内容仍可在第二段中查看');
+    assert.equal(appended[1].top, 0, '用户上翻后追加过程不能强行拉回底部');
     measurements.push({name, boxes, scrolled, appended});
     await fs.writeFile(path.join(output, name + '.png'), (await window.webContents.capturePage()).toPNG());
     await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
     assert.equal(await evaluate(`document.querySelectorAll('[data-testid=process-segment-details]').length`), 0, '折叠后释放固定高度');
+    await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
+    for (const box of await readScrollGeometry()) {
+      assert.ok(Math.abs(box.content - box.height - box.top) <= 1, '重新展开时从最新过程开始');
+    }
+    await evaluate(`document.querySelectorAll('[data-testid=process-segment-details]').forEach(box => { box.scrollTop = 0; });
+      document.querySelector('[data-testid=whole-process-toggle]').click(); window.flush()`);
+    await evaluate(`document.querySelector('[data-testid=whole-process-toggle]').click(); window.flush()`);
+    for (const box of await readScrollGeometry()) {
+      assert.ok(Math.abs(box.content - box.height - box.top) <= 1, '整轮收起后重新展开也从最新过程开始');
+    }
   }
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, 'measurements.json'), JSON.stringify(measurements, null, 2));

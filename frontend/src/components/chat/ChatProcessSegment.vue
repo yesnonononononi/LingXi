@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, ref} from 'vue';
+import {computed, ref, watch} from 'vue';
 import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
 import type {ProcessSegmentView} from '../../utils/processViewModel';
 import CollapseTransition from '../common/CollapseTransition.vue';
@@ -30,6 +30,11 @@ const emit = defineEmits<{ (e: 'selectSubSession', id: string | number): void }>
 const segment = computed(() => props.view.segment);
 const mode = computed(() => props.view.mode);
 const expanded = ref(false);
+const detailsBox = ref<HTMLElement | null>(null);
+// 每次展开先呈现最新过程，后续更新保留用户主动上翻的位置。
+watch(detailsBox, box => {
+  if (box) box.scrollTop = box.scrollHeight;
+}, {flush: 'post'});
 const headline = computed(() => props.view.headline);
 // 标题/预览/状态全部来自视图模型，组件只决定排版：长正文右对齐溢出，短值截断。
 const title = computed(() => headline.value.title);
@@ -85,7 +90,7 @@ const isRunningTurn = computed(() => props.turn
       <div v-if="visible && expanded" class="mt-1">
         <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。 -->
         <div class="h-[480px] max-h-[70dvh] overflow-y-auto overscroll-y-contain pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
-          data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')">
+          ref="detailsBox" data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')">
           <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"
             :file-edits="message.fileEdits" :is-message-complete="message.isComplete"
             :message-is-suspended="Boolean(message.isSuspended)" :is-running-turn="isRunningTurn"
