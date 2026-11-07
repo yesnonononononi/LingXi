@@ -1,0 +1,238 @@
+package com.summit.dp.session.application.convert;
+
+import com.summit.core.audit.AuditStatus;
+import com.summit.core.audit.DocumentElement;
+import com.summit.core.audit.token.TokenAuditDocument;
+import com.summit.core.audit.token.tool.ToolAuditDocument;
+import com.summit.core.audit.token.tool.ToolElement;
+import com.summit.dp.session.domain.model.Session;
+import com.summit.dp.session.domain.model.TokenAuditGroupKind;
+import com.summit.dp.session.domain.model.TokenAuditReconciler.GroupMeasurement;
+import com.summit.dp.session.domain.model.TokenAuditReconciler.ItemMeasurement;
+import com.summit.dp.session.domain.model.TokenAuditReconciler.Measurement;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 框架审计文档 → 领域扁平测量值（{@link Measurement}）。
+ *
+ * <p><b>框架类型只允许出现在这一层</b>：{@code TokenAuditDocument} / {@code ToolAuditDocument} /
+ * {@code ToolElement} 全部在此收口，领域模型只认 {@code int} 与 {@link GroupMeasurement}，
+ * 这样框架口径再变也只改这一个文件。</p>
+ *
+ * <p><b>本类只做「读取 + 兜底」，不做任何口径换算</b>：四类求和、请求开销减法、
+ * 去重叠、分组与工具名的父子一致全部在 {@code TokenAuditReconciler}（Pitest 扫描区）里。
+ * 这里出现算术就意味着质量门禁扫不到，属于设计禁止的做法。</p>
+ *
+ * <p><b>口径（框架 {@code d32ff83} 起）</b>：{@code ToolElement.totalTokens} /
+ * {@code ToolAuditDocument.toolTokens} 是「结果消息 + 结果消息框架」，<b>不含工具调用参数</b>；
+ * 参数（{@code argumentTokens}）仅作归因说明。因此本类原样透传框架数值，<b>不做减法</b>。</p>
+ *
+ * <p><b>模型输入总量（U1 决策）</b>：取 {@code Session.contextTokenCount} —— 它与框架终态时的
+ * {@code Execution.getContextUsageMetric()} 同源（由 {@code SessionContextUsageProjector} 写入），
+ * 不自行估算、不抄框架实现细节。拿不到时传 0，由换算器退化成「请求开销 = 0」，
+ * 绝不允许出现巨大负残差。上限同理取 {@code Session.contextMaxTokens}。</p>
+ */
+@Slf4j
+@Component
+public class TokenAuditConverter {
+
+    /**
+     * 转换（无调用条数来源）。{@code callCount} 一律为 0。
+     *
+     * <p><b>为什么没有条数</b>：框架审计文档里没有消息列表，{@code ToolElement} 只有
+     * argument / output / total 三个量，无法反推调用条数。不凭空造数——
+     * 需要「N 项」徽标时由接线方通过
+     * {@link #toMeasurement(TokenAuditDocument, Session, Map)} 传入真实条数。</p>
+     *
+     * @param document 框架审计文档，可为 {@code null}（视为全 0）
+     * @param session  产出该快照的会话，可为 {@code null}（此时总量与上限未知，均为 0）
+     * @return 领域测量值
+     */
+    public Measurement toMeasurement(TokenAuditDocument document, Session session) {
+        return toMeasurement(document, session, Map.of());
+    }
+
+    /**
+     * 转换（带调用条数来源）。
+     *
+     * @param document       框架审计文档，可为 {@code null}
+     * @param session        产出该快照的会话，可为 {@code null}
+     * @param toolCallCounts 工具名 → 调用条数；缺省的工具名按 0 条计。可为 {@code null}
+     * @return 领域测量值
+     */
+    public Measurement toMeasurement(TokenAuditDocument document, Session session,
+                                     Map<String, Integer> toolCallCounts) {
+        Map<String, Integer> counts = toolCallCounts == null ? Map.of() : toolCallCounts;
+        if (document == null) {
+            return new Measurement(0, 0, 0, 0, 0, liveTotalTokens(session), liveMaxTokens(session),
+                    List.of());
+        }
+        ToolParts tool = toolParts(document.toolTokens(), counts);
+        return new Measurement(
+                intValueOf(document.systemTokens()),
+                intValueOf(document.userTokens()),
+                intValueOf(document.assistantTokens()),
+                tool.toolTokens(),
+                tool.argumentTokens(),
+                liveTotalTokens(session),
+                liveMaxTokens(session),
+                tool.groups());
+    }
+
+    /**
+     * 工具视图：分组 + 参数合计 + 框架工具总量。
+     *
+     * @param element 框架工具文档元素
+     * @param counts  工具名 → 调用条数
+     * @return 三部分；框架没给（{@code null} / 非 {@code SUCCESS}）时全 0 且无分组
+     */
+    private ToolParts toolParts(DocumentElement<ToolAuditDocument> element, Map<String, Integer> counts) {
+        ToolAuditDocument document = metaOf(element);
+        if (document == null) {
+            return new ToolParts(0, 0, List.of());
+        }
+        List<GroupMeasurement> groups = new ArrayList<>(3);
+        int arguments = 0;
+        GroupMeasurement mcp = namedGroup(TokenAuditGroupKind.MCP, document.mcpDetail());
+        if (mcp != null) {
+            groups.add(mcp);
+            arguments += mcp.argumentTokens();
+        }
+        GroupMeasurement skill = namedGroup(TokenAuditGroupKind.SKILL, document.skillDetail());
+        if (skill != null) {
+            groups.add(skill);
+            arguments += skill.argumentTokens();
+        }
+        GroupMeasurement ordinary = ordinaryGroup(document.tokenDetails(), counts);
+        if (ordinary != null) {
+            groups.add(ordinary);
+            arguments += ordinary.argumentTokens();
+        }
+        return new ToolParts(nonNegative(document.toolTokens()), arguments, List.copyOf(groups));
+    }
+
+    /** MCP / SKILL 分组：框架只给聚合三元组，没有工具名明细，也没有条数。 */
+    private GroupMeasurement namedGroup(TokenAuditGroupKind kind,
+                                        DocumentElement<ToolElement> element) {
+        ToolElement tool = metaOf(element);
+        if (tool == null) {
+            return null;
+        }
+        return new GroupMeasurement(kind,
+                nonNegative(tool.totalTokens()),
+                nonNegative(tool.argumentTokens()),
+                nonNegative(tool.outputTokens()),
+                0,
+                List.of());
+    }
+
+    /** 普通工具分组：按工具名逐条下钻，分组值取各工具名之和（与恒等式 4 一致）。 */
+    private GroupMeasurement ordinaryGroup(Map<String, ToolElement> details,
+                                            Map<String, Integer> counts) {
+        if (details == null || details.isEmpty()) {
+            return null;
+        }
+        Map<String, ItemMeasurement> merged = new LinkedHashMap<>();
+        for (Map.Entry<String, ToolElement> entry : details.entrySet()) {
+            ToolElement tool = entry.getValue();
+            if (tool == null) {
+                continue;
+            }
+            String name = normalizeName(entry.getKey());
+            ItemMeasurement item = new ItemMeasurement(name,
+                    nonNegative(tool.totalTokens()),
+                    nonNegative(tool.argumentTokens()),
+                    nonNegative(tool.outputTokens()),
+                    nonNegative(counts.getOrDefault(name, 0)));
+            merged.merge(name, item, TokenAuditConverter::mergeItem);
+        }
+        if (merged.isEmpty()) {
+            return null;
+        }
+        int total = 0;
+        int arguments = 0;
+        int output = 0;
+        int calls = 0;
+        for (ItemMeasurement item : merged.values()) {
+            total += item.totalTokens();
+            arguments += item.argumentTokens();
+            output += item.outputTokens();
+            calls += item.callCount();
+        }
+        return new GroupMeasurement(TokenAuditGroupKind.ORDINARY, total, arguments, output, calls,
+                List.copyOf(merged.values()));
+    }
+
+    /** 同名工具（大小写或空白差异被归一后相撞）合并为一条，保持「一行一个工具名」。 */
+    private static ItemMeasurement mergeItem(ItemMeasurement left, ItemMeasurement right) {
+        return new ItemMeasurement(left.toolName(),
+                left.totalTokens() + right.totalTokens(),
+                left.argumentTokens() + right.argumentTokens(),
+                left.outputTokens() + right.outputTokens(),
+                left.callCount() + right.callCount());
+    }
+
+    /** 只接受 {@code SUCCESS} 且带载荷的元素：{@code NO_DATA} / {@code FAILED} 一律按「没有」处理。 */
+    private static <T> T metaOf(DocumentElement<T> element) {
+        if (element == null || element.getStatus() != AuditStatus.SUCCESS) {
+            return null;
+        }
+        return element.getTokenMeta();
+    }
+
+    private static int intValueOf(DocumentElement<Integer> element) {
+        Integer value = metaOf(element);
+        return value == null ? 0 : nonNegative(value);
+    }
+
+    /**
+     * 模型输入总量（U1）：取会话上下文用量，与框架终态 {@code ContextUsageMetric} 同源。
+     *
+     * @return 非负总量；会话缺失或尚未采集时为 0（由换算器退化为「请求开销 = 0」）
+     */
+    private static int liveTotalTokens(Session session) {
+        if (session == null || session.getContextTokenCount() == null) {
+            return 0;
+        }
+        return clamp(session.getContextTokenCount());
+    }
+
+    /** 上下文上限；会话缺失或未知时为 0（换算器据此把比率置空而不是除零）。 */
+    private static int liveMaxTokens(Session session) {
+        if (session == null || session.getContextMaxTokens() == null) {
+            return 0;
+        }
+        return nonNegative(session.getContextMaxTokens());
+    }
+
+    /** 框架给负数说明数据异常；按 0 处理而不是抛错，避免一次脏数据毁掉整份快照。 */
+    private static int nonNegative(int value) {
+        return Math.max(value, 0);
+    }
+
+    /** 超出 int 范围时饱和，避免 Long → int 静默截断成负数。 */
+    private static int clamp(long value) {
+        if (value < 0) {
+            return 0;
+        }
+        return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
+    }
+
+    /** 与领域层同一套工具名归一规则（空白兜底为 {@code unknown_tool}）。 */
+    private static String normalizeName(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            return com.summit.dp.session.domain.model.TokenAuditReconciler.UNKNOWN_TOOL_NAME;
+        }
+        return toolName.strip();
+    }
+
+    /** 工具视图的三部分（框架类型在本层消化掉，不外泄）。 */
+    private record ToolParts(int toolTokens, int argumentTokens, List<GroupMeasurement> groups) {
+    }
+}

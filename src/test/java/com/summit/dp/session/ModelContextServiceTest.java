@@ -144,7 +144,10 @@ class ModelContextServiceTest {
         List<Message> restored = service.find(201L).orElseThrow();
         restored.add(UserMessageEntity.from("继续重试"));
 
-        ContextUsageMetric usage = assertDoesNotThrow(() -> tokenizer.usage(restored, 258000));
+        // 框架升级：usage 新增「工具定义」参数（工具定义也占上下文），此处无工具定义故传空列表，
+        // 与升级前 usage(messages, maxTokens) 的语义等价。
+        ContextUsageMetric usage = assertDoesNotThrow(
+                () -> tokenizer.usage(restored, List.of(), 258000));
         assertNotNull(usage);
         int recoveredCount = tokenizer.count(restored);
         assertTrue(recoveredCount > originalCount);

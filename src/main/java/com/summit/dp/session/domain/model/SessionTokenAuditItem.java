@@ -6,13 +6,15 @@ import lombok.Getter;
 /**
  * 审计快照的一条明细行。
  *
- * <p><b>数值契约（本次最容易被改坏的地方）</b>：{@link #totalTokens} 永远是框架原值（含工具调用参数），
- * 展示用的去重叠值只由 {@link #resultTokens()} 现算。任何时候都不许把去重叠值写回
- * {@code total_tokens} 列 —— 那会让 AI 项没扣、TOOL 项扣两次，总数越用越少，
- * 且历史快照再也解释不清。</p>
+ * <p><b>数值契约（本次最容易被改坏的地方）</b>：{@link #totalTokens} 永远是框架原值。
+ * 框架自身已完成去重叠（{@code d32ff83}：{@code ToolElement.totalTokens} 不含工具调用参数），
+ * 因此 {@link #resultTokens()} <b>不得再做任何减法</b> —— 框架已减过一次，业务再减一次
+ * 就是双重扣减，TOOL 分项会凭空少掉「参数总量」，四类求和与请求开销跟着一起崩。</p>
  *
  * <p>为什么参数不参与任何求和：框架的 {@code assistantTokens} 已经把工具调用参数算进去了，
- * TOOL 视图再算一遍就是重复。参数只作只读说明字段（{@link #argumentTokens}）下发。</p>
+ * TOOL 视图再算一遍就是重复。参数只作只读说明字段（{@link #argumentTokens}）下发，
+ * 且新口径下它与 {@link #totalTokens} <b>没有包含关系</b>（参数 5000、结果 1000 是正常情况），
+ * 因此两者之间不允许出现大小比较或加减运算。</p>
  */
 @Getter
 public final class SessionTokenAuditItem {
@@ -27,9 +29,9 @@ public final class SessionTokenAuditItem {
     private final String toolName;
     /** 该聚合项覆盖的调用条数（前端「N 项」徽标）。 */
     private final int callCount;
-    /** 框架原值，含 {@link #argumentTokens}。 */
+    /** 框架原值；框架已去重叠，不含工具调用参数。 */
     private final int totalTokens;
-    /** 工具调用参数 token：已计入 AI 项，仅作说明。 */
+    /** 工具调用参数 token：已计入 AI 项，仅作只读说明，与 {@link #totalTokens} 无包含关系。 */
     private final int argumentTokens;
     private final int outputTokens;
     private final int sortOrder;
@@ -46,7 +48,6 @@ public final class SessionTokenAuditItem {
         this.argumentTokens = requireNonNegative(argumentTokens, "参数 token");
         this.outputTokens = requireNonNegative(outputTokens, "输出 token");
         this.sortOrder = requireNonNegative(sortOrder, "排序序号");
-        requireArgumentWithinTotal(this.category, this.totalTokens, this.argumentTokens);
         requireShape(this.level, this.category, this.groupKind, this.toolName);
         this.id = id;
     }
@@ -55,8 +56,8 @@ public final class SessionTokenAuditItem {
      * 消息构成行（SYSTEM / USER / AI / TOOL）。
      *
      * @param category       分类，不能为空
-     * @param totalTokens    框架原值（TOOL 行也含参数）
-     * @param argumentTokens 仅 TOOL 行可能非 0
+     * @param totalTokens    框架原值（框架已去重叠，不含参数）
+     * @param argumentTokens 工具调用参数 token（只读归因；现口径下挂在 AI 行）
      * @param sortOrder      固定展示顺序，从 1 开始
      */
     public static SessionTokenAuditItem message(TokenAuditCategory category, int totalTokens,
@@ -70,7 +71,7 @@ public final class SessionTokenAuditItem {
      *
      * @param groupKind      分组，不能为空
      * @param callCount      组内调用条数
-     * @param totalTokens    框架原值（含参数）
+     * @param totalTokens    框架原值（框架已去重叠，不含参数）
      * @param argumentTokens 组内参数 token 合计
      * @param outputTokens   组内工具输出 token 合计
      * @param sortOrder      组内展示顺序，从 1 开始
@@ -88,7 +89,7 @@ public final class SessionTokenAuditItem {
      *
      * @param toolName       工具名；空值按框架兜底名 {@code unknown_tool} 处理
      * @param callCount      该工具调用条数
-     * @param totalTokens    框架原值（含参数）
+     * @param totalTokens    框架原值（框架已去重叠，不含参数）
      * @param argumentTokens 该工具参数 token 合计
      * @param outputTokens   该工具输出 token 合计
      * @param sortOrder      组内展示顺序，从 1 开始
@@ -115,12 +116,11 @@ public final class SessionTokenAuditItem {
     }
 
     /**
-     * 展示用的去重叠值：TOOL 类减去已计入 AI 项的工具调用参数，其余分类原值。
-     *
-     * <p>这是「参数不重复计入」的唯一实现点，绝不允许在别处再扣一次。</p>
+     * 展示值：框架已在 {@code d32ff83} 去重叠，{@link #totalTokens} 本身就是展示值，
+     * 这里<b>不做任何减法</b>（再减一次就是双重扣减）。
      */
     public int resultTokens() {
-        return category == TokenAuditCategory.TOOL ? totalTokens - argumentTokens : totalTokens;
+        return totalTokens;
     }
 
     /**
@@ -163,15 +163,6 @@ public final class SessionTokenAuditItem {
             throw new ClientException("token 审计明细的" + label + "不能为负数: " + value);
         }
         return value;
-    }
-
-    /** 参数已经计入 AI 项，这里只允许它不超过原值：否则去重叠后会得到负数 token 行。 */
-    private static void requireArgumentWithinTotal(TokenAuditCategory category, int totalTokens,
-                                                   int argumentTokens) {
-        if (category == TokenAuditCategory.TOOL && argumentTokens > totalTokens) {
-            throw new ClientException("工具调用参数 token 超出工具视图总量: 参数=" + argumentTokens
-                    + "，总量=" + totalTokens);
-        }
     }
 
     /** 层级决定哪些字段必须有值：三者错配就是 DDL 与领域模型不同步。 */

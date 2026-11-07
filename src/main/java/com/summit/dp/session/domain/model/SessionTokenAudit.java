@@ -42,13 +42,22 @@ public class SessionTokenAudit {
     private Integer requestOverheadTokens;
     /** 工具调用参数 token：已计入 AI 项，仅说明。 */
     private Integer overlapTokens;
+    /**
+     * 归因漂移（有符号）：采集时的「框架自报工具总量 − 各分组展示值之和」。
+     *
+     * <p><b>为什么必须落库</b>：恒等式 3 要求 TOOL 行 = Σ分组，因此该差在库内<b>恒等于 0</b>，
+     * 读库无法复算。它是分组归因写错时的绊线（会先变大而 {@code requestOverhead} 不响），
+     * 只能在采集瞬间算出来并存下来。</p>
+     */
+    private Integer toolGroupingDrift;
     private Instant capturedAt;
     private String failReason;
     private final List<SessionTokenAuditItem> items;
 
     private SessionTokenAudit(Long sessionId, Long executionId, TokenAuditPersistedState state,
                               Integer totalTokens, Integer maxTokens, Integer messagesTokens,
-                              Integer requestOverheadTokens, Integer overlapTokens, Instant capturedAt,
+                              Integer requestOverheadTokens, Integer overlapTokens,
+                              Integer toolGroupingDrift, Instant capturedAt,
                               String failReason, List<SessionTokenAuditItem> items) {
         if (sessionId == null) {
             throw new ClientException("token 审计快照必须归属一个会话");
@@ -61,6 +70,7 @@ public class SessionTokenAudit {
         this.messagesTokens = messagesTokens;
         this.requestOverheadTokens = requestOverheadTokens;
         this.overlapTokens = overlapTokens;
+        this.toolGroupingDrift = toolGroupingDrift;
         this.capturedAt = capturedAt;
         this.failReason = failReason;
         this.items = new ArrayList<>(Objects.requireNonNullElse(items, List.of()));
@@ -82,7 +92,7 @@ public class SessionTokenAudit {
         }
         return new SessionTokenAudit(sessionId, executionId, TokenAuditPersistedState.COLLECTED,
                 result.totalTokens(), toMaxTokens(result.maxTokens()), result.messagesTokens(),
-                result.requestOverheadTokens(), result.overlapTokens(),
+                result.requestOverheadTokens(), result.overlapTokens(), result.toolGroupingDrift(),
                 Objects.requireNonNullElseGet(capturedAt, Instant::now), null, result.items());
     }
 
@@ -100,7 +110,7 @@ public class SessionTokenAudit {
     public static SessionTokenAudit failure(Long sessionId, Long executionId, String reason,
                                             Instant capturedAt) {
         return new SessionTokenAudit(sessionId, executionId, TokenAuditPersistedState.FAILED,
-                null, null, null, null, null,
+                null, null, null, null, null, null,
                 Objects.requireNonNullElseGet(capturedAt, Instant::now),
                 normalizeFailReason(reason), List.of());
     }
@@ -112,10 +122,11 @@ public class SessionTokenAudit {
                                             TokenAuditPersistedState state, Integer totalTokens,
                                             Integer maxTokens, Integer messagesTokens,
                                             Integer requestOverheadTokens, Integer overlapTokens,
-                                            Instant capturedAt, String failReason,
-                                            List<SessionTokenAuditItem> items) {
+                                            Integer toolGroupingDrift, Instant capturedAt,
+                                            String failReason, List<SessionTokenAuditItem> items) {
         return new SessionTokenAudit(sessionId, executionId, state, totalTokens, maxTokens,
-                messagesTokens, requestOverheadTokens, overlapTokens, capturedAt, failReason, items);
+                messagesTokens, requestOverheadTokens, overlapTokens, toolGroupingDrift, capturedAt,
+                failReason, items);
     }
 
     /**
@@ -135,6 +146,7 @@ public class SessionTokenAudit {
         this.messagesTokens = null;
         this.requestOverheadTokens = null;
         this.overlapTokens = null;
+        this.toolGroupingDrift = null;
         this.failReason = normalizeFailReason(reason);
         this.capturedAt = Instant.now();
         this.items.clear();
@@ -258,6 +270,15 @@ public class SessionTokenAudit {
         }
         return sum;
     }
+
+    /**
+     * 归因漂移（字段 {@link #toolGroupingDrift}，由 {@code @Getter} 暴露为
+     * {@code getToolGroupingDrift()}）。
+     *
+     * <p>值来自采集瞬间（{@code TokenAuditReconciler.Result#toolGroupingDrift()}）并已落库，
+     * 读库拿到的就是真值。<b>不要再按「TOOL 行 − Σ分组」由库内数据派生</b>：恒等式 3 要求
+     * TOOL 行 = Σ分组，派生结果恒为 0，会把这条归因绊线变成死数据。</p>
+     */
 
     /** 明细行只读视图：调用方不能借返回的集合改聚合内部状态。 */
     public List<SessionTokenAuditItem> getItems() {

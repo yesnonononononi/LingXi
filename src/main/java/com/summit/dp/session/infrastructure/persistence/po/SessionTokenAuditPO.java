@@ -37,6 +37,11 @@ public class SessionTokenAuditPO {
     private Integer messagesTokens;
     private Integer requestOverheadTokens;
     private Integer overlapTokens;
+    /**
+     * 归因漂移（有符号）：框架自报工具总量 − 各分组展示值之和。
+     * 只作诊断，不进 {@code request_overhead_tokens}，也不参与任何恒等式求和。
+     */
+    private Integer toolGroupingDrift;
     private Instant capturedAt;
     private String failReason;
     private Instant createTime;

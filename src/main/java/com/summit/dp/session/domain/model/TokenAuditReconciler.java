@@ -25,9 +25,10 @@ import java.util.Map;
  *   <li>{@code 普通工具分组 = Σ(各工具名展示值)}（子项优先，保证百分比之和恰为 100%）</li>
  * </ol>
  *
- * <p>框架的 {@code ToolElement.totalTokens} 含工具调用参数，而参数已计入 {@code assistantTokens}；
- * 因此 TOOL 视图一律按「结果消息 + 结果消息框架」展示（{@link SessionTokenAuditItem#resultTokens()}），
- * 参数只作为 {@link Result#overlapTokens()} 说明字段下发，不参与任何求和。</p>
+ * <p><b>框架口径已变（{@code d32ff83}）</b>：{@code ToolElement.totalTokens} / {@code ToolAuditDocument.toolTokens}
+ * 现在是「结果消息 + 结果消息框架」，<b>不含工具调用参数</b>，参数仅作归因说明保留。
+ * 因此 TOOL 视图直接取框架总量，<b>业务侧不得再做减法</b>；参数不参与任何求和，
+ * 也不与总量做大小比较（两者已无包含关系）。</p>
  */
 public final class TokenAuditReconciler {
 
@@ -51,8 +52,8 @@ public final class TokenAuditReconciler {
      * 单个工具名（普通工具明细）的原始测量值。
      *
      * @param toolName       工具名；空值按 {@link #UNKNOWN_TOOL_NAME} 处理
-     * @param totalTokens    框架原值（含参数）
-     * @param argumentTokens 工具调用参数 token
+     * @param totalTokens    框架原值（框架已去重叠，不含参数）
+     * @param argumentTokens 工具调用参数 token（只读归因，与 totalTokens 无包含关系）
      * @param outputTokens   工具输出文本 token
      * @param callCount      调用条数
      */
@@ -64,10 +65,8 @@ public final class TokenAuditReconciler {
             requireNonNegative(argumentTokens, "工具参数 token");
             requireNonNegative(outputTokens, "工具输出 token");
             requireNonNegative(callCount, "工具调用条数");
-            if (argumentTokens > totalTokens) {
-                throw new ClientException("工具参数 token 超出该工具 token 总量: tool="
-                        + toolName + "，参数=" + argumentTokens + "，总量=" + totalTokens);
-            }
+            // 新口径下 totalTokens（结果消息）与 argumentTokens（调用参数）是两个独立的量，
+            // 不存在包含关系，因此**不做任何大小比较**：参数大于结果是完全正常的调用。
         }
     }
 
@@ -75,8 +74,8 @@ public final class TokenAuditReconciler {
      * 一个工具分组（MCP / SKILL / ORDINARY）的原始测量值。
      *
      * @param groupKind      分组类型，不能为空
-     * @param totalTokens    框架原值（含参数）
-     * @param argumentTokens 组内参数 token 合计
+     * @param totalTokens    框架原值（框架已去重叠，不含参数）
+     * @param argumentTokens 组内参数 token 合计（只读归因）
      * @param outputTokens   组内工具输出 token 合计
      * @param callCount      组内调用条数（框架参数是分组级聚合，不能从 token 反推）
      * @param items          仅 ORDINARY 分组可能有工具名明细；其余分组传空集合
@@ -92,10 +91,7 @@ public final class TokenAuditReconciler {
             requireNonNegative(argumentTokens, "工具分组参数 token");
             requireNonNegative(outputTokens, "工具分组输出 token");
             requireNonNegative(callCount, "工具分组调用条数");
-            if (argumentTokens > totalTokens) {
-                throw new ClientException("工具分组参数 token 超出分组 token 总量: 分组=" + groupKind
-                        + "，参数=" + argumentTokens + "，总量=" + totalTokens);
-            }
+            // 与 ItemMeasurement 同理：新口径下总量与参数无包含关系，不做大小比较。
             items = items == null ? List.of() : List.copyOf(items);
         }
     }
@@ -112,8 +108,8 @@ public final class TokenAuditReconciler {
      * @param systemTokens           系统提示词 token
      * @param userTokens             用户消息 token
      * @param assistantTokens        AI 消息 token（含工具调用参数）
-     * @param toolDocumentTokens     框架工具视图总量（含参数）
-     * @param argumentOverlapTokens  工具调用参数 token 合计
+     * @param toolDocumentTokens     框架工具视图总量（框架已去重叠，不含参数）
+     * @param argumentOverlapTokens  工具调用参数 token 合计（只读归因，不参与任何运算）
      * @param totalTokens            框架口径的模型输入总量；0 表示框架没给
      * @param maxTokens              审计当时的模型上下文上限；0 表示未知
      * @param groups                 工具分组测量值，可为空集合
@@ -130,10 +126,7 @@ public final class TokenAuditReconciler {
             requireNonNegative(argumentOverlapTokens, "工具参数 token");
             requireNonNegative(totalTokens, "模型输入总量");
             requireNonNegative(maxTokens, "上下文上限");
-            if (argumentOverlapTokens > toolDocumentTokens) {
-                throw new ClientException("工具调用参数 token 超出工具视图总量: 参数="
-                        + argumentOverlapTokens + "，总量=" + toolDocumentTokens);
-            }
+            // 参数与工具视图总量在新口径下是独立的两个量，不做大小比较。
             groups = groups == null ? List.of() : List.copyOf(groups);
         }
     }
@@ -146,7 +139,7 @@ public final class TokenAuditReconciler {
      * @param messagesTokens        四类分项之和（已去重叠）
      * @param requestOverheadTokens 非消息请求开销，由减法得出，可能为负（无工具时为 -9 量级）
      * @param overlapTokens         工具调用参数 token，仅说明，不参与求和
-     * @param toolGroupingDrift     诊断值：框架工具视图去重叠值 − 各分组展示值之和
+     * @param toolGroupingDrift     诊断值：框架工具视图展示值 − 各分组展示值之和
      *                              （常态为负：每个分组独立测量各带一个 primer，
      *                              量级 3 × (分组数 − 1)；不为 0 也不影响其余恒等式）
      * @param items                 明细行（4 条消息行 + 0~3 条分组行 + N 条工具名行）
@@ -175,7 +168,8 @@ public final class TokenAuditReconciler {
         boolean hasGroups = !items.isEmpty();
 
         // 恒等式 3：有分组时 TOOL = Σ分组展示值（子项优先）；无分组时退回框架工具视图。
-        int frameworkToolDisplay = measurement.toolDocumentTokens() - measurement.argumentOverlapTokens();
+        // 框架已去重叠（d32ff83），业务侧不再做减法，直接取框架总量。
+        int frameworkToolDisplay = measurement.toolDocumentTokens();
         int toolDisplayTokens = hasGroups ? toolGroupTokens : frameworkToolDisplay;
         int toolGroupingDrift = frameworkToolDisplay - toolDisplayTokens;
 
@@ -187,17 +181,19 @@ public final class TokenAuditReconciler {
         int totalTokens = measurement.totalTokens() > 0 ? measurement.totalTokens() : messagesTokens;
         int requestOverheadTokens = totalTokens - messagesTokens;
 
-        // TOOL 消息行存框架原值：展示值 + 参数，保证 resultTokens() 恰好还原展示值。
-        int toolArgument = Math.min(measurement.argumentOverlapTokens(), toolDisplayTokens);
+        // TOOL 消息行存 toolDisplayTokens：有分组时即 Σ分组展示值，保证前端「子项求和 == 父项」；
+        // 与框架总量的差额（toolGroupingDrift）单独落库，不在这里掰平。
+        // 框架已去重叠（d32ff83），resultTokens() 不再做减法。
+        // 参数只挂在 AI 行作归因说明（参数本来就算进 assistantTokens），不参与任何求和。
         List<SessionTokenAuditItem> messageRows = new ArrayList<>(4);
         messageRows.add(SessionTokenAuditItem.message(TokenAuditCategory.SYSTEM,
                 measurement.systemTokens(), 0, SYSTEM_ORDER));
         messageRows.add(SessionTokenAuditItem.message(TokenAuditCategory.USER,
                 measurement.userTokens(), 0, USER_ORDER));
         messageRows.add(SessionTokenAuditItem.message(TokenAuditCategory.AI,
-                measurement.assistantTokens(), 0, AI_ORDER));
+                measurement.assistantTokens(), measurement.argumentOverlapTokens(), AI_ORDER));
         messageRows.add(SessionTokenAuditItem.message(TokenAuditCategory.TOOL,
-                toolDisplayTokens + toolArgument, toolArgument, TOOL_ORDER));
+                toolDisplayTokens, 0, TOOL_ORDER));
         messageRows.addAll(items);
 
         return new Result(totalTokens, measurement.maxTokens(), messagesTokens, requestOverheadTokens,
@@ -333,8 +329,9 @@ public final class TokenAuditReconciler {
             callCount += item.callCount();
         }
 
+        /** 展示值：框架已去重叠，{@code totalTokens} 即展示值，不做减法。 */
         private int displayTokens() {
-            return totalTokens - argumentTokens;
+            return totalTokens;
         }
     }
 }

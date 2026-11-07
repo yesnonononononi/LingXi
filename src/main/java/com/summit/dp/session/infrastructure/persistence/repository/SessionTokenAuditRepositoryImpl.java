@@ -62,6 +62,7 @@ public class SessionTokenAuditRepositoryImpl
                 .messagesTokens(entity.getMessagesTokens())
                 .requestOverheadTokens(entity.getRequestOverheadTokens())
                 .overlapTokens(entity.getOverlapTokens())
+                .toolGroupingDrift(entity.getToolGroupingDrift())
                 .capturedAt(entity.getCapturedAt())
                 .failReason(entity.getFailReason())
                 .build();
@@ -155,6 +156,7 @@ public class SessionTokenAuditRepositoryImpl
                 .set(SessionTokenAuditPO::getMessagesTokens, audit.getMessagesTokens())
                 .set(SessionTokenAuditPO::getRequestOverheadTokens, audit.getRequestOverheadTokens())
                 .set(SessionTokenAuditPO::getOverlapTokens, audit.getOverlapTokens())
+                .set(SessionTokenAuditPO::getToolGroupingDrift, audit.getToolGroupingDrift())
                 .set(SessionTokenAuditPO::getCapturedAt, audit.getCapturedAt())
                 .set(SessionTokenAuditPO::getFailReason, audit.getFailReason())
                 .set(SessionTokenAuditPO::getUpdateTime, Instant.now()));
@@ -196,6 +198,7 @@ public class SessionTokenAuditRepositoryImpl
                 head.getMessagesTokens(),
                 head.getRequestOverheadTokens(),
                 head.getOverlapTokens(),
+                head.getToolGroupingDrift(),
                 head.getCapturedAt(),
                 head.getFailReason(),
                 items);

@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS session_token_audit (
     request_overhead_tokens INTEGER NULL,
     -- 工具调用参数 token：已计入 AI 项，仅供说明，不参与任何求和。
     overlap_tokens          INTEGER NULL,
+    -- 归因漂移绊线（有符号）：框架自报工具总量 − 各分组展示值之和。
+    -- 各分组独立测量各带一个 primer，故常态为负（量级 3 × (分组数 − 1)）；
+    -- 它只在该处体现，不进 request_overhead_tokens，一旦分组归因写错（例如某工具被重复计入）
+    -- 这一列会先变而 request_overhead 不响 —— 这正是它存在的意义。
+    tool_grouping_drift     INTEGER NULL,
     captured_at             TIMESTAMP(3) NULL,
     fail_reason             VARCHAR(512) NULL,
     create_time             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
