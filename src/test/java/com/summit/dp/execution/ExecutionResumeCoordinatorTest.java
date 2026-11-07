@@ -255,10 +255,14 @@ class ExecutionResumeCoordinatorTest {
         stubStatus(ExecutionState.SUSPENDED);
         Execution paused = execution(ExecutionState.SUSPENDED);
         InputAutomationPolicy.putAttribute(paused, InputAutomationPolicy.USER_PAUSED, true);
-        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID))).thenReturn(Optional.of(paused));
+        // 首次读（门禁之前）还没暂停：门禁放行、真的去 resume；resume 抛错后重读变成「已暂停」，
+        // 这一步才是本用例要守的让位判据 —— 暂停标记晚到，绝不改判成启动失败。
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)), Optional.of(paused));
         doThrow(new IllegalStateException("执行已由用户暂停")).when(executionControl).resume(any(Execution.class));
         coordinator.dispatch(EXECUTION_ID);
-        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state());
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state(),
+                "暂停晚到属于让位，请求作废但绝不把执行收成失败");
         verify(executionControl, never()).fail(any(), any());
     }
 
@@ -367,7 +371,7 @@ class ExecutionResumeCoordinatorTest {
     @DisplayName("accept：无未决槽位则落请求并排到提交后派发，最终恢复")
     void acceptWritesMarkerAndSchedulesDispatchAfterCommit() {
         stubStatus(ExecutionState.SUSPENDED);
-        when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(task.get());
+        when(tasks.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(task.get());
         when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
                 .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
         when(executionControl.resume(any(Execution.class)))
@@ -382,7 +386,7 @@ class ExecutionResumeCoordinatorTest {
 
         assertEquals(ResumeDisposition.QUEUED, disposition);
         assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten().state());
-        verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any());
+        verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any(), any());
         verify(frameworkExecutions).afterCommit(any());
     }
 
@@ -396,7 +400,7 @@ class ExecutionResumeCoordinatorTest {
         ResumeDisposition disposition = coordinator.accept(EXECUTION_ID);
 
         assertEquals(ResumeDisposition.WAITING_OTHER_TOOLS, disposition);
-        verify(tasks, never()).enqueue(anyLong(), anyLong(), any());
+        verify(tasks, never()).enqueue(anyLong(), anyLong(), any(), any());
         verify(frameworkExecutions, never()).afterCommit(any());
     }
 
@@ -454,7 +458,7 @@ class ExecutionResumeCoordinatorTest {
     void activeRequestNeedsAnExplicitRecheckAfterRelease() {
         stubStatus(ExecutionState.SUSPENDED);
         when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(true);
-        when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(task.get());
+        when(tasks.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(task.get());
         when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
                 .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
         when(executionControl.resume(any(Execution.class)))
@@ -466,7 +470,7 @@ class ExecutionResumeCoordinatorTest {
 
         // 首轮执行期间唤醒到达（控制槽位仍被持有）：不能丢弃，登记为保留唤醒。
         assertEquals(ResumeDisposition.RUNNING, coordinator.accept(EXECUTION_ID));
-        verify(tasks, never()).enqueue(anyLong(), anyLong(), any());
+        verify(tasks, never()).enqueue(anyLong(), anyLong(), any(), any());
         assertNull(stateWritten.get(), "活跃期不得派发");
 
         // 根随后挂起、控制槽位释放：重放保留唤醒 → 入队 + 派发 + 恢复。
@@ -474,7 +478,7 @@ class ExecutionResumeCoordinatorTest {
         coordinator.accept(EXECUTION_ID);
 
         assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten().state());
-        verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any());
+        verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any(), any());
         verify(executionControl).resume(any(Execution.class));
     }
 

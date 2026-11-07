@@ -132,9 +132,9 @@ public class ExecutionResumeCoordinator {
      * 「决策已落库但恢复请求没落库」的窗口。真正派发排在事务提交之后 ——
      * 它走独立线程，不会读到未提交的槽位状态。</p>
      *
-     * <p><b>触发来源只在内存里传递，不落库</b>：它只影响消费端复检的门禁口径，
-     * 不是请求的持久语义。进程重启后重投的请求按自动唤醒处理 —— 保守方向是「保持挂起」，
-     * 用户仍可手动恢复；反过来把重投的请求当人工决策放行，就等于让一次崩溃替用户批准了工具。</p>
+     * <p><b>触发来源随请求一起落库</b>：它决定消费端复检的门禁口径（人工决策不该被自动轮次
+     * 上限拦住），因此不是「只在内存里传一次」的参数。只放在内存里，进程崩溃后重投就丢了它 ——
+     * 人工批准会被按自动唤醒判掉并静默作废，而回执当时说的是「已受理」。</p>
      *
      * @param executionId 执行 ID；0 表示没有可用执行（如命令卡片未挂执行）
      * @param trigger     触发来源；决定消费端复检时哪些门禁对它生效
@@ -164,29 +164,24 @@ public class ExecutionResumeCoordinator {
         if (generation <= 0L) {
             return ResumeDisposition.ENDED;
         }
-        taskRepository.enqueue(executionId, generation, Instant.now());
+        // 来源与请求同一次写入：重启后重投靠它，而不是靠某个内存参数。
+        taskRepository.enqueue(executionId, generation, Instant.now(), trigger.persisted());
         // 请求先随决策事务提交，派发动作排到提交之后；无事务同步时立即执行（单测与直调路径）。
-        frameworkExecutions.getObject().afterCommit(() -> dispatch(executionId, trigger));
+        frameworkExecutions.getObject().afterCommit(() -> dispatch(executionId));
         return ResumeDisposition.QUEUED;
-    }
-
-    /**
-     * 唤醒 worker 处理某执行上的恢复请求（触发来源按自动唤醒处理）。
-     *
-     * <p>崩溃遗留、启动收口这类「没人告诉我们是谁触发的」重投都走这里：保守按自动唤醒，
-     * 门禁全查，宁愿保持挂起也不替人做决定。</p>
-     */
-    public void dispatch(long executionId) {
-        dispatch(executionId, ResumeTriggerType.AUTO_INPUT_WAKEUP);
     }
 
     /**
      * 唤醒 worker 处理某执行上的恢复请求。
      *
+     * <p><b>不需要触发来源参数</b>：来源已经是请求行上的字段，重投、重试、启动扫描一律读它。
+     * 这正是本次修复的核心 —— 曾经的「内存里传一次、重投时退化成自动唤醒」会让人工决策被
+     * 自动轮次上限判掉。崩溃遗留、启动收口这类「没人告诉我们是谁触发的」重投也走这里。</p>
+     *
      * <p>幂等：已在派发中就直接返回。真正的单飞由 {@code claim} 的 {@code eq(version)} 保证，
      * 这里的标记只用来避免「一次决策唤醒 N 个线程去抢同一条请求」。</p>
      */
-    public void dispatch(long executionId, ResumeTriggerType trigger) {
+    public void dispatch(long executionId) {
         String key = String.valueOf(executionId);
         AtomicBoolean gate = dispatching.computeIfAbsent(key, ignored -> new AtomicBoolean());
         if (!gate.compareAndSet(false, true)) {
@@ -203,7 +198,7 @@ public class ExecutionResumeCoordinator {
                         if (!taskRepository.claim(task)) {
                             continue;
                         }
-                        runOnce(executionId, task, trigger);
+                        runOnce(executionId, task);
                         if (inputWakeups != null) inputWakeups.getObject().resumeIfInputPending(executionId);
                     }
                 } catch (RuntimeException error) {
@@ -213,10 +208,9 @@ public class ExecutionResumeCoordinator {
                     // 退出前复查：worker 运行期间新入队的请求可能因门闩 CAS 失败被挡掉，
                     // 此处门闩已释放，重新派发即可领到它（CAS 成功）。只认仍 READY 的请求，
                     // 已被他人领取 / 已收口的请求不再触发，避免空转。
-                    // 来源沿用本次：同一执行上并发的请求多半来自同一类触发（决策或唤醒）；
-                    // 若这里退化成自动唤醒，被 CAS 挡掉的审批请求会在轮次上限处被静默作废 —— 那正是要修的缺陷。
+                    // 来源不再是参数：重投时从请求行读回，不会退化成自动唤醒。
                     if (hasReadyTask(executionId)) {
-                        dispatch(executionId, trigger);
+                        dispatch(executionId);
                     }
                 }
             });
@@ -256,10 +250,11 @@ public class ExecutionResumeCoordinator {
      * <p>顺序刻意是「重读 → 判闸门 → 才运行」：领取时的状态是快照，可能已被 stop 或另一条
      * 决策改变，直接跑就会出现「已取消的执行被恢复」或「同一执行跑两个 loop」。</p>
      *
-     * @param trigger 本次请求的触发来源：门禁口径由它决定，<b>不能在这里写死</b> ——
-     *                写死成自动唤醒会把人工决策一起按自动唤醒的规则拦掉
+     * <p><b>门禁口径取自已落库的来源</b>：这里不再接受调用方传来的来源参数 —— 重投、重试、
+     * 启动扫描都从请求行读，写死或退化成自动唤醒会让人工决策在轮次上限处被静默作废。</p>
      */
-    private void runOnce(long executionId, ExecutionResumeTask task, ResumeTriggerType trigger) {
+    private void runOnce(long executionId, ExecutionResumeTask task) {
+        ResumeTriggerType trigger = resolveTrigger(task);
         // 门闩只圈住「核对代际 + 写状态」这一小段；模型调用在临界区之外。
         synchronized (ExecutionCoordination.monitor(String.valueOf(executionId))) {
             if (supersedeIfStale(task)) {
@@ -276,12 +271,13 @@ public class ExecutionResumeCoordinator {
             markSuperseded(task, "执行已不在挂起态，无需本请求恢复");
             return;
         }
-        // 锁内复检：与手动入口的同步预检同一套门禁，口径由触发来源决定。不通过就静默保持挂起 ——
-        // 这不是失败，只是「还没条件恢复」，标失败会把「等审批」错记成「恢复崩了」。
+        // 锁内复检：与手动入口的同步预检同一套门禁，口径由持久化的来源决定。
+        // 不通过就留在 DEFERRED（不是失败、更不是作废）—— 「还没条件恢复」不该让用户
+        // 永久失去这次恢复的机会：下一次受理会把请求重新排回 READY。
         synchronized (ExecutionCoordination.monitor(String.valueOf(executionId))) {
             GateCheckResult readiness = gates.checkReadiness(execution, trigger);
             if (!readiness.allowed()) {
-                markSuperseded(task, "挂起门禁未放行: " + readiness.reason());
+                markDeferred(task, "挂起门禁未放行: " + readiness.reason());
                 return;
             }
         }
@@ -390,6 +386,38 @@ public class ExecutionResumeCoordinator {
             // 条件更新落空 = 另一方已改过状态；此时不得强行覆盖。
             log.debug("恢复请求作废时状态已变化: taskId={}, reason={}", task.getId(), reason);
         }
+    }
+
+    /**
+     * 取本次复检用的门禁口径：一律读请求行上持久化的来源。
+     *
+     * <p>遗留行（来源为 NULL）按自动唤醒处理并记一条日志 —— 「按旧数据口径处理」必须可追，
+     * 否则线上出现「历史审批需要手动点一次恢复」时无从解释。</p>
+     */
+    private ResumeTriggerType resolveTrigger(ExecutionResumeTask task) {
+        if (task.lacksPersistedTrigger()) {
+            log.info("恢复请求没有持久化来源，按旧数据口径处理为自动唤醒: taskId={}, executionId={}",
+                    task.getId(), task.getExecutionId());
+        }
+        return ResumeTriggerType.of(task.effectiveTrigger());
+    }
+
+    /**
+     * 门禁未放行：置为 {@code DEFERRED} 留待下一次唤醒。
+     *
+     * <p><b>刻意不作废</b>：作废是「这次恢复永久没机会了」，而门禁不通过往往只是「此刻还不行」
+     * （自动轮次到顶、用户暂停、等待子代理）。烧成作废会让用户点完批准就彻底失去重试入口，
+     * 而回执当时说的是「已受理」。</p>
+     */
+    private void markDeferred(ExecutionResumeTask task, String reason) {
+        task.defer(reason);
+        if (!taskRepository.updateState(task)) {
+            // 条件更新落空 = 另一方已改过状态；此时不得强行覆盖。
+            log.debug("恢复请求置为待观察时状态已变化: taskId={}, reason={}", task.getId(), reason);
+            return;
+        }
+        log.info("挂起门禁未放行，恢复请求保留待下一次唤醒: taskId={}, executionId={}, reason={}",
+                task.getId(), task.getExecutionId(), reason);
     }
 
     /** 启动失败已收口：记失败原因，不再派发。 */

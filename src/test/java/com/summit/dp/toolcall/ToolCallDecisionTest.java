@@ -154,7 +154,7 @@ class ToolCallDecisionTest {
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository), provider(activity))),
                 sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
-        when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any())).thenReturn(resumeTask());
+        when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(resumeTask());
         when(resumeTaskRepository.findByExecutionId(3L)).thenReturn(List.of(resumeTask()));
         when(resumeTaskRepository.claim(any())).thenReturn(true);
         when(resumeTaskRepository.updateState(any())).thenReturn(true);

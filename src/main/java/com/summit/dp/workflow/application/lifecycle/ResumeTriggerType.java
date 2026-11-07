@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.lifecycle;
 
+import com.summit.dp.execution.domain.model.ResumeSource;
+
 /**
  * 恢复触发来源：决定门禁怎么判、以及能否清理人的暂停意图。
  *
@@ -33,7 +35,6 @@ public enum ResumeTriggerType {
     public boolean clearsPauseMarkers() {
         return clearsPauseMarkers;
     }
-
     /**
      * 本次恢复是否由人做出（手动恢复、审批 / 多选 / 命令决议）。
      *
@@ -44,5 +45,34 @@ public enum ResumeTriggerType {
      */
     public boolean humanInitiated() {
         return humanInitiated;
+    }
+
+    /**
+     * 持久化口径：把「门禁怎么判」的策略来源写成恢复请求行上的来源。
+     *
+     * <p>映射就放在这里，因为只有本包能同时看到两个枚举；领域层因此不必反向依赖应用层。
+     * 两边是否一一对应由 {@code ResumeTriggerSourceMappingTest} 守着 —— 新增一个触发来源
+     * 却忘了映射，那条用例会红。</p>
+     */
+    public ResumeSource persisted() {
+        return switch (this) {
+            case MANUAL_USER_RESUME -> ResumeSource.MANUAL_USER_RESUME;
+            case APPROVAL_DECISION -> ResumeSource.APPROVAL_DECISION;
+            case AUTO_INPUT_WAKEUP -> ResumeSource.AUTO_INPUT_WAKEUP;
+            case STARTUP_RECOVERY -> ResumeSource.STARTUP_RECOVERY;
+        };
+    }
+
+    /** 反向映射：消费端按库里的来源复检门禁时用。 */
+    public static ResumeTriggerType of(ResumeSource source) {
+        if (source == null) {
+            return AUTO_INPUT_WAKEUP;
+        }
+        return switch (source) {
+            case MANUAL_USER_RESUME -> MANUAL_USER_RESUME;
+            case APPROVAL_DECISION -> APPROVAL_DECISION;
+            case AUTO_INPUT_WAKEUP -> AUTO_INPUT_WAKEUP;
+            case STARTUP_RECOVERY -> STARTUP_RECOVERY;
+        };
     }
 }

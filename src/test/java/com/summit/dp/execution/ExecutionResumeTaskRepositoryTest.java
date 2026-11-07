@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
+import com.summit.dp.execution.domain.model.ResumeSource;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
@@ -74,10 +75,10 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("受理：同执行同代际只落一条，重复受理返回既有请求而不新建")
     void enqueueIsIdempotentPerExecutionAndGeneration() {
-        ExecutionResumeTask first = repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        ExecutionResumeTask first = repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         assertNotNull(first.getId());
 
-        ExecutionResumeTask again = repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        ExecutionResumeTask again = repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
 
         assertEquals(first.getId(), again.getId(), "重复受理必须复用同一行");
         assertEquals(1, repository.findByExecutionId(EXECUTION_ID).size());
@@ -86,8 +87,8 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("受理：换一次挂起边界（代际 +1）就是新请求，两条互不覆盖")
     void newGenerationCreatesSeparateTask() {
-        repository.enqueue(EXECUTION_ID, 3L, Instant.now());
-        ExecutionResumeTask next = repository.enqueue(EXECUTION_ID, 4L, Instant.now());
+        repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
+        ExecutionResumeTask next = repository.enqueue(EXECUTION_ID, 4L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
 
         assertEquals(4L, next.getGeneration());
         assertEquals(2, repository.findByExecutionId(EXECUTION_ID).size(),
@@ -97,7 +98,7 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("领取：条件更新把 READY 置为 CLAIMED")
     void claimMovesReadyToClaimed() {
-        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
 
         assertTrue(repository.claim(task));
 
@@ -108,7 +109,7 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("领取：同一条请求只能被领取一次（第二个 worker 必须让位）")
     void secondClaimOnSameTaskYields() {
-        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         assertTrue(repository.claim(task));
 
         // 另一个 worker 拿着自己读到的旧快照来领：version 已变，条件更新命中 0 行
@@ -121,7 +122,7 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("领取：FAILED 已收口，不再可领（只尝试一次，无重试）")
     void claimRejectsFailedTask() {
-        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         task.fail("启动失败");
         repository.updateState(task);
 
@@ -142,7 +143,7 @@ class ExecutionResumeTaskRepositoryTest {
                 futures.add(pool.submit(() -> {
                     try {
                         start.await(10, TimeUnit.SECONDS);
-                        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 7L, Instant.now());
+                        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 7L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
                         synchronized (ids) {
                             ids.add(task.getId());
                         }
@@ -164,7 +165,7 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("并发领取：同一请求多线程抢领，只有一方拿到（条件更新带 version）")
     void concurrentClaimLetsExactlyOneWorkerWin() throws Exception {
-        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 8L, Instant.now());
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 8L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         ExecutionResumeTask snapshot = repository.findById(task.getId()).orElseThrow();
         int threads = 6;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -196,7 +197,7 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("状态写入：version 过期时命中 0 行并返回 false（迟到的恢复不得覆盖）")
     void updateStateFailsWhenVersionIsStale() {
-        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         task.fail("第一次失败");
         assertTrue(repository.updateState(task), "首次写入应成功");
 
@@ -242,13 +243,13 @@ class ExecutionResumeTaskRepositoryTest {
     @Test
     @DisplayName("未决请求筛选：只回未结束的请求，已成功/已作废的不再参与")
     void listLiveExcludesFinishedTasks() {
-        ExecutionResumeTask done = repository.enqueue(EXECUTION_ID, 1L, Instant.now());
+        ExecutionResumeTask done = repository.enqueue(EXECUTION_ID, 1L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         done.succeed();
         repository.updateState(done);
-        ExecutionResumeTask voided = repository.enqueue(EXECUTION_ID, 2L, Instant.now());
+        ExecutionResumeTask voided = repository.enqueue(EXECUTION_ID, 2L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
         voided.supersede();
         repository.updateState(voided);
-        repository.enqueue(EXECUTION_ID, 3L, Instant.now());
+        repository.enqueue(EXECUTION_ID, 3L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
 
         List<ExecutionResumeTask> live = repository.listLiveByExecution(EXECUTION_ID);
 
@@ -260,7 +261,7 @@ class ExecutionResumeTaskRepositoryTest {
     @DisplayName("状态写入刷新 updated_at：回收窗口按「最后一次状态变化」算，不是按创建时刻")
     void stateWriteRefreshesUpdatedAt() {
         Instant created = Instant.now().minusSeconds(7200);
-        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 1L, created);
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 1L, created, ResumeSource.AUTO_INPUT_WAKEUP);
         task.succeed();
         repository.updateState(task);
 
@@ -318,7 +319,7 @@ class ExecutionResumeTaskRepositoryTest {
                 futures.add(pool.submit(() -> {
                     start.await();
                     try {
-                        return racing.enqueue(EXECUTION_ID, generation, Instant.now());
+                        return racing.enqueue(EXECUTION_ID, generation, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
                     } catch (RuntimeException error) {
                         leaked.incrementAndGet();
                         throw error;

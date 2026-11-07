@@ -37,6 +37,9 @@ public class ExecutionResumeTaskPO {
     /** 恢复失败的异常文本：长度不可控，H2 侧按 CLOB 存，避免 VARCHAR 截断型静默丢数据。 */
     @TableField(value = "error_reason", jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String errorReason;
+    /** 本次恢复的来源（{@code ResumeSource.dbValue()}）；升级前的遗留行为 {@code null}。 */
+    @TableField("trigger_type")
+    private String triggerType;
     private Long version;
     @TableField("created_at")
     private LocalDateTime createdAt;

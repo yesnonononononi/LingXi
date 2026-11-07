@@ -37,8 +37,85 @@ public class ExecutionResumeTask {
     private final Instant createdAt;
     private Instant updatedAt;
 
+    /**
+     * 本次恢复的触发来源；{@code null} 表示升级前的遗留请求（当时来源没落库）。
+     *
+     * <p><b>为什么来源必须是持久字段而不是调用参数</b>：它决定消费端复检的门禁口径。
+     * 只放在内存里，进程崩溃后重投就没有它了 —— 人工批准会被自动轮次上限判掉并静默作废，
+     * 而回执当时说的是「已受理」。</p>
+     */
+    private ResumeSource triggerType;
+
     public void acceptPersistedVersion(long nextVersion) {
         this.version = nextVersion;
+    }
+
+    /**
+     * 本次恢复实际按哪个来源判定门禁。
+     *
+     * <p><b>遗留行（来源为 NULL）按 {@link ResumeSource#AUTO_INPUT_WAKEUP} 处理</b>：
+     * 升级前的写入方只有审批与人工补充，但库上分辨不出来；选保守方向 —— 自动唤醒要过全部门禁
+     * （含自动轮次上限），最坏结果只是「极少数历史审批需要用户手动点一次恢复」，
+     * 而反向选择会让一次崩溃替用户批准工具。调用方在取到回退值时记一条日志，
+     * 使「按旧数据口径处理」在日志里可追。</p>
+     */
+    public ResumeSource effectiveTrigger() {
+        return triggerType == null ? ResumeSource.AUTO_INPUT_WAKEUP : triggerType;
+    }
+
+    /** 该请求是否缺少持久化来源（升级前的遗留行）。 */
+    public boolean lacksPersistedTrigger() {
+        return triggerType == null;
+    }
+
+    /**
+     * 合并新来源：<b>人工优先，只升不降</b>。
+     *
+     * <p>同一挂起点上先来了自动唤醒、后来人点了批准，行只有一条（唯一索引钉死），
+     * 因此必须把来源升级成人工 —— 否则后到的人工决策会沿用先到的自动口径被轮次上限判掉。</p>
+     *
+     * @param source 本次触发的来源；{@code null} 视为没有新信息
+     * @return 是否真的改了来源（调用方据此决定要不要写库）
+     */
+    public boolean promoteSource(ResumeSource source) {
+        if (source == null) {
+            return false;
+        }
+        if (triggerType == source) {
+            return false;
+        }
+        // 人工来源覆盖一切（含遗留 NULL 与自动唤醒）；自动来源只填补 NULL。
+        if (source.humanInitiated() || triggerType == null) {
+            this.triggerType = source;
+            this.updatedAt = Instant.now();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 门禁没放行：置为 {@link ResumeTaskState#DEFERRED} 并留下原因。
+     *
+     * <p>刻意不用 {@link #supersede()}：作废是「这次恢复永久没机会了」，而门禁不通过只是
+     * 「此刻还不行」。留在未完成态，下一次受理（人或自动唤醒）可以重新排回 READY。</p>
+     */
+    public void defer(String reason) {
+        if (state == ResumeTaskState.SUCCEEDED || state == ResumeTaskState.SUPERSEDED) {
+            return;
+        }
+        this.state = ResumeTaskState.DEFERRED;
+        this.errorReason = reason == null ? "恢复门禁未放行" : reason;
+        this.updatedAt = Instant.now();
+    }
+
+    /** 把待观察的请求重新排入可领取状态；非 DEFERRED 不动。 */
+    public boolean requeueIfDeferred() {
+        if (state != ResumeTaskState.DEFERRED) {
+            return false;
+        }
+        this.state = ResumeTaskState.READY;
+        this.updatedAt = Instant.now();
+        return true;
     }
 
     /**

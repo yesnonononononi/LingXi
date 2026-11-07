@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
+import com.summit.dp.execution.domain.model.ResumeSource;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
@@ -29,6 +31,7 @@ import java.util.Optional;
  */
 @Repository
 @RequiredArgsConstructor
+@Slf4j
 public class ExecutionResumeTaskRepositoryImpl
         extends AbstractRepository<ExecutionResumeTask, ExecutionResumeTaskPO, Long>
         implements ExecutionResumeTaskRepository {
@@ -120,19 +123,26 @@ public class ExecutionResumeTaskRepositoryImpl
     /**
      * 受理恢复请求。
      *
-     * <p>同执行同代际只允许一条：先查已有行，命中就复用（不新建）——「重复落定同一张卡片」
+     * <p>同执行同代际只允许一条：先查已有行，命中就合并（不新建）——「重复落定同一张卡片」
      * 和「审批重试」都会走到这里，重建一条新请求会让两次派发互相作废。</p>
      *
      * <p><b>并发窗口也要兜住</b>：先查后插之间另一路可能已插入并提交，此时本次插入会撞唯一键
      * 抛 {@code DuplicateKeyException}。它和「插入命中 0 行」是同一件事，都改读既有行。</p>
+     *
+     * <p><b>合并内容</b>：来源只升不降（人工优先），{@code DEFERRED} 的请求重新排回 READY。
+     * 写回走 (id, version) 条件更新 —— 并发合并时让位，绝不覆盖别人刚写下的状态。</p>
      */
     @Override
-    public ExecutionResumeTask enqueue(long executionId, long generation, Instant now) {
+    public ExecutionResumeTask enqueue(long executionId, long generation, Instant now, ResumeSource source) {
+        if (source == null) {
+            throw new IllegalArgumentException("恢复请求来源不能为空: executionId=" + executionId);
+        }
         // 先插入再回查，以唯一约束裁决同一恢复代际的重复领取。
         ExecutionResumeTaskPO row = new ExecutionResumeTaskPO();
         row.setExecutionId(executionId);
         row.setGeneration(generation);
         row.setState(ResumeTaskState.READY.dbValue());
+        row.setTriggerType(source.dbValue());
         row.setVersion(1L);
         row.setCreatedAt(toLocalDateTime(now));
         row.setUpdatedAt(toLocalDateTime(now));
@@ -144,10 +154,46 @@ public class ExecutionResumeTaskRepositoryImpl
             // 并发下另一路已插入同一 (executionId, generation)：唯一键冲突是「已存在」的另一种表达，
             // 与插入命中 0 行同义。这里不能让它冒泡成业务失败，否则幂等的重复受理会报错。
         }
-        // 命中 0 行或撞唯一键都表示该请求已存在：改读既有行，不重建、不报错。
-        return findByExecutionAndGeneration(executionId, generation).orElseThrow(
+        // 命中 0 行或撞唯一键都表示该请求已存在：读既有行并合并来源，不重建、不报错。
+        ExecutionResumeTask existing = findByExecutionAndGeneration(executionId, generation).orElseThrow(
                 () -> new IllegalStateException("恢复请求受理失败: executionId=" + executionId
                         + ", generation=" + generation));
+        mergeSource(existing, source);
+        return existing;
+    }
+
+    /**
+     * 把新来源合并进既有请求：只升不降，DEFERRED 重新排回 READY。
+     *
+     * <p>写回按 (id, version) 条件更新：并发的两次合并只有一方落库，另一方让位
+     * （方向只有一个，谁赢都不会降级）。</p>
+     */
+    private void mergeSource(ExecutionResumeTask existing, ResumeSource source) {
+        boolean sourceChanged = existing.promoteSource(source);
+        boolean requeued = existing.requeueIfDeferred();
+        if (!sourceChanged && !requeued) {
+            return;
+        }
+        long expected = existing.getVersion();
+        int changed = taskMapper.update(Wrappers.<ExecutionResumeTaskPO>lambdaUpdate()
+                .set(ExecutionResumeTaskPO::getTriggerType, existing.effectiveTrigger().dbValue())
+                .set(ExecutionResumeTaskPO::getState, existing.getState().dbValue())
+                .set(ExecutionResumeTaskPO::getErrorReason, existing.getErrorReason())
+                .set(ExecutionResumeTaskPO::getVersion, expected + 1)
+                .set(ExecutionResumeTaskPO::getUpdatedAt, LocalDateTime.now())
+                .eq(ExecutionResumeTaskPO::getId, existing.getId())
+                .eq(ExecutionResumeTaskPO::getVersion, expected));
+        if (changed != 1) {
+            // 让位：另一路已改过该行。重读一遍，把库里的权威值带回给调用方。
+            log.debug("合并恢复请求来源时状态已变化，让位并重读: taskId={}", existing.getId());
+            findByExecutionAndGeneration(existing.getExecutionId(), existing.getGeneration())
+                    .ifPresent(authoritative -> {
+                        existing.acceptPersistedVersion(authoritative.getVersion());
+                        existing.promoteSource(authoritative.effectiveTrigger());
+                    });
+            return;
+        }
+        existing.acceptPersistedVersion(expected + 1);
     }
 
     @Override
@@ -180,6 +226,7 @@ public class ExecutionResumeTaskRepositoryImpl
                 .generation(model.getGeneration())
                 .state(model.getState() == null ? null : model.getState().dbValue())
                 .errorReason(model.getErrorReason())
+                .triggerType(model.getTriggerType() == null ? null : model.getTriggerType().dbValue())
                 .version(model.getVersion())
                 .createdAt(toLocalDateTime(model.getCreatedAt()))
                 .updatedAt(toLocalDateTime(model.getUpdatedAt()))
@@ -195,6 +242,7 @@ public class ExecutionResumeTaskRepositoryImpl
                 .generation(po.getGeneration() == null ? 0L : po.getGeneration())
                 .state(ResumeTaskState.parse(po.getState()))
                 .errorReason(po.getErrorReason())
+                .triggerType(ResumeSource.parse(po.getTriggerType()))
                 .version(po.getVersion() == null ? 1L : po.getVersion())
                 .createdAt(toInstant(po.getCreatedAt()))
                 .updatedAt(toInstant(po.getUpdatedAt()))

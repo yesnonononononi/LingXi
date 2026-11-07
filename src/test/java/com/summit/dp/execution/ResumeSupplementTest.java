@@ -14,6 +14,7 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.execution.application.service.ResumeDisposition;
+import com.summit.dp.execution.domain.model.ResumeSource;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
@@ -113,7 +114,7 @@ class ResumeSupplementTest {
         when(turns.findByIds(List.of(TURN_ID))).thenReturn(Map.of(TURN_ID, turn));
         when(turns.findByExecutionId(900L)).thenReturn(Optional.of(turn));
         when(coordinator.accept(900L, ResumeTriggerType.AUTO_INPUT_WAKEUP)).thenAnswer(invocation -> {
-            tasks.enqueue(900L, 1L, Instant.now());
+            tasks.enqueue(900L, 1L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
             return ResumeDisposition.QUEUED;
         });
         service = new ResumeSupplementService(turns, messages, provider(executions), provider(executions),
@@ -153,7 +154,7 @@ class ResumeSupplementTest {
     @Test
     void failureAfterEnqueueRollsBackBothRecords() {
         doAnswer(invocation -> {
-            tasks.enqueue(900L, 1L, Instant.now());
+            tasks.enqueue(900L, 1L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
             throw new IllegalStateException("模拟受理失败");
         }).when(coordinator).accept(900L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
         assertThrows(IllegalStateException.class, () -> service.accept(SESSION_ID, command("不要提交")));
