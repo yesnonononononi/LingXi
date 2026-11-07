@@ -15,6 +15,13 @@ public final class ExecutionAttributes {
     public static final String ROOT_EXECUTION_ID = "lingxi.root_execution_id";
     public static final String TEAM_ID = "lingxi.team_id";
     public static final String LAST_RESUME_SUPPLEMENT_ID = "lingxi.last_resume_supplement_id";
+    /**
+     * 已注入上下文的最后一条协作邮件消息 id：注入去重的<b>权威判据</b>，随检查点持久化。
+     *
+     * <p>为什么不靠邮件的全局消费状态：消息追加进上下文之后、检查点落库之前存在崩溃窗口。
+     * 用全局状态当判据，崩溃后重启会因「库里已消费」而永远看不到这条输入。</p>
+     */
+    public static final String LAST_MAIL_ID = "lingxi.last_mail_id";
 
     private ExecutionAttributes() { }
 
