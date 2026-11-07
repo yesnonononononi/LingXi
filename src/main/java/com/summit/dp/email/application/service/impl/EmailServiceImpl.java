@@ -174,6 +174,20 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public List<EmailMessageVO> pendingItemsAfter(Long workflowExecutionId, Long recipientAgentId,
+                                                  long afterMessageId) {
+        if (workflowExecutionId == null || recipientAgentId == null) {
+            return List.of();
+        }
+        Optional<Email> mailbox = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
+        if (mailbox.isEmpty()) {
+            return List.of();
+        }
+        return messageRepository.findByEmailIdsAfterId(List.of(mailbox.get().getId()), afterMessageId)
+                .stream().map(this::toMessageVO).toList();
+    }
+
+    @Override
     @Transactional
     public void consumePendingItems(List<EmailMessageVO> items) {
         throwIf(items == null, "待消费消息列表不能为空");

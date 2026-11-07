@@ -33,6 +33,19 @@ public interface EmailMessageRepository extends RepositoryTemplate<EmailMessage,
     List<EmailMessage> findPendingByEmailIds(Collection<Long> emailIds);
 
     /**
+     * 查询多封邮件下 id 大于 {@code afterId} 的全部消息，按 id 升序。
+     *
+     * <p><b>为什么需要「含已消费」的查询</b>：注入路径的权威去重判据是随检查点持久化的游标，
+     * 不是消息的全局消费状态。若这里仍按 PENDING 过滤，一旦「全局消费已生效、检查点没落库」
+     * （崩溃窗口），重启后这批消息就再也取不到了 —— 输入被永久吞掉。
+     * 按 id 游标取则只会重复注入一次，符合「宁可重复，不可丢失」的取舍。</p>
+     *
+     * @param emailIds 邮件 id 集合，空集合返回空列表
+     * @param afterId  游标消息 id，返回 id 严格大于它的行
+     */
+    List<EmailMessage> findByEmailIdsAfterId(Collection<Long> emailIds, long afterId);
+
+    /**
      * 单条条件更新：仅当该消息仍为 PENDING 时置为 CONSUMED 并触碰 update_at，
      * 消除 check-then-act 竞态窗口。
      *

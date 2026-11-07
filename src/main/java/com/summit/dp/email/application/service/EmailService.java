@@ -76,6 +76,18 @@ public interface EmailService {
     /** 判断与注入统一读取本批待处理项，不在查询中消费。 */
     List<EmailMessageVO> pendingItems(Long workflowExecutionId, Long recipientAgentId);
 
+    /**
+     * 按消息 id 游标取协作消息，含已被全局消费的行。
+     *
+     * <p>注入路径的权威去重判据是随检查点持久化的游标；这里不过滤消费状态，
+     * 是为了在「全局消费已生效、检查点没落库」的崩溃窗口里仍能重新取到输入。</p>
+     *
+     * @param workflowExecutionId 邮箱归属的执行 id
+     * @param recipientAgentId    收件 Agent id
+     * @param afterMessageId      游标消息 id，返回 id 严格大于它的行
+     */
+    List<EmailMessageVO> pendingItemsAfter(Long workflowExecutionId, Long recipientAgentId, long afterMessageId);
+
     /** 只确认本批查询结果，期间新到的消息留给下一轮。 */
     void consumePendingItems(List<EmailMessageVO> items);
 

@@ -77,6 +77,19 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
     }
 
     @Override
+    public List<EmailMessage> findByEmailIdsAfterId(Collection<Long> emailIds, long afterId) {
+        if (emailIds == null || emailIds.isEmpty()) {
+            return List.of();
+        }
+        // 不按 status 过滤：注入判据是检查点里的游标，见接口注释。
+        return mapper.selectList(Wrappers.<EmailMessagePO>lambdaQuery()
+                        .in(EmailMessagePO::getEmailId, emailIds)
+                        .gt(EmailMessagePO::getId, afterId)
+                        .orderByAsc(EmailMessagePO::getId))
+                .stream().map(this::toModel).toList();
+    }
+
+    @Override
     public int consumePendingById(Long id) {
         // 条件更新：仅 PENDING 可被置为 CONSUMED，where 条件兜住并发下的重复消费
         return mapper.update(null, Wrappers.<EmailMessagePO>lambdaUpdate()
