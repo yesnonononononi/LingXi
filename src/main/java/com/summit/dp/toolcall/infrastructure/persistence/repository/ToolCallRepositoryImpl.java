@@ -17,7 +17,9 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -233,6 +235,32 @@ public class ToolCallRepositoryImpl
                 .eq(ToolCallPO::getId, toolCallId)
                 .and(w -> w.isNull(ToolCallPO::getSessionMessageId)
                         .or().ne(ToolCallPO::getSessionMessageId, sessionMessageId)));
+    }
+
+    /**
+     * 批量回填锚点：一条参数绑定的 {@code UPDATE} 完成多个工具调用。
+     *
+     * <p><b>为什么不走领域方法</b>：这条路径只写一列，且卡片可能正处于任意生命周期状态 ——
+     * 拉领域模型再整行写回会读出 4 个 CLOB（H2 临时 LOB 写放大），还会用旧快照覆盖别的写入方刚推进的
+     * 状态。批量口径下逐行 {@code updateById} 又是 N 条语句。因此保留窄更新，条件与版本自增
+     * 与单条版本严格一致。</p>
+     */
+    @Override
+    public int bindSessionMessagesBatch(Map<String, Long> toolCallIdToMessageId) {
+        if (toolCallIdToMessageId == null || toolCallIdToMessageId.isEmpty()) {
+            return 0;
+        }
+        Map<String, Long> bindings = new LinkedHashMap<>();
+        for (Map.Entry<String, Long> entry : toolCallIdToMessageId.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
+                continue;
+            }
+            bindings.put(entry.getKey(), entry.getValue());
+        }
+        if (bindings.isEmpty()) {
+            return 0;
+        }
+        return toolCallMapper.bindSessionMessagesBatch(bindings);
     }
 
     @Override

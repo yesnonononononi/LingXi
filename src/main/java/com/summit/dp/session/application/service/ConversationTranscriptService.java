@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** 历史独立于可变上下文；TOOL 只存调用身份，内容以工具实体为准。 */
@@ -82,13 +84,21 @@ public class ConversationTranscriptService {
                         List<? extends Message> messages, String responseId) {
         List<SessionMessage> records = recordAssembler.build(sessionId, turnId, messages, responseId);
         messageRepository.appendAll(sessionId, rootSessionId, records);
+
+        // 锚点回填：一轮的所有 TOOL 行合并成一条批量 UPDATE。仍是尽力而为 ——
+        // 锚点只服务于「消息 → 工具卡片」的回指，回填失败不该让已经落定的转录整体回滚。
+        Map<String, Long> bindings = new LinkedHashMap<>();
         for (SessionMessage record : records) {
             if (record.getType() != SessionMessageType.TOOL || record.getText() == null) continue;
-            try {
-                toolCallRepository.bindSessionMessage(record.getText(), record.getId());
-            } catch (RuntimeException e) {
-                log.warn("回填工具消息锚点失败: callId={}, error={}", record.getText(), e.toString());
-            }
+            bindings.put(record.getText(), record.getId());
+        }
+        if (bindings.isEmpty()) {
+            return;
+        }
+        try {
+            toolCallRepository.bindSessionMessagesBatch(bindings);
+        } catch (RuntimeException e) {
+            log.warn("回填工具消息锚点失败: 条数={}, error={}", bindings.size(), e.toString());
         }
     }
 

@@ -82,6 +82,9 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
     /**
      * 追加用户可见的 transcript 消息，不改写更早历史。
      *
+     * <p><b>一次往返</b>：主键由 {@code TranscriptRecordAssembler} 预生成，批量插入不需要驱动回填；
+     * 逐行 {@code save} 会让「一轮 30 个工具」变成 31 条 INSERT。</p>
+     *
      * @param sessionId     实体归属会话（子会话即子会话自身）
      * @param rootSessionId v3 投递目标（根会话）；子会话消息必须传根，否则投错连接桶
      */

@@ -6,6 +6,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -65,6 +66,18 @@ public interface ToolCallRepository extends RepositoryTemplate<ToolCall, String>
 
     /** 尽力回填 TOOL 行锚点：设置 {@code session_message_id}。 */
     void bindSessionMessage(String toolCallId, Long sessionMessageId);
+
+    /**
+     * 批量回填 TOOL 行锚点：一次往返绑定多个工具调用。
+     *
+     * <p>语义与 {@link #bindSessionMessage} 完全一致（只更新为空或与目标值不同的行，并
+     * {@code version = version + 1}），只是合并为一条 {@code UPDATE}。用作一轮结束时的锚点回填，
+     * 替代逐行调用。</p>
+     *
+     * @param toolCallIdToMessageId 工具调用 ID → 消息 ID；空映射返回 0 且不发语句
+     * @return 实际更新的行数
+     */
+    int bindSessionMessagesBatch(Map<String, Long> toolCallIdToMessageId);
 
     /**
      * 单块推送用的只读投影：只取 {@code id/conversationId/toolName/type/status/raw_output/version}。

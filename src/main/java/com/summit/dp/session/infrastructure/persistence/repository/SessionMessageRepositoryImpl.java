@@ -145,11 +145,20 @@ public class SessionMessageRepositoryImpl
                 .stream().map(this::toModel).toList();
     }
 
+    /**
+     * 批量追加：一条 INSERT 落全部行。
+     *
+     * <p>主键是预生成雪花，批量写入不依赖驱动回填；插入行数不符即视为落库异常并抛错，
+     * 让事务回滚，而不是带着缺行继续回填工具锚点。</p>
+     */
     @Override
     public void appendAll(Long sessionId, Long rootSessionId, List<SessionMessage> messages) {
-        if (messages == null || messages.isEmpty()) return;
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        List<SessionMessagePO> rows = new ArrayList<>(messages.size());
         for (SessionMessage message : messages) {
-            save(SessionMessage.builder()
+            rows.add(toPO(SessionMessage.builder()
                     .id(message.getId())
                     .responseId(message.getResponseId())
                     .resumeRequestId(message.getResumeRequestId())
@@ -158,7 +167,11 @@ public class SessionMessageRepositoryImpl
                     .type(message.getType())
                     .text(message.getText())
                     .createTime(message.getCreateTime())
-                    .build(), rootSessionId);
+                    .build()));
+        }
+        int inserted = messageMapper.insertBatch(rows);
+        if (inserted != rows.size()) {
+            throw new IllegalStateException("批量落库会话消息行数不符: 期望=" + rows.size() + ", 实际=" + inserted);
         }
     }
 

@@ -279,5 +279,23 @@ class ToolCallRegistrarImplTest {
                 rows.put(toolCallId, row);
             }
         }
+
+        /** 批量口径与单条口径保持同样语义：逐项调用单条实现，测试只关心最终锚点。 */
+        @Override
+        public int bindSessionMessagesBatch(Map<String, Long> toolCallIdToMessageId) {
+            if (toolCallIdToMessageId == null || toolCallIdToMessageId.isEmpty()) {
+                return 0;
+            }
+            int changed = 0;
+            for (Map.Entry<String, Long> entry : toolCallIdToMessageId.entrySet()) {
+                ToolCall row = rows.get(entry.getKey());
+                if (row == null || entry.getValue() == null || entry.getValue().equals(row.getSessionMessageId())) {
+                    continue;
+                }
+                rows.put(entry.getKey(), row.toBuilder().sessionMessageId(entry.getValue()).build());
+                changed++;
+            }
+            return changed;
+        }
     }
 }
