@@ -7,17 +7,17 @@ import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.core.agent.Execution;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchGateway;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchSpec;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -33,7 +33,6 @@ import java.util.concurrent.Executors;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class PreparedChatExecutor {
 
     private final AgentWorkflowOrchestrator agentWorkflowOrchestrator;
@@ -43,9 +42,50 @@ public class PreparedChatExecutor {
     private final ExecutionControl executionControl;
     /** 启动失败收口口径的唯一实现；本类只声明自己是根会话启动。 */
     private final StartupFailureCloser startupFailureCloser;
+    /** 统一启动入口：根与子代理共用同一套「准入 → 提交 → 没能起步的收口」。 */
+    private final ExecutionLaunchGateway executionLaunchGateway;
     @Autowired
     private ObjectProvider<InputWakeupService> inputWakeups;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
+
+    /**
+     * 手工构造重载：启动入口用同一个收口口径现装。
+     *
+     * <p>生产的唯一构造器是下面那个（Spring 注入共享实例）；这个重载只为直接 {@code new} 的用例
+     * 保留原来的参数个数，避免「新增协作方」把二十几处测试构造点全部掀翻。</p>
+     */
+    public PreparedChatExecutor(AgentWorkflowOrchestrator agentWorkflowOrchestrator,
+                                RequestPreparer requestPreparer,
+                                ModelContextService modelContextService,
+                                SessionExecutionRegistry sessionExecutionRegistry,
+                                ExecutionControl executionControl,
+                                StartupFailureCloser startupFailureCloser) {
+        this(agentWorkflowOrchestrator, requestPreparer, modelContextService, sessionExecutionRegistry,
+                executionControl, startupFailureCloser, new ExecutionLaunchGateway(startupFailureCloser));
+    }
+
+    /** 生产构造器：由容器注入共享的启动入口。 */
+    @Autowired
+    public PreparedChatExecutor(AgentWorkflowOrchestrator agentWorkflowOrchestrator,
+                                RequestPreparer requestPreparer,
+                                ModelContextService modelContextService,
+                                SessionExecutionRegistry sessionExecutionRegistry,
+                                ExecutionControl executionControl,
+                                StartupFailureCloser startupFailureCloser,
+                                ExecutionLaunchGateway executionLaunchGateway) {
+        if (agentWorkflowOrchestrator == null || requestPreparer == null || modelContextService == null
+                || sessionExecutionRegistry == null || executionControl == null
+                || startupFailureCloser == null || executionLaunchGateway == null) {
+            throw new IllegalArgumentException("执行器协作方不能为空");
+        }
+        this.agentWorkflowOrchestrator = agentWorkflowOrchestrator;
+        this.requestPreparer = requestPreparer;
+        this.modelContextService = modelContextService;
+        this.sessionExecutionRegistry = sessionExecutionRegistry;
+        this.executionControl = executionControl;
+        this.startupFailureCloser = startupFailureCloser;
+        this.executionLaunchGateway = executionLaunchGateway;
+    }
 
     /**
      * 受理：把业务轮次、用户消息与框架执行行放进同一个事务提交。
@@ -82,33 +122,46 @@ public class PreparedChatExecutor {
     /**
      * 异步提交一次已受理的执行：只跑模型，不建 emitter、不订阅。
      *
-     * <p><b>提交本身失败（线程池拒绝）与启动失败同口径收口</b>：此时执行从未进入
-     * {@link #run}，它的 {@code finally} 不会执行，运行资格与轮次收口必须在这里补上 ——
-     * 否则会话被单飞锁死（用户再也发不出下一条），「已受理」的轮次永远没有终态。</p>
+     * <p><b>提交走统一启动入口</b>（{@link ExecutionLaunchGateway}）：根与子代理共用同一套
+     * 「准入 → 提交 → 没能起步的收口」，「提交本身失败（线程池拒绝）与启动失败同口径收口」
+     * 这条才不用在两条链上各写一遍。此时执行从未进入 {@link #run}，它的 {@code finally} 不会执行，
+     * 运行资格与轮次收口必须在这条路径上补 —— 否则会话被单飞锁死（用户再也发不出一条），
+     * 「已受理」的轮次永远没有终态。</p>
      */
     public void submitAsync(RuntimeContext context) {
-        try {
-            CompletableFuture.runAsync(() -> run(context),executorService);
-        } catch (RuntimeException submitFailure) {
-            failSubmit(context, submitFailure);
-            throw submitFailure;
-        }
+        launchGateway().submit(rootLaunchSpec(context));
     }
 
     /**
      * 提交失败收口：与启动失败同口径把执行 / 轮次收成终态并广播，再释放运行资格。
      *
      * <p><b>本方法不外抛</b>：它只做「收口 + 释放资格」，执行侧收口失败也只告警
-     * （见 {@code markStartupFailedQuietly}）。原始的「线程池已满」必须原样冒泡给调用方 ——
-     * 那由 {@link #submitAsync} 的 catch 在本方法<b>返回之后</b>抛出，不在这里被换成次生异常。</p>
+     * （见 {@code StartupFailureCloser}）。原始的「线程池已满」必须原样冒泡给调用方 ——
+     * 那由 {@link #submitAsync} 抛出，不在这里被换成次生异常。</p>
      *
      * <p>包可见：线程池拒绝难以在单测里稳定复现，暴露这一小步让「拒绝 → 释放资格 + 收口」
-     * 这条被漏掉就会锁死会话的路径可被直接验证。这是刻意设计的可测性取舍，
-     * 调用方只有 {@link #submitAsync}，不要从别处直接调它。</p>
+     * 这条被漏掉就会锁死会话的路径可被直接验证。调用方只有 {@link #submitAsync}，
+     * 不要从别处直接调它。</p>
      */
     void failSubmit(RuntimeContext context, RuntimeException submitFailure) {
-        markStartupFailedQuietly(context, submitFailure);
-        sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
+        launchGateway().releaseUnstarted(rootLaunchSpec(context), submitFailure);
+    }
+
+    /**
+     * 根会话的启动请求：准入提交时恒真（运行资格已由受理脚本拿到），
+     * 没能起步时释放的是根运行资格 —— 子代理那份撤销是 {@code revokeChild}，两者不可混用。
+     */
+    private ExecutionLaunchSpec rootLaunchSpec(RuntimeContext context) {
+        return new ExecutionLaunchSpec(ExecutionLaunchRole.ROOT, executorService, context.execution(),
+                () -> true,
+                () -> sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId(),
+                        context.executionContext().executionId()),
+                () -> run(context));
+    }
+
+    /** 统一启动入口：根与子代理共用，注入而非现建，容器里只有一个实例。 */
+    private ExecutionLaunchGateway launchGateway() {
+        return executionLaunchGateway;
     }
 
     /**

@@ -208,7 +208,9 @@ class QaAsyncDelegationAdversarialTest {
         assertNotNull(result);
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
         // 提交失败 → 撤销待启动登记；异步体从未运行 → 不建会话行 / 不落账 / 不建执行。
-        verify(registry).revokeChild(eq(ROOT_SESSION_ID), anyLong(), any());
+        // 撤销可能发生两次（统一启动入口一次 + 工具侧 fail-closed 兜底一次），revokeChild 按登记判据幂等，
+        // 这里守的是「确实撤销了」与「没有落库副作用」，不是次数。
+        verify(registry, org.mockito.Mockito.atLeastOnce()).revokeChild(eq(ROOT_SESSION_ID), anyLong(), any());
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
         verify(subAgent, never()).execute(any(AgentRequest.class));

@@ -4,18 +4,19 @@ import com.summit.core.agent.Execution;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.application.chat.SessionContextEntity;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchGateway;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchSpec;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -31,7 +32,6 @@ import java.util.concurrent.Executors;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class AsyncDelegationSubmitter {
 
     private final SubAgent subAgent;
@@ -44,27 +44,97 @@ public class AsyncDelegationSubmitter {
     private final StartupFailureCloser startupFailureCloser;
     /** 子执行从未建立执行（落库前失败）时的兜底结束事实协作器。 */
     private final SubExecutionLifecycle subExecutionLifecycle;
+    /** 统一启动入口：与根会话共用同一套准入与没能起步的收口。 */
+    private final ExecutionLaunchGateway executionLaunchGateway;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
-    /** 提交一次协作式子执行：立即返回，真正的落库与开跑在虚拟线程内进行。 */
-    public void submit(AsyncDelegationTask task) {
-        CompletableFuture.runAsync(() -> runChild(task), executorService);
+    /**
+     * 手工构造重载：启动入口用同一个收口口径现装。
+     *
+     * <p>生产的唯一构造器是下面那个（Spring 注入共享实例）；这个重载只为直接 {@code new} 的用例
+     * 保留原来的参数个数。</p>
+     */
+    public AsyncDelegationSubmitter(SubAgent subAgent,
+                                    SessionExecutionRegistry sessionExecutionRegistry,
+                                    SubSessionResolver subSessionResolver,
+                                    DelegationRecorder delegationRecorder,
+                                    ModelContextService modelContextService,
+                                    ExecutionControl executionControl,
+                                    StartupFailureCloser startupFailureCloser,
+                                    SubExecutionLifecycle subExecutionLifecycle) {
+        this(subAgent, sessionExecutionRegistry, subSessionResolver, delegationRecorder, modelContextService,
+                executionControl, startupFailureCloser, subExecutionLifecycle,
+                new ExecutionLaunchGateway(startupFailureCloser));
+    }
+
+    /** 生产构造器：由容器注入共享的启动入口。 */
+    @Autowired
+    public AsyncDelegationSubmitter(SubAgent subAgent,
+                                    SessionExecutionRegistry sessionExecutionRegistry,
+                                    SubSessionResolver subSessionResolver,
+                                    DelegationRecorder delegationRecorder,
+                                    ModelContextService modelContextService,
+                                    ExecutionControl executionControl,
+                                    StartupFailureCloser startupFailureCloser,
+                                    SubExecutionLifecycle subExecutionLifecycle,
+                                    ExecutionLaunchGateway executionLaunchGateway) {
+        if (subAgent == null || sessionExecutionRegistry == null || subSessionResolver == null
+                || delegationRecorder == null || modelContextService == null || executionControl == null
+                || startupFailureCloser == null || subExecutionLifecycle == null
+                || executionLaunchGateway == null) {
+            throw new IllegalArgumentException("子执行协作方不能为空");
+        }
+        this.subAgent = subAgent;
+        this.sessionExecutionRegistry = sessionExecutionRegistry;
+        this.subSessionResolver = subSessionResolver;
+        this.delegationRecorder = delegationRecorder;
+        this.modelContextService = modelContextService;
+        this.executionControl = executionControl;
+        this.startupFailureCloser = startupFailureCloser;
+        this.subExecutionLifecycle = subExecutionLifecycle;
+        this.executionLaunchGateway = executionLaunchGateway;
     }
 
     /**
-     * 子执行体：先检查取消，再落库，最后开跑。
+     * 提交一次协作式子执行：走统一启动入口，真正的落库与开跑在角色线程池内进行。
      *
-     * <p>检查失败意味着根已取消：此时<b>不建任何行、不开跑</b>，撤销未开跑登记后直接结束（无孤儿）。</p>
+     * <p><b>准入与登记撤销都在统一入口里</b>：准入是抢登记 {@code tryStartChild}，
+     * 没能起步时撤销的是子登记 {@code revokeChild} —— 与根会话释放运行资格是两件事，
+     * 混用会让还在跑的根被误判为「已收尾」。</p>
+     */
+    public void submit(AsyncDelegationTask task) {
+        launchGateway().submit(childLaunchSpec(task));
+    }
+
+    /**
+     * 子代理的启动请求：执行对象此时还不存在（{@code createExecution} 在异步体里），
+     * 所以提交被拒时只撤销登记，没有执行终态可收 —— 这是角色差异，不是漏实现。
+     */
+    private ExecutionLaunchSpec childLaunchSpec(AsyncDelegationTask task) {
+        Long rootSessionId = task.rootSessionId();
+        Long childSessionId = task.numericSubSessionId();
+        return new ExecutionLaunchSpec(ExecutionLaunchRole.SUB_AGENT, executorService, null,
+                () -> sessionExecutionRegistry.tryStartChild(task.request().getExecutionId()),
+                () -> {
+                    sessionExecutionRegistry.revokeChild(rootSessionId, childSessionId,
+                            task.request().getExecutionId());
+                    log.info("子执行未开跑（根已取消）: rootSessionId={}, subSessionId={}",
+                            rootSessionId, childSessionId);
+                },
+                () -> runChild(task));
+    }
+
+    /** 统一启动入口：与根会话共用同一个实例。 */
+    private ExecutionLaunchGateway launchGateway() {
+        return executionLaunchGateway;
+    }
+
+    /**
+     * 子执行体：准入已在统一入口里过完，这里直接落库并开跑。
      */
     private void runChild(AsyncDelegationTask task) {
         Long rootSessionId = task.rootSessionId();
         Long childSessionId = task.numericSubSessionId();
-
-        if (!sessionExecutionRegistry.tryStartChild(task.request().getExecutionId())) {
-            sessionExecutionRegistry.revokeChild(rootSessionId, childSessionId, task.request().getExecutionId());
-            log.info("子执行未开跑（根已取消）: rootSessionId={}, subSessionId={}", rootSessionId, childSessionId);
-            return;
-        }
         try {
             // 首次委派才建会话行；复用路径行已存在，重复 insert 会主键冲突。
             if (!task.target().reused()) {
