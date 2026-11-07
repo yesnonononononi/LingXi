@@ -16,6 +16,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 /**
@@ -36,6 +37,9 @@ class SessionMessageTurnIdTest {
     @Test
     @DisplayName("追加消息时把 turnId 写进 PO（而不是只留在领域对象里）")
     void appendPersistsTurnId() {
+        // 批量插入是唯一的追加入口：桩要打在批量方法上，断言落在真正交给 Mapper 的行上。
+        when(mapper.insertBatch(anyList())).thenReturn(1);
+
         repository.appendAll(SESSION_ID, SESSION_ID, List.of(SessionMessage.builder()
                 .id(1001L)
                 .sessionId(SESSION_ID)
@@ -45,10 +49,12 @@ class SessionMessageTurnIdTest {
                 .createTime(Instant.parse("2026-10-01T10:00:00Z"))
                 .build()));
 
-        ArgumentCaptor<SessionMessagePO> inserted = ArgumentCaptor.forClass(SessionMessagePO.class);
-        verify(mapper).insert(inserted.capture());
-        assertEquals(TURN_ID, inserted.getValue().getTurnId());
-        assertEquals(SESSION_ID, inserted.getValue().getSessionId());
+        ArgumentCaptor<List<SessionMessagePO>> inserted = ArgumentCaptor.forClass(List.class);
+        verify(mapper).insertBatch(inserted.capture());
+        SessionMessagePO row = inserted.getValue().getFirst();
+        assertEquals(TURN_ID, row.getTurnId());
+        assertEquals(SESSION_ID, row.getSessionId());
+        assertEquals(1001L, row.getId(), "预生成主键必须原样落到 PO，批量插入不能丢 ID");
     }
 
     @Test
