@@ -38,6 +38,7 @@ import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
@@ -211,17 +212,22 @@ class QaIndependentDelegationLifecycleTest {
         when(requestFactory.build(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(AgentRequest.builder().executionId("901").build());
 
-        // 提交失败：线程池拒绝之类。
-        doThrow(new RuntimeException("pool rejected")).when(submitter).submit(any());
+        // 提交失败：线程池拒绝之类。撤销的归属是提交方，桩按真实契约先撤销再抛。
         SessionExecutionRegistry failingRegistry = new SessionExecutionRegistry();
         failingRegistry.restoreExecution(ROOT_SESSION_ID, ROOT_SESSION_ID, "900");
+        doAnswer(invocation -> {
+            AsyncDelegationTask task = invocation.getArgument(0);
+            failingRegistry.revokeChild(task.rootSessionId(), task.numericSubSessionId(),
+                    task.request().getExecutionId());
+            throw new RuntimeException("pool rejected");
+        }).when(submitter).submit(any());
         CallSubAgentTool failingTool = new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
                 subSessionResolver, failingRegistry, sessionRepository, submitter, renderer);
 
         ToolExecuteResult failed = failingTool.execute(delegationExecution());
         assertFalse(failed.isSuccess(), "提交失败必须报错，不能谎报已委派");
         assertFalse(failingRegistry.hasUnfinishedChildren(ROOT_SESSION_ID),
-                "提交失败必须撤销待启动登记，否则根会以为有子执行而永久驻留");
+                "提交失败必须撤销待启动登记，否则根会以为有子执行而永久驻留 —— 撤销由提交方负责，工具侧不重复撤销");
 
         // 提交成功：登记保留（登记早于提交），供根驻留判定使用。
         doNothing().when(submitter).submit(any());

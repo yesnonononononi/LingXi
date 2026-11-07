@@ -201,20 +201,24 @@ class CallSubAgentAsyncDelegationTest {
     }
 
     @Test
-    @DisplayName("提交被拒（线程池拒绝）：撤销登记并 fail-closed，不谎报已委派")
+    @DisplayName("提交被拒（线程池拒绝）：工具 fail-closed，撤销由提交方负责且恰好一次")
     void rejectedSubmissionRevokesRegistration() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
         when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong(), any(), any())).thenReturn(true);
-        org.mockito.Mockito.doThrow(new java.util.concurrent.RejectedExecutionException("qa: rejected"))
-                .when(asyncSubmitter).submit(any(AsyncDelegationTask.class));
+        // 撤销的归属是提交方（交接前兜底 / 交接后网关）：这里让桩按真实契约先撤销再抛。
+        doAnswer(invocation -> {
+            AsyncDelegationTask task = invocation.getArgument(0);
+            registry.revokeChild(task.rootSessionId(), task.numericSubSessionId(), task.request().getExecutionId());
+            throw new java.util.concurrent.RejectedExecutionException("qa: rejected");
+        }).when(asyncSubmitter).submit(any(AsyncDelegationTask.class));
 
         ToolExecuteResult result = tool.execute(toolExecution(args()));
 
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
         assertTrue(result.getToolOutput().contains("委派提交失败"));
         ArgumentCaptor<Long> childCaptor = ArgumentCaptor.forClass(Long.class);
-        verify(registry).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture(), any());
+        verify(registry, times(1)).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture(), any());
         assertNotNull(childCaptor.getValue(), "撤销的是本次登记的子会话");
     }
 
