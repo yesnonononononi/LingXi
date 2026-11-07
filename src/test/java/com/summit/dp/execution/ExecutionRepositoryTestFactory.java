@@ -93,7 +93,8 @@ public final class ExecutionRepositoryTestFactory {
                 provider(mock(SessionContextUsageProjector.class)),
                 provider(new ChatTurnLifecycleProjector(chatTurnService)),
                 provider(mock(RuntimeEventPublisher.class)),
-                provider(mock(InputWakeupService.class)));
+                provider(mock(InputWakeupService.class)),
+                provider(mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)));
     }
 
     @SuppressWarnings("unchecked")

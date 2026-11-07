@@ -116,7 +116,8 @@ class LocalExecutionRepositoryResumeTest {
                     checkpointStore,
                     provider(new ExecutionLifecycleProjection(
                             provider(readiness), provider(tools), provider(subExecutionLifecycle),
-                            provider(sessions), provider(turns), provider(runtimeEvents), provider(wakeups))));
+                            provider(sessions), provider(turns), provider(runtimeEvents), provider(wakeups),
+                            provider(mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -612,7 +613,8 @@ class LocalExecutionRepositoryResumeTest {
                 checkpointStore,
                 provider(new ExecutionLifecycleProjection(provider(failing), provider(tools),
                         provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),
-                        provider(mock(InputWakeupService.class)))));
+                        provider(mock(InputWakeupService.class)),
+                        provider(mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
         doAnswer(invocation -> {
             assertTrue(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));

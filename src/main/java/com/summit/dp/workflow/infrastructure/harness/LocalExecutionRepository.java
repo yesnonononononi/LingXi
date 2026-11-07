@@ -128,11 +128,15 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
                 String previousFile;
                 boolean firstFailure;
+                boolean persistedTerminal;
+                boolean closureWasPending;
                 try {
                     ExecutionCheckpointService.SaveOutcome outcome = commitCheckpoint(execution, id, sessionId,
                             resolveStatus(state), fileId);
                     firstFailure = outcome.firstFailure();
                     previousFile = outcome.previousFile();
+                    persistedTerminal = outcome.terminal();
+                    closureWasPending = outcome.closureWasPending();
                 } catch (RuntimeException failure) {
                     // 整笔最终失败（含重试耗尽）：删掉本次新文件，库内仍指向旧文件。
                     writer.rollback();
@@ -165,17 +169,17 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 boolean terminal = ExecutionStateCodec.isTerminalState(state);
                 afterCommit(() -> executionRegistry.recordExecution(rootSessionId, sessionId, execution.getId(), terminal));
                 boolean withoutControlSlot = !executionRegistry.isActive(execution.getId());
-                // 上一次收口不完整时的补偿：这次落库顺带把收口补做一遍（投影内部按状态判据去重）。
-                boolean closurePending = Boolean.TRUE.equals(
-                        InputAutomationPolicy.attributes(execution).get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE));
-                // 补一次终结投影，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
-                // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
-                // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
-                if (firstFailure && withoutControlSlot) {
-                    afterCommit(() -> projection().onFinished(execution));
-                } else if (closurePending) {
-                    // 崩溃或步骤失败留下的不完整收口：下一次落库时补做，标记随本次提交一起持久化。
-                    afterCommit(() -> projection().completeClosure(execution));
+                // 本方法自己收口的两类时机（其余由 unregister 负责）：
+                //  ①首次落为 FAILED 且没有控制槽位（启动失败，unregister 不会来）；
+                //  ②该行本来就带待收口事实（上一次收口失败留下的重试机会）。
+                // 带上「终态」这个前提，非终态落库不会去跑收口脚本。
+                boolean closureDue = persistedTerminal && withoutControlSlot
+                        && (firstFailure || closureWasPending);
+                if (closureDue) {
+                    // 收口脚本必须早于框架发布终态事件：框架的顺序是「save(FAILED) → 返回发布任务 → 调用方 run 它」，
+                    // 业务侧没有排序权，只能在这里补上，否则界面会先收到终态、后收到轮次更新。
+                    // 终态事件仍由框架自己发布（活跃保存路径上框架拥有广播权），这里只补业务收口。
+                    afterCommit(() -> projection().completeClosure(execution, false));
                 }
             }
         }
@@ -333,8 +337,10 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 }
             }
             if (execution != null && ExecutionStateCodec.isTerminalState(execution.getExecutionState())) {
-                if (cancelledOnRelease) projection().onCancelled(execution);
-                else projection().onFinished(execution);
+                // 收口脚本 + 清待收口位 + 广播/唤醒只有一处实现，正常收尾与启动补偿走同一条。
+                // cancelled 只表达「这次取消由业务侧造成、框架不会再发终态事件」：活跃循环里的取消
+                // 有自己的事件所有权（框架负责广播），这里若也发一次，订阅方会收到两次「已取消」。
+                projection().completeClosure(execution, cancelledOnRelease);
             }
             if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED) {
                 projection().resumeInputIfPending(execution);
@@ -375,7 +381,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             }
             execution.cancelChecked();
             save(execution);
-            afterCommit(() -> projection().onCancelled(execution));
+            // 没有控制槽位就没有 unregister 这条正常收尾路径，取消收口必须在这里显式补一次。
+            afterCommit(() -> projection().completeClosure(execution, true));
         }
     }
 

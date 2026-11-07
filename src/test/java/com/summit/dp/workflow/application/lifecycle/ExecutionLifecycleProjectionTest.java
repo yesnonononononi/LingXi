@@ -9,9 +9,10 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.ExecutionCancelledEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.input.InputWakeupService;
@@ -26,30 +27,29 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * 生命周期投影的步骤顺序、失败分级与补偿。
+ * 收口脚本的顺序、失败中断与补偿语义。
  *
- * <p>这里守的是「为什么这样排序、为什么这一步必须成功」这份唯一知识：顺序被调换、或者必须成功的
- * 步骤失败后被当成没事，不会让任何编译出错，只会让线上出现「轮次已完成但卡片还亮着」
+ * <p>这里守的是「为什么这样排序、失败了会怎样」这份唯一知识：顺序被调换、或者必须成功的一步
+ * 失败后被当成没事，都不会让任何编译出错，只会让线上出现「轮次已完成但卡片还亮着」
  * 「子代理交付了但根永远不继续」这类同步问题。</p>
  *
  * <p>用记录型假实现（{@link #steps}）而不是 {@code InOrder}：断言的是一个可读的调用序列，
@@ -68,6 +68,7 @@ class ExecutionLifecycleProjectionTest {
     private final ChatTurnLifecycleProjector turns = mock(ChatTurnLifecycleProjector.class);
     private final RuntimeEventPublisher events = mock(RuntimeEventPublisher.class);
     private final InputWakeupService wakeups = mock(InputWakeupService.class);
+    private final ExecutionRepository executions = mock(ExecutionRepository.class);
 
     private Logger logger;
     private ListAppender<ILoggingEvent> logs;
@@ -90,6 +91,10 @@ class ExecutionLifecycleProjectionTest {
                 .when(events).onExecutionCancelled(any(ExecutionCancelledEvent.class));
         doAnswer(invocation -> record(ExecutionLifecycleProjection.STEP_RESUME_PENDING_INPUT))
                 .when(wakeups).resumeIfInputPending(anyLong());
+        when(executions.clearClosurePending(anyLong())).thenAnswer(invocation -> {
+            steps.add(ExecutionLifecycleProjection.STEP_CLEAR_PENDING);
+            return true;
+        });
 
         logger = (Logger) LoggerFactory.getLogger(ExecutionLifecycleProjection.class);
         logs = new ListAppender<>();
@@ -103,31 +108,34 @@ class ExecutionLifecycleProjectionTest {
     }
 
     @Test
-    @DisplayName("终结投影：卡片 → 子执行结束事实 → 会话用量 → 业务轮次 → 自动唤醒，顺序不可交换")
-    void finishedStepsRunInCausalOrder() {
-        ExecutionLifecycleProjection.ClosureOutcome outcome = projection().onFinished(execution(ExecutionState.COMPLETED));
+    @DisplayName("终结收口：卡片 → 子执行结束事实 → 会话用量 → 业务轮次 → 清待收口位 → 自动唤醒")
+    void closedTerminalStepsRunInCausalOrder() {
+        projection().completeClosure(execution(ExecutionState.COMPLETED), false);
 
         assertEquals(List.of(
                 ExecutionLifecycleProjection.STEP_CLOSE_CARDS,
                 ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED,
                 ExecutionLifecycleProjection.STEP_SAVE_USAGE,
                 ExecutionLifecycleProjection.STEP_FINISH_TURN,
+                ExecutionLifecycleProjection.STEP_CLEAR_PENDING,
                 ExecutionLifecycleProjection.STEP_RESUME_PENDING_INPUT), steps,
-                "业务轮次必须最后收口（前面几步还会往轮次上追加卡片结果与用量），自动唤醒必须在全部落库之后");
-        assertTrue(outcome.complete(), "全部步骤成功时收口必须报告完整");
-        assertTrue(outcome.failedRequired().isEmpty());
+                "业务轮次必须收在清位之前、清位必须排在唤醒之前：先让事实落库，再对外喊话");
+        verify(events, never()).onExecutionCancelled(any(ExecutionCancelledEvent.class));
     }
 
     @Test
-    @DisplayName("取消投影：终态事件排在业务轮次收口之后")
-    void cancelledBroadcastFollowsTurnClosing() {
-        projection().onCancelled(execution(ExecutionState.CANCELLED));
+    @DisplayName("取消收口：轮次收口 → 清待收口位 → 广播「已取消」")
+    void cancelledBroadcastHappensOnlyAfterTurnClosedAndFlagCleared() {
+        projection().completeClosure(execution(ExecutionState.CANCELLED), true);
 
         assertTrue(steps.indexOf(ExecutionLifecycleProjection.STEP_FINISH_TURN)
-                        < steps.indexOf(ExecutionLifecycleProjection.STEP_PUBLISH_CANCELLED),
+                        < steps.indexOf(ExecutionLifecycleProjection.STEP_CLEAR_PENDING),
                 "订阅方拿到「已取消」时必须能读到已收口的轮次");
-        assertEquals(ExecutionLifecycleProjection.STEP_PUBLISH_CANCELLED, steps.get(steps.size() - 1),
-                "取消终态是最后一个动作：先让轮次收口、再让界面知道执行没了");
+        assertTrue(steps.indexOf(ExecutionLifecycleProjection.STEP_CLEAR_PENDING)
+                        < steps.indexOf(ExecutionLifecycleProjection.STEP_PUBLISH_CANCELLED),
+                "广播必须排在清待收口位之后：先把「收口做完了」写进库，再对外发通知");
+        assertEquals(ExecutionLifecycleProjection.STEP_RESUME_PENDING_INPUT, steps.get(steps.size() - 1),
+                "唤醒是最后一个动作");
     }
 
     @Test
@@ -140,32 +148,27 @@ class ExecutionLifecycleProjectionTest {
     }
 
     @Test
-    @DisplayName("必须步骤失败：中断后续步骤，不把轮次标成正常结束，并留下不完整标记")
+    @DisplayName("必须步骤失败：中断后续、不清待收口位、不广播，日志带执行与步骤名")
     void requiredStepFailureAbortsWithoutPublishingSuccess() {
         // 子执行结束事实是必须步骤：它失败说明根仍被判为「还在等子代理」。
         doAnswer(invocation -> {
             steps.add(ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED);
             throw new IllegalStateException("终止子执行失败");
         }).when(subExecution).onFinished(any());
-        Execution finished = execution(ExecutionState.COMPLETED);
 
-        ExecutionLifecycleProjection.ClosureOutcome outcome = projection().onFinished(finished);
+        projection().completeClosure(execution(ExecutionState.CANCELLED), true);
 
         assertEquals(List.of(
                 ExecutionLifecycleProjection.STEP_CLOSE_CARDS,
                 ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED), steps,
                 "必须步骤失败后不得继续：继续就会把轮次标成正常结束，产出带着缺失事实的成功结果");
-        assertFalse(outcome.complete(), "必须步骤没做成时收口必须报告不完整");
-        assertEquals(List.of(ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED), outcome.failedRequired(),
-                "失败步骤必须按名字进结果，调用方才能判断是哪一环没做成");
-        assertEquals(Boolean.TRUE,
-                InputAutomationPolicy.attributes(finished).get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE),
-                "不完整收口必须留下标记，供下一次落库与启动巡检补做");
+        verify(events, never()).onExecutionCancelled(any(ExecutionCancelledEvent.class));
+        verify(executions, never()).clearClosurePending(anyLong());
         String logged = firstLifecycleError();
         assertTrue(logged.contains("executionId=" + EXECUTION_ID), "日志必须能定位到具体执行: " + logged);
         assertTrue(logged.contains("step=" + ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED),
                 "日志必须写明是哪一步失败: " + logged);
-        assertTrue(logged.contains("level=REQUIRED"), "日志必须写明这一步的级别: " + logged);
+        assertTrue(logged.contains("终止子执行失败"), "日志必须带上原始异常: " + logged);
     }
 
     @Test
@@ -175,109 +178,54 @@ class ExecutionLifecycleProjectionTest {
             throw new IllegalStateException("工具卡片收口失败");
         }).when(toolCalls).cancelPendingToolCalls(anyString());
 
-        ExecutionLifecycleProjection.ClosureOutcome outcome = projection().onFinished(execution(ExecutionState.CANCELLED));
+        projection().completeClosure(execution(ExecutionState.CANCELLED), true);
 
         assertTrue(steps.isEmpty(), "第一步就失败时不得继续执行任何后续步骤");
-        assertEquals(List.of(ExecutionLifecycleProjection.STEP_CLOSE_CARDS), outcome.failedRequired());
-        assertFalse(outcome.complete());
+        verify(executions, never()).clearClosurePending(anyLong());
     }
 
     @Test
-    @DisplayName("尽力步骤失败：只记录，不中断，不影响收口完整性")
+    @DisplayName("尽力步骤失败：只记录，不中断，收口照样完成并清位")
     void bestEffortStepFailureDoesNotAbort() {
         doAnswer(invocation -> {
             steps.add(ExecutionLifecycleProjection.STEP_SAVE_USAGE);
             throw new IllegalStateException("会话用量保存失败");
         }).when(usage).saveExecutionContextUsage(any());
-        Execution finished = execution(ExecutionState.COMPLETED);
 
-        ExecutionLifecycleProjection.ClosureOutcome outcome = projection().onFinished(finished);
+        projection().completeClosure(execution(ExecutionState.COMPLETED), false);
 
         assertEquals(List.of(
                 ExecutionLifecycleProjection.STEP_CLOSE_CARDS,
                 ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED,
                 ExecutionLifecycleProjection.STEP_SAVE_USAGE,
                 ExecutionLifecycleProjection.STEP_FINISH_TURN,
+                ExecutionLifecycleProjection.STEP_CLEAR_PENDING,
                 ExecutionLifecycleProjection.STEP_RESUME_PENDING_INPUT), steps,
                 "用量只是统计信息，失败不得阻止轮次收口");
-        assertTrue(outcome.complete(), "只有尽力步骤失败时收口仍然完整");
-        assertEquals(List.of(ExecutionLifecycleProjection.STEP_SAVE_USAGE), outcome.failedBestEffort());
-        assertNull(InputAutomationPolicy.attributes(finished).get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE),
-                "收口完整时必须清掉不完整标记，否则补偿会无谓地反复重做");
+        verify(executions).clearClosurePending(EXECUTION_ID);
     }
 
     @Test
-    @DisplayName("取消投影：终结不完整时不广播取消")
-    void cancelledBroadcastSuppressedWhenClosureIncomplete() {
+    @DisplayName("收口脚本单步失败即抛，带步骤名（调用方据此记日志，不吞异常）")
+    void closeTerminalThrowsWithStepName() {
         doAnswer(invocation -> {
-            throw new IllegalStateException("工具卡片收口失败");
-        }).when(toolCalls).cancelPendingToolCalls(anyString());
+            throw new IllegalStateException("轮次收口失败");
+        }).when(turns).finishExecution(any());
 
-        ExecutionLifecycleProjection.ClosureOutcome outcome = projection().onCancelled(execution(ExecutionState.CANCELLED));
+        ExecutionLifecycleProjection.ExecutionClosureFailure failure = assertThrows(
+                ExecutionLifecycleProjection.ExecutionClosureFailure.class,
+                () -> projection().closeTerminal(execution(ExecutionState.COMPLETED)));
 
-        assertFalse(steps.contains(ExecutionLifecycleProjection.STEP_PUBLISH_CANCELLED),
-                "轮次都没收口就广播「已取消」，订阅方会读到互相矛盾的两个事实");
-        assertFalse(outcome.complete());
+        assertEquals(ExecutionLifecycleProjection.STEP_FINISH_TURN, failure.step());
     }
 
     @Test
-    @DisplayName("补偿入口：补做后收口真正完成，再调一次副作用只发生一次")
-    void completeClosureRepairsOnceAndIsIdempotent() {
-        // 轮次终态按状态判据幂等：同一执行第二次 markTerminal 不再产生新的可见变化。
-        Set<String> alreadyTerminal = new HashSet<>();
-        List<String> effectiveTurnClosures = new ArrayList<>();
-        ChatTurnService turnService = mock(ChatTurnService.class);
-        doAnswer(invocation -> {
-            String executionId = invocation.getArgument(0);
-            if (alreadyTerminal.add(executionId)) {
-                effectiveTurnClosures.add(executionId);
-                steps.add(ExecutionLifecycleProjection.STEP_FINISH_TURN);
-            }
-            return null;
-        }).when(turnService).markTerminal(anyString(), any(ChatTurnStatus.class), any(), any(), any(),
-                any(), any());
-        ExecutionLifecycleProjection realTurns = projectionWithRealTurnProjector(turnService);
-
-        // 第一次收口：子执行结束事实失败 → 中断 → 轮次没被标终态。
-        RuntimeException deliveryFailure = new IllegalStateException("子执行交付失败");
-        doAnswer(invocation -> {
-            throw deliveryFailure;
-        }).when(subExecution).onFinished(any());
-        Execution cancelled = execution(ExecutionState.CANCELLED);
-        ExecutionLifecycleProjection.ClosureOutcome first = realTurns.onFinished(cancelled);
-
-        assertFalse(first.complete());
-        assertTrue(effectiveTurnClosures.isEmpty(), "必须步骤失败时轮次不得被标成终态");
-        assertEquals(Boolean.TRUE,
-                InputAutomationPolicy.attributes(cancelled).get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE));
-
-        // 故障消除后补偿：收口真正完成，轮次拿到终态。
-        doAnswer(invocation -> record(ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED))
-                .when(subExecution).onFinished(any());
-        ExecutionLifecycleProjection.ClosureOutcome repaired = realTurns.completeClosure(cancelled);
-
-        assertTrue(repaired.complete(), "补偿后必须报告收口完整");
-        assertEquals(List.of(EXECUTION_ID_TEXT), effectiveTurnClosures, "补偿必须把轮次真正收到终态");
-        assertNull(InputAutomationPolicy.attributes(cancelled).get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE),
-                "补偿成功后必须清掉标记，否则每次落库都会重复补做");
-
-        // 再调一次：副作用不得重复发生（靠状态判据，不靠内存「跑过一次」）。
-        ExecutionLifecycleProjection.ClosureOutcome again = realTurns.completeClosure(cancelled);
-
-        assertTrue(again.complete());
-        assertEquals(List.of(EXECUTION_ID_TEXT), effectiveTurnClosures,
-                "重复补偿不得再产生一次轮次收口副作用");
-    }
-
-    @Test
-    @DisplayName("补偿入口：未到终态的执行不补收口")
+    @DisplayName("补偿入口：未到终态的执行不收口")
     void completeClosureRejectsNonTerminalExecution() {
-        Execution running = execution(ExecutionState.RUNNING);
+        projection().completeClosure(execution(ExecutionState.RUNNING), false);
 
-        ExecutionLifecycleProjection.ClosureOutcome outcome = projection().completeClosure(running);
-
-        assertFalse(outcome.complete());
-        assertTrue(steps.isEmpty(), "未到终态就补收口等于替用户做结束决定");
+        assertTrue(steps.isEmpty(), "未到终态就收口等于替用户做结束决定");
+        verify(executions, never()).clearClosurePending(anyLong());
     }
 
     @Test
@@ -298,10 +246,10 @@ class ExecutionLifecycleProjectionTest {
                 "只有真正停在挂起点的执行才有暂停意图");
     }
 
-    /** 第一条生命周期错误日志：断言用，取不到就失败（静默丢失本身就是缺陷）。 */
+    /** 第一条收口错误日志：断言用，取不到就失败（静默丢失本身就是缺陷）。 */
     private String firstLifecycleError() {
         return logs.list.stream().map(ILoggingEvent::getFormattedMessage)
-                .filter(message -> message.contains("执行生命周期处理失败"))
+                .filter(message -> message.contains("执行收口失败"))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("失败步骤必须留下日志，实际无任何相关日志"));
     }
@@ -319,24 +267,13 @@ class ExecutionLifecycleProjectionTest {
                 provider(SessionContextUsageProjector.class, usage),
                 provider(ChatTurnLifecycleProjector.class, turns),
                 provider(RuntimeEventPublisher.class, events),
-                provider(InputWakeupService.class, wakeups));
-    }
-
-    /** 幂等用例要真的走轮次投影：状态判据在它下游的服务里，mock 掉就测不到了。 */
-    private ExecutionLifecycleProjection projectionWithRealTurnProjector(ChatTurnService turnService) {
-        return new ExecutionLifecycleProjection(
-                provider(ToolCallReadinessService.class, readiness),
-                provider(ToolCallService.class, toolCalls),
-                provider(SubExecutionLifecycle.class, subExecution),
-                provider(SessionContextUsageProjector.class, usage),
-                provider(ChatTurnLifecycleProjector.class, new ChatTurnLifecycleProjector(turnService)),
-                provider(RuntimeEventPublisher.class, events),
-                provider(InputWakeupService.class, wakeups));
+                provider(InputWakeupService.class, wakeups),
+                provider(ExecutionRepository.class, executions));
     }
 
     private static Execution execution(ExecutionState state) {
         Map<String, Object> attributes = new HashMap<>();
-        attributes.put(com.summit.dp.execution.ExecutionAttributes.SESSION_ID, "820");
+        attributes.put(ExecutionAttributes.SESSION_ID, "820");
         return Execution.builder().id(String.valueOf(EXECUTION_ID)).agentId("chatAgent")
                 .executionState(state)
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))

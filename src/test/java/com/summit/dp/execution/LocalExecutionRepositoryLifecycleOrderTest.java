@@ -129,7 +129,8 @@ class LocalExecutionRepositoryLifecycleOrderTest {
     private LocalExecutionRepository repository() {
         ExecutionCheckpointService checkpointService = mock(ExecutionCheckpointService.class);
         when(checkpointService.save(anyLong(), any(), anyInt(), anyString(), any(), any(), any()))
-                .thenReturn(new ExecutionCheckpointService.SaveOutcome(true, null));
+                .thenReturn(new ExecutionCheckpointService.SaveOutcome(true, null, true, false));
+        when(checkpointService.clearClosurePending(anyLong())).thenReturn(true);
         ExecutionCheckpointStore store = mock(ExecutionCheckpointStore.class);
         ExecutionCheckpointStore.CheckpointWriter writer = mock(ExecutionCheckpointStore.CheckpointWriter.class);
         when(writer.fileId()).thenReturn("file-880");
@@ -144,7 +145,9 @@ class LocalExecutionRepositoryLifecycleOrderTest {
                 provider(ChatTurnLifecycleProjector.class, turns),
                 provider(com.summit.core.conversation.event.RuntimeEventPublisher.class,
                         mock(com.summit.core.conversation.event.RuntimeEventPublisher.class)),
-                provider(InputWakeupService.class, wakeups));
+                provider(InputWakeupService.class, wakeups),
+                provider(com.summit.dp.execution.domain.repository.ExecutionRepository.class,
+                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)));
         return new LocalExecutionRepository(checkpointService, new JsonConfig().objectMapper(), store,
                 provider(ExecutionLifecycleProjection.class, projection));
     }

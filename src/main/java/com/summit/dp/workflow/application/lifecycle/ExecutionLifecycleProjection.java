@@ -27,28 +27,40 @@ import java.util.List;
  * 直接依赖工具卡片、子执行、会话用量、业务轮次、运行时事件五个协作方 —— 一个存储组件穿着
  * 编排器的衣服，读代码时看不出「保存检查点」和「收口用户可见的轮次」是两件事。</p>
  *
- * <h2>失败语义：按因果链分两级，不是「记日志继续」</h2>
+ * <h2>一条显式脚本，不抽象分级</h2>
  *
- * <p>「一步失败就记日志继续」对终态收口链是错的：卡片收口失败后仍把轮次标成正常结束，界面就会
- * 「轮次已完成、卡片还亮着可点」；子执行交付失败后仍收口轮次，根会永远被判为还在等子代理。
- * 因此每一步都先回答「失败对用户意味着什么」，再据此决定它是否必须成功：</p>
+ * <p>终结收口只有<b>一条</b>链：收口工具卡片 → 子执行结束事实 → 会话用量 → 收口业务轮次，
+ * 取消时再多一步「发布取消终态」。顺序是硬编码的方法调用序列，谁想改顺序都得改这份方法体，
+ * 不需要、也不允许再引入「步骤级别枚举」这种只有一个用例的抽象。</p>
  *
+ * <p>失败语义按<b>用户可见后果</b>分两类，落在代码里就是「抛或不抛」：</p>
  * <ul>
- *   <li>{@link StepKind#REQUIRED}：失败即本次收口不完整，<b>中断后续步骤</b>，
- *       不再发布任何「成功可见结果」，由补偿入口重做（见 {@link #completeClosure}）。</li>
- *   <li>{@link StepKind#BEST_EFFORT}：失败只丢这一项信息，不影响其它步骤的结论，只记日志。</li>
+ *   <li><b>必须成功</b>（卡片、子执行结束事实、业务轮次、取消广播）：失败即抛
+ *       {@link ExecutionClosureFailure}，<b>立即中断后续步骤</b>，不再产出「成功可见结果」。
+ *       后果举例 —— 子执行结束事实没做成，根会永远被判为「还在等子代理」；轮次没收口，
+ *       界面永远停在「进行中」。</li>
+ *   <li><b>尽力而为</b>（会话用量、自动唤醒复查）：失败只丢这一项信息，记日志继续。</li>
  * </ul>
  *
- * <p>不完整收口会在执行属性上留下 {@value #CLOSURE_INCOMPLETE} 标记。标记的消费方：
- * {@code LocalExecutionRepository#save}（该执行下一次落库时补做）与启动巡检（已读到的快照补做）。</p>
+ * <h2>事务边界：提交后投影失败 = 可重试的待办事实，不是丢数据</h2>
  *
- * <p><b>事务边界</b>：本类的终态与挂起入口全部在调用方的 {@code afterCommit} 里执行 ——
- * 检查点已提交、框架终态尚未发布，所以每一步都是「提交后必然尝试一次」。崩溃恰好落在
- * 提交与收口之间时，标记来不及落库，恢复只能靠补偿路径（见未完项）。</p>
+ * <p>本类的终态入口全部在调用方的 {@code afterCommit} 里执行 —— 检查点已提交、框架终态尚未发布。
+ * 因此：</p>
+ * <ul>
+ *   <li><b>投影失败不回滚终态</b>：轮回滚会让执行卡在 RUNNING，比「收口没做完」更糟；</li>
+ *   <li><b>回滚语义只留在状态提交事务本身</b>：检查点写失败仍整笔回滚；</li>
+ *   <li><b>可恢复性靠库列</b>：`execution.closure_pending` 与「写成终态」由同一条 UPDATE 写入
+ *       （见 {@code V5__execution_closure_pending.sql}），所以崩溃落在提交与收口之间时，
+ *       重启后的 {@code ExecutionStartupReaper} 能按这一列把活捞回来重做 ——
+ *       不依赖任何内存标记，也不依赖遗留恢复请求。</li>
+ * </ul>
+ *
+ * <p><b>广播与唤醒一律排在「清掉待收口位」之后</b>：先把「收口做完了」这个事实写进库，
+ * 再对外发「已取消」和唤醒输入队列；否则订阅方可能收到一条指向没收口轮次的通知。</p>
  *
  * <p><b>幂等靠状态判据，不靠「跑过一次」</b>：收卡片对已无待决策卡片是空操作；子执行结束事实
  * 按登记表的注销结果去重；轮次终态对同一终态重复通知是幂等的（{@code ChatTurnService#markTerminal}
- * 的契约）。因此补偿入口可以安全重复调用。</p>
+ * 的契约）。因此同一条脚本可以安全重复执行。</p>
  *
  * <p><b>协作方一律经 {@link ObjectProvider} 延迟取用</b>：这些组件（尤其 {@code SubExecutionLifecycle}）
  * 与执行仓储互为依赖，构造期直接注入会形成闭环。</p>
@@ -57,9 +69,6 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class ExecutionLifecycleProjection {
-
-    /** 收口不完整标记：只放执行属性，不新增库列。 */
-    public static final String CLOSURE_INCOMPLETE = "lingxi.lifecycle.closure_incomplete";
 
     /** 挂起路径步骤名。 */
     public static final String STEP_RELEASE_CARDS = "开放工具卡片";
@@ -75,32 +84,27 @@ public class ExecutionLifecycleProjection {
     /** 取消路径额外步骤名：终态事件必须在业务轮次收口之后补发。 */
     public static final String STEP_PUBLISH_CANCELLED = "发布取消终态";
 
-    /** 步骤级别：决定失败后中断还是继续。 */
-    public enum StepKind {
-        /** 失败即收口不完整，必须中断并等补偿重做。 */
-        REQUIRED,
-        /** 失败只丢这一项信息，不影响其它步骤的结论。 */
-        BEST_EFFORT
-    }
+    /** 收口成功后清「待收口位」这个动作的名字。 */
+    public static final String STEP_CLEAR_PENDING = "清除待收口位";
 
     /**
-     * 一次收口的结果：调用方据此判断「能不能当作成功发布」。
+     * 必须成功的步骤失败时抛出：带步骤名，供日志定位与调用方判定。
      *
-     * @param complete         必须成功的步骤是否全部完成
-     * @param failedRequired   未完成的必须步骤名（按执行顺序）
-     * @param failedBestEffort 失败的尽力步骤名（按执行顺序）
+     * <p><b>为什么不吞异常</b>：吞掉就等于「用日志包住静默丢失」—— 卡片/轮次/子执行就真的没人补了。
+     * 抛出去之后库里的待收口位仍是 1，下次启动巡检或该执行下一次落库会重做同一条脚本。</p>
      */
-    public record ClosureOutcome(boolean complete, List<String> failedRequired, List<String> failedBestEffort) {
+    public static class ExecutionClosureFailure extends RuntimeException {
+        private final String step;
 
-        /** 紧凑构造：列表不可变，避免调用方改到内部状态。 */
-        public ClosureOutcome {
-            failedRequired = List.copyOf(failedRequired);
-            failedBestEffort = List.copyOf(failedBestEffort);
+        public ExecutionClosureFailure(String step, Throwable cause) {
+            super("执行收口失败: step=" + step, cause);
+            this.step = step;
         }
-    }
 
-    /** 一个步骤：名字进日志与结果，级别决定失败后的走向。 */
-    private record Step(String name, StepKind kind, Runnable action) {
+        /** 失败的步骤名（见本类的 {@code STEP_*} 常量）。 */
+        public String step() {
+            return step;
+        }
     }
 
     private final ObjectProvider<ToolCallReadinessService> readinessService;
@@ -110,6 +114,8 @@ public class ExecutionLifecycleProjection {
     private final ObjectProvider<ChatTurnLifecycleProjector> chatTurns;
     private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
     private final ObjectProvider<InputWakeupService> inputWakeups;
+    /** 待收口位的读写口：脚本成功之后由本类自己按 id 条件清 0。 */
+    private final ObjectProvider<com.summit.dp.execution.domain.repository.ExecutionRepository> executions;
 
     /**
      * 落库前补写「用户暂停」意图。
@@ -136,23 +142,27 @@ public class ExecutionLifecycleProjection {
      * <p><b>顺序理由</b>：先开放卡片再改轮次状态。轮次的「等待中」是界面对用户的承诺，
      * 卡片还没开放就标等待，用户会看到一个没有任何可操作项的等待轮次。</p>
      *
-     * <p><b>为什么两步都不中断</b>：它们各是一份独立信息，且都不会产出「成功结束」这种假结果 ——
+     * <p><b>两步都是尽力而为</b>：它们各是一份独立信息，且都不会产出「成功结束」这种假结果 ——
      * 卡片没开但轮次标了等待，用户还能靠手动 {@code /resume} 走出来；两步都放弃，轮次会停在
      * 「运行中」，那才是真的走不出来。</p>
      *
      * @param execution 已提交的挂起执行
-     * @return 本次挂起投影结果；未完成项只作记录，不影响下一轮保存重做
      */
-    public ClosureOutcome onSuspended(Execution execution) {
-        return runChain(execution, List.of(
-                step(STEP_RELEASE_CARDS, StepKind.BEST_EFFORT,
-                        () -> readinessService.getObject().markReady(execution.getId())),
-                step(STEP_WAITING_TURN, StepKind.BEST_EFFORT,
-                        () -> chatTurns.getObject().markExecutionWaiting(execution))));
+    public void onSuspended(Execution execution) {
+        try {
+            readinessService.getObject().markReady(execution.getId());
+        } catch (RuntimeException error) {
+            log.error("挂起投影失败: executionId={}, step={}", execution.getId(), STEP_RELEASE_CARDS, error);
+        }
+        try {
+            chatTurns.getObject().markExecutionWaiting(execution);
+        } catch (RuntimeException error) {
+            log.error("挂起投影失败: executionId={}, step={}", execution.getId(), STEP_WAITING_TURN, error);
+        }
     }
 
     /**
-     * 终结投影：把各模块的收尾按因果顺序走完。
+     * 终结收口脚本：按因果顺序把各模块收尾走完，必须成功的一步失败就抛。
      *
      * <p><b>顺序不可交换，逐条说明依赖与失败后果</b>：</p>
      * <ol>
@@ -164,9 +174,7 @@ public class ExecutionLifecycleProjection {
      *       因此失败同样中断，不许把子执行所在轮次标成正常结束让用户以为链路走通了。</li>
      *   <li>{@value #STEP_SAVE_USAGE}（尽力）：失败只导致用量/计费少记一段，不影响任何状态结论。</li>
      *   <li>{@value #STEP_FINISH_TURN}（必须）：业务轮次最后写，它是用户可见的最终状态。
-     *       失败后果 —— 轮次永远停在「进行中」，必须由补偿入口重做。</li>
-     *   <li>{@value #STEP_RESUME_PENDING_INPUT}（尽力）：全部落库状态改完才复查输入队列。
-     *       失败只是「已排队输入晚一点被拉起」，用户下一次输入会重新触发。</li>
+     *       失败后果 —— 轮次永远停在「进行中」，必须由补偿重做。</li>
      * </ol>
      *
      * <p><b>本方法必须早于框架终态事件</b>：框架的顺序是「save(FAILED) → 返回发布任务 → 调用方 run 它」，
@@ -174,65 +182,96 @@ public class ExecutionLifecycleProjection {
      * 后收到轮次更新，出现「执行结束了但轮次还转着」的瞬间。</p>
      *
      * @param execution 已提交的终态执行
-     * @return 本次终结投影结果；{@code complete=false} 表示必须成功的一步没做成
+     * @throws ExecutionClosureFailure 必须成功的一步失败（中断后续，待收口位保持 1）
      */
-    public ClosureOutcome onFinished(Execution execution) {
-        return runChain(execution, finishChain(execution));
+    public void closeTerminal(Execution execution) {
+        step(execution, STEP_CLOSE_CARDS,
+                () -> toolCallService.getObject().cancelPendingToolCalls(execution.getId()));
+        step(execution, STEP_SUB_EXECUTION_FINISHED,
+                () -> subExecutionLifecycle.getObject().onFinished(execution));
+        bestEffort(execution, STEP_SAVE_USAGE,
+                () -> sessionUsage.getObject().saveExecutionContextUsage(execution));
+        step(execution, STEP_FINISH_TURN,
+                () -> chatTurns.getObject().finishExecution(execution));
     }
 
     /**
-     * 取消投影：终结投影 + 补发取消终态事件。
+     * 收口补偿入口：重做一条完整脚本，成功则清待收口位，再对外广播/唤醒。
      *
-     * <p>终态事件排在业务轮次收口之后：订阅方拿到「已取消」时应当能同时读到已收口的轮次，
-     * 否则前端会先清空执行、再收到一次轮次更新。</p>
+     * <p><b>谁调它</b>：①该执行的下一次 {@code save}（上一次收口失败时重试）；
+     * ②{@code ExecutionStartupReaper} 按 {@code closure_pending = 1} 扫出来的行
+     * （崩溃落在提交与收口之间时的唯一恢复路径）。</p>
      *
-     * <p>终结投影不完整时<b>不广播取消</b>：广播出去的「已取消」是用户可见的成功结果，
-     * 而轮次此时还没收口，两者互相矛盾。</p>
+     * <p><b>顺序就是安全性</b>：脚本 → 清位 → 广播 → 唤醒。任何一步失败都不广播、不清位 ——
+     * 「已取消」是一次性通知，重发会让订阅方收到两次；而缺失的广播靠轮次终态收敛。
+     * 脚本失败只记日志并返回，待收口位仍是 1，等下一次重试。</p>
      *
-     * @param execution 已提交的取消执行
-     * @return 合成结果：终结与广播任一未完成即为不完整
+     * @param execution 需要收口的终态执行
+     * @param cancelled 是否取消终态（决定清位后是否补发取消事件）
      */
-    public ClosureOutcome onCancelled(Execution execution) {
-        ClosureOutcome finished = onFinished(execution);
-        if (!finished.complete()) {
-            return finished;
+    public void completeClosure(Execution execution, boolean cancelled) {
+        if (execution == null || execution.getId() == null || !isTerminal(execution.getExecutionState())) {
+            // 未到终态的执行没有「收口」可补：替它收口等于替用户做结束决定。
+            return;
         }
-        ClosureOutcome cancelled = runChain(execution, List.of(
-                step(STEP_PUBLISH_CANCELLED, StepKind.REQUIRED,
-                        () -> runtimeEvents.getObject().onExecutionCancelled(
-                                new ExecutionCancelledEvent(execution.getId(),
-                                        TokenInfo.from(execution.getTokenUsage()), execution.eventMetaData())))));
-        return merge(finished, cancelled);
+        try {
+            closeTerminal(execution);
+        } catch (ExecutionClosureFailure failure) {
+            log.error("执行收口失败，待收口位保留待重试: executionId={}, step={}, error={}",
+                    execution.getId(), failure.step(), failure.getCause() == null
+                            ? failure.toString() : failure.getCause().toString(), failure);
+            return;
+        }
+        try {
+            executions.getObject().clearClosurePending(numericId(execution.getId()));
+        } catch (RuntimeException error) {
+            // 清位失败只意味着「下次会再补一遍幂等脚本」，绝不能因此丢掉广播。
+            log.error("清除待收口位失败: executionId={}, step={}", execution.getId(), STEP_CLEAR_PENDING, error);
+        }
+        if (cancelled) {
+            try {
+                runtimeEvents.getObject().onExecutionCancelled(new ExecutionCancelledEvent(execution.getId(),
+                        TokenInfo.from(execution.getTokenUsage()), execution.eventMetaData()));
+            } catch (RuntimeException error) {
+                log.error("发布取消终态失败: executionId={}, step={}", execution.getId(), STEP_PUBLISH_CANCELLED, error);
+            }
+        }
+        resumeInputIfPending(execution);
     }
 
-    /**
-     * 补偿入口：重做一次收口，靠状态判据去重，可安全重复调用。
-     *
-     * <p><b>谁调它</b>：①该执行下一次落库时（{@code LocalExecutionRepository#save} 见到
-     * {@value #CLOSURE_INCOMPLETE} 标记就补做）；②启动巡检对已读到的执行快照补做。</p>
-     *
-     * <p><b>为什么不重发终态广播</b>：广播是一次性通知，重发会让订阅方收到两次「已取消」；
-     * 而轮次终态本身已是可观测的收敛点，漏掉的广播不会让界面停在错误状态 —— 重复比缺失更难容忍，
-     * 所以补偿只补业务状态。</p>
-     *
-     * @param execution 需要补做收口的执行
-     * @return 补偿结果；未到终态的执行返回不完整且不做任何副作用
-     */
-    public ClosureOutcome completeClosure(Execution execution) {
-        if (execution == null || execution.getId() == null || execution.getExecutionState() == null) {
-            return new ClosureOutcome(false, List.of(), List.of());
+    /** 必须成功的一步：失败包装成带步骤名的异常，中断整条脚本。 */
+    private static void step(Execution execution, String name, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException error) {
+            log.error("执行收口失败: executionId={}, step={}, error={}",
+                    execution == null ? null : execution.getId(), name, error.toString(), error);
+            throw new ExecutionClosureFailure(name, error);
         }
-        if (!isTerminal(execution.getExecutionState())) {
-            // 未到终态的执行没有「收口」可补：替它补终态等于替用户做结束决定。
-            return new ClosureOutcome(false, List.of(), List.of());
+    }
+
+    /** 尽力而为的一步：失败只丢这一项信息。 */
+    private static void bestEffort(Execution execution, String name, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException error) {
+            log.error("执行收口尽力步骤失败: executionId={}, step={}, error={}",
+                    execution == null ? null : execution.getId(), name, error.toString(), error);
         }
-        return onFinished(execution);
     }
 
     /** 终态判据只在这里用一次：application 层不反向依赖 harness 的状态编码器。 */
     private static boolean isTerminal(ExecutionState state) {
         return state == ExecutionState.COMPLETED || state == ExecutionState.FAILED
                 || state == ExecutionState.CANCELLED;
+    }
+
+    private static long numericId(String executionId) {
+        try {
+            return Long.parseLong(executionId);
+        } catch (NumberFormatException error) {
+            throw new IllegalStateException("执行 ID 必须是数字: executionId=" + executionId, error);
+        }
     }
 
     /**
@@ -243,73 +282,10 @@ public class ExecutionLifecycleProjection {
      * @param execution 已提交的执行
      */
     public void resumeInputIfPending(Execution execution) {
-        if (inputWakeups == null || execution == null || execution.getId() == null) {
+        if (execution == null || execution.getId() == null) {
             return;
         }
-        runChain(execution, List.of(step(STEP_RESUME_PENDING_INPUT, StepKind.BEST_EFFORT,
-                () -> inputWakeups.getObject().resumeIfInputPending(Long.parseLong(execution.getId())))));
-    }
-
-    /** 终结链：顺序与级别见 {@link #onFinished} 的 Javadoc。 */
-    private List<Step> finishChain(Execution execution) {
-        return List.of(
-                step(STEP_CLOSE_CARDS, StepKind.REQUIRED,
-                        () -> toolCallService.getObject().cancelPendingToolCalls(execution.getId())),
-                step(STEP_SUB_EXECUTION_FINISHED, StepKind.REQUIRED,
-                        () -> subExecutionLifecycle.getObject().onFinished(execution)),
-                step(STEP_SAVE_USAGE, StepKind.BEST_EFFORT,
-                        () -> sessionUsage.getObject().saveExecutionContextUsage(execution)),
-                step(STEP_FINISH_TURN, StepKind.REQUIRED,
-                        () -> chatTurns.getObject().finishExecution(execution)),
-                step(STEP_RESUME_PENDING_INPUT, StepKind.BEST_EFFORT,
-                        () -> inputWakeups.getObject().resumeIfInputPending(Long.parseLong(execution.getId()))));
-    }
-
-    private static Step step(String name, StepKind kind, Runnable action) {
-        return new Step(name, kind, action);
-    }
-
-    /**
-     * 按链执行步骤。
-     *
-     * <p>必须成功的步骤失败即中断：继续往下走就会产出「轮次已完成」这种带着缺失事实的成功结果。
-     * 尽力步骤失败只记日志。结论落到 {@value #CLOSURE_INCOMPLETE} 标记上 —— 标记被清除
-     * 说明这一刻收口是完整的。</p>
-     */
-    private ClosureOutcome runChain(Execution execution, List<Step> chain) {
-        List<String> failedRequired = new ArrayList<>();
-        List<String> failedBestEffort = new ArrayList<>();
-        for (Step current : chain) {
-            try {
-                current.action().run();
-            } catch (RuntimeException error) {
-                log.error("执行生命周期处理失败: executionId={}, step={}, level={}",
-                        execution == null ? null : execution.getId(), current.name(), current.kind(), error);
-                if (current.kind() == StepKind.REQUIRED) {
-                    failedRequired.add(current.name());
-                    break;
-                }
-                failedBestEffort.add(current.name());
-            }
-        }
-        boolean complete = failedRequired.isEmpty();
-        mark(execution, !complete);
-        return new ClosureOutcome(complete, failedRequired, failedBestEffort);
-    }
-
-    /** 标记只表达「这一刻收口是否完整」；重入去重不依赖它，靠各协作方的状态判据。 */
-    private void mark(Execution execution, boolean incomplete) {
-        if (execution == null || execution.getAgentRequest() == null) {
-            return;
-        }
-        InputAutomationPolicy.putAttribute(execution, CLOSURE_INCOMPLETE, incomplete ? Boolean.TRUE : null);
-    }
-
-    private static ClosureOutcome merge(ClosureOutcome first, ClosureOutcome second) {
-        List<String> required = new ArrayList<>(first.failedRequired());
-        required.addAll(second.failedRequired());
-        List<String> bestEffort = new ArrayList<>(first.failedBestEffort());
-        bestEffort.addAll(second.failedBestEffort());
-        return new ClosureOutcome(required.isEmpty(), required, bestEffort);
+        bestEffort(execution, STEP_RESUME_PENDING_INPUT,
+                () -> inputWakeups.getObject().resumeIfInputPending(numericId(execution.getId())));
     }
 }

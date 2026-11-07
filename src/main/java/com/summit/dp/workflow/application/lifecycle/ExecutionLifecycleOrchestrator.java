@@ -6,9 +6,10 @@ package com.summit.dp.workflow.application.lifecycle;
  * <p><b>为什么要收成一个口</b>：暂停/恢复原先散在 {@code ChatServiceImpl}、恢复协调器、
  * 受理执行器、子执行提交器里，门禁条件各写一份，「改了闸门漏掉某条路径」是必然结果。</p>
  *
- * <p><b>启动失败收口不在这里</b>：它由 {@link StartupFailureCloser} 按角色提供，
- * 各启动点直接声明自己是哪个角色。曾在本接口上留过一层 {@code submitNewExecution} /
- * {@code closeFailedStartup} 包装，生产代码一个都没走 —— 两套入口迟早分叉，已删。</p>
+ * <p><b>启动失败收口与统一启动入口都不在这里</b>：收口口径由 {@link StartupFailureCloser} 按角色提供，
+ * 启动本身由 {@link ExecutionLaunchGateway} + {@link ExecutionLaunchSpec} 承担（角色差异写在
+ * {@link ExecutionLaunchRole} 里）。本接口只管暂停与恢复两个动作 —— 曾在此留过一层
+ * {@code submitNewExecution} / {@code closeFailedStartup} 包装，生产代码一个都没走，已删。</p>
  */
 public interface ExecutionLifecycleOrchestrator {
 

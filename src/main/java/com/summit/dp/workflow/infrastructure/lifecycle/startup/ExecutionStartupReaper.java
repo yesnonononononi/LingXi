@@ -51,6 +51,8 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
 
     /** 遗留请求启动收口的批次上限；启动只处理有界的一批，避免拉全表。 */
     private static final int UNFINISHED_BATCH = 500;
+    /** 单次启动最多补做多少条待收口事实；处理不完的留到下次启动（待收口位仍是 1）。 */
+    private static final int CLOSURE_BATCH = 500;
     /** 已结束请求的回收窗口：巡检已随重试模型删除，终态回收只在启动时做一次。 */
     private static final long PURGE_AFTER_SECONDS = 3600L;
 
@@ -83,58 +85,60 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
             log.info("回收已结束的恢复请求，共 {} 条", purged);
         }
 
-        int repaired = repairIncompleteClosures(snapshots);
+        int repaired = repairPendingClosures();
         if (repaired > 0) {
-            log.info("启动补做不完整收口，共 {} 条", repaired);
+            log.info("启动补做未完成的收口，共 {} 条", repaired);
         }
     }
 
     /**
-     * 补做「上一进程没能收完」的终态收口。
+     * 按「待收口位」把上一进程没做完的收口补上。
      *
-     * <p><b>为什么要挂在启动巡检上</b>：收口在 {@code afterCommit} 里执行，崩溃恰好落在
-     * 「检查点已提交」与「卡片/轮次收口」之间时，内存里的不完整标记来不及落库，
-     * 只能由重启后的巡检按<b>已读到的快照</b>补做 —— 这是零新增状态（不加列、不加表）的唯一挂载点。</p>
+     * <p><b>为什么这一列能覆盖崩溃窗口</b>：{@code closure_pending} 与「状态写成终态」由同一条
+     * UPDATE 写入（{@link com.summit.dp.execution.application.service.ExecutionCheckpointService#save}），
+     * 所以只要终态落库了，就必然留下一条「还要收口」的事实。进程崩在提交与 afterCommit 之间时，
+     * 内存里什么都没有，但这一列在库里 —— 这正是旧的「检查点属性标记」覆盖不到的场景
+     * （标记是提交之后才写进内存的，且它只跟着「下一次保存」走）。</p>
      *
-     * <p><b>为什么只处理本批已读到的快照</b>：不加列就无法反查「所有不完整收口的执行」，
-     * 所以这里只覆盖巡检本来就要读的那批（有遗留恢复请求的执行）。既不再落库、也不在巡检快照里
-     * 的执行，留给 Phase 2 把回执可查化时一并覆盖，见交付的未完项。</p>
+     * <p><b>不看遗留恢复请求</b>：那条路径要求「崩溃前正好有一次恢复」，而绝大多数终态执行
+     * 根本没有恢复请求。这里只按 {@code closure_pending = 1} 这一条窄查询找活，与本批
+     * 遗留请求的处置完全独立。</p>
      *
-     * <p>补偿入口本身幂等：卡片收口、子执行结束事实、轮次终态都按状态判据去重，
-     * 重复启动不会产生第二次可见副作用。</p>
+     * <p><b>批大小有界</b>：单次启动最多处理 {@value #CLOSURE_BATCH} 条。处理不完的仍为
+     * {@code closure_pending = 1}，下一次启动会继续；这期间用户可见的事实可能停在「执行已终结、
+     * 轮次仍进行中」，属于已知且有限的滞后（见交付未完项）。</p>
      *
-     * @param snapshots 收口前读到的执行摘要
-     * @return 实际补做收口的条数
+     * @return 本批次实际收口完成的条数
      */
-    private int repairIncompleteClosures(Map<Long, Execution> snapshots) {
+    private int repairPendingClosures() {
+        List<Long> pending = executionRepository.findClosurePendingIds(CLOSURE_BATCH);
+        if (pending.isEmpty()) {
+            return 0;
+        }
         int repaired = 0;
-        for (Execution summary : snapshots.values()) {
-            if (summary.getId() == null || !ExecutionStatusCodes.isTerminal(summary.getStatus())) {
+        for (Long executionId : pending) {
+            if (executionId == null) {
                 continue;
             }
-            com.summit.core.agent.Execution checkpoint =
-                    checkpointRepository.findById(String.valueOf(summary.getId())).orElse(null);
-            if (checkpoint == null || !closureIncomplete(checkpoint)) {
+            com.summit.core.agent.Execution execution = checkpointRepository
+                    .findById(String.valueOf(executionId)).orElse(null);
+            if (execution == null) {
+                log.warn("启动补做收口跳过：检查点读不到, executionId={}", executionId);
                 continue;
             }
-            ExecutionLifecycleProjection.ClosureOutcome outcome = lifecycleProjection.completeClosure(checkpoint);
-            if (outcome.complete()) {
-                repaired++;
+            // 收口脚本 + 清待收口位 + 广播/唤醒：与正常收尾走同一个入口，靠项目自己的状态判据去重。
+            lifecycleProjection.completeClosure(execution,
+                    execution.getExecutionState() == com.summit.core.agent.ExecutionState.CANCELLED);
+            boolean stillPending = executionRepository.findCheckpointSummary(executionId)
+                    .map(summary -> Integer.valueOf(1).equals(summary.getClosurePending()))
+                    .orElse(false);
+            if (stillPending) {
+                log.warn("启动补做收口未完成，待收口位仍在: executionId={}", executionId);
             } else {
-                log.warn("启动补做收口仍不完整: executionId={}, 失败步骤={}",
-                        summary.getId(), outcome.failedRequired());
+                repaired++;
             }
         }
         return repaired;
-    }
-
-    /** 只认显式标记：没有标记的执行不该被巡检无谓地重跑一遍收口。 */
-    private static boolean closureIncomplete(com.summit.core.agent.Execution execution) {
-        if (execution.getAgentRequest() == null) {
-            return false;
-        }
-        return Boolean.TRUE.equals(execution.getAgentRequest().runtimeParametersOrDefault()
-                .getAttributes().get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE));
     }
 
     /**
