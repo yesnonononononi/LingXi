@@ -10,8 +10,6 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
-import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
-import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchSpec;
 import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
@@ -29,7 +27,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -40,9 +37,10 @@ import static org.mockito.Mockito.*;
 /**
  * 生命周期编排的动作语义回归。
  *
- * <p>守三件事：<b>收口口径按角色分</b>（挂起态对根会话是「可恢复」、对恢复启动是「必须收口」）、
- * <b>手动恢复的顺序</b>（清标记的 save 必须先于 resume，否则控制槽位登记会拒绝）、
+ * <p>守两件事：<b>手动恢复的顺序</b>（清标记的 save 必须先于 resume，否则控制槽位登记会拒绝）、
  * <b>暂停的竞争容忍</b>（执行刚好结束不算故障）。</p>
+ *
+ * <p>「启动失败按角色收口」的语义在 {@code StartupFailureCloserTest} 里守 —— 它才是那份口径的实现。</p>
  */
 class ExecutionLifecycleOrchestratorImplTest {
 
@@ -57,89 +55,11 @@ class ExecutionLifecycleOrchestratorImplTest {
 
     private ExecutionLifecycleOrchestratorImpl orchestrator(List<SuspensionGate> gates) {
         return new ExecutionLifecycleOrchestratorImpl(executionRepository, executionControl, executionLocator,
-                new SuspensionGateChain(gates), resumer, new StartupFailureCloser(executionControl), resumeCoordinator);
+                new SuspensionGateChain(gates), resumer, resumeCoordinator);
     }
 
     private ExecutionLifecycleOrchestratorImpl orchestrator() {
         return orchestrator(List.of(new UserPauseSuspensionGate()));
-    }
-
-    // ---------------- 启动失败收口 ----------------
-
-    @Test
-    @DisplayName("启动失败：按 ROOT 口径收口（终态与挂起态都不覆盖）后原样抛出")
-    void submitFailureClosesRootExecutionAndRethrows() {
-        Execution execution = execution(ExecutionState.CREATED, new HashMap<>());
-        RuntimeException failure = new IllegalStateException("模型调用失败");
-        when(executionControl.fail(any(), any())).thenReturn(() -> { });
-
-        RuntimeException thrown = assertThrows(RuntimeException.class, () ->
-                orchestrator().submitNewExecution(ExecutionLaunchSpec.create(execution, ExecutionLaunchRole.ROOT,
-                        () -> {
-                            throw failure;
-                        })));
-
-        assertSame(failure, thrown, "原始异常必须原样冒出，不能换成次生异常");
-        verify(executionControl).fail(execution, failure);
-    }
-
-    @Test
-    @DisplayName("启动成功：不安置任何收口")
-    void successfulLaunchDoesNotCloseAnything() {
-        Execution execution = execution(ExecutionState.RUNNING, new HashMap<>());
-
-        Execution result = orchestrator().submitNewExecution(
-                ExecutionLaunchSpec.create(execution, ExecutionLaunchRole.ROOT, () -> execution));
-
-        assertSame(execution, result);
-        verify(executionControl, never()).fail(any(), any());
-    }
-
-    @Test
-    @DisplayName("ROOT 口径：挂起态不收口（挂起可恢复，不是启动失败）")
-    void rootRoleSkipsSuspendedExecution() {
-        orchestrator().closeFailedStartup(execution(ExecutionState.SUSPENDED, new HashMap<>()),
-                new IllegalStateException("x"), ExecutionLaunchRole.ROOT);
-
-        verify(executionControl, never()).fail(any(), any());
-    }
-
-    @Test
-    @DisplayName("RESUME 口径：挂起态必须收口（已批准但恢复没起步）")
-    void resumeRoleClosesSuspendedExecution() {
-        Execution execution = execution(ExecutionState.SUSPENDED, new HashMap<>());
-        when(executionControl.fail(any(), any())).thenReturn(() -> { });
-
-        orchestrator().closeFailedStartup(execution, new IllegalStateException("x"), ExecutionLaunchRole.RESUME);
-
-        verify(executionControl).fail(eq(execution), any(IllegalStateException.class));
-    }
-
-    @Test
-    @DisplayName("终态一律不收口（框架已 fail 过，重复 fail 会抛非法状态转换）")
-    void terminalExecutionIsNeverClosedAgain() {
-        for (ExecutionState state : List.of(ExecutionState.FAILED, ExecutionState.COMPLETED, ExecutionState.CANCELLED)) {
-            orchestrator().closeFailedStartup(execution(state, new HashMap<>()),
-                    new IllegalStateException("x"), ExecutionLaunchRole.RESUME);
-        }
-
-        verify(executionControl, never()).fail(any(), any());
-    }
-
-    @Test
-    @DisplayName("收口自己失败只告警，绝不掩盖原始异常")
-    void closingFailureDoesNotMaskOriginalCause() {
-        Execution execution = execution(ExecutionState.CREATED, new HashMap<>());
-        IllegalStateException original = new IllegalStateException("原始失败");
-        when(executionControl.fail(any(), any())).thenThrow(new IllegalStateException("收口也炸了"));
-
-        RuntimeException thrown = assertThrows(RuntimeException.class, () ->
-                orchestrator().submitNewExecution(ExecutionLaunchSpec.create(execution, ExecutionLaunchRole.SUB_AGENT,
-                        () -> {
-                            throw original;
-                        })));
-
-        assertSame(original, thrown);
     }
 
     // ---------------- 暂停 ----------------

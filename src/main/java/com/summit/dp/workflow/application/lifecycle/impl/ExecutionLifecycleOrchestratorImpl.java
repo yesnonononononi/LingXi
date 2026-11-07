@@ -6,14 +6,11 @@ import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
-import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
-import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchSpec;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
 import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
@@ -23,7 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 生命周期编排实现：启动收口、暂停、恢复三条动作的唯一落点。
+ * 生命周期编排实现：暂停、恢复两个动作的唯一落点。
+ *
+ * <p><b>启动失败收口不在这里</b>：那由 {@code StartupFailureCloser} 按角色提供，各启动点直接用。
  *
  * <p><b>手动恢复保持同步</b>：入口要在同一个请求线程里拿到「被拒的原因」或「恢复后的消息」。
  * 其余触发入队后置派发，为的是「决策事务已提交、派发还没发生就崩了」这段窗口不丢恢复。</p>
@@ -41,33 +40,7 @@ public class ExecutionLifecycleOrchestratorImpl implements ExecutionLifecycleOrc
     private final ExecutionLocator executionLocator;
     private final SuspensionGateChain gates;
     private final SuspendedExecutionResumer resumer;
-    private final StartupFailureCloser startupFailureCloser;
     private final ExecutionResumeCoordinator resumeCoordinator;
-
-    @Override
-    public Execution submitNewExecution(ExecutionLaunchSpec launchSpec) {
-        Execution execution = launchSpec.execution();
-        try {
-            return launchSpec.body().get();
-        } catch (RuntimeException error) {
-            closeFailedStartup(execution, error, launchSpec.role());
-            throw error;
-        }
-    }
-
-    /**
-     * 收口没能起步的执行。
-     *
-     * <p>判据按角色分开（见 {@link ExecutionLaunchRole}）：根与子代理不覆盖挂起态（挂起可恢复），
-     * 恢复启动则连挂起态也要收口 —— 「已批准但恢复没起步」必须有个终态。</p>
-     *
-     * <p>先判状态是硬要求：框架入口内与 loop 内的失败它已自行 fail 过，
-     * {@code Execution.failChecked} 对已终态会抛「非法状态转换」。</p>
-     */
-    @Override
-    public void closeFailedStartup(Execution execution, Exception cause, ExecutionLaunchRole role) {
-        startupFailureCloser.closeQuietly(execution, cause, role);
-    }
 
     /**
      * 暂停会话下仍在生命周期内的执行。

@@ -81,7 +81,7 @@ class ChatResumeTeamAttributeTest {
                 new SubAgentWaitSuspensionGate(new SubExecutionDependency(sessionExecutionRegistry,
                         sessionRepository, mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
         ExecutionLifecycleOrchestratorImpl lifecycle = new ExecutionLifecycleOrchestratorImpl(
-                executionRepository, executionControl, executionIdentity, gates, resumer, new StartupFailureCloser(executionControl),
+                executionRepository, executionControl, executionIdentity, gates, resumer,
                 mock(ExecutionResumeCoordinator.class));
         return new ChatServiceImpl(sseEventPublisher, requestPreparer, lifecycle,
                 sessionRepository, sessionExecutionRegistry,
