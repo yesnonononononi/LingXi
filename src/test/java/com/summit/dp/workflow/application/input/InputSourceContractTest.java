@@ -42,13 +42,15 @@ import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
 import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecutionInputSource;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.SubExecutionResultChannel;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.anyList;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -65,14 +67,16 @@ import static org.mockito.Mockito.*;
 
 class InputSourceContractTest {
     @Test
-    void selectedMailBatchDoesNotConsumeLaterArrivals() throws Exception {
+    void consumedBatchDoesNotSwallowLaterArrivals() throws Exception {
         try (Fixture fixture = new Fixture()) {
             EmailMessageVO first = fixture.emails.sendMail(7L, "第一份", new MailSendContext(10L, 8L, null)).getData();
-            List<EmailMessageVO> selected = fixture.mail.pendingItems(fixture.execution);
+            List<EmailMessageVO> selected = fixture.mail.pollPendingItems(fixture.execution);
             EmailMessageVO late = fixture.emails.sendMail(7L, "检查后到达", new MailSendContext(10L, 8L, null)).getData();
-            fixture.emails.consumePendingItems(selected);
-            assertEquals(List.of(late.getId()), fixture.mail.pendingItems(fixture.execution).stream().map(EmailMessageVO::getId).toList());
-            new EmailLoopInterceptor(fixture.emails, fixture.mail).onBeforeModelInvoke(context(fixture.execution));
+            // 游标只推进到选中批次的最后一条：迟到的那条在游标之后，不算已注入。
+            fixture.mail.markConsumed(fixture.execution, selected);
+            fixture.mail.cleanupAfterConsume(fixture.execution, selected);
+            assertEquals(List.of(late.getId()), fixture.mail.pollPendingItems(fixture.execution).stream().map(EmailMessageVO::getId).toList());
+            new EmailLoopInterceptor(fixture.mail).onBeforeModelInvoke(context(fixture.execution));
             assertFalse(fixture.resolver.hasPendingItems(fixture.execution));
             assertEquals(1, fixture.execution.getMessages().size());
             assertTrue(fixture.execution.getMessages().getFirst().text().contains("检查后到达"));
@@ -85,14 +89,15 @@ class InputSourceContractTest {
         try (Fixture fixture = new Fixture()) {
             Task task = Task.builder().id(20L).sessionId(10L).turnId(30L).executionId(100L).command("test").build();
             fixture.tasks.save(task);
-            assertTrue(fixture.background.hasOpenDependency(fixture.execution));
-            assertTrue(fixture.background.pendingItems(fixture.execution).isEmpty());
+            assertTrue(fixture.background.hasOpenAsyncDependency(fixture.execution));
+            assertTrue(fixture.background.pollPendingItems(fixture.execution).isEmpty());
             task.finish(TaskStatus.SUCCESS, "真实输出", 0, false);
             fixture.tasks.updateById(task);
-            assertFalse(fixture.background.hasOpenDependency(fixture.execution));
-            assertEquals(1, fixture.background.pendingItems(fixture.execution).size());
-            fixture.notifications.append(context(fixture.execution), fixture.background.pendingItems(fixture.execution));
-            assertTrue(fixture.background.pendingItems(fixture.execution).isEmpty());
+            assertFalse(fixture.background.hasOpenAsyncDependency(fixture.execution));
+            assertEquals(1, fixture.background.pollPendingItems(fixture.execution).size());
+            new BackgroundTaskLoopInterceptor(fixture.background).onBeforeModelInvoke(context(fixture.execution));
+            // 回执与消息同批写下：同一批不会被第二次交付。
+            assertTrue(fixture.background.pollPendingItems(fixture.execution).isEmpty());
             assertEquals(1, fixture.execution.getMessages().size());
         }
     }
@@ -100,14 +105,17 @@ class InputSourceContractTest {
     @Test
     void finalChildPublicationAtDependencyReadIsSeenBeforeCompletion() throws Exception {
         try (Fixture fixture = new Fixture()) {
-            InputSource<Void> child = new InputSource<>() {
-                @Override public List<Void> pendingItems(Execution execution) { return List.of(); }
-                @Override public boolean hasOpenDependency(Execution execution) {
-                    fixture.emails.sendMailOnce(7L, "最后一份交付", new MailSendContext(10L, 8L, null), "last-child");
-                    return false;
-                }
-            };
-            InputResolver resolver = new InputResolver(List.of(child, fixture.mail), new ObjectMapper().findAndRegisterModules());
+            // 依赖读取发生的那一刻，最后一份交付刚好落库：随后的待处理读取必须看得到它。
+            // 依赖读取发生的那一刻，最后一份交付刚好落库：随后的待处理读取必须看得到它。
+            SessionExecutionRegistry registry = mock(SessionExecutionRegistry.class);
+            when(registry.hasUnfinishedChildren(10L)).thenAnswer(call -> {
+                fixture.emails.sendMailOnce(7L, "最后一份交付", new MailSendContext(10L, 8L, null), "last-child");
+                return true;
+            });
+            InputResolver resolver = new InputResolver(fixture.mail,
+                    new SubExecutionResultChannel(new SubExecutionDependency(registry,
+                            mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class))),
+                    fixture.background, new ObjectMapper().findAndRegisterModules());
             SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(resolver);
             InterceptorResult result = wait.onBeforeComplete(context(fixture.execution));
             assertEquals(LoopResult.Status.CONTINUE, result.loopResult().status());
@@ -135,21 +143,21 @@ class InputSourceContractTest {
             task.finish(TaskStatus.SUCCESS, "任务交付", 0, false);
             InputTurnAdmission target = new InputTurnAdmission(executor, fixture.emails, turns,
                     new StaticListableBeanFactory(Map.of("snapshots", snapshots))
-                            .getBeanProvider(ExecutionRepository.class), fixture.notifications);
+                            .getBeanProvider(ExecutionRepository.class), fixture.mail, fixture.background);
             ProxyFactory proxy = new ProxyFactory(target);
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(fixture.dataSource),
                     new AnnotationTransactionAttributeSource()));
             InputTurnAdmission admission = (InputTurnAdmission) proxy.getProxy();
             doThrow(new IllegalStateException("检查点持久化失败")).when(snapshots).save(fixture.execution);
-            List<EmailMessageVO> selected = fixture.mail.pendingItems(fixture.execution);
+            List<EmailMessageVO> selected = fixture.mail.pollPendingItems(fixture.execution);
             assertThrows(IllegalStateException.class, () -> admission.admit(context, fixture.execution,
                     "batch-command", selected, List.of(task)));
             assertNull(fixture.turnRows.selectById(300L));
-            assertEquals(selected, fixture.mail.pendingItems(fixture.execution));
+            assertEquals(selected, fixture.mail.pollPendingItems(fixture.execution));
             doNothing().when(snapshots).save(fixture.execution);
             admission.admit(context, fixture.execution, "batch-command", selected, List.of(task));
             assertNotNull(fixture.turnRows.selectById(300L));
-            assertTrue(fixture.mail.pendingItems(fixture.execution).isEmpty());
+            assertTrue(fixture.mail.pollPendingItems(fixture.execution).isEmpty());
             assertEquals(1, InputAutomationPolicy.autoRounds(next));
         }
     }
@@ -166,13 +174,13 @@ class InputSourceContractTest {
             child.setVersion(0L);
             child.setResumeGeneration(1L);
             fixture.executionRows.insert(child);
-            SubExecutionInputSource source = new SubExecutionInputSource(
+            SubExecutionResultChannel source = new SubExecutionResultChannel(
                     new SubExecutionDependency(new SessionExecutionRegistry(), sessions,
                             new ExecutionRepositoryImpl(fixture.executionRows)));
-            assertTrue(source.hasOpenDependency(fixture.execution));
+            assertTrue(source.hasOpenAsyncDependency(fixture.execution));
             child.setStatus(ExecutionStatusCodes.COMPLETED);
             fixture.executionRows.updateById(child);
-            assertFalse(source.hasOpenDependency(fixture.execution));
+            assertFalse(source.hasOpenAsyncDependency(fixture.execution));
         }
     }
 
@@ -187,10 +195,10 @@ class InputSourceContractTest {
         private final ChatTurnMapper turnRows;
         private final ExecutionMapper executionRows;
         private final EmailService emails;
-        private final MailInputSource mail;
+        private final MailInputChannel mail;
         private final TaskRepositoryImpl tasks;
         private final BackgroundTaskNotifications notifications = new BackgroundTaskNotifications();
-        private final BackgroundTaskInputSource background;
+        private final BackgroundTaskChannel background;
         private final InputResolver resolver;
         private final Execution execution = Execution.builder().id("100").executionState(ExecutionState.RUNNING)
                 .messages(new ArrayList<Message>()).agentRequest(AgentRequest.builder()
@@ -212,13 +220,13 @@ class InputSourceContractTest {
             ProxyFactory proxy = new ProxyFactory(target);
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
             emails = (EmailService) proxy.getProxy();
-            mail = new MailInputSource(emails);
+            mail = new MailInputChannel(emails);
             tasks = new TaskRepositoryImpl(session.getMapper(TaskMapper.class));
-            background = new BackgroundTaskInputSource(tasks, notifications);
-            resolver = new InputResolver(List.of(mail, background, new SubExecutionInputSource(
+            background = new BackgroundTaskChannel(tasks, notifications);
+            resolver = new InputResolver(mail, new SubExecutionResultChannel(
                     new SubExecutionDependency(new SessionExecutionRegistry(), mock(SessionRepository.class),
-                            new ExecutionRepositoryImpl(executionRows)))),
-                    new ObjectMapper().findAndRegisterModules());
+                            new ExecutionRepositoryImpl(executionRows))),
+                    background, new ObjectMapper().findAndRegisterModules());
         }
 
         @Override public void close() throws Exception { database.close(); }

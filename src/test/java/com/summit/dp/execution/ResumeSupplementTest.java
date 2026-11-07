@@ -13,6 +13,8 @@ import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.input.ResumeSupplementChannel;
+import com.summit.dp.workflow.application.input.ResumeSupplementVersionRegistry;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.model.ResumeSource;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
@@ -81,6 +83,8 @@ class ResumeSupplementTest {
     private LocalExecutionRepository executions;
     private ResumeSupplementService service;
     private Execution staleCheckpoint;
+    private ResumeSupplementVersionRegistry versions;
+    private ResumeSupplementChannel channel;
 
     @BeforeEach
     void setup() throws Exception {
@@ -117,8 +121,11 @@ class ResumeSupplementTest {
             tasks.enqueue(900L, 1L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
             return ResumeDisposition.QUEUED;
         });
+        versions = new ResumeSupplementVersionRegistry();
+        channel = new ResumeSupplementChannel(messages, turns, json, versions);
         service = new ResumeSupplementService(turns, messages, provider(executions), provider(executions),
-                unresolvedToolGate, coordinator, new TransactionTemplate(new DataSourceTransactionManager(database)), json);
+                unresolvedToolGate, coordinator, new TransactionTemplate(new DataSourceTransactionManager(database)), json,
+                versions);
     }
 
     @AfterEach
@@ -231,7 +238,7 @@ class ResumeSupplementTest {
     @Test
     void staleCheckpointReceivesCommittedSupplementsOnceAndCursorSurvivesCheckpointReload() throws Exception {
         service.accept(SESSION_ID, command("新增的验收项"));
-        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(messages, turns, json);
+        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(channel);
         List<Message> appended = new ArrayList<>();
         LoopContext context = context(staleCheckpoint, appended);
         interceptor.onBeforeModelInvoke(context);
@@ -261,7 +268,7 @@ class ResumeSupplementTest {
         parameters.setAttributes(immutable);
         parameters.setEventMetaData(Map.of("event", "保留事件身份"));
         parameters.setAllowOutsideWorkspace(true);
-        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(messages, turns, json);
+        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(channel);
         LoopContext failing = new LoopContext(LoopMessages.builder().execution(staleCheckpoint).build(),
                 new ExecutionControlSignal(EXECUTION_ID), 0, ignored -> { throw new IllegalStateException("模拟追加失败"); });
         assertThrows(IllegalStateException.class, () -> interceptor.onBeforeModelInvoke(failing));
@@ -308,7 +315,7 @@ class ResumeSupplementTest {
         assertTrue(messages.findBySessionId(SESSION_ID).isEmpty());
         messages.save(SessionMessage.builder().id(999L).sessionId(SESSION_ID).turnId(TURN_ID)
                 .type(SessionMessageType.USER).resumeRequestId("broken-request-id").text("坏数据").build());
-        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(messages, turns, json);
+        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(channel);
         assertThrows(IllegalStateException.class, () -> interceptor.onBeforeModelInvoke(context(staleCheckpoint, new ArrayList<>())));
     }
 

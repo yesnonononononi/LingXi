@@ -1,6 +1,6 @@
 package com.summit.dp.task;
 
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -163,7 +163,7 @@ class BackgroundCommandTest {
         Execution execution = Execution.builder().id("1").messages(new ArrayList<Message>())
                 .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build()).build();
-        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(repository, new BackgroundTaskNotifications()), new BackgroundTaskNotifications());
+        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(new BackgroundTaskChannel(repository, new BackgroundTaskNotifications()));
         notifications.onBeforeModelInvoke(new LoopContext(LoopMessages.builder().execution(execution).build(),
                 new ExecutionControlSignal("1"), 0, execution.getMessages()::addAll));
         assertEquals(1, execution.getMessages().size());

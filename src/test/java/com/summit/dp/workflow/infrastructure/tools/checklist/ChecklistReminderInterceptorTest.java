@@ -1,6 +1,6 @@
 package com.summit.dp.workflow.infrastructure.tools.checklist;
 
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -155,7 +155,7 @@ class ChecklistReminderInterceptorTest {
     void orderStaysAfterTheBackgroundTaskWaitAndErrorsPropagate() {
         ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(
                 mock(ChecklistService.class), mock(ChecklistContextInjector.class), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
-        BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(mock(TaskRepository.class), mock(BackgroundTaskNotifications.class)), mock(BackgroundTaskNotifications.class));
+        BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskChannel(mock(TaskRepository.class), mock(BackgroundTaskNotifications.class)));
 
         assertEquals(-650, background.order(), "后台任务等待的顺序是前提，改动它就该重审本用例");
         assertEquals(-600, reminder.order());

@@ -62,15 +62,15 @@ import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecutionInputSource;
+import com.summit.dp.workflow.application.input.SubExecutionResultChannel;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
@@ -103,6 +103,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -146,6 +147,8 @@ class QaPendingMailRedelegationTest {
         try (Fixture fixture = new Fixture(directory)) {
             fixture.sendLegacyMail();
             fixture.emails.consumePending(10L, 6L);
+            // 关键前提：这封历史邮件既已在库里消费、也已随检查点标记为注入过。
+            fixture.markMailInjected();
             Observation observed = fixture.run(false, false);
             assertEquals(ExecutionState.COMPLETED, observed.execution().getExecutionState());
             assertEquals(2, observed.requests().size());
@@ -226,11 +229,13 @@ class QaPendingMailRedelegationTest {
     private static final class Fixture implements AutoCloseable {
         private final AutoCloseable database;
         private final EmailService emails;
-        private final MailInputSource mail;
+        private final MailInputChannel mail;
         private final InputResolver inputs;
         private final Path artifact;
         private final AtomicInteger artifactCalls = new AtomicInteger();
         private final AtomicInteger mailCalls = new AtomicInteger();
+        private long mailCursor = 0L;
+        private boolean mailAlreadyInjected = false;
         private final ObjectMapper json = new JsonConfig().objectMapper();
 
         private Fixture(Path directory) {
@@ -245,19 +250,42 @@ class QaPendingMailRedelegationTest {
                     new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class))));
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
             emails = (EmailService) proxy.getProxy();
-            mail = new MailInputSource(emails);
-            inputs = new InputResolver(List.of(mail,
-                    new BackgroundTaskInputSource(mock(TaskRepository.class), new BackgroundTaskNotifications()),
-                    new SubExecutionInputSource(new SubExecutionDependency(new SessionExecutionRegistry(),
-                            mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class)))), json);
+            mail = new MailInputChannel(emails);
+            inputs = new InputResolver(mail,
+                    new SubExecutionResultChannel(new SubExecutionDependency(new SessionExecutionRegistry(),
+                            mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class))),
+                    new BackgroundTaskChannel(mock(TaskRepository.class), new BackgroundTaskNotifications()), json);
         }
 
         private void sendLegacyMail() {
             emails.sendMail(6L, LEGACY_MAIL, new MailSendContext(10L, 7L, 3L));
         }
 
+        /**
+         * 把「这批历史邮件已经注入过」这一事实记到游标上。
+         *
+         * <p>改造后「已注入」的权威判据是随检查点持久化的游标，不再是库里的消费状态：
+         * 只消费不推游标的崩溃窗口必须能重新读到，才不至于丢输入。所以要在用例里表达
+         * 「历史邮件已经进过上下文」，就必须推游标。</p>
+         */
+        private void markMailInjected() {
+            mailAlreadyInjected = true;
+        }
+
         private Observation run(boolean honorDelegation, boolean mailDuringOpening) {
             AgentRequest request = buildReusedRequest();
+            if (mailAlreadyInjected) {
+                // 用生产同一套解析逻辑定位邮箱，避免用例自己猜收件键。
+                Map<String, Object> attributes = request.getRuntimeParameters().getAttributes();
+                Long mailbox = ExecutionAttributes.mailboxSessionId(attributes);
+                Long recipient = ExecutionAttributes.readLong(attributes, ExecutionAttributes.AGENT_ID);
+                long newest = mailbox == null || recipient == null ? 0L
+                        : emails.pendingItemsAfter(mailbox, recipient, 0L).stream()
+                                .map(EmailMessageVO::getId).reduce(0L, Math::max);
+                Map<String, Object> injected = new HashMap<>(attributes);
+                injected.put(ExecutionAttributes.LAST_MAIL_ID, newest);
+                request.getRuntimeParameters().setAttributes(injected);
+            }
             List<List<Message>> requests = new ArrayList<>();
             Execution execution = Execution.create(request, "");
             execution.setMaxSteps(5);
@@ -271,7 +299,7 @@ class QaPendingMailRedelegationTest {
                     .executionControl(new DefaultExecutionController(() -> null, checkpoints, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).toolExecutionManager(tools())
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor(),
-                            new EmailLoopInterceptor(emails, mail), new SubAgentWaitInterceptor(inputs))))
+                            new EmailLoopInterceptor(mail), new SubAgentWaitInterceptor(inputs))))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
                             conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
                     .invoker(new DefaultChatModelInvoker(command -> {

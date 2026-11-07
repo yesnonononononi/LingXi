@@ -1,7 +1,7 @@
 package com.summit.dp.task;
 
 import com.summit.dp.shared.support.InputTestSupport;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -57,7 +57,7 @@ class BackgroundTaskNotificationTest {
     private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
     private final BackgroundTaskNotifications notifications = new BackgroundTaskNotifications();
     private final BackgroundTaskLoopInterceptor interceptor =
-            new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(repository, notifications), notifications);
+            new BackgroundTaskLoopInterceptor(new BackgroundTaskChannel(repository, notifications));
     private final SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(InputTestSupport.background(repository, notifications));
     private final ObjectMapper json = new JsonConfig().objectMapper();
 
@@ -163,7 +163,7 @@ class BackgroundTaskNotificationTest {
     @Test void terminalWaitCannotMaskTheExistingCollaborationInputWakeup() {
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task(1L)));
         EmailService email = mock(EmailService.class);
-        when(email.pendingItems(10L, 7L)).thenReturn(List.of(EmailMessageVO.builder().id(2L).content("协作输入").build()));
+        when(email.pendingItemsAfter(10L, 7L, 0L)).thenReturn(List.of(EmailMessageVO.builder().id(2L).content("协作输入").build()));
         SubAgentWaitInterceptor collaboration = new SubAgentWaitInterceptor(InputTestSupport.collaboration(mock(SessionExecutionRegistry.class), email));
         Execution execution = execution(100L, 10L, false);
         execution.getAgentRequest().runtimeParametersOrDefault().setAttributes(
@@ -171,7 +171,7 @@ class BackgroundTaskNotificationTest {
         DefaultLoopInterceptorProcessor processor = new DefaultLoopInterceptorProcessor(List.of(interceptor, collaboration));
         assertEquals(LoopResult.Status.CONTINUE, processor.onBeforeComplete(context(execution)).loopResult().status());
         verifyNoInteractions(coordinator);
-        verify(email).pendingItems(10L, 7L);
+        verify(email).pendingItemsAfter(10L, 7L, 0L);
     }
 
     @Test void realLoopProcessesCompletionInTheSameExecution() throws Exception {

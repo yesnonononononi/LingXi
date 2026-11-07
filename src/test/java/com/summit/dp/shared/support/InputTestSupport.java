@@ -17,13 +17,13 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.workflow.application.input.InputResolver;
+import com.summit.dp.workflow.application.input.MailInputChannel;
+import com.summit.dp.workflow.application.input.SubExecutionResultChannel;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecutionInputSource;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 
 import java.util.List;
@@ -56,12 +56,17 @@ public final class InputTestSupport {
     public static InputResolver collaboration(SessionExecutionRegistry registry, EmailService emails) {
         SubExecutionDependency dependency = new SubExecutionDependency(registry,
                 mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class));
-        return new InputResolver(List.of(new MailInputSource(emails), new SubExecutionInputSource(dependency)),
+        return new InputResolver(new MailInputChannel(emails), new SubExecutionResultChannel(dependency),
+                new BackgroundTaskChannel(mock(TaskRepository.class), new BackgroundTaskNotifications()),
                 new ObjectMapper().findAndRegisterModules());
     }
 
     public static InputResolver background(TaskRepository tasks, BackgroundTaskNotifications notifications) {
-        return new InputResolver(List.of(new BackgroundTaskInputSource(tasks, notifications)),
+        SubExecutionDependency noDependency = new SubExecutionDependency(new SessionExecutionRegistry(),
+                mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class));
+        return new InputResolver(new MailInputChannel(mock(EmailService.class)),
+                new SubExecutionResultChannel(noDependency),
+                new BackgroundTaskChannel(tasks, notifications),
                 new ObjectMapper().findAndRegisterModules());
     }
 }

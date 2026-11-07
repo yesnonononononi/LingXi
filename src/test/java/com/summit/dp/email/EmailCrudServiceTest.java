@@ -1,6 +1,6 @@
 package com.summit.dp.email;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -139,7 +139,7 @@ class EmailCrudServiceTest {
         List<Message> appended = new ArrayList<>();
         LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
                 new ExecutionControlSignal("900"), 0, appended::addAll);
-        EmailLoopInterceptor interceptor = new EmailLoopInterceptor(service, new MailInputSource(service));
+        EmailLoopInterceptor interceptor = new EmailLoopInterceptor(new MailInputChannel(service));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appended.size());
         assertTrue(appended.getFirst().text().contains("成员 @8 的子任务已完成"));

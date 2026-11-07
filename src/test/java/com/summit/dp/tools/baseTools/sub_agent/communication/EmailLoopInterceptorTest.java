@@ -1,6 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -40,7 +40,7 @@ class EmailLoopInterceptorTest {
     private static final long SESSION_ID = 405L;
 
     private final EmailService emailService = mock(EmailService.class);
-    private final EmailLoopInterceptor interceptor = new EmailLoopInterceptor(emailService, new MailInputSource(emailService));
+    private final EmailLoopInterceptor interceptor = new EmailLoopInterceptor(new MailInputChannel(emailService));
 
     @Test
     @DisplayName("裸模型未绑定 Agent：不查邮箱、不追加消息")
@@ -67,33 +67,33 @@ class EmailLoopInterceptorTest {
     @Test
     @DisplayName("根执行：没有 ROOT_SESSION_ID 属性时取自身 SESSION_ID 作为邮箱业务键")
     void rootExecutionUsesItsOwnSessionId() {
-        when(emailService.pendingItems(SESSION_ID, 7L)).thenReturn(List.of());
+        when(emailService.pendingItemsAfter(SESSION_ID, 7L, 0L)).thenReturn(List.of());
 
         interceptor.onBeforeModelInvoke(context("900",
                 Map.of(ExecutionAttributes.AGENT_ID, "7",
                         ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID)), new ArrayList<>()));
 
-        verify(emailService).pendingItems(SESSION_ID, 7L);
+        verify(emailService).pendingItemsAfter(SESSION_ID, 7L, 0L);
     }
 
     @Test
     @DisplayName("子执行：用 ROOT_SESSION_ID 属性作为邮箱业务键，与根执行同一把键")
     void childExecutionUsesRootSessionAttribute() {
-        when(emailService.pendingItems(SESSION_ID, 8L)).thenReturn(List.of());
+        when(emailService.pendingItemsAfter(SESSION_ID, 8L, 0L)).thenReturn(List.of());
 
         interceptor.onBeforeModelInvoke(context("1234",
                 Map.of(ExecutionAttributes.AGENT_ID, "8",
                         ExecutionAttributes.ROOT_SESSION_ID, String.valueOf(SESSION_ID),
                         ExecutionAttributes.ROOT_EXECUTION_ID, "900"), new ArrayList<>()));
 
-        verify(emailService).pendingItems(SESSION_ID, 8L);
-        verify(emailService, never()).pendingItems(1234L, 8L);
+        verify(emailService).pendingItemsAfter(SESSION_ID, 8L, 0L);
+        verify(emailService, never()).pendingItemsAfter(1234L, 8L, 0L);
     }
 
     @Test
     @DisplayName("消费到的消息以 UserMessage 追加到模型上下文末尾")
     void appendsConsumedMessagesAsUserMessages() {
-        when(emailService.pendingItems(SESSION_ID, 7L)).thenReturn(List.of(
+        when(emailService.pendingItemsAfter(SESSION_ID, 7L, 0L)).thenReturn(List.of(
                 message(1L, 100L, "请处理甲"),
                 message(2L, 101L, "请处理乙")));
 
@@ -116,7 +116,7 @@ class EmailLoopInterceptorTest {
     @Test
     @DisplayName("空收件箱：保持安静，不注入任何话术")
     void staysSilentWhenInboxEmpty() {
-        when(emailService.pendingItems(SESSION_ID, 7L)).thenReturn(List.of());
+        when(emailService.pendingItemsAfter(SESSION_ID, 7L, 0L)).thenReturn(List.of());
 
         List<Message> appended = new ArrayList<>();
         interceptor.onBeforeModelInvoke(context("900",
@@ -130,7 +130,7 @@ class EmailLoopInterceptorTest {
     @Test
     @DisplayName("消费返回 null 数据：同样保持安静，不抛异常")
     void staysSilentWhenConsumeReturnsNullData() {
-        when(emailService.pendingItems(SESSION_ID, 7L)).thenReturn(null);
+        when(emailService.pendingItemsAfter(SESSION_ID, 7L, 0L)).thenReturn(null);
 
         List<Message> appended = new ArrayList<>();
         interceptor.onBeforeModelInvoke(context("900",
@@ -143,7 +143,7 @@ class EmailLoopInterceptorTest {
     @Test
     @DisplayName("取信失败必须向上抛出：消息只消费一次，吞掉等于静默丢弃协作方的新需求")
     void propagatesConsumeFailure() {
-        when(emailService.pendingItems(SESSION_ID, 7L)).thenThrow(new IllegalStateException("邮箱不可用"));
+        when(emailService.pendingItemsAfter(SESSION_ID, 7L, 0L)).thenThrow(new IllegalStateException("邮箱不可用"));
 
         assertThrows(IllegalStateException.class,
                 () -> interceptor.onBeforeModelInvoke(context("900",

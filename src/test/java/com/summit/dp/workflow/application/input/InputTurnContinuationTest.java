@@ -26,9 +26,12 @@ import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.MailInputChannel;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
+import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.task.domain.repository.TaskRepository;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
@@ -42,17 +45,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class InputTurnContinuationTest {
+    private final EmailService emails = mock(EmailService.class);
+    private final TaskRepository taskRepository = mock(TaskRepository.class);
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
     private final ChatTurnRepository turns = mock(ChatTurnRepository.class);
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
-    private final MailInputSource mail = mock(MailInputSource.class);
-    private final BackgroundTaskInputSource tasks = mock(BackgroundTaskInputSource.class);
+    private final MailInputChannel mail = new MailInputChannel(emails);
+    private final BackgroundTaskChannel tasks = new BackgroundTaskChannel(taskRepository, new BackgroundTaskNotifications());
     private final RequestPreparer preparer = mock(RequestPreparer.class);
     private final PreparedChatExecutor executor = mock(PreparedChatExecutor.class);
     private final InputTurnAdmission admission = mock(InputTurnAdmission.class);
     private final InputWakeupService wakeups = mock(InputWakeupService.class);
     private final InputTurnContinuation service = new InputTurnContinuation(executions, turns, registry, mail, tasks,
-            new BackgroundTaskNotifications(), admission, preparer, executor,
+            admission, preparer, executor,
             new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class));
 
     private RuntimeContext preparedContext() {
@@ -67,7 +72,7 @@ class InputTurnContinuationTest {
                 .messages(new ArrayList<>()).agentRequest(AgentRequest.builder().runtimeParameters(
                         AgentRuntimeParameters.builder().attributes(Map.of(ExecutionAttributes.SESSION_ID, "10",
                                 ExecutionAttributes.AGENT_ID, "7")).build()).build()).build();
-        when(mail.pendingItems(execution)).thenReturn(List.of(EmailMessageVO.builder().id(1L)
+        when(emails.pendingItemsAfter(10L, 7L, 0L)).thenReturn(List.of(EmailMessageVO.builder().id(1L)
                 .emailId(2L).senderId(8L).content("迟到的真实输入").build()));
         return execution;
     }

@@ -2,7 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.shared.support.InputTestSupport;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -145,7 +145,7 @@ class ChecklistLoopIntegrationTest {
         when(tasks.findByExecutionId(SESSION, 1001L)).thenReturn(List.of(Task.builder().id(1L).build()));
         BackgroundTaskNotifications notifications = mock(BackgroundTaskNotifications.class);
         when(notifications.readReceipts(any())).thenReturn(Set.of());
-        BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(tasks, notifications), notifications);
+        BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskChannel(tasks, notifications));
         LoopResult result = runner(command -> { calls.incrementAndGet(); return response(List.of()); },
                 List.of(reminder(new ChecklistReminderDelivery(mock(ExecutionRepository.class))), background,
                         new SubAgentWaitInterceptor(InputTestSupport.background(tasks, notifications))), 3).run(execution(), signal());

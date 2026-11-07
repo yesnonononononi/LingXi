@@ -2,7 +2,7 @@ package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.shared.support.InputTestSupport;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -127,7 +127,7 @@ class QaDelegationLifecycleInterleavingTest {
             return invocation.getArgument(0);
         });
         when(executionControl.fail(any(), any())).thenReturn(() -> { });
-        when(emailService.pendingItems(anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
+        when(emailService.pendingItemsAfter(anyLong(), anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
                 ? List.of(EmailMessageVO.builder().id(1L).senderId(8L).content("待处理交付").build()) : List.of());
 
         when(executions.findResumeGeneration(ROOT_EXECUTION_ID)).thenReturn(GENERATION);
@@ -226,10 +226,10 @@ class QaDelegationLifecycleInterleavingTest {
             pendingMail.set(mail);
             return Result.success(mail);
         });
-        when(emailService.pendingItems(ROOT_SESSION_ID, ROOT_AGENT_ID))
+        when(emailService.pendingItemsAfter(ROOT_SESSION_ID, ROOT_AGENT_ID, 0L))
                 .thenAnswer(invocation -> pendingMail.get() == null ? List.of() : List.of(pendingMail.get()));
         doAnswer(invocation -> { pendingMail.set(null); return null; }).when(emailService).consumePendingItems(anyList());
-        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(emailService, new MailInputSource(emailService));
+        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(new MailInputChannel(emailService));
         doAnswer(invocation -> {
             Execution root = invocation.getArgument(0);
             LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
@@ -345,11 +345,11 @@ class QaDelegationLifecycleInterleavingTest {
     void lateMailAfterStopIsConsumedByNextRoundUnderRootSessionKey() {
         EmailService mailbox = mock(EmailService.class);
         AtomicReference<long[]> consumedKey = new AtomicReference<>();
-        when(mailbox.pendingItems(anyLong(), anyLong())).thenAnswer(invocation -> {
+        when(mailbox.pendingItemsAfter(anyLong(), anyLong(), anyLong())).thenAnswer(invocation -> {
             consumedKey.set(new long[]{invocation.getArgument(0), invocation.getArgument(1)});
             return List.of();
         });
-        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(mailbox, new MailInputSource(mailbox));
+        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(new MailInputChannel(mailbox));
 
         // 停止之后、下一轮 beginRoot 之前到达的邮件：按协作根会话 id 落箱。
         // 新一轮执行的执行 id 与上一轮不同，但会话 id 不变 —— 取信键必须仍命中同一把邮箱。
