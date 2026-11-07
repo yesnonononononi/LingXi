@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.TurnViewService;
@@ -145,6 +146,19 @@ class SessionBlockUpsertBaselineTest {
                 "单块（消息版）仍在读整轮消息，实际: " + legacySingle.queries());
         assertEquals(1, full.toolCallSelects(), "整轮装配的工具查询是一次 IN，实际: " + full.queries());
         assertEquals(1, legacySingle.toolCallSelects(), "单块的工具查询是一次主键投影，实际: " + legacySingle.queries());
+
+        // 改造后的单块口径（事件事实驱动）：消息侧只发一条带 type 过滤的窄查询，不再整轮 IN。
+        Measurement event = measure("event", () -> service
+                .assembleToolBlockView(session(), turn(), VIEW_VERSION, eventFacts()));
+        assertEquals(1, event.messageSelects(), "事件驱动单块只允许一条消息查询，实际: " + event.queries());
+        assertFalse(event.wholeTurnMessageSelect(), "事件驱动单块不得再整轮 IN 全类型，实际: " + event.queries());
+        assertTrue(event.narrowTypeFilter(), "事件驱动单块的消息查询必须下推 type 过滤，实际: " + event.queries());
+        assertEquals(1, event.toolCallSelects(), "事件驱动单块只允许一条工具投影，实际: " + event.queries());
+        assertTrue(event.queries().size() <= 2, "事件驱动单块的语句数必须收敛在 2 条内，实际: " + event.queries());
+
+        System.out.println("BASELINE fixture=tools=" + TOOL_COUNT
+                + " aiJsonChars=" + aiJsonChars()
+                + " userRowChars=" + userRowChars());
     }
 
     private void seedFixture() {
@@ -207,7 +221,8 @@ class SessionBlockUpsertBaselineTest {
         List<String> queries = capture.queries();
         Measurement measurement = new Measurement(path, queries,
                 countMessageSelects(queries), countToolCallSelects(queries),
-                hasWholeTurnMessageSelect(queries), medianMillis(durationsNanos), p95Millis(durationsNanos));
+                hasWholeTurnMessageSelect(queries), hasNarrowTypeFilter(queries),
+                medianMillis(durationsNanos), p95Millis(durationsNanos));
         System.out.println(measurement.summaryLine());
         System.out.println("BASELINE-SQL path=" + path + " " + measurement.queries());
         return measurement;
@@ -233,6 +248,34 @@ class SessionBlockUpsertBaselineTest {
                 .map(SqlCaptureInterceptor::normalize)
                 .filter(sql -> sql.contains("from session_message"))
                 .anyMatch(sql -> sql.contains("turn_id in"));
+    }
+
+    /** 「窄查询形态」的判据：消息查询带 {@code type} 等值过滤。 */
+    private static boolean hasNarrowTypeFilter(List<String> queries) {
+        return queries.stream()
+                .map(SqlCaptureInterceptor::normalize)
+                .filter(sql -> sql.contains("from session_message"))
+                .anyMatch(sql -> sql.contains("type ="));
+    }
+
+    /** 事件驱动单块用的权威事实：与 AI 行 JSON 里第 0 个请求逐字一致。 */
+    private static ToolBlockEventFacts eventFacts() {
+        return new ToolBlockEventFacts(TARGET, "9007199254740993", 0, "read_file",
+                "{\"path\":\"文件-0.txt\"}");
+    }
+
+    /** 本轮 AI 行的 JSON 字符数：窄查询不再读它，这个数字说明省掉的是多大一列。 */
+    private int aiJsonChars() {
+        return messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)).stream()
+                .filter(row -> row.getType() == SessionMessageType.AI)
+                .map(row -> row.getText() == null ? 0 : row.getText().length())
+                .findFirst().orElse(0);
+    }
+
+    /** 该轮 USER 行的字符数：窄查询只读这些行。 */
+    private int userRowChars() {
+        return messageRepository.findUserMessages(SESSION_ID, TURN_ID).stream()
+                .mapToInt(row -> row.getText() == null ? 0 : row.getText().length()).sum();
     }
 
     private static double medianMillis(long[] durationsNanos) {
@@ -297,12 +340,13 @@ class SessionBlockUpsertBaselineTest {
 
     /** 一次测量的结果；{@code queries} 保留最后一次运行的原始 SQL 摘要，便于人工核对。 */
     private record Measurement(String path, List<String> queries, int messageSelects, int toolCallSelects,
-                               boolean wholeTurnMessageSelect, double medianMs, double p95Ms) {
+                               boolean wholeTurnMessageSelect, boolean narrowTypeFilter,
+                               double medianMs, double p95Ms) {
 
         String summaryLine() {
             return "BASELINE path=" + path + " statements=" + queries.size()
                     + " msgSelects=" + messageSelects + " toolSelects=" + toolCallSelects
-                    + " wholeTurnMsg=" + wholeTurnMessageSelect
+                    + " wholeTurnMsg=" + wholeTurnMessageSelect + " narrowTypeFilter=" + narrowTypeFilter
                     + " medianMs=" + medianMs + " p95Ms=" + p95Ms;
         }
     }

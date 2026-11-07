@@ -3,6 +3,7 @@ package com.summit.dp.session;
 import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.tool.ToolCallStatus;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
@@ -10,9 +11,12 @@ import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.workflow.infrastructure.listener.session.BlockUpsertRuntimeListener;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class BlockUpsertRuntimeListenerTest {
@@ -27,9 +31,15 @@ class BlockUpsertRuntimeListenerTest {
         ChatTurn turn = ChatTurn.accept(900L, 7L, null, TurnModelSnapshot.of("model", "provider", null));
         when(turns.findByExecutionId(800L)).thenReturn(Optional.of(turn));
 
-        listener.onToolCall(new ToolCallStartEvent("command", "800", "execute_command", "{}", "101", null, 0));
+        listener.onToolCall(new ToolCallStartEvent("command", "800", "execute_command", "{\"cmd\":\"ls\"}",
+                "101", null, 2));
 
-        verify(broadcaster).broadcastBlockUpsert(900L, "command");
+        ToolBlockEventFacts facts = captureFacts();
+        assertEquals("command", facts.toolCallId());
+        assertEquals("101", facts.responseId(), "响应身份必须来自框架事件，不再回查 AI 行");
+        assertEquals(2, facts.requestIndex(), "请求位置必须来自框架事件，决定块内顺序");
+        assertEquals("execute_command", facts.toolName());
+        assertEquals("{\"cmd\":\"ls\"}", facts.args(), "原始参数必须来自框架事件");
         // 归属判断只需要执行 ID：不查轮次以外的东西。
         verify(turns, times(1)).findByExecutionId(800L);
         verifyNoMoreInteractions(turns);
@@ -44,7 +54,17 @@ class BlockUpsertRuntimeListenerTest {
         listener.onToolCallOutput(new ToolCallEndEvent("command", "800", "101", "execute_command",
                 "{}", "完成", null, ToolCallStatus.COMPLETED, 0));
 
-        verify(broadcaster).broadcastBlockUpsert(900L, "command");
+        ToolBlockEventFacts facts = captureFacts();
+        assertEquals("command", facts.toolCallId());
+        assertEquals("101", facts.responseId());
+        assertEquals(0, facts.requestIndex());
+    }
+
+    /** 捕获监听器交给广播器的事件事实（广播器的入参就是契约）。 */
+    private ToolBlockEventFacts captureFacts() {
+        ArgumentCaptor<ToolBlockEventFacts> facts = ArgumentCaptor.forClass(ToolBlockEventFacts.class);
+        verify(broadcaster).broadcastBlockUpsert(eq(900L), facts.capture());
+        return facts.getValue();
     }
 
     @Test

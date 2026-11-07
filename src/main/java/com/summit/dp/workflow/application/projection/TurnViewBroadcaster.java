@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.application.projection;
 
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -156,11 +157,37 @@ public class TurnViewBroadcaster {
     }
 
     /**
-     * 单块增量：只下发指定 blockId 的那一个块。
+     * 单块增量（事件事实版，BLOCK_UPSERT 主路径）：直接拿框架事件里的权威身份与参数组装。
+     *
+     * <p><b>为什么不再传 toolCallId 让服务层反查</b>：反查要读整轮消息并逐行解析 AI 行 JSON，
+     * 只为回答「哪个响应请求了它」。事件已经带 {@code responseId} / {@code requestIndex} /
+     * {@code toolName} / {@code args}，这条路只发一条 USER 行窄查询 + 一条工具行投影。</p>
+     *
+     * @param facts 事件权威事实；{@code toolCallId} 为空时静默跳过
+     */
+    public void broadcastBlockUpsert(Long turnId, ToolBlockEventFacts facts) {
+        if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
+            return;
+        }
+        BroadcastTarget target = resolveTarget(turnId);
+        if (target == null) {
+            return;
+        }
+        Optional<TurnViewVO> view = turnViewService.assembleToolBlockView(
+                target.session(), target.turn(), target.viewVersion(), facts);
+        if (view.isEmpty()) {
+            // 该块此刻还不存在（尚未落库的实时窗口）：推空块会被前端读成「该块被清空了」。
+            return;
+        }
+        publish(target, BlockEventType.BLOCK_UPSERT, view.get());
+    }
+
+    /**
+     * 单块增量（历史口径，保留给拿不到框架事件身份的调用方）。
      *
      * <p><b>走单块构造</b>：整轮装配再过滤等于为了一个块把所有兄弟工具调用的 4 个 CLOB 全读一遍，
-     * 工具越多越亏。单块路径只取目标那一个调用（且只取需要的列），VO 元数据仍来自该轮消息，
-     * 形状与整轮快照一致，前端只需一套 upsert 逻辑。</p>
+     * 工具越多越亏。该重载仍按本轮消息定位目标块（会读整轮消息），仅在没有事件事实时使用；
+     * 实时链路一律走事件事实重载。</p>
      *
      * @param toolCallId 变化的工具块身份；工具块的 blockId 规则是 {@code tool:<toolCallId>}
      */

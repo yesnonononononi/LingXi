@@ -50,6 +50,18 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
     List<SessionMessage> findByTurnIds(Long sessionId, Collection<Long> turnIds);
 
     /**
+     * 只取该轮的用户行（窄查询），按主键升序。
+     *
+     * <p><b>为什么不用 {@link #findByTurnIds}</b>：单块推送只需要「提问 / 图片 / 补录 / 用户消息 id」，
+     * 它们全部挂在 USER 行上；按轮次取全类型会把 AI 行的长 {@code content} CLOB 一并读回，
+     * H2 侧就是一次临时 LOB 落盘写放大。</p>
+     *
+     * @param sessionId 会话归属
+     * @param turnId    目标轮次；{@code null} 表示归属未知，返回空
+     */
+    List<SessionMessage> findUserMessages(Long sessionId, Long turnId);
+
+    /**
      * 取「归属未知」的历史消息（{@code turn_id IS NULL}），升序返回。
      *
      * <p>本次改造之前的旧数据没有轮次归属，无法进入按轮次分页的口径；把它们整批放在

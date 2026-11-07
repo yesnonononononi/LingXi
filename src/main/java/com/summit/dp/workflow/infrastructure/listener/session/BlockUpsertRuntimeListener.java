@@ -4,6 +4,7 @@ import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.core.tool.ToolCallStatus;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
@@ -30,7 +31,8 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
     @Override
     public void onToolCall(ToolCallStartEvent event) {
         if (event != null) {
-            broadcastToolBlock(event.getRequestId(), event.getExecutionId());
+            broadcastToolBlock(new ToolBlockEventFacts(event.getRequestId(), event.getResponseId(),
+                    event.getRequestIndex(), event.getToolName(), event.getArgs()), event.getExecutionId());
         }
     }
 
@@ -39,11 +41,12 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
         if (event == null || event.resultStatus() == ToolCallStatus.PROMISED) {
             return;
         }
-        broadcastToolBlock(event.getRequestId(), event.getExecutionId());
+        broadcastToolBlock(new ToolBlockEventFacts(event.getRequestId(), event.getResponseId(),
+                event.getRequestIndex(), event.getToolName(), event.getArgs()), event.getExecutionId());
     }
 
-    private void broadcastToolBlock(String toolCallId, String executionId) {
-        if (toolCallId == null || toolCallId.isBlank()) {
+    private void broadcastToolBlock(ToolBlockEventFacts facts, String executionId) {
+        if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
             return;
         }
         try {
@@ -56,9 +59,10 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
             }
             chatTurnRepository.findByExecutionId(numericExecutionId)
                     .map(ChatTurn::getId)
-                    .ifPresent(turnId -> turnViewBroadcaster.broadcastBlockUpsert(turnId, toolCallId));
+                    .ifPresent(turnId -> turnViewBroadcaster.broadcastBlockUpsert(turnId, facts));
         } catch (RuntimeException e) {
-            log.warn("推送工具块增量失败（不影响执行本身）: requestId={}, error={}", toolCallId, e.toString());
+            log.warn("推送工具块增量失败（不影响执行本身）: requestId={}, error={}",
+                    facts.toolCallId(), e.toString());
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.summit.dp.session.application.service;
 
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
@@ -72,6 +73,32 @@ public class TurnViewService {
         List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turn.getId()));
         Map<String, ToolCall> toolCalls = loadToolCallsForTurn(messages, turn.getId());
         return Optional.of(buildView(session, turn, viewVersion, messages, toolCalls));
+    }
+
+    /**
+     * 单块装配的事件事实重载（BLOCK_UPSERT 主路径）：整轮消息一次都不读。
+     *
+     * <p>只做三件事：一次该轮 USER 行窄查询（提问 / 图片 / 补录 / 用户消息 id 的唯一来源）、
+     * 一次工具行只读投影、一次单块构造。响应身份与参数直接取自框架工具事件，
+     * 因此不必再为「哪个响应请求了它」扫描整轮 AI 行、解析完整 {@code AiMessageEntity}。</p>
+     *
+     * <p>轮次终态的全量校准由整轮快照负责，本路径不为终态兜底。</p>
+     *
+     * @param facts 事件权威事实；{@code toolCallId} 为空或 {@code turn} 不完整时返回空
+     * @return 只含该块的视图；该块此刻不该存在时为空（对应「空则跳过」的推送语义）
+     * @throws com.summit.dp.shared.exception.ClientException 响应身份不可解析（与整轮路径同一条拒绝）
+     */
+    public Optional<TurnViewVO> assembleToolBlockView(Session session, ChatTurn turn, long viewVersion,
+                                                     ToolBlockEventFacts facts) {
+        if (turn == null || turn.getId() == null || turn.getSessionId() == null
+                || facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
+            return Optional.empty();
+        }
+        List<SessionMessage> userRows = messageRepository.findUserMessages(turn.getSessionId(), turn.getId());
+        // 目标工具行只查一次，且是只读投影（不读 content / raw_input / meta_data）。
+        ToolCallBlockView toolCall = toolCallRepository.findForBlockUpsert(facts.toolCallId()).orElse(null);
+        Optional<Block> block = turnViewAssembler.buildSingleToolBlock(facts, toolCall);
+        return block.map(single -> buildViewFromBlocks(session, turn, viewVersion, userRows, List.of(single)));
     }
 
     /**

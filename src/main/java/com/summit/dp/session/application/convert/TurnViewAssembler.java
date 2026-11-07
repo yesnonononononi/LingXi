@@ -115,10 +115,7 @@ public class TurnViewAssembler {
     private void appendAiBlocks(List<Block> blocks, SessionMessage aiRow, Map<String, ToolCall> toolCalls,
                                 String concludingResponseId, boolean executionCompleted) {
         AiMessageEntity aiMessage = parse(aiRow.getText());
-        String responseId = aiRow.getResponseId();
-        if (responseId == null || !responseId.matches("[0-9]+")) {
-            throw new ClientException("历史模型响应缺少框架身份，请重新开始会话");
-        }
+        String responseId = requireResponseId(aiRow.getResponseId());
 
         // 该 AI 行是否有工具请求 —— 这既是 isBody 判据之一，也决定工具块是否展开。
         List<ToolCallRequest> requests = aiMessage == null || aiMessage.getToolCalls() == null
@@ -149,6 +146,44 @@ public class TurnViewAssembler {
             blocks.add(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()), request,
                     ToolFacts.of(toolCall)));
         }
+    }
+
+    /**
+     * 由框架工具事件的权威事实直接构造工具块（BLOCK_UPSERT 主路径）。
+     *
+     * <p><b>为什么不需要消息</b>：响应身份、请求位置、工具名与参数都由框架事件给出，
+     * 工具状态与结果来自工具行只读投影。原先为了拿到「哪个响应请求了它」要读整轮消息并逐行解析
+     * 完整 {@code AiMessageEntity}，现在这条路一次消息查询都不需要。</p>
+     *
+     * <p>字段映射复用 {@link #buildToolBlock}（唯一来源），不另写一份。</p>
+     *
+     * @param facts    事件事实；{@code toolCallId} 为空视为无目标，返回空
+     * @param toolCall 工具行只读投影（{@code null} 表示尚未落库，按「已开始」造块）
+     * @return 该块
+     * @throws ClientException 响应身份不可解析（与整轮路径同一条拒绝口径）
+     */
+    public Optional<Block> buildSingleToolBlock(ToolBlockEventFacts facts, ToolCallBlockView toolCall) {
+        if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
+            return Optional.empty();
+        }
+        String responseId = requireResponseId(facts.responseId());
+        ToolCallRequest request = new ToolCallRequest(facts.toolCallId(), facts.toolName(),
+                facts.requestIndex(), facts.args());
+        return Optional.of(buildToolBlock(responseId, BlockOrder.tool(facts.requestIndex()), request,
+                ToolFacts.of(toolCall)));
+    }
+
+    /**
+     * 工具块构造的唯一入口之上的作用点：响应身份必须可解析。
+     *
+     * <p>整轮路径与事件路径共用这一处校验，保证「同一条数据、同一条拒绝」——
+     * 各自写一遍迟早出现「历史报错、增量静默」。</p>
+     */
+    private static String requireResponseId(String responseId) {
+        if (responseId == null || !responseId.matches("[0-9]+")) {
+            throw new ClientException("历史模型响应缺少框架身份，请重新开始会话");
+        }
+        return responseId;
     }
 
     /**
@@ -185,10 +220,7 @@ public class TurnViewAssembler {
                 if (request == null || !toolCallId.equals(request.id())) {
                     continue;
                 }
-                String responseId = message.getResponseId();
-                if (responseId == null || !responseId.matches("[0-9]+")) {
-                    throw new ClientException("历史模型响应缺少框架身份，请重新开始会话");
-                }
+                String responseId = requireResponseId(message.getResponseId());
                 return Optional.of(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()),
                         request, ToolFacts.of(toolCall)));
             }

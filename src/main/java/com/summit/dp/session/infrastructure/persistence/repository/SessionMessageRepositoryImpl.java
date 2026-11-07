@@ -104,6 +104,28 @@ public class SessionMessageRepositoryImpl
     }
 
     /**
+     * 该轮用户行的窄查询：只选提问/图片/补录/用户消息 id 用到的列，并下推 {@code type = USER}。
+     *
+     * <p>单块推送不再需要 AI 行与 TOOL 行，按轮次取全类型会把 AI 行的长 CLOB 一起读回
+     * （H2 临时 LOB 写放大）。</p>
+     */
+    @Override
+    public List<SessionMessage> findUserMessages(Long sessionId, Long turnId) {
+        if (sessionId == null || turnId == null) {
+            return List.of();
+        }
+        return messageMapper.selectList(Wrappers.<SessionMessagePO>lambdaQuery()
+                        .select(SessionMessagePO::getId, SessionMessagePO::getTurnId,
+                                SessionMessagePO::getType, SessionMessagePO::getResumeRequestId,
+                                SessionMessagePO::getContent, SessionMessagePO::getCreateTime)
+                        .eq(SessionMessagePO::getSessionId, sessionId)
+                        .eq(SessionMessagePO::getTurnId, turnId)
+                        .eq(SessionMessagePO::getType, SessionMessageType.USER.name())
+                        .orderByAsc(SessionMessagePO::getId))
+                .stream().map(this::toModel).toList();
+    }
+
+    /**
      * 取归属未知的旧消息（{@code turn_id IS NULL}）。
      *
      * <p>这些行早于「归属落到消息行」的改造，无法进入按轮次分页的口径。整批放到历史最前面
