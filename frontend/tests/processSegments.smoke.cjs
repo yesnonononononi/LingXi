@@ -1,7 +1,3 @@
-// 本轮（过程区技术债）未执行：用户要求绕过 Electron。DOM/testid 等价性由
-// tests/processDetailsSplit.test.cjs 与 node 侧真实组件挂载覆盖；真实布局几何、计算样式与
-// 扫光视觉呈现是**不可替代断言**，清单见 docs/qa/process-debt-verification.md §3。
-// 断言一行未改（拆分前后选择器等价），合并前需有 Electron 环境的人补跑一次并回填结论。
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -53,6 +49,24 @@ window.runClosedSegment = async () => { turn.value={status:'RUNNING'};
       {id:'read',toolName:AgentToolName.ReadFile,order:2,status:'success',args:{path:'ApplicationContextAssemblyTest.java'}}]};
   mountKey.value++; await window.flush(); };
 window.completeCommand = async () => { message.value.toolCalls[0].status='success'; message.value.toolCalls[0].result='核验通过'; await window.flush(); };
+window.showManyProcesses = async (count = 60) => {
+  turn.value = {status:'RUNNING'};
+  message.value = {id:'many-processes',role:'assistant',turnId:'901',timestamp:0,content:'',isComplete:false,
+    aiMessages:[{id:'middle',order:1000,text:'继续核对下一组文件。'}],
+    toolCalls: Array.from({length:count * 2}, (_, index) => {
+      const group = index < count ? 0 : 1;
+      const row = index % count;
+      return {id:'read-' + group + '-' + row,toolName:AgentToolName.ReadFile,
+        order:group * 2000 + row,status:'success',args:{path:'group-' + group + '-file-' + row + '.java'}};
+    })};
+  mountKey.value++; await window.flush();
+};
+window.appendProcesses = async () => {
+  message.value.toolCalls.push(...Array.from({length:40}, (_, index) => ({
+    id:'extra-' + index,toolName:AgentToolName.ReadFile,order:2100 + index,status:'success',
+    args:{path:'extra-file-' + index + '.java'}})));
+  await window.flush();
+};
 </script>
 <template><main class="mx-auto max-w-lx-chat px-4 py-10">
 <ChatMessageItem :key="mountKey" :message="message" :turn="turn" :is-dark="dark" session-id="7" />
@@ -177,8 +191,48 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'),'false');
   assert.match(await evaluate('document.querySelector("[data-testid=process-segment-title]").textContent'),/执行命令、读取/);
   await fs.writeFile(path.join(output, 'completed-between-text.png'), (await window.webContents.capturePage()).toPNG());
+  for (const [name, width, height, dark] of [['scroll-light', 1000, 900, false], ['scroll-dark', 1000, 900, true], ['scroll-small', 360, 600, true]]) {
+    window.setContentSize(width, height);
+    await evaluate(`window.setDark(${dark}); window.showManyProcesses()`);
+    await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
+    const readScrollGeometry = () => evaluate(`(() => {
+      const boxes = [...document.querySelectorAll('[data-testid=process-segment-details]')];
+      return boxes.map(box => ({height:box.clientHeight, content:box.scrollHeight,
+        overflow:getComputedStyle(box).overflowY, overscroll:getComputedStyle(box).overscrollBehaviorY,
+        width:document.documentElement.scrollWidth, viewport:innerWidth}));
+    })()`);
+    const boxes = await readScrollGeometry();
+    assert.equal(boxes.length, 2, '每个过程段各有独立滚动框');
+    for (const box of boxes) {
+      assert.ok(Math.abs(box.height - Math.min(480, height * 0.7)) <= 1, '固定高度充足，且适配较矮窗口：' + JSON.stringify(box));
+      assert.ok(box.content > box.height * 2, '大量工具项必须在框内溢出');
+      assert.equal(box.overflow, 'auto');
+      assert.equal(box.overscroll, 'contain', '滚到边界时不带动外层对话');
+      assert.ok(box.width <= box.viewport + 1, '滚动框不能撑宽窄屏');
+    }
+    const scrolled = await evaluate(`(() => {
+      const boxes = [...document.querySelectorAll('[data-testid=process-segment-details]')];
+      boxes[0].scrollTop = boxes[0].scrollHeight;
+      const last = boxes[0].firstElementChild.lastElementChild.getBoundingClientRect();
+      const bounds = boxes[0].getBoundingClientRect();
+      return {first:boxes[0].scrollTop, second:boxes[1].scrollTop,
+        lastVisible:last.bottom <= bounds.bottom + 1 && last.top >= bounds.top, page:scrollY};
+    })()`);
+    assert.ok(scrolled.first > 0, '可以滚到过程末尾');
+    assert.equal(scrolled.second, 0, '滚动一段不影响另一段');
+    assert.equal(scrolled.lastVisible, true, '最后一项可以完整滚入视野');
+    assert.equal(scrolled.page, 0, '框内滚动不改变页面位置');
+    await evaluate('window.appendProcesses()');
+    const appended = await readScrollGeometry();
+    assert.deepEqual(appended.map(box => box.height), boxes.map(box => box.height), '增量过程不能继续撑高展开框');
+    assert.ok(appended[1].content > boxes[1].content, '增量内容仍可在第二段中查看');
+    measurements.push({name, boxes, scrolled, appended});
+    await fs.writeFile(path.join(output, name + '.png'), (await window.webContents.capturePage()).toPNG());
+    await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
+    assert.equal(await evaluate(`document.querySelectorAll('[data-testid=process-segment-details]').length`), 0, '折叠后释放固定高度');
+  }
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, 'measurements.json'), JSON.stringify(measurements, null, 2));
-  console.log('过程区：运行节点不被摘要占位、文本间命令收尾后才生成摘要、整轮折叠、深浅主题、窄屏与历史展开选择保留验证通过。截图：' + output);
+  console.log('过程区：节点摘要、整轮折叠、深浅主题、窄屏、历史展开选择及各段固定高度独立滚动验证通过。截图：' + output);
   clearTimeout(deadline); window.destroy(); app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); if (window) window.destroy(); app.exit(1); });

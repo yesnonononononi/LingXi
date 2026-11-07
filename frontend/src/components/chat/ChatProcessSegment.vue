@@ -82,12 +82,15 @@ const isRunningTurn = computed(() => props.turn
       </span>
     </button>
     <CollapseTransition>
-      <div v-if="visible && expanded" class="mt-1 pl-3 border-l border-zinc-200 dark:border-white/10"
-        data-testid="process-segment-details">
-        <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"
-          :file-edits="message.fileEdits" :is-message-complete="message.isComplete"
-          :message-is-suspended="Boolean(message.isSuspended)" :is-running-turn="isRunningTurn"
-          :sub-sessions="subSessions" @select-sub-session="emit('selectSubSession', $event)" />
+      <div v-if="visible && expanded" class="mt-1">
+        <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。 -->
+        <div class="h-[480px] max-h-[70dvh] overflow-y-auto overscroll-y-contain pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
+          data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')">
+          <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"
+            :file-edits="message.fileEdits" :is-message-complete="message.isComplete"
+            :message-is-suspended="Boolean(message.isSuspended)" :is-running-turn="isRunningTurn"
+            :sub-sessions="subSessions" @select-sub-session="emit('selectSubSession', $event)" />
+        </div>
       </div>
     </CollapseTransition>
   </div>
