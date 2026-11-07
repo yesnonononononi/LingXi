@@ -5,6 +5,7 @@ import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +57,10 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
     private final ExecutionRepository executionRepository;
     private final ExecutionResumeTaskRepository resumeTaskRepository;
     private final ExecutionResumeCoordinator resumeCoordinator;
+    /** 检查点读取口：补做收口要拿到带属性的完整执行，摘要里没有那些字段。 */
+    private final com.summit.core.runtime.loop.ExecutionRepository checkpointRepository;
+    /** 收口补偿入口：幂等，靠各协作方的状态判据去重。 */
+    private final ExecutionLifecycleProjection lifecycleProjection;
 
     @Override
     public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
@@ -77,6 +82,59 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
         if (purged > 0) {
             log.info("回收已结束的恢复请求，共 {} 条", purged);
         }
+
+        int repaired = repairIncompleteClosures(snapshots);
+        if (repaired > 0) {
+            log.info("启动补做不完整收口，共 {} 条", repaired);
+        }
+    }
+
+    /**
+     * 补做「上一进程没能收完」的终态收口。
+     *
+     * <p><b>为什么要挂在启动巡检上</b>：收口在 {@code afterCommit} 里执行，崩溃恰好落在
+     * 「检查点已提交」与「卡片/轮次收口」之间时，内存里的不完整标记来不及落库，
+     * 只能由重启后的巡检按<b>已读到的快照</b>补做 —— 这是零新增状态（不加列、不加表）的唯一挂载点。</p>
+     *
+     * <p><b>为什么只处理本批已读到的快照</b>：不加列就无法反查「所有不完整收口的执行」，
+     * 所以这里只覆盖巡检本来就要读的那批（有遗留恢复请求的执行）。既不再落库、也不在巡检快照里
+     * 的执行，留给 Phase 2 把回执可查化时一并覆盖，见交付的未完项。</p>
+     *
+     * <p>补偿入口本身幂等：卡片收口、子执行结束事实、轮次终态都按状态判据去重，
+     * 重复启动不会产生第二次可见副作用。</p>
+     *
+     * @param snapshots 收口前读到的执行摘要
+     * @return 实际补做收口的条数
+     */
+    private int repairIncompleteClosures(Map<Long, Execution> snapshots) {
+        int repaired = 0;
+        for (Execution summary : snapshots.values()) {
+            if (summary.getId() == null || !ExecutionStatusCodes.isTerminal(summary.getStatus())) {
+                continue;
+            }
+            com.summit.core.agent.Execution checkpoint =
+                    checkpointRepository.findById(String.valueOf(summary.getId())).orElse(null);
+            if (checkpoint == null || !closureIncomplete(checkpoint)) {
+                continue;
+            }
+            ExecutionLifecycleProjection.ClosureOutcome outcome = lifecycleProjection.completeClosure(checkpoint);
+            if (outcome.complete()) {
+                repaired++;
+            } else {
+                log.warn("启动补做收口仍不完整: executionId={}, 失败步骤={}",
+                        summary.getId(), outcome.failedRequired());
+            }
+        }
+        return repaired;
+    }
+
+    /** 只认显式标记：没有标记的执行不该被巡检无谓地重跑一遍收口。 */
+    private static boolean closureIncomplete(com.summit.core.agent.Execution execution) {
+        if (execution.getAgentRequest() == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(execution.getAgentRequest().runtimeParametersOrDefault()
+                .getAttributes().get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE));
     }
 
     /**

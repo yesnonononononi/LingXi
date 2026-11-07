@@ -205,7 +205,9 @@ class ExecutionStartupReaperTest {
     }
 
     private ExecutionStartupReaper reaper() {
-        return new ExecutionStartupReaper(repository, resumeTaskRepository, resumeCoordinator);
+        return new ExecutionStartupReaper(repository, resumeTaskRepository, resumeCoordinator,
+                mock(com.summit.core.runtime.loop.ExecutionRepository.class),
+                mock(com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection.class));
     }
 
     private ExecutionResumeTask resumeTask(long id, long executionId, long generation, ResumeTaskState state) {
