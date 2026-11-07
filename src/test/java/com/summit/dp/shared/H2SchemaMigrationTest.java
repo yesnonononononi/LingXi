@@ -184,17 +184,19 @@ class H2SchemaMigrationTest {
     }
 
     @Test
-    @DisplayName("初始化器内置的期望表清单与脚本声明的表集合完全一致（防两处漂移）")
+    @DisplayName("初始化器内置的期望表清单与全部脚本声明的表集合完全一致（防两处漂移）")
     void expectedTablesMatchTheScript() {
         Pattern createTable = Pattern.compile(
                 "CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(\\w+)", Pattern.CASE_INSENSITIVE);
-        Matcher matcher = createTable.matcher(baselineScript().content());
         Set<String> declared = new LinkedHashSet<>();
-        while (matcher.find()) {
-            declared.add(matcher.group(1).toLowerCase(Locale.ROOT));
+        for (SchemaScript script : loader.load(H2Storage.SCHEMA_LOCATION)) {
+            Matcher matcher = createTable.matcher(script.content());
+            while (matcher.find()) {
+                declared.add(matcher.group(1).toLowerCase(Locale.ROOT));
+            }
         }
         assertEquals(declared, new LinkedHashSet<>(H2SchemaInitializer.expectedTables()),
-                "期望表清单必须与 db/h2 基线脚本声明的表集合一致");
+                "期望表清单必须与 db/h2 全部版本脚本声明的表集合一致");
     }
 
     /** 临时库：只开文件不建表，建库交给被测的初始化器。 */

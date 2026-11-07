@@ -66,6 +66,7 @@ class H2SchemaPoConsistencyTest {
             com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO.class,
             com.summit.dp.email.infrastructure.persistence.po.EmailPO.class,
             com.summit.dp.email.infrastructure.persistence.po.EmailMessagePO.class,
+            com.summit.dp.email.infrastructure.persistence.po.EmailMessageReceiptPO.class,
             com.summit.dp.mcp.infrastructure.persistence.po.McpPO.class,
             com.summit.dp.task.infrastructure.persistence.po.TaskPO.class,
             com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO.class,

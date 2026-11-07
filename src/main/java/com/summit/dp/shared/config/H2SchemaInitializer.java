@@ -55,7 +55,8 @@ public class H2SchemaInitializer implements SchemaInitializer {
     private static final List<String> EXPECTED_TABLES = List.of(
             "mcp", "provider_config", "model_config", "workspace", "session", "session_message",
             "session_context", "user_configs", "agent", "team", "execution", "chat_turn", "tool_call",
-            "execution_resume_task", "email", "email_message", "runtime_config_revision", "task",
+            "execution_resume_task", "email", "email_message", "email_message_receipt",
+            "runtime_config_revision", "task",
             "checklist", "checklist_step");
 
     /** 从 SQLite 抄过来的写法一律拒绝：自增、SQL 触发器体、切模式、虚拟列在 H2 都不成立。 */
@@ -121,7 +122,12 @@ public class H2SchemaInitializer implements SchemaInitializer {
             createVersionTable(connection);
             Map<Integer, String> applied = readApplied(connection);
             int executed = 0;
+            // 期望表集合按版本累积，且取自 classpath 上的权威脚本（不是本次传入的可能被改坏的那份）：
+            // 「少建了一张表」必须能被抓住，所以期望清单不能由被测内容自己声明。
+            Map<Integer, Set<String>> authoritative = declaredTablesByVersion(loadScripts());
+            Set<String> expected = new LinkedHashSet<>();
             for (SchemaScript script : ordered) {
+                expected.addAll(authoritative.getOrDefault(script.version(), declaredTables(script)));
                 String appliedChecksum = applied.get(script.version());
                 if (appliedChecksum != null) {
                     if (!appliedChecksum.equalsIgnoreCase(script.checksum())) {
@@ -133,7 +139,7 @@ public class H2SchemaInitializer implements SchemaInitializer {
                 }
                 executeIdempotent(connection, script);
                 verifyObjects(connection, script);
-                verifyExpectedTables(connection);
+                verifyExpectedTables(connection, expected);
                 recordVersion(connection, script);
                 executed++;
             }
@@ -208,9 +214,9 @@ public class H2SchemaInitializer implements SchemaInitializer {
     }
 
     /** 期望业务表全部存在才算建库完成；缺一张就抛错并保持「未登记」，下次启动重跑补齐。 */
-    private void verifyExpectedTables(Connection connection) throws SQLException {
+    private void verifyExpectedTables(Connection connection, Set<String> expected) throws SQLException {
         List<String> missing = new ArrayList<>();
-        for (String table : EXPECTED_TABLES) {
+        for (String table : expected) {
             if (!tableExists(connection, table)) {
                 missing.add(table);
             }
@@ -218,6 +224,25 @@ public class H2SchemaInitializer implements SchemaInitializer {
         if (!missing.isEmpty()) {
             throw new IllegalStateException("H2 建库未完成，缺少业务表，未登记版本: " + missing);
         }
+    }
+
+    /** 该脚本声明的表集合（小写）。 */
+    private static Set<String> declaredTables(SchemaScript script) {
+        Set<String> tables = new LinkedHashSet<>();
+        Matcher matcher = CREATE_TABLE_NAME.matcher(script.content());
+        while (matcher.find()) {
+            tables.add(matcher.group(1).toLowerCase(java.util.Locale.ROOT));
+        }
+        return tables;
+    }
+
+    /** 版本号 → 该版本权威脚本声明的表集合。 */
+    private static Map<Integer, Set<String>> declaredTablesByVersion(List<SchemaScript> scripts) {
+        Map<Integer, Set<String>> byVersion = new LinkedHashMap<>();
+        for (SchemaScript script : scripts) {
+            byVersion.put(script.version(), declaredTables(script));
+        }
+        return byVersion;
     }
 
     /** 只有上面全部通过才会走到这里：登记版本与指纹。 */
