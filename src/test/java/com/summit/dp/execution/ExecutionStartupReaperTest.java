@@ -205,9 +205,16 @@ class ExecutionStartupReaperTest {
     }
 
     private ExecutionStartupReaper reaper() {
+        // 本类只关心启动段自身的判定；待收口补偿由专门用例覆盖，这里给一个不执行任务的执行器。
         return new ExecutionStartupReaper(repository, resumeTaskRepository, resumeCoordinator,
                 mock(com.summit.core.runtime.loop.ExecutionRepository.class),
-                mock(com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection.class));
+                mock(com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection.class),
+                new com.summit.dp.shared.concurrent.ManagedAsyncExecutor() {
+                    @Override
+                    public boolean tryExecute(String taskName, Runnable task) {
+                        return true;
+                    }
+                });
     }
 
     private ExecutionResumeTask resumeTask(long id, long executionId, long generation, ResumeTaskState state) {

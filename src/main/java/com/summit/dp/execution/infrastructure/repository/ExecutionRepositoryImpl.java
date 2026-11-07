@@ -72,12 +72,13 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
 
     @Override
     public List<Long> findClosurePendingIds(int limit) {
-        return mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
-                        .select(ExecutionPO::getId)
-                        .eq(ExecutionPO::getClosurePending, CLOSURE_PENDING)
-                        .orderByAsc(ExecutionPO::getId)
-                        .last("LIMIT " + Math.clamp(limit, 1, MAX_CLOSURE_BATCH)))
-                .stream().map(ExecutionPO::getId).filter(Objects::nonNull).toList();
+        return mapper.findClosurePendingIds(CLOSURE_PENDING, Math.clamp(limit, 1, MAX_CLOSURE_BATCH));
+    }
+
+    @Override
+    public List<Long> findClosurePendingIdsAfter(long afterId, int limit) {
+        return mapper.findClosurePendingIdsAfter(CLOSURE_PENDING, afterId,
+                Math.clamp(limit, 1, MAX_CLOSURE_BATCH));
     }
 
     /**

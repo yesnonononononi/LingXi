@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.infrastructure.lifecycle.startup;
 
+import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
@@ -7,6 +8,7 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -19,6 +21,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 启动执行收尸钩子：进程崩溃重启后，{@code execution} 表里遗留的 CREATED / RUNNING
@@ -51,8 +54,27 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
 
     /** 遗留请求启动收口的批次上限；启动只处理有界的一批，避免拉全表。 */
     private static final int UNFINISHED_BATCH = 500;
-    /** 单次启动最多补做多少条待收口事实；处理不完的留到下次启动（待收口位仍是 1）。 */
-    private static final int CLOSURE_BATCH = 500;
+    /**
+     * 单批处理的待收口条数。
+     *
+     * <p><b>为什么从 500 收到 100</b>：批大小原来承担「一次启动能处理多少」的语义，越大越好；
+     * 现在由游标翻页负责覆盖任意量，批大小的作用变成「一轮的延迟上限」，越小越公平 ——
+     * 每条补做都要读检查点正文并跨模块收口，一批 100 条既能摊平瞬时故障的影响，
+     * 也不会让「一条卡住」把整批拖成一眼看不到头的等待。游标查询本身只取一列走索引，多翻几页无成本。</p>
+     */
+    private static final int CLOSURE_BATCH = 100;
+    /**
+     * 消费轮次上限：防一条永远失败的项把轮转变成永动机。
+     *
+     * <p>退避 {@value #CLOSURE_BACKOFF_MILLIS} 毫秒 × {@value #CLOSURE_ROUNDS_LIMIT} 轮 ≈ 10 秒的进程内
+     * 重试窗口：足够覆盖瞬时故障（锁竞争、短暂不可用），又不会无限占着后台线程。用尽后待收口位
+     * 留在库里，等该执行下次落库或下次启动。</p>
+     */
+    private static final int CLOSURE_ROUNDS_LIMIT = 200;
+    /** 轮间退避：既让瞬时故障（锁竞争、短暂不可用）有机会自愈，也不至于把线程烧满。 */
+    private static final long CLOSURE_BACKOFF_MILLIS = 50L;
+    /** 任务名：进日志与受管执行器的丢弃告警，便于定位是谁的后台任务。 */
+    public static final String TASK_CLOSURE_REPAIR = "execution-startup-closure-repair";
     /** 已结束请求的回收窗口：巡检已随重试模型删除，终态回收只在启动时做一次。 */
     private static final long PURGE_AFTER_SECONDS = 3600L;
 
@@ -63,12 +85,13 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
     private final com.summit.core.runtime.loop.ExecutionRepository checkpointRepository;
     /** 收口补偿入口：幂等，靠各协作方的状态判据去重。 */
     private final ExecutionLifecycleProjection lifecycleProjection;
+    /** 受管异步执行器：待收口项的消费必须跑在受管线程上，启动线程只负责提交。 */
+    private final ManagedAsyncExecutor asyncExecutor;
 
     @Override
     public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
-        // 先快照遗留请求与它们此刻的执行状态，再收口孤儿运行。
-        // 顺序不可颠倒：收口会把崩溃时仍 RUNNING 的执行改成 FAILED，若在收口之后才读状态，
-        // 「崩溃时正在 loop 中」这一信息就没了。
+        // 启动线程只做「有界、不去重不重要」的收尾：读一批遗留请求、收口孤儿运行、回收旧请求。
+        // 这些动作与待办数量无关（固定 1 次查询 + 1 次条件 UPDATE + 1 次删除）。
         List<ExecutionResumeTask> leftover = resumeTaskRepository.listUnfinished(UNFINISHED_BATCH);
         Map<Long, Execution> snapshots = readExecutionSummaries(leftover);
 
@@ -85,10 +108,8 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
             log.info("回收已结束的恢复请求，共 {} 条", purged);
         }
 
-        int repaired = repairPendingClosures();
-        if (repaired > 0) {
-            log.info("启动补做未完成的收口，共 {} 条", repaired);
-        }
+        // 待收口项的消费量与库里的待办量成正比，绝不能留在启动线程里：只提交，立刻返回。
+        triggerClosureRepair();
     }
 
     /**
@@ -104,41 +125,135 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
      * 根本没有恢复请求。这里只按 {@code closure_pending = 1} 这一条窄查询找活，与本批
      * 遗留请求的处置完全独立。</p>
      *
-     * <p><b>批大小有界</b>：单次启动最多处理 {@value #CLOSURE_BATCH} 条。处理不完的仍为
-     * {@code closure_pending = 1}，下一次启动会继续；这期间用户可见的事实可能停在「执行已终结、
-     * 轮次仍进行中」，属于已知且有限的滞后（见交付未完项）。</p>
-     *
-     * @return 本批次实际收口完成的条数
+     * <p><b>启动段只触发、不处理</b>：真正的扫描交给 {@link ManagedAsyncExecutor}，启动线程立刻返回。
+     * 启动耗时因此与待办数量无关 —— 待办一万条也不会把 Spring 的
+     * {@code ApplicationReadyEvent} 拖住。</p>
      */
-    private int repairPendingClosures() {
-        List<Long> pending = executionRepository.findClosurePendingIds(CLOSURE_BATCH);
-        if (pending.isEmpty()) {
-            return 0;
+    private void triggerClosureRepair() {
+        boolean accepted = asyncExecutor.tryExecute(TASK_CLOSURE_REPAIR, this::drainPendingClosures);
+        if (!accepted) {
+            // 关停瞬间被拒：待收口位仍在库里，下次启动或该执行下一次落库会重做，不丢事实。
+            log.warn("启动补做收口的任务未被受理（执行器已关闭），待收口事实留在库里待下次启动: task={}",
+                    TASK_CLOSURE_REPAIR);
         }
-        int repaired = 0;
-        for (Long executionId : pending) {
-            if (executionId == null) {
+    }
+
+    /**
+     * 消费待收口项：有界批次 + 游标翻页 + 公平轮转，直到清空或轮次用尽。
+     *
+     * <p><b>有界批次</b>：每批 {@value #CLOSURE_BATCH} 条。批大小压到 500（= 原来的一次性上限）而不是
+     * 更大，是因为每条补做都要读一次检查点正文并跨模块收口，单批再放大只会让「一批里失败一条」
+     * 的代价变高，不会更快清空。</p>
+     *
+     * <p><b>游标 + 公平轮转</b>：一轮按 {@code id > cursor} 向后翻页直到取不满一批，然后游标归零，
+     * 下一轮从头再来。失败项<b>在同一轮里最多尝试一次</b>，失败只记日志、跳过继续处理后面的项 ——
+     * 否则「前 N 条一直失败」会把后面的项饿死（旧的单批扫一轮就有这个问题）。</p>
+     *
+     * <p><b>为什么必须在进程内重试</b>：一旦这次执行不再落库，进程里就再没有别的触发点。
+     * 只靠「下次启动」意味着用户要等到重启才能看到轮次收口，而这不是可接受的语义。</p>
+     *
+     * <p><b>什么时候停</b>：清空即停；另外轮次有上限 {@value #CLOSURE_ROUNDS_LIMIT}，防止一条
+     * 永远失败的项把这里变成永动机 —— 用尽后待收口位仍留在库里，等该执行下次落库或下次启动。</p>
+     */
+    private void drainPendingClosures() {
+        long cursor = 0L;
+        int round = 0;
+        while (round < CLOSURE_ROUNDS_LIMIT && !Thread.currentThread().isInterrupted()) {
+            List<Long> pending;
+            try {
+                pending = executionRepository.findClosurePendingIdsAfter(cursor, CLOSURE_BATCH);
+            } catch (RuntimeException failure) {
+                log.error("读取待收口项失败，本轮放弃: cursor={}, error={}", cursor, failure.toString(), failure);
+                return;
+            }
+            if (pending.isEmpty()) {
+                if (cursor == 0L) {
+                    if (round > 0) {
+                        log.info("启动补做收口完成，共 {} 轮", round);
+                    }
+                    return;
+                }
+                // 本轮翻到底：游标归零，退避后从头再来。
+                cursor = 0L;
+                round++;
+                if (!awaitNextRound()) {
+                    return;
+                }
                 continue;
             }
-            com.summit.core.agent.Execution execution = checkpointRepository
-                    .findById(String.valueOf(executionId)).orElse(null);
-            if (execution == null) {
+            for (Long executionId : pending) {
+                repairOne(executionId);
+            }
+            cursor = pending.get(pending.size() - 1);
+            if (pending.size() < CLOSURE_BATCH) {
+                // 这一页没取满说明已经到底：直接进入下一轮，省一次空查询。
+                cursor = 0L;
+                round++;
+                if (pendingCountIsZero()) {
+                    log.info("启动补做收口完成，共 {} 轮", round);
+                    return;
+                }
+                if (!awaitNextRound()) {
+                    return;
+                }
+            }
+        }
+        log.warn("启动补做收口轮次用尽仍有余量，待收口事实留在库里: rounds={}, 待下次落库或下次启动",
+                CLOSURE_ROUNDS_LIMIT);
+    }
+
+    /**
+     * 补做一条待收口事实。
+     *
+     * <p><b>单条失败绝不打断整轮</b>：一条收口失败不代表后面的项也失败，跳过继续处理才是公平的。
+     * 失败项仍是 {@code closure_pending = 1}，由下一轮或下次启动重试。</p>
+     *
+     * <p><b>不在这里再读一次「是否清位」</b>：收口成功与否已由 {@code completeClosure} 自己的日志
+     * 表达（失败带步骤名且不清位），每条多一次 SELECT 只会把消费一轮的耗时翻倍。</p>
+     */
+    private void repairOne(Long executionId) {
+        if (executionId == null) {
+            return;
+        }
+        try {
+            // 用 Optional 的 map 承接，是为了让框架执行对象的类型由上下文推断 ——
+            // 它与业务侧 Execution 同名，写出来就得用全类名，方法体内出现全类名是 AGENTS 明确禁止的。
+            boolean closed = checkpointRepository.findById(String.valueOf(executionId))
+                    .map(execution -> {
+                        // 收口脚本 + 清待收口位 + 广播/唤醒：与正常收尾走同一个入口，靠状态判据去重。
+                        lifecycleProjection.completeClosure(execution,
+                                execution.getExecutionState() == ExecutionState.CANCELLED);
+                        return Boolean.TRUE;
+                    })
+                    .orElse(Boolean.FALSE);
+            if (!closed) {
                 log.warn("启动补做收口跳过：检查点读不到, executionId={}", executionId);
-                continue;
             }
-            // 收口脚本 + 清待收口位 + 广播/唤醒：与正常收尾走同一个入口，靠项目自己的状态判据去重。
-            lifecycleProjection.completeClosure(execution,
-                    execution.getExecutionState() == com.summit.core.agent.ExecutionState.CANCELLED);
-            boolean stillPending = executionRepository.findCheckpointSummary(executionId)
-                    .map(summary -> Integer.valueOf(1).equals(summary.getClosurePending()))
-                    .orElse(false);
-            if (stillPending) {
-                log.warn("启动补做收口未完成，待收口位仍在: executionId={}", executionId);
-            } else {
-                repaired++;
-            }
+        } catch (RuntimeException failure) {
+            log.error("启动补做收口失败，跳过本项继续: executionId={}, error={}",
+                    executionId, failure.toString(), failure);
         }
-        return repaired;
+    }
+
+    /** 轮间退避；被打断就返回 {@code false} 让消费停止。 */
+    private boolean awaitNextRound() {
+        try {
+            TimeUnit.MILLISECONDS.sleep(CLOSURE_BACKOFF_MILLIS);
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /** 待办是否已全部清空（库内事实，不看内存计数）。 */
+    private boolean pendingCountIsZero() {
+        try {
+            return executionRepository.findClosurePendingIds(1).isEmpty();
+        } catch (RuntimeException failure) {
+            log.error("确认待收口是否清空失败，按未清空处理: error={}", failure.toString(), failure);
+            return false;
+        }
     }
 
     /**

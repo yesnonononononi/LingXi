@@ -50,6 +50,25 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
                              @Param("running") int running);
 
     /**
+     * 取「还有待收口事实」的执行 id（{@code closure_pending = 1}），按 id 升序。
+     *
+     * <p>行数上限由 {@link Param} 绑定（不是拼串）：这是启动/巡检热路径，只取 id 一列、走
+     * {@code idx_execution_closure_pending}，不 join、不读检查点正文。</p>
+     */
+    @Select("SELECT id FROM execution WHERE closure_pending = #{pending} ORDER BY id LIMIT #{limit}")
+    List<Long> findClosurePendingIds(@Param("pending") int pending, @Param("limit") int limit);
+
+    /**
+     * 按游标取一页「还有待收口事实」的执行 id（{@code closure_pending = 1} 且 {@code id > afterId}）。
+     *
+     * <p>消费方按 {@code id > cursor} 逐页向后翻，才能在同一进程内把整张待办表走完。</p>
+     */
+    @Select("SELECT id FROM execution WHERE closure_pending = #{pending} AND id > #{afterId}"
+            + " ORDER BY id LIMIT #{limit}")
+    List<Long> findClosurePendingIdsAfter(@Param("pending") int pending, @Param("afterId") long afterId,
+                                          @Param("limit") int limit);
+
+    /**
      * 取「仍活跃」执行所属的会话 id 集合（去重）。
      *
      * <p>启动自检只需要候选会话，不需要执行行本身：先按状态挑出会话，再对这些会话解析最新执行，

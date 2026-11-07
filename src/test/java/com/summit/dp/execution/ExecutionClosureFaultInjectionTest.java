@@ -302,8 +302,16 @@ class ExecutionClosureFaultInjectionTest {
 
     private ExecutionStartupReaper reaper(LocalExecutionRepository checkpointRepository,
                                          ExecutionLifecycleProjection projection) {
+        // 本类验证的是收口脚本与补偿的语义，不是异步策略：让受管执行器当场跑完，断言才是确定的。
         return new ExecutionStartupReaper(executions, resumeTasks,
-                mock(ExecutionResumeCoordinator.class), checkpointRepository, projection);
+                mock(ExecutionResumeCoordinator.class), checkpointRepository, projection,
+                new com.summit.dp.shared.concurrent.ManagedAsyncExecutor() {
+                    @Override
+                    public boolean tryExecute(String taskName, Runnable task) {
+                        task.run();
+                        return true;
+                    }
+                });
     }
 
     /** 真实卡片服务：走的是一次独立的收口事务，与生产同构。 */

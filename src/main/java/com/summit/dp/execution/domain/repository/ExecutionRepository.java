@@ -118,6 +118,22 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
     List<Long> findClosurePendingIds(int limit);
 
     /**
+     * 按游标读一页「还有待收口事实」的执行 id（{@code closure_pending = 1} 且 {@code id > afterId}）。
+     *
+     * <p><b>为什么需要游标版本</b>：单批 {@code limit} 只能处理最前面的一页，而待办数可能远超一批。
+     * 消费方按 {@code id > cursor} 逐页向后翻，才能在同一进程内把整张待办表走完；否则第 N+1 页之后
+     * 的项永远等不到处理 —— 进程不重启就不会有「下一次启动」。</p>
+     *
+     * <p><b>失败项不会挪动游标</b>：游标只按已扫到的最大 id 前进，某条处理失败不影响游标，
+     * 它仍留在库里（{@code closure_pending = 1}），下一轮从 0 重新扫时再试一次。</p>
+     *
+     * @param afterId 游标（不含）；传 0 表示从头开始
+     * @param limit   单批上限；实现内部会夹到有界范围
+     * @return 命中的执行 id，按 id 升序，最多 {@code limit} 条
+     */
+    List<Long> findClosurePendingIdsAfter(long afterId, int limit);
+
+    /**
      * 按 id 条件把待收口位从 1 改为 0（只命中仍为 1 的行）。
      *
      * <p>不是业务状态变更，所以不带版本条件；返回值让「漏清」可观测。</p>
