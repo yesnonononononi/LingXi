@@ -25,6 +25,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -117,22 +118,38 @@ class ExecutionStartupReaperTest {
     }
 
     // ------------------------------------------------------------------
-    // 遗留请求只收口、不重投（变异守卫 #3）
+    // 遗留请求按来源与状态分治（变异守卫 #3）
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("遗留请求只收口不重投：执行收口 + 请求 FAILED，绝不 dispatch")
-    void leftoverRequestIsClosedOutAndNeverRedispatched() {
+    @DisplayName("已受理未开始（READY）且执行仍挂起：按库内来源重投，绝不烧成 FAILED")
+    void queuedRequestOnSuspendedExecutionIsRedispatched() {
         long executionId = insertExecution(301L, STATUS_SUSPENDED, 7L);
         ExecutionResumeTask leftover = resumeTask(1L, executionId, 7L, ResumeTaskState.READY);
         when(resumeTaskRepository.listUnfinished(anyInt())).thenReturn(List.of(leftover));
 
         reaper().onApplicationEvent(mock(ApplicationReadyEvent.class));
 
-        verify(resumeCoordinator).closeStartupFailure(eq(executionId), any());
-        verify(resumeCoordinator, never()).dispatch(anyLong());
-        assertEquals(ResumeTaskState.FAILED, leftover.getState(),
-                "遗留请求必须收口为 FAILED，绝不能自动重投");
+        verify(resumeCoordinator).dispatch(executionId);
+        verify(resumeCoordinator, never()).closeStartupFailure(anyLong(), any());
+        assertNotEquals(ResumeTaskState.FAILED, leftover.getState(),
+                "决策已落库、执行仍挂起：重启必须重投，不能把用户那次批准静默作废");
+    }
+
+    @Test
+    @DisplayName("门禁未放行（DEFERRED）且执行仍挂起：重新排队后重投")
+    void deferredRequestOnSuspendedExecutionIsRedispatched() {
+        long executionId = insertExecution(303L, STATUS_SUSPENDED, 7L);
+        ExecutionResumeTask leftover = resumeTask(3L, executionId, 7L, ResumeTaskState.DEFERRED);
+        when(resumeTaskRepository.listUnfinished(anyInt())).thenReturn(List.of(leftover));
+
+        reaper().onApplicationEvent(mock(ApplicationReadyEvent.class));
+
+        verify(resumeCoordinator).dispatch(executionId);
+        verify(resumeCoordinator, never()).closeStartupFailure(anyLong(), any());
+        verify(resumeTaskRepository).updateState(leftover);
+        assertNotEquals(ResumeTaskState.FAILED, leftover.getState(),
+                "决策已落库、执行仍挂起：重启必须重投，不能把用户那次批准静默作废");
     }
 
     @Test

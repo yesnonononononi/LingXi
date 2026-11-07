@@ -4,6 +4,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
+import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
@@ -33,10 +34,11 @@ import java.util.concurrent.TimeUnit;
  * 「已暂停待恢复」，必须保留，误标会让恢复入口消失；COMPLETED / FAILED / CANCELLED 等
  * 终态行不属于本钩子职责，绝不触碰。</p>
  *
- * <p><b>遗留恢复请求只收口、不重投</b>：恢复已改为「只尝试一次」。进程崩溃后留下的
- * READY / CLAIMED 请求代表「批准已落库、恢复没跑完」，自动重投会让同一段恢复执行两次，
- * 因此这里只做失败收口：执行已终态或代际已变的请求作废；其余请求把执行按框架失败链
- * 落终态并把请求标 FAILED。<b>完全没有遗留请求的 SUSPENDED 执行是「正常等待审批」，
+ * <p><b>遗留恢复请求按来源与状态分治，不再一律收口</b>：{@code READY} / {@code DEFERRED} 且执行
+ * <b>仍 SUSPENDED</b>、代际一致的请求，代表「决策已落库、恢复没跑完」——进程崩溃前用户那次批准
+ * 是有效决定，重启后必须按<b>库内来源</b>重投（人工来源不受 {@code AUTO_ROUNDS} 限制）。
+ * {@code CLAIMED}（崩溃时已在 loop 中）无法确认是否已产生副作用，仍按既有安全策略失败收口；
+ * 代际过期 / 执行已终态则作废。<b>完全没有遗留请求的 SUSPENDED 执行是「正常等待审批」，
  * 原样保留</b>，用户仍可经 {@code /resume} 手工恢复。</p>
  *
  * <p><b>顺序不可调换</b>：请求对应执行的状态必须在
@@ -257,13 +259,24 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
     }
 
     /**
-     * 逐条收口遗留请求：只失败收口，绝不重新派发。
+     * 逐条处置遗留请求：按<b>请求状态 + 执行事实 + 代际</b>三分，而不是一律失败收口。
      *
-     * <p>执行已终态（崩溃前就结束了）或代际已变（期间又挂起过一次）的请求直接作废 ——
-     * 前者已无恢复对象，后者的新挂起边界是合法的等待，不能被旧请求连坐。其余（仍 SUSPENDED
-     * 或崩溃时正在 loop 中）说明恢复没跑完：把执行按框架失败链落终态，请求标 FAILED。
-     * 崩溃时 RUNNING 的执行已被 {@link ExecutionRepository#markOrphanRunsFailed()} 收口，
-     * 这里的收口对它是幂等的空操作。</p>
+     * <p><b>为什么不能一律 FAILED</b>：{@code READY}（已受理、还没开始跑）的同代际人工审批，
+     * 决策已经落库、执行仍挂在 SUSPENDED —— 这正是「点完批准、进程崩了」的形态。把它烧成 FAILED
+     * 等于把用户那次批准静默作废，而 {@code trigger_type} 白存了。恢复的危害只存在于
+     * 「已经跑起来、不知道跑到了哪」的那一侧。</p>
+     *
+     * <p><b>判定（逐条说明依据）</b>：</p>
+     * <ol>
+     *   <li>执行行缺失 / 执行已终态 / 代际已变 → 作废。前两者已无恢复对象，后者说明期间又挂起过，
+     *       当前挂起边界是合法的等待，不能被旧请求连坐。</li>
+     *   <li>{@code READY} / {@code DEFERRED} 且执行<b>仍 SUSPENDED</b> → 交给
+     *       {@link ExecutionResumeCoordinator#dispatch(long)} 按<b>库内来源</b>重投。
+     *       门禁不通过自然会再落回 {@code DEFERRED}：人工来源不受 {@code AUTO_ROUNDS} 限制，
+     *       {@code USER_PAUSED} 仍拦。</li>
+     *   <li>{@code CLAIMED}（已开始跑，崩在运行中），或执行已不在挂起态 → 保持既有安全策略：
+     *       失败收口 + 请求 FAILED。此时无法确认是否已产生副作用，重投会让同一段执行跑两次。</li>
+     * </ol>
      *
      * @param leftover  收口前读到的遗留请求
      * @param snapshots 上述请求对应执行在收口前的状态摘要
@@ -277,13 +290,48 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
                 handled++;
                 continue;
             }
-            // 恢复没跑完：执行收口为 FAILED，请求标 FAILED，不再自动派发。
+            if (resumable(task, snapshot)) {
+                requeueAndReplay(task);
+                handled++;
+                continue;
+            }
+            // 已开始跑却崩在运行中：无法确认副作用边界，只收口不重投。
             resumeCoordinator.closeStartupFailure(task.getExecutionId(),
                     "进程崩溃时恢复未完成，无法确认是否已产生副作用");
             markFailed(task, "进程崩溃时恢复未完成，无法确认是否已产生副作用，只收口不重投");
             handled++;
         }
         return handled;
+    }
+
+    /**
+     * 这条遗留请求是否可以按库内来源重投。
+     *
+     * <p>两个条件缺一不可：请求还没被领取（{@code READY} / {@code DEFERRED}），且执行确实还挂在
+     * {@code SUSPENDED}。代际与终态已在 {@link #supersedeIfMoot} 判过。</p>
+     */
+    private static boolean resumable(ExecutionResumeTask task, Execution snapshot) {
+        ResumeTaskState state = task.getState();
+        boolean notStarted = state == ResumeTaskState.READY || state == ResumeTaskState.DEFERRED;
+        return notStarted && snapshot.getStatus() != null && snapshot.getStatus() == ExecutionStatusCodes.SUSPENDED;
+    }
+
+    /**
+     * 把请求重新排回可领取状态并触发一次派发。
+     *
+     * <p>{@code DEFERRED} 必须先显式改回 {@code READY}：领取是带 {@code state = READY} 条件的
+     * 条件更新，直接派发只会一次次领取失败。改状态失败（版本被别人推进）就跳过 ——
+     * 说明此刻已有别的路径在处置这条请求。</p>
+     */
+    private void requeueAndReplay(ExecutionResumeTask task) {
+        if (task.requeueIfDeferred() && !resumeTaskRepository.updateState(task)) {
+            log.info("遗留恢复请求重新排队时状态已变化，跳过: taskId={}, executionId={}",
+                    task.getId(), task.getExecutionId());
+            return;
+        }
+        log.info("遗留恢复请求按库内来源重投: taskId={}, executionId={}, source={}",
+                task.getId(), task.getExecutionId(), task.effectiveTrigger());
+        resumeCoordinator.dispatch(task.getExecutionId());
     }
 
     /** 批量读一批请求对应执行的摘要（状态 + 代际），供收口前快照使用。 */

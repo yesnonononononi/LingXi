@@ -64,9 +64,11 @@ public class ExecutionResumeTaskRepositoryImpl
     @Override
     public List<ExecutionResumeTask> listUnfinished(int limit) {
         // 只按状态集合查询：遗留请求的处置由启动收口按执行状态与代际逐个判定。
+        // DEFERRED 必须一并纳入 —— 它代表「门禁暂时没放行」，重启后若扫不到就永远等不到下一次受理。
         LambdaQueryWrapper<ExecutionResumeTaskPO> wrapper = Wrappers.<ExecutionResumeTaskPO>lambdaQuery()
                 .in(ExecutionResumeTaskPO::getState,
-                        ResumeTaskState.READY.dbValue(), ResumeTaskState.CLAIMED.dbValue())
+                        ResumeTaskState.READY.dbValue(), ResumeTaskState.CLAIMED.dbValue(),
+                        ResumeTaskState.DEFERRED.dbValue())
                 .orderByAsc(ExecutionResumeTaskPO::getId)
                 .last("LIMIT " + Math.clamp(limit, 1, 1000));
         return taskMapper.selectList(wrapper).stream().map(this::toModel).toList();
