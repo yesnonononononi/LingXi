@@ -8,8 +8,8 @@ package com.summit.dp.workflow.application.lifecycle;
  *
  * <p><b>启动失败收口与统一启动入口都不在这里</b>：收口口径由 {@link StartupFailureCloser} 按角色提供，
  * 启动本身由 {@link ExecutionLaunchGateway} + {@link ExecutionLaunchSpec} 承担（角色差异写在
- * {@link ExecutionLaunchRole} 里）。本接口只管暂停与恢复两个动作 —— 曾在此留过一层
- * {@code submitNewExecution} / {@code closeFailedStartup} 包装，生产代码一个都没走，已删。</p>
+ * {@link ExecutionLaunchRole} 里）。本接口只管暂停与恢复两个动作，启动与启动失败收口一律走上面那条链，
+ * 不要在本接口上再加启动包装 —— 同一件事两处入口，必然出现「改一处漏一处」。</p>
  */
 public interface ExecutionLifecycleOrchestrator {
 
