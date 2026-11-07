@@ -349,12 +349,7 @@ class ModelContextReplaceTransactionTest {
                                         LocalFileCheckpointStore checkpointStore) {
 
             return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore,
-                    provider(mock(ToolCallReadinessService.class)),
-                    provider(mock(ToolCallService.class)),
-                    provider(mock(SubExecutionLifecycle.class)),
-                    provider(mock(SessionContextUsageProjector.class)),
-                    provider(new ChatTurnLifecycleProjector(mock(ChatTurnService.class))),
-                    provider(mock(RuntimeEventPublisher.class)));
+                    ExecutionRepositoryTestFactory.projectionProvider());
         }
 
         @SuppressWarnings("unchecked")

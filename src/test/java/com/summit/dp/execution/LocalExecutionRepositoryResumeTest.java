@@ -4,6 +4,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -65,6 +66,7 @@ class LocalExecutionRepositoryResumeTest {
     private final SessionContextUsageProjector sessions = mock(SessionContextUsageProjector.class);
     private final ChatTurnLifecycleProjector turns = mock(ChatTurnLifecycleProjector.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
+    private final InputWakeupService wakeups = mock(InputWakeupService.class);
     private final List<String> suspended = new ArrayList<>();
     private final List<String> finished = new ArrayList<>();
     @org.junit.jupiter.api.BeforeEach
@@ -112,8 +114,9 @@ class LocalExecutionRepositoryResumeTest {
     private final LocalExecutionRepository repository =
             new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
                     checkpointStore,
-                    provider(readiness), provider(tools),
-                    provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
+                    provider(new ExecutionLifecycleProjection(
+                            provider(readiness), provider(tools), provider(subExecutionLifecycle),
+                            provider(sessions), provider(turns), provider(runtimeEvents), provider(wakeups))));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -127,8 +130,7 @@ class LocalExecutionRepositoryResumeTest {
 
     @Test
     void releaseRechecksAfterWaitingProjectionAndOutsideTheGate() {
-        InputWakeupService wakeups = mock(InputWakeupService.class);
-        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        // 自动唤醒由投影触发：唤醒服务在装配时就固定在投影里，用例直接观察它。
         repository.save(execution());
         ExecutionControlSignal signal = repository.register("305");
         doAnswer(call -> {
@@ -144,8 +146,7 @@ class LocalExecutionRepositoryResumeTest {
 
     @Test
     void failureBeforeControlRegistrationAlsoRechecksAfterClosure() {
-        InputWakeupService wakeups = mock(InputWakeupService.class);
-        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        // 自动唤醒由投影触发：唤醒服务在装配时就固定在投影里，用例直接观察它。
         repository.save(execution());
         Execution failed = execution();
         failed.fail("执行初始化失败");
@@ -156,8 +157,7 @@ class LocalExecutionRepositoryResumeTest {
 
     @Test
     void terminalReleaseRechecksAfterTurnClosure() {
-        InputWakeupService wakeups = mock(InputWakeupService.class);
-        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        // 自动唤醒由投影触发：唤醒服务在装配时就固定在投影里，用例直接观察它。
         repository.save(execution());
         ExecutionControlSignal signal = repository.register("305");
         Execution completed = execution();
@@ -610,7 +610,9 @@ class LocalExecutionRepositoryResumeTest {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
         LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
                 checkpointStore,
-                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
+                provider(new ExecutionLifecycleProjection(provider(failing), provider(tools),
+                        provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),
+                        provider(mock(InputWakeupService.class)))));
         doAnswer(invocation -> {
             assertTrue(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
@@ -661,7 +663,7 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
-    void terminalServiceFailuresDoNotBlockMetricsAndTurnClosure() {
+    void terminalServiceFailuresAbortSuccessPublicationInsteadOfLosingClosure() {
         repository.save(execution());
         doThrow(new IllegalStateException("工具收口失败")).when(tools).cancelPendingToolCalls("305");
         doThrow(new IllegalStateException("委派回填失败")).when(subExecutionLifecycle).onFinished(any());
@@ -669,13 +671,12 @@ class LocalExecutionRepositoryResumeTest {
 
         assertDoesNotThrow(() -> repository.requireCancel("305"));
 
-        ArgumentCaptor<Execution> checkpoint = ArgumentCaptor.forClass(Execution.class);
-        verify(subExecutionLifecycle).onFinished(checkpoint.capture());
-        assertEquals(ExecutionState.CANCELLED, checkpoint.getValue().getExecutionState());
-        verify(sessions).saveExecutionContextUsage(same(checkpoint.getValue()));
-        verify(turns).finishExecution(same(checkpoint.getValue()));
-        assertEquals(List.of("305"), finished);
-        verifyNoInteractions(readiness);
+        // 第一步（收口工具卡片）就是必须步骤：失败后整条链中断，不得再把轮次标成正常结束。
+        verify(tools).cancelPendingToolCalls("305");
+        verify(subExecutionLifecycle, never()).onFinished(any());
+        verify(sessions, never()).saveExecutionContextUsage(any());
+        verify(turns, never()).finishExecution(any());
+        assertTrue(finished.isEmpty(), "收口不完整时不得把轮次标成终态 —— 那正是用户可见的成功假象");
     }
 
     @Test

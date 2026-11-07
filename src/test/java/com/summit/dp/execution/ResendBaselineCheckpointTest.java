@@ -63,12 +63,7 @@ class ResendBaselineCheckpointTest {
                     mock(ApplicationEventPublisher.class)),
             mapper,
             checkpointStore,
-            ExecutionRepositoryTestFactory.provider(mock(ToolCallReadinessService.class)),
-            ExecutionRepositoryTestFactory.provider(mock(ToolCallService.class)),
-            ExecutionRepositoryTestFactory.provider(mock(SubExecutionLifecycle.class)),
-            ExecutionRepositoryTestFactory.provider(mock(SessionContextUsageProjector.class)),
-            ExecutionRepositoryTestFactory.provider(mock(ChatTurnLifecycleProjector.class)),
-            ExecutionRepositoryTestFactory.provider(mock(RuntimeEventPublisher.class)));
+            ExecutionRepositoryTestFactory.projectionProvider());
 
     @BeforeEach
     void prepareFakeTable() {

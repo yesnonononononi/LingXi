@@ -10,6 +10,8 @@ import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
@@ -65,9 +67,33 @@ public final class ExecutionRepositoryTestFactory {
                 new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper), mock(ApplicationEventPublisher.class)),
                 objectMapper,
                 checkpointStore,
-                provider(mock(ToolCallReadinessService.class)), provider(mock(ToolCallService.class)),
-                provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionContextUsageProjector.class)),
-                provider(new ChatTurnLifecycleProjector(chatTurnService)), provider(mock(RuntimeEventPublisher.class)));
+                projectionProvider(chatTurnService));
+    }
+
+    /**
+     * 生命周期投影的测试装配：除轮次服务外全部 mock。
+     *
+     * <p>保留真实的 {@link ChatTurnLifecycleProjector}，因为「轮次有没有收口」是多条端到端用例
+     * 唯一能观察到的用户可见结果；投影本身必须是真的，否则被测的是 mock 的回声。</p>
+     */
+    public static ObjectProvider<ExecutionLifecycleProjection> projectionProvider(ChatTurnService chatTurnService) {
+        return provider(projection(chatTurnService));
+    }
+
+    /** 不关心任何副作用的用例：连轮次服务也用 mock。 */
+    public static ObjectProvider<ExecutionLifecycleProjection> projectionProvider() {
+        return provider(projection(mock(ChatTurnService.class)));
+    }
+
+    public static ExecutionLifecycleProjection projection(ChatTurnService chatTurnService) {
+        return new ExecutionLifecycleProjection(
+                provider(mock(ToolCallReadinessService.class)),
+                provider(mock(ToolCallService.class)),
+                provider(mock(SubExecutionLifecycle.class)),
+                provider(mock(SessionContextUsageProjector.class)),
+                provider(new ChatTurnLifecycleProjector(chatTurnService)),
+                provider(mock(RuntimeEventPublisher.class)),
+                provider(mock(InputWakeupService.class)));
     }
 
     @SuppressWarnings("unchecked")

@@ -85,12 +85,7 @@ class ConcurrentSaveRetryProbeTest {
                     mock(ApplicationEventPublisher.class));
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);
             LocalExecutionRepository repository = new LocalExecutionRepository(checkpointService, mapper, store,
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallReadinessService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SubExecutionLifecycle.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SessionContextUsageProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ChatTurnLifecycleProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(RuntimeEventPublisher.class)));
+                    ExecutionRepositoryTestFactory.projectionProvider());
             // 与 Spring 注入的是同一个字段：只有它是真实事务管理器时，保存才会「自己拥有事务」并逐次重试。
             injectTransactionManager(repository, new DataSourceTransactionManager(database));
 
@@ -151,12 +146,7 @@ class ConcurrentSaveRetryProbeTest {
             LocalExecutionRepository repository = new LocalExecutionRepository(
                     new ExecutionCheckpointService(spiedRepository, mock(ApplicationEventPublisher.class)),
                     mapper, store,
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallReadinessService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SubExecutionLifecycle.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SessionContextUsageProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ChatTurnLifecycleProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(RuntimeEventPublisher.class)));
+                    ExecutionRepositoryTestFactory.projectionProvider());
             injectTransactionManager(repository, new DataSourceTransactionManager(database));
 
             assertThrows(RuntimeException.class, () -> repository.save(execution("920009", "没有这一行")));
@@ -193,12 +183,7 @@ class ConcurrentSaveRetryProbeTest {
             LocalExecutionRepository repository = new LocalExecutionRepository(
                     new ExecutionCheckpointService(spiedRepository, mock(ApplicationEventPublisher.class)),
                     mapper, store,
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallReadinessService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SubExecutionLifecycle.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SessionContextUsageProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ChatTurnLifecycleProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(RuntimeEventPublisher.class)));
+                    ExecutionRepositoryTestFactory.projectionProvider());
             injectTransactionManager(repository, new DataSourceTransactionManager(database));
 
             Execution execution = execution(EXECUTION_A, "受理阶段正文");

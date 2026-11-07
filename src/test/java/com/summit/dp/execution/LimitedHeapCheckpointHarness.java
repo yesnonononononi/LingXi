@@ -108,12 +108,7 @@ public final class LimitedHeapCheckpointHarness {
                             mock(ApplicationEventPublisher.class)),
                     checkpointMapper,
                     checkpointStore,
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallReadinessService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ToolCallService.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SubExecutionLifecycle.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(SessionContextUsageProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(ChatTurnLifecycleProjector.class)),
-                    ExecutionRepositoryTestFactory.provider(mock(RuntimeEventPublisher.class)));
+                    ExecutionRepositoryTestFactory.projectionProvider());
 
             List<Message> body = body();
             long fixtureBytes = plainMapper.writeValueAsBytes(

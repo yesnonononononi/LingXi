@@ -1,13 +1,9 @@
 package com.summit.dp.workflow.infrastructure.harness;
 
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
-import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.ExecutionCancelledEvent;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
-import com.summit.core.conversation.event.TokenInfo;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -16,13 +12,9 @@ import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.shared.persistence.TransactionRetryTemplate;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,14 +45,13 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private final ObjectMapper objectMapper;
     /** 检查点正文的存储端口：文件命名、路径校验、流式读写、发布与删除都在实现里。 */
     private final ExecutionCheckpointStore checkpointStore;
-    /** 延迟取服务，避免生命周期处理与执行仓储形成构造期闭环。 */
-    private final ObjectProvider<ToolCallReadinessService> readinessService;
-    private final ObjectProvider<ToolCallService> toolCallService;
-    /** 子执行「结束事实」协作器；经 ObjectProvider 断开与执行仓储的构造期闭环。 */
-    private final ObjectProvider<SubExecutionLifecycle> subExecutionLifecycle;
-    private final ObjectProvider<SessionContextUsageProjector> sessionService;
-    private final ObjectProvider<ChatTurnLifecycleProjector> chatTurnService;
-    private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
+    /**
+     * 业务投影：状态提交之后「卡片 / 子执行 / 用量 / 轮次 / 事件」各自该做什么，全部在那边。
+     *
+     * <p>仓储只依赖这一个门面，不再逐个持有业务协作方 —— 否则存储组件会再次变成编排器。
+     * 经 {@link ObjectProvider} 延迟取用，断开与执行仓储的构造期闭环。</p>
+     */
+    private final ObjectProvider<ExecutionLifecycleProjection> lifecycle;
 
     @Autowired
     private SessionExecutionRegistry executionRegistry = new SessionExecutionRegistry();
@@ -81,8 +72,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
      * 由 {@link #checkpointSaveRetryTemplate()} 现场造一个降级使用（不持有、不加锁）。</p>
      */
     private volatile TransactionRetryTemplate saveRetry;
-    @Autowired
-    private ObjectProvider<InputWakeupService> inputWakeups;
 
     /**
      * 预建保存重试器。
@@ -115,10 +104,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             synchronized (ExecutionCoordination.monitor(execution.getId())) {
                 long id = numericId(execution.getId());
                 ExecutionState state = execution.getExecutionState();
-                if (state == ExecutionState.SUSPENDED && executionRegistry.isSuspendRequired(execution.getId())) {
-                    InputAutomationPolicy.putAttribute(execution,
-                            InputAutomationPolicy.USER_PAUSED, true);
-                }
+                // 暂停意图的补写规则在投影里：哪些状态要落 USER_PAUSED 属于业务语义，不属于存储。
+                projection().applyPauseIntent(execution, executionRegistry.isSuspendRequired(execution.getId()));
 
                 Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
                 Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
@@ -178,11 +165,17 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 boolean terminal = ExecutionStateCodec.isTerminalState(state);
                 afterCommit(() -> executionRegistry.recordExecution(rootSessionId, sessionId, execution.getId(), terminal));
                 boolean withoutControlSlot = !executionRegistry.isActive(execution.getId());
-                // 补一次终结广播，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
+                // 上一次收口不完整时的补偿：这次落库顺带把收口补做一遍（投影内部按状态判据去重）。
+                boolean closurePending = Boolean.TRUE.equals(
+                        InputAutomationPolicy.attributes(execution).get(ExecutionLifecycleProjection.CLOSURE_INCOMPLETE));
+                // 补一次终结投影，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
                 // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
                 // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
                 if (firstFailure && withoutControlSlot) {
-                    afterCommit(() -> notifyFinished(execution));
+                    afterCommit(() -> projection().onFinished(execution));
+                } else if (closurePending) {
+                    // 崩溃或步骤失败留下的不完整收口：下一次落库时补做，标记随本次提交一起持久化。
+                    afterCommit(() -> projection().completeClosure(execution));
                 }
             }
         }
@@ -336,15 +329,15 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                     save(execution);
                 }
                 if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED) {
-                    notifySuspended(execution);
+                    projection().onSuspended(execution);
                 }
             }
             if (execution != null && ExecutionStateCodec.isTerminalState(execution.getExecutionState())) {
-                if (cancelledOnRelease) notifyCancelled(execution);
-                else notifyFinished(execution);
+                if (cancelledOnRelease) projection().onCancelled(execution);
+                else projection().onFinished(execution);
             }
-            if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED && inputWakeups != null) {
-                inputWakeups.getObject().resumeIfInputPending(Long.parseLong(execution.getId()));
+            if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED) {
+                projection().resumeInputIfPending(execution);
             }
         });
     }
@@ -363,7 +356,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             if (execution.getExecutionState() != ExecutionState.SUSPENDED) {
                 throw new IllegalStateException("执行尚未运行或已经结束，无法暂停");
             }
-            InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.USER_PAUSED, true);
+            projection().applyPauseIntent(execution, true);
             save(execution);
         }
     }
@@ -382,45 +375,17 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             }
             execution.cancelChecked();
             save(execution);
-            afterCommit(() -> notifyCancelled(execution));
+            afterCommit(() -> projection().onCancelled(execution));
         }
     }
 
-    /** 控制槽位释放且检查点提交后，才能开放卡片并处理结束事实（子执行挂起 / 输入复查）。 */
-    private void notifySuspended(Execution execution) {
-        invokeLifecycle("开放工具卡片", execution, () -> readinessService.getObject().markReady(execution.getId()));
-        invokeLifecycle("更新等待轮次", execution, () -> chatTurnService.getObject().markExecutionWaiting(execution));
+    /**
+     * 投影门面：状态提交之后「卡片 / 子执行 / 用量 / 轮次 / 事件」各自该做什么，只在
+     * {@link ExecutionLifecycleProjection} 里定义 —— 仓储不再持有任何业务协作方。
+     */
+    private ExecutionLifecycleProjection projection() {
+        return lifecycle.getObject();
     }
-
-    /** 传递已提交对象，避免订阅方重复解码检查点。 */
-    private void notifyFinished(Execution execution) {
-        invokeLifecycle("收口工具卡片", execution, () -> toolCallService.getObject().cancelPendingToolCalls(execution.getId()));
-        invokeLifecycle("结束事实-终结", execution, () -> subExecutionLifecycle.getObject().onFinished(execution));
-        invokeLifecycle("保存会话用量", execution, () -> sessionService.getObject().saveExecutionContextUsage(execution));
-        invokeLifecycle("收口业务轮次", execution, () -> chatTurnService.getObject().finishExecution(execution));
-        if (inputWakeups != null) {
-            inputWakeups.getObject().resumeIfInputPending(Long.parseLong(execution.getId()));
-        }
-    }
-
-    /** 无活跃循环的取消须在检查点提交与轮次收口后补发终态事件。 */
-    private void notifyCancelled(Execution execution) {
-        notifyFinished(execution);
-        invokeLifecycle("发布挂起取消", execution, () -> runtimeEvents.getObject().onExecutionCancelled(
-                new ExecutionCancelledEvent(execution.getId(), TokenInfo.from(execution.getTokenUsage()),
-                        execution.eventMetaData())));
-    }
-
-    /** 各模块独立隔离失败，不能让一项失败阻止其余终结处理。 */
-    private void invokeLifecycle(String action, Execution execution, Runnable callback) {
-        try {
-            callback.run();
-        } catch (RuntimeException error) {
-            log.error("执行生命周期处理失败: executionId={}, action={}", execution.getId(), action, error);
-        }
-    }
-
-
 
     private static long numericId(String id) {
         try {
