@@ -27,6 +27,7 @@ import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
@@ -106,6 +107,8 @@ class VersionedToolCallDecisionTest {
     private final WorkspaceResolver workspaces = mock(WorkspaceResolver.class);
     private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
     private final ObjectMapper mapper = new ObjectMapper();
+    /** 受管执行器：真实现，审批收尾要真的派发出去（v2 收尾同样走受管线程）。 */
+    private final ManagedAsyncExecutor asyncExecutor = new ManagedAsyncExecutor();
 
     private VersionedToolCallDecisionService service;
     private SuspendedExecutionResumer resumer;
@@ -141,7 +144,8 @@ class VersionedToolCallDecisionTest {
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
-                resumeCoordinator);
+                resumeCoordinator,
+                asyncExecutor);
         service = new VersionedToolCallDecisionService(toolCallRepository,
                 converter, modelContextService,
                 sseEventPublisher, transactions, provider(executionRepository),

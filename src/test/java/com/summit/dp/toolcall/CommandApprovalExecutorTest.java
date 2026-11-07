@@ -28,6 +28,7 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -93,6 +94,8 @@ class CommandApprovalExecutorTest {
     private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    /** 受管执行器：真实现（虚拟线程），用例要验「收尾确实跑在这条线程上」，用桩验不出来。 */
+    private final ManagedAsyncExecutor asyncExecutor = new ManagedAsyncExecutor();
 
     private TransactionTemplate transactions;
     private SuspendedExecutionResumer resumer;
@@ -144,7 +147,8 @@ class CommandApprovalExecutorTest {
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, resolver, provider(toolRegistry)),
                 modelContextService,
-                resumeCoordinator);
+                resumeCoordinator,
+                asyncExecutor);
     }
 
     @Test
@@ -295,7 +299,8 @@ class CommandApprovalExecutorTest {
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
-                resumeCoordinator) {
+                resumeCoordinator,
+                asyncExecutor) {
             @Override
             protected void dispatchAsync(Runnable task) {
                 if (linkageFailure) throw new NoClassDefFoundError("审批派发依赖缺失");

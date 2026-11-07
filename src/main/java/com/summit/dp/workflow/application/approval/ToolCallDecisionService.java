@@ -5,6 +5,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -21,8 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.concurrent.CompletableFuture;
-
 /** 无外部副作用的互动决策，槽位与模型上下文必须同事务提交。 */
 @Service
 @RequiredArgsConstructor
@@ -37,6 +36,7 @@ public class ToolCallDecisionService {
     private final ObjectProvider<ExecutionRepository> executionRepository;
     private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final SuspendedExecutionResumer resumer;
+    private final ManagedAsyncExecutor asyncExecutor;
 
     /** 分支 A：{@code PLAN} / {@code CHOICE}（无外部副作用）——单事务。 */
     public SseEmitter decide(ToolCall toolCall, ToolCallKind kind, boolean approved, String text) {
@@ -68,7 +68,9 @@ public class ToolCallDecisionService {
         boolean pending = unresolvedToolGate.hasUnresolvedSlot(toolCall.getExecutionId());
         long rootId = executionLocator.resolveRootSessionId(conversationId);
         SseEmitter emitter = sseEventPublisher.connect(rootId);
-        CompletableFuture.runAsync(() -> {
+        // v1 契约：先连上，再在后台把恢复跑完，最后才关这条连接 —— 前端靠「连接仍开着」判断还在恢复。
+        // 因此这里只换执行器，三步的先后一个字都不能动。
+        boolean accepted = asyncExecutor.tryExecute("工具决策后恢复执行", () -> {
             try {
                 // 未决判定在事务提交后即已完成（见上方 pending），异步段只负责恢复。
                 if (!pending) {
@@ -81,6 +83,11 @@ public class ToolCallDecisionService {
                 sseEventPublisher.finish(emitter);
             }
         });
+        if (!accepted) {
+            // 执行器已关闭：后台段不会跑，收尾就没人做。这里当场关流，绝不留一条永不结束的连接。
+            log.warn("恢复任务未被受理，直接关闭本次 SSE 连接: executionId={}", executionId);
+            sseEventPublisher.finish(emitter);
+        }
         return emitter;
     }
 

@@ -9,6 +9,7 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -24,7 +25,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * 命令审批入口与异步收尾的<b>顺序编排</b>：T1 提交 → 执行副作用 → T2 落结果 → 释放并恢复。
@@ -53,6 +54,7 @@ public class CommandApprovalExecutor {
     private final ApprovedCommandRestorer commandRestorer;
     private final ModelContextService modelContextService;
     private final ExecutionResumeCoordinator resumeCoordinator;
+    private final ManagedAsyncExecutor asyncExecutor;
 
     /** 一次命令审批的受理结论：落定的动作与恢复处置。 */
     public record CommandApprovalResult(ToolCallOutcome outcome, ResumeDisposition disposition) {
@@ -223,9 +225,14 @@ public class CommandApprovalExecutor {
 
     /**
      * 异步派发收尾任务；独立成可覆写方法，使「派发失败仍收口」这条护栏能被单测构造出来。
+     *
+     * <p>执行器拒绝（已关闭）时抛 {@link java.util.concurrent.RejectedExecutionException}：
+     * 调用方必须把它当成「收尾永远起不来」来处理 —— T1 已提交，若不收口，执行会永久停在 RUNNING。</p>
      */
     protected void dispatchAsync(Runnable task) {
-        CompletableFuture.runAsync(task);
+        if (!asyncExecutor.tryExecute("命令审批收尾", task)) {
+            throw new RejectedExecutionException("受管执行器已关闭，审批收尾任务未被受理");
+        }
     }
 
     /** 异步派发失败：T1 已提交，必须把执行收成失败并释放控制槽位，不能留下 RUNNING 泄漏。 */

@@ -31,6 +31,7 @@ import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
@@ -102,6 +103,8 @@ class ToolCallDecisionTest {
      */
     private final CountDownLatch resumed = new CountDownLatch(1);
     private final ObjectMapper mapper = new ObjectMapper();
+    /** 受管执行器：真实现，决策路径要验「恢复跑完后才关流」，且它确实跑在这条线程上。 */
+    private final ManagedAsyncExecutor asyncExecutor = new ManagedAsyncExecutor();
     /** 恢复协调器的两张表在单测里只有桩：命令 T2 是否真的派发出去才是这些用例的断言点。 */
     private final ExecutionResumeTaskRepository resumeTaskRepository = mock(ExecutionResumeTaskRepository.class);
     private final com.summit.dp.execution.domain.repository.ExecutionRepository resumeExecutions =
@@ -140,12 +143,14 @@ class ToolCallDecisionTest {
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
-                coordinator(resumer));
+                coordinator(resumer),
+                asyncExecutor);
         service = new ToolCallWorkflowService(toolCallRepository,
                 converter, commandApprovalExecutor,
                 new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
                         modelContextService, sseEventPublisher, transactions,
-                        provider(executionRepository), new UnresolvedToolSuspensionGate(toolCallRepository), resumer),
+                        provider(executionRepository), new UnresolvedToolSuspensionGate(toolCallRepository), resumer,
+                        asyncExecutor),
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository), provider(activity))),
                 sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
