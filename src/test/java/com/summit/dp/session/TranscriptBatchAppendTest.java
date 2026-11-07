@@ -11,11 +11,13 @@ import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.TranscriptReplayMatcher;
+import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
+import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.support.SqlCaptureInterceptor;
@@ -25,7 +27,11 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
+import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -33,6 +39,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -50,6 +57,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -63,7 +72,11 @@ import static org.mockito.Mockito.mock;
  */
 class TranscriptBatchAppendTest {
 
-    private static final long SESSION_ID = 5101L;
+    /**
+     * 会话主键不再是写死的常量：AGENTS.md 要求夹具的业务数据也走仓储，
+     * 而仓储的主键由 identity 生成，所以落库后回填。
+     */
+    private long sessionId;
     private static final long TURN_ID = 5201L;
     private static final long EXECUTION_ID = 5301L;
     private static final String RESPONSE_ID = "9007199254740993";
@@ -71,6 +84,7 @@ class TranscriptBatchAppendTest {
 
     private H2TestDatabase database;
     private SqlCaptureInterceptor capture;
+    private SessionRepositoryImpl sessionRepository;
     private SessionMessageRepositoryImpl messageRepository;
     private ToolCallRepositoryImpl toolCallRepository;
     private ConversationTranscriptService service;
@@ -92,8 +106,10 @@ class TranscriptBatchAppendTest {
         SqlSessionFactory sessionFactory = factory.getObject();
         SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
 
+        SessionMapper sessionMapper = template.getMapper(SessionMapper.class);
+        sessionRepository = new SessionRepositoryImpl(sessionMapper);
         messageRepository = new SessionMessageRepositoryImpl(
-                template.getMapper(SessionMessageMapper.class), template.getMapper(SessionMapper.class));
+                template.getMapper(SessionMessageMapper.class), sessionMapper);
         toolCallRepository = new ToolCallRepositoryImpl(template.getMapper(ToolCallMapper.class),
                 new ObjectMapper(), cardAvailabilityPolicy());
         JsonConfig jsonConfig = new JsonConfig();
@@ -125,12 +141,12 @@ class TranscriptBatchAppendTest {
         assertEquals(1, inserts.size(), "消息必须一次批量插入，实际: " + capture.updates());
         assertEquals(1, binds.size(), "锚点必须一次批量绑定，实际: " + capture.updates());
 
-        List<SessionMessage> stored = messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID));
+        List<SessionMessage> stored = messageRepository.findByTurnIds(sessionId, List.of(TURN_ID));
         assertEquals(TOOL_COUNT + 1, stored.size(), "1 条 AI + 30 条 TOOL 必须整批落库");
         assertEquals(SessionMessageType.AI, stored.getFirst().getType(), "按主键升序时 AI 行必须在最前（顺序未重排）");
         for (SessionMessage row : stored) {
             assertNotNull(row.getId(), "主键不得丢失");
-            assertEquals(SESSION_ID, row.getSessionId());
+            assertEquals(Long.valueOf(sessionId), row.getSessionId());
             assertEquals(TURN_ID, row.getTurnId());
             assertNotNull(row.getCreateTime(), "create_time 不得丢失");
         }
@@ -171,19 +187,33 @@ class TranscriptBatchAppendTest {
     }
 
     @Test
-    @DisplayName("重放同一轮（幂等）：不再插入、再 bind 返回 0")
+    @DisplayName("重放同一轮（幂等）：不再插入、再 bind 返回 0，且库内锚点与版本原封不动")
     void replayingSameRoundIsIdempotent() {
         appendRound();
-        long before = messageRepository.countBySessionId(SESSION_ID);
+        long before = messageRepository.countBySessionId(sessionId);
+        // 第一次绑定后的库内事实：重放必须以它为准，不能被一次「0 行更新」悄悄改写。
+        Map<String, Long> anchorAfterFirstBind = currentBindings();
+        Map<String, Long> versionAfterFirstBind = currentVersions();
 
         capture.clear();
         appendRound();
 
         assertTrue(statements("insert into session_message").isEmpty(), "重放不得再次插入，实际: " + capture.updates());
-        assertEquals(before, messageRepository.countBySessionId(SESSION_ID), "重放后行数不变");
+        assertEquals(before, messageRepository.countBySessionId(sessionId), "重放后行数不变");
         int rebound = transaction.execute(status ->
-                toolCallRepository.bindSessionMessagesBatch(currentBindings()));
+                toolCallRepository.bindSessionMessagesBatch(anchorAfterFirstBind));
         assertEquals(0, rebound, "重放后的再次绑定应为 0 行");
+
+        // 直接查库：0 行更新的语义是「什么都没改」，不是「又自增了一次版本」。
+        for (String callId : callIds()) {
+            ToolCall reread = toolCallRepository.findById(callId).orElseThrow();
+            assertEquals(anchorAfterFirstBind.get(callId), reread.getSessionMessageId(),
+                    "重放后 session_message_id 不得变动: " + callId);
+            assertEquals(versionAfterFirstBind.get(callId), reread.getVersion(),
+                    "重放后 version 不得自增: " + callId);
+            assertEquals(2L, reread.getVersion().longValue(),
+                    "版本必须停在第一次绑定后的值（1 → 2），不得因 0 行更新再涨: " + callId);
+        }
     }
 
     @Test
@@ -209,18 +239,51 @@ class TranscriptBatchAppendTest {
     @Test
     @DisplayName("事务内抛异常：消息与锚点都不落库")
     void failureInsideTransactionLeavesNothingBehind() {
-        long before = messageRepository.countBySessionId(SESSION_ID);
+        long before = messageRepository.countBySessionId(sessionId);
 
         assertThrows(IllegalStateException.class, () -> transaction.executeWithoutResult(status -> {
             appendRoundInTransaction();
             throw new IllegalStateException("模拟落库后失败");
         }));
 
-        assertEquals(before, messageRepository.countBySessionId(SESSION_ID), "失败后消息行不得残留");
+        assertEquals(before, messageRepository.countBySessionId(sessionId), "失败后消息行不得残留");
         for (String callId : callIds()) {
             assertNull(toolCallRepository.findById(callId).orElseThrow().getSessionMessageId(),
                     "失败后锚点不得残留: " + callId);
         }
+    }
+
+    @Test
+    @DisplayName("锚点批量绑定失败：日志仍能定位到具体 callId，而不是只剩条数")
+    void bindFailureLogKeepsCallIdLocatability() {
+        ToolCallRepository failing = mock(ToolCallRepository.class);
+        doThrow(new IllegalStateException("stub-bind-failure"))
+                .when(failing).bindSessionMessagesBatch(anyMap());
+        JsonConfig jsonConfig = new JsonConfig();
+        ConversationTranscriptService lossyService = new ConversationTranscriptService(
+                messageRepository, failing,
+                new TranscriptRecordAssembler(jsonConfig.objectMapper()),
+                new TranscriptReplayMatcher(jsonConfig.objectMapper()));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ConversationTranscriptService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            transaction.executeWithoutResult(status -> lossyService.appendRound(
+                    sessionId, sessionId, TURN_ID, aiMessage(), toolMessages(), RESPONSE_ID));
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String logged = appender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(text -> text.contains("回填工具消息锚点失败"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("缺少回填失败日志，事件数=" + appender.list.size()));
+        assertTrue(logged.contains("条数=" + TOOL_COUNT), "失败日志必须给出条数: " + logged);
+        assertTrue(logged.contains("callId=call-batch-00,call-batch-01,call-batch-02,..."),
+                "失败日志必须给出前 3 个 callId 并以省略号收尾（排障要能看出是哪个锚点）: " + logged);
     }
 
     private void appendRound() {
@@ -228,7 +291,7 @@ class TranscriptBatchAppendTest {
     }
 
     private void appendRoundInTransaction() {
-        service.appendRound(SESSION_ID, SESSION_ID, TURN_ID, aiMessage(), toolMessages(), RESPONSE_ID);
+        service.appendRound(sessionId, sessionId, TURN_ID, aiMessage(), toolMessages(), RESPONSE_ID);
     }
 
     /** 与 {@code statementId :: sql} 记录匹配的写入语句（小写、去空白后包含即可）。 */
@@ -246,15 +309,35 @@ class TranscriptBatchAppendTest {
         return bindings;
     }
 
+    /** 读回库内当前版本号，用于断言「0 行更新」没有顺手改写既有事实。 */
+    private Map<String, Long> currentVersions() {
+        Map<String, Long> versions = new LinkedHashMap<>();
+        for (String callId : callIds()) {
+            versions.put(callId, toolCallRepository.findById(callId).orElseThrow().getVersion());
+        }
+        return versions;
+    }
+
+    /**
+     * 会话行也走仓储，不再 {@code database.execute} 直写。
+     *
+     * <p>为什么必须走仓储：AGENTS.md 要求测试里的业务数据准备与查询同样经 Mapper/仓储，
+     * 建表脚本由测试框架的脚本执行器加载；直写 SQL 会绕过列映射与主键策略，
+     * 一旦表结构变化，夹具会静默脱离生产写入路径。</p>
+     */
     private void insertSessionRow() {
-        database.execute("INSERT INTO session (id, root_session_id, name) VALUES ("
-                + SESSION_ID + ", 0, '批量写作会话')");
+        Long created = sessionRepository.saveAndReturnId(Session.builder()
+                .rootSessionId(Session.ROOT_SESSION_ID)
+                .name("批量写作会话")
+                .build());
+        assertNotNull(created, "会话落库后必须拿到主键");
+        sessionId = created;
     }
 
     private void seedToolCalls() {
         for (String callId : callIds()) {
             toolCallRepository.save(ToolCall.builder()
-                    .id(callId).conversationId(SESSION_ID).executionId(EXECUTION_ID)
+                    .id(callId).conversationId(sessionId).executionId(EXECUTION_ID)
                     .toolName("read_file").type(ToolCallType.EXECUTE).status(ToolCallStatus.COMPLETED)
                     .content("{\"kind\":\"PLAN\"}")
                     .rawInput("{\"args\":{\"path\":\"文件.txt\"}}")

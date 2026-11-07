@@ -27,6 +27,9 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class ConversationTranscriptService {
+    /** 失败日志里最多列出的锚点数：够定位，又不会把一轮 30 个工具刷满。 */
+    private static final int CALL_ID_LOG_LIMIT = 3;
+
     private final MessageRepository messageRepository;
     private final ToolCallRepository toolCallRepository;
     private final TranscriptRecordAssembler recordAssembler;
@@ -98,8 +101,18 @@ public class ConversationTranscriptService {
         try {
             toolCallRepository.bindSessionMessagesBatch(bindings);
         } catch (RuntimeException e) {
-            log.warn("回填工具消息锚点失败: 条数={}, error={}", bindings.size(), e.toString());
+            // 批量更新失败时只报条数等于排障降级：得能看出是哪个锚点没绑上，
+            // 因此带前若干个 callId；上限 3 个避免一轮 30 工具把日志刷成整屏。
+            log.warn("回填工具消息锚点失败: 条数={}, callId={}, error={}",
+                    bindings.size(), headCallIds(bindings), e.toString());
         }
+    }
+
+    /** 失败日志里用于定位的 callId 前缀，超过上限时以省略号收尾。 */
+    private String headCallIds(Map<String, Long> bindings) {
+        List<String> head = bindings.keySet().stream().limit(CALL_ID_LOG_LIMIT).toList();
+        String joined = String.join(",", head);
+        return bindings.size() > CALL_ID_LOG_LIMIT ? joined + ",..." : joined;
     }
 
     private void throwIf(boolean condition, String err) {
