@@ -6,6 +6,7 @@ import com.summit.core.conversation.event.ExecutionCancelledEvent;
 import com.summit.core.conversation.event.ExecutionCompleteEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.TokenInfo;
+import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
@@ -131,7 +132,7 @@ public class ExecutionLifecycleProjection {
     private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
     private final ObjectProvider<InputWakeupService> inputWakeups;
     /** 待收口位的读写口：脚本成功之后由本类自己按 id 条件清 0。 */
-    private final ObjectProvider<com.summit.dp.execution.domain.repository.ExecutionRepository> executions;
+    private final ObjectProvider<ExecutionRepository> executions;
 
     /**
      * 落库前补写「用户暂停」意图。

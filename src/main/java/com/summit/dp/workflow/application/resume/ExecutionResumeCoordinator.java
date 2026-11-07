@@ -437,7 +437,7 @@ public class ExecutionResumeCoordinator {
     private Integer readStatus(long executionId) {
         return executions.findSummariesByIds(List.of(executionId)).stream()
                 .findFirst()
-                .map(com.summit.dp.execution.domain.model.Execution::getStatus)
+                .map(summary -> summary.getStatus())
                 .orElse(null);
     }
 

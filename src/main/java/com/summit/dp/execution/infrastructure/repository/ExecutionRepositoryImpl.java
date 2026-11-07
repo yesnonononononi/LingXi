@@ -121,11 +121,7 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
 
     @Override
     public List<Execution> findRecentBySession(Long sessionId, int limit) {
-        return mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
-                        .eq(ExecutionPO::getSessionId, sessionId)
-                        .orderByDesc(ExecutionPO::getId)
-                        .last("LIMIT " + Math.clamp(limit, 1, 100)))
-                .stream().map(this::toModel).toList();
+        return mapper.findRecentBySession(sessionId, Math.clamp(limit, 1, 100)).stream().map(this::toModel).toList();
     }
 
     @Override

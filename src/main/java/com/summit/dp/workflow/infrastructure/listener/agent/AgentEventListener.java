@@ -8,6 +8,7 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.workflow.application.chat.ExecutionErrorText;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -27,7 +28,7 @@ public class AgentEventListener implements RuntimeListener {
     private final SseEventPublisher sseEventPublisher;
     private final ExecutionLocator executionLocator;
     /** 待收口位读口：成功终态能否发布由这一列决定（见 {@code suppressedWhileClosurePending}）。 */
-    private final com.summit.dp.execution.domain.repository.ExecutionRepository executions;
+    private final ExecutionRepository executions;
 
     private interface TypedEventMixIn {
         @JsonProperty("type")

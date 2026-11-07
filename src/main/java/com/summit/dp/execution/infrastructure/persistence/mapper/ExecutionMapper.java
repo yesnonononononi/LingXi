@@ -77,6 +77,14 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
     Integer selectClosurePending(@Param("id") long executionId);
 
     /**
+     * 某会话最近的执行行（按 id 降序取前 {@code limit} 条）。
+     *
+     * <p>行数上限用 {@link Param} 绑定，不在调用侧拼字符串：拼接既绕开预编译，也让 SQL 不可缓存。</p>
+     */
+    @Select("SELECT * FROM execution WHERE session_id = #{sessionId} ORDER BY id DESC LIMIT #{limit}")
+    List<ExecutionPO> findRecentBySession(@Param("sessionId") long sessionId, @Param("limit") int limit);
+
+    /**
      * 取「仍活跃」执行所属的会话 id 集合（去重）。
      *
      * <p>启动自检只需要候选会话，不需要执行行本身：先按状态挑出会话，再对这些会话解析最新执行，
