@@ -15,6 +15,7 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Repository;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
@@ -108,6 +109,20 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
                         .in(TaskPO::getStatus, "PENDING", "RUNNING")
                         .orderByDesc(TaskPO::getId))
                 .stream().map(this::toSummary).toList();
+    }
+
+    /**
+     * 「可能仍有终态结果待注入」的候选会话：终态集合由域枚举推导，SQL 里只做状态过滤与时间比较。
+     *
+     * <p>不做逐会话查询：一条语句取出全部候选，候选数与历史会话总数无关。</p>
+     */
+    @Override
+    public List<Long> findSessionIdsWithUnconsumedTerminalTasks() {
+        List<String> terminalStatuses = Arrays.stream(Task.TaskStatus.values())
+                .filter(Task.TaskStatus::isTerminal)
+                .map(Enum::name)
+                .toList();
+        return mapper.selectSessionIdsWithUnconsumedTerminalTasks(terminalStatuses);
     }
 
     /** 列表展示列（不含 {@code output}）：裁剪口径只在这一处定义，两个摘要查询共用。 */

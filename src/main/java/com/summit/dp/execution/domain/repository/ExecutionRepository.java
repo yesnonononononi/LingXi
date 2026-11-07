@@ -53,6 +53,16 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
     int markOrphanRunsFailed();
 
     /**
+     * 「仍活跃」执行所属的会话 id 集合（去重）：状态为 CREATED / RUNNING / SUSPENDED。
+     *
+     * <p>启动自检的候选来源之一。只用一次单表查询就拿到候选，避免「先遍历根会话、再逐个查会话树」
+     * 那种随历史会话数增长的做法。</p>
+     *
+     * @return 去重后的会话 id；无候选返回空列表
+     */
+    List<Long> findUnfinishedSessionIds();
+
+    /**
      * 批量取每个会话、每种状态下 id 最大的执行，按 sessionId 升序、id 降序返回。
      *
      * <p>仅加载 id/sessionId/status/createdAt，供只读状态查询使用；snapshot 与 updatedAt

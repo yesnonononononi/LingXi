@@ -50,6 +50,21 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
                              @Param("running") int running);
 
     /**
+     * 取「仍活跃」执行所属的会话 id 集合（去重）。
+     *
+     * <p>启动自检只需要候选会话，不需要执行行本身：先按状态挑出会话，再对这些会话解析最新执行，
+     * 才不会随历史会话数增长。状态码全部由 {@link Param} 传入，无外部输入拼接。</p>
+     *
+     * @param statuses 视为活跃的状态码集合；空集合由仓储层短路
+     * @return 去重后的会话 id，无候选返回空列表
+     */
+    @Select("<script>"
+            + "SELECT DISTINCT session_id FROM execution WHERE status IN "
+            + "<foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach>"
+            + "</script>")
+    List<Long> selectUnfinishedSessionIds(@Param("statuses") Collection<Integer> statuses);
+
+    /**
      * 批量查询每个会话、每种状态下最新的执行，复用 ExecutionPO 接收轻量列。
      *
      * <p>按 session_id/status 分区取第一条，再按 id 降序返回。六种已知状态最多返回六条，

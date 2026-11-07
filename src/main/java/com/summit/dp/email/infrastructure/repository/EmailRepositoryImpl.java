@@ -7,12 +7,14 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.email.domain.model.Email;
+import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.po.EmailPO;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -65,6 +67,12 @@ public class EmailRepositoryImpl extends AbstractRepository<Email, EmailPO, Long
                 .eq(EmailPO::getWorkflowExecutionId, workflowExecutionId)
                 .eq(EmailPO::getRecipientAgentId, recipientAgentId));
         return po == null ? Optional.empty() : Optional.of(toModel(po));
+    }
+
+    /** 待消费邮件的候选会话：一次 EXISTS 查询取去重会话 id，不装载邮箱聚合。 */
+    @Override
+    public List<Long> findPendingMailboxSessionIds() {
+        return mapper.selectPendingMailboxSessionIds(EmailMessage.EMStatus.PENDING.name());
     }
 
     @Override

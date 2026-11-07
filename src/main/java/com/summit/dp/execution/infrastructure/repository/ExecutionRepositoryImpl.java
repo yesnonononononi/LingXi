@@ -126,6 +126,13 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
                 ExecutionStatusCodes.CREATED, ExecutionStatusCodes.RUNNING);
     }
 
+    /** 启动自检的「仍活跃」候选：一次单表查询取去重会话 id，不读检查点正文。 */
+    @Override
+    public List<Long> findUnfinishedSessionIds() {
+        return mapper.selectUnfinishedSessionIds(
+                List.of(ExecutionStatusCodes.CREATED, ExecutionStatusCodes.RUNNING, ExecutionStatusCodes.SUSPENDED));
+    }
+
     @Override
     public List<Execution> findLatestBySessionAndStatus(Collection<Long> sessionIds) {
         if (sessionIds == null || sessionIds.isEmpty()) return List.of();

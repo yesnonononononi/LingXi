@@ -5,6 +5,7 @@ import com.summit.ddd.domain.repository.RepositoryTemplate;
 import com.summit.dp.email.domain.model.Email;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -40,6 +41,16 @@ public interface EmailRepository extends RepositoryTemplate<Email, Long> {
      * @return 邮箱；任一参数为 null 或无命中返回 {@link Optional#empty()}
      */
     Optional<Email> findByBusinessKey(Long workflowExecutionId, Long recipientAgentId);
+
+    /**
+     * 「尚有未消费消息」的邮箱所属会话 id 集合（去重）。
+     *
+     * <p>启动自检的候选来源之二：有待消费邮件的会话才可能被唤醒，其余历史会话一律不进入候选，
+     * 启动开销由此与会话总数脱钩。</p>
+     *
+     * @return 去重后的会话 id；无候选返回空列表
+     */
+    List<Long> findPendingMailboxSessionIds();
 
     /**
      * 按业务键精确查询并加行锁（{@code SELECT ... FOR UPDATE}）。

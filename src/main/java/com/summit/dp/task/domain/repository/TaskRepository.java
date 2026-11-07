@@ -28,4 +28,15 @@ public interface TaskRepository extends RepositoryTemplate<Task, Long> {
 
     /** 列表摘要：会话内未结束（待执行 / 执行中）的任务，同样不读 {@code output}。 */
     List<TaskSummary> findActiveSummaryBySessionId(long sessionId);
+
+    /**
+     * 「可能仍有终态结果待注入」的会话 id 集合（去重）。
+     *
+     * <p>启动自检的候选来源之三。任务的注入回执存在执行属性里，库上无法区分「已注入」，因此实现用
+     * <b>有界推断</b>收窄：会话内存在在该任务完成之后结束的执行，即视为后续轮次已注入。
+     * 这是保守判据（多算只会多一次幂等唤醒，漏算才会丢唤醒），调用方请按「可能」语义使用。</p>
+     *
+     * @return 去重后的会话 id；无候选返回空列表
+     */
+    List<Long> findSessionIdsWithUnconsumedTerminalTasks();
 }
