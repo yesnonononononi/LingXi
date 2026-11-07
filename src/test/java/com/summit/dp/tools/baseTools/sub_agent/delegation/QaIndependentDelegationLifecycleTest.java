@@ -146,7 +146,7 @@ class QaIndependentDelegationLifecycleTest {
             ((Runnable) invocation.getArgument(0)).run();
             return null;
         }).when(frameworkExecutions).afterCommit(any());
-        when(tasks.enqueue(anyLong(), anyLong(), any())).thenAnswer(invocation -> newTask());
+        when(tasks.enqueue(anyLong(), anyLong(), any(), any())).thenAnswer(invocation -> newTask());
         when(tasks.findByExecutionId(ROOT_EXECUTION_ID)).thenAnswer(invocation -> List.of(newTask()));
         when(tasks.claim(any())).thenAnswer(invocation -> {
             ((ExecutionResumeTask) invocation.getArgument(0)).claim();
@@ -292,7 +292,7 @@ class QaIndependentDelegationLifecycleTest {
         ExecutionResumeTask second = newTask();
         AtomicReference<List<ExecutionResumeTask>> snapshot = new AtomicReference<>(List.of(first));
         when(tasks.findByExecutionId(ROOT_EXECUTION_ID)).thenAnswer(invocation -> snapshot.get());
-        when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(first, second);
+        when(tasks.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(first, second);
         liveTasks.set(List.of(first));
 
         registry.beginRoot(ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));

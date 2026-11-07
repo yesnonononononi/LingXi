@@ -139,7 +139,7 @@ class QaDelegationLifecycleInterleavingTest {
             ((Runnable) invocation.getArgument(0)).run();
             return null;
         }).when(frameworkExecutions).afterCommit(any());
-        when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(newTask());
+        when(tasks.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(newTask());
         when(tasks.findByExecutionId(ROOT_EXECUTION_ID)).thenAnswer(invocation -> List.of(newTask()));
         when(tasks.claim(any())).thenReturn(true);
         when(tasks.listLiveByExecution(ROOT_EXECUTION_ID)).thenReturn(List.of());
