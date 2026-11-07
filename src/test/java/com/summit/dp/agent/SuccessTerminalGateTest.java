@@ -1,3 +1,6 @@
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -8,6 +11,7 @@ import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -34,6 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -48,6 +53,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -55,6 +61,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -167,20 +174,92 @@ class SuccessTerminalGateTest {
     }
 
     @Test
-    @DisplayName("门禁读库失败按「未拦下」处理：宁可多推一帧完成，也不让用户永远看不到结束")
-    void closurePendingReadFailureStillPublishesSuccess() {
+    @DisplayName("门禁读库失败按「未知即暂缓」处理：不发布成功终态，并留下带 executionId 的中文警告")
+    void closurePendingReadFailureDefersSuccess() {
         ExecutionRepositoryImpl unreadableGate = spy(executions);
         doThrow(new IllegalStateException("模拟待收口位读取失败"))
                 .when(unreadableGate).isClosurePending(anyLong());
-        AgentEventListener failOpenListener = new AgentEventListener(new JsonConfig().objectMapper(),
-                ssePublisher, mock(com.summit.dp.execution.application.service.ExecutionLocator.class),
-                unreadableGate);
-        failOpenListener.init();
+        AgentEventListener deferringListener = listenerWith(unreadableGate);
 
-        new RuntimeEventPublisher(List.of(failOpenListener))
-                .onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
+        Logger logger = (Logger) LoggerFactory.getLogger(AgentEventListener.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            new RuntimeEventPublisher(List.of(deferringListener))
+                    .onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
 
-        verify(ssePublisher).publish(anyLong(), any(ExecutionCompleteEvent.class));
+            verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
+            verify(ssePublisher, never()).publishBusiness(anyLong(), anyString(), any());
+
+            List<String> messages = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+            assertTrue(messages.stream().anyMatch(message -> message.contains(EXECUTION_ID_TEXT)
+                            && message.contains("暂缓发布成功终态")
+                            && message.contains("等待权威快照收敛")
+                            && message.contains("模拟待收口位读取失败")),
+                    "读库失败必须留下带 executionId 与原因的可定位日志: " + messages);
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("读库恢复且待收口位为 0 后，成功终态正常发出且只发一次")
+    void successPublishesOnceAfterGateReadRecovers() {
+        seedRunningTurn();
+        ExecutionControlSignal signal = runtime.register(EXECUTION_ID_TEXT);
+        saveTerminal();
+        runtime.unregister(signal);
+        assertEquals(Integer.valueOf(1), closurePending(), "夹具前提：收口失败必须留下待收口事实");
+
+        // 第一次读库失败、之后恢复真实读取。
+        ExecutionRepositoryImpl recoveringGate = spy(executions);
+        doThrow(new IllegalStateException("模拟待收口位读取失败"))
+                .doCallRealMethod()
+                .when(recoveringGate).isClosurePending(anyLong());
+        RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(listenerWith(recoveringGate)));
+
+        // ① 读库失败：暂缓，且不得改动待收口事实。
+        publisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
+        verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
+        assertEquals(Integer.valueOf(1), closurePending(), "门禁只读，读失败也不得改动待收口事实");
+
+        // ② 收口仍未完成：恢复可读也不放行。
+        publisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
+        verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
+
+        // ③ 恢复可读且待收口位已清零：成功终态正常发出一次。
+        turnFailureActive.set(false);
+        projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, false);
+        assertEquals(Integer.valueOf(0), closurePending(), "补偿成功后待收口位必须清零");
+        assertEquals("COMPLETED", turnStatus(), "补偿成功后轮次必须收口");
+
+        publisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
+        verify(ssePublisher, times(1)).publish(anyLong(), any(ExecutionCompleteEvent.class));
+    }
+
+    @Test
+    @DisplayName("暂缓的那一帧不影响业务事实：补偿入口收敛后由它补发一次，且与轮次终态一致")
+    void deferredSuccessFrameConvergesWithBusinessSnapshotAfterCompensation() {
+        seedRunningTurn();
+        ExecutionControlSignal signal = runtime.register(EXECUTION_ID_TEXT);
+        saveTerminal();
+        runtime.unregister(signal);
+
+        // 这一路读库始终失败：本次执行的成功终态一直被暂缓。
+        ExecutionRepositoryImpl unreadableGate = spy(executions);
+        doThrow(new IllegalStateException("模拟待收口位读取失败"))
+                .when(unreadableGate).isClosurePending(anyLong());
+        RuntimeEventPublisher deferringPublisher = new RuntimeEventPublisher(List.of(listenerWith(unreadableGate)));
+        deferringPublisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
+        verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
+
+        // 补偿路径（启动收口扫 closure_pending=1 的那条）照旧收敛：收口脚本 + 清位 + 补发被拦下的那一帧。
+        turnFailureActive.set(false);
+        projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, true);
+        assertEquals("COMPLETED", turnStatus(), "缺帧不得影响业务事实落库");
+        assertEquals(Integer.valueOf(0), closurePending(), "缺帧不得影响待收口位清零");
+        verify(ssePublisher, times(1)).publish(anyLong(), any(ExecutionCompleteEvent.class));
     }
 
     // ------------------------------------------------------------------
@@ -209,6 +288,14 @@ class SuccessTerminalGateTest {
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .build();
+    }
+
+    /** 换一个门禁读口构造监听器，用于模拟读库失败 / 恢复。 */
+    private AgentEventListener listenerWith(ExecutionRepository gate) {
+        AgentEventListener listener = new AgentEventListener(new JsonConfig().objectMapper(),
+                ssePublisher, mock(com.summit.dp.execution.application.service.ExecutionLocator.class), gate);
+        listener.init();
+        return listener;
     }
 
     private ExecutionLifecycleProjection projection(ChatTurnService turns) {

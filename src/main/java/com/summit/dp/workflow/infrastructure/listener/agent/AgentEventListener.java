@@ -94,9 +94,18 @@ public class AgentEventListener implements RuntimeListener {
      * —— 第二遍发现它已是 0，就不会重复发。也就是说「是否已发布过」这个事实由库里的待收口位承载，
      * 不靠内存标记。</p>
      *
-     * <p><b>读库失败按「未拦下」处理（fail-open）</b>：查询抛异常时返回 {@code false} 照常发布。
-     * 这是刻意的取向 —— 宁可多发一帧「完成」，也不让一次查询失败把用户永久挡在「看起来没结束」
-     * 的状态里；代价是多推一帧，而多推一帧的后果只是界面早一步显示完成。</p>
+     * <p><b>读库失败按「未知即暂缓」（fail-closed）</b>：查询抛异常时返回 {@code true}
+     * —— 不发布成功终态，并留一条带 {@code executionId} 的 warn 日志。</p>
+     *
+     * <p><b>这是刻意取向的修订，与原实现相反</b>。原实现读不到就照常发布（fail-open），
+     * 理由是「宁可多发一帧，也别让用户永久看不到完成」。但那份代价方向选错了：读不到待收口位
+     * 时我们<b>并不知道</b>收口是否已完成，此时发布成功终态等于<b>可能提前声称业务成功</b>
+     * —— 界面显示完成、而轮次 / 卡片 / 子执行可能还在进行，用户据此继续操作就会踩到不一致。
+     * 「看不到完成」只是延迟，且是可修复的缺帧；「错误地声称成功」则是事实错误。</p>
+     *
+     * <p><b>缺帧由权威快照修复，不需要另建状态机</b>：被暂缓的这一帧由权威 bootstrap 与轮次
+     * 终态快照收敛 —— 订阅方本来就能靠这两条路径补齐终态，因此暂缓不会造成「永久看不到完成」。
+     * 所以这里既不需要「已发布」列，也不需要去重表，判据仍然只有 {@code closure_pending} 一列。</p>
      *
      * <p><b>已知残留：会在「清位」与「发布」之间丢一帧</b>。崩溃若恰好落在补偿路径
      * 「清掉 closure_pending」之后、「补发成功终态」之前，这一帧 SSE 成功通知就永久丢失：该执行
@@ -115,9 +124,12 @@ public class AgentEventListener implements RuntimeListener {
         boolean pending;
         try {
             pending = executions.isClosurePending(Long.parseLong(executionId));
-        } catch (RuntimeException ignored) {
-            // 读不到就不拦：宁可多推一帧，也不要因为一次查询失败让用户永远看不到完成。
-            return false;
+        } catch (RuntimeException failure) {
+            // 未知即暂缓：读不到待收口位就无从判断收口是否完成，宁可暂缓成功事件被权威快照补齐，
+            // 也不能提前声称业务成功。异常信息必须记下来，否则线上无从定位。
+            log.warn("待收口位查询失败，暂缓发布成功终态，等待权威快照收敛: executionId={}, error={}, message={}",
+                    executionId, failure.getClass().getSimpleName(), failure.getMessage());
+            return true;
         }
         if (!pending) {
             return false;
