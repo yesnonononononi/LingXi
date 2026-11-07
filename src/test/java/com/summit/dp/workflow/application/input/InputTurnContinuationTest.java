@@ -100,8 +100,7 @@ class InputTurnContinuationTest {
             previous.setExecutionState(ExecutionState.COMPLETED);
             return previous;
         });
-        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(mock(ToolCallRepository.class),
-                mock(SessionAttributeRestorer.class), contexts,
+        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(mock(SessionAttributeRestorer.class), contexts,
                 new StaticListableBeanFactory(Map.of("control", control)).getBeanProvider(ExecutionControl.class));
         RuntimeContext context = preparedContext();
         when(preparer.prepare(any(ChatCommand.class))).thenReturn(context);

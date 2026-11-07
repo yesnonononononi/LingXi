@@ -26,6 +26,8 @@ import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
@@ -48,6 +50,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.session.domain.repo.SessionRepository;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -98,9 +105,12 @@ class QaDelegationLifecycleInterleavingTest {
     void setup() {
         registry = new SessionExecutionRegistry();
         coordinator = new ExecutionResumeCoordinator(tasks, executions,
-                new SuspendedExecutionResumer(toolCallRepository, sessionAttributeRestorer,
+                new SuspendedExecutionResumer(sessionAttributeRestorer,
                         modelContextService, provider(executionControl)),
-                executionControl, provider(frameworkExecutions), provider(activity));
+                executionControl, lifecycleGates(toolCallRepository),
+                new UnresolvedToolSuspensionGate(toolCallRepository),
+                provider(frameworkExecutions), provider(activity),
+                new StartupFailureCloser(executionControl));
         wakeups = InputTestSupport.wakeup(coordinator, frameworkExecutions, activity, registry, emailService);
         SubAgentCompleteNotifier notifier = mock(SubAgentCompleteNotifier.class);
         doAnswer(call -> { pendingInput.set(true); return null; }).when(notifier).notifyCommander(any());
@@ -481,4 +491,13 @@ class QaDelegationLifecycleInterleavingTest {
             return "D:/tmp";
         }
     };
+    /** 恢复消费端锁内复检用的门禁链：与生产装配同一份顺序，避免测试另造一套口径。 */
+    private static SuspensionGateChain lifecycleGates(ToolCallRepository toolCalls) {
+        return new SuspensionGateChain(List.of(
+                new UserPauseSuspensionGate(),
+                new UnresolvedToolSuspensionGate(toolCalls),
+                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
+                        mock(SessionRepository.class),
+                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
+    }
 }

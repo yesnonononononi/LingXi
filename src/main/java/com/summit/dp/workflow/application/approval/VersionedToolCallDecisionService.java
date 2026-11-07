@@ -15,7 +15,7 @@ import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
 import com.summit.dp.toolcall.domain.model.*;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -61,7 +61,7 @@ public class VersionedToolCallDecisionService {
     private final SseEventPublisher sseEventPublisher;
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionRepository> executionRepository;
-    private final SuspendedExecutionResumer resumer;
+    private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final ExecutionResumeCoordinator resumeCoordinator;
     private final CommandApprovalExecutor commandApprovalExecutor;
 
@@ -247,7 +247,7 @@ public class VersionedToolCallDecisionService {
             return ResumeDisposition.ENDED;
         }
         if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
-            return resumer.hasUnresolvedSlot(toolCall.getExecutionId())
+            return unresolvedToolGate.hasUnresolvedSlot(toolCall.getExecutionId())
                     ? ResumeDisposition.WAITING_OTHER_TOOLS : ResumeDisposition.QUEUED;
         }
         return ResumeDisposition.RUNNING;

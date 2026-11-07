@@ -62,6 +62,13 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -100,8 +107,7 @@ class CommandApprovalExecutorTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
 
-        resumer = new SuspendedExecutionResumer(toolCallRepository,
-                new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
+        resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
         // 模拟框架控制：beginApproval 把执行从挂起推入运行；finishApproval(CANCELLED) / failApproval 收口。
         doAnswer(invocation -> {
@@ -135,7 +141,7 @@ class CommandApprovalExecutorTest {
                 new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
-                resumer,
+                new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, resolver, provider(toolRegistry)),
                 modelContextService,
                 resumeCoordinator);
@@ -286,7 +292,7 @@ class CommandApprovalExecutorTest {
                 new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
-                resumer,
+                new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
                 resumeCoordinator) {
@@ -429,5 +435,14 @@ class CommandApprovalExecutorTest {
         ObjectProvider<T> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(value);
         return provider;
+    }
+    /** 恢复消费端锁内复检用的门禁链：与生产装配同一份顺序，避免测试另造一套口径。 */
+    private static SuspensionGateChain lifecycleGates(ToolCallRepository toolCalls) {
+        return new SuspensionGateChain(List.of(
+                new UserPauseSuspensionGate(),
+                new UnresolvedToolSuspensionGate(toolCalls),
+                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
+                        mock(SessionRepository.class),
+                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
     }
 }

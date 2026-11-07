@@ -37,6 +37,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.ResumeSupplementCommand;
 import com.summit.dp.workflow.application.resume.ResumeSupplementService;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
@@ -70,6 +71,7 @@ class ResumeSupplementTest {
     private final ObjectMapper json = new JsonConfig().objectMapper();
     private final ChatTurnService turns = mock(ChatTurnService.class);
     private final SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
+    private final UnresolvedToolSuspensionGate unresolvedToolGate = mock(UnresolvedToolSuspensionGate.class);
     private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
     private H2TestDatabase database;
     private SessionMessageRepositoryImpl messages;
@@ -114,7 +116,7 @@ class ResumeSupplementTest {
             return ResumeDisposition.QUEUED;
         });
         service = new ResumeSupplementService(turns, messages, provider(executions), provider(executions),
-                resumer, coordinator, new TransactionTemplate(new DataSourceTransactionManager(database)), json);
+                unresolvedToolGate, coordinator, new TransactionTemplate(new DataSourceTransactionManager(database)), json);
     }
 
     @AfterEach
@@ -285,9 +287,9 @@ class ResumeSupplementTest {
 
     @Test
     void unresolvedCardsAndEndedOrForeignTurnsCannotAcceptSupplements() {
-        when(resumer.hasUnresolvedSlot(900L)).thenReturn(true);
+        when(unresolvedToolGate.hasUnresolvedSlot(900L)).thenReturn(true);
         assertThrows(ClientException.class, () -> service.accept(SESSION_ID, command("有未决卡片")));
-        when(resumer.hasUnresolvedSlot(900L)).thenReturn(false);
+        when(unresolvedToolGate.hasUnresolvedSlot(900L)).thenReturn(false);
         staleCheckpoint.resumeChecked();
         staleCheckpoint.completeChecked();
         executions.save(staleCheckpoint);

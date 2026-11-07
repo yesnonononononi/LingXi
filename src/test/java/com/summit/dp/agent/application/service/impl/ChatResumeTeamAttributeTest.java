@@ -34,6 +34,7 @@ import org.mockito.InOrder;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 
 import java.util.*;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -72,8 +73,7 @@ class ChatResumeTeamAttributeTest {
     private ChatServiceImpl service() {
         com.summit.dp.turn.application.service.ChatTurnService chatTurnService =
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class);
-        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
-                new SessionAttributeRestorer(sessionRepository), modelContextService,
+        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(sessionRepository), modelContextService,
                 provider(ExecutionControl.class, executionControl));
         SuspensionGateChain gates = new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
@@ -81,7 +81,7 @@ class ChatResumeTeamAttributeTest {
                 new SubAgentWaitSuspensionGate(new SubExecutionDependency(sessionExecutionRegistry,
                         sessionRepository, mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
         ExecutionLifecycleOrchestratorImpl lifecycle = new ExecutionLifecycleOrchestratorImpl(
-                executionRepository, executionControl, executionIdentity, gates, resumer,
+                executionRepository, executionControl, executionIdentity, gates, resumer, new StartupFailureCloser(executionControl),
                 mock(ExecutionResumeCoordinator.class));
         return new ChatServiceImpl(sseEventPublisher, requestPreparer, lifecycle,
                 sessionRepository, sessionExecutionRegistry,

@@ -14,6 +14,7 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +34,7 @@ public class ResumeSupplementService {
     private final MessageRepository messages;
     private final ObjectProvider<ExecutionRepository> executions;
     private final ObjectProvider<ExecutionActivity> activity;
-    private final SuspendedExecutionResumer resumer;
+    private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final ExecutionResumeCoordinator coordinator;
     private final TransactionTemplate transactions;
     private final ObjectMapper json;
@@ -71,7 +72,7 @@ public class ResumeSupplementService {
                 throwIf(ExecutionIdentity.sessionId(execution) != sessionId, "执行不属于当前会话");
                 throwIf(activity.getObject().isActive(executionId) || execution.getExecutionState() != ExecutionState.SUSPENDED,
                         "主会话已恢复或结束，补充要求尚未提交，输入内容已保留");
-                throwIf(resumer.hasUnresolvedSlot(turn.getExecutionId()), "请先处理待审批或待回答的卡片");
+                throwIf(unresolvedToolGate.hasUnresolvedSlot(turn.getExecutionId()), "请先处理待审批或待回答的卡片");
                 SessionMessage message = SessionMessage.builder().id(IdUtil.getSnowflakeNextId())
                         .sessionId(sessionId).turnId(command.turnId()).type(SessionMessageType.USER)
                         .resumeRequestId(command.requestId()).text(content).createTime(Instant.now()).build();

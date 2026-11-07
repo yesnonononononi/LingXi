@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -56,7 +57,7 @@ class ExecutionLifecycleOrchestratorImplTest {
 
     private ExecutionLifecycleOrchestratorImpl orchestrator(List<SuspensionGate> gates) {
         return new ExecutionLifecycleOrchestratorImpl(executionRepository, executionControl, executionLocator,
-                new SuspensionGateChain(gates), resumer, resumeCoordinator);
+                new SuspensionGateChain(gates), resumer, new StartupFailureCloser(executionControl), resumeCoordinator);
     }
 
     private ExecutionLifecycleOrchestratorImpl orchestrator() {

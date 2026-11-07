@@ -5,7 +5,6 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,20 +27,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class SuspendedExecutionResumer {
 
-    private final ToolCallRepository toolCallRepository;
     private final SessionAttributeRestorer sessionAttributeRestorer;
     private final ModelContextService modelContextService;
     private final ObjectProvider<ExecutionControl> executionControl;
-
-    /**
-     * 该执行是否还有未落定的槽位。
-     *
-     * <p>准备中、执行中、委派等待都算未决 —— 只看 {@code pending} 会漏掉它们，
-     * 在这些状态下恢复会让 loop 拿到一个还没写回结论的槽位。</p>
-     */
-    public boolean hasUnresolvedSlot(Long executionIdNumber) {
-        return !toolCallRepository.listUnresolvedByExecutionId(executionIdNumber).isEmpty();
-    }
 
     /** 执行是否停在可接受决策的挂起点。 */
     public boolean isSuspended(Execution execution) {

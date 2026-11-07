@@ -13,10 +13,10 @@ import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +41,7 @@ public class ExecutionLifecycleOrchestratorImpl implements ExecutionLifecycleOrc
     private final ExecutionLocator executionLocator;
     private final SuspensionGateChain gates;
     private final SuspendedExecutionResumer resumer;
+    private final StartupFailureCloser startupFailureCloser;
     private final ExecutionResumeCoordinator resumeCoordinator;
 
     @Override
@@ -65,22 +66,7 @@ public class ExecutionLifecycleOrchestratorImpl implements ExecutionLifecycleOrc
      */
     @Override
     public void closeFailedStartup(Execution execution, Exception cause, ExecutionLaunchRole role) {
-        if (execution == null) {
-            return;
-        }
-        try {
-            ExecutionState state = execution.getExecutionState();
-            if (ExecutionStateCodec.isTerminalState(state)) {
-                return;
-            }
-            if (role != ExecutionLaunchRole.RESUME && state == ExecutionState.SUSPENDED) {
-                return;
-            }
-            executionControl.fail(execution, cause).run();
-        } catch (RuntimeException failFailure) {
-            log.warn("收口启动失败的执行时出错: executionId={}, cause={}, 收口失败原因={}",
-                    execution.getId(), cause.toString(), failFailure.toString());
-        }
+        startupFailureCloser.closeQuietly(execution, cause, role);
     }
 
     /**

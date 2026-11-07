@@ -63,6 +63,13 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -120,8 +127,7 @@ class ToolCallDecisionTest {
         }).when(emitter).complete();
         doAnswer(invocation -> { emitter.complete(); return null; }).when(sseEventPublisher).finish(emitter);
 
-        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
-                new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
+        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
         ToolCallConverter converter = new ToolCallConverter(mapper);
         CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
@@ -131,7 +137,7 @@ class ToolCallDecisionTest {
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer,
                         coordinator(resumer)),
-                resumer,
+                new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
                 coordinator(resumer));
@@ -139,7 +145,7 @@ class ToolCallDecisionTest {
                 converter, commandApprovalExecutor,
                 new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
                         modelContextService, sseEventPublisher, transactions,
-                        provider(executionRepository), resumer),
+                        provider(executionRepository), new UnresolvedToolSuspensionGate(toolCallRepository), resumer),
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository), provider(activity))),
                 sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
@@ -163,7 +169,9 @@ class ToolCallDecisionTest {
      */
     private ExecutionResumeCoordinator coordinator(SuspendedExecutionResumer resumer) {
         ExecutionResumeCoordinator coordinator = new ExecutionResumeCoordinator(resumeTaskRepository,
-                resumeExecutions, resumer, executionControl, provider(executionRepository), provider(activity));
+                resumeExecutions, resumer, executionControl, lifecycleGates(toolCallRepository),
+                new UnresolvedToolSuspensionGate(toolCallRepository), provider(executionRepository), provider(activity),
+                new StartupFailureCloser(executionControl));
         coordinators.add(coordinator);
         return coordinator;
     }
@@ -421,5 +429,14 @@ class ToolCallDecisionTest {
         ObjectProvider<T> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(value);
         return provider;
+    }
+    /** 恢复消费端锁内复检用的门禁链：与生产装配同一份顺序，避免测试另造一套口径。 */
+    private static SuspensionGateChain lifecycleGates(ToolCallRepository toolCalls) {
+        return new SuspensionGateChain(List.of(
+                new UserPauseSuspensionGate(),
+                new UnresolvedToolSuspensionGate(toolCalls),
+                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
+                        mock(SessionRepository.class),
+                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
     }
 }

@@ -58,6 +58,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -121,8 +128,7 @@ class VersionedToolCallDecisionTest {
             return null;
         }).when(executionControl).beginApproval(any(Execution.class));
 
-        resumer = new SuspendedExecutionResumer(toolCallRepository,
-                new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
+        resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
         ToolCallConverter converter = new ToolCallConverter(mapper);
         CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
@@ -131,14 +137,14 @@ class VersionedToolCallDecisionTest {
                 new CommandOutcomeResolver(converter, runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
-                resumer,
+                new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
                 resumeCoordinator);
         service = new VersionedToolCallDecisionService(toolCallRepository,
                 converter, modelContextService,
                 sseEventPublisher, transactions, provider(executionRepository),
-                resumer, resumeCoordinator, commandApprovalExecutor);
+                new UnresolvedToolSuspensionGate(toolCallRepository), resumeCoordinator, commandApprovalExecutor);
     }
 
     // ------------------------------------------------------------------

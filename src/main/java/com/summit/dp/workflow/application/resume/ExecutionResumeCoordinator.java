@@ -16,6 +16,12 @@ import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -69,10 +75,16 @@ public class ExecutionResumeCoordinator {
     private final com.summit.dp.execution.domain.repository.ExecutionRepository executions;
     private final SuspendedExecutionResumer resumer;
     private final ExecutionControl executionControl;
+    /** 锁内复检用的门禁链：与手动预检同一份定义，差别只在「不通过怎么办」。 */
+    private final SuspensionGateChain gates;
+    /** 未决槽位判定只有一份：审批流程与恢复入口都从这里取。 */
+    private final UnresolvedToolSuspensionGate unresolvedToolGate;
     /** 框架仓储经 ObjectProvider 断开构造期闭环：它由 LocalExecutionRepository 实现，与恢复链互为依赖。 */
     private final ObjectProvider<ExecutionRepository> frameworkExecutions;
     /** 控制槽位活跃判定；与 frameworkExecutions 同为实现类，语义不同，单独注入以免误用。 */
     private final ObjectProvider<ExecutionActivity> activity;
+    /** 启动失败收口口径的唯一实现；本类只按 RESUME 角色调用它。 */
+    private final StartupFailureCloser startupFailureCloser;
 
     /** 派发线程：与请求线程、loop 线程都分开，恢复失败不会拖垮受理响应。 */
     @Autowired
@@ -84,14 +96,20 @@ public class ExecutionResumeCoordinator {
                                       com.summit.dp.execution.domain.repository.ExecutionRepository executions,
                                       SuspendedExecutionResumer resumer,
                                       ExecutionControl executionControl,
+                                      SuspensionGateChain gates,
+                                      UnresolvedToolSuspensionGate unresolvedToolGate,
                                       ObjectProvider<ExecutionRepository> frameworkExecutions,
-                                      ObjectProvider<ExecutionActivity> activity) {
+                                      ObjectProvider<ExecutionActivity> activity,
+                                      StartupFailureCloser startupFailureCloser) {
         this.taskRepository = taskRepository;
         this.executions = executions;
         this.resumer = resumer;
         this.executionControl = executionControl;
+        this.gates = gates;
+        this.unresolvedToolGate = unresolvedToolGate;
         this.frameworkExecutions = frameworkExecutions;
         this.activity = activity;
+        this.startupFailureCloser = startupFailureCloser;
     }
 
     /**
@@ -112,7 +130,7 @@ public class ExecutionResumeCoordinator {
         if (ExecutionStatusCodes.isTerminal(status)) {
             return ResumeDisposition.ENDED;
         }
-        if (resumer.hasUnresolvedSlot(executionId)) {
+        if (unresolvedToolGate.hasUnresolvedSlot(executionId)) {
             // 还有槽位：不派发、不落请求。最后一个槽位落定时它自己的决策会再走一遍 accept。
             return ResumeDisposition.WAITING_OTHER_TOOLS;
         }
@@ -223,6 +241,15 @@ public class ExecutionResumeCoordinator {
             markSuperseded(task, "执行已不在挂起态，无需本请求恢复");
             return;
         }
+        // 锁内复检：与手动入口的同步预检同一套门禁。不通过就静默保持挂起 —— 这不是失败，
+        // 只是「还没条件恢复」，标失败会把「等审批」错记成「恢复崩了」。
+        synchronized (ExecutionCoordination.monitor(String.valueOf(executionId))) {
+            GateCheckResult readiness = gates.checkReadiness(execution, ResumeTriggerType.AUTO_INPUT_WAKEUP);
+            if (!readiness.allowed()) {
+                markSuperseded(task, "挂起门禁未放行: " + readiness.reason());
+                return;
+            }
+        }
         if (isActive(executionId)) {
             // 已有 loop 持有控制槽位：让位。竞争失败不是执行失败，绝不改判。
             markSuperseded(task, "执行已有运行持有控制槽位，恢复请求作废");
@@ -290,16 +317,8 @@ public class ExecutionResumeCoordinator {
      * 这一支将永远收不了口。</p>
      */
     private void closeFailedExecution(Execution execution, Exception cause) {
-        try {
-            if (ExecutionStateCodec.isTerminalState(execution.getExecutionState())) {
-                return;
-            }
-            executionControl.fail(execution, cause).run();
-        } catch (RuntimeException closeFailure) {
-            // 收口失败只告警，绝不掩盖原始异常。
-            log.warn("收口启动失败的执行时出错: executionId={}, cause={}, 收口失败原因={}",
-                    execution.getId(), cause.toString(), closeFailure.toString());
-        }
+        // 收口口径只有一处定义（StartupFailureCloser 按角色分三种）；恢复启动连挂起态也要收口。
+        startupFailureCloser.closeQuietly(execution, cause, ExecutionLaunchRole.RESUME);
     }
 
     /**

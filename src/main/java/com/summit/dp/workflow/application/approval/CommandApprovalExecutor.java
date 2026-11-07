@@ -15,7 +15,7 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +48,7 @@ public class CommandApprovalExecutor {
     private final ObjectProvider<ExecutionRepository> executionRepository;
     private final CommandOutcomeResolver outcomeResolver;
     private final ApprovalFinalizer finalizer;
-    private final SuspendedExecutionResumer resumer;
+    private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final ApprovedCommandRestorer commandRestorer;
     private final ModelContextService modelContextService;
     private final ExecutionResumeCoordinator resumeCoordinator;
@@ -189,7 +189,7 @@ public class CommandApprovalExecutor {
 
             // 未决判定必须在 unregister 之前：unregister 会经生命周期端口把该执行所有未决
             // 槽位一次性结掉，事后重查恒为「无未决」，恢复闸门会形同虚设。
-            boolean pending = resumer.hasUnresolvedSlot(Long.valueOf(executionId));
+            boolean pending = unresolvedToolGate.hasUnresolvedSlot(Long.valueOf(executionId));
 
             // 先置位再 unregister：unregister 抛错时 finally 不再重复释放（重复释放会抛
             // 「控制信号已释放」并盖掉真正的失败原因）。

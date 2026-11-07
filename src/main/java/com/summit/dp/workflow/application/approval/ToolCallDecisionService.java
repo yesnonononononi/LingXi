@@ -11,6 +11,7 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class ToolCallDecisionService {
     private final SseEventPublisher sseEventPublisher;
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionRepository> executionRepository;
+    private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final SuspendedExecutionResumer resumer;
 
     /** 分支 A：{@code PLAN} / {@code CHOICE}（无外部副作用）——单事务。 */
@@ -63,7 +65,7 @@ public class ToolCallDecisionService {
             modelContextService.replace(conversationId, execution.getMessages());
         });
 
-        boolean pending = resumer.hasUnresolvedSlot(toolCall.getExecutionId());
+        boolean pending = unresolvedToolGate.hasUnresolvedSlot(toolCall.getExecutionId());
         long rootId = executionLocator.resolveRootSessionId(conversationId);
         SseEmitter emitter = sseEventPublisher.connect(rootId);
         CompletableFuture.runAsync(() -> {

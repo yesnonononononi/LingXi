@@ -62,6 +62,14 @@ import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.session.domain.repo.SessionRepository;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -113,7 +121,7 @@ class ChoiceAnswersServiceTest {
         when(provider.getObject()).thenReturn(executions);
         SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
         service = new ChoiceAnswersService(tools, new ToolCallConverter(mapper), new ChoiceAnswersValidator(mapper, messages),
-                provider, contexts, coordinator, resumer, transactions);
+                provider, contexts, coordinator, new UnresolvedToolSuspensionGate(tools), transactions);
         seed();
     }
 

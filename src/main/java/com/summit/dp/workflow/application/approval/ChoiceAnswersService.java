@@ -18,7 +18,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +39,7 @@ public class ChoiceAnswersService {
     private final ObjectProvider<ExecutionRepository> executions;
     private final ModelContextService contexts;
     private final ExecutionResumeCoordinator resumeCoordinator;
-    private final SuspendedExecutionResumer resumer;
+    private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final TransactionTemplate transactions;
 
     public ChoiceAnswersReceipt submit(ChoiceAnswersCommand command) {
@@ -113,7 +113,7 @@ public class ChoiceAnswersService {
         if (current.getExecutionState() != ExecutionState.SUSPENDED) {
             return ResumeDisposition.RUNNING;
         }
-        return resumer.hasUnresolvedSlot(executionId)
+        return unresolvedToolGate.hasUnresolvedSlot(executionId)
                 ? ResumeDisposition.WAITING_OTHER_TOOLS : ResumeDisposition.QUEUED;
     }
 
