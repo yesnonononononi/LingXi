@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.TaskPage;
 import com.summit.dp.task.domain.model.TaskSummary;
@@ -112,7 +113,12 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
     }
 
     /**
-     * 「可能仍有终态结果待注入」的候选会话：终态集合由域枚举推导，SQL 里只做状态过滤与时间比较。
+     * 「可能仍有终态结果待注入」的候选会话：终态集合由域枚举推导，
+     * 「已注入」的完成状态由 {@link ExecutionStatusCodes#COMPLETED} 传入，SQL 里不写字面量。
+     *
+     * <p>判据只认「在任务完成之后<b>才开始</b>、且正常完成」的执行（见
+     * {@code TaskMapper#selectSessionIdsWithUnconsumedTerminalTasks} 的取舍说明）：
+     * 用 {@code completed_at} 会把「任务在某一轮最后一次模型调用之后完成」的会话误判为已注入。</p>
      *
      * <p>不做逐会话查询：一条语句取出全部候选，候选数与历史会话总数无关。</p>
      */
@@ -122,7 +128,8 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
                 .filter(Task.TaskStatus::isTerminal)
                 .map(Enum::name)
                 .toList();
-        return mapper.selectSessionIdsWithUnconsumedTerminalTasks(terminalStatuses);
+        return mapper.selectSessionIdsWithUnconsumedTerminalTasks(terminalStatuses,
+                ExecutionStatusCodes.COMPLETED);
     }
 
     /** 列表展示列（不含 {@code output}）：裁剪口径只在这一处定义，两个摘要查询共用。 */

@@ -51,14 +51,14 @@ class InputStartupRecheckCandidateScopeTest {
 
     private static final long MAIL_AGENT_ID = 9001L;
     private static final long TURN_ID = 1L;
-    /** 任务完成时刻：历史执行只要在它之后结束，就视为已注入。 */
+    /** 任务完成时刻：判「已注入」时与执行两侧的时间比较都以它为基准。 */
     private static final LocalDateTime TASK_COMPLETE_AT = LocalDateTime.of(2026, 1, 1, 0, 0, 0);
     /**
      * 先后判据用的间隔。
      *
-     * <p>取一整天而不是几秒：{@code task.complete_at} 与 {@code execution.completed_at} 走的是两套类型
-     * 处理器（Instant 与 LocalDateTime），落库的墙钟时刻可能相差一个时区偏移，只有「至少一天」这种量级的
-     * 间隔才是与时区无关的先后见证。</p>
+     * <p>取一整天而不是几秒：{@code task.complete_at} 与 {@code execution.started_at / completed_at} 走的是
+     * 两套类型处理器（Instant 与 LocalDateTime），落库的墙钟时刻可能相差一个时区偏移，只有「至少一天」这种
+     * 量级的间隔才是与时区无关的先后见证。</p>
      */
     private static final long ORDER_GAP_HOURS = 24L;
 
@@ -119,6 +119,7 @@ class InputStartupRecheckCandidateScopeTest {
     @DisplayName("正向：终态任务结果无人接手（之后没有执行跑完）时唤醒该会话")
     void terminalTaskWithoutLaterExecutionIsWoken() {
         long completedExecutionId = scope.insertExecution(600L, ExecutionStatusCodes.COMPLETED,
+                TASK_COMPLETE_AT.minusHours(2 * ORDER_GAP_HOURS),
                 TASK_COMPLETE_AT.minusHours(ORDER_GAP_HOURS));
         scope.insertTerminalTask(600L, 600L, TASK_COMPLETE_AT);
 
@@ -128,11 +129,65 @@ class InputStartupRecheckCandidateScopeTest {
         verifyNoMoreInteractions(scope.wakeups);
     }
 
+    /**
+     * 正向（必须唤醒）：任务在该轮<b>最后一次模型调用之后</b>完成，该轮随后正常结束。
+     *
+     * <p>执行在任务完成前就开始了（{@code started_at < task.complete_at}），却在任务完成之后才结束
+     * （{@code completed_at > task.complete_at}）。这一轮之后没有再发生模型调用，结果从未被注入；
+     * 旧判据 {@code completed_at >= task.complete_at} 会把它排除，导致这条结果永久不被注入。</p>
+     */
+    @Test
+    @DisplayName("正向（漏唤醒回归）：任务在该轮最后一次模型调用之后完成，仍必须唤醒")
+    void taskFinishingAfterLastModelCallStillWakes() {
+        long completedExecutionId = scope.insertExecution(750L, ExecutionStatusCodes.COMPLETED,
+                TASK_COMPLETE_AT.minusHours(ORDER_GAP_HOURS),
+                TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS));
+        scope.insertTerminalTask(750L, 750L, TASK_COMPLETE_AT);
+
+        scope.recheck.recheck();
+
+        verify(scope.wakeups).resumeIfInputPending(completedExecutionId);
+        verifyNoMoreInteractions(scope.wakeups);
+    }
+
+    /** 负向：任务完成后该会话才新起一轮并正常完成 → 那一轮的首次模型调用必然已注入，不唤醒。 */
+    @Test
+    @DisplayName("负向：任务完成后新起一轮并正常完成 → 不唤醒")
+    void newRoundStartedAfterTaskCompletionDoesNotWake() {
+        long laterExecutionId = scope.insertExecution(760L, ExecutionStatusCodes.COMPLETED,
+                TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS),
+                TASK_COMPLETE_AT.plusHours(2 * ORDER_GAP_HOURS));
+        scope.insertTerminalTask(760L, 760L, TASK_COMPLETE_AT);
+
+        scope.recheck.recheck();
+
+        assertTrue(laterExecutionId > 0L);
+        verifyNoInteractions(scope.wakeups);
+        assertEquals(3, scope.capture.queries().size(),
+                "没有候选时只发三条候选查询: " + scope.capture.queries());
+    }
+
+    /** 补充：任务完成后新起的执行在首次模型调用前就失败（不是 COMPLETED）→ 仍必须唤醒。 */
+    @Test
+    @DisplayName("补充：任务完成后新起的执行失败（首次调用前）→ 仍必须唤醒")
+    void failedRoundAfterTaskCompletionStillWakes() {
+        long failedExecutionId = scope.insertExecution(770L, ExecutionStatusCodes.FAILED,
+                TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS),
+                TASK_COMPLETE_AT.plusHours(2 * ORDER_GAP_HOURS));
+        scope.insertTerminalTask(770L, 770L, TASK_COMPLETE_AT);
+
+        scope.recheck.recheck();
+
+        verify(scope.wakeups).resumeIfInputPending(failedExecutionId);
+        verifyNoMoreInteractions(scope.wakeups);
+    }
+
     @Test
     @DisplayName("负向：终态任务已注入（之后有执行跑完）+ 邮件已消费 → 一次唤醒都不该有")
     void alreadyInjectedHistoryDoesNotWake() {
         long completedExecutionId = scope.insertExecution(700L, ExecutionStatusCodes.COMPLETED,
-                TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS));
+                TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS),
+                TASK_COMPLETE_AT.plusHours(2 * ORDER_GAP_HOURS));
         scope.insertTerminalTask(700L, 700L, TASK_COMPLETE_AT);
         long mailbox = scope.insertMailbox(700L, MAIL_AGENT_ID);
         scope.insertMessage(mailbox, EmailMessage.EMStatus.CONSUMED);
@@ -227,8 +282,10 @@ class InputStartupRecheckCandidateScopeTest {
             long offset = historySize * 1_000_000L;
             for (int index = 0; index < historySize; index++) {
                 long sessionId = offset + index;
+                // 历史执行：在任务完成之后才「开始」并正常完成 → 那一轮的首次模型调用已注入。
                 insertExecution(sessionId, ExecutionStatusCodes.COMPLETED,
-                        TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS));
+                        TASK_COMPLETE_AT.plusHours(ORDER_GAP_HOURS),
+                        TASK_COMPLETE_AT.plusHours(2 * ORDER_GAP_HOURS));
                 insertTerminalTask(sessionId, sessionId, TASK_COMPLETE_AT);
                 if (index % 50 == 0) {
                     long mailbox = insertMailbox(sessionId, MAIL_AGENT_ID);
@@ -246,14 +303,25 @@ class InputStartupRecheckCandidateScopeTest {
             return new Measure(statements, wakes);
         }
 
-        /** 落一条执行行；{@code completedAt} 为 null 表示未结束。 */
+        /** 落一条执行行；{@code completedAt} 为 null 表示未结束（不写 started_at）。 */
         private long insertExecution(long sessionId, int status, LocalDateTime completedAt) {
+            return insertExecution(sessionId, status, null, completedAt);
+        }
+
+        /**
+         * 落一条执行行。
+         *
+         * <p>{@code startedAt} 是「已注入」判据的锚点：只有在该任务完成之后<b>才开始</b>且正常完成的执行
+         * 才能证明注入发生过；{@code null} 表示这一轮从未开始（旧数据 / 未启动）。</p>
+         */
+        private long insertExecution(long sessionId, int status, LocalDateTime startedAt, LocalDateTime completedAt) {
             ExecutionPO row = new ExecutionPO();
             row.setSessionId(sessionId);
             row.setStatus(status);
             row.setVersion(1L);
             row.setResumeGeneration(0L);
             row.setSnapshotFile("{}");
+            row.setStartedAt(startedAt);
             row.setCompletedAt(completedAt);
             row.setCreatedAt(TASK_COMPLETE_AT);
             row.setUpdatedAt(TASK_COMPLETE_AT);
