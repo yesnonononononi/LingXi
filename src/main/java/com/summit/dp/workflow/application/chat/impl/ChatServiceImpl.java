@@ -1,26 +1,22 @@
 package com.summit.dp.workflow.application.chat.impl;
 
-import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.execution.domain.model.ExecutionStatus;
-import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.ConversationRollbackService.ResendAdmission;
 import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
+import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,14 +39,11 @@ public class ChatServiceImpl implements ChatService {
 
     private final SseEventPublisher sseEventPublisher;
     private final RequestPreparer requestPreparer;
-    private final ExecutionControl executionControl;
-    private final ExecutionRepository executionRepository;
+    /** 生命周期统一编排：暂停与恢复都从它走，ChatServiceImpl 不再直接碰控制信号。 */
+    private final ExecutionLifecycleOrchestrator lifecycle;
     private final SessionRepository sessionRepository;
     private final SessionExecutionRegistry sessionExecutionRegistry;
-    private final ModelContextService modelContextService;
     private final ExecutionLocator executionLocator;
-    private final ToolCallRepository toolCallRepository;
-    private final SessionAttributeRestorer sessionAttributeRestorer;
     /** 已受理上下文的执行协作：模型调用与运行资格收尾都在它那里。 */
     private final PreparedChatExecutor chatExecutor;
     private final ChatTurnService chatTurnService;
@@ -210,42 +203,27 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void suspend(Long sessionId) {
         throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
-        for (String executionId : executionLocator.activeExecutionIds(sessionId)) {
-            try {
-                executionControl.suspend(executionId);
-            } catch (IllegalStateException error) {
-                // 查询与发信号之间执行可能已结束，不能把这个正常竞争报成服务器故障。
-                log.debug("暂停时执行已退出: executionId={}", executionId);
-            }
-        }
+        lifecycle.pauseSessionExecution(String.valueOf(sessionId));
     }
 
+    /**
+     * 手动恢复：同步预检 → 清挂起痕迹提交 → 交回 loop → 回写上下文。
+     *
+     * <p>编排、门禁与顺序都在 {@code ExecutionLifecycleOrchestrator} 里，入口只做两件事：
+     * 取「被挂起的那个执行」，把门禁给的原因翻成业务错误。这样手动与自动两条恢复路径
+     * 不会各养一份门禁判断。</p>
+     */
     @Override
     public synchronized Result<String> resume(Long sessionId) {
-        // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
-        synchronized (ExecutionCoordination.monitor("session:" + sessionId)) {
-            String id = executionLocator.latestSuspendedExecutionId(sessionId);
-            throwIf(id == null, "该会话没有可恢复的执行");
+        String executionId = executionLocator.latestSuspendedExecutionId(sessionId);
+        throwIf(executionId == null, "该会话没有可恢复的执行");
 
-            Execution execution;
-            synchronized (ExecutionCoordination.monitor(id)) {
-                throwIf(!toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(id)).isEmpty(), "请先处理待审批事项");
-                execution = executionRepository.findById(id).orElseThrow(ClientException::new);
-                throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行不可以恢复");
-                sessionAttributeRestorer.restore(execution, sessionId);
-                // 清除意图须先提交，控制槽位登记才允许这次主动恢复通过。
-                InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.USER_PAUSED, null);
-                InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.AUTO_ROUNDS, null);
-                executionRepository.save(execution);
-            }
+        ResumeAcceptResult result = lifecycle.requestResume(
+                ResumeRequest.create(executionId, sessionId, ResumeTriggerType.MANUAL_USER_RESUME));
+        // 未决工具、用户暂停等原因必须原样回给用户：静默失败会让「点了恢复没反应」无从排查。
+        throwIf(result.blocked(), result.reason());
 
-            // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
-            Execution resumed = executionControl.resume(execution);
-
-            modelContextService.replace(sessionId, resumed.getMessages());
-
-            return Result.success(resumed.getMessages().toString());
-        }
+        return Result.success(result.resumed().getMessages().toString());
     }
 
     /**

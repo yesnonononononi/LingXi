@@ -13,6 +13,7 @@ import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
@@ -47,10 +48,10 @@ class ChatSubscribeSessionIdTest {
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
 
     private ChatServiceImpl service() {
-        return new ChatServiceImpl(sseEventPublisher, requestPreparer, executionControl,
-                executionRepository, sessionRepository, sessionExecutionRegistry, modelContextService,
-                executionIdentity, toolCallRepository,
-                new SessionAttributeRestorer(sessionRepository),
+        return new ChatServiceImpl(sseEventPublisher, requestPreparer,
+                mock(ExecutionLifecycleOrchestrator.class),
+                sessionRepository, sessionExecutionRegistry,
+                executionIdentity,
                 new PreparedChatExecutor(mock(AgentWorkflowOrchestrator.class), requestPreparer,
                         modelContextService, sessionExecutionRegistry, executionControl),
                 mock(ChatTurnService.class),

@@ -20,6 +20,7 @@ import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,10 +68,9 @@ class ChatAdmissionOrderTest {
 
     private final ChatServiceImpl chatService = new ChatServiceImpl(
             sseEventPublisher, requestPreparer,
-            executionControl, mock(ExecutionRepository.class),
-            mock(SessionRepository.class), registry, modelContextService,
-            mock(ExecutionLocator.class), mock(ToolCallRepository.class),
-            mock(SessionAttributeRestorer.class),
+            mock(ExecutionLifecycleOrchestrator.class),
+            mock(SessionRepository.class), registry,
+            mock(ExecutionLocator.class),
             new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry, executionControl),
             chatTurnService,
             mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),

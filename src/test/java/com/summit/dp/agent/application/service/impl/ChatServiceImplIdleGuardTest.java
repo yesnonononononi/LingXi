@@ -17,6 +17,7 @@ import com.summit.dp.workflow.application.chat.ResendTargetResolver;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
@@ -53,14 +54,10 @@ class ChatServiceImplIdleGuardTest {
     private final ChatServiceImpl service = new ChatServiceImpl(
             mock(SseEventPublisher.class),
             mock(RequestPreparer.class),
-            mock(ExecutionControl.class),
-            mock(ExecutionRepository.class),
+            mock(ExecutionLifecycleOrchestrator.class),
             mock(SessionRepository.class),
             mock(SessionExecutionRegistry.class),
-            mock(ModelContextService.class),
             mock(ExecutionLocator.class),
-            mock(ToolCallRepository.class),
-            mock(SessionAttributeRestorer.class),
             mock(PreparedChatExecutor.class),
             mock(ChatTurnService.class),
             executionQueryService,

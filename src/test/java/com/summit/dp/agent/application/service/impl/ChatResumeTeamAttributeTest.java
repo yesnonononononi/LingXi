@@ -16,6 +16,14 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
+import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.lifecycle.impl.ExecutionLifecycleOrchestratorImpl;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -56,19 +64,39 @@ class ChatResumeTeamAttributeTest {
     private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
 
+    /**
+     * 装配真实的生命周期编排：{@code ChatServiceImpl#resume} 已改为委托编排器，
+     * 断言仍落在「交给 loop 的那个 Execution 实例」上，因此这里必须用真编排 + 真门禁链 +
+     * 真恢复器（仓储与控制信号仍是 mock），否则测的就不是生产那条路径了。
+     */
     private ChatServiceImpl service() {
         com.summit.dp.turn.application.service.ChatTurnService chatTurnService =
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class);
-        return new ChatServiceImpl(sseEventPublisher, requestPreparer, executionControl,
-                executionRepository, sessionRepository, sessionExecutionRegistry, modelContextService,
-                executionIdentity, toolCallRepository,
-                new SessionAttributeRestorer(sessionRepository),
+        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
+                new SessionAttributeRestorer(sessionRepository), modelContextService,
+                provider(ExecutionControl.class, executionControl));
+        SuspensionGateChain gates = new SuspensionGateChain(List.of(
+                new UserPauseSuspensionGate(),
+                new UnresolvedToolSuspensionGate(toolCallRepository),
+                new SubAgentWaitSuspensionGate(new SubExecutionDependency(sessionExecutionRegistry,
+                        sessionRepository, mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
+        ExecutionLifecycleOrchestratorImpl lifecycle = new ExecutionLifecycleOrchestratorImpl(
+                executionRepository, executionControl, executionIdentity, gates, resumer,
+                mock(ExecutionResumeCoordinator.class));
+        return new ChatServiceImpl(sseEventPublisher, requestPreparer, lifecycle,
+                sessionRepository, sessionExecutionRegistry,
+                executionIdentity,
                 new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService,
                         sessionExecutionRegistry, executionControl),
                 chatTurnService,
                 mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
                 // 本测试只盯 resume 的属性补齐，重发链路用不到。
                 mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
+    }
+
+    private static <T> org.springframework.beans.factory.ObjectProvider<T> provider(Class<T> type, T value) {
+        return new org.springframework.beans.factory.support.StaticListableBeanFactory(
+                Map.of("value", value)).getBeanProvider(type);
     }
 
     @Test
