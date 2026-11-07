@@ -240,27 +240,27 @@
 
 实施时先记录以下具体信息；文档阶段不编造项目地址或实际测试结果。
 
-| 项目 | 待实施时填写 |
+| 项目 | 阶段一实施时的实际记录（2026-11-07） |
 | --- | --- |
-| 验收项目及真实工作区 | 待填写 |
-| 原项目启动命令与工作目录 | 待填写 |
-| 可访问的完整页面 URL | 待填写 |
-| 页面所需后端及登录条件 | 待填写 |
-| 桌面运行或安装版本 | 待填写 |
-| 实际点击、输入、滚动、路由操作 | 待填写 |
-| 界面截图 / 录屏及验证结果 | 待填写 |
-| 已知限制 | 待填写 |
+| 验收项目及真实工作区 | 以 LingXi 自身前端为被预览的真实项目：工作区 `D:\Code\LingXi`，服务目录 `frontend`。不是新生成的演示 HTML。 |
+| 原项目启动命令与工作目录 | `cd /d D:\Code\LingXi\frontend && npx vite --port 5199 --strictPort`（等价于该项目的 `npm run dev`，仅换端口避免与他人 dev server 冲突）。验收后进程已停止，`netstat` 只余 TIME_WAIT，无 5199 监听。 |
+| 可访问的完整页面 URL | `http://localhost:5199/`（回环 + 明确端口，满足阶段一 URL 白名单） |
+| 页面所需后端及登录条件 | 无。该页面为前端静态页 + 前端路由，不依赖后端 `8088`，也不需要登录，因此不涉及 OAuth 弹窗 / 第三方 Cookie 兼容项。 |
+| 桌面运行或安装版本 | Electron 实际运行（`npx electron` 受真实主进程 `registerProjectPagePreview` + preload 驱动，offscreen 窗口）。**未覆盖**安装版/打包产物同链路，见已知限制。 |
+| 实际点击、输入、滚动、路由操作 | iframe 内真实页面断言 300 个节点、标题 `LX`；输入 textarea 后回读 `QA-阶段一输入`；点击 `button[title="系统设置"]` 打开设置面板；`scrollTop=220`；`pushState('/models')` + `popstate` 后路由切到「模型管理」。用例见 `frontend/node_modules/.tmp/qa-phase1/run-live.cjs`（32/32 通过）。 |
+| 界面截图 / 录屏及验证结果 | 截图证据（不入仓，`.tmp` 属临时目录）：`node_modules/.tmp/qa-phase1/artifacts/01-real-page.png`（真实页面在面板内渲染）、`02-settings-open.png`（页内交互生效）、`layout.png`、`race-log.json`（竞态时序）；`node_modules/.tmp/project-page-preview-smoke/page-preview.png`。验证结论见 `.lingxi/qa-report-project-page-phase1.md`。 |
+| 已知限制 | ① 未在安装版/打包产物内复验同链路（计划书要 7 条只覆盖到 Electron 实跑）；② 面板窄于页面设计宽度时右侧会被裁，需最大化；③ 页面依赖 OAuth 弹窗、顶层跳转、第三方 Cookie 的登录流程本轮不承诺；④ `did-frame-navigate` 属响应阶段事件，「服务接受连接但永不响应」场景不产生开始事件，由 15s 超时兜底；⑤ `tests/filePreview.smoke.cjs` 存在与本阶段无关的既有红灯（根因 `ToolCallRenderer`/`ProcessDetails` 链路）。 |
 
 阶段一交付清单：
 
-- [ ] 没有打开文件时，也能进入项目页面预览。
-- [ ] 用户指定的真实项目页面在 iframe 内展示。
-- [ ] 点击、输入、滚动和项目路由跳转可操作。
-- [ ] 文件 / 页面模式切换、拖拽宽度、最大化及重新加载可用。
-- [ ] 未启动服务、等待超时及禁止嵌入有可理解的反馈。
-- [ ] 切换会话或工作区不会复用上一个页面的业务状态。
-- [ ] 已在 Electron 实际运行形态中演示，并留下复现记录。
-- [ ] 相关回归验证通过，提交边界只包含阶段一。
+- [x] 没有打开文件时，也能进入项目页面预览。
+- [x] 用户指定的真实项目页面在 iframe 内展示。
+- [x] 点击、输入、滚动和项目路由跳转可操作。
+- [x] 文件 / 页面模式切换、拖拽宽度、最大化及重新加载可用。
+- [x] 未启动服务、等待超时及禁止嵌入有可理解的反馈。
+- [x] 切换会话或工作区不会复用上一个页面的业务状态。
+- [x] 已在 Electron 实际运行形态中演示，并留下复现记录。
+- [x] 相关回归验证通过，提交边界只包含阶段一。
 
 ## 12. 技术参考
 

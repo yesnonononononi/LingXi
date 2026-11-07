@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
+const { registerProjectPagePreview } = require('./project-page-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
 const { createDisabledPet, resolvePetExposure } = require('./pet-feature-gate.cjs');
@@ -47,6 +48,15 @@ let backendStopped = false;
  */
 let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
+
+/**
+ * 项目页面预览（阶段一）诊断通道：只上报目标 iframe 的加载事件。
+ *
+ * <p>不拦 will-navigate 也不改 setWindowOpenHandler —— 现有的外链策略（http/https 交给系统浏览器、
+ * 其余 deny/allow 原样）已经能挡住 iframe 发起的顶层弹窗；iframe 自身的顶层导航由渲染层
+ * sandbox（不含 allow-top-navigation）限制。这里不再加第二道会误伤现有外链的闸门。</p>
+ */
+const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow });
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
@@ -746,6 +756,8 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   isQuiting = true;
   closeFilePreviews();
+  // 页面预览只是摘掉 webContents 监听器与 IPC handler，没有需要落盘的状态
+  projectPagePreview.close();
   // 背景 IPC 只是注销通道，不删用户图片（图片要跨重启保留）
   backgroundImages.close();
   // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净

@@ -1,13 +1,26 @@
 <script setup lang="ts">
 import {computed, defineAsyncComponent, onBeforeUnmount, ref} from 'vue';
 import type {FilePreviewTab} from '../../types/filePreview';
+import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {t} from '../../i18n';
+import ProjectPagePreview from './ProjectPagePreview.vue';
 
+/**
+ * 预览面板外壳：顶栏（标题 / 模式切换 / 最大化 / 关闭）、拖拽调宽、最大化。
+ *
+ * <p>外壳与内容分离：文件模式渲染原有的标签 + 工具栏 + 代码区，页面模式只渲染
+ * {@code ProjectPagePreview}，**不渲染**标签与代码区。`mode` 是可选的受控属性：
+ * 父级绑定时走父级状态（v-model:mode），未绑定时用组件内部兜底状态，
+ * 这样既保持既有的独立挂载（filePreview.smoke.cjs 只传 tabs/activeId/isDark）可用，
+ * 又不会出现「点了模式按钮但状态没动」的双真源。</p>
+ */
 const props = defineProps<{
   tabs: FilePreviewTab[];
   activeId: string;
   isDark: boolean;
+  /** 内容模式；省略时按 'file' 处理（保持旧调用方行为不变）。 */
+  mode?: PreviewPanelMode;
 }>();
 const emit = defineEmits<{
   (e: 'activate', id: string): void;
@@ -16,14 +29,32 @@ const emit = defineEmits<{
   (e: 'refresh', tab: FilePreviewTab): void;
   (e: 'open'): void;
   (e: 'reveal'): void;
+  (e: 'update:mode', mode: PreviewPanelMode): void;
 }>();
 
+/** 未受控时的兜底模式（受控时以 props.mode 为准）。 */
+const internalMode = ref<PreviewPanelMode>('file');
+const currentMode = computed<PreviewPanelMode>(() => props.mode ?? internalMode.value);
+const isPageMode = computed<boolean>(() => currentMode.value === 'page');
+
 const active = computed(() => props.tabs.find(tab => tab.id === props.activeId));
+const panelTitle = computed(() => (isPageMode.value ? t('projectPagePreview.title') : t('filePreview.title')));
 const CodePreview = defineAsyncComponent(() => import('../common/CodePreview.vue'));
 const maximized = ref(false);
 const panelWidth = ref(540);
 const { copy, isCopied } = useCopyFeedback();
 let dragStart: { x: number; width: number } | undefined;
+
+/**
+ * 切换内容模式：内部状态先跟上，再通知父级（受控时父级会回写 props.mode）。
+ *
+ * @param mode 目标模式。
+ */
+const setMode = (mode: PreviewPanelMode): void => {
+  if (mode !== 'file' && mode !== 'page') return;
+  if (internalMode.value !== mode) internalMode.value = mode;
+  if (props.mode !== mode) emit('update:mode', mode);
+};
 
 const moveResize = (event: PointerEvent) => {
   if (!dragStart) return;
@@ -51,29 +82,35 @@ onBeforeUnmount(stopResize);
     class="file-preview-panel"
     :class="{ 'is-dark': isDark, 'is-maximized': maximized }"
     :style="{ width: maximized ? undefined : `${panelWidth}px` }"
-    :aria-label="t('filePreview.title')"
+    :aria-label="panelTitle"
     @keydown.esc="!$event.defaultPrevented && (maximized ? maximized = false : emit('close'))"
   >
     <div v-if="!maximized" class="resize-handle" role="separator" :aria-label="t('filePreview.resizeAria')" aria-orientation="vertical" tabindex="0"
       @pointerdown="startResize" @keydown.left.prevent="panelWidth = Math.min(panelWidth + 32, 1000)" @keydown.right.prevent="panelWidth = Math.max(panelWidth - 32, 320)" />
     <header class="preview-topbar">
-      <span class="panel-title">{{ t('filePreview.title') }}</span>
+      <span class="panel-title">{{ panelTitle }}</span>
       <div class="topbar-actions">
+        <!-- 模式切换：用 aria-pressed 双按钮而不是 role=tab（文件标签已占用 role=tab，语义不能混） -->
+        <div class="mode-switch" role="group" :aria-label="t('filePreview.modeLabel')">
+          <button type="button" :aria-pressed="!isPageMode" :title="t('filePreview.modeFile')" @click="setMode('file')">{{ t('filePreview.modeFile') }}</button>
+          <button type="button" :aria-pressed="isPageMode" :title="t('filePreview.modePage')" @click="setMode('page')">{{ t('filePreview.modePage') }}</button>
+        </div>
         <button type="button" :title="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" :aria-label="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" @click="maximized = !maximized">{{ maximized ? t('filePreview.restore') : t('common.expand') }}</button>
         <button type="button" :aria-label="t('filePreview.closePreview')" :title="t('filePreview.closePreview')" @click="emit('close')">✕</button>
       </div>
     </header>
-    <div class="file-tabs" role="tablist" :aria-label="t('filePreview.openedFiles')">
-      <div v-for="tab in tabs" :key="tab.id" class="file-tab" :class="{ selected: tab.id === activeId }">
-        <button type="button" role="tab" :aria-selected="tab.id === activeId" :title="tab.request.path" @click="emit('activate', tab.id)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" /></svg>
-          <span>{{ tab.name }}</span>
-        </button>
-        <button type="button" :aria-label="t('filePreview.closeNamed', { name: tab.name })" @click="emit('closeTab', tab.id)">×</button>
+    <template v-if="!isPageMode">
+      <div class="file-tabs" role="tablist" :aria-label="t('filePreview.openedFiles')">
+        <div v-for="tab in tabs" :key="tab.id" class="file-tab" :class="{ selected: tab.id === activeId }">
+          <button type="button" role="tab" :aria-selected="tab.id === activeId" :title="tab.request.path" @click="emit('activate', tab.id)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" /></svg>
+            <span>{{ tab.name }}</span>
+          </button>
+          <button type="button" :aria-label="t('filePreview.closeNamed', { name: tab.name })" @click="emit('closeTab', tab.id)">×</button>
+        </div>
       </div>
-    </div>
-    <template v-if="active">
-      <div class="preview-toolbar">
+      <!-- 文件正文自身判空（不再用 v-if="active" 包住整块）：页面模式没有 active 也必须能渲染别的内容 -->
+      <div v-if="active" class="preview-toolbar">
         <div class="file-heading" :title="active.data?.path ?? active.request.path">
           <strong>{{ active.name }}</strong>
           <span>{{ active.data?.path ?? active.request.path }}</span>
@@ -85,21 +122,34 @@ onBeforeUnmount(stopResize);
           <button type="button" :title="t('filePreview.revealInFolder')" @click="emit('reveal')">{{ t('filePreview.reveal') }}</button>
         </div>
       </div>
-      <div v-if="active.error" class="preview-error" role="alert">
+      <div v-if="active?.error" class="preview-error" role="alert">
         <span>{{ active.error }}</span>
         <button type="button" :disabled="active.loading" @click="emit('refresh', active)">{{ t('common.retry') }}</button>
       </div>
-      <div class="code-preview" role="tabpanel" :aria-label="t('filePreview.codeAria')">
-        <CodePreview v-show="!!active.data" :tabs="tabs" :activeId="activeId" :isDark="isDark" />
-        <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
-        <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
+      <div class="code-preview" :role="active ? 'tabpanel' : undefined" :aria-label="t('filePreview.codeAria')">
+        <template v-if="active">
+          <CodePreview v-show="!!active.data" :tabs="tabs" :activeId="activeId" :isDark="isDark" />
+          <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
+          <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
+        </template>
+        <div v-else class="preview-placeholder">{{ t('filePreview.noOpenFile') }}</div>
       </div>
-      <footer class="preview-status">
+      <footer v-if="active" class="preview-status">
         <span>{{ active.loading ? t('filePreview.refreshing') : active.error && active.data ? t('filePreview.showLastContent') : active.data?.watchId ? t('filePreview.autoRefresh') : t('filePreview.readOnly') }}</span>
         <span v-if="active.data">{{ active.data.encoding }} · {{ Math.ceil(active.data.size / 1024) }} KB</span>
       </footer>
-      <div v-if="active.data?.truncated" class="preview-truncated">{{ t('filePreview.truncated') }}</div>
+      <div v-if="active?.data?.truncated" class="preview-truncated">{{ t('filePreview.truncated') }}</div>
     </template>
+    <!--
+      页面正文用 v-show 而不是 v-if：切到文件模式只隐藏、不卸载，iframe 实例与其输入/登录状态得以保留；
+      真正销毁实例的入口只有「关闭」「重新加载」（换 generation）与切换会话/工作区。
+      v-show 必须落在 ProjectPagePreview 的**根元素**上（也就是 .project-page-preview 自己）：
+      如果只把它挂在某个外层包裹 div 上，祖先 display:none 并不会改变子元素自身的计算样式，
+      「页面正文已隐藏」这件事就无法从 .project-page-preview 上观察到，测试与调试都会误判。
+      高度一律用显式选择器，不用 `.page-preview-body > *` 这类通配符 —— 那会把地址栏/状态行/frame-area
+      三块各撑成 1/3，iframe 只剩面板高度的三分之一。
+    -->
+    <ProjectPagePreview v-show="isPageMode" class="page-preview-frame" />
   </aside>
 </template>
 
@@ -110,6 +160,10 @@ onBeforeUnmount(stopResize);
 .resize-handle { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; z-index: 5; touch-action: none; }
 .resize-handle:hover, .resize-handle:focus-visible { background: #6366f140; }
 .preview-topbar, .preview-toolbar, .preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.mode-switch { display: flex; gap: 2px; padding: 2px; margin-right: 4px; border: 1px solid var(--file-line); border-radius: 8px; }
+.mode-switch button[aria-pressed='true'] { background: var(--file-tab); font-weight: 600; }
+/* 页面正文根元素：占满面板剩余高度，内部布局归 ProjectPagePreview 自己（显式选择器，不用通配符） */
+.page-preview-frame { flex: 1 1 0%; min-height: 0; min-width: 0; }
 .preview-topbar { border-bottom: 1px solid var(--file-line); }
 .panel-title { font-size: var(--lx-font-size-lg); font-weight: 600; }
 .topbar-actions, .toolbar-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }

@@ -26,6 +26,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** 重启应用（数据目录变更后需要重启才生效）；主进程会校验调用来源 */
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
+  /**
+   * 项目页面预览（阶段一）：主进程只回传**目标 iframe** 的加载诊断事件。
+   * watch 带上 origin + generation，事件里的 generation 由渲染层用来丢弃迟到结果。
+   */
+  projectPage: {
+    watch: (request) => ipcRenderer.invoke('project-page:watch', request),
+    unwatch: () => ipcRenderer.invoke('project-page:unwatch'),
+    onEvent: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('project-page:event', listener);
+      return () => ipcRenderer.removeListener('project-page:event', listener);
+    },
+  },
   /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */
   notify: (options) => ipcRenderer.invoke('notify', options),
   /**

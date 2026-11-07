@@ -33,8 +33,24 @@
       <div class="relative flex-1 min-w-0 h-full flex flex-col overflow-hidden">
 
         <!-- 文件预览入口：必须挂**在消息区容器内**做绝对定位。挂到右侧同级容器上时会按整个容器
-             右缘对齐，而子代理面板可见时那个右缘属于面板本身 —— 按钮就会盖住面板头部的「收起」。 -->
-        <button v-if="fileTabs.length && !filePreviewOpen" type="button" class="absolute right-4 top-3 z-30 rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900" @click="filePreviewOpen = true">{{ t('chat.view.filePreview', { count: fileTabs.length }) }}</button>
+             右缘对齐，而子代理面板可见时那个右缘属于面板本身 —— 按钮就会盖住面板头部的「收起」。
+             两个入口并排：有文件标签时出现「文件预览」，页面预览入口则始终在（零文件标签也能进）。 -->
+        <div v-if="!previewPanelVisible" class="absolute right-4 top-3 z-30 flex items-center gap-2">
+          <button
+            v-if="fileTabs.length"
+            type="button"
+            class="rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900"
+            @click="openFilePreviewPanel"
+          >{{ t('chat.view.filePreview', { count: fileTabs.length }) }}</button>
+          <button
+            type="button"
+            data-test="chat-project-page-entry"
+            :aria-label="t('chat.view.projectPagePreview')"
+            :title="t('chat.view.projectPagePreview')"
+            class="rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900"
+            @click="openProjectPagePanel"
+          >{{ t('chat.view.projectPagePreview') }}</button>
+        </div>
 
         <!-- 初始化数据加载失败：可见失败态（区别于「确实为空」，避免后端宕机时静默显示为空） -->
         <div
@@ -254,14 +270,16 @@
       </div>
 
       <FilePreviewPanel
-        v-if="fileTabs.length"
-        v-show="filePreviewOpen"
+        v-if="fileTabs.length || pagePreviewOpen"
+        v-show="previewPanelVisible"
         :tabs="fileTabs"
         :activeId="activeFileId"
         :isDark="displayIsDark"
+        :mode="previewMode"
+        @update:mode="handlePreviewModeChange"
         @activate="activeFileId = $event"
         @closeTab="closeFileTab"
-        @close="filePreviewOpen = false"
+        @close="closePreviewPanel"
         @refresh="refreshFile"
         @open="runFileAction('open')"
         @reveal="runFileAction('reveal')"
@@ -269,7 +287,7 @@
 
       <!-- 右侧：子 Agent 会话轨迹和标签面板 -->
       <SubAgentSidePanel
-        v-if="availableSubSessionItems.length > 0 && !filePreviewOpen"
+        v-if="availableSubSessionItems.length > 0 && !previewPanelVisible"
         :items="availableSubSessionItems"
         :activeSubId="activeViewingSubSessionId"
         :activeSubSession="activeViewingSubSessionVO"
@@ -352,13 +370,16 @@
 
 <script setup lang="ts">
 import type {Component} from 'vue';
-import {onMounted, provide, ref, shallowReactive, watch} from 'vue';
+import {computed, onMounted, provide, ref, shallowReactive, watch} from 'vue';
 import {t} from '../../i18n';
 import {isOk} from '../../utils/api';
 import {LogAPI} from '../../services/log';
 import {useFilePreview} from '../../composables/useFilePreview';
+import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
+import type {PreviewPanelMode} from '../../types/projectPagePreview';
+import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 import {ANSWER_CHOICES_KEY, DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
@@ -430,6 +451,63 @@ onMounted(() => {
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
 provide(FILE_PREVIEW_KEY, openFilePreview);
+
+/**
+ * 预览面板的内容模式 + 项目页面预览状态。
+ *
+ * <p>项目页面的唯一真源是 {@link useProjectPagePreview}（由本组件持有并 provide）：
+ * 面板外壳只传 `mode`，正文组件 inject 同一份状态 —— 面板被隐藏、切到文件模式都不会重置 iframe。</p>
+ */
+const previewMode = ref<PreviewPanelMode>('file');
+const pagePreview = useProjectPagePreview();
+provide(PROJECT_PAGE_PREVIEW_KEY, pagePreview);
+
+/**
+ * 面板可见性：文件链路（filePreviewOpen）与页面链路（pagePreview.open）任一为真即显示。
+ *
+ * <p>不用 `mode` 参与判断：切换模式不应该把面板藏起来，否则「点了文件标签就整块消失」。</p>
+ */
+const previewPanelVisible = computed<boolean>(() => filePreviewOpen.value || pagePreview.open.value);
+
+/**
+ * 页面模式是否已打开（模板用）。
+ *
+ * <p>模板里 `pagePreview.open` 拿到的是 Ref 对象（对象里的 ref 不会被自动解包），永远为真，
+ * 会退化成「面板一直挂着」；这个顶层 computed 才是模板该读的布尔值。</p>
+ */
+const pagePreviewOpen = computed<boolean>(() => pagePreview.open.value);
+
+/** 打开文件模式（有标签时才有这个入口）。 */
+const openFilePreviewPanel = (): void => {
+  previewMode.value = 'file';
+  filePreviewOpen.value = true;
+};
+
+/** 打开项目页面模式：即使零个文件标签也能进，不去伪造文件标签。 */
+const openProjectPagePanel = (): void => {
+  previewMode.value = 'page';
+  pagePreview.open.value = true;
+};
+
+/**
+ * 面板内的模式切换。
+ *
+ * @param mode 目标模式。
+ */
+const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
+  previewMode.value = mode === 'page' ? 'page' : 'file';
+  if (previewMode.value === 'page') {
+    pagePreview.open.value = true;
+  } else if (fileTabs.value.length) {
+    filePreviewOpen.value = true;
+  }
+};
+
+/** 「关闭」是明确关闭：文件链路的可见性归零，页面实例销毁并释放订阅。 */
+const closePreviewPanel = (): void => {
+  filePreviewOpen.value = false;
+  pagePreview.close();
+};
 
 const logOpening = ref(false);
 
@@ -552,6 +630,17 @@ const {
   handleTouchStart,
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef });
+
+/**
+ * 切换会话或工作区必须销毁页面实例。
+ *
+ * <p>否则新会话会复用上一个项目页面的登录态与表单内容，隔离边界就破了（计划书阶段一验收第 5 条）。
+ * 文件标签维持既有行为，不在本阶段改动。</p>
+ */
+watch([localActiveId, localActiveWorkspaceId], () => {
+  pagePreview.close();
+});
+
 
 // 卡片决策提交能力：注入给深层卡片组件（PlanCard / ApprovalCard / RequireChoiceCard）
 provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
