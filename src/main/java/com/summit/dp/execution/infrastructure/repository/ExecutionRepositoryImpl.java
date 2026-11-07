@@ -22,6 +22,11 @@ import java.util.*;
 public class ExecutionRepositoryImpl extends AbstractRepository<Execution, ExecutionPO, Long>
         implements ExecutionRepository {
 
+    /** 待收口位的「待办」取值：与 V5 迁移里的列语义一致（1 待收口 / 0 已收口）。 */
+    private static final int CLOSURE_PENDING = 1;
+    /** 单批扫描上限：启动补偿只处理有界的一批，避免拉全表。 */
+    private static final int MAX_CLOSURE_BATCH = 1000;
+
     private final ExecutionMapper mapper;
 
     public ExecutionRepositoryImpl(ExecutionMapper mapper) {
@@ -57,10 +62,39 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     public Optional<Execution> findCheckpointSummary(long executionId) {
         return Optional.ofNullable(mapper.selectOne(Wrappers.<ExecutionPO>lambdaQuery()
                 .select(ExecutionPO::getId, ExecutionPO::getSessionId, ExecutionPO::getStatus, ExecutionPO::getVersion,
-                        ExecutionPO::getResumeGeneration, ExecutionPO::getSnapshotFile)
+                        ExecutionPO::getResumeGeneration, ExecutionPO::getSnapshotFile,
+                        ExecutionPO::getClosurePending)
                 .eq(ExecutionPO::getId, executionId)))
                 .map(row -> Execution.restoreCheckpointSummary(row.getId(), row.getVersion(),
-                        row.getStatus(), row.getResumeGeneration(), row.getSessionId(), row.getSnapshotFile()));
+                        row.getStatus(), row.getResumeGeneration(), row.getSessionId(), row.getSnapshotFile(),
+                        row.getClosurePending()));
+    }
+
+    @Override
+    public List<Long> findClosurePendingIds(int limit) {
+        return mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
+                        .select(ExecutionPO::getId)
+                        .eq(ExecutionPO::getClosurePending, CLOSURE_PENDING)
+                        .orderByAsc(ExecutionPO::getId)
+                        .last("LIMIT " + Math.clamp(limit, 1, MAX_CLOSURE_BATCH)))
+                .stream().map(ExecutionPO::getId).filter(Objects::nonNull).toList();
+    }
+
+    /**
+     * 按 id 条件清理待收口事实，只命中仍为 1 的行。
+     *
+     * <p><b>为什么不用 {@code updateById}</b>：那条路径带版本条件并会推进版本号，
+     * 而这里要改的是一个与业务版本无关的待办位；按 id + 当前值条件更新既够用，
+     * 也把「漏清」变成可观测的返回值（0 行 = 别人已经清过或从没置过）。</p>
+     *
+     * @return 是否真的把 1 改成了 0
+     */
+    @Override
+    public boolean clearClosurePending(long executionId) {
+        return mapper.update(null, Wrappers.<ExecutionPO>lambdaUpdate()
+                .set(ExecutionPO::getClosurePending, 0)
+                .eq(ExecutionPO::getId, executionId)
+                .eq(ExecutionPO::getClosurePending, CLOSURE_PENDING)) == 1;
     }
 
     @Override public void save(Execution model) {

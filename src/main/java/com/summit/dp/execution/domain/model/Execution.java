@@ -42,6 +42,14 @@ public class Execution {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    /**
+     * 是否还有「状态已提交、业务收口未做完」的待办事实：1 待收口，0 已收口。
+     *
+     * <p>与 {@code status} 由同一条 UPDATE 写入 —— 写成终态即置 1，收口脚本成功后再清 0。
+     * 启动巡检按这一列找活，不看任何检查点属性标记（那份内存状态在崩溃窗口里根本来不及落库）。</p>
+     */
+    private Integer closurePending;
+
     /** 会话归属只能从数据库恢复，检查点请求不能覆盖它。 */
     public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation,
                                                      Long sessionId, String snapshotFile) {
@@ -52,6 +60,14 @@ public class Execution {
         execution.status = status;
         execution.resumeGeneration = generation;
         execution.snapshotFile = snapshotFile;
+        return execution;
+    }
+
+    /** 同 {@link #restoreCheckpointSummary}，额外带上「是否待收口」。 */
+    public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation,
+                                                     Long sessionId, String snapshotFile, Integer closurePending) {
+        Execution execution = restoreCheckpointSummary(id, version, status, generation, sessionId, snapshotFile);
+        execution.closurePending = closurePending;
         return execution;
     }
 
@@ -66,6 +82,7 @@ public class Execution {
         execution.createdAt = createdAt;
         execution.startedAt = startedAt;
         execution.completedAt = completedAt;
+        execution.closurePending = ExecutionStatusCodes.isTerminal(status) ? 1 : 0;
         return execution;
     }
 
@@ -79,11 +96,30 @@ public class Execution {
         if (nextStatus == ExecutionStatusCodes.SUSPENDED && !ExecutionStatusCodes.isSuspended(status)) {
             generation++;
         }
+        Integer previousStatus = status;
         this.resumeGeneration = generation;
         this.status = nextStatus;
         this.snapshotFile = snapshotFile;
         if (startedAt != null) this.startedAt = startedAt;
         if (completedAt != null) this.completedAt = completedAt;
+        applyClosurePending(previousStatus, nextStatus);
+    }
+
+    /**
+     * 「写成终态 ⇔ 有待收口的活」必须由同一条 UPDATE 写入，否则会出现「已终结但没人知道要收口」的行。
+     *
+     * <p>已经终态的行再次写终态（框架重复落库）时保留原有待办事实：已收口的行不能被重新标成待收口，
+     * 未收口的行也不能因为一次重复保存就丢掉重试机会。</p>
+     */
+    private void applyClosurePending(Integer previousStatus, int nextStatus) {
+        if (!ExecutionStatusCodes.isTerminal(nextStatus)) {
+            this.closurePending = 0;
+        } else if (!ExecutionStatusCodes.isTerminal(previousStatus)) {
+            this.closurePending = 1;
+        } else if (closurePending == null) {
+            // 摘要没带这一列时的安全默认：宁可多补一次（脚本幂等），不可漏一次。
+            this.closurePending = 1;
+        }
     }
 
     public void acceptPersistedVersion(long persistedVersion) { this.version = persistedVersion; }

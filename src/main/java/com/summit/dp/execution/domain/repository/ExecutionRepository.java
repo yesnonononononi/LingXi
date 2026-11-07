@@ -105,4 +105,25 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
      * @param executionIds 执行 id 集合
      */
     java.util.Map<Long, String> findSnapshotFileIds(java.util.Collection<Long> executionIds);
+
+    /**
+     * 读「还有待收口事实」的执行 id（{@code closure_pending = 1}）。
+     *
+     * <p>只取一列、走 {@code idx_execution_closure_pending}，<b>不 join、不读检查点正文</b> ——
+     * 启动补偿要能廉价地找出「终态已提交、业务收口没做完」的行，正文由调用方按 id 再取。</p>
+     *
+     * @param limit 单批上限；实现内部会夹到有界范围
+     * @return 命中的执行 id，按 id 升序
+     */
+    List<Long> findClosurePendingIds(int limit);
+
+    /**
+     * 按 id 条件把待收口位从 1 改为 0（只命中仍为 1 的行）。
+     *
+     * <p>不是业务状态变更，所以不带版本条件；返回值让「漏清」可观测。</p>
+     *
+     * @param executionId 执行 id
+     * @return 是否真的把 1 改成 0
+     */
+    boolean clearClosurePending(long executionId);
 }

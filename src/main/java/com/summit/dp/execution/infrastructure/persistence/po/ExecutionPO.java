@@ -60,4 +60,17 @@ public class ExecutionPO {
     private LocalDateTime createdAt;
     @TableField("updated_at")
     private LocalDateTime updatedAt;
+
+    /**
+     * 是否还有「状态已提交、业务收口未做完」的待办事实：1 待收口，0 已收口。
+     *
+     * <p><b>为什么必须是库列而不是内存标记</b>：收口在 {@code afterCommit} 里执行，进程崩在
+     * 提交与收口之间时内存里什么都留不下。这一列与「写成终态」由同一条 UPDATE 写入，
+     * 于是「已终结」与「还要收口」原子同生，重启后巡检按它一条窄查询就能捞出来重做。</p>
+     *
+     * <p>用 {@code Integer} 而非 {@code Boolean}：H2 侧是 {@code TINYINT}（0/1），
+     * 用布尔会引出 BIT 与 TINYINT 的类型转换差异。</p>
+     */
+    @TableField("closure_pending")
+    private Integer closurePending;
 }
