@@ -239,6 +239,33 @@ class ExecutionClosureFaultInjectionTest {
     // 夹具
     // ------------------------------------------------------------------
 
+    @Test
+    @DisplayName("非终态写库不得置待收口位：置了会让巡检反复扫到一条永远收不了口的行")
+    void nonTerminalSaveNeverMarksClosurePending() {
+        fixture();
+        LocalExecutionRepository savingRuntime = runtime(mock(ExecutionLifecycleProjection.class));
+
+        savingRuntime.save(execution(ExecutionState.CREATED));
+        assertEquals(Integer.valueOf(0), pendingFlag(),
+                "CREATED 不是终态，待收口位必须是 0，否则巡检会把它当成待办");
+        assertFalse(executions.findClosurePendingIds(100).contains(EXECUTION_ID),
+                "CREATED 行不得出现在启动扫描结果里");
+        assertFalse(executions.findClosurePendingIdsAfter(0L, 100).contains(EXECUTION_ID),
+                "CREATED 行不得出现在游标扫描结果里");
+
+        savingRuntime.save(execution(ExecutionState.RUNNING));
+        assertEquals(Integer.valueOf(0), pendingFlag(), "RUNNING 不是终态，待收口位必须是 0");
+
+        savingRuntime.save(execution(ExecutionState.SUSPENDED));
+        assertEquals(Integer.valueOf(0), pendingFlag(),
+                "SUSPENDED 只是等待人工决策，不是终态，待收口位必须是 0");
+        assertFalse(executions.findClosurePendingIds(100).contains(EXECUTION_ID),
+                "SUSPENDED 行不得出现在启动扫描结果里：completeClosure 对非终态直接 return 且不清位，"
+                        + "扫到它只会让每一轮巡检把这条永远收不了口的行空转一遍");
+        assertFalse(executions.findClosurePendingIdsAfter(0L, 100).contains(EXECUTION_ID),
+                "SUSPENDED 行同样不得出现在游标扫描结果里");
+    }
+
     /** 会话两行（根 + 子）、业务轮次（运行中）、可决策卡片、子执行登记。 */
     private void fixture() {
         sessionMapper.insert(SessionPO.builder().id(ROOT_SESSION_ID).rootSessionId(0L).name("根会话").build());

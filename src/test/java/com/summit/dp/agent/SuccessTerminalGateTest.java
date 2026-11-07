@@ -51,8 +51,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -160,6 +162,23 @@ class SuccessTerminalGateTest {
         assertEquals(Integer.valueOf(0), closurePending());
 
         events.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
+
+        verify(ssePublisher).publish(anyLong(), any(ExecutionCompleteEvent.class));
+    }
+
+    @Test
+    @DisplayName("门禁读库失败按「未拦下」处理：宁可多推一帧完成，也不让用户永远看不到结束")
+    void closurePendingReadFailureStillPublishesSuccess() {
+        ExecutionRepositoryImpl unreadableGate = spy(executions);
+        doThrow(new IllegalStateException("模拟待收口位读取失败"))
+                .when(unreadableGate).isClosurePending(anyLong());
+        AgentEventListener failOpenListener = new AgentEventListener(new JsonConfig().objectMapper(),
+                ssePublisher, mock(com.summit.dp.execution.application.service.ExecutionLocator.class),
+                unreadableGate);
+        failOpenListener.init();
+
+        new RuntimeEventPublisher(List.of(failOpenListener))
+                .onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
 
         verify(ssePublisher).publish(anyLong(), any(ExecutionCompleteEvent.class));
     }

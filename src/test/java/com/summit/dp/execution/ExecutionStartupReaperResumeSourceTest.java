@@ -6,6 +6,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeSource;
@@ -177,6 +178,27 @@ class ExecutionStartupReaperResumeSourceTest {
         verify(executionControl, never()).fail(any(), any());
     }
 
+    @Test
+    @DisplayName("请求 READY 但执行仍在跑：不得重投，按既有安全策略收口为 FAILED")
+    void runningExecutionIsNotResumedEvenWhenRequestReady() {
+        long executionId = insertExecution(ExecutionStatusCodes.RUNNING, GENERATION);
+        ExecutionResumeTask task = tasks.enqueue(executionId, GENERATION, Instant.now(),
+                ResumeSource.APPROVAL_DECISION);
+        assertEquals(ResumeTaskState.READY, resumeTaskOf(executionId).getState(),
+                "前提：请求已受理、尚未被领取");
+        stubExecution(executionId, ExecutionState.RUNNING, new HashMap<>());
+
+        reaper().onApplicationEvent(mock(ApplicationReadyEvent.class));
+
+        assertEquals(ResumeTaskState.FAILED, resumeTaskOf(executionId).getState(),
+                "执行已不在 SUSPENDED（这里是 RUNNING，等同另一个活进程正在跑）：重投会让同一段执行并行跑第二次模型调用");
+        verify(resumer, never()).resume(any(Execution.class), anyLong());
+        verify(coordinator, never()).dispatch(anyLong());
+        verify(executionControl).fail(any(), any());
+        assertEquals(task.getId(), resumeTaskOf(executionId).getId(),
+                "收口沿用同一条请求，不得另开一条");
+    }
+
     // ------------------------------------------------------------------
     // 夹具
     // ------------------------------------------------------------------
@@ -212,9 +234,14 @@ class ExecutionStartupReaperResumeSourceTest {
     }
 
     private void stubSuspendedExecution(long executionId, Map<String, Object> attributes) {
+        stubExecution(executionId, ExecutionState.SUSPENDED, attributes);
+    }
+
+    /** 框架检查点读口返回的执行快照：状态由用例指定，其余字段与生产同构。 */
+    private void stubExecution(long executionId, ExecutionState state, Map<String, Object> attributes) {
         attributes.put(com.summit.dp.execution.ExecutionAttributes.SESSION_ID, "9500");
         Execution execution = Execution.builder().id(String.valueOf(executionId))
-                .agentId("chatAgent").executionState(ExecutionState.SUSPENDED)
+                .agentId("chatAgent").executionState(state)
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(executionId))
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
