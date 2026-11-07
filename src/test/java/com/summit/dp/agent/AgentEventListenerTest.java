@@ -7,10 +7,12 @@ import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.event.*;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.tool.ToolCallStatus;
+import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
+import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
@@ -412,6 +414,138 @@ class AgentEventListenerTest {
         listener.onExecutionCompleted(new ExecutionCompleteEvent(EXECUTION_ID, null));
 
         verifyNoInteractions(publisher);
+    }
+
+    // ------------------------------------------------------------------
+    // 流式分片的归属路由：元数据完整时零查库，缺失时有界回退，仍不可归属则丢弃。
+    // ------------------------------------------------------------------
+
+    /** 子会话 ID：与根会话不同，用来验证发布落点是根而不是子。 */
+    private static final long SUB_SESSION_ID = 2105000000000000005L;
+
+    /** 真实分片入口（partial text）连发 5 片：元数据完整时一次库都不查。 */
+    @Test
+    @DisplayName("流式文本分片：元数据完整时 0 次归属查库，落点是根会话")
+    void partialTextWithFullMetadataQueriesNothing() {
+        Map<String, Object> metadata = ExecutionEventMetadata.of(ROOT_SESSION_ID, ROOT_SESSION_ID, TURN_ID, null, 0L);
+
+        for (int index = 0; index < 5; index++) {
+            listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID,
+                    "片" + index, index, metadata, null));
+        }
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher, times(5)).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), payload.capture());
+        assertEquals("片4", payload.getAllValues().get(4).get("content").asText());
+        verifyNoInteractions(identity);
+    }
+
+    /** 子会话的流式思考分片：发布到根会话，且不查库。 */
+    @Test
+    @DisplayName("思考分片来自子会话：发布到根会话，且不查库")
+    void partialThinkingFromSubSessionRoutesToRootWithoutQuery() {
+        Map<String, Object> metadata = ExecutionEventMetadata.of(ROOT_SESSION_ID, SUB_SESSION_ID, TURN_ID, TURN_ID, 3L);
+
+        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "在想", 0, RESPONSE_ID,
+                metadata, null));
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_THINKING"), payload.capture());
+        assertEquals(BlockOrder.thinking(), payload.getValue().path("order").asLong());
+        verifyNoInteractions(identity);
+    }
+
+    /** 工具调用与完整文本同样走元数据：这两条也是高频入口。 */
+    @Test
+    @DisplayName("工具调用与完整文本：元数据完整时都不查库")
+    void toolCallAndCompleteTextUseMetadata() {
+        Map<String, Object> metadata = ExecutionEventMetadata.of(ROOT_SESSION_ID, SUB_SESSION_ID, TURN_ID, null, 1L);
+        ToolCallStartEvent tool = new ToolCallStartEvent("request-1", EXECUTION_ID, "read_file", "{}",
+                RESPONSE_ID, metadata, 0);
+
+        listener.onToolCall(tool);
+        listener.onCompleteText(new AgentCompleteTextEvent("agent", EXECUTION_ID, "完整文本", RESPONSE_ID,
+                null, metadata, null));
+
+        verify(publisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), any(String.class), any(ObjectNode.class));
+        verifyNoInteractions(identity);
+    }
+
+    /** 终态事件（走 publish 而非 publishBusiness）同样吃元数据。 */
+    @Test
+    @DisplayName("执行完成：元数据完整时按根会话广播，不查库")
+    void executionCompletedUsesMetadata() {
+        ExecutionCompleteEvent event = new ExecutionCompleteEvent(EXECUTION_ID, null,
+                ExecutionEventMetadata.of(ROOT_SESSION_ID, SUB_SESSION_ID, TURN_ID, null, 2L));
+
+        listener.onExecutionCompleted(event);
+
+        verify(publisher).publish(ROOT_SESSION_ID, event);
+        verifyNoInteractions(identity);
+    }
+
+    /** 旧检查点没有归属键：回退执行归属查询，结果与改造前一致（每个事件恰好 2 次查库）。 */
+    @Test
+    @DisplayName("元数据缺失：回退查库，落点仍正确（每事件 2 次查询）")
+    void missingMetadataFallsBackToLocator() {
+        resolveSession();
+        Map<String, Object> legacyMetadata = Map.of("turnId", Long.toString(TURN_ID));
+
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "你好", 0,
+                legacyMetadata, null));
+
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), any(ObjectNode.class));
+        verifySingleIdentityResolution();
+    }
+
+    /** 只有一半归属（缺根会话键）也必须走兜底，不能拿半截元数据拼一个落点。 */
+    @Test
+    @DisplayName("元数据只有 sessionId：仍回退查库，落点取查库结果")
+    void partialMetadataFallsBackToLocator() {
+        resolveSession();
+        Map<String, Object> halfMetadata = Map.of("sessionId", Long.toString(SESSION_ID));
+
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "你好", 0,
+                halfMetadata, null));
+
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), any(ObjectNode.class));
+        verifySingleIdentityResolution();
+    }
+
+    /** 元数据缺失且执行查不到：丢弃，不发布任何帧，并留一条 warn（绝不改投别的会话）。 */
+    @Test
+    @DisplayName("完全不可归属：不发布任何帧，并记一条 warn")
+    void unattributableChunkIsDroppedWithWarn() {
+        when(identity.sessionId(EXECUTION_ID)).thenThrow(new IllegalStateException("执行不存在"));
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(AgentEventListener.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "你好", 0,
+                    Map.of(), null));
+
+            verifyNoInteractions(publisher);
+            assertTrue(appender.list.stream().anyMatch(logged ->
+                            logged.getLevel() == ch.qos.logback.classic.Level.WARN
+                                    && logged.getFormattedMessage().contains("丢弃")),
+                    "丢弃必须留下 warn，实际日志: " + appender.list);
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    /** 连执行身份都没有的分片：同样丢弃，不发布。 */
+    @Test
+    @DisplayName("缺少执行身份：丢弃，不发布任何帧")
+    void chunkWithoutExecutionIdIsDropped() {
+        listener.onPartialText(new AgentPartialTextEvent("agent", "  ", RESPONSE_ID, "你好", 0,
+                ExecutionEventMetadata.of(ROOT_SESSION_ID, SUB_SESSION_ID, TURN_ID, null, 0L), null));
+
+        verifyNoInteractions(publisher);
+        verifyNoInteractions(identity);
     }
 
     private void resolveSession() {

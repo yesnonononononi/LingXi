@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.*;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.RuntimeListener;
+import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.workflow.application.chat.ExecutionErrorText;
@@ -14,6 +15,8 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /** 实时事件保留框架偏移，补齐展示位置后按根会话推送，执行终结不关闭会话流。 */
 @Slf4j
@@ -163,12 +166,27 @@ public class AgentEventListener implements RuntimeListener {
         sseEventPublisher.publish(target.rootSessionId(), event);
     }
 
-    /** 无执行归属就丢弃，避免把未知事件送到其它会话。 */
+    /**
+     * 解析本次广播的落点（所属会话 + 根会话）。
+     *
+     * <p>流式分片一次回答有数百个 Token 块，为每个块查两次库会把「转发」变成数据库热点：
+     * 框架事件在构造时已带上 {@link ExecutionEventMetadata} 的归属快照，能读到的就零查库。</p>
+     *
+     * <p>元数据缺失时回退执行归属查询，且<b>不加本地缓存</b>：旧检查点可能没有这两个键，
+     * 缓存只对「仍在上报的旧执行」有意义，却要额外承担失效、容量与并发三份复杂度，
+     * 收益远低于风险。自愈路径是下一轮执行 —— 新构造的元数据一律带全键，回退随即消失。</p>
+     *
+     * <p>两处都拿不到归属就丢弃：宁可少推一帧，也绝不把未知事件改投到别的会话。</p>
+     */
     private BroadcastTarget resolveTarget(AgentEvent event) {
         String executionId = event.executionId();
         if (executionId == null || executionId.isBlank()) {
             log.warn("丢弃缺少执行身份的事件: event={}", event);
             return null;
+        }
+        BroadcastTarget fromMetadata = resolveTargetFromMetadata(event);
+        if (fromMetadata != null) {
+            return fromMetadata;
         }
         try {
             // 复用会话解析结果，避免 rootSessionId(executionId) 再次查询执行表。
@@ -179,6 +197,22 @@ public class AgentEventListener implements RuntimeListener {
             log.warn("丢弃无法定位根会话的事件: reason={}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 从事件元数据解析归属；两个键缺一即返回 {@code null} 交由兜底路径。
+     *
+     * <p>复用 {@link ExecutionEventMetadata} 的解析规则，不另写一份键名与格式判断：
+     * 元数据键是十进制字符串，缺失或不可解析返回 {@code null}。</p>
+     */
+    private static BroadcastTarget resolveTargetFromMetadata(AgentEvent event) {
+        Map<String, Object> metadata = event.eventMetaData();
+        Long sessionId = ExecutionEventMetadata.sessionId(metadata);
+        Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(metadata);
+        if (sessionId == null || rootSessionId == null) {
+            return null;
+        }
+        return new BroadcastTarget(sessionId, rootSessionId);
     }
 
     /** 一次广播的落点：执行所属会话与其根会话。 */
