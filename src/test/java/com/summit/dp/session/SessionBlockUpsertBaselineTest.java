@@ -135,17 +135,11 @@ class SessionBlockUpsertBaselineTest {
         Measurement full = measure("full", () -> service
                 .assembleTurnView(session(), turn(), VIEW_VERSION)
                 .map(view -> onlyBlock(view, ToolBlock.identity(TARGET))));
-        Measurement legacySingle = measure("single-legacy", () -> service
-                .assembleToolBlockView(session(), turn(), VIEW_VERSION, TARGET));
 
         // 两条口径的「改造前」事实：都为整轮装载，消息查询带 turn_id in，工具查询是 30 个 id 的 IN。
         assertEquals(1, full.messageSelects(), "整轮装配只发一条 session_message 查询，实际: " + full.queries());
         assertTrue(full.wholeTurnMessageSelect(), "整轮装配的消息查询是按 turn_id IN 取全类型，实际: " + full.queries());
-        assertEquals(1, legacySingle.messageSelects(), "单块（消息版）同样只发一条消息查询，实际: " + legacySingle.queries());
-        assertTrue(legacySingle.wholeTurnMessageSelect(),
-                "单块（消息版）仍在读整轮消息，实际: " + legacySingle.queries());
         assertEquals(1, full.toolCallSelects(), "整轮装配的工具查询是一次 IN，实际: " + full.queries());
-        assertEquals(1, legacySingle.toolCallSelects(), "单块的工具查询是一次主键投影，实际: " + legacySingle.queries());
 
         // 改造后的单块口径（事件事实驱动）：消息侧只发一条带 type 过滤的窄查询，不再整轮 IN。
         Measurement event = measure("event", () -> service

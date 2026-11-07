@@ -187,48 +187,6 @@ public class TurnViewAssembler {
     }
 
     /**
-     * 只构造<b>目标那一个</b>工具块（BLOCK_UPSERT 单块推送用）。
-     *
-     * <p>不再走「整轮装配 → 过滤」：那等于为了一个块把整轮所有兄弟工具调用的 CLOB 全读一遍。
-     * 定位口径与 {@link #assembleBlocks} 完全一致 —— 按消息顺序找第一处
-     * {@code AI 行 → 工具请求 id} 匹配，因此结果与「整轮装配后按 blockId 过滤」逐字段相等。</p>
-     *
-     * <p>工具行缺失（尚未落库的实时窗口）时按「已开始」造块，与整轮路径同一规则。</p>
-     *
-     * @param turnId     目标轮次
-     * @param messages   该轮消息（VO 元数据与请求原文都来自它们）
-     * @param toolCallId 目标工具调用 ID
-     * @param toolCall   只读投影（可为 {@code null}，表示行还没落库）
-     * @return 该块；该轮没有任何 AI 行请求过它时返回空（对应「空则跳过」的推送语义）
-     * @throws ClientException 目标 AI 行的响应身份不可解析（与整轮路径同一条拒绝规则）
-     */
-    public Optional<Block> buildSingleToolBlock(Long turnId, List<SessionMessage> messages,
-                                               String toolCallId, ToolCallBlockView toolCall) {
-        if (turnId == null || messages == null || toolCallId == null || toolCallId.isBlank()) {
-            return Optional.empty();
-        }
-        for (SessionMessage message : messages) {
-            if (message == null || !turnId.equals(message.getTurnId())
-                    || message.getType() != SessionMessageType.AI) {
-                continue;
-            }
-            AiMessageEntity aiMessage = parse(message.getText());
-            if (aiMessage == null || aiMessage.getToolCalls() == null) {
-                continue;
-            }
-            for (ToolCallRequest request : aiMessage.getToolCalls()) {
-                if (request == null || !toolCallId.equals(request.id())) {
-                    continue;
-                }
-                String responseId = requireResponseId(message.getResponseId());
-                return Optional.of(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()),
-                        request, ToolFacts.of(toolCall)));
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
      * 构造工具块（<b>块字段映射的唯一来源</b>）。
      *
      * <p>工具块身份来自 {@code toolCallId}，{@code responseId} 用于确定所属模型响应的位置。

@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.TurnViewService;
@@ -88,6 +89,7 @@ class SessionBlockUpsertSqlGuardTest {
 
         toolCallRepository.save(heavyRow());
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(messageRepository.findUserMessages(SESSION_ID, TURN_ID)).thenReturn(turnMessages());
     }
 
     @AfterEach
@@ -106,7 +108,9 @@ class SessionBlockUpsertSqlGuardTest {
         assertTrue(stored.getRawOutput().length() > 256, "前提：raw_output 必须是大字段");
 
         capture.clear();
-        TurnViewVO view = service.assembleToolBlockView(session(), turn(), 5L, TARGET).orElseThrow();
+        TurnViewVO view = service.assembleToolBlockView(session(), turn(), 5L,
+                new ToolBlockEventFacts(TARGET, "9007199254740993", 0, "read_file", "{\"path\":\"a\"}"))
+                .orElseThrow();
 
         List<String> toolCallQueries = capture.queries().stream()
                 .filter(entry -> entry.toLowerCase().contains("toolcallmapper"))

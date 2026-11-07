@@ -85,6 +85,10 @@ public class TurnViewBroadcaster {
      *
      * <p>解析失败一律静默跳过（记一条 debug）：推送是**旁路观测**动作，拿不到归属只说明实体
      * 尚未落库或已被清理，不该把「一次模型调用」顶成 500。</p>
+     *
+     * <p><b>这一步只在事件不带权威归属时使用</b>（旧检查点构造的事件没有 {@code turnId} /
+     * {@code rootSessionId} 两个键）。它有三次查库：轮次行、会话行，以及「会话 → 根会话」的解析。
+     * 事件带齐归属时走 {@link #resolveTarget(TurnBroadcastIdentity)}，只需要读轮次行与会话行。</p>
      */
     private BroadcastTarget resolveTarget(Long turnId) {
         if (turnId == null) {
@@ -163,13 +167,18 @@ public class TurnViewBroadcaster {
      * 只为回答「哪个响应请求了它」。事件已经带 {@code responseId} / {@code requestIndex} /
      * {@code toolName} / {@code args}，这条路只发一条 USER 行窄查询 + 一条工具行投影。</p>
      *
-     * @param facts 事件权威事实；{@code toolCallId} 为空时静默跳过
+     * <p><b>为什么把归属当入参传进来</b>：事件元数据里已带着 {@code turnId} / {@code sessionId} /
+     * {@code rootSessionId}，调用方解析一次就够。若不传，监听器要先按执行 ID 反查轮次、
+     * 本类再按轮次查一遍会话并再解析一次根会话 —— 同一条事实被解析三遍，其中两遍纯属重复。</p>
+     *
+     * @param identity 事件携带的权威归属；三键必须齐备
+     * @param facts    事件权威事实；{@code toolCallId} 为空时静默跳过
      */
-    public void broadcastBlockUpsert(Long turnId, ToolBlockEventFacts facts) {
+    public void broadcastBlockUpsert(TurnBroadcastIdentity identity, ToolBlockEventFacts facts) {
         if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
             return;
         }
-        BroadcastTarget target = resolveTarget(turnId);
+        BroadcastTarget target = resolveTarget(identity);
         if (target == null) {
             return;
         }
@@ -183,16 +192,18 @@ public class TurnViewBroadcaster {
     }
 
     /**
-     * 单块增量（历史口径，保留给拿不到框架事件身份的调用方）。
+     * 单块增量（回退口径）：只有事件不带权威归属时才走这里。
      *
-     * <p><b>走单块构造</b>：整轮装配再过滤等于为了一个块把所有兄弟工具调用的 4 个 CLOB 全读一遍，
-     * 工具越多越亏。该重载仍按本轮消息定位目标块（会读整轮消息），仅在没有事件事实时使用；
-     * 实时链路一律走事件事实重载。</p>
+     * <p><b>保留它是为了旧检查点</b>：重启前落盘的执行元数据里没有 {@code turnId} /
+     * {@code rootSessionId}，这些执行仍会把工具事件报上来。这条路与改造前完全一致 ——
+     * 按轮次查会话、再解析根会话；它的成本比主路径多两次查库，但只在旧数据上出现，
+     * 且下一轮执行构造出的元数据一定带全键，回退会自然消失。</p>
      *
-     * @param toolCallId 变化的工具块身份；工具块的 blockId 规则是 {@code tool:<toolCallId>}
+     * @param turnId 目标轮次；{@code null} 时静默跳过
+     * @param facts  事件权威事实；{@code toolCallId} 为空时静默跳过
      */
-    public void broadcastBlockUpsert(Long turnId, String toolCallId) {
-        if (toolCallId == null || toolCallId.isBlank()) {
+    public void broadcastBlockUpsert(Long turnId, ToolBlockEventFacts facts) {
+        if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
             return;
         }
         BroadcastTarget target = resolveTarget(turnId);
@@ -200,11 +211,44 @@ public class TurnViewBroadcaster {
             return;
         }
         Optional<TurnViewVO> view = turnViewService.assembleToolBlockView(
-                target.session(), target.turn(), target.viewVersion(), toolCallId);
+                target.session(), target.turn(), target.viewVersion(), facts);
         if (view.isEmpty()) {
-            // 该块此刻还不存在（尚未落库的实时窗口）：推空块会被前端读成「该块被清空了」。
             return;
         }
         publish(target, BlockEventType.BLOCK_UPSERT, view.get());
+    }
+
+    /**
+     * 按事件自带的权威归属解析推送目标：<b>只查两条窄数据</b>，不再解析根会话。
+     *
+     * <p>仍然必须查库的两项，都是事件里没有、也无法从事件推出来的东西：</p>
+     * <ol>
+     *   <li><b>轮次行</b>（{@code chat_turn} 主键读）：展示版本号 {@code version}、
+     *       轮次状态、{@code parentTurnId} 都在这一行上。版本号是「该轮被改变了几次」的
+     *       落库结果，事件里没有、也不能靠推送次数累加（那是另一份状态）。</li>
+     *   <li><b>会话行</b>（{@code session} 主键读）：上下文用量快照是 VO 的 {@code metric}，
+     *       由会话上的持久化值决定；事件里的瞬时 {@code usage} 与落库值口径不同，不能冒充。</li>
+     * </ol>
+     *
+     * <p><b>归属冲突一律丢弃</b>：元数据与轮次行声称的会话不一致时直接返回 {@code null}，
+     * 不拿任一方凑合发出去 —— 「拿不到归属就丢弃」的语义在这里同样成立。</p>
+     */
+    private BroadcastTarget resolveTarget(TurnBroadcastIdentity identity) {
+        if (identity == null || identity.turnId() == null) {
+            return null;
+        }
+        ChatTurn turn = chatTurnRepository.findById(identity.turnId()).orElse(null);
+        if (turn == null) {
+            log.debug("推送块视图跳过：元数据指向的轮次不存在: turnId={}", identity.turnId());
+            return null;
+        }
+        if (!identity.matchesTurnSession(turn.getSessionId())) {
+            log.warn("丢弃归属不一致的推送：metadata.sessionId={}, turn.sessionId={}, turnId={}",
+                    identity.sessionId(), turn.getSessionId(), identity.turnId());
+            return null;
+        }
+        Session session = sessionRepository.findById(identity.sessionId()).orElse(null);
+        long viewVersion = turn.getVersion() == null ? 0L : turn.getVersion();
+        return new BroadcastTarget(turn, session, identity.rootSessionId(), viewVersion);
     }
 }

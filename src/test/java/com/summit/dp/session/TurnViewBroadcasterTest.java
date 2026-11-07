@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.TurnViewService;
@@ -18,6 +19,7 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.application.projection.TurnBroadcastIdentity;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -102,7 +104,7 @@ class TurnViewBroadcasterTest {
         assertNull(turnViewService.assembleTurnView(null, runningTurn(), 1L).orElseThrow().parentTurnId());
 
         broadcaster.broadcastSnapshot(TURN_ID);
-        broadcaster.broadcastBlockUpsert(TURN_ID, "call-1");
+        broadcaster.broadcastBlockUpsert(identity(), facts("call-1"));
         ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
         verify(sseEventPublisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), any(), payload.capture());
         assertEquals(3, ((BlockEventType.BlockEventPayload) payload.getAllValues().get(0)).view().blocks().size());
@@ -217,7 +219,7 @@ class TurnViewBroadcasterTest {
         when(executionIdentity.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
 
         // 增量：只带 call-1 这一个工具块（块身份规则 tool:<toolCallId>）。
-        broadcaster.broadcastBlockUpsert(TURN_ID, "call-1");
+        broadcaster.broadcastBlockUpsert(identity(), facts("call-1"));
 
         ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
         ArgumentCaptor<String> name = ArgumentCaptor.forClass(String.class);
@@ -237,16 +239,25 @@ class TurnViewBroadcasterTest {
     }
 
     @Test
-    @DisplayName("增量过滤后为空则不推（该块此刻尚不存在，推空块会被前端读成「被清空」）")
-    void emptyUpsertIsNotPublished() {
-        stubAiRound();
+    @DisplayName("目标块身份缺失则不推（推空块会被前端读成「被清空」）")
+    void blankToolCallIdIsNotPublished() {
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(runningTurn()));
         when(sessionRepository.findById(SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(SESSION_ID).rootSessionId(0L).build()));
         when(executionIdentity.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
 
-        broadcaster.broadcastBlockUpsert(TURN_ID, "call-not-exists");
+        broadcaster.broadcastBlockUpsert(identity(), facts("  "));
 
         verify(sseEventPublisher, never()).publishBusiness(anyLong(), any(), any());
+    }
+
+    /** 事件自带的权威归属：轮次、轮次自身会话、路由根会话（后两者必须不同才会验出混用）。 */
+    private static TurnBroadcastIdentity identity() {
+        return new TurnBroadcastIdentity(TURN_ID, SESSION_ID, ROOT_SESSION_ID);
+    }
+
+    /** 工具事件带来的块事实：响应身份与请求位置都由框架给出（此处给一条数值型响应 ID）。 */
+    private static ToolBlockEventFacts facts(String toolCallId) {
+        return new ToolBlockEventFacts(toolCallId, "9007199254740993", 0, "read_file", "{}");
     }
 }

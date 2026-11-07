@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.TurnViewService;
@@ -26,6 +27,7 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.application.projection.TurnBroadcastIdentity;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
@@ -78,10 +80,12 @@ class BlockUpsertSingleBlockTest {
     @DisplayName("等价性：单块结果 == 整轮装配后过滤出的同一块（含全部 VO 字段）")
     void singleBlockMatchesFilteredFullView() {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(messageRepository.findUserMessages(SESSION_ID, TURN_ID)).thenReturn(turnMessages());
         when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of(fullToolCall(TARGET), fullToolCall(SIBLING)));
 
-        TurnViewVO single = service.assembleToolBlockView(session(), turn(), turn().getVersion(), TARGET).orElseThrow();
+        TurnViewVO single = service.assembleToolBlockView(session(), turn(), turn().getVersion(),
+                facts(TARGET, 0)).orElseThrow();
         TurnViewVO full = service.assembleTurnView(session(), turn(), turn().getVersion()).orElseThrow();
 
         // 前提：整轮里确实有两个工具块，单块只留下其中一个 —— 否则「相等」可能只是两边都空。
@@ -105,10 +109,12 @@ class BlockUpsertSingleBlockTest {
     @DisplayName("工具行尚未落库：两条路径都装出 TOOL_STARTED 的单块，仍然等价")
     void missingToolRowStillMatches() {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(messageRepository.findUserMessages(SESSION_ID, TURN_ID)).thenReturn(turnMessages());
         when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.empty());
         when(toolCallRepository.listByIds(any())).thenReturn(List.of(fullToolCall(SIBLING)));
 
-        TurnViewVO single = service.assembleToolBlockView(session(), turn(), turn().getVersion(), TARGET).orElseThrow();
+        TurnViewVO single = service.assembleToolBlockView(session(), turn(), turn().getVersion(),
+                facts(TARGET, 0)).orElseThrow();
         TurnViewVO full = service.assembleTurnView(session(), turn(), turn().getVersion()).orElseThrow();
 
         assertEquals(onlyBlock(full, ToolBlock.identity(TARGET)), single);
@@ -119,15 +125,14 @@ class BlockUpsertSingleBlockTest {
     @Test
     @DisplayName("广播器走单块构造：一次增量推送不装载兄弟工具")
     void broadcasterUsesSingleBlockAssembly() {
-        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(messageRepository.findUserMessages(SESSION_ID, TURN_ID)).thenReturn(turnMessages());
         when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(turn()));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
-        when(executionLocator.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         TurnViewBroadcaster broadcaster = new TurnViewBroadcaster(
                 service, chatTurnRepository, sessionRepository, sseEventPublisher, executionLocator);
 
-        broadcaster.broadcastBlockUpsert(TURN_ID, TARGET);
+        broadcaster.broadcastBlockUpsert(identity(), facts(TARGET, 0));
 
         ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
         verify(sseEventPublisher).publishBusiness(eq(ROOT_SESSION_ID), eq(BlockEventType.BLOCK_UPSERT), payload.capture());
@@ -135,24 +140,17 @@ class BlockUpsertSingleBlockTest {
         assertEquals(1, pushed.blocks().size(), "增量只下发变化的那一个块");
         assertEquals(ToolBlock.identity(TARGET), pushed.blocks().getFirst().getBlockId());
         verify(toolCallRepository, never()).listByIds(any());
-    }
-
-    @Test
-    @DisplayName("该块不存在（模型没请求过它）：返回空，对应「空则跳过」不推空块")
-    void unknownBlockYieldsEmpty() {
-        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
-        when(toolCallRepository.findForBlockUpsert("call-unknown")).thenReturn(Optional.empty());
-
-        assertTrue(service.assembleToolBlockView(session(), turn(), 1L, "call-unknown").isEmpty());
+        // 身份来自事件：根会话不必再解析一次（这条正是「重复解析根会话」被消除的守卫）。
+        verify(executionLocator, never()).resolveRootSessionIdOrNull(anyLong());
     }
 
     @Test
     @DisplayName("单块路径不装载兄弟工具：findForBlockUpsert 一次、listByIds 零次、整轮装配零次")
     void singleBlockPathNeverLoadsSiblings() {
-        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(messageRepository.findUserMessages(SESSION_ID, TURN_ID)).thenReturn(turnMessages());
         when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
 
-        service.assembleToolBlockView(session(), turn(), 1L, TARGET);
+        service.assembleToolBlockView(session(), turn(), 1L, facts(TARGET, 0));
 
         ArgumentCaptor<String> id = ArgumentCaptor.forClass(String.class);
         verify(toolCallRepository, times(1)).findForBlockUpsert(id.capture());
@@ -160,8 +158,9 @@ class BlockUpsertSingleBlockTest {
         verify(toolCallRepository, never()).listByIds(any());
         verify(toolCallRepository, never()).findById(anyString());
         verify(messageRepository, never()).findBySessionId(anyLong());
-        // 该轮消息仍要装载一次（VO 的状态/提问/用量来自它们），但只此一次、不逐工具循环。
-        verify(messageRepository, times(1)).findByTurnIds(SESSION_ID, List.of(TURN_ID));
+        verify(messageRepository, never()).findByTurnIds(anyLong(), any());
+        // 该轮 USER 行仍要取一次（提问 / 图片 / 补录 / 用户消息 id 的唯一来源），但只此一次。
+        verify(messageRepository, times(1)).findUserMessages(SESSION_ID, TURN_ID);
         // 关键守卫：整轮装配一次都不许调 —— 只要回退成 buildView→assembleBlocks 再过滤，这条立刻红。
         verify(turnViewAssembler, never()).assembleBlocks(any(), any(), any(), any());
     }
@@ -169,18 +168,29 @@ class BlockUpsertSingleBlockTest {
     @Test
     @DisplayName("广播器走单块构造时也不整轮装配：不装载兄弟工具、不调 assembleBlocks")
     void broadcasterPathNeverAssemblesWholeTurn() {
-        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());
+        when(messageRepository.findUserMessages(SESSION_ID, TURN_ID)).thenReturn(turnMessages());
         when(toolCallRepository.findForBlockUpsert(TARGET)).thenReturn(Optional.of(blockView(TARGET)));
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(turn()));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
-        when(executionLocator.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         TurnViewBroadcaster broadcaster = new TurnViewBroadcaster(
                 service, chatTurnRepository, sessionRepository, sseEventPublisher, executionLocator);
 
-        broadcaster.broadcastBlockUpsert(TURN_ID, TARGET);
+        broadcaster.broadcastBlockUpsert(identity(), facts(TARGET, 0));
 
         verify(turnViewAssembler, never()).assembleBlocks(any(), any(), any(), any());
         verify(toolCallRepository, never()).listByIds(any());
+    }
+
+    /** 事件自带的权威归属：轮次、轮次自身会话、路由根会话。 */
+    private static TurnBroadcastIdentity identity() {
+        return new TurnBroadcastIdentity(TURN_ID, SESSION_ID, ROOT_SESSION_ID);
+    }
+
+    /** 工具事件带来的块事实：与 {@link #turnMessages()} 里那条 AI 行的请求逐字段一致。 */
+    private static ToolBlockEventFacts facts(String toolCallId, int requestIndex) {
+        String args = requestIndex == 0 ? "{\"path\":\"a\"}" : "{\"command\":\"ls\"}";
+        String toolName = requestIndex == 0 ? "read_file" : "command";
+        return new ToolBlockEventFacts(toolCallId, "12", requestIndex, toolName, args);
     }
 
     /** 测试侧的独立过滤实现：不复用待测类的私有方法，避免「用实现验证实现」。 */

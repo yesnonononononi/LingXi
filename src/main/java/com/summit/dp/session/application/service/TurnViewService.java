@@ -102,34 +102,6 @@ public class TurnViewService {
     }
 
     /**
-     * 单块装配：只构造目标工具块，不装载兄弟工具的全量 CLOB。
-     *
-     * <p>BLOCK_UPSERT 原先走整轮装配再过滤 —— 一次工具收尾就要把整轮所有工具调用的
-     * content/raw_input/raw_output/meta_data 读一遍。这里消息仍按本轮取（VO 的状态、提问、
-     * 用量等元数据都来自该轮消息与 session），工具调用只取目标那一个，
-     * 且用只读投影省掉三个不需要的 CLOB 列；块本身由
-     * {@link TurnViewAssembler#buildSingleToolBlock} 用与整轮完全相同的字段映射构造。</p>
-     *
-     * <p>返回的视图<b>只用于推送</b>，其中的工具事实来自只读投影，绝不能拿去 {@code updateById}。</p>
-     *
-     * @param toolCallId 目标工具调用；块身份规则是 {@code tool:<toolCallId>}
-     * @return 只含该块的视图；该块此刻不存在时返回空（对应「空则跳过」的推送语义）
-     */
-    public Optional<TurnViewVO> assembleToolBlockView(Session session, ChatTurn turn, long viewVersion,
-                                                      String toolCallId) {
-        if (turn == null || turn.getId() == null || turn.getSessionId() == null
-                || toolCallId == null || toolCallId.isBlank()) {
-            return Optional.empty();
-        }
-        // 消息仍要装载：VO 的状态 / 提问 / 图片 / 补录 / 用量都来自该轮消息。
-        List<SessionMessage> messages = messageRepository.findByTurnIds(turn.getSessionId(), List.of(turn.getId()));
-        // 目标工具行只查一次，且是只读投影（不读 content / raw_input / meta_data）。
-        ToolCallBlockView toolCall = toolCallRepository.findForBlockUpsert(toolCallId).orElse(null);
-        Optional<Block> block = turnViewAssembler.buildSingleToolBlock(turn.getId(), messages, toolCallId, toolCall);
-        return block.map(single -> buildViewFromBlocks(session, turn, viewVersion, messages, List.of(single)));
-    }
-
-    /**
      * 批量装配一页内多个轮次的展示视图（历史分页用）。
      *
      * <p><b>复用当页已查出的消息</b>：历史按轮次分页，{@code pageMessages} 就是这一页所有轮次的
