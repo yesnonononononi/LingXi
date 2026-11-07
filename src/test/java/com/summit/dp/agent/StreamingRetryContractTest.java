@@ -119,13 +119,16 @@ class StreamingRetryContractTest {
                 public List<ToolExecuteResult> execute(ToolExecuteCommand command) { return List.of(); }
                 public ToolRegistry toolRegistry() { return new ToolRegistry(List.of()); }
             };
+            // 框架升级后 BoundaryChecker 需要显式注入 ContextUsageReporter 与 ToolRegistry：
+            // 传 null 时它会在 maxTokens 缺省时 intValue() 空指针，故复用 runtime 的同一个 reporter。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
             RuntimeProcessorTemplate runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(repository).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, repository, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).toolExecutionManager(tools)
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
-                            conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
+                            conversations, null, null, usage, null)).usage(usage)
                     .invoker(new DefaultStreamingModelInvoker(model)).build());
             if (!completed) assertThrows(RuntimeException.class, () -> runtime.execute(execution));
             else runtime.execute(execution);

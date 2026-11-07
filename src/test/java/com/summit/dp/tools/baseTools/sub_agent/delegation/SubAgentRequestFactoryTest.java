@@ -253,7 +253,9 @@ class SubAgentRequestFactoryTest {
                 .executionRepository(snapshots).conversationManager(conversations).toolExecutionManager(tools)
                 .executionControl(new DefaultExecutionController(() -> null, snapshots, events, lifecycle))
                 .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).usage(usage)
-                .runtimeBoundaryChecker(new BoundaryChecker(config, tokenizer, conversations, null, null))
+                // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
+                .runtimeBoundaryChecker(new BoundaryChecker(config, tokenizer, conversations, null, null,
+                        usage, tools.toolRegistry()))
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                 .invoker(new DefaultChatModelInvoker(command -> {
                     sent.addAll(command.getMessages());

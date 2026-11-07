@@ -224,13 +224,16 @@ class HttpClientNetworkComparisonTest {
                 public List<ToolExecuteResult> execute(ToolExecuteCommand command) { return List.of(); }
                 public ToolRegistry toolRegistry() { return new ToolRegistry(List.of()); }
             };
+            // 框架升级后 BoundaryChecker 必须显式注入 ContextUsageReporter/ToolRegistry：
+            // null 会在 AgentConfig.maxTokens 缺省时 intValue() 空指针，故复用 runtime 的同一个 reporter。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
             runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(repository).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, repository, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).toolExecutionManager(tools)
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
-                            conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
+                            conversations, null, null, usage, tools.toolRegistry())).usage(usage)
                     .invoker(invokers.select(config).invoker()).build());
         }
 

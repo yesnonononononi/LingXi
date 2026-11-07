@@ -12,6 +12,7 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopResult;
 import com.summit.core.model.DefaultModelProviderNames;
@@ -122,14 +123,17 @@ class ReadImageLoopIntegrationTest {
                     .agentRequest(request).messages(new ArrayList<>(request.getMessages())).tokenUsage(TokenUsageEntity.empty()).build();
             DefaultTokenizer tokenizer = new DefaultTokenizer();
             DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, events, 1);
             BoundaryChecker budget = new BoundaryChecker(AgentConfig.builder().maxIterations(3).maxTokens(100_000).build(),
-                    tokenizer, conversations, null, null);
+                    tokenizer, conversations, null, null, usage,
+                    new ToolRegistry(List.of(definition)));
             try (DefaultToolExecutionManager tools = new DefaultToolExecutionManager(
                     new ToolExecutionContext(events, new ToolRegistry(List.of(definition)), 4),
                     invocation -> ((ToolExecutor) invocation.getTarget()).execute(invocation.getContext()), List.of())) {
                 RuntimeContext context = RuntimeContext.builder().conversationManager(conversations)
                         .workspace(new LocalWorkspace("test", workspaceRoot.toString())).runtimeEventPublisher(events)
-                        .toolExecutionManager(tools).runtimeBoundaryChecker(budget)
+                        .toolExecutionManager(tools).runtimeBoundaryChecker(budget).usage(usage)
                         .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(
                                 new DefaultLoopInterceptor(), new ImageInjectionInterceptor(cache))))
                         .invoker(new DefaultChatModelInvoker(model)).build();

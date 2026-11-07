@@ -180,7 +180,7 @@ class BackgroundTaskNotificationTest {
         ToolExecutionManager tools = mock(ToolExecutionManager.class);
         when(tools.toolRegistry()).thenReturn(new ToolRegistry(List.of()));
         RuntimeBoundaryChecker boundary = mock(RuntimeBoundaryChecker.class);
-        when(boundary.before(any())).thenReturn(CheckPointResult.continueWith());
+        when(boundary.before(any(), any())).thenReturn(CheckPointResult.continueWith());
         ExecutionRepository checkpoints = mock(ExecutionRepository.class);
         AtomicReference<byte[]> snapshot = new AtomicReference<>();
         doAnswer(invocation -> {
