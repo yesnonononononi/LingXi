@@ -2,6 +2,7 @@ package com.summit.dp.workflow.application.projection;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.event.TokenInfo;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.persistence.TransactionRetryTemplate;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -70,6 +71,40 @@ public class ChatTurnLifecycleProjector {
                     execution.getCompletedAt(), rootSessionId);
             return null;
         });
+    }
+
+    /**
+     * 按执行自身的权威快照覆盖写轮次用量。
+     *
+     * <p><b>为什么要有这条入口</b>：轮次用量原来只由框架终态事件的 {@code tokenInfo} 驱动
+     * （{@code ChatTurnRuntimeListener}）。补偿路径（重启后的收口重做）<b>没有事件</b>：
+     * 框架进程已经不存在了，只有投影还会被执行一次。没有这条入口，崩溃窗口里丢掉的用量
+     * 就永久缺失。</p>
+     *
+     * <p><b>幂等靠覆盖写而不是去重</b>：写入值取 {@code execution.tokenUsage} 这一份唯一事实，
+     * 重复执行结果完全一致；{@code null} 表示未采集到，不覆盖已知值。因此同一条收口脚本跑两遍
+     * 不会把同一执行算两次。</p>
+     *
+     * @param execution 已提交的终态执行
+     */
+    public void refreshUsageFromExecution(Execution execution) {
+        TokenInfo usage = execution == null ? null : TokenInfo.from(execution.getTokenUsage());
+        if (usage == null) {
+            return;
+        }
+        Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(execution.eventMetaData());
+        retryTemplate().execute(() -> {
+            chatTurnService.refreshUsage(execution.getId(),
+                    toLong(usage.inputTokenCount()), toLong(usage.outputTokenCount()),
+                    toLong(usage.totalTokenCount()), toLong(usage.cacheTokens()),
+                    toLong(usage.reasoningTokens()), rootSessionId);
+            return null;
+        });
+    }
+
+    /** 框架用量是 {@code Integer}，轮次是 BIGINT（{@code Long}）；null 原样透传，不得当成 0。 */
+    private static Long toLong(Integer value) {
+        return value == null ? null : value.longValue();
     }
 
     /**

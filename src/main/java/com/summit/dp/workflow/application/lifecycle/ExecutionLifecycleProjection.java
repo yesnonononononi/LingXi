@@ -35,12 +35,24 @@ import java.util.List;
  *
  * <p>失败语义按<b>用户可见后果</b>分两类，落在代码里就是「抛或不抛」：</p>
  * <ul>
- *   <li><b>必须成功</b>（卡片、子执行结束事实、业务轮次、取消广播）：失败即抛
+ *   <li><b>必须成功</b>（卡片、子执行结束事实、会话用量、业务轮次、取消广播）：失败即抛
  *       {@link ExecutionClosureFailure}，<b>立即中断后续步骤</b>，不再产出「成功可见结果」。
  *       后果举例 —— 子执行结束事实没做成，根会永远被判为「还在等子代理」；轮次没收口，
- *       界面永远停在「进行中」。</li>
- *   <li><b>尽力而为</b>（会话用量、自动唤醒复查）：失败只丢这一项信息，记日志继续。</li>
+ *       界面永远停在「进行中」；用量没写成，计费与用量视图永久缺这一段。</li>
+ *   <li><b>尽力而为</b>（自动唤醒复查）：失败只丢这一项信息，下一次输入会重新触发。</li>
  * </ul>
+ *
+ * <h2>通知（SSE 广播）与业务事实的边界</h2>
+ *
+ * <p><b>业务事实先落库、清位，再发通知</b>：卡片 / 子执行 / 用量 / 轮次写完之后才清
+ * 「待收口位」，清位之后才广播「已取消」并唤醒输入队列 —— 否则订阅方可能收到一条指向
+ * 没收口轮次的通知。</p>
+ *
+ * <p><b>通知失败不回退任何业务事实</b>：广播在清位之后执行，抛异常只记日志（带
+ * {@code executionId} 与步骤名），既不会把待收口位重新置 1，也不会回滚已提交的轮次 / 卡片 /
+ * 用量 —— 那些是库里的既成事实，不应因为「没有观众」而被抹掉。客户端靠 bootstrap 与轮次终态
+ * 快照收敛：少一帧「已取消」不会让状态错乱，而丢掉业务事实会。</p>
+
  *
  * <h2>事务边界：提交后投影失败 = 可重试的待办事实，不是丢数据</h2>
  *
@@ -172,7 +184,9 @@ public class ExecutionLifecycleProjection {
      *   <li>{@value #STEP_SUB_EXECUTION_FINISHED}（必须）：子执行结束事实在卡片收口之后。
      *       失败后果 —— 根执行仍被判为「还在等这个子代理」，永远不会收尾，比轮次没收口严重；
      *       因此失败同样中断，不许把子执行所在轮次标成正常结束让用户以为链路走通了。</li>
-     *   <li>{@value #STEP_SAVE_USAGE}（尽力）：失败只导致用量/计费少记一段，不影响任何状态结论。</li>
+     *   <li>{@value #STEP_SAVE_USAGE}（必须）：会话上下文占用与轮次用量都按执行快照覆盖写。
+     *       失败后果 —— 计费与用量视图永久少这一段；补偿路径上没有框架事件，只有这里会写，
+     *       所以它不能是「尽力」。判据是覆盖写，重复执行结果一致。</li>
      *   <li>{@value #STEP_FINISH_TURN}（必须）：业务轮次最后写，它是用户可见的最终状态。
      *       失败后果 —— 轮次永远停在「进行中」，必须由补偿重做。</li>
      * </ol>
@@ -189,10 +203,30 @@ public class ExecutionLifecycleProjection {
                 () -> toolCallService.getObject().cancelPendingToolCalls(execution.getId()));
         step(execution, STEP_SUB_EXECUTION_FINISHED,
                 () -> subExecutionLifecycle.getObject().onFinished(execution));
-        bestEffort(execution, STEP_SAVE_USAGE,
-                () -> sessionUsage.getObject().saveExecutionContextUsage(execution));
+        step(execution, STEP_SAVE_USAGE, () -> saveUsage(execution));
         step(execution, STEP_FINISH_TURN,
                 () -> chatTurns.getObject().finishExecution(execution));
+    }
+
+    /**
+     * 用量落库：两个口径都按<b>执行自身的权威快照</b>覆盖写，因此重复执行结果一致（不累加）。
+     *
+     * <ul>
+     *   <li>会话侧上下文占用：{@code execution.contextUsageMetric} → 会话的上下文用量列；</li>
+     *   <li>轮次侧 token 用量：{@code execution.tokenUsage} → 轮次用量列（覆盖写，{@code null} 不覆盖）。</li>
+     * </ul>
+     *
+     * <p><b>为什么轮次用量也要在这里写一遍</b>：正常路径上框架的终态事件会带 {@code tokenInfo}
+     * 让 {@code ChatTurnRuntimeListener} 入账，但<b>补偿路径上没有事件</b> —— 进程重启后框架早已
+     * 消失，只有本投影还会被执行一次。若这里不写，崩溃窗口里丢掉的用量就永久缺失，
+     * 「会话用量是业务状态」这条约束落不了地。</p>
+     *
+     * <p>两条写的是同一份事实的不同侧面，同时失败时用步骤名区分不出是谁 —— 因此合并成一个步骤，
+     * 失败即中断（不清待收口位、不广播），由补偿重做；重复执行的幂等性由「覆盖写」保证。</p>
+     */
+    private void saveUsage(Execution execution) {
+        sessionUsage.getObject().saveExecutionContextUsage(execution);
+        chatTurns.getObject().refreshUsageFromExecution(execution);
     }
 
     /**

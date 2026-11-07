@@ -185,8 +185,8 @@ class ExecutionLifecycleProjectionTest {
     }
 
     @Test
-    @DisplayName("尽力步骤失败：只记录，不中断，收口照样完成并清位")
-    void bestEffortStepFailureDoesNotAbort() {
+    @DisplayName("用量是业务状态：写失败必须中断、不清位、不广播，等补偿重做")
+    void usageStepFailureAbortsClosure() {
         doAnswer(invocation -> {
             steps.add(ExecutionLifecycleProjection.STEP_SAVE_USAGE);
             throw new IllegalStateException("会话用量保存失败");
@@ -197,12 +197,11 @@ class ExecutionLifecycleProjectionTest {
         assertEquals(List.of(
                 ExecutionLifecycleProjection.STEP_CLOSE_CARDS,
                 ExecutionLifecycleProjection.STEP_SUB_EXECUTION_FINISHED,
-                ExecutionLifecycleProjection.STEP_SAVE_USAGE,
-                ExecutionLifecycleProjection.STEP_FINISH_TURN,
-                ExecutionLifecycleProjection.STEP_CLEAR_PENDING,
-                ExecutionLifecycleProjection.STEP_RESUME_PENDING_INPUT), steps,
-                "用量只是统计信息，失败不得阻止轮次收口");
-        verify(executions).clearClosurePending(EXECUTION_ID);
+                ExecutionLifecycleProjection.STEP_SAVE_USAGE), steps,
+                "用量缺失会让计费与用量视图永久少一段，必须中断而不是记日志继续");
+        verify(turns, never()).finishExecution(any());
+        verify(executions, never()).clearClosurePending(anyLong());
+        verify(events, never()).onExecutionCancelled(any());
     }
 
     @Test
