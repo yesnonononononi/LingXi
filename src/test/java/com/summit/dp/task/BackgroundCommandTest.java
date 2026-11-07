@@ -188,7 +188,10 @@ class BackgroundCommandTest {
 
     @Test void timeoutSettlesWithoutPollingOrAwaitingAndCapsRetainedOutput() throws Exception {
         Long id = submitter.submit(command(60_000, 0), 10L, 20L, 100L, workspace, 2, 5);
-        Thread.sleep(3500);
+        // 不用固定 sleep 等墙钟：后台超时靠自己的调度线程结算，机器被并行构建抢占时
+        // 3.5 秒可能还不够（实测并发下会假红成 RUNNING）。改成有界轮询等「结算完成」这个事实，
+        // 断言内容不变 —— 仍然是「不轮询、不阻塞等待就能结算」。
+        await(() -> repository.findById(id).orElseThrow().getStatus() == TaskStatus.TIMEOUT);
         Task task = repository.findById(id).orElseThrow();
         assertEquals(TaskStatus.TIMEOUT, task.getStatus());
         assertEquals(5, task.getOutput().length()); assertTrue(task.isTruncated());
