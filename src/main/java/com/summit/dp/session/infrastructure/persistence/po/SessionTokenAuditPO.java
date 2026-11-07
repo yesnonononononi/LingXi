@@ -1,0 +1,44 @@
+package com.summit.dp.session.infrastructure.persistence.po;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+
+/**
+ * 会话级 token 审计快照（头表）：一个会话只保留最近一次采集，主键即会话 id。
+ *
+ * <p>为什么用 {@link IdType#INPUT}：主键是业务键（session_id），不是自增序列；
+ * 与 {@code session_context} 表同一先例，upsert 语义天然成立。</p>
+ *
+ * <p>为什么数值列都可空：{@code audit_state = FAILED} 时只保留失败原因与时间，
+ * 用 0 冒充「采集到 0 token」会让前端画出错误的构成图。</p>
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@TableName("session_token_audit")
+public class SessionTokenAuditPO {
+
+    @TableId(type = IdType.INPUT)
+    private Long sessionId;
+    /** 产出这份快照的执行；归属解析失败时为 null（此时只落库、不广播）。 */
+    private Long executionId;
+    /** {@code COLLECTED} / {@code FAILED}：持久层只承认这两种事实。 */
+    private String auditState;
+    private Integer totalTokens;
+    private Integer maxTokens;
+    private Integer messagesTokens;
+    private Integer requestOverheadTokens;
+    private Integer overlapTokens;
+    private Instant capturedAt;
+    private String failReason;
+    private Instant createTime;
+    private Instant updateTime;
+}
