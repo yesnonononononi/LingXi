@@ -69,6 +69,14 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
                                           @Param("limit") int limit);
 
     /**
+     * 只读待收口位一列：通知层用它判断「成功终态能不能发」。
+     *
+     * <p>不读整行、不 join：这是发布热路径上的一次窄查询。</p>
+     */
+    @Select("SELECT closure_pending FROM execution WHERE id = #{id}")
+    Integer selectClosurePending(@Param("id") long executionId);
+
+    /**
      * 取「仍活跃」执行所属的会话 id 集合（去重）。
      *
      * <p>启动自检只需要候选会话，不需要执行行本身：先按状态挑出会话，再对这些会话解析最新执行，

@@ -1,5 +1,9 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import static org.mockito.Mockito.mock;
+
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.api.ChatResponseEntity;
@@ -45,7 +49,7 @@ class AgentEventListenerTest {
     @Test
     void retryRoutesToRootSessionAndRetainsFailedResponseAndTurnIdentity() {
         resolveSession();
-        AgentEventListener retryListener = new AgentEventListener(new JsonConfig().objectMapper(), publisher, identity);
+        AgentEventListener retryListener = new AgentEventListener(new JsonConfig().objectMapper(), publisher, identity, mock(ExecutionRepository.class));
         retryListener.init();
         InvokeRetryEvent event = InvokeRetryEvent.builder().executionId(EXECUTION_ID).responseId(RESPONSE_ID)
                 .retryCount(2).retryDelay(750).timeUnit(TimeUnit.MILLISECONDS)
@@ -72,7 +76,7 @@ class AgentEventListenerTest {
     private final SseEventPublisher publisher = mock(SseEventPublisher.class);
     private final ExecutionLocator identity = mock(ExecutionLocator.class);
     private final AgentEventListener listener =
-            new AgentEventListener(objectMapper, publisher, identity);
+            new AgentEventListener(objectMapper, publisher, identity, mock(ExecutionRepository.class));
 
     /** 「流仍然连着」用的真实传输层：mock emitter 挂在真注册表里，连接数才是可断言的结果。 */
     private final SseEventPublisher livePublisher = new SseEventPublisher() {
@@ -85,7 +89,7 @@ class AgentEventListenerTest {
     };
     private final List<SseEmitter> liveEmitters = new ArrayList<>();
     private final AgentEventListener liveListener =
-            new AgentEventListener(objectMapper, livePublisher, identity);
+            new AgentEventListener(objectMapper, livePublisher, identity, mock(ExecutionRepository.class));
 
     @BeforeEach
     void setUp() {

@@ -26,6 +26,8 @@ public class AgentEventListener implements RuntimeListener {
     private final ObjectMapper objectMapper;
     private final SseEventPublisher sseEventPublisher;
     private final ExecutionLocator executionLocator;
+    /** 待收口位读口：成功终态能否发布由这一列决定（见 {@code suppressedWhileClosurePending}）。 */
+    private final com.summit.dp.execution.domain.repository.ExecutionRepository executions;
 
     private interface TypedEventMixIn {
         @JsonProperty("type")
@@ -68,7 +70,48 @@ public class AgentEventListener implements RuntimeListener {
 
     @Override
     public void onExecutionCompleted(ExecutionCompleteEvent event) {
+        if (suppressedWhileClosurePending(event)) {
+            return;
+        }
         broadcast(event);
+    }
+
+    /**
+     * 成功终态的通知层门禁：业务收口没做完就不发「完成」。
+     *
+     * <p><b>为什么必须在这里挡</b>：框架的 {@code RuntimeProcessorTemplate} 在 {@code finally} 里
+     * 用 {@code RuntimeUtil.runAll(...)} 逐任务 catch 地跑
+     * {@code save → unregister → publish → 成功终态}，也就是<b>收口失败绝不会阻止成功终态发出</b>
+     * —— 让收口异常向上抛只会被吞掉，把投影塞进状态提交事务同样躲不过这个 {@code runAll}。
+     * 因此唯一能生效的位置就是业务侧自己的终态发布入口。</p>
+     *
+     * <p><b>判据只有一列：{@code execution.closure_pending}</b>。它不是新状态机，只是「状态已提交、
+     * 业务收口没做完」这一事实本身；为 1 就意味着收口脚本没走完，此刻发「完成」会让界面显示完成
+     * 而业务轮次还在进行中。本方法<b>只读</b>这一列，不写、不改任何状态流转。</p>
+     *
+     * <p><b>谁来补发</b>：清位之后由补偿路径（启动收口）补一次成功终态；补发与否同样看这一列
+     * —— 第二遍发现它已是 0，就不会重复发。也就是说「是否已发布过」这个事实由库里的待收口位承载，
+     * 不靠内存标记。</p>
+     *
+     * @return 已拦截返回 {@code true}（不广播）
+     */
+    private boolean suppressedWhileClosurePending(ExecutionCompleteEvent event) {
+        String executionId = event.executionId();
+        if (executionId == null || executionId.isBlank()) {
+            return false;
+        }
+        boolean pending;
+        try {
+            pending = executions.isClosurePending(Long.parseLong(executionId));
+        } catch (RuntimeException ignored) {
+            // 读不到就不拦：宁可多推一帧，也不要因为一次查询失败让用户永远看不到完成。
+            return false;
+        }
+        if (!pending) {
+            return false;
+        }
+        log.warn("业务收口未完成，暂不发布成功终态: executionId={}, closure_pending=1", executionId);
+        return true;
     }
 
     @Override

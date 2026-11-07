@@ -91,6 +91,11 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
      * @return 是否真的把 1 改成了 0
      */
     @Override
+    public boolean isClosurePending(long executionId) {
+        return Integer.valueOf(CLOSURE_PENDING).equals(mapper.selectClosurePending(executionId));
+    }
+
+    @Override
     public boolean clearClosurePending(long executionId) {
         return mapper.update(null, Wrappers.<ExecutionPO>lambdaUpdate()
                 .set(ExecutionPO::getClosurePending, 0)

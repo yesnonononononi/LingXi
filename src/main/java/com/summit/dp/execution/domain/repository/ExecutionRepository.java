@@ -142,4 +142,16 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
      * @return 是否真的把 1 改成 0
      */
     boolean clearClosurePending(long executionId);
+
+    /**
+     * 读该执行是否还有「状态已提交、业务收口没做完」的待办事实。
+     *
+     * <p><b>为什么通知层需要一个读口</b>：框架在 save/unregister 之后必然发终态事件，业务侧没有
+     * 排序权。要判断「这次成功终态能不能发」，唯一权威事实就是这一列 —— 为 1 说明收口脚本没走完，
+     * 此刻发「完成」会让界面显示完成而轮次还在进行中。</p>
+     *
+     * @param executionId 执行 id
+     * @return 仍有待收口事实返回 {@code true}；执行行不存在或该列为 0 返回 {@code false}
+     */
+    boolean isClosurePending(long executionId);
 }

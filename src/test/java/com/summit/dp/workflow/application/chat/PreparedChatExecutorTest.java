@@ -1,5 +1,9 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import static org.mockito.Mockito.mock;
+
+
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -88,7 +92,7 @@ class PreparedChatExecutorTest {
 
     {
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                sseEventPublisher, executionIdentity);
+                sseEventPublisher, executionIdentity, mock(ExecutionRepository.class));
         agentEvents.init();
         // 与生产同序：轮次侧监听器（HIGHEST_PRECEDENCE）在前，SSE 广播在后。
         RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(
@@ -207,7 +211,7 @@ class PreparedChatExecutorTest {
             live.connect(ROOT_SESSION_ID);
             int connected = live.connectedCount();
             AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                    live, executionIdentity);
+                    live, executionIdentity, mock(ExecutionRepository.class));
             agentEvents.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                     new ChatTurnRuntimeListener(chatTurnService), agentEvents));

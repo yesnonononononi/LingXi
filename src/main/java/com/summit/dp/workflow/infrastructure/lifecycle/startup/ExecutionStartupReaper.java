@@ -223,8 +223,9 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
             boolean closed = checkpointRepository.findById(String.valueOf(executionId))
                     .map(execution -> {
                         // 收口脚本 + 清待收口位 + 广播/唤醒：与正常收尾走同一个入口，靠状态判据去重。
+                        // 补偿声明为 true：框架那次成功终态在发布时已被门禁拦下，再没有人会补发。
                         lifecycleProjection.completeClosure(execution,
-                                execution.getExecutionState() == ExecutionState.CANCELLED);
+                                execution.getExecutionState() == ExecutionState.CANCELLED, true);
                         return Boolean.TRUE;
                     })
                     .orElse(Boolean.FALSE);

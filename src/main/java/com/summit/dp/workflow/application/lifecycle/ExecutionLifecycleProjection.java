@@ -3,6 +3,7 @@ package com.summit.dp.workflow.application.lifecycle;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.ExecutionCancelledEvent;
+import com.summit.core.conversation.event.ExecutionCompleteEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.TokenInfo;
 import com.summit.dp.toolcall.application.service.ToolCallService;
@@ -95,6 +96,9 @@ public class ExecutionLifecycleProjection {
 
     /** 取消路径额外步骤名：终态事件必须在业务轮次收口之后补发。 */
     public static final String STEP_PUBLISH_CANCELLED = "发布取消终态";
+
+    /** 补偿路径步骤名：补发被通知层门禁拦下的成功终态。 */
+    public static final String STEP_PUBLISH_COMPLETED = "补发成功终态";
 
     /** 收口成功后清「待收口位」这个动作的名字。 */
     public static final String STEP_CLEAR_PENDING = "清除待收口位";
@@ -244,10 +248,31 @@ public class ExecutionLifecycleProjection {
      * @param cancelled 是否取消终态（决定清位后是否补发取消事件）
      */
     public void completeClosure(Execution execution, boolean cancelled) {
+        completeClosure(execution, cancelled, false);
+    }
+
+    /**
+     * 同上，并声明「框架那一次成功终态发布不会再来，需要本入口补发」。
+     *
+     * <p><b>只有启动收口传 {@code true}</b>：它按 {@code closure_pending = 1} 扫出来的行，
+     * 而框架的成功终态在发布时已被通知层门禁拦下（同一列判据），此后再没有人会替它发。
+     * 正常路径（{@code save} / {@code unregister} 的 {@code afterCommit}）必须传 {@code false}：
+     * 框架紧接着自己会发，这里再发就是重复。</p>
+     *
+     * <p><b>补发一次且只一次靠库内事实</b>：先读一次待收口位，只有「读到时仍为 1」（说明确实被拦过）
+     * 才在清位之后补发；第二遍补偿读到的已是 0，不会再发。不引入内存标记。</p>
+     *
+     * @param execution                 需要收口的终态执行
+     * @param cancelled                 是否取消终态
+     * @param compensateTerminalDelivery 是否由本入口补发被拦下的成功终态
+     */
+    public void completeClosure(Execution execution, boolean cancelled, boolean compensateTerminalDelivery) {
         if (execution == null || execution.getId() == null || !isTerminal(execution.getExecutionState())) {
             // 未到终态的执行没有「收口」可补：替它收口等于替用户做结束决定。
             return;
         }
+        // 补发判据在清位之前读：清完之后这一列就是 0，读不出「当初有没有被拦过」。
+        boolean terminalDeliverySuppressed = compensateTerminalDelivery && !cancelled && wasPending(execution);
         try {
             closeTerminal(execution);
         } catch (ExecutionClosureFailure failure) {
@@ -270,7 +295,36 @@ public class ExecutionLifecycleProjection {
                 log.error("发布取消终态失败: executionId={}, step={}", execution.getId(), STEP_PUBLISH_CANCELLED, error);
             }
         }
+        if (terminalDeliverySuppressed) {
+            publishCompensatedCompletion(execution);
+        }
         resumeInputIfPending(execution);
+    }
+
+    /**
+     * 补发被通知层门禁拦下的成功终态。
+     *
+     * <p>只发一次「完成」：失败同样只记日志 —— 客户端靠 bootstrap 与轮次终态快照能收敛到已完成，
+     * 而业务事实已经在库里，重试广播没有任何要修复的东西。</p>
+     */
+    private void publishCompensatedCompletion(Execution execution) {
+        try {
+            runtimeEvents.getObject().onExecutionComplete(new ExecutionCompleteEvent(execution.getId(),
+                    TokenInfo.from(execution.getTokenUsage()), execution.eventMetaData()));
+        } catch (RuntimeException error) {
+            log.error("补发成功终态失败: executionId={}, step={}", execution.getId(), STEP_PUBLISH_COMPLETED, error);
+        }
+    }
+
+    /** 只读该执行是否还有待收口事实；读失败按「没有」处理，绝不因此拦掉终态。 */
+    private boolean wasPending(Execution execution) {
+        try {
+            return executions.getObject().isClosurePending(numericId(execution.getId()));
+        } catch (RuntimeException error) {
+            log.warn("读取待收口位失败，按未拦下处理: executionId={}, error={}",
+                    execution.getId(), error.toString());
+            return false;
+        }
     }
 
     /** 必须成功的一步：失败包装成带步骤名的异常，中断整条脚本。 */

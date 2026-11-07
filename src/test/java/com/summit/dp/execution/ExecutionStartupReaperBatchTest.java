@@ -135,7 +135,7 @@ class ExecutionStartupReaperBatchTest {
             // 阻塞住「处理一条待办」这个动作：同步处理会让启动段卡死在这里。
             neverReleased.await();
             return null;
-        }).when(blocking).completeClosure(any(), anyBoolean());
+        }).when(blocking).completeClosure(any(), anyBoolean(), anyBoolean());
 
         ExecutionStartupReaper reaper = reaper(blocking);
         try {
@@ -187,7 +187,7 @@ class ExecutionStartupReaperBatchTest {
         ExecutionLifecycleProjection closing = alwaysClosingProjection();
         reaper(closing).onApplicationEvent(mock(ApplicationReadyEvent.class));
 
-        verify(closing, never()).completeClosure(any(), anyBoolean());
+        verify(closing, never()).completeClosure(any(), anyBoolean(), anyBoolean());
         assertEquals(Integer.valueOf(0), mapper.selectById(legacy.getId()).getClosurePending(),
                 "巡检不得改动历史行");
     }
@@ -218,10 +218,11 @@ class ExecutionStartupReaperBatchTest {
 
     private ExecutionLifecycleProjection projection(java.util.function.Consumer<Execution> closure) {
         ExecutionLifecycleProjection projection = mock(ExecutionLifecycleProjection.class);
+        // 三参重载是生产实际调用的那一个（带补偿标记），必须同样桩上，否则「收口成功」根本没发生。
         doAnswer(invocation -> {
             closure.accept(invocation.getArgument(0));
             return null;
-        }).when(projection).completeClosure(any(), anyBoolean());
+        }).when(projection).completeClosure(any(), anyBoolean(), anyBoolean());
         return projection;
     }
 
