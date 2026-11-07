@@ -60,8 +60,15 @@ class ExecutionStartupReaperBatchTest {
 
     /** 造出的待办量：故意多于几批（批大小 100），才测得出「游标翻页」与「同一进程内收敛」。 */
     private static final int TOTAL_PENDING = 260;
-    /** 用例等待收敛的上限；只做「有限时间内能收敛」的断言，不卡具体耗时。 */
-    private static final Duration CONVERGENCE_TIMEOUT = Duration.ofSeconds(60);
+    /**
+     * 用例等待收敛的上限；只做「有限时间内能收敛」的断言，不卡具体耗时。
+     *
+     * <p>为什么取 180s 而不是更小的 60s：260 条待办每条都要读一次检查点并跨模块收口，正常单跑约 40s；
+     * 但本仓常有多人并行 mvn（实测同机 7 个 JVM），单条耗时会被放大数倍，60s 窗口在负载下会假红
+     * （`expected: <0> but was: <44>`）。这条断言要证明的是「会收敛」，不是「多快收敛」——性能门禁
+     * 另有 SQL/查询次数守卫，所以这里给足窗口，避免把机器抢占误判成功能回归。</p>
+     */
+    private static final Duration CONVERGENCE_TIMEOUT = Duration.ofSeconds(180);
 
     private H2TestDatabase database;
     private ExecutionMapper mapper;
