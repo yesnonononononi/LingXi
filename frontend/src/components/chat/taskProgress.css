@@ -20,7 +20,7 @@
   background: var(--task-bg); box-shadow: 0 8px 24px #0000000a;
 }
 .task-progress-surface button:focus-visible { outline: 2px solid var(--task-muted); outline-offset: 3px; }
-.task-progress-dock { margin-bottom: 12px; }
+.task-progress-dock { margin-top: 12px; margin-bottom: 12px; }
 .task-progress-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .task-progress-row .task-panel {
   position: absolute; z-index: 40; bottom: calc(100% + 10px); left: 0; right: 0;

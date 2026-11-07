@@ -1,11 +1,8 @@
-// 本轮（过程区技术债）未执行：用户要求绕过 Electron。本脚本只挂 ChatMessageItem / 列表，
-// 不触碰过程段内部与 ProcessDetails，与本轮改动无交集；断言一行未改。
-// 未验证面登记见 docs/qa/process-debt-verification.md §4。
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
-const output = path.resolve(__dirname, '../node_modules/.tmp/task-progress');
+const output = path.resolve(__dirname, '../node_modules/.tmp', process.env.TASK_PROGRESS_MUTATION ? 'task-progress-mutation' : 'task-progress');
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
 let window;
@@ -15,12 +12,17 @@ app.whenReady().then(async () => {
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
 import { ref, watch, onScopeDispose } from 'vue';
 import TaskProgressDock from '../../../src/components/chat/TaskProgressDock.vue';
+import ChatMessageList from '../../../src/components/chat/ChatMessageList.vue';
+import { AgentToolName } from '../../../src/utils/toolNames';
 import { useBackgroundTasks } from '../../../src/views/chat/useBackgroundTasks';
 import { useChecklist } from '../../../src/views/chat/useChecklist';
 import { SessionEventStream } from '../../../src/views/chat/sessionEventStream';
 import '../../../src/style.css';
 const root = ref('9007199254740993'); const dark = ref(false); const executing = ref(true);
 const background = useBackgroundTasks(root); const checklist = useChecklist(root);
+const messages = [{id:'process-answer',role:'assistant',timestamp:0,isComplete:false,content:'',
+  toolCalls:Array.from({length:60}, (_, index) => ({id:'read-' + index,order:index,
+    toolName:AgentToolName.ReadFile,status:'success',args:{path:'process-file-' + index + '.java'}}))}];
 const stream = new SessionEventStream({onEvent: event => checklist.onEvent(event),
   onConnectionClosed: () => checklist.refresh(), onBackgroundTaskChanged: background.onTaskChanged});
 watch(root, (id, previous) => { if(previous) stream.release(previous); if(id) stream.acquire(id); }, {immediate:true});
@@ -30,9 +32,14 @@ window.changeTheme = value => {dark.value = value;}; window.switchSession = id =
 window.changeExecuting = value => {executing.value = value;};
 window.refreshBackground = () => background.refresh(); window.refreshChecklist = () => checklist.refresh();
 window.state = () => ({snapshot:checklist.snapshot.value, error:checklist.error.value, tasks:background.tasks.value, selected:background.selectedId.value});
-</script><template><main :style="{padding:'350px 12px 36px', minHeight:'900px', background:dark?'#000':'#fff'}">
+</script><template><main class="h-screen flex flex-col overflow-hidden" :style="{padding:'0 12px 36px', background:dark?'#000':'#fff'}">
+<div class="relative flex-1 min-h-0 overflow-hidden" data-testid="task-message-viewport">
+  <ChatMessageList :messages="messages" :is-dark="dark" :session-id="root" />
+</div>
+<div class="w-full shrink-0 flex flex-col items-center">
 <TaskProgressDock :background="background" :checklist="checklist" :is-dark="dark" :executing="executing" />
 <div class="w-full max-w-lx-chat mx-auto px-4"><textarea id="draft" placeholder="描述你想要构建的内容" :style="{width:'100%',height:'110px',borderRadius:'18px',border:dark?'1px solid #303034':'1px solid #e4e4e7',padding:'18px',background:dark?'#000':'#fff',color:dark?'#fff':'#27272a'}" /></div>
+</div>
 <button id="outside">外部区域</button>
 </main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
@@ -77,6 +84,10 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');await
       const needle = 'animation: checklist-spin .9s steps(8) infinite'; assert.ok(source.includes(needle));
       return source.replace(needle, 'animation: none');
     }
+    if (mutation === 'gap' && id.endsWith('/taskProgress.css')) {
+      const needle = 'margin-top: 12px;'; assert.ok(source.includes(needle));
+      return source.replace(needle, 'margin-top: 0;');
+    }
   } };
   await build({configFile:false,root:output,base:'./',plugins:[mutationPlugin,vue()],logLevel:'error',build:{target:'esnext',outDir:path.join(output,'dist'),emptyOutDir:true}});
   window = new BrowserWindow({width:1100,height:900,show:false,webPreferences:{contextIsolation:true,offscreen:true,backgroundThrottling:false}});
@@ -86,7 +97,21 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');await
   const click = async id => evaluate(`document.querySelector('[data-testid="${id}"]').click();window.flush()`);
   const screenshot = async name => fs.writeFile(path.join(output,name),(await window.webContents.capturePage()).toPNG());
   const pillOrder = () => evaluate('Array.from(document.querySelectorAll(".task-pill"),button=>button.dataset.testid)');
+  const assertDockGap = async () => {
+    const bounds = await evaluate(`(() => {
+      const viewport = document.querySelector('[data-testid=task-message-viewport]').getBoundingClientRect();
+      const pills = [...document.querySelectorAll('.task-pill')].map(pill => pill.getBoundingClientRect());
+      return {messageBottom:viewport.bottom, pills:pills.map(pill => ({top:pill.top, bottom:pill.bottom}))};
+    })()`);
+    assert.ok(bounds.pills.length > 0, '间距检查必须覆盖实际可见的胶囊');
+    for (const pill of bounds.pills) {
+      assert.ok(pill.top - bounds.messageBottom >= 12, '消息可视区与每个胶囊至少间隔 12px：' + JSON.stringify(bounds));
+    }
+  };
   await until('window.ready && window.state().snapshot && window.controllers["9007199254740993"]');
+  await evaluate(`document.querySelector('[data-testid=process-segment-toggle]').click();window.flush()`);
+  assert.ok(await evaluate(`document.querySelector('[data-testid=process-segment-details]').scrollHeight > 1000`), '间距场景必须包含已展开的长过程');
+  await assertDockGap();
   assert.deepEqual(await pillOrder(),['checklist-toggle']);
   assert.match(await evaluate('document.querySelector("[data-testid=checklist-toggle]").textContent'),/任务清单\s*3\/5/);
   const left = await evaluate('document.querySelector("[data-testid=checklist-toggle]").getBoundingClientRect().left');
@@ -110,6 +135,7 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');await
   await evaluate('window.taskData["9007199254740993"]=[window.makeTask("9007199254740993")];window.refreshBackground();window.flush()');
   await until('document.querySelector("[data-testid=background-task-toggle]")');
   assert.deepEqual(await pillOrder(),['checklist-toggle','background-task-toggle']);
+  await assertDockGap();
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=background-task-panel]").length'),0);
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=checklist-panel]").length'),1);
   assert.equal(await evaluate('document.querySelector("[data-testid=checklist-toggle]").getBoundingClientRect().left'),left);
@@ -125,10 +151,18 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');await
   assert.equal(await evaluate('window.state().selected'),null);
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=checklist-panel]").length'),1);
   await evaluate('window.changeTheme(true);window.flush()');
+  await assertDockGap();
   const colors = await evaluate('Array.from(document.querySelectorAll(".task-pill, .task-panel"),element=>{const s=getComputedStyle(element);return {bg:s.backgroundColor,ink:s.color,shadow:s.textShadow};})');
   assert.ok(colors.length>=3); for(const color of colors){assert.equal(color.bg,'rgb(0, 0, 0)');assert.notEqual(color.shadow,'none');}
   await screenshot('dark-checklist.png');
   await click('background-task-toggle'); await screenshot('dark-background.png');
+  window.setContentSize(390,650); await evaluate('window.flush()');
+  await assertDockGap();
+  const wrapped = await evaluate(`Array.from(document.querySelectorAll('.task-pill'), pill => pill.getBoundingClientRect().top)`);
+  assert.equal(wrapped.length, 2);
+  assert.ok(wrapped[1] > wrapped[0], '窄屏间距检查必须覆盖双胶囊换行');
+  await screenshot('mobile-process-gap.png');
+  window.setContentSize(1100,900); await evaluate('window.flush()');
   await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));window.flush()');
   assert.equal(await evaluate('document.querySelectorAll(".task-panel").length'),0);
   assert.equal(await evaluate('document.activeElement.dataset.testid'),'background-task-toggle');
