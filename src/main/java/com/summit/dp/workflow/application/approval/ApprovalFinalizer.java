@@ -14,6 +14,7 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
@@ -105,7 +106,8 @@ public class ApprovalFinalizer {
             return false;
         }
         return resumeCoordinator.accept(Objects.requireNonNullElse(
-                ExecutionIdentity.numericOrNull(latest.getId()), 0L)) == ResumeDisposition.QUEUED;
+                ExecutionIdentity.numericOrNull(latest.getId()), 0L), ResumeTriggerType.APPROVAL_DECISION)
+                == ResumeDisposition.QUEUED;
     }
 
     /** 命令执行中断：把执行与卡片一并收成失败，禁止自动重放已可能产生副作用的命令。 */

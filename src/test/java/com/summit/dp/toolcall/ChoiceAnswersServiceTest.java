@@ -12,6 +12,7 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.application.service.ResumeDisposition;
@@ -111,7 +112,7 @@ class ChoiceAnswersServiceTest {
         tools = spy(new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class), mapper, mock(CardAvailabilityPolicy.class)));
         contexts = mock(ModelContextService.class);
         coordinator = mock(ExecutionResumeCoordinator.class);
-        when(coordinator.accept(EXECUTION)).thenAnswer(invocation -> {
+        when(coordinator.accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION)).thenAnswer(invocation -> {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
             assertTrue(tools.listByExecutionId(EXECUTION).stream().allMatch(ToolCall::isCompleted));
             return ResumeDisposition.QUEUED;
@@ -177,7 +178,7 @@ class ChoiceAnswersServiceTest {
             assertEquals(" answer " + index + "\n", ((ToolMessageEntity) saved.getMessages().get(index + 1)).getToolOutput());
         }
         verify(contexts).replace(eq(CONVERSATION), any());
-        verify(coordinator).accept(EXECUTION);
+        verify(coordinator).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
     }
 
     @Test
@@ -200,7 +201,7 @@ class ChoiceAnswersServiceTest {
         Execution saved = executions.findById(String.valueOf(EXECUTION)).orElseThrow();
         assertEquals(failure, ((ToolMessageEntity) saved.getMessages().get(4)).getToolOutput());
         assertEquals(failure, tools.findById("choice-3").orElseThrow().getRawOutput());
-        verify(coordinator).accept(EXECUTION);
+        verify(coordinator).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
     }
 
     @Test
@@ -212,7 +213,7 @@ class ChoiceAnswersServiceTest {
                         .content(mapper.writeValueAsString(command("http-batch"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.toolCalls.length()").value(4))
                 .andExpect(jsonPath("$.data.commandId").value("http-batch"));
-        verify(coordinator).accept(EXECUTION);
+        verify(coordinator).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
     }
 
     @Test
@@ -251,11 +252,11 @@ class ChoiceAnswersServiceTest {
         tools.save(ToolCall.builder().id("plan").conversationId(CONVERSATION).executionId(EXECUTION)
                 .toolName(ToolCatalog.CREATE_PLAN).type(ToolCallType.PROMISE).status(ToolCallStatus.PENDING)
                 .content("{\"kind\":\"PLAN\"}").build());
-        doReturn(ResumeDisposition.WAITING_OTHER_TOOLS).when(coordinator).accept(EXECUTION);
+        doReturn(ResumeDisposition.WAITING_OTHER_TOOLS).when(coordinator).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
 
         assertEquals(ResumeDisposition.WAITING_OTHER_TOOLS, service.submit(command("with-plan")).resumeDisposition());
         assertEquals(ToolCallStatus.PENDING, tools.findById("plan").orElseThrow().getStatus());
-        verify(coordinator).accept(EXECUTION);
+        verify(coordinator).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
     }
 
     @Test
@@ -271,7 +272,7 @@ class ChoiceAnswersServiceTest {
         } finally {
             workers.shutdownNow();
         }
-        verify(coordinator).accept(EXECUTION);
+        verify(coordinator).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
         verify(contexts).replace(eq(CONVERSATION), any());
     }
 
@@ -283,7 +284,7 @@ class ChoiceAnswersServiceTest {
         transactions.executeWithoutResult(status -> executions.save(execution));
 
         assertEquals(ResumeDisposition.RUNNING, service.submit(command("retry")).resumeDisposition());
-        verify(coordinator, times(1)).accept(EXECUTION);
+        verify(coordinator, times(1)).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
         verify(contexts, times(1)).replace(eq(CONVERSATION), any());
     }
 
@@ -298,7 +299,7 @@ class ChoiceAnswersServiceTest {
         changed.set(0, new ChoiceAnswersCommand.Answer("choice-0", 1L, "other"));
         assertThrows(DecisionConflictException.class, () -> service.submit(
                 new ChoiceAnswersCommand(CONVERSATION, RESPONSE, "retry", changed)));
-        verify(coordinator, times(1)).accept(EXECUTION);
+        verify(coordinator, times(1)).accept(EXECUTION, ResumeTriggerType.APPROVAL_DECISION);
     }
 
     @Test

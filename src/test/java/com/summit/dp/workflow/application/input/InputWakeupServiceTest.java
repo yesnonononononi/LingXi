@@ -5,6 +5,7 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
@@ -72,7 +73,7 @@ class InputWakeupServiceTest {
         verifyNoInteractions(resumes);
         when(inputs.pendingBatchKey(execution)).thenReturn("batch-1");
         check();
-        verify(resumes).accept(100L);
+        verify(resumes).accept(100L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
     }
 
     @Test void completedInputUsesANewTurnAndNeverResumesTheOldExecution() throws Exception {
@@ -132,14 +133,14 @@ class InputWakeupServiceTest {
         Execution execution = given(ExecutionState.SUSPENDED);
         when(inputs.pendingBatchKey(execution)).thenThrow(new IllegalStateException("暂时失败")).thenReturn("batch-1");
         check();
-        verify(resumes).accept(100L);
+        verify(resumes).accept(100L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
         verifyNoInteractions(notices);
     }
 
     @Test void publicationGatePreventsInputFromOvertakingWaitingProjection() throws Exception {
         given(ExecutionState.SUSPENDED);
         AtomicBoolean projected = new AtomicBoolean();
-        doAnswer(call -> { assertTrue(projected.get()); return null; }).when(resumes).accept(100L);
+        doAnswer(call -> { assertTrue(projected.get()); return null; }).when(resumes).accept(100L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
         CompletableFuture<Void> check;
         synchronized (ExecutionCoordination.monitor("100")) {
             check = service.resumeIfInputPending(100L);
@@ -147,7 +148,7 @@ class InputWakeupServiceTest {
             projected.set(true);
         }
         check.get(5, TimeUnit.SECONDS);
-        verify(resumes).accept(100L);
+        verify(resumes).accept(100L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
     }
 
     private static <T> ObjectProvider<T> provider(Class<T> type, T value) {

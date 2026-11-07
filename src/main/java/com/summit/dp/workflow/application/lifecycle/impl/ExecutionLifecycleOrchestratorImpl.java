@@ -105,7 +105,8 @@ public class ExecutionLifecycleOrchestratorImpl implements ExecutionLifecycleOrc
      * 不是「能不能恢复」的最终结论。</p>
      */
     private ResumeAcceptResult queueResume(ResumeRequest request) {
-        ResumeDisposition disposition = resumeCoordinator.accept(numericId(request.executionId()));
+        ResumeDisposition disposition = resumeCoordinator.accept(numericId(request.executionId()),
+                request.triggerType());
         return switch (disposition) {
             case QUEUED -> ResumeAcceptResult.queued();
             case RUNNING -> ResumeAcceptResult.running();

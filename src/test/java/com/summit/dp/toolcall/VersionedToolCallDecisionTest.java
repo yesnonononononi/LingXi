@@ -21,6 +21,7 @@ import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
@@ -121,7 +122,7 @@ class VersionedToolCallDecisionTest {
         when(executionIdentity.resolveRootSessionId(CONVERSATION_ID)).thenReturn(CONVERSATION_ID);
         // 默认无未决槽位：单卡决策应当直接派发恢复。
         when(toolCallRepository.listUnresolvedByExecutionId(EXECUTION_ID)).thenReturn(List.of());
-        when(resumeCoordinator.accept(EXECUTION_ID)).thenReturn(ResumeDisposition.QUEUED);
+        when(resumeCoordinator.accept(EXECUTION_ID, ResumeTriggerType.APPROVAL_DECISION)).thenReturn(ResumeDisposition.QUEUED);
         // 模拟框架 beginApproval：SUSPENDED → RUNNING。执行中重试的恢复处置据此回答 RUNNING。
         doAnswer(invocation -> {
             ((Execution) invocation.getArgument(0)).resumeChecked();
@@ -168,7 +169,7 @@ class VersionedToolCallDecisionTest {
         assertEquals("completed", receipt.toolCall().getStatus());
         // 重试不得重新写库，也不得重复登记恢复意图（会重复唤醒 worker）
         verify(toolCallRepository, never()).updateById(any());
-        verify(resumeCoordinator, never()).accept(anyLong());
+        verify(resumeCoordinator, never()).accept(anyLong(), any(ResumeTriggerType.class));
     }
 
     @Test
@@ -206,7 +207,7 @@ class VersionedToolCallDecisionTest {
         assertEquals(DecisionErrorCode.COMMAND_CONFLICT.code(), failure.errorCode().code());
         // 结论仍是首次的：用户的第二次修改意图没有被静默吞掉，也没有被伪装成成功
         assertTrue(decided.getRawOutput().contains("APPROVED"));
-        verify(resumeCoordinator, never()).accept(anyLong());
+        verify(resumeCoordinator, never()).accept(anyLong(), any(ResumeTriggerType.class));
     }
 
     // ------------------------------------------------------------------
@@ -229,7 +230,7 @@ class VersionedToolCallDecisionTest {
         assertNotNull(failure.latestView(), "必须带回实际最新视图");
         assertEquals("completed", ((ToolCallVO) failure.latestView()).getStatus());
         assertTrue(decided.getRawOutput().contains("APPROVED"), "首次结论不被后一次意图覆盖");
-        verify(resumeCoordinator, never()).accept(anyLong());
+        verify(resumeCoordinator, never()).accept(anyLong(), any(ResumeTriggerType.class));
     }
 
     // ------------------------------------------------------------------

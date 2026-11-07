@@ -72,7 +72,8 @@ public class InputWakeupService {
                     return;
                 }
                 if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
-                    resumes.getObject().accept(executionId);
+                    // 外部输入到位属于自动唤醒：门禁已在本方法上方查过，这里把来源一并交给消费端复检。
+                    resumes.getObject().accept(executionId, ResumeTriggerType.AUTO_INPUT_WAKEUP);
                 } else if (execution.getExecutionState() == ExecutionState.COMPLETED) {
                     completed = execution;
                 }

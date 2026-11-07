@@ -45,6 +45,7 @@ import static org.mockito.Mockito.*;
 class ExecutionLifecycleOrchestratorImplTest {
 
     private static final String EXECUTION_ID = "900";
+    private static final long EXECUTION_ID_NUMERIC = 900L;
     private static final long SESSION_ID = 500L;
 
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
@@ -145,25 +146,42 @@ class ExecutionLifecycleOrchestratorImplTest {
     // ---------------- 自动触发 ----------------
 
     @Test
-    @DisplayName("自动触发：入队口径原样映射回执，不在请求线程恢复")
+    @DisplayName("自动触发：入队口径原样映射回执，且触发来源原样传给消费端")
     void automaticTriggerMapsDispositions() {
-        when(resumeCoordinator.accept(anyLong())).thenReturn(ResumeDisposition.QUEUED);
+        when(resumeCoordinator.accept(anyLong(), eq(ResumeTriggerType.AUTO_INPUT_WAKEUP)))
+                .thenReturn(ResumeDisposition.QUEUED);
         assertEquals(ResumeAcceptResult.ResumeOutcome.QUEUED, orchestrator().requestResume(
                 ResumeRequest.create(EXECUTION_ID, SESSION_ID, ResumeTriggerType.AUTO_INPUT_WAKEUP)).outcome());
 
-        when(resumeCoordinator.accept(anyLong())).thenReturn(ResumeDisposition.WAITING_OTHER_TOOLS);
+        when(resumeCoordinator.accept(anyLong(), eq(ResumeTriggerType.AUTO_INPUT_WAKEUP)))
+                .thenReturn(ResumeDisposition.WAITING_OTHER_TOOLS);
         assertEquals(ResumeAcceptResult.ResumeOutcome.WAITING_UNRESOLVED, orchestrator().requestResume(
                 ResumeRequest.create(EXECUTION_ID, SESSION_ID, ResumeTriggerType.AUTO_INPUT_WAKEUP)).outcome());
 
-        when(resumeCoordinator.accept(anyLong())).thenReturn(ResumeDisposition.RUNNING);
+        when(resumeCoordinator.accept(anyLong(), eq(ResumeTriggerType.AUTO_INPUT_WAKEUP)))
+                .thenReturn(ResumeDisposition.RUNNING);
         assertEquals(ResumeAcceptResult.ResumeOutcome.RUNNING, orchestrator().requestResume(
                 ResumeRequest.create(EXECUTION_ID, SESSION_ID, ResumeTriggerType.AUTO_INPUT_WAKEUP)).outcome());
 
-        when(resumeCoordinator.accept(anyLong())).thenReturn(ResumeDisposition.ENDED);
+        when(resumeCoordinator.accept(anyLong(), eq(ResumeTriggerType.AUTO_INPUT_WAKEUP)))
+                .thenReturn(ResumeDisposition.ENDED);
         assertEquals(ResumeAcceptResult.ResumeOutcome.ENDED, orchestrator().requestResume(
                 ResumeRequest.create(EXECUTION_ID, SESSION_ID, ResumeTriggerType.AUTO_INPUT_WAKEUP)).outcome());
 
         verify(resumer, never()).resume(any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("人工决策经编排器入队：传给消费端的来源必须是人工，不能退化成自动唤醒")
+    void approvalDecisionKeepsHumanTriggerWhenQueued() {
+        when(resumeCoordinator.accept(anyLong(), eq(ResumeTriggerType.APPROVAL_DECISION)))
+                .thenReturn(ResumeDisposition.QUEUED);
+
+        ResumeAcceptResult result = orchestrator().requestResume(
+                ResumeRequest.create(EXECUTION_ID, SESSION_ID, ResumeTriggerType.APPROVAL_DECISION));
+
+        assertEquals(ResumeAcceptResult.ResumeOutcome.QUEUED, result.outcome());
+        verify(resumeCoordinator).accept(EXECUTION_ID_NUMERIC, ResumeTriggerType.APPROVAL_DECISION);
     }
 
     private static SuspensionGate alwaysBlocked(String reason) {

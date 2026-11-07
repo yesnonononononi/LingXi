@@ -15,6 +15,7 @@ import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
 import com.summit.dp.toolcall.domain.model.*;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
@@ -182,7 +183,9 @@ public class VersionedToolCallDecisionService {
             repository.save(execution);
             modelContextService.replace(conversationId, execution.getMessages());
             // 恢复意图与决策同事务登记：不存在「决策已落库但恢复意图没落库」的窗口。
-            disposition[0] = resumeCoordinator.accept(current.getExecutionId());
+            // 触发来源必须显式声明为人工决策：自动轮次上限不该拦住用户刚做的批准。
+            disposition[0] = resumeCoordinator.accept(current.getExecutionId(),
+                    ResumeTriggerType.APPROVAL_DECISION);
         });
 
         ToolCall latest = toolCallRepository.findById(toolCall.getId()).orElse(toolCall);

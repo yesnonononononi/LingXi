@@ -14,6 +14,7 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
@@ -77,7 +78,9 @@ public class ResumeSupplementService {
                         .sessionId(sessionId).turnId(command.turnId()).type(SessionMessageType.USER)
                         .resumeRequestId(command.requestId()).text(content).createTime(Instant.now()).build();
                 messages.appendAll(sessionId, sessionId, List.of(message));
-                coordinator.accept(turn.getExecutionId());
+                // 补充要求是「外部输入到位」，不是人撤销暂停：按自动唤醒处理 —— 该被暂停与轮次上限
+                // 拦住时保持挂起（内容已落库，用户仍可手动恢复），避免一条补充把中断意图顶回去。
+                coordinator.accept(turn.getExecutionId(), ResumeTriggerType.AUTO_INPUT_WAKEUP);
                 return String.valueOf(message.getId());
             });
         }

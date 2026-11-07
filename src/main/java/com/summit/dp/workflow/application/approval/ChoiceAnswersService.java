@@ -18,6 +18,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
@@ -76,7 +77,8 @@ public class ChoiceAnswersService {
 
         repository.save(execution);
         contexts.replace(command.conversationId(), execution.getMessages());
-        return toReceipt(command, cards, resumeCoordinator.accept(executionId));
+        return toReceipt(command, cards,
+                resumeCoordinator.accept(executionId, ResumeTriggerType.APPROVAL_DECISION));
     }
 
     /** 按卡片标识排序回答：摘要计算与落库顺序都以该顺序为准。 */

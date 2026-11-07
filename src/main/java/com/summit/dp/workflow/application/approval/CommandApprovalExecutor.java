@@ -15,6 +15,7 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
@@ -155,7 +156,8 @@ public class CommandApprovalExecutor {
             toolCallRepository.updateById(current);
             repository.save(execution);
             modelContextService.replace(conversationId, execution.getMessages());
-            disposition[0] = resumeCoordinator.accept(current.getExecutionId());
+            disposition[0] = resumeCoordinator.accept(current.getExecutionId(),
+                    ResumeTriggerType.APPROVAL_DECISION);
         });
         if (completion != null) {
             completion.run();

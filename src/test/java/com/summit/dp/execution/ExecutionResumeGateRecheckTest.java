@@ -9,6 +9,7 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
+import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.session.application.service.ModelContextService;
@@ -21,6 +22,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
@@ -165,6 +167,55 @@ class ExecutionResumeGateRecheckTest {
         assertEquals(String.valueOf(EXECUTION_ID), captor.getValue().getId());
     }
 
+    @Test
+    @DisplayName("轮次上限已满 + 人工批准：消费端复检放行并真恢复，请求不判作废")
+    void autoRoundsAtLimitDoesNotBlockApprovalResume() {
+        stubImmediateDispatch();
+        Execution execution = stubSuspendedExecution(autoRoundsAtLimit());
+        when(executionControl.resume(any(Execution.class))).thenReturn(execution);
+
+        // 直连 accept：这就是 ApprovalFinalizer / ChoiceAnswersService / CommandApprovalExecutor /
+        // VersionedToolCallDecisionService 真实调用形态，不经过编排器。
+        ResumeDisposition disposition = coordinator.accept(EXECUTION_ID, ResumeTriggerType.APPROVAL_DECISION);
+
+        assertEquals(ResumeDisposition.QUEUED, disposition);
+        assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten(),
+                "人工批准不是自动接续，轮次上限不得拦住它 —— 拦住就是「回执说已受理、执行永远挂起」");
+        verify(executionControl).resume(any(Execution.class));
+        assertEquals(InputAutomationPolicy.MAX_AUTO_ROUNDS, InputAutomationPolicy.autoRounds(execution),
+                "放行不等于清标记：轮次计数仍由入口在自动接续时维护");
+    }
+
+    @Test
+    @DisplayName("轮次上限已满 + 自动唤醒：仍然作废请求并保持挂起")
+    void autoRoundsAtLimitStillBlocksAutomaticWakeup() {
+        stubImmediateDispatch();
+        stubSuspendedExecution(autoRoundsAtLimit());
+
+        coordinator.accept(EXECUTION_ID, ResumeTriggerType.AUTO_INPUT_WAKEUP);
+
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten(),
+                "自动唤醒继续受轮次上限约束，否则就是机器无限自转");
+        verify(executionControl, never()).resume(any());
+        verify(executionControl, never()).fail(any(), any());
+    }
+
+    @Test
+    @DisplayName("用户暂停中 + 人工批准：仍然作废，暂停标记原样保留")
+    void userPausedStillBlocksApprovalDecision() {
+        stubImmediateDispatch();
+        Execution execution = stubSuspendedExecution(
+                new HashMap<>(Map.of(InputAutomationPolicy.USER_PAUSED, true)));
+
+        coordinator.accept(EXECUTION_ID, ResumeTriggerType.APPROVAL_DECISION);
+
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten(),
+                "人按了暂停就是暂停：审批恢复不能替他取消，手动恢复才是唯一出口");
+        verify(executionControl, never()).resume(any());
+        assertTrue(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.USER_PAUSED),
+                "暂停标记必须原样保留，否则下一次自动唤醒就会在用户不知情时把执行拉起来");
+    }
+
     private Execution stubSuspendedExecution(Map<String, Object> attributes) {
         attributes.put(com.summit.dp.execution.ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID));
         Execution execution = Execution.builder().id(String.valueOf(EXECUTION_ID))
@@ -175,6 +226,23 @@ class ExecutionResumeGateRecheckTest {
                 .build();
         when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID))).thenReturn(Optional.of(execution));
         return execution;
+    }
+
+    /**
+     * 让 {@code accept} 驱动整条链路。
+     *
+     * <p>生产里 {@code afterCommit} 要等事务提交才回调；单测没有事务同步，直接立即执行，
+     * 这样测的就是「决策受理 → 派发 → 消费端复检」这条真实路径，而不是手调 {@code dispatch}。
+     */
+    private void stubImmediateDispatch() {
+        doAnswer(invocation -> {
+            invocation.getArgument(0, Runnable.class).run();
+            return null;
+        }).when(frameworkExecutions).afterCommit(any());
+    }
+
+    private static Map<String, Object> autoRoundsAtLimit() {
+        return new HashMap<>(Map.of(InputAutomationPolicy.AUTO_ROUNDS, InputAutomationPolicy.MAX_AUTO_ROUNDS));
     }
 
     private ResumeTaskState awaitStateWritten() {
