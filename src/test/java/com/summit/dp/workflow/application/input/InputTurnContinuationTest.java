@@ -72,7 +72,7 @@ class InputTurnContinuationTest {
                 .messages(new ArrayList<>()).agentRequest(AgentRequest.builder().runtimeParameters(
                         AgentRuntimeParameters.builder().attributes(Map.of(ExecutionAttributes.SESSION_ID, "10",
                                 ExecutionAttributes.AGENT_ID, "7")).build()).build()).build();
-        when(emails.pendingItemsAfter(10L, 7L, 0L)).thenReturn(List.of(EmailMessageVO.builder().id(1L)
+        when(emails.pendingItemsUndelivered(10L, 7L)).thenReturn(List.of(EmailMessageVO.builder().id(1L)
                 .emailId(2L).senderId(8L).content("迟到的真实输入").build()));
         return execution;
     }

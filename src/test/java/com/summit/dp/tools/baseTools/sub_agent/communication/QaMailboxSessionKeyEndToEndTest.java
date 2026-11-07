@@ -19,16 +19,20 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.domain.model.EmailMessage;
+import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
 import com.summit.dp.email.domain.repository.EmailMessageRepository;
 import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
+import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
+import com.summit.dp.email.infrastructure.repository.EmailMessageReceiptRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
+import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
@@ -75,6 +79,8 @@ class QaMailboxSessionKeyEndToEndTest {
     private EmailMessageMapper messageMapper;
     private EmailRepository emailRepository;
     private EmailMessageRepository messageRepository;
+    private EmailMessageReceiptRepository receiptRepository;
+    private MailReceiptFlusher flusher;
     private EmailServiceImpl service;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -89,6 +95,7 @@ class QaMailboxSessionKeyEndToEndTest {
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(EmailMapper.class);
         configuration.addMapper(EmailMessageMapper.class);
+        configuration.addMapper(EmailMessageReceiptMapper.class);
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         configuration.addInterceptor(interceptor);
@@ -101,6 +108,9 @@ class QaMailboxSessionKeyEndToEndTest {
         messageMapper = session.getMapper(EmailMessageMapper.class);
         emailRepository = new EmailRepositoryImpl(emailMapper);
         messageRepository = new EmailMessageRepositoryImpl(messageMapper);
+        receiptRepository = new EmailMessageReceiptRepositoryImpl(
+                session.getMapper(EmailMessageReceiptMapper.class));
+        flusher = new MailReceiptFlusher(receiptRepository, messageRepository);
         service = new EmailServiceImpl(emailRepository, messageRepository);
     }
 
@@ -177,12 +187,22 @@ class QaMailboxSessionKeyEndToEndTest {
                 "收尾判定与投递同键：有未处理输入时必须驻留，不得提前 COMPLETED");
 
         // 4) 下一轮全新根执行 E2：执行 id 与 E1 不同，会话 id 相同 —— 消费侧必须仍命中同一把邮箱。
-        List<Message> appended = new ArrayList<>();
+        Execution nextRound = execution("E2", ROOT_SESSION_ID, ROOT_AGENT_ID);
         EmailLoopInterceptor consumer = new EmailLoopInterceptor(new MailInputChannel(service));
-        consumer.onBeforeModelInvoke(rootContext("E2", ROOT_SESSION_ID, ROOT_AGENT_ID));
+        consumer.onBeforeModelInvoke(loopContext(nextRound, new ArrayList<>()));
 
-        // 5) 消费之后无 PENDING。
-        assertFalse(service.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID), "迟到邮件已被下一轮消费");
+        // 5) 注入后、检查点提交前：库里还没有回执，所以仍算「未投递」—— 崩在这一步只会重复注入。
+        assertTrue(service.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID),
+                "回执未落库时仍算未投递（宁可重复一次，不可丢）");
+
+        // 6) 检查点提交那次事务里写回执：此后同一封邮件不再被任何新执行取到。
+        flusher.flush(nextRound);
+        assertFalse(service.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID), "回执落库后不再是未投递");
+        assertEquals(1, receiptRepository.findMessageIdsByEmailId(
+                        emailRepository.findByBusinessKey(ROOT_SESSION_ID, ROOT_AGENT_ID).orElseThrow().getId())
+                .size(), "回执是权威判据：一封信只被认领一次");
+        assertTrue(service.pendingItemsUndelivered(ROOT_SESSION_ID, ROOT_AGENT_ID).isEmpty(),
+                "已认领的邮件绝不能再进任何一个新执行的上下文");
     }
 
     @Test
@@ -198,12 +218,14 @@ class QaMailboxSessionKeyEndToEndTest {
                 "{\"toAgentId\":100,\"mailContent\":\"构建产物已就绪\"}")).isSuccess());
 
         List<Message> appended = new ArrayList<>();
+        Execution nextRound = execution("E2", ROOT_SESSION_ID, ROOT_AGENT_ID);
         EmailLoopInterceptor consumer = new EmailLoopInterceptor(new MailInputChannel(service));
-        consumer.onBeforeModelInvoke(loopContext("E2", ROOT_SESSION_ID, ROOT_AGENT_ID, appended));
+        consumer.onBeforeModelInvoke(loopContext(nextRound, appended));
 
         assertEquals(1, appended.size(), "取信钩子应把待处理邮件作为一条用户消息注入");
         assertTrue(appended.getFirst().text().contains("构建产物已就绪"),
                 "实际注入的上下文应包含邮件正文，实际=" + appended.getFirst().text());
+        flusher.flush(nextRound);
         assertFalse(service.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID));
     }
 
@@ -216,11 +238,12 @@ class QaMailboxSessionKeyEndToEndTest {
     }
 
     private static LoopContext rootContext(String executionId, long sessionId, long agentId) {
-        return loopContext(executionId, sessionId, agentId, new ArrayList<>());
+        return loopContext(execution(executionId, sessionId, agentId), new ArrayList<>());
     }
 
-    private static LoopContext loopContext(String executionId, long sessionId, long agentId, List<Message> appended) {
-        Execution execution = Execution.builder()
+    /** 最小执行：只带会话与 Agent 属性，邮箱按键解析依赖它们。 */
+    private static Execution execution(String executionId, long sessionId, long agentId) {
+        return Execution.builder()
                 .id(executionId)
                 .agentRequest(AgentRequest.builder()
                         .workspaceSpec(TEST_WORKSPACE)
@@ -229,8 +252,11 @@ class QaMailboxSessionKeyEndToEndTest {
                                 ExecutionAttributes.AGENT_ID, String.valueOf(agentId))).build())
                         .build())
                 .build();
+    }
+
+    private static LoopContext loopContext(Execution execution, List<Message> appended) {
         LoopMessages loopMessages = LoopMessages.builder().execution(execution).build();
-        return new LoopContext(loopMessages, new ExecutionControlSignal(executionId), 0, appended::addAll);
+        return new LoopContext(loopMessages, new ExecutionControlSignal(execution.getId()), 0, appended::addAll);
     }
 
     private static final WorkspaceSpec TEST_WORKSPACE = new WorkspaceSpec() {

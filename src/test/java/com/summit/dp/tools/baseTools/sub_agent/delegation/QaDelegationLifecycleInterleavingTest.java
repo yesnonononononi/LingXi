@@ -127,7 +127,7 @@ class QaDelegationLifecycleInterleavingTest {
             return invocation.getArgument(0);
         });
         when(executionControl.fail(any(), any())).thenReturn(() -> { });
-        when(emailService.pendingItemsAfter(anyLong(), anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
+        when(emailService.pendingItemsUndelivered(anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
                 ? List.of(EmailMessageVO.builder().id(1L).senderId(8L).content("待处理交付").build()) : List.of());
 
         when(executions.findResumeGeneration(ROOT_EXECUTION_ID)).thenReturn(GENERATION);
@@ -226,15 +226,16 @@ class QaDelegationLifecycleInterleavingTest {
             pendingMail.set(mail);
             return Result.success(mail);
         });
-        when(emailService.pendingItemsAfter(ROOT_SESSION_ID, ROOT_AGENT_ID, 0L))
+        when(emailService.pendingItemsUndelivered(ROOT_SESSION_ID, ROOT_AGENT_ID))
                 .thenAnswer(invocation -> pendingMail.get() == null ? List.of() : List.of(pendingMail.get()));
-        doAnswer(invocation -> { pendingMail.set(null); return null; }).when(emailService).consumePendingItems(anyList());
         EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(new MailInputChannel(emailService));
         doAnswer(invocation -> {
             Execution root = invocation.getArgument(0);
             LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
                     new ExecutionControlSignal(root.getId()), 0, appended::addAll);
             mailConsumer.onBeforeModelInvoke(context);
+            // 回执由检查点保存路径落库；这是「已投递」的可观测等价事实，后续轮次不该再取到它。
+            pendingMail.set(null);
             resumeCount.incrementAndGet();
             return root;
         }).when(executionControl).resume(any());
@@ -345,7 +346,7 @@ class QaDelegationLifecycleInterleavingTest {
     void lateMailAfterStopIsConsumedByNextRoundUnderRootSessionKey() {
         EmailService mailbox = mock(EmailService.class);
         AtomicReference<long[]> consumedKey = new AtomicReference<>();
-        when(mailbox.pendingItemsAfter(anyLong(), anyLong(), anyLong())).thenAnswer(invocation -> {
+        when(mailbox.pendingItemsUndelivered(anyLong(), anyLong())).thenAnswer(invocation -> {
             consumedKey.set(new long[]{invocation.getArgument(0), invocation.getArgument(1)});
             return List.of();
         });

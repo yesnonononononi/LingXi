@@ -30,8 +30,12 @@ import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.application.vo.EmailMessageVO;
+import com.summit.dp.email.domain.model.EmailMessageReceipt;
+import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
+import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
+import com.summit.dp.email.infrastructure.repository.EmailMessageReceiptRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -174,6 +178,8 @@ class QaPendingMailRedelegationTest {
 
     private static void assertReceiptOnlyCompletion(Fixture fixture, Observation observed, int modelCalls) throws Exception {
         Execution completed = observed.execution();
+        // 轮末检查点提交时补写回执：生产中由 LocalExecutionRepository 在同一事务里执行这一步。
+        fixture.flusher.flush(completed);
         assertEquals(ExecutionState.COMPLETED, completed.getExecutionState());
         assertEquals(modelCalls, observed.requests().size());
         assertEquals(RECEIPT, completed.getAiMessage().getText());
@@ -229,12 +235,13 @@ class QaPendingMailRedelegationTest {
     private static final class Fixture implements AutoCloseable {
         private final AutoCloseable database;
         private final EmailService emails;
+        private final EmailMessageReceiptRepository receipts;
+        private final MailReceiptFlusher flusher;
         private final MailInputChannel mail;
         private final InputResolver inputs;
         private final Path artifact;
         private final AtomicInteger artifactCalls = new AtomicInteger();
         private final AtomicInteger mailCalls = new AtomicInteger();
-        private long mailCursor = 0L;
         private boolean mailAlreadyInjected = false;
         private final ObjectMapper json = new JsonConfig().objectMapper();
 
@@ -244,12 +251,16 @@ class QaPendingMailRedelegationTest {
             SqlSessionFactory factory;
             H2TestDatabase db = H2TestDatabase.create("pending-mail-redelegation");
             database = db; source = db;
-            factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class);
+            factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, EmailMessageReceiptMapper.class);
             SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
-            ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(new EmailRepositoryImpl(session.getMapper(EmailMapper.class)),
-                    new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class))));
+            EmailMessageRepositoryImpl messageRows = new EmailMessageRepositoryImpl(
+                    session.getMapper(EmailMessageMapper.class));
+            ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(
+                    new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows));
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
             emails = (EmailService) proxy.getProxy();
+            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
+            flusher = new MailReceiptFlusher(receipts, messageRows);
             mail = new MailInputChannel(emails);
             inputs = new InputResolver(mail,
                     new SubExecutionResultChannel(new SubExecutionDependency(new SessionExecutionRegistry(),
@@ -262,29 +273,29 @@ class QaPendingMailRedelegationTest {
         }
 
         /**
-         * 把「这批历史邮件已经注入过」这一事实记到游标上。
+         * 把「这批历史邮件已经注入过」这一事实写成回执。
          *
-         * <p>改造后「已注入」的权威判据是随检查点持久化的游标，不再是库里的消费状态：
-         * 只消费不推游标的崩溃窗口必须能重新读到，才不至于丢输入。所以要在用例里表达
-         * 「历史邮件已经进过上下文」，就必须推游标。</p>
+         * <p>权威判据是库里的回执，不是执行私有游标：新建执行 / 重发 / 旧检查点都没有那把游标，
+         * 因此要表达「历史邮件已经进过上下文」，只能真的写回执。</p>
          */
         private void markMailInjected() {
             mailAlreadyInjected = true;
         }
 
+        /** 给当前邮箱里所有未投递的邮件写回执（等价于「上一轮已把它们注入过上下文」）。 */
+        private void markMailDelivered() {
+            for (EmailMessageVO item : emails.pendingItemsUndelivered(10L, 6L)) {
+                if (receipts.findMessageIdsWithReceipt(List.of(item.getId())).isEmpty()) {
+                    receipts.save(EmailMessageReceipt.create(item.getId(), item.getEmailId(), 10L));
+                }
+            }
+        }
+
         private Observation run(boolean honorDelegation, boolean mailDuringOpening) {
             AgentRequest request = buildReusedRequest();
             if (mailAlreadyInjected) {
-                // 用生产同一套解析逻辑定位邮箱，避免用例自己猜收件键。
-                Map<String, Object> attributes = request.getRuntimeParameters().getAttributes();
-                Long mailbox = ExecutionAttributes.mailboxSessionId(attributes);
-                Long recipient = ExecutionAttributes.readLong(attributes, ExecutionAttributes.AGENT_ID);
-                long newest = mailbox == null || recipient == null ? 0L
-                        : emails.pendingItemsAfter(mailbox, recipient, 0L).stream()
-                                .map(EmailMessageVO::getId).reduce(0L, Math::max);
-                Map<String, Object> injected = new HashMap<>(attributes);
-                injected.put(ExecutionAttributes.LAST_MAIL_ID, newest);
-                request.getRuntimeParameters().setAttributes(injected);
+                // 历史邮件已投递：写回执，循环里就不该再取到它。
+                markMailDelivered();
             }
             List<List<Message>> requests = new ArrayList<>();
             Execution execution = Execution.create(request, "");

@@ -31,6 +31,9 @@ import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
+import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
+import com.summit.dp.email.infrastructure.repository.EmailMessageReceiptRepositoryImpl;
+import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -141,7 +144,7 @@ class InputSourceContractTest {
             });
             Task task = Task.builder().id(20L).sessionId(10L).turnId(30L).executionId(100L).command("test").build();
             task.finish(TaskStatus.SUCCESS, "任务交付", 0, false);
-            InputTurnAdmission target = new InputTurnAdmission(executor, fixture.emails, turns,
+            InputTurnAdmission target = new InputTurnAdmission(executor, turns,
                     new StaticListableBeanFactory(Map.of("snapshots", snapshots))
                             .getBeanProvider(ExecutionRepository.class), fixture.mail, fixture.background);
             ProxyFactory proxy = new ProxyFactory(target);
@@ -153,11 +156,21 @@ class InputSourceContractTest {
             assertThrows(IllegalStateException.class, () -> admission.admit(context, fixture.execution,
                     "batch-command", selected, List.of(task)));
             assertNull(fixture.turnRows.selectById(300L));
-            assertEquals(selected, fixture.mail.pollPendingItems(fixture.execution));
-            doNothing().when(snapshots).save(fixture.execution);
+            // 回滚后库里没有回执：重新加载的执行（等价于重启后）仍必须取到这条输入。
+            assertEquals(selected, fixture.mail.pollPendingItems(fixture.reloaded()));
+            assertTrue(fixture.receipts.findMessageIdsWithReceipt(List.of(selected.getFirst().getId())).isEmpty(),
+                    "回滚不得留下回执");
+            // 生产里 save 会在同一事务里补写回执，这里用同样的动作复刻。
+            doAnswer(call -> {
+                fixture.flusher.flush(call.getArgument(0));
+                return null;
+            }).when(snapshots).save(fixture.execution);
             admission.admit(context, fixture.execution, "batch-command", selected, List.of(task));
             assertNotNull(fixture.turnRows.selectById(300L));
-            assertTrue(fixture.mail.pollPendingItems(fixture.execution).isEmpty());
+            assertFalse(fixture.receipts.findMessageIdsWithReceipt(List.of(selected.getFirst().getId())).isEmpty(),
+                    "提交后回执必须落库");
+            assertTrue(fixture.mail.pollPendingItems(fixture.reloaded()).isEmpty(),
+                    "回执落库后重新加载的执行不再取到同一封");
             assertEquals(1, InputAutomationPolicy.autoRounds(next));
         }
     }
@@ -195,6 +208,8 @@ class InputSourceContractTest {
         private final ChatTurnMapper turnRows;
         private final ExecutionMapper executionRows;
         private final EmailService emails;
+        private final EmailMessageReceiptRepository receipts;
+        private final MailReceiptFlusher flusher;
         private final MailInputChannel mail;
         private final TaskRepositoryImpl tasks;
         private final BackgroundTaskNotifications notifications = new BackgroundTaskNotifications();
@@ -210,16 +225,21 @@ class InputSourceContractTest {
             SqlSessionFactory factory;
             H2TestDatabase db = H2TestDatabase.create("input-contract");
             database = db; source = db;
-            factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
+            factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, EmailMessageReceiptMapper.class,
+                    TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
             SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
             dataSource = source;
             turnRows = session.getMapper(ChatTurnMapper.class);
             executionRows = session.getMapper(ExecutionMapper.class);
-            EmailServiceImpl target = new EmailServiceImpl(new EmailRepositoryImpl(session.getMapper(EmailMapper.class)),
-                    new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class)));
+            EmailMessageRepositoryImpl messageRows = new EmailMessageRepositoryImpl(
+                    session.getMapper(EmailMessageMapper.class));
+            EmailServiceImpl target = new EmailServiceImpl(
+                    new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows);
             ProxyFactory proxy = new ProxyFactory(target);
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
             emails = (EmailService) proxy.getProxy();
+            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
+            flusher = new MailReceiptFlusher(receipts, messageRows);
             mail = new MailInputChannel(emails);
             tasks = new TaskRepositoryImpl(session.getMapper(TaskMapper.class));
             background = new BackgroundTaskChannel(tasks, notifications);
@@ -230,5 +250,14 @@ class InputSourceContractTest {
         }
 
         @Override public void close() throws Exception { database.close(); }
+
+        /** 重新加载的执行：等价于进程重启后从检查点读出的新实例（内存属性全丢）。 */
+        private Execution reloaded() {
+            return Execution.builder().id("100").executionState(ExecutionState.RUNNING)
+                    .messages(new ArrayList<Message>()).agentRequest(AgentRequest.builder()
+                            .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
+                                    ExecutionAttributes.SESSION_ID, "10",
+                                    ExecutionAttributes.AGENT_ID, "7")).build()).build()).build();
+        }
     }
 }

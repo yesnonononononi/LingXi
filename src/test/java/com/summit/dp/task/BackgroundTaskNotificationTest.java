@@ -163,7 +163,7 @@ class BackgroundTaskNotificationTest {
     @Test void terminalWaitCannotMaskTheExistingCollaborationInputWakeup() {
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task(1L)));
         EmailService email = mock(EmailService.class);
-        when(email.pendingItemsAfter(10L, 7L, 0L)).thenReturn(List.of(EmailMessageVO.builder().id(2L).content("协作输入").build()));
+        when(email.pendingItemsUndelivered(10L, 7L)).thenReturn(List.of(EmailMessageVO.builder().id(2L).content("协作输入").build()));
         SubAgentWaitInterceptor collaboration = new SubAgentWaitInterceptor(InputTestSupport.collaboration(mock(SessionExecutionRegistry.class), email));
         Execution execution = execution(100L, 10L, false);
         execution.getAgentRequest().runtimeParametersOrDefault().setAttributes(
@@ -171,7 +171,7 @@ class BackgroundTaskNotificationTest {
         DefaultLoopInterceptorProcessor processor = new DefaultLoopInterceptorProcessor(List.of(interceptor, collaboration));
         assertEquals(LoopResult.Status.CONTINUE, processor.onBeforeComplete(context(execution)).loopResult().status());
         verifyNoInteractions(coordinator);
-        verify(email).pendingItemsAfter(10L, 7L, 0L);
+        verify(email).pendingItemsUndelivered(10L, 7L);
     }
 
     @Test void realLoopProcessesCompletionInTheSameExecution() throws Exception {

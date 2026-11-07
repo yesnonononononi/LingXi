@@ -137,7 +137,7 @@ class QaIndependentDelegationLifecycleTest {
             return invocation.getArgument(0);
         });
         when(executionControl.fail(any(), any())).thenReturn(() -> { });
-        when(emailService.pendingItemsAfter(anyLong(), anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
+        when(emailService.pendingItemsUndelivered(anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
                 ? List.of(EmailMessageVO.builder().id(1L).senderId(8L).content("待处理交付").build()) : List.of());
 
         when(executions.findResumeGeneration(ROOT_EXECUTION_ID)).thenReturn(GENERATION);

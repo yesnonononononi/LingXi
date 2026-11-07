@@ -10,6 +10,8 @@ import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
+import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
+import com.summit.dp.email.infrastructure.repository.EmailMessageReceiptRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -72,6 +74,7 @@ class PendingInputChannelGuardTest {
     private H2TestDatabase database;
     private SqlCaptureInterceptor capture;
     private EmailService emails;
+    private MailReceiptFlusher flusher;
     private SessionMessageRepositoryImpl messages;
     private ChatTurnService turns;
     private ResumeSupplementVersionRegistry versions;
@@ -83,7 +86,7 @@ class PendingInputChannelGuardTest {
         capture = new SqlCaptureInterceptor();
         MybatisConfiguration configuration = database.configuration(
                 SessionMessageMapper.class, SessionMapper.class, EmailMapper.class, EmailMessageMapper.class,
-                TaskMapper.class);
+                EmailMessageReceiptMapper.class, TaskMapper.class);
         configuration.addInterceptor(capture);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
@@ -96,12 +99,15 @@ class PendingInputChannelGuardTest {
 
         messages = new SessionMessageRepositoryImpl(template.getMapper(SessionMessageMapper.class),
                 template.getMapper(SessionMapper.class));
+        EmailMessageRepositoryImpl emailMessages = new EmailMessageRepositoryImpl(
+                template.getMapper(EmailMessageMapper.class));
         ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(
-                new EmailRepositoryImpl(template.getMapper(EmailMapper.class)),
-                new EmailMessageRepositoryImpl(template.getMapper(EmailMessageMapper.class))));
+                new EmailRepositoryImpl(template.getMapper(EmailMapper.class)), emailMessages));
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(database),
                 new AnnotationTransactionAttributeSource()));
         emails = (EmailService) proxy.getProxy();
+        flusher = new MailReceiptFlusher(new EmailMessageReceiptRepositoryImpl(
+                template.getMapper(EmailMessageReceiptMapper.class)), emailMessages);
         turns = mock(ChatTurnService.class);
         versions = new ResumeSupplementVersionRegistry();
         supplements = new ResumeSupplementChannel(messages, turns, new ObjectMapper().findAndRegisterModules(), versions);
@@ -172,11 +178,11 @@ class PendingInputChannelGuardTest {
                 + "\n需要完整已保存输出时，使用 manage_command 的 snapshot 操作并传入 taskId。", taskText);
     }
 
-    // ---------- ③ 崩溃窗口：不丢优先，允许重复一次 ----------
+    // ---------- ③ 崩溃窗口：回执与检查点同批提交，不丢优先 ----------
 
     @Test
-    @DisplayName("游标已推进但全局消费失败：同一执行不再重复注入，新实例(检查点未落)重新读到")
-    void cursorSurvivesConsumeFailureButNeverLosesInput() {
+    @DisplayName("同一轮内不重复注入；回执未落库时重建立即重新取到（重复而非丢失）")
+    void receiptKeepsRoundLocalDedupeButNeverLosesInput() {
         emails.sendMail(7L, "崩溃窗口输入", new MailSendContext(SESSION_ID, 8L, null));
         MailInputChannel channel = new MailInputChannel(emails);
         Execution execution = execution(7L);
@@ -184,22 +190,27 @@ class PendingInputChannelGuardTest {
         assertEquals(1, polled.size());
 
         channel.markConsumed(execution, polled);
-        // 全局消费失败（网关/锁冲突）：注入事实不受影响。
-        channel.cleanupAfterConsume(execution, List.of(EmailMessageVO.builder().id(-1L).build()));
-        assertTrue(channel.pollPendingItems(execution).isEmpty(), "游标已推进，同一执行不得重复注入");
+        assertTrue(channel.pollPendingItems(execution).isEmpty(), "同一执行同一轮不得重复注入");
 
         // 检查点没落库 = 内存全丢：新实例必须重新读到（宁可重复一次，不可丢）。
         assertEquals(1, channel.pollPendingItems(execution(7L)).size(),
-                "检查点未落库时重启必须重新取到这条输入");
+                "回执未落库时重启必须重新取到这条输入");
+
+        // 检查点那次事务提交（回执落库）之后，任何新实例都不再取到这封信。
+        flusher.flush(execution);
+        assertTrue(channel.pollPendingItems(execution(7L)).isEmpty(),
+                "回执是权威判据：落库后任何新执行都不许再注入");
     }
 
     @Test
-    @DisplayName("邮件按 id 游标取：已被全局消费但游标未推进的消息仍能取到")
-    void consumedButNotCursorAdvancedIsStillVisible() {
-        EmailMessageVO sent = emails.sendMail(7L, "只消费未推游标", new MailSendContext(SESSION_ID, 8L, null)).getData();
+    @DisplayName("状态已是 CONSUMED 但没有回执：仍必须投递一次（不按 status 过滤）")
+    void consumedWithoutReceiptIsStillDelivered() {
+        EmailMessageVO sent = emails.sendMail(7L, "只消费未写回执", new MailSendContext(SESSION_ID, 8L, null)).getData();
+        // 旧实现/人工清理会把消息置 CONSUMED 却不记回执：按 status 过滤就会永久丢掉这条输入。
         emails.consumePending(SESSION_ID, 7L);
         List<EmailMessageVO> polled = new MailInputChannel(emails).pollPendingItems(execution(7L));
-        assertEquals(List.of(sent.getId()), polled.stream().map(EmailMessageVO::getId).toList());
+        assertEquals(List.of(sent.getId()), polled.stream().map(EmailMessageVO::getId).toList(),
+                "判据是回执，不是 status");
     }
 
     // ---------- ④ §4.4 门禁：冷启动必查一次，之后零查库 ----------
