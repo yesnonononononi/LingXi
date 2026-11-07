@@ -15,12 +15,15 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.input.ResumeSupplementVersionRegistry;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
@@ -39,6 +42,8 @@ public class ResumeSupplementService {
     private final ExecutionResumeCoordinator coordinator;
     private final TransactionTemplate transactions;
     private final ObjectMapper json;
+    /** 检查点之外的脏版本事实：让拦截器能证明「没有新补充」从而零查库。 */
+    private final ResumeSupplementVersionRegistry supplementVersions;
 
     public String accept(Long sessionId, ResumeSupplementCommand command) {
         throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
@@ -78,6 +83,10 @@ public class ResumeSupplementService {
                         .sessionId(sessionId).turnId(command.turnId()).type(SessionMessageType.USER)
                         .resumeRequestId(command.requestId()).text(content).createTime(Instant.now()).build();
                 messages.appendAll(sessionId, sessionId, List.of(message));
+                // 提交成功即意味着「该执行至少多了这一条补充」：把脏版本记到检查点之外，
+                // 拦截器据此判断「需不需要查库」。事务还没提交就记早一点只会多查一次库，
+                // 绝不会少查，所以这里放在提交前也安全；但按纪律仍在提交后记。
+                noteAppendedAfterCommit(turn.getExecutionId(), message.getId());
                 // 补充要求是「外部输入到位」，不是人撤销暂停：按自动唤醒处理 —— 该被暂停与轮次上限
                 // 拦住时保持挂起（内容已落库，用户仍可手动恢复），避免一条补充把中断意图顶回去。
                 coordinator.accept(turn.getExecutionId(), ResumeTriggerType.AUTO_INPUT_WAKEUP);
@@ -88,5 +97,24 @@ public class ResumeSupplementService {
 
     private void throwIf(boolean condition, String err) {
         if (condition) throw new ClientException(err);
+    }
+
+    /**
+     * 补充提交成功后把脏版本记到进程内：拦截器据此判断「需不需要查库」。
+     *
+     * <p>挂到 {@code afterCommit} 而不是提交前：提交前记会让回滚后的执行也显示「有新补充」，
+     * 虽然只是多查一次库，但账要与库内事实一致。</p>
+     */
+    private void noteAppendedAfterCommit(long executionId, long supplementMessageId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    supplementVersions.noteAppended(executionId, supplementMessageId);
+                }
+            });
+            return;
+        }
+        supplementVersions.noteAppended(executionId, supplementMessageId);
     }
 }

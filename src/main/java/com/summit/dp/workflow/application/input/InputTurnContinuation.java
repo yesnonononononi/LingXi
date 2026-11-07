@@ -14,25 +14,28 @@ import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/** 正常完成后的新输入经标准受理创建真实身份，不复活旧执行。 */
+/**
+ * 正常完成后的新输入经标准受理创建真实身份，不复活旧执行。
+ *
+ * <p><b>文本只由通道拼</b>：这里不再感知「邮件长什么样、任务结果长什么样」，
+ * 只负责按通道顺序取 {@link InputInjectionStage#CONTINUATION} 阶段的文本并串起来。
+ * 改造前这里另有一份「成员 @x 发来消息」的拼装，与循环内拦截器那份是同一件事的两份代码，
+ * 改一处忘一处就会出现「循环内注入的话术和续跑的不一样」。</p>
+ */
 @Component
 @RequiredArgsConstructor
 public class InputTurnContinuation {
     private final ExecutionRepository executions;
     private final ChatTurnRepository turns;
     private final SessionExecutionRegistry registry;
-    private final MailInputSource mailSource;
-    private final BackgroundTaskInputSource taskSource;
-    private final BackgroundTaskNotifications notifications;
+    private final MailInputChannel mailChannel;
+    private final BackgroundTaskChannel taskChannel;
     private final InputTurnAdmission admission;
     private final RequestPreparer preparer;
     private final PreparedChatExecutor executor;
@@ -51,17 +54,18 @@ public class InputTurnContinuation {
                 wakeups.getObject().resumeIfInputPending(latest);
                 return;
             }
-            List<EmailMessageVO> mail = mailSource.pendingItems(previous);
-            List<Task> tasks = taskSource.pendingItems(previous);
+            List<EmailMessageVO> mail = mailChannel.pollPendingItems(previous);
+            List<Task> tasks = taskChannel.pollPendingItems(previous);
             if (mail.isEmpty() && tasks.isEmpty()) return;
             String commandId = "auto-input:" + sessionId + ":" + DigestUtil.sha256Hex(
                     mail.stream().map(item -> "mail:" + item.getId()).toList().toString()
                     + tasks.stream().map(task -> "task:" + task.getId()).toList());
             if (turns.findByCommandId(commandId).isPresent()) return;
-            StringBuilder text = new StringBuilder("以下是新到达的协作与任务输入，请接续处理：\n");
-            for (EmailMessageVO item : mail) text.append("成员 @").append(item.getSenderId())
-                    .append(" 发来消息：\n").append(item.getContent()).append('\n');
-            for (Task task : tasks) text.append(notifications.format(task)).append('\n');
+            StringBuilder text = new StringBuilder(PendingInputTexts.CONTINUATION_HEADER);
+            mailChannel.formatForModelContext(previous, mail, InputInjectionStage.CONTINUATION)
+                    .forEach(text::append);
+            taskChannel.formatForModelContext(previous, tasks, InputInjectionStage.CONTINUATION)
+                    .forEach(line -> text.append(line).append('\n'));
             ChatCommand command = new ChatCommand(text.toString(), sessionId, null, null, null,
                     ExecutionAttributes.readLong(InputAutomationPolicy.attributes(previous), ExecutionAttributes.AGENT_ID),
                     false, List.of(), List.of());
@@ -87,3 +91,4 @@ public class InputTurnContinuation {
         executor.submitAsync(admitted);
     }
 }
+
