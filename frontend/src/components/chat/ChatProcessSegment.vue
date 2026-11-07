@@ -89,7 +89,7 @@ const isRunningTurn = computed(() => props.turn
     <CollapseTransition>
       <div v-if="visible && expanded" class="mt-1">
         <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。 -->
-        <div class="h-[480px] max-h-[70dvh] overflow-y-auto overscroll-y-contain pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
+        <div class="max-h-[min(480px,70dvh)] overflow-y-auto overscroll-y-contain pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
           ref="detailsBox" data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')">
           <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"
             :file-edits="message.fileEdits" :is-message-complete="message.isComplete"

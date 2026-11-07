@@ -67,6 +67,17 @@ window.appendProcesses = async () => {
     args:{path:'extra-file-' + index + '.java'}})));
   await window.flush();
 };
+window.showCompactProcess = async kind => {
+  turn.value = {status:'COMPLETED'};
+  message.value = {id:'compact-' + kind,role:'assistant',turnId:'902',timestamp:0,
+    content:'核对完成。',isComplete:true,
+    thoughtSteps:kind === 'empty-thought' || kind === 'short-thought'
+      ? [{id:'compact-thought',order:0,title:'思考',status:'success',
+          content:kind === 'short-thought' ? '只需核对这一个文件。' : ''}] : [],
+    toolCalls:kind === 'tool' ? [{id:'compact-tool',toolName:AgentToolName.ReadFile,order:0,
+      status:'success',args:{path:'one-file.java'}}] : []};
+  mountKey.value++; await window.flush();
+};
 </script>
 <template><main class="mx-auto max-w-lx-chat px-4 py-10">
 <ChatMessageItem :key="mountKey" :message="message" :turn="turn" :is-dark="dark" session-id="7" />
@@ -193,6 +204,28 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   await fs.writeFile(path.join(output, 'completed-between-text.png'), (await window.webContents.capturePage()).toPNG());
   for (const [name, width, height, dark] of [['scroll-light', 1000, 900, false], ['scroll-dark', 1000, 900, true], ['scroll-small', 360, 600, true]]) {
     window.setContentSize(width, height);
+    await evaluate(`window.setDark(${dark})`);
+    for (const kind of ['none', 'empty-thought', 'short-thought', 'tool']) {
+      await evaluate(`window.showCompactProcess('${kind}')`);
+      if (kind === 'none') {
+        assert.equal(await evaluate(`document.querySelector('[data-testid=whole-process]')`), null, '没有过程时不渲染过程区');
+        continue;
+      }
+      await evaluate(`document.querySelector('[data-testid=whole-process-toggle]').click(); window.flush()`);
+      await evaluate(`document.querySelector('[data-testid=process-segment-toggle]').click(); window.flush()`);
+      const compactHeight = await evaluate(`document.querySelector('[data-testid=process-segment-details]').clientHeight`);
+      assert.ok(compactHeight > 0 && compactHeight < 60, '仅有标题或单行工具时按内容收缩：' + kind + ', height=' + compactHeight);
+      if (kind === 'short-thought') {
+        const toggleThought = `document.querySelector('[data-testid=process-segment-details] button').click(); window.flush()`;
+        await evaluate(toggleThought);
+        const expandedHeight = await evaluate(`document.querySelector('[data-testid=process-segment-details]').clientHeight`);
+        assert.ok(expandedHeight > compactHeight && expandedHeight < 160, '短思考展开后也只占内容高度');
+        await evaluate(toggleThought);
+        const collapsedHeight = await evaluate(`document.querySelector('[data-testid=process-segment-details]').clientHeight`);
+        assert.equal(collapsedHeight, compactHeight, '思考收起后外层立即收缩，不留下空白');
+        await fs.writeFile(path.join(output, 'compact-' + name + '.png'), (await window.webContents.capturePage()).toPNG());
+      }
+    }
     await evaluate(`window.setDark(${dark}); window.showManyProcesses()`);
     await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
     const readScrollGeometry = () => evaluate(`(() => {
@@ -204,7 +237,7 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     const boxes = await readScrollGeometry();
     assert.equal(boxes.length, 2, '每个过程段各有独立滚动框');
     for (const box of boxes) {
-      assert.ok(Math.abs(box.height - Math.min(480, height * 0.7)) <= 1, '固定高度充足，且适配较矮窗口：' + JSON.stringify(box));
+      assert.ok(Math.abs(box.height - Math.min(480, height * 0.7)) <= 1, '长过程高度上限充足，且适配较矮窗口：' + JSON.stringify(box));
       assert.ok(box.content > box.height * 2, '大量工具项必须在框内溢出');
       assert.ok(Math.abs(box.content - box.height - box.top) <= 1, '展开后默认从最新过程开始');
       assert.equal(box.overflow, 'auto');
@@ -246,6 +279,6 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   }
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, 'measurements.json'), JSON.stringify(measurements, null, 2));
-  console.log('过程区：节点摘要、整轮折叠、深浅主题、窄屏、历史展开选择及各段固定高度独立滚动验证通过。截图：' + output);
+  console.log('过程区：空内容与短内容自然收缩、长内容限高滚动、展开定位底部、深浅主题及窄屏验证通过。截图：' + output);
   clearTimeout(deadline); window.destroy(); app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); if (window) window.destroy(); app.exit(1); });
