@@ -17,6 +17,7 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.workflow.application.input.InputResolver;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecutionInputSource;
@@ -50,7 +51,9 @@ public final class InputTestSupport {
     }
 
     public static InputResolver collaboration(SessionExecutionRegistry registry, EmailService emails) {
-        return new InputResolver(List.of(new MailInputSource(emails), new SubExecutionInputSource(registry, mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class))),
+        SubExecutionDependency dependency = new SubExecutionDependency(registry,
+                mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class));
+        return new InputResolver(List.of(new MailInputSource(emails), new SubExecutionInputSource(dependency)),
                 new ObjectMapper().findAndRegisterModules());
     }
 

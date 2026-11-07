@@ -39,6 +39,7 @@ import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
@@ -165,8 +166,9 @@ class InputSourceContractTest {
             child.setVersion(0L);
             child.setResumeGeneration(1L);
             fixture.executionRows.insert(child);
-            SubExecutionInputSource source = new SubExecutionInputSource(new SessionExecutionRegistry(), sessions,
-                    new ExecutionRepositoryImpl(fixture.executionRows));
+            SubExecutionInputSource source = new SubExecutionInputSource(
+                    new SubExecutionDependency(new SessionExecutionRegistry(), sessions,
+                            new ExecutionRepositoryImpl(fixture.executionRows)));
             assertTrue(source.hasOpenDependency(fixture.execution));
             child.setStatus(ExecutionStatusCodes.COMPLETED);
             fixture.executionRows.updateById(child);
@@ -213,7 +215,9 @@ class InputSourceContractTest {
             mail = new MailInputSource(emails);
             tasks = new TaskRepositoryImpl(session.getMapper(TaskMapper.class));
             background = new BackgroundTaskInputSource(tasks, notifications);
-            resolver = new InputResolver(List.of(mail, background, new SubExecutionInputSource(new SessionExecutionRegistry(), mock(SessionRepository.class), new ExecutionRepositoryImpl(executionRows))),
+            resolver = new InputResolver(List.of(mail, background, new SubExecutionInputSource(
+                    new SubExecutionDependency(new SessionExecutionRegistry(), mock(SessionRepository.class),
+                            new ExecutionRepositoryImpl(executionRows)))),
                     new ObjectMapper().findAndRegisterModules());
         }
 

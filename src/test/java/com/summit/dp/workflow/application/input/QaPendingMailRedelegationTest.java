@@ -53,6 +53,7 @@ import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
@@ -244,8 +245,8 @@ class QaPendingMailRedelegationTest {
             mail = new MailInputSource(emails);
             inputs = new InputResolver(List.of(mail,
                     new BackgroundTaskInputSource(mock(TaskRepository.class), new BackgroundTaskNotifications()),
-                    new SubExecutionInputSource(new SessionExecutionRegistry(), mock(SessionRepository.class),
-                            mock(ExecutionRepositoryImpl.class))), json);
+                    new SubExecutionInputSource(new SubExecutionDependency(new SessionExecutionRegistry(),
+                            mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class)))), json);
         }
 
         private void sendLegacyMail() {
