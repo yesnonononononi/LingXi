@@ -115,6 +115,12 @@ class ExecutionResumeGateRecheckTest {
             stateWritten.countDown();
             return true;
         });
+        // 受理时把来源合并进同一个任务对象：生产里 enqueue 会把来源写进库、消费端从行上读回来，
+        // 这里用 mock 仓储，必须显式模拟「来源随着请求被记住」，否则所有请求都会退化成自动唤醒。
+        when(tasks.enqueue(anyLong(), anyLong(), any(), any())).thenAnswer(invocation -> {
+            task.get().promoteSource(invocation.getArgument(3));
+            return task.get();
+        });
     }
 
     @AfterEach
@@ -133,8 +139,8 @@ class ExecutionResumeGateRecheckTest {
 
         coordinator.dispatch(EXECUTION_ID);
 
-        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten(),
-                "门禁拦住只是「还没条件恢复」，必须作废本次请求而不是判失败");
+        assertEquals(ResumeTaskState.DEFERRED, awaitStateWritten(),
+                "门禁拦住只是「还没条件恢复」：请求必须保留可重试，不能烧成作废，也不能判失败");
         verify(executionControl, never()).resume(any());
         verify(executionControl, never()).fail(any(), any());
         verify(modelContextService, never()).replace(anyLong(), any());
@@ -147,7 +153,7 @@ class ExecutionResumeGateRecheckTest {
 
         coordinator.dispatch(EXECUTION_ID);
 
-        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten());
+        assertEquals(ResumeTaskState.DEFERRED, awaitStateWritten());
         verify(executionControl, never()).resume(any());
         assertTrue(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.USER_PAUSED),
                 "自动唤醒绝不能替人清掉暂停意图");
@@ -194,8 +200,8 @@ class ExecutionResumeGateRecheckTest {
 
         coordinator.accept(EXECUTION_ID, ResumeTriggerType.AUTO_INPUT_WAKEUP);
 
-        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten(),
-                "自动唤醒继续受轮次上限约束，否则就是机器无限自转");
+        assertEquals(ResumeTaskState.DEFERRED, awaitStateWritten(),
+                "自动唤醒继续受轮次上限约束（否则就是机器无限自转），但请求保留可重试");
         verify(executionControl, never()).resume(any());
         verify(executionControl, never()).fail(any(), any());
     }
@@ -209,8 +215,8 @@ class ExecutionResumeGateRecheckTest {
 
         coordinator.accept(EXECUTION_ID, ResumeTriggerType.APPROVAL_DECISION);
 
-        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten(),
-                "人按了暂停就是暂停：审批恢复不能替他取消，手动恢复才是唯一出口");
+        assertEquals(ResumeTaskState.DEFERRED, awaitStateWritten(),
+                "人按了暂停就是暂停：审批恢复不能替他取消，手动恢复才是唯一出口（请求保留可重试）");
         verify(executionControl, never()).resume(any());
         assertTrue(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.USER_PAUSED),
                 "暂停标记必须原样保留，否则下一次自动唤醒就会在用户不知情时把执行拉起来");
