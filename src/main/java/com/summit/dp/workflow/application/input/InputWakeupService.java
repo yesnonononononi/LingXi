@@ -4,6 +4,9 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
+import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import jakarta.annotation.PreDestroy;
@@ -28,6 +31,8 @@ public class InputWakeupService {
     private final InputNoticeReporter notices;
     private final ObjectProvider<ExecutionResumeCoordinator> resumes;
     private final ObjectProvider<InputTurnContinuation> continuations;
+    /** 自动唤醒必须过同一套挂起门禁：用户暂停与自动轮次上限都在那里拦。 */
+    private final SuspensionGateChain gates;
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
 
     public CompletableFuture<Void> resumeIfInputPending(long executionId) {
@@ -58,6 +63,12 @@ public class InputWakeupService {
                 String reason = policy.blockedReason(execution);
                 if (reason != null) {
                     notices.report(execution, batchKey, reason);
+                    return;
+                }
+                // 终态语义之后再过挂起门禁：用户暂停 / 自动轮次上限 / 等待子代理三门禁都拦住自动唤醒。
+                GateCheckResult readiness = gates.checkReadiness(execution, ResumeTriggerType.AUTO_INPUT_WAKEUP);
+                if (!readiness.allowed()) {
+                    notices.report(execution, batchKey, readiness.reason());
                     return;
                 }
                 if (execution.getExecutionState() == ExecutionState.SUSPENDED) {

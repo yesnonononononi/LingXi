@@ -87,7 +87,8 @@ class ChatResumeTeamAttributeTest {
                 sessionRepository, sessionExecutionRegistry,
                 executionIdentity,
                 new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService,
-                        sessionExecutionRegistry, executionControl),
+                        sessionExecutionRegistry, executionControl,
+                        new StartupFailureCloser(executionControl)),
                 chatTurnService,
                 mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
                 // 本测试只盯 resume 的属性补齐，重发链路用不到。

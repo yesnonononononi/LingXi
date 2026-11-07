@@ -31,10 +31,7 @@ public class StartupFailureCloser {
         }
         try {
             ExecutionState state = execution.getExecutionState();
-            if (ExecutionStateCodec.isTerminalState(state)) {
-                return false;
-            }
-            if (role != ExecutionLaunchRole.RESUME && state == ExecutionState.SUSPENDED) {
+            if (!closeable(state, role)) {
                 return false;
             }
             executionControl.fail(execution, cause).run();
@@ -44,5 +41,27 @@ public class StartupFailureCloser {
                     execution.getId(), cause.toString(), failFailure.toString());
             return false;
         }
+    }
+
+    /**
+     * 各角色真正能收口的状态。
+     *
+     * <p>{@link ExecutionLaunchRole#SUB_AGENT} 只收 {@code CREATED}：子 loop 一旦跑起来，
+     * 它内部的失败由框架自己 fail 过，业务侧再补一次会撞上「非法状态转换」。</p>
+     *
+     * <p>{@link ExecutionLaunchRole#ROOT} 收 {@code CREATED}/{@code RUNNING}：挂起可恢复，
+     * 终态已被框架收过，两者都不能碰。</p>
+     *
+     * <p>{@link ExecutionLaunchRole#RESUME} 连挂起也收：已批准但恢复没起步必须有个终态。</p>
+     */
+    private boolean closeable(ExecutionState state, ExecutionLaunchRole role) {
+        if (ExecutionStateCodec.isTerminalState(state)) {
+            return false;
+        }
+        return switch (role) {
+            case ROOT -> state != ExecutionState.SUSPENDED;
+            case SUB_AGENT -> state == ExecutionState.CREATED;
+            case RESUME -> true;
+        };
     }
 }

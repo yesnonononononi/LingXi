@@ -54,6 +54,8 @@ import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
@@ -200,7 +202,8 @@ class QaPendingMailRedelegationTest {
         InputWakeupService wakeups = new InputWakeupService(provider(ExecutionRepository.class, snapshots),
                 provider(ExecutionActivity.class, mock(ExecutionActivity.class)), fixture.inputs,
                 new InputAutomationPolicy(new SessionExecutionRegistry()), notices,
-                provider(ExecutionResumeCoordinator.class, resumes), provider(InputTurnContinuation.class, continuations));
+                provider(ExecutionResumeCoordinator.class, resumes), provider(InputTurnContinuation.class, continuations),
+                new SuspensionGateChain(List.of(new UserPauseSuspensionGate())));
         try {
             wakeups.resumeIfInputPending(Long.parseLong(completed.getId())).get(5, TimeUnit.SECONDS);
             verifyNoInteractions(resumes, continuations, notices);

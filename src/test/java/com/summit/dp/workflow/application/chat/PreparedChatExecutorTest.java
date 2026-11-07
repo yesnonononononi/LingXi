@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -81,7 +82,8 @@ class PreparedChatExecutorTest {
     private final ExecutionControl frameworkFail = mock(ExecutionControl.class);
 
     private final PreparedChatExecutor guardedExecutor =
-            new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry, frameworkFail);
+            new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry, frameworkFail,
+                    new StartupFailureCloser(frameworkFail));
     private final PreparedChatExecutor realChainExecutor;
 
     {
@@ -94,8 +96,11 @@ class PreparedChatExecutorTest {
         LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
                 executionMapper, new JsonConfig().objectMapper(), chatTurnService);
         DefaultRuntimeLifeStyleManager lifeStyle = new DefaultRuntimeLifeStyleManager(publisher);
+        // 同一份控制器交给执行器与收口器：收口必须走生产那条 fail 链，另造一个实例就测不到真实行为。
+        DefaultExecutionController realController = new DefaultExecutionController(
+                () -> null, repository, publisher, lifeStyle);
         realChainExecutor = new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry,
-                new DefaultExecutionController(() -> null, repository, publisher, lifeStyle));
+                realController, new StartupFailureCloser(realController));
     }
 
     @BeforeEach
@@ -208,9 +213,10 @@ class PreparedChatExecutorTest {
                     new ChatTurnRuntimeListener(chatTurnService), agentEvents));
             LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
                     executionMapper, new JsonConfig().objectMapper(), chatTurnService);
+            DefaultExecutionController realController = new DefaultExecutionController(() -> null, repository,
+                    events, new DefaultRuntimeLifeStyleManager(events));
             PreparedChatExecutor executor = new PreparedChatExecutor(orchestrator, requestPreparer,
-                    modelContextService, registry, new DefaultExecutionController(() -> null, repository,
-                    events, new DefaultRuntimeLifeStyleManager(events)));
+                    modelContextService, registry, realController, new StartupFailureCloser(realController));
 
             Execution execution = execution(ExecutionState.CREATED);
             when(orchestrator.execute(any(RuntimeContext.class), any(Execution.class)))

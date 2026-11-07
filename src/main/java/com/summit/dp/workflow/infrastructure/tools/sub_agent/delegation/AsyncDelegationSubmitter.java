@@ -1,10 +1,11 @@
 package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.application.chat.SessionContextEntity;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
@@ -39,6 +40,8 @@ public class AsyncDelegationSubmitter {
     private final DelegationRecorder delegationRecorder;
     private final ModelContextService modelContextService;
     private final ExecutionControl executionControl;
+    /** 启动失败收口口径的唯一实现；本类只声明自己是子代理启动。 */
+    private final StartupFailureCloser startupFailureCloser;
     /** 子执行从未建立执行（落库前失败）时的兜底结束事实协作器。 */
     private final SubExecutionLifecycle subExecutionLifecycle;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
@@ -98,21 +101,19 @@ public class AsyncDelegationSubmitter {
         try {
             return subAgent.execute(created);
         } catch (RuntimeException e) {
-            failCreatedExecutionQuietly(created, e);
+            closeFailedChildStartup(created, e);
             throw e;
         }
     }
 
-    private void failCreatedExecutionQuietly(Execution execution, RuntimeException cause) {
-        if (execution == null || execution.getExecutionState() != ExecutionState.CREATED) {
-            return;
-        }
-        try {
-            executionControl.fail(execution, cause).run();
-        } catch (RuntimeException failFailure) {
-            log.warn("收口未开跑的子执行时出错: executionId={}, cause={}, 收口失败原因={}",
-                    execution.getId(), cause.toString(), failFailure.toString());
-        }
+    /**
+     * 未开跑的子执行收口。
+     *
+     * <p>口径交给 {@code StartupFailureCloser}（SUB_AGENT 角色）：框架已 fail 过的因终态被跳过，
+     * 在这个类里再判一遍状态就是第二份口径，改一处漏一处。</p>
+     */
+    private void closeFailedChildStartup(Execution execution, RuntimeException cause) {
+        startupFailureCloser.closeQuietly(execution, cause, ExecutionLaunchRole.SUB_AGENT);
     }
 
     /** 关闭时停掉子执行线程池，避免非托管场景下的线程泄漏。 */

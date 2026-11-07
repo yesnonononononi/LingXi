@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -32,7 +33,8 @@ class PreparedChatExecutorLinkageTest {
     private final ModelContextService modelContext = mock(ModelContextService.class);
     private final SessionExecutionRegistry registry = spy(new SessionExecutionRegistry());
     private final ExecutionControl control = mock(ExecutionControl.class);
-    private final PreparedChatExecutor executor = new PreparedChatExecutor(orchestrator, preparer, modelContext, registry, control);
+    private final PreparedChatExecutor executor = new PreparedChatExecutor(orchestrator, preparer, modelContext, registry, control,
+            new StartupFailureCloser(control));
     private final AtomicBoolean failurePublished = new AtomicBoolean();
     private final NoSuchMethodError linkage = new NoSuchMethodError("ContextSqueezeRequest.builder()");
     private Execution execution;

@@ -53,6 +53,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -155,7 +156,8 @@ class StartupFailureEndToEndTest {
         ExecutionControl control = new DefaultExecutionController(() -> null, repository, events,
                 new DefaultRuntimeLifeStyleManager(events));
         executor = new PreparedChatExecutor(orchestrator, mock(RequestPreparer.class),
-                mock(ModelContextService.class), new SessionExecutionRegistry(), control);
+                mock(ModelContextService.class), new SessionExecutionRegistry(), control,
+                new StartupFailureCloser(control));
     }
 
     @AfterEach

@@ -21,6 +21,7 @@ import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,7 +72,8 @@ class ChatAdmissionOrderTest {
             mock(ExecutionLifecycleOrchestrator.class),
             mock(SessionRepository.class), registry,
             mock(ExecutionLocator.class),
-            new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry, executionControl),
+            new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry, executionControl,
+                    new StartupFailureCloser(executionControl)),
             chatTurnService,
             mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
             // 本测试只盯「单飞校验先于用户消息落库」这一段顺序，重发链路用不到。

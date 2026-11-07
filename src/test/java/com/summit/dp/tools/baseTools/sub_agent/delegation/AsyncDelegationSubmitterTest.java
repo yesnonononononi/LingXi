@@ -26,6 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.TimeUnit;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
@@ -56,7 +57,8 @@ class AsyncDelegationSubmitterTest {
     private final SubExecutionLifecycle subExecutionLifecycle = mock(SubExecutionLifecycle.class);
 
     private final AsyncDelegationSubmitter submitter = new AsyncDelegationSubmitter(subAgent, registry,
-            subSessionResolver, delegationRecorder, modelContextService, executionControl, subExecutionLifecycle);
+            subSessionResolver, delegationRecorder, modelContextService, executionControl,
+            new StartupFailureCloser(executionControl), subExecutionLifecycle);
 
     AsyncDelegationSubmitterTest() {
         // 同线程执行：让提交与 runChild 在测试线程内同步跑完，既可断言顺序也可断言绑定线程。

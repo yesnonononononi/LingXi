@@ -42,6 +42,7 @@ import java.util.*;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -194,9 +195,11 @@ class QaAsyncDelegationAdversarialTest {
         when(registry.registerPendingChild(anyLong(), anyLong(), any(), any())).thenReturn(true);
 
         // 真提交器 + 拒绝执行的线程池：走真实 submit() 逻辑。
+        ExecutionControl rejectingControl = mock(ExecutionControl.class);
         AsyncDelegationSubmitter rejecting = new AsyncDelegationSubmitter(subAgent, registry,
                 mock(SubSessionResolver.class), mock(DelegationRecorder.class),
-                modelContextService, mock(ExecutionControl.class), mock(SubExecutionLifecycle.class));
+                modelContextService, rejectingControl, new StartupFailureCloser(rejectingControl),
+                mock(SubExecutionLifecycle.class));
         org.springframework.test.util.ReflectionTestUtils.setField(rejecting, "executorService",
                 new RejectingExecutorService());
 

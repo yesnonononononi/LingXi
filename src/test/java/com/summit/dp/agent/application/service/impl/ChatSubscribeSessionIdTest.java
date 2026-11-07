@@ -19,6 +19,7 @@ import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -53,7 +54,8 @@ class ChatSubscribeSessionIdTest {
                 sessionRepository, sessionExecutionRegistry,
                 executionIdentity,
                 new PreparedChatExecutor(mock(AgentWorkflowOrchestrator.class), requestPreparer,
-                        modelContextService, sessionExecutionRegistry, executionControl),
+                        modelContextService, sessionExecutionRegistry, executionControl,
+                        new StartupFailureCloser(executionControl)),
                 mock(ChatTurnService.class),
                 mock(ExecutionQueryService.class),
                 mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));

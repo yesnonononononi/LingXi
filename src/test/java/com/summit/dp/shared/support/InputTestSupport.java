@@ -18,6 +18,8 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.workflow.application.input.InputResolver;
 import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecutionInputSource;
@@ -43,7 +45,8 @@ public final class InputTestSupport {
         return new InputWakeupService(provider(ExecutionRepository.class, executions), provider(ExecutionActivity.class, activity),
                 collaboration(registry, emails), new InputAutomationPolicy(registry), mock(InputNoticeReporter.class),
                 provider(ExecutionResumeCoordinator.class, coordinator),
-                provider(InputTurnContinuation.class, mock(InputTurnContinuation.class)));
+                provider(InputTurnContinuation.class, mock(InputTurnContinuation.class)),
+                new SuspensionGateChain(List.of(new UserPauseSuspensionGate())));
     }
 
     private static <T> ObjectProvider<T> provider(Class<T> type, T value) {

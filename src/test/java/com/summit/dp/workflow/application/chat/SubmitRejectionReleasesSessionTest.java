@@ -43,6 +43,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -102,7 +103,8 @@ class SubmitRejectionReleasesSessionTest {
         AgentWorkflowOrchestrator orchestrator = mock(AgentWorkflowOrchestrator.class);
         RequestPreparer requestPreparer = mock(RequestPreparer.class);
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,
-                mock(ModelContextService.class), registry, control);
+                mock(ModelContextService.class), registry, control,
+                new StartupFailureCloser(control));
     }
 
     @AfterEach

@@ -7,6 +7,8 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
+import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -16,6 +18,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -35,7 +38,8 @@ class InputWakeupServiceTest {
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
     private final InputWakeupService service = new InputWakeupService(provider(ExecutionRepository.class, executions),
             provider(ExecutionActivity.class, activity), inputs, new InputAutomationPolicy(registry), notices,
-            provider(ExecutionResumeCoordinator.class, resumes), provider(InputTurnContinuation.class, continuations));
+            provider(ExecutionResumeCoordinator.class, resumes), provider(InputTurnContinuation.class, continuations),
+            new SuspensionGateChain(List.of(new UserPauseSuspensionGate())));
 
     @AfterEach void close() { service.close(); }
 

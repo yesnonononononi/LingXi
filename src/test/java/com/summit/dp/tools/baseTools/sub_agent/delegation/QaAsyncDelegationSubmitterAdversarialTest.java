@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -56,7 +57,8 @@ class QaAsyncDelegationSubmitterAdversarialTest {
     private final SubExecutionLifecycle subExecutionLifecycle = mock(SubExecutionLifecycle.class);
 
     private final AsyncDelegationSubmitter submitter = new AsyncDelegationSubmitter(subAgent, registry,
-            subSessionResolver, delegationRecorder, modelContextService, executionControl, subExecutionLifecycle);
+            subSessionResolver, delegationRecorder, modelContextService, executionControl,
+            new StartupFailureCloser(executionControl), subExecutionLifecycle);
 
     private AsyncDelegationTask task(SubSessionTarget target) {
         CallSubAgentToolArgument argument = new CallSubAgentToolArgument();

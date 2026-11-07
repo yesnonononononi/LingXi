@@ -5,11 +5,11 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +41,8 @@ public class PreparedChatExecutor {
     private final ModelContextService modelContextService;
     private final SessionExecutionRegistry sessionExecutionRegistry;
     private final ExecutionControl executionControl;
+    /** 启动失败收口口径的唯一实现；本类只声明自己是根会话启动。 */
+    private final StartupFailureCloser startupFailureCloser;
     @Autowired
     private ObjectProvider<InputWakeupService> inputWakeups;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
@@ -153,32 +155,17 @@ public class PreparedChatExecutor {
     }
 
     /**
-     * 收口「已登记但没能跑起来」的执行；收口本身失败只告警，绝不掩盖原始异常。
+     * 收口「已登记但没能跑起来」的执行。
      *
-     * <p><b>为什么只判状态、别的都不做</b>：执行行与轮次的收口、以及终态事件的发布，
-     * 全由框架的 {@code ExecutionControl.fail} 一条链完成 —— 它先落库（终态 + 结束时间），
-     * 再由仓储在提交后通知轮次收口，最后才发布事件。业务侧再手工写一遍轮次就会与它打架。</p>
-     *
-     * <p><b>为什么必须先判状态</b>：框架入口内与 loop 内的失败，框架已自行 fail 过
-     * （{@code ChatAgent#execute} 与 {@code RuntimeProcessorTemplate}），而
-     * {@code Execution.failChecked} 对已终态会抛「非法状态转换」。判据与旧的 SQL 条件更新同口径：
-     * 只处理 CREATED / RUNNING —— 终态不覆盖，挂起更不覆盖（挂起可恢复）。</p>
+     * <p>判据与顺序只有一处定义（{@code StartupFailureCloser} 按角色分口径）：这里只声明本次是
+     * 根会话启动，不重复判终态、不重复判挂起 —— 那两处判断改错一次就会把「挂起可恢复」收成失败。</p>
      */
     private void markStartupFailedQuietly(RuntimeContext context, RuntimeException cause) {
         Execution execution = context.execution();
         if (execution == null) {
             return;
         }
-        try {
-            ExecutionState state = execution.getExecutionState();
-            if (ExecutionStateCodec.isTerminalState(state) || state == ExecutionState.SUSPENDED) {
-                return;
-            }
-            executionControl.fail(execution, cause).run();
-        } catch (RuntimeException failFailure) {
-            log.warn("收口启动失败的执行时出错: executionId={}, cause={}, 收口失败原因={}",
-                    execution.getId(), cause.toString(), failFailure.toString());
-        }
+        startupFailureCloser.closeQuietly(execution, cause, ExecutionLaunchRole.ROOT);
     }
 
     /** 关闭时停掉执行线程，避免非托管场景下的线程泄漏。 */

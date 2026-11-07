@@ -10,6 +10,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
@@ -131,9 +132,10 @@ class ChatAdmissionTransactionTest {
                 transcriptService, mock(ModelContextService.class),
                 chatTurnService, mock(com.summit.dp.agent.application.service.AgentService.class),
                 mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+        ExecutionControl control = mock(ExecutionControl.class);
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,
                 mock(ModelContextService.class), mock(SessionExecutionRegistry.class),
-                mock(ExecutionControl.class));
+                control, new StartupFailureCloser(control));
     }
 
     @AfterEach
