@@ -6,6 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
 import {
   PROJECT_PAGE_LOAD_TIMEOUT_MS,
   useProjectPagePreview,
@@ -15,6 +16,7 @@ import type {ProjectPagePreviewApi} from '../src/types/projectPagePreview';
 
 const ADDRESS = 'http://localhost:5173/';
 const OTHER_ADDRESS = 'http://127.0.0.1:5180/settings?tab=theme';
+const {normalizeTargetOrigin} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -49,21 +51,27 @@ test('URL 校验：拒绝非 http/https 协议', () => {
   if (!bare.ok) assert.equal(bare.reason, 'protocol');
 });
 
-test('URL 校验：拒绝非回环主机', () => {
-  for (const address of ['http://example.com:8080/', 'http://192.168.1.10:5173/', 'http://[::2]:5173/']) {
+test('URL 校验：接受远程域名、局域网及 IPv6 地址', () => {
+  for (const address of ['https://example.com/docs?q=preview#intro', 'http://example.com:8080/', 'http://192.168.1.10:5173/', 'http://[::2]:5173/']) {
     const result = validateProjectPageUrl(address);
-    assert.equal(result.ok, false, `${address} 应被拒绝`);
-    if (result.ok) return;
-    assert.equal(result.reason, 'host');
+    assert.deepEqual(result, {ok: true, url: address, origin: new URL(address).origin});
+    assert.equal(normalizeTargetOrigin(address), new URL(address).origin);
   }
 });
 
-test('URL 校验：拒绝没有明确端口的地址', () => {
-  for (const address of ['http://localhost/', 'https://127.0.0.1/api']) {
+test('URL 校验：接受默认端口和显式标准端口', () => {
+  for (const address of ['http://localhost/', 'https://127.0.0.1/api', 'https://example.com:443/', 'http://example.com:80/']) {
     const result = validateProjectPageUrl(address);
-    assert.equal(result.ok, false, `${address} 应被拒绝`);
-    if (result.ok) return;
-    assert.equal(result.reason, 'port');
+    const parsed = new URL(address);
+    assert.deepEqual(result, {ok: true, url: parsed.href, origin: parsed.origin});
+    assert.equal(normalizeTargetOrigin(address), parsed.origin);
+  }
+});
+
+test('主进程地址校验：远程地址仍拒绝非网页协议、内嵌凭据和畸形地址', () => {
+  for (const address of ['file:///D:/app/index.html', 'javascript:alert(1)', 'https://user:secret@example.com/', 'http://', '']) {
+    assert.equal(validateProjectPageUrl(address).ok, false);
+    assert.throws(() => normalizeTargetOrigin(address));
   }
 });
 
@@ -240,7 +248,7 @@ test('状态机：非法地址给可见错误且不改动已提交地址', () =>
   preview.openAddress(ADDRESS);
   const generation = preview.generation.value;
 
-  preview.openAddress('http://example.com:8080/');
+  preview.openAddress('ftp://example.com/');
   assert.notEqual(preview.addressError.value, '');
   assert.equal(preview.committedUrl.value, 'http://localhost:5173/');
   assert.equal(preview.generation.value, generation);

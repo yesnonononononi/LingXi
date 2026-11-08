@@ -234,10 +234,17 @@ window.__demo = { file, page, mode };
     if (event.level === 'error') console.error('宿主页面:', event.message);
   });
   const remoteRequests = [];
+  const remoteOrigin = 'https://preview.lingxi.test';
+  // 保留远程 HTTPS origin 与默认端口，响应由本机提供，避免公网波动影响回归。
+  window.webContents.session.protocol.handle('https', request => {
+    assert.equal(new URL(request.url).origin, remoteOrigin);
+    return new Response(DEMO_PAGE, {headers: {'Content-Type': 'text/html; charset=utf-8'}});
+  });
   window.webContents.session.webRequest.onBeforeRequest({urls: ['http://*/*', 'https://*/*']}, (details, callback) => {
     const loopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+(\/|$)/.test(details.url);
-    if (!loopback) remoteRequests.push(details.url);
-    callback({cancel: !loopback});
+    const allowed = loopback || new URL(details.url).origin === remoteOrigin;
+    if (!allowed) remoteRequests.push(details.url);
+    callback({cancel: !allowed});
   });
   closePreviewIpc = registerProjectPagePreview({ipcMain, getWindow: () => window});
   closeFileIpc = registerFilePreview({ipcMain, shell, getWindow: () => window});
@@ -398,13 +405,32 @@ window.__demo = { file, page, mode };
   assert.match(blocked.hint, /X-Frame-Options|frame-ancestors/);
   assert.match(blocked.detail, /ERR_BLOCKED_BY_RESPONSE/);
 
-  // ---- 9. 关闭即销毁：iframe 卸载、状态归零 ----
+  // ---- 9. 远程 HTTPS 默认端口：从地址栏提交，主进程诊断与页面交互都可用 ----
+  const remoteUrl = remoteOrigin + '/docs?mode=preview#intro';
+  await run(`(() => {
+    const input = document.querySelector('.address-input');
+    input.value = ${JSON.stringify(remoteUrl)};
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.form.requestSubmit();
+  })()`);
+  await waitFor(`window.__demo.page.committedUrl.value === ${JSON.stringify(remoteUrl)}`);
+  await waitFor(`window.__demo.page.loadState.value === 'loaded'`);
+  assert.equal(await run(`document.querySelector('iframe.page-frame').src`), remoteUrl);
+  assert.equal(await run(`window.__demo.page.addressError.value`), '');
+  assert.equal(await runInFrame(remoteOrigin, `document.getElementById('heading').textContent`), 'demo project page');
+  await runInFrame(remoteOrigin, `document.getElementById('inc').click()`);
+  assert.equal(await runInFrame(remoteOrigin, `document.getElementById('count').textContent`), '1');
+  await run(`document.querySelector('.address-bar button[aria-label="重新加载"]').click()`);
+  await waitFor(`window.__demo.page.loadState.value === 'loaded'`);
+  assert.equal(await runInFrame(remoteOrigin, `document.getElementById('count').textContent`), '0');
+
+  // ---- 10. 关闭即销毁：iframe 卸载、状态归零 ----
   await run(`document.querySelector('button[aria-label="关闭文件预览"]').click()`);
   await waitFor(`!document.querySelector('iframe.page-frame')`);
   assert.equal(await run(`window.__demo.page.committedUrl.value`), '');
   assert.equal(await run(`window.__demo.page.loadState.value`), 'idle');
 
-  assert.deepEqual(remoteRequests, [], '不应请求任何非回环地址');
+  assert.deepEqual(remoteRequests, [], '只允许回环服务与本机模拟的远程站点');
   await fs.writeFile(path.join(output, 'page-preview.png'), (await window.webContents.capturePage()).toPNG());
   console.log('项目页面预览验证通过: 真实渲染 / 点击 / 输入 / 滚动 / 路由 / 模式切换保活 / 最大化 / 拖拽 / 重新加载 / 未启动服务 / 等待超时 / 禁止嵌入');
   console.log('截图与产物目录: ' + output);

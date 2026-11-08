@@ -24,9 +24,6 @@ import type {
 /** 加载等待超时毫秒数；超时只改变提示，**不销毁** iframe（迟到的成功仍可更新状态）。 */
 export const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
 
-/** 允许的本机回环主机名，与 `electron/file-preview.cjs` 的 `resolveLocalBase` 口径一致。 */
-const ALLOWED_HOSTNAMES: readonly string[] = ['localhost', '127.0.0.1', '[::1]'];
-
 /** Chromium 错误码 → 便于理解的检查建议；未收录的码只回显主进程给的描述。 */
 const FAILURE_HINT_KEYS: Record<number, string> = {
   // ERR_BLOCKED_BY_RESPONSE：跨源嵌入被响应头拒绝（X-Frame-Options / CSP frame-ancestors）
@@ -49,8 +46,6 @@ const REJECT_KEYS: Record<ProjectPageRejectReason, string> = {
   empty: 'projectPagePreview.rejectEmpty',
   malformed: 'projectPagePreview.rejectMalformed',
   protocol: 'projectPagePreview.rejectProtocol',
-  host: 'projectPagePreview.rejectHost',
-  port: 'projectPagePreview.rejectPort',
   credentials: 'projectPagePreview.rejectCredentials',
 };
 
@@ -66,7 +61,7 @@ const STATE_KEYS: Record<ProjectPageLoadState, string> = {
 /**
  * 校验用户输入的页面地址。
  *
- * <p>只接受 http/https + 本机回环主机 + 明确端口，禁止账号密码；path / query / hash 全部保留。</p>
+ * 允许本机与远程 HTTP/HTTPS 页面，禁止内嵌账号密码；路径、查询与锚点全部保留。
  *
  * @param input 用户原始输入。
  * @returns 规范化后的 URL 与 origin，或失败原因码。
@@ -87,12 +82,6 @@ export function validateProjectPageUrl(input: string): ProjectPageUrlResult {
   }
   if (parsed.username || parsed.password) {
     return {ok: false, reason: 'credentials'};
-  }
-  if (!ALLOWED_HOSTNAMES.includes(parsed.hostname)) {
-    return {ok: false, reason: 'host'};
-  }
-  if (!parsed.port) {
-    return {ok: false, reason: 'port'};
   }
   return {ok: true, url: parsed.toString(), origin: parsed.origin};
 }

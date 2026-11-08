@@ -26,9 +26,6 @@ const CHANNELS = Object.freeze({
   event: 'project-page:event',
 });
 
-/** 与 `file-preview.cjs` 的 `resolveLocalBase` 保持同一份回环口径。 */
-const ALLOWED_HOSTNAMES = Object.freeze(['localhost', '127.0.0.1', '[::1]']);
-
 /** ERR_ABORTED：正常取消（换地址、销毁 iframe）也会报这个码，不作为失败证据上报。 */
 const ERR_ABORTED = -3;
 
@@ -40,7 +37,7 @@ const MAX_FRAME_DEPTH = 8;
  *
  * @param {string} value 渲染层提交的 origin（完整 URL 也可）。
  * @returns {string} 规范化 origin。
- * @throws {Error} 协议 / 主机 / 端口 / 凭据不合法时抛出。
+ * @throws {Error} 地址格式、协议或凭据不合法时抛出。
  */
 function normalizeTargetOrigin(value) {
   if (typeof value !== 'string' || !value.trim()) {
@@ -53,13 +50,7 @@ function normalizeTargetOrigin(value) {
     throw new Error('目标页面地址格式不正确');
   }
   if (!['http:', 'https:'].includes(url.protocol)) {
-    throw new Error('只支持 http/https 的本机页面地址');
-  }
-  if (!ALLOWED_HOSTNAMES.includes(url.hostname)) {
-    throw new Error('只支持本机回环地址的页面');
-  }
-  if (!url.port) {
-    throw new Error('页面地址必须带明确的端口');
+    throw new Error('页面地址必须使用 http/https 协议');
   }
   if (url.username || url.password) {
     throw new Error('页面地址不能包含账号密码');
@@ -359,5 +350,4 @@ module.exports = {
   normalizeTargetOrigin,
   normalizeGeneration,
   CHANNELS,
-  ALLOWED_HOSTNAMES,
 };

@@ -15,8 +15,6 @@ export type ProjectPageRejectReason =
   | 'empty'
   | 'malformed'
   | 'protocol'
-  | 'host'
-  | 'port'
   | 'credentials';
 
 /** 地址校验结果：成功时带规范化 URL 与 origin，失败时只带原因码。 */
