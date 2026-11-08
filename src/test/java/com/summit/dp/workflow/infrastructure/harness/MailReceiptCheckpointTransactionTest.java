@@ -137,6 +137,33 @@ class MailReceiptCheckpointTransactionTest {
     }
 
     @Test
+    @DisplayName("回执写库失败：检查点整笔回滚，不留半条回执也不推进检查点")
+    void receiptFailureRollsBackCheckpoint() {
+        MailReceiptFlusher failing = new MailReceiptFlusher(receipts, messages) {
+            @Override
+            public void flush(Execution execution) {
+                super.flush(execution);
+                throw new IllegalStateException("回执写入失败");
+            }
+        };
+        LocalExecutionRepository failingRepository = ExecutionRepositoryTestFactory.create(
+                session.getMapper(ExecutionMapper.class), objectMapper, failing);
+        injectTransactionManager(failingRepository, transactions.getTransactionManager());
+
+        assertThrows(IllegalStateException.class, () -> transactions.execute(status -> {
+            failingRepository.save(execution(List.of(MESSAGE_ID)));
+            return null;
+        }), "回执失败必须让整笔保存失败");
+
+        assertEquals(0, receipts.findMessageIdsWithReceipt(List.of(MESSAGE_ID)).size(),
+                "回执失败时不得留下任何回执（否则这条输入会被永久判为已消费）");
+        assertTrue(new ExecutionCheckpointService(new ExecutionRepositoryImpl(session.getMapper(ExecutionMapper.class)),
+                        mock(ApplicationEventPublisher.class))
+                .find(EXECUTION_ID).isEmpty(),
+                "回执失败必须连带回滚检查点：检查点已提交而回执失败等于永久丢输入");
+    }
+
+    @Test
     @DisplayName("装配缺少邮件回执协作方：构造直接失败，不允许保存时静默跳过")
     void missingReceiptCollaboratorFailsFast() {
         ObjectProvider<ExecutionLifecycleProjection> lifecycle =
@@ -148,7 +175,7 @@ class MailReceiptCheckpointTransactionTest {
                 database.toString() + "-missing-flusher", objectMapper);
 
         assertThrows(NullPointerException.class,
-                () -> new LocalExecutionRepository(checkpoints, objectMapper, store, lifecycle, null),
+                () -> ExecutionRepositoryTestFactory.create(checkpoints, objectMapper, store, lifecycle, null),
                 "回执协作方是必需依赖：缺了必须装配失败，而不是「保存成功但输入丢/重放」");
     }
 
