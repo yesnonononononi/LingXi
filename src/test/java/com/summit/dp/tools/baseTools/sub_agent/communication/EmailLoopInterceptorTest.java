@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -96,6 +98,8 @@ class EmailLoopInterceptorTest {
         when(emailService.pendingItemsUndelivered(SESSION_ID, 7L)).thenReturn(List.of(
                 message(1L, 100L, "请处理甲"),
                 message(2L, 101L, "请处理乙")));
+        // 认领是注入的前置条件（真实实现在轮询时逐条认领，拿不到投递权就不注入）。
+        when(emailService.claimDelivery(anyLong(), anyString())).thenReturn(true);
 
         List<Message> appended = new ArrayList<>();
         interceptor.onBeforeModelInvoke(context("900",

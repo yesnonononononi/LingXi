@@ -10,6 +10,7 @@ import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
+import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
 import com.summit.dp.email.infrastructure.repository.EmailMessageReceiptRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
@@ -101,13 +102,15 @@ class PendingInputChannelGuardTest {
                 template.getMapper(SessionMapper.class));
         EmailMessageRepositoryImpl emailMessages = new EmailMessageRepositoryImpl(
                 template.getMapper(EmailMessageMapper.class));
+        EmailMessageReceiptMapper receiptMapper = template.getMapper(EmailMessageReceiptMapper.class);
+        EmailMessageReceiptRepository receiptRepository = new EmailMessageReceiptRepositoryImpl(
+                receiptMapper);
         ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(
-                new EmailRepositoryImpl(template.getMapper(EmailMapper.class)), emailMessages));
+                new EmailRepositoryImpl(template.getMapper(EmailMapper.class)), emailMessages, receiptRepository));
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(database),
                 new AnnotationTransactionAttributeSource()));
         emails = (EmailService) proxy.getProxy();
-        flusher = new MailReceiptFlusher(new EmailMessageReceiptRepositoryImpl(
-                template.getMapper(EmailMessageReceiptMapper.class)), emailMessages);
+        flusher = new MailReceiptFlusher(receiptRepository, emailMessages);
         turns = mock(ChatTurnService.class);
         versions = new ResumeSupplementVersionRegistry();
         supplements = new ResumeSupplementChannel(messages, turns, new ObjectMapper().findAndRegisterModules(), versions);
@@ -192,7 +195,7 @@ class PendingInputChannelGuardTest {
         channel.markConsumed(execution, polled);
         assertTrue(channel.pollPendingItems(execution).isEmpty(), "同一执行同一轮不得重复注入");
 
-        // 检查点没落库 = 内存全丢：新实例必须重新读到（宁可重复一次，不可丢）。
+        // 检查点没落库 = 内存全丢：同一执行重新认领是幂等的，必须立刻重新读到（宁可重复一次，不可丢）。
         assertEquals(1, channel.pollPendingItems(execution(7L)).size(),
                 "回执未落库时重启必须重新取到这条输入");
 

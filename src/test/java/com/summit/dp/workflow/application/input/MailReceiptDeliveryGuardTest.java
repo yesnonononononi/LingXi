@@ -14,6 +14,7 @@ import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.application.vo.EmailMessageVO;
+import com.summit.dp.email.MailLeaseTestSupport;
 import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
@@ -88,6 +89,7 @@ class MailReceiptDeliveryGuardTest {
     private EmailRepository mailboxes;
     private EmailMessageRepositoryImpl messages;
     private EmailMessageReceiptRepository receiptRepository;
+    private EmailMessageReceiptMapper receiptMapper;
     private MailInputChannel mail;
     private BackgroundTaskChannel background;
     private TaskRepositoryImpl tasks;
@@ -113,10 +115,10 @@ class MailReceiptDeliveryGuardTest {
 
         mailboxes = new EmailRepositoryImpl(template.getMapper(EmailMapper.class));
         messages = new EmailMessageRepositoryImpl(template.getMapper(EmailMessageMapper.class));
-        receiptRepository = new EmailMessageReceiptRepositoryImpl(
-                template.getMapper(EmailMessageReceiptMapper.class));
+        receiptMapper = template.getMapper(EmailMessageReceiptMapper.class);
+        receiptRepository = new EmailMessageReceiptRepositoryImpl(receiptMapper);
         transactions = new DataSourceTransactionManager(database);
-        emails = (EmailService) transactionalProxy(new EmailServiceImpl(mailboxes, messages));
+        emails = (EmailService) transactionalProxy(new EmailServiceImpl(mailboxes, messages, receiptRepository));
         mail = new MailInputChannel(emails);
         tasks = new TaskRepositoryImpl(template.getMapper(TaskMapper.class));
         background = new BackgroundTaskChannel(tasks, new BackgroundTaskNotifications());
@@ -150,7 +152,7 @@ class MailReceiptDeliveryGuardTest {
 
         // 冷恢复：重建仓储与通道实例（等价于进程重启后首次查询）。
         MailInputChannel restarted = new MailInputChannel((EmailService) transactionalProxy(
-                new EmailServiceImpl(mailboxes, messages)));
+                new EmailServiceImpl(mailboxes, messages, receiptRepository)));
         assertTrue(restarted.pollPendingItems(execution("902")).isEmpty(), "重启后首查同样不重放");
 
         emails.sendMail(AGENT_ID, "第二轮的邮件 B", new MailSendContext(SESSION_ID, 8L, null));
@@ -201,9 +203,11 @@ class MailReceiptDeliveryGuardTest {
         mail.markConsumed(previous, batch);
 
         MailInputChannel restarted = new MailInputChannel((EmailService) transactionalProxy(
-                new EmailServiceImpl(mailboxes, messages)));
+                new EmailServiceImpl(mailboxes, messages, receiptRepository)));
+        // 崩溃后超过租约期：新执行（或重启后的同一执行）才有资格重新认领。
+        MailLeaseTestSupport.expireClaims(receiptMapper);
         assertEquals(1, restarted.pollPendingItems(execution("915")).size(),
-                "未提交的回执不得吞掉输入：重启后必须重新注入（重复而非丢失）");
+                "未提交的回执不得吞掉输入：租约过期后必须重新注入（重复而非丢失）");
 
         // 检查点提交那次事务里写回执。
         flusher.flush(previous);
@@ -232,11 +236,13 @@ class MailReceiptDeliveryGuardTest {
                 polled.stream().map(EmailMessageVO::getId).toList(),
                 "注入顺序按 create_at、id 稳定排列，不是水位过滤");
 
-        // 只认领「大 id」这一条：高水位实现会把小 id 一起挡掉，回执实现只跳过已认领的那条。
-        flusher.flush(executionWithDelivered("907", List.of(BIG_MESSAGE_ID)));
+        // 只认领「大 id」这一条：高水位实现会把小 id 一起挡掉，回执实现只跳过已交付的那条。
+        flusher.flush(executionWithDelivered("906", List.of(BIG_MESSAGE_ID)));
+        // 小 id 仍被 906 的租约占着：租约内别人不得抢；崩溃/过期后才可重新认领。
+        MailLeaseTestSupport.expireClaims(receiptMapper);
         assertEquals(List.of(SMALL_MESSAGE_ID),
                 mail.pollPendingItems(execution("908")).stream().map(EmailMessageVO::getId).toList(),
-                "已认领的只是大 id，小 id 仍必须被投递");
+                "已交付的只是大 id，小 id 在租约过期后仍必须被投递");
     }
 
     // ---------- ③ 受理事务回滚与重试 ----------
@@ -260,7 +266,10 @@ class MailReceiptDeliveryGuardTest {
         });
         assertTrue(receiptRepository.findMessageIdsWithReceipt(List.of(sent.getId())).isEmpty(),
                 "事务回滚后回执不得存在");
-        assertEquals(1, mail.pollPendingItems(execution("907")).size(), "回滚后输入仍必须可取");
+        // 租约过期后，同一执行冷重读：内存里的去重清单已随回滚丢弃，输入必须仍能取到。
+        MailLeaseTestSupport.expireClaims(receiptMapper);
+        assertEquals(1, mail.pollPendingItems(execution(PREVIOUS_EXECUTION_ID)).size(),
+                "回滚后输入仍必须可取");
 
         // 重试：这次提交成功，回执落库。
         RuntimeContext admitted = template.execute(status ->

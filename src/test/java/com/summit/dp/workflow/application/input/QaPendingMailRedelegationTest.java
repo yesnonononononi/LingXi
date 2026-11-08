@@ -255,11 +255,11 @@ class QaPendingMailRedelegationTest {
             SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
             EmailMessageRepositoryImpl messageRows = new EmailMessageRepositoryImpl(
                     session.getMapper(EmailMessageMapper.class));
+            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
             ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(
-                    new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows));
+                    new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows, receipts));
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
             emails = (EmailService) proxy.getProxy();
-            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
             flusher = new MailReceiptFlusher(receipts, messageRows);
             mail = new MailInputChannel(emails);
             inputs = new InputResolver(mail,

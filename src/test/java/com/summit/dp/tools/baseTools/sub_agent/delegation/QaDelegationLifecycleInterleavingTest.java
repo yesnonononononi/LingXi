@@ -129,6 +129,8 @@ class QaDelegationLifecycleInterleavingTest {
         when(executionControl.fail(any(), any())).thenReturn(() -> { });
         when(emailService.pendingItemsUndelivered(anyLong(), anyLong())).thenAnswer(call -> pendingInput.get()
                 ? List.of(EmailMessageVO.builder().id(1L).senderId(8L).content("待处理交付").build()) : List.of());
+        // 认领是注入前置：真实实现逐条认领，拿不到投递权就不注入。
+        when(emailService.claimDelivery(anyLong(), any())).thenReturn(true);
 
         when(executions.findResumeGeneration(ROOT_EXECUTION_ID)).thenReturn(GENERATION);
         stubRootSummary(ExecutionState.SUSPENDED);
@@ -221,7 +223,7 @@ class QaDelegationLifecycleInterleavingTest {
         List<Message> appended = new ArrayList<>();
         lifecycle = new SubExecutionLifecycle(registry, wakeups, executionIdentity, new SubAgentCompleteNotifier(provider(frameworkExecutions), emailService));
         when(emailService.sendMailOnce(eq(ROOT_AGENT_ID), any(), any(), any())).thenAnswer(invocation -> {
-            EmailMessageVO mail = EmailMessageVO.builder().senderId(8L)
+            EmailMessageVO mail = EmailMessageVO.builder().id(1L).emailId(9L).senderId(8L)
                     .content(invocation.getArgument(1)).build();
             pendingMail.set(mail);
             return Result.success(mail);
@@ -350,6 +352,7 @@ class QaDelegationLifecycleInterleavingTest {
             consumedKey.set(new long[]{invocation.getArgument(0), invocation.getArgument(1)});
             return List.of();
         });
+        when(mailbox.claimDelivery(anyLong(), any())).thenReturn(true);
         EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(new MailInputChannel(mailbox));
 
         // 停止之后、下一轮 beginRoot 之前到达的邮件：按协作根会话 id 落箱。

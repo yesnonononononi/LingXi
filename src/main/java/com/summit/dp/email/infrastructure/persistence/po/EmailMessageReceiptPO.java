@@ -28,4 +28,6 @@ public class EmailMessageReceiptPO {
     private Long emailId;
     private Long consumerSessionId;
     private Instant deliveredAt;
+    private String claimExecutionId;
+    private Instant claimedAt;
 }

@@ -11,6 +11,8 @@ import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.application.vo.EmailVO;
 import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.model.EmailMessage;
+import com.summit.dp.email.domain.model.MailDeliveryLease;
+import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
 import com.summit.dp.email.domain.repository.EmailMessageRepository;
 import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.shared.exception.ClientException;
@@ -50,6 +52,7 @@ public class EmailServiceImpl implements EmailService {
 
     private final EmailRepository repository;
     private final EmailMessageRepository messageRepository;
+    private final EmailMessageReceiptRepository receiptRepository;
 
     @Override
     public Result<EmailVO> findById(Long id) {
@@ -184,6 +187,25 @@ public class EmailServiceImpl implements EmailService {
         }
         return messageRepository.findUndeliveredByEmailIds(List.of(mailbox.get().getId()))
                 .stream().map(this::toMessageVO).toList();
+    }
+
+    /**
+     * 认领投递权：已交付或别人持有有效租约时返回 false，调用方不得注入该邮件。
+     *
+     * <p>这里是短事务：认领只在轮询那一刻发生，模型调用期间不持有任何锁。</p>
+     */
+    @Override
+    @Transactional
+    public boolean claimDelivery(Long messageId, String executionId) {
+        if (messageId == null || executionId == null) {
+            return false;
+        }
+        Optional<EmailMessage> message = messageRepository.findById(messageId);
+        if (message.isEmpty()) {
+            return false;
+        }
+        return receiptRepository.tryClaim(messageId, message.get().getEmailId(), executionId,
+                Instant.now(), MailDeliveryLease.DURATION);
     }
 
     @Override

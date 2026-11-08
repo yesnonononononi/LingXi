@@ -25,6 +25,9 @@ import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.application.vo.EmailVO;
 import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.model.EmailMessage;
+import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
+import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
+import com.summit.dp.email.infrastructure.repository.EmailMessageReceiptRepositoryImpl;
 import com.summit.dp.email.domain.repository.EmailMessageRepository;
 import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
@@ -81,6 +84,7 @@ class EmailCrudServiceTest {
     private EmailMessageMapper messageMapper;
     private EmailRepository emailRepository;
     private EmailMessageRepository messageRepository;
+    private EmailMessageReceiptRepository receiptRepository;
     private EmailServiceImpl service;
 
     @BeforeEach
@@ -92,6 +96,7 @@ class EmailCrudServiceTest {
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(EmailMapper.class);
         configuration.addMapper(EmailMessageMapper.class);
+        configuration.addMapper(EmailMessageReceiptMapper.class);
         // 应用侧 MybatisPlusConfig 同款分页插件：selectPage 需要它做 LIMIT 改写与 count
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
@@ -103,13 +108,15 @@ class EmailCrudServiceTest {
         SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         emailMapper = session.getMapper(EmailMapper.class);
         messageMapper = session.getMapper(EmailMessageMapper.class);
+        receiptRepository = new EmailMessageReceiptRepositoryImpl(
+                session.getMapper(EmailMessageReceiptMapper.class));
         emailRepository = new EmailRepositoryImpl(emailMapper);
         messageRepository = new EmailMessageRepositoryImpl(messageMapper);
         service = transactionalService(messageRepository);
     }
 
     private EmailServiceImpl transactionalService(EmailMessageRepository messages) {
-        ProxyFactory factory = new ProxyFactory(new EmailServiceImpl(emailRepository, messages));
+        ProxyFactory factory = new ProxyFactory(new EmailServiceImpl(emailRepository, messages, receiptRepository));
         factory.setProxyTargetClass(true);
         factory.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(database),
                 new AnnotationTransactionAttributeSource()));

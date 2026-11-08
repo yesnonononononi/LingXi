@@ -39,7 +39,7 @@ public class InputResolver {
         try {
             List<String> batches = new ArrayList<>();
             for (PendingInputChannel<?> channel : channels()) {
-                List<?> items = channel.pollPendingItems(execution);
+                List<?> items = channel.peekPendingItems(execution);
                 if (!items.isEmpty()) {
                     batches.add(channel.getClass().getName() + ":" + json.writeValueAsString(items));
                 }
@@ -51,7 +51,7 @@ public class InputResolver {
     }
 
     public boolean hasPendingItems(Execution execution) {
-        return channels().stream().anyMatch(channel -> !channel.pollPendingItems(execution).isEmpty());
+        return channels().stream().anyMatch(channel -> !channel.peekPendingItems(execution).isEmpty());
     }
 
     public boolean hasOpenDependency(Execution execution) {

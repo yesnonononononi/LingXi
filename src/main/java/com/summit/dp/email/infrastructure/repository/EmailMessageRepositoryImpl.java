@@ -83,10 +83,11 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
         if (emailIds == null || emailIds.isEmpty()) {
             return List.of();
         }
-        // 判据是回执表（NOT EXISTS 是固定片段，无外部拼接）：与消息 status、与 id 大小顺序都无关。
+        // 判据是「没有已交付回执」：已认领未交付仍算待投递（由认领裁决归属），与 status、id 大小都无关。
         return mapper.selectList(Wrappers.<EmailMessagePO>lambdaQuery()
                         .in(EmailMessagePO::getEmailId, emailIds)
-                        .notExists("SELECT 1 FROM email_message_receipt r WHERE r.message_id = email_message.id")
+                        .notExists("SELECT 1 FROM email_message_receipt r WHERE r.message_id = email_message.id"
+                                + " AND r.delivered_at IS NOT NULL")
                         .orderByAsc(EmailMessagePO::getCreateAt)
                         .orderByAsc(EmailMessagePO::getId))
                 .stream().map(this::toModel).toList();

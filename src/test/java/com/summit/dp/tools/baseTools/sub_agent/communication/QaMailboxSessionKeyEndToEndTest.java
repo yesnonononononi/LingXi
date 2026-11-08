@@ -111,7 +111,7 @@ class QaMailboxSessionKeyEndToEndTest {
         receiptRepository = new EmailMessageReceiptRepositoryImpl(
                 session.getMapper(EmailMessageReceiptMapper.class));
         flusher = new MailReceiptFlusher(receiptRepository, messageRepository);
-        service = new EmailServiceImpl(emailRepository, messageRepository);
+        service = new EmailServiceImpl(emailRepository, messageRepository, receiptRepository);
     }
 
     @AfterEach

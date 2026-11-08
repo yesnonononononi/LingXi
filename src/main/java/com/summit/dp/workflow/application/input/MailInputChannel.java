@@ -5,6 +5,7 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ import java.util.Set;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
 
     /** 邮件晚于恢复补充、早于子执行结果：协作方的新需求先于收尾判定被读到。 */
@@ -57,6 +59,36 @@ public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
 
     @Override
     public List<EmailMessageVO> pollPendingItems(Execution execution) {
+        List<EmailMessageVO> items = undelivered(execution);
+        if (items.isEmpty()) {
+            return List.of();
+        }
+        Long mailbox = ExecutionAttributes.mailboxSessionId(InputAutomationPolicy.attributes(execution));
+        Long recipient = ExecutionAttributes.readLong(InputAutomationPolicy.attributes(execution),
+                ExecutionAttributes.AGENT_ID);
+        List<EmailMessageVO> claimed = new ArrayList<>();
+        for (EmailMessageVO item : items) {
+            if (item.getId() == null) {
+                continue;
+            }
+            // 逐条认领：拿不到投递权（已交付，或别人持有有效租约）就绝不注入，避免两份上下文各投一次。
+            if (emails.claimDelivery(item.getId(), execution.getId())) {
+                claimed.add(item);
+            }
+        }
+        log.debug("邮件认领结果: mailbox={}, recipient={}, 候选={}, 取得={}",
+                mailbox, recipient, items.size(), claimed.size());
+        return claimed;
+    }
+
+    /** 只读探测：给出本邮箱里还没有交付回执的邮件，不认领。 */
+    @Override
+    public List<EmailMessageVO> peekPendingItems(Execution execution) {
+        return undelivered(execution);
+    }
+
+    /** 本邮箱下没有已交付回执、且不在本轮已注入清单里的邮件（按 create_at, id 稳定排序）。 */
+    private List<EmailMessageVO> undelivered(Execution execution) {
         Long mailbox = ExecutionAttributes.mailboxSessionId(InputAutomationPolicy.attributes(execution));
         Long recipient = ExecutionAttributes.readLong(InputAutomationPolicy.attributes(execution),
                 ExecutionAttributes.AGENT_ID);
@@ -67,7 +99,7 @@ public class MailInputChannel implements PendingInputChannel<EmailMessageVO> {
         if (items == null || items.isEmpty()) {
             return List.of();
         }
-        // 同一轮内的去重：回执要等检查点提交才落库，这之前只能靠执行属性挡住重复注入。
+        // 同一轮内的去重：回执要等检查点提交才落库，这之前靠执行属性挡住重复注入。
         Set<Long> deliveredInRound = new LinkedHashSet<>(ExecutionAttributes.readLongs(
                 InputAutomationPolicy.attributes(execution), ExecutionAttributes.DELIVERED_MAIL_IDS));
         if (deliveredInRound.isEmpty()) {

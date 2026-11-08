@@ -55,6 +55,17 @@ public interface PendingInputChannel<T> {
     List<T> pollPendingItems(Execution execution);
 
     /**
+     * 只读探测：不认领、不消费。
+     *
+     * <p>收尾驻留判定与批次签名只需要「有没有 / 是什么」，不能顺手把投递权拿走 ——
+     * 否则一次只读探测就会占住租约，真正要注入的那一轮反而拿不到输入。
+     * 默认与轮询同义；会认领的实现必须覆盖它。</p>
+     */
+    default List<T> peekPendingItems(Execution execution) {
+        return pollPendingItems(execution);
+    }
+
+    /**
      * 格式化为注入模型的文本块，每个元素对应一条消息。
      *
      * <p>循环内注入与终态跨轮次续跑共用本方法，只按 {@code stage} 取不同的文本协议：

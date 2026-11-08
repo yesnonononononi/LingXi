@@ -87,6 +87,17 @@ public interface EmailService {
      */
     List<EmailMessageVO> pendingItemsUndelivered(Long workflowExecutionId, Long recipientAgentId);
 
+    /**
+     * 逐条认领一条邮件消息的投递权（短事务，不跨模型调用持锁）。
+     *
+     * <p>返回 {@code false} 时调用方<b>不得</b>把该邮件注入上下文：它已交付，或正被别的执行持有有效租约。</p>
+     *
+     * @param messageId   消息 id
+     * @param executionId 申请认领的执行 id
+     * @return 本执行是否取得投递权
+     */
+    boolean claimDelivery(Long messageId, String executionId);
+
     /** 只确认本批查询结果，期间新到的消息留给下一轮。 */
     void consumePendingItems(List<EmailMessageVO> items);
 

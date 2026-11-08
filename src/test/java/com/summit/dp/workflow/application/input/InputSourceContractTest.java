@@ -233,12 +233,12 @@ class InputSourceContractTest {
             executionRows = session.getMapper(ExecutionMapper.class);
             EmailMessageRepositoryImpl messageRows = new EmailMessageRepositoryImpl(
                     session.getMapper(EmailMessageMapper.class));
+            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
             EmailServiceImpl target = new EmailServiceImpl(
-                    new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows);
+                    new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows, receipts);
             ProxyFactory proxy = new ProxyFactory(target);
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
             emails = (EmailService) proxy.getProxy();
-            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
             flusher = new MailReceiptFlusher(receipts, messageRows);
             mail = new MailInputChannel(emails);
             tasks = new TaskRepositoryImpl(session.getMapper(TaskMapper.class));

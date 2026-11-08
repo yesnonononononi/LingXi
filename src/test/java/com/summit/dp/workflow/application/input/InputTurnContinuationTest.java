@@ -74,6 +74,8 @@ class InputTurnContinuationTest {
                                 ExecutionAttributes.AGENT_ID, "7")).build()).build()).build();
         when(emails.pendingItemsUndelivered(10L, 7L)).thenReturn(List.of(EmailMessageVO.builder().id(1L)
                 .emailId(2L).senderId(8L).content("迟到的真实输入").build()));
+        // 认领是注入前置：真实实现逐条认领，拿不到投递权就不注入。
+        when(emails.claimDelivery(anyLong(), any())).thenReturn(true);
         return execution;
     }
 
