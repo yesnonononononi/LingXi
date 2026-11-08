@@ -99,7 +99,7 @@ class SessionTokenAuditDomainTest {
     @DisplayName("shouldReplace：旧快照缺采集时刻或执行 id 时允许被替换")
     void shouldReplaceHandlesLegacyRows() {
         SessionTokenAudit restored = SessionTokenAudit.restore(SESSION_ID, null,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, null, null, null, null, null, List.of());
+                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, null, null, null, null, null, null, null, List.of());
 
         assertTrue(restored.shouldReplace(CAPTURED_AT, null), "旧行没有采集时刻时必须能升级");
         assertTrue(restored.shouldReplace(CAPTURED_AT, 7L));
@@ -154,7 +154,7 @@ class SessionTokenAuditDomainTest {
                 captured.getTotalTokens(), captured.getMaxTokens(), captured.getMessagesTokens(),
                 captured.getRequestOverheadTokens(), captured.getOverlapTokens(),
                 captured.getToolGroupingDrift(), captured.getToolDefinitionTokens(),
-                captured.getMcpToolDefinitionTokens(), captured.getCapturedAt(),
+                captured.getMcpToolDefinitionTokens(), null, null, captured.getCapturedAt(),
                 captured.getFailReason(), captured.getItems());
 
         assertEquals(8200, reloaded.getToolDefinitionTokens(), "读回值必须等于采集值");
@@ -171,7 +171,7 @@ class SessionTokenAuditDomainTest {
 
         // 失败态把上一轮的两项值一并清空（残差不落库，自然为 null）。
         SessionTokenAudit failed = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.FAILED, null, null, null, null, null, null, 8200, 3100,
+                TokenAuditPersistedState.FAILED, null, null, null, null, null, null, 8200, 3100, null, null,
                 CAPTURED_AT, "先失败", List.of());
         failed.changeFailed("再失败一次");
         assertNull(failed.getToolDefinitionTokens(), "失败态不得保留上一轮的工具定义值");
@@ -192,7 +192,7 @@ class SessionTokenAuditDomainTest {
                 captured.getTotalTokens(), captured.getMaxTokens(), captured.getMessagesTokens(),
                 captured.getRequestOverheadTokens(), captured.getOverlapTokens(),
                 captured.getToolGroupingDrift(), captured.getToolDefinitionTokens(),
-                captured.getMcpToolDefinitionTokens(), captured.getCapturedAt(),
+                captured.getMcpToolDefinitionTokens(), null, null, captured.getCapturedAt(),
                 captured.getFailReason(), captured.getItems());
 
         assertEquals(-6, reloaded.getToolGroupingDrift(), "读回值必须等于采集值（已落库，不是 0）");
@@ -235,13 +235,13 @@ class SessionTokenAuditDomainTest {
     @DisplayName("覆盖裁决补充：旧行执行 id 缺失、采集时刻相同时允许被替换；失败态可再次失败并清空明细")
     void shouldReplaceLegacyAndRepeatedFailure() {
         SessionTokenAudit noExecution = SessionTokenAudit.restore(SESSION_ID, null,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, null, null, null, CAPTURED_AT, null,
+                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, null, null, null, null, null, CAPTURED_AT, null,
                 List.of(SessionTokenAuditItem.message(TokenAuditCategory.SYSTEM, 90, 0, 1)));
         assertTrue(noExecution.shouldReplace(CAPTURED_AT, 5L),
                 "同刻但旧行没有执行 id 时必须能被替换（否则快照永远停在旧数据）");
 
         SessionTokenAudit failed = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.FAILED, null, null, null, null, null, null, null, null, CAPTURED_AT, "先失败",
+                TokenAuditPersistedState.FAILED, null, null, null, null, null, null, null, null, null, null, CAPTURED_AT, "先失败",
                 List.of(SessionTokenAuditItem.message(TokenAuditCategory.SYSTEM, 90, 0, 1)));
         failed.changeFailed("再失败一次");
         assertTrue(failed.getItems().isEmpty(), "失败态再次失败必须清空残留明细");
@@ -252,7 +252,7 @@ class SessionTokenAuditDomainTest {
     @DisplayName("resolveDisplayState：总量缺失但状态不是 FAILED 时为 NOT_COLLECTED")
     void displayStateNotCollectedWhenTotalsMissing() {
         SessionTokenAudit missingTotals = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.COLLECTED, null, 200000, null, null, null, null, null, null, CAPTURED_AT, null,
+                TokenAuditPersistedState.COLLECTED, null, 200000, null, null, null, null, null, null, null, null, CAPTURED_AT, null,
                 List.of());
 
         assertEquals(TokenAuditDisplayState.NOT_COLLECTED, missingTotals.resolveDisplayState(120L),
@@ -265,11 +265,11 @@ class SessionTokenAuditDomainTest {
     @DisplayName("ratio / toMaxTokens 边界：上限恰为 0 时比率为 null，且落库写成 null")
     void ratioBoundaryOnZeroMaxTokens() {
         SessionTokenAudit zeroMax = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.COLLECTED, 100, 0, 90, 10, 0, null, null, null, CAPTURED_AT, null, List.of());
+                TokenAuditPersistedState.COLLECTED, 100, 0, 90, 10, 0, null, null, null, null, null, CAPTURED_AT, null, List.of());
         assertNull(zeroMax.ratio(), "上限恰为 0 时不除零");
 
         SessionTokenAudit negativeMax = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.COLLECTED, 100, -1, 90, 10, 0, null, null, null, CAPTURED_AT, null, List.of());
+                TokenAuditPersistedState.COLLECTED, 100, -1, 90, 10, 0, null, null, null, null, null, CAPTURED_AT, null, List.of());
         assertNull(negativeMax.ratio());
 
         SessionTokenAudit captured = SessionTokenAudit.capture(SESSION_ID, 1L,
@@ -281,7 +281,7 @@ class SessionTokenAuditDomainTest {
     @DisplayName("toolGroupingDrift 读回真值：落库值不必等于「TOOL 行 − 分组」，它是独立诊断量")
     void toolGroupingDriftReportsPersistedValue() {
         SessionTokenAudit inconsistent = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 190, 0, 0, 10, null, null, CAPTURED_AT, null, List.of(
+                TokenAuditPersistedState.COLLECTED, 100, 200, 190, 0, 0, 10, null, null, null, null, CAPTURED_AT, null, List.of(
                 SessionTokenAuditItem.message(TokenAuditCategory.TOOL, 100, 0, 4),
                 SessionTokenAuditItem.toolGroup(TokenAuditGroupKind.MCP, 1, 90, 0, 80, 1)));
 
@@ -293,7 +293,7 @@ class SessionTokenAuditDomainTest {
     @DisplayName("分组与工具名查询按 sortOrder 升序，与入库顺序无关")
     void itemsSortedBySortOrder() {
         SessionTokenAudit unsorted = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, null, null, null, CAPTURED_AT, null, List.of(
+                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, null, null, null, null, null, CAPTURED_AT, null, List.of(
                 SessionTokenAuditItem.toolGroup(TokenAuditGroupKind.ORDINARY, 2, 30, 0, 20, 3),
                 SessionTokenAuditItem.toolGroup(TokenAuditGroupKind.MCP, 1, 60, 0, 50, 1),
                 SessionTokenAuditItem.toolGroup(TokenAuditGroupKind.SKILL, 1, 10, 0, 5, 2)));
@@ -346,7 +346,7 @@ class SessionTokenAuditDomainTest {
                 TokenAuditItemLevel.MESSAGE, TokenAuditCategory.SYSTEM, TokenAuditGroupKind.MCP,
                 null, 0, 1, 0, 0, 1));
         assertThrows(ClientException.class, () -> SessionTokenAudit.restore(null, 1L,
-                TokenAuditPersistedState.COLLECTED, 1, 1, 1, 0, 0, 0, null, null, CAPTURED_AT, null, List.of()),
+                TokenAuditPersistedState.COLLECTED, 1, 1, 1, 0, 0, 0, null, null, null, null, CAPTURED_AT, null, List.of()),
                 "快照必须归属一个会话");
         assertThrows(ClientException.class,
                 () -> SessionTokenAudit.capture(SESSION_ID, 1L, null, CAPTURED_AT));

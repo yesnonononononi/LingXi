@@ -166,7 +166,7 @@ class SessionTokenAuditApiTest {
                         audit.getMaxTokens(), audit.getMessagesTokens(),
                         audit.getRequestOverheadTokens(), audit.getOverlapTokens(),
                         audit.getToolGroupingDrift(), audit.getToolDefinitionTokens(),
-                        audit.getMcpToolDefinitionTokens(), audit.getCapturedAt(),
+                        audit.getMcpToolDefinitionTokens(), null, null, audit.getCapturedAt(),
                         audit.getFailReason(), audit.getItems())));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
                 Session.builder().id(SESSION_ID).build()));
