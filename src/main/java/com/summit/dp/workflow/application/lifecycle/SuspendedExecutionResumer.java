@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.application.resume;
+package com.summit.dp.workflow.application.lifecycle;
 
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.core.agent.Execution;

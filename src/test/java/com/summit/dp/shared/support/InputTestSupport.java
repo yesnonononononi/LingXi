@@ -7,7 +7,7 @@ import com.summit.dp.workflow.application.input.InputTurnContinuation;
 import com.summit.dp.workflow.application.input.InputNoticeReporter;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.input.InputWakeupService;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;

@@ -29,7 +29,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;

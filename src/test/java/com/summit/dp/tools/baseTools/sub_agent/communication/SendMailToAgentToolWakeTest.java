@@ -10,7 +10,7 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
+import com.summit.dp.workflow.application.input.CommanderMailWakeService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;

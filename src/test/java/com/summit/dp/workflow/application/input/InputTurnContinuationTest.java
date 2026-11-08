@@ -2,7 +2,7 @@ package com.summit.dp.workflow.application.input;
 
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.core.runtime.loop.ExecutionControl;
@@ -26,8 +26,6 @@ import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.input.MailInputChannel;
-import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.task.domain.repository.TaskRepository;

@@ -15,7 +15,7 @@ import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.startup.ExecutionStartupReaper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

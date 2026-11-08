@@ -12,7 +12,7 @@ import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
+import com.summit.dp.workflow.application.input.CommanderMailWakeService;
 import com.summit.dp.workflow.infrastructure.tools.arguments.SendMailArgument;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;

@@ -7,7 +7,7 @@ import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;

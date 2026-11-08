@@ -33,7 +33,7 @@ import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
-import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
+import com.summit.dp.workflow.application.input.CommanderMailWakeService;
 import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;

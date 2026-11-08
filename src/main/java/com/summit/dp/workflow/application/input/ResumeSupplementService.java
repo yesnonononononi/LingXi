@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.application.resume;
+package com.summit.dp.workflow.application.input;
 
 import cn.hutool.core.util.IdUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -14,8 +14,8 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
-import com.summit.dp.workflow.application.input.ResumeSupplementVersionRegistry;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;

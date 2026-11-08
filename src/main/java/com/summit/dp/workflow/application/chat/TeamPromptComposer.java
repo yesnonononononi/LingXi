@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.application.delegation;
+package com.summit.dp.workflow.application.chat;
 
 import com.summit.dp.agent.application.vo.AgentVO;
 

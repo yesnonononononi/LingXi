@@ -15,7 +15,7 @@ import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
 import com.summit.dp.workflow.infrastructure.tools.memory.MemoryWikiLoader;

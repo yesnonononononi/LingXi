@@ -1,7 +1,7 @@
 package com.summit.dp.agent.infrastructure.workflow;
 
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
+import com.summit.dp.workflow.application.chat.TeamPromptComposer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
