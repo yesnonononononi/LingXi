@@ -9,7 +9,7 @@
  *   <li>`null` / `undefined` 表示「不知道」，**不等于 0**。字段缺失时整行不渲染。</li>
  *   <li>调用次数（`callCount`）**已从契约移除，后端不再下发**：前端不得声明、读取或渲染它。
  *       需要「N 项」时取明细数组长度，需要「N 类」时取存在的分组个数。</li>
- *   <li>所有数值与百分比一律取后端算好的字段，前端不做除法/减法；
+ *   <li>所有分项计数与百分比一律取框架给出的字段，前端不做除法/减法；
  *       仅允许把 ratio 乘 100 转成百分数文本、以及直接用 ratio 当进度条宽度。</li>
  * </ol>
  *
@@ -51,7 +51,8 @@ export interface TokenAuditAmountVO {
 }
 
 /** 单个工具的 token 占用。 */
-export interface TokenAuditToolItemVO extends TokenAuditAmountVO {
+export interface TokenAuditToolItemVO {
+  tokens?: TokenAuditNumeric;
   /** 工具机器名（如 `search_web`），原样展示，不做展示名映射。 */
   toolName: string;
   /** 入参 token，只读说明字段，不参与任何求和。 */
@@ -62,10 +63,8 @@ export interface TokenAuditToolItemVO extends TokenAuditAmountVO {
 
 /** 工具来源分组（普通工具 / MCP / Skill）。 */
 export interface TokenAuditToolGroupVO extends TokenAuditAmountVO {
-  /** 分组种类，决定「N 项」以外的展示文案。 */
+  /** 分组种类，决定展示文案。 */
   groupKind: TokenAuditToolGroupKind;
-  /** 组内工具明细；缺失或空数组表示没有明细可展开。 */
-  items?: TokenAuditToolItemVO[] | null;
 }
 
 /** 工具返回消息（TOOL 分项）的二级构成。 */
@@ -75,10 +74,10 @@ export interface TokenAuditToolBreakdownVO extends TokenAuditAmountVO {
   /** Skill 工具分组；`null`/`undefined` 表示不存在该来源，不渲染。 */
   skill?: TokenAuditToolGroupVO | null;
   /** 普通工具分组；`null`/`undefined` 表示不存在该来源，不渲染。 */
-  ordinary?: TokenAuditToolGroupVO | null;
+  ordinary?: {items?: TokenAuditToolItemVO[] | null} | null;
 }
 
-/** 消息构成里的单个分项（后端恒返回 4 条：SYSTEM / USER / AI / TOOL）。 */
+/** 消息构成里的单个分项（仅包含框架成功给出的 SYSTEM / USER / AI / TOOL）。 */
 export interface TokenAuditCategoryVO extends TokenAuditAmountVO {
   /** 分项类型。 */
   type: TokenAuditCategoryType;
@@ -87,41 +86,13 @@ export interface TokenAuditCategoryVO extends TokenAuditAmountVO {
 }
 
 /** 「其他消息」（请求开销）小节。 */
-export interface TokenAuditRequestOverheadVO extends TokenAuditAmountVO {
+export interface TokenAuditRequestOverheadVO {
   /** 项数，即「其他消息 N 项」里的 N。**必须取此字段，不得用数组长度替代**。 */
   itemCount?: TokenAuditNumeric;
   /** 内核工具定义占用。 */
   toolDefinition?: TokenAuditAmountVO | null;
   /** MCP 工具定义占用。 */
   mcpToolDefinition?: TokenAuditAmountVO | null;
-  /** 请求框架残差（不单独成行，仅备查）。 */
-  framingResidualTokens?: TokenAuditNumeric;
-}
-
-/**
- * 对账信息（后端 `TokenAuditReconciliationVO`）。
- *
- * <p>面板不渲染这些字段（设计稿没有对应行），仅作契约登记，保留索引签名以便后端演进时前端不炸。</p>
- */
-export interface TokenAuditReconciliationVO {
-  /** 快照总量（框架口径）。 */
-  totalTokens?: TokenAuditNumeric;
-  /** 四类消息之和。 */
-  messagesTokens?: TokenAuditNumeric;
-  /** 其他消息（请求开销）总量。 */
-  requestOverheadTokens?: TokenAuditNumeric;
-  /** 工具入参被消息体重复计入的部分。 */
-  argumentOverlapTokens?: TokenAuditNumeric;
-  /** 工具分组对账残差。 */
-  toolGroupingDrift?: TokenAuditNumeric;
-  /** 内核工具定义总量。 */
-  toolDefinitionTokens?: TokenAuditNumeric;
-  /** MCP 工具定义总量。 */
-  mcpToolDefinitionTokens?: TokenAuditNumeric;
-  /** 请求框架残差。 */
-  framingResidualTokens?: TokenAuditNumeric;
-  /** 后端后续新增字段的逃生舱。 */
-  [key: string]: unknown;
 }
 
 /** 会话用量审计聚合视图对象。**原始载荷**：数值字段可能是字符串。 */
@@ -148,16 +119,12 @@ export interface SessionTokenAuditVO {
   capturedAt?: string | number | null;
   /** 采集失败原因（仅 `FAILED` 态有值）。 */
   failReason?: string | null;
-  /** 消息构成分项，后端恒返回 4 条。 */
+  /** 框架成功给出的消息分项。 */
   messages?: TokenAuditCategoryVO[] | null;
-  /** 消息构成总量（各分项之和，后端算好）。 */
-  messagesTotalTokens?: TokenAuditNumeric;
   /** 工具返回消息的二级构成。 */
   tools?: TokenAuditToolBreakdownVO | null;
   /** 其他消息（请求开销）。 */
   requestOverhead?: TokenAuditRequestOverheadVO | null;
-  /** 对账信息。 */
-  reconciliation?: TokenAuditReconciliationVO | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -179,7 +146,8 @@ export interface TokenAuditAmount {
 }
 
 /** 单个工具的 token 占用（已归一）。 */
-export interface TokenAuditToolItem extends TokenAuditAmount {
+export interface TokenAuditToolItem {
+  tokens: number | null;
   /** 工具机器名。 */
   toolName: string;
   /** 入参 token；`null` = 不知道。 */
@@ -192,8 +160,6 @@ export interface TokenAuditToolItem extends TokenAuditAmount {
 export interface TokenAuditToolGroup extends TokenAuditAmount {
   /** 分组种类。 */
   groupKind: TokenAuditToolGroupKind;
-  /** 组内明细；`null`/`[]` 表示没有明细可展开。 */
-  items: TokenAuditToolItem[] | null;
 }
 
 /** 工具返回消息的二级构成（已归一）。 */
@@ -203,7 +169,7 @@ export interface TokenAuditToolBreakdown extends TokenAuditAmount {
   /** Skill 分组；`null` = 该来源不存在。 */
   skill: TokenAuditToolGroup | null;
   /** 普通工具分组；`null` = 该来源不存在。 */
-  ordinary: TokenAuditToolGroup | null;
+  ordinary: {items: TokenAuditToolItem[] | null} | null;
 }
 
 /** 消息构成里的单个分项（已归一）。 */
@@ -215,37 +181,13 @@ export interface TokenAuditCategory extends TokenAuditAmount {
 }
 
 /** 「其他消息」（请求开销）小节（已归一）。 */
-export interface TokenAuditRequestOverhead extends TokenAuditAmount {
+export interface TokenAuditRequestOverhead {
   /** 「其他消息 N 项」里的 N（取后端字段，不用数组长度替代）。 */
   itemCount: number | null;
   /** 内核工具定义占用。 */
   toolDefinition: TokenAuditAmount | null;
   /** MCP 工具定义占用。 */
   mcpToolDefinition: TokenAuditAmount | null;
-  /** 请求框架残差。 */
-  framingResidualTokens: number | null;
-}
-
-/** 对账信息（已归一；面板不渲染，仅登记）。 */
-export interface TokenAuditReconciliation {
-  /** 快照总量（框架口径）。 */
-  totalTokens: number | null;
-  /** 四类消息之和。 */
-  messagesTokens: number | null;
-  /** 其他消息（请求开销）总量。 */
-  requestOverheadTokens: number | null;
-  /** 工具入参被消息体重复计入的部分。 */
-  argumentOverlapTokens: number | null;
-  /** 工具分组对账残差。 */
-  toolGroupingDrift: number | null;
-  /** 内核工具定义总量。 */
-  toolDefinitionTokens: number | null;
-  /** MCP 工具定义总量。 */
-  mcpToolDefinitionTokens: number | null;
-  /** 请求框架残差。 */
-  framingResidualTokens: number | null;
-  /** 后端后续新增字段的逃生舱（归一化后的值原样保留）。 */
-  [key: string]: unknown;
 }
 
 /**
@@ -279,12 +221,8 @@ export interface SessionTokenAuditSnapshot {
   failReason: string | null;
   /** 消息构成分项。 */
   messages: TokenAuditCategory[] | null;
-  /** 消息构成总量。 */
-  messagesTotalTokens: number | null;
   /** 工具返回消息的二级构成。 */
   tools: TokenAuditToolBreakdown | null;
   /** 其他消息（请求开销）。 */
   requestOverhead: TokenAuditRequestOverhead | null;
-  /** 对账信息。 */
-  reconciliation: TokenAuditReconciliation | null;
 }

@@ -45,7 +45,7 @@ public class SessionTokenAuditVO {
     /** 实时上下文上限；null 表示未知。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer liveMaxTokens;
-    /** {@code liveTotalTokens / liveMaxTokens}，可 &gt; 1；上限未知时为 null（不除零）。 */
+    /** 框架实时用量比例，不由业务计数反推。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Double liveRatio;
     /**
@@ -58,7 +58,7 @@ public class SessionTokenAuditVO {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer remainingTokens;
-    /** {@code remainingTokens / liveMaxTokens}；上限未知或 {@code <= 0} 时为 null。 */
+    /** 框架已用比例的补数；原比例缺失时不补算。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Double remainingRatio;
     /** 快照总量（框架口径：消息 + 工具定义 + 请求框架）。 */
@@ -73,36 +73,14 @@ public class SessionTokenAuditVO {
     /** 仅 {@code FAILED} 有值（中文业务文案）。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String failReason;
-    /** 差额解释；{@code NOT_COLLECTED} 时为 null。 */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private TokenAuditReconciliationVO reconciliation;
-    /**
-     * 上下文归因明细：记忆正文 token 与用户附件 token。
-     *
-     * <p><b>归因明细，不得累加进分类合计</b>：它们已分别包含在 SYSTEM / USER 两项里，
-     * 只是说明「合计里有多少来自记忆 / 附件」。放进 {@link #messages} 会让四类之和
-     * 超过 {@link #messagesTotalTokens}；放进 {@link #reconciliation} 会破坏请求开销恒等式。</p>
-     *
-     * <p>两项皆未知时为 null（前端隐藏该块）；{@code null} 不等于 0。</p>
-     */
+    /** 记忆与附件已包含在消息分项里，不作为独立开销累加。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditContextAttributionVO contextAttribution;
-    /**
-     * 设计稿的「其他消息」面板：非消息请求开销的工具定义构成。
-     *
-     * <p><b>刻意不放进 {@link #messages}</b>：四类分项之和必须恰等于
-     * {@link #messagesTotalTokens}，而这块是「总量比四类之和多出来」的部分，
-     * 混进数组会让那条恒等式不成立（设计稿也用 {@code border-t} 把它单独隔开）。</p>
-     *
-     * <p>无快照或总量未知时为 null（此时谈不上「构成」）。</p>
-     */
+    /** 框架给出的工具定义分项。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditRequestOverheadVO requestOverhead;
-    /** 四类分项：恒为 4 条、固定顺序 SYSTEM / USER / AI / TOOL。 */
+    /** 成功采集的消息分项，固定顺序 SYSTEM / USER / AI / TOOL。 */
     private List<TokenAuditCategoryVO> messages;
-    /** 四类之和（= {@code reconciliation.messagesTokens}）；无快照时为 null。 */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private Integer messagesTotalTokens;
     /** TOOL 下钻；无工具分组时为 null。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditToolBreakdownVO tools;

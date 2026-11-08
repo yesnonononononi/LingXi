@@ -3,6 +3,7 @@ package com.summit.dp.session;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.TokenAuditConverter;
+import com.summit.dp.session.application.convert.TokenAuditFrameworkViewConverter;
 import com.summit.dp.session.application.port.TokenAuditBroadcaster;
 import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.session.application.service.SessionTokenAuditQueryService;
@@ -64,6 +65,16 @@ class SessionTokenAuditCollectorTest {
 
     private final SessionTokenAuditCollector collector = new SessionTokenAuditCollector(auditRepository,
             sessionRepository, executionLocator, new TokenAuditConverter(), queryService, broadcasters);
+
+    @Test
+    void collectionPreservesOriginalFrameworkDocument() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
+        collector.collect("1", SessionTokenAuditApiTest.frameworkDocument(), metadata());
+        ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
+        verify(auditRepository).replaceSnapshot(captor.capture());
+        assertEquals(0.0412345, TokenAuditFrameworkViewConverter.read(captor.getValue().getFrameworkDocument())
+                .getRequestOverhead().getToolDefinition().getRatio());
+    }
 
     @Test
     @DisplayName("采集成功：落 COLLECTED 快照并按根会话广播与 GET 同构的载荷")

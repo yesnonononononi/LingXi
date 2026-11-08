@@ -77,6 +77,7 @@ class H2SchemaPoConsistencyTest {
     /** 附录 A.2 的大文本列清单（逐列核对，缺一即错）。 */
     private static final List<String> LARGE_TEXT_COLUMNS = List.of(
             "session_context.content",
+            "session_token_audit.framework_document",
             "session_message.content",
             "tool_call.content",
             "tool_call.raw_input",
@@ -403,8 +404,7 @@ class H2SchemaPoConsistencyTest {
             }
             try (Stream<Path> paths = Files.list(candidate)) {
                 Path script = paths
-                        .filter(path -> path.getFileName().toString().matches("V\\d+__.*\\.sql"))
-                        .sorted(Comparator.comparing(path -> path.getFileName().toString()))
+                        .filter(path -> path.getFileName().toString().equals("V1__schema.sql"))
                         .findFirst()
                         .orElse(null);
                 if (script != null) {

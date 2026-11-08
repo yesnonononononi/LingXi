@@ -4,6 +4,7 @@ import com.summit.core.audit.token.TokenAuditDocument;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.TokenAuditConverter;
+import com.summit.dp.session.application.convert.TokenAuditFrameworkViewConverter;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionTokenAudit;
 import com.summit.dp.session.domain.model.TokenAuditPersistedState;
@@ -84,6 +85,7 @@ public class SessionTokenAuditCollector {
                 TokenAuditReconciler.reconcile(converter.toMeasurement(document, session));
         SessionTokenAudit incoming = SessionTokenAudit.capture(sessionId, numericExecutionId(executionId),
                 result, Instant.now());
+        incoming.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(document));
 
         // 乱序投递（同一执行重复到达 / 更早的执行迟到）不得覆盖更新的快照。
         Optional<SessionTokenAudit> existing = auditRepository.findBySessionId(sessionId);

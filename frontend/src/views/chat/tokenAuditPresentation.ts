@@ -1,14 +1,12 @@
 import {formatClockTime} from '../../utils/format';
 import type {
   SessionTokenAuditSnapshot,
-  TokenAuditAmount,
   TokenAuditCategoryType,
   TokenAuditCategory,
   TokenAuditRequestOverhead,
   TokenAuditToolBreakdown,
   TokenAuditToolGroupKind,
   TokenAuditToolGroup,
-  TokenAuditToolItem,
 } from '../../types/tokenAudit';
 
 /**
@@ -69,26 +67,18 @@ export interface TokenAuditToolGroupRow {
   labelKey: string;
   tokens: number;
   ratio?: number | null;
-  /** 「N 项」= 明细数组长度；调用次数已从契约移除，不得再作为口径。 */
-  itemCount: number;
-  items: TokenAuditToolItemRow[];
+
 }
 
 /** 组内单个工具的一行。 */
 export interface TokenAuditToolItemRow {
   toolName: string;
   tokens: number;
-  ratio?: number | null;
 }
 
-/**
- * 「其他消息」里的工具定义构成一行。
- *
- * <p>`key` 的第三个取值 `framing` 是**后端的派生量**（请求框架残差），不是一项独立开销：
- * 它没有 ratio（后端没给，前端也不许自己除），也不计入「N 项」徽标。</p>
- */
+/** 框架提供的工具定义分项。 */
 export interface TokenAuditDefinitionRow {
-  key: 'kernel' | 'mcp' | 'framing';
+  key: 'kernel' | 'mcp';
   labelKey: string;
   tokens: number;
   ratio?: number | null;
@@ -113,7 +103,7 @@ const isKnownNumber = (value: number | null | undefined): value is number =>
  * @param value 待判定对象
  * @returns 存在且 tokens 为有限数值时返回 true
  */
-const isRenderableAmount = <T extends TokenAuditAmount>(
+const isRenderableAmount = <T extends {tokens: number | null}>(
   value: T | null | undefined
 ): value is T & {tokens: number} =>
   value !== null && value !== undefined && isKnownNumber(value.tokens);
@@ -251,11 +241,11 @@ const collectToolGroups = (
 ): (TokenAuditToolGroup & {tokens: number})[] => {
   if (!tools) return [];
   const byKind: Record<TokenAuditToolGroupKind, TokenAuditToolGroup | null | undefined> = {
-    ORDINARY: tools.ordinary,
+    ORDINARY: null,
     MCP: tools.mcp,
     SKILL: tools.skill,
   };
-  return TOOL_GROUP_ORDER
+  return TOOL_GROUP_ORDER.filter(kind => kind !== 'ORDINARY')
     .map((kind) => byKind[kind])
     .filter((group): group is TokenAuditToolGroup & {tokens: number} => isRenderableAmount(group));
 };
@@ -267,7 +257,7 @@ const collectToolGroups = (
  * @returns 非空分组数（0..3）
  */
 export function countToolGroupKinds(tools?: TokenAuditToolBreakdown | null): number {
-  return collectToolGroups(tools).length;
+  return collectToolGroups(tools).length + (resolveOrdinaryToolRows(tools).length > 0 ? 1 : 0);
 }
 
 /**
@@ -277,50 +267,21 @@ export function countToolGroupKinds(tools?: TokenAuditToolBreakdown | null): num
  * @returns 可直接渲染的分组行；无分组时返回空数组
  */
 export function resolveToolGroupRows(tools?: TokenAuditToolBreakdown | null): TokenAuditToolGroupRow[] {
-  return collectToolGroups(tools).map((group) => {
-    const items = Array.isArray(group.items)
-      ? group.items.filter(
-          (item): item is TokenAuditToolItem & {tokens: number} =>
-            isRenderableAmount(item) && typeof item.toolName === 'string'
-        )
-      : [];
-    return {
-      kind: group.groupKind,
-      labelKey: TOOL_GROUP_LABEL_KEY[group.groupKind] ?? TOOL_GROUP_LABEL_KEY.ORDINARY,
-      tokens: group.tokens,
-      ratio: group.ratio ?? null,
-      // 「N 项」只认数组长度；调用次数已从契约移除，不再参与任何计数。
-      itemCount: items.length,
-      items: items.map((item) => ({
-        toolName: item.toolName,
-        tokens: item.tokens,
-        ratio: item.ratio ?? null,
-      })),
-    };
-  });
+  return collectToolGroups(tools).map(group => ({
+    kind: group.groupKind,
+    labelKey: TOOL_GROUP_LABEL_KEY[group.groupKind],
+    tokens: group.tokens,
+    ratio: group.ratio ?? null,
+  }));
 }
 
-/**
- * 「其他消息 → 工具定义构成」行派生。
- *
- * <p>三行顺序固定：内核 → MCP → **请求框架残差**。残差行存在的意义是让
- * `内核 + MCP + 残差 = 其他消息总量` 这个加式在界面上闭合 —— 少了它，两行占比加起来永远差一截，
- * 看起来像前端算错了。后端 `TokenAuditReconciler` 已如实下发
- * `framingResidual = requestOverhead − toolDefinition − mcpToolDefinition`，前端只负责展示。</p>
- *
- * <p>残差的渲染规则（与内核/MCP 不同，务必按此实现）：</p>
- * <ul>
- *   <li><b>未知（`null`）不渲染</b>：不知道就不画，绝不补 0；</li>
- *   <li><b>等于 0 不渲染</b>：0 表示两项已精确解释全部开销，多一行「0 tok」纯是噪声；</li>
- *   <li><b>负数照常渲染</b>：后端注释写明残差可为负（「合并计算 vs 分开计算」的框架差异），
- *       吞掉负数等于制造新的对不上；</li>
- *   <li><b>`ratio` 恒为 `null`</b>：后端没有给残差的 ratio（它是派生量）。前端<b>不许</b>自己除 ——
- *       模板对 `ratio` 为 null 的处理就是「不显示百分比」，这正是我们要的效果。</li>
- * </ul>
- *
- * @param overhead 请求开销小节
- * @returns 可渲染的定义行（内核 / MCP / 框架残差），缺失或无需展示的项直接跳过
- */
+/** 普通工具只有框架逐项计数，直接平铺，不生成分组汇总或比例。 */
+export function resolveOrdinaryToolRows(tools?: TokenAuditToolBreakdown | null): TokenAuditToolItemRow[] {
+  return (tools?.ordinary?.items ?? []).filter(isRenderableAmount)
+    .map(item => ({toolName: item.toolName, tokens: item.tokens}));
+}
+
+/** 只展示框架提供的定义分项，不为闭合总和补残差。 */
 export function resolveToolDefinitionRows(
   overhead?: TokenAuditRequestOverhead | null
 ): TokenAuditDefinitionRow[] {
@@ -342,28 +303,18 @@ export function resolveToolDefinitionRows(
       ratio: overhead.mcpToolDefinition.ratio ?? null,
     });
   }
-  // 残差：只展示「已知且非 0」的派生量；`ratio` 故意留 null（后端未给，前端不做除法）。
-  const framing = overhead.framingResidualTokens;
-  if (isKnownNumber(framing) && framing !== 0) {
-    rows.push({
-      key: 'framing',
-      labelKey: 'chat.tokenAudit.definition.framing',
-      tokens: framing,
-      ratio: null,
-    });
-  }
   return rows;
 }
 
 /**
- * 「其他消息」小节是否可渲染：总量或项数任一已知即可成行。
+ * 工具定义小节只在存在框架明细时渲染。
  *
  * @param overhead 请求开销小节
  * @returns 可渲染返回 true
  */
 export function hasOverheadSection(overhead?: TokenAuditRequestOverhead | null): boolean {
   if (!overhead) return false;
-  return isKnownNumber(overhead.tokens) || isKnownNumber(overhead.itemCount);
+  return resolveToolDefinitionRows(overhead).length > 0;
 }
 
 /**
@@ -386,15 +337,5 @@ export function resolveCapturingDrift(audit?: SessionTokenAuditSnapshot | null):
 export function hasContextSection(audit?: SessionTokenAuditSnapshot | null): boolean {
   if (!audit) return false;
   return isKnownNumber(audit.liveTotalTokens) || isKnownNumber(audit.liveMaxTokens);
-}
-
-/**
- * 消息构成标题右侧的总量文本。
- *
- * @param audit 已归一快照
- * @returns 如 `142,850`；缺失返回空串
- */
-export function resolveMessagesTotalText(audit?: SessionTokenAuditSnapshot | null): string {
-  return formatTokenAmount(audit?.messagesTotalTokens ?? null);
 }
 

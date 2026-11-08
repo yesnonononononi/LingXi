@@ -12,8 +12,7 @@ import java.util.Objects;
 /**
  * 会话级 token 审计快照（聚合根）：一个会话只保留最近一次采集的事实。
  *
- * <p><b>为什么不落「比率」</b>：比率是展示派生值，父级为 0 时必须为 null 而不是 0 或 NaN；
- * 落库只会把某一刻的父级固化成永久错误。查询期现算，永远与当次分项一致。</p>
+ * <p>展示使用保存的框架审计原文，旧对账列不作为展示分项的来源。</p>
  *
  * <p><b>{@code CAPTURING} 不落库</b>：它是「此刻快照总量与实时总量是否相等」的判定，
  * 落库即过期。持久层只承认 {@link TokenAuditPersistedState#COLLECTED} /
@@ -76,6 +75,8 @@ public class SessionTokenAudit {
      * <p>同 {@link #memoryTokens}：<b>已并入 {@code USER} 分项，纯归因明细，禁止累加</b>。</p>
      */
     private Integer attachmentTokens;
+    /** 保留框架原始比例，避免查询时按业务父级重算。 */
+    private String frameworkDocument;
     private Instant capturedAt;
     private String failReason;
     private final List<SessionTokenAuditItem> items;
@@ -166,18 +167,17 @@ public class SessionTokenAudit {
                 capturedAt, failReason, items);
     }
 
-    /**
-     * 把快照置为失败。
-     *
-     * <p><b>已有成功快照时绝不生效</b>：一次失败的采集不该摧毁手上唯一可解释的事实，
-     * 用户宁可看到「旧快照 + 正在采集」，也不要看到一份空白面板。</p>
-     *
-     * @param reason 失败原因；空值使用兜底文案，超长截断
-     */
+    /** 保存框架事实，避免读库时丢失原始比例。 */
+    public void changeFrameworkDocument(String document) {
+        this.frameworkDocument = document;
+    }
+
+    /** 已有成功快照时，后续失败不能将其清空。 */
     public void changeFailed(String reason) {
         if (state == TokenAuditPersistedState.COLLECTED) {
             return;
         }
+        this.frameworkDocument = null;
         this.state = TokenAuditPersistedState.FAILED;
         this.totalTokens = null;
         this.messagesTokens = null;

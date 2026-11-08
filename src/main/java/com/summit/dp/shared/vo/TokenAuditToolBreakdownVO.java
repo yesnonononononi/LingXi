@@ -9,9 +9,9 @@ import lombok.Data;
 @Builder
 public class TokenAuditToolBreakdownVO {
 
-    /** = 三个分组之和（子项优先），与 TOOL 消息行同口径。 */
+    /** 框架工具计数，与 TOOL 消息行同源，不要求等于各分组之和。 */
     private Integer tokens;
-    /** 占父级（{@code messagesTotalTokens}）的比例。 */
+    /** 框架原始比例。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Double ratio;
     /** MCP 工具分组；本轮没有 MCP 调用时为 null。 */
@@ -22,5 +22,5 @@ public class TokenAuditToolBreakdownVO {
     private TokenAuditToolGroupVO skill;
     /** 普通工具分组；本轮没有普通工具调用时为 null。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private TokenAuditToolGroupVO ordinary;
+    private TokenAuditOrdinaryToolsVO ordinary;
 }

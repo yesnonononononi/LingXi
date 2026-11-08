@@ -32,7 +32,7 @@ import {t} from '../../i18n';
 import {isOk} from '../../utils/api';
 import {ApiError, describeKind} from '../../services/interceptor';
 import {TokenAuditAPI} from '../../services/tokenAudit';
-import type {SessionTokenAuditSnapshot, TokenAuditCategoryType, TokenAuditToolGroupKind} from '../../types/tokenAudit';
+import type {SessionTokenAuditSnapshot, TokenAuditCategoryType} from '../../types/tokenAudit';
 import {
   formatBarWidth,
   formatCapturedAt,
@@ -44,10 +44,10 @@ import {
   resolveCapturingDrift,
   resolveContextSummary,
   resolveMessageRows,
-  resolveMessagesTotalText,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   countToolGroupKinds,
+  resolveOrdinaryToolRows,
 } from '../../views/chat/tokenAuditPresentation';
 import {
   clearTokenAuditStreamEntry,
@@ -113,9 +113,6 @@ const isStreamDriven = computed<boolean>(() => streamEntry.value !== null);
 const toolRowExpanded = ref(false);
 /** 「其他消息」二级拆解是否展开。 */
 const overheadExpanded = ref(false);
-/** 各工具来源分组的展开态（按分组种类键控）。 */
-const expandedGroups = ref<Record<string, boolean>>({});
-
 /** 采集状态；无数据时按「未采集」处理，绝不臆造 COLLECTED。 */
 const displayState = computed<string>(() => displayed.value?.displayState ?? 'NOT_COLLECTED');
 const isFailed = computed<boolean>(() => displayState.value === 'FAILED');
@@ -130,15 +127,13 @@ const showContext = computed<boolean>(() => hasContextSection(displayed.value));
 
 const messageRows = computed(() => resolveMessageRows(displayed.value?.messages));
 const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools));
+const ordinaryToolRows = computed(() => resolveOrdinaryToolRows(displayed.value?.tools));
 const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
-const messagesTotalText = computed<string>(() => resolveMessagesTotalText(displayed.value));
 const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
 const capturingDrift = computed<number | null>(() => resolveCapturingDrift(displayed.value));
 
 const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
 const definitionRows = computed(() => resolveToolDefinitionRows(displayed.value?.requestOverhead));
-const overheadTokensText = computed<string>(() => formatTokenAmount(displayed.value?.requestOverhead?.tokens ?? null));
-const overheadRatioText = computed<string>(() => formatRatioPercent(displayed.value?.requestOverhead?.ratio ?? null));
 const overheadItemCount = computed<number | null>(() => {
   const count = displayed.value?.requestOverhead?.itemCount;
   return typeof count === 'number' && Number.isFinite(count) ? count : null;
@@ -155,7 +150,6 @@ const failText = computed<string>(() => {
 const resetExpansion = (): void => {
   toolRowExpanded.value = false;
   overheadExpanded.value = false;
-  expandedGroups.value = {};
 };
 
 /**
@@ -208,14 +202,6 @@ const toggleToolRow = (): void => {
 const toggleOverhead = (): void => {
   overheadExpanded.value = !overheadExpanded.value;
 };
-
-/** 切换某个工具来源分组的明细。 */
-const toggleGroup = (kind: TokenAuditToolGroupKind): void => {
-  expandedGroups.value = {...expandedGroups.value, [kind]: !expandedGroups.value[kind]};
-};
-
-/** 某个工具来源分组是否展开。 */
-const isGroupExpanded = (kind: TokenAuditToolGroupKind): boolean => expandedGroups.value[kind] === true;
 
 /** 文本形式的占比；空串表示「不知道」，模板据此不渲染该列。 */
 const ratioText = (ratio?: number | null): string => formatRatioPercent(ratio);
@@ -398,9 +384,6 @@ watch(
                     class="truncate text-lx-fs-2xs text-lx-warning"
                   >{{ t('chat.tokenAudit.capturing', {tokens: formatTokenAmount(capturingDrift)}) }}</span>
                 </div>
-                <span v-if="messagesTotalText" class="shrink-0 font-mono text-lx-fs-xs text-lx-faint">
-                  {{ messagesTotalText }} {{ t('chat.tokenAudit.tokenUnitLong') }}
-                </span>
               </div>
               <p v-if="capturedAtText" class="text-right font-mono text-lx-fs-2xs text-lx-faint">
                 {{ t('chat.tokenAudit.capturedAt', {time: capturedAtText}) }}
@@ -453,7 +436,7 @@ watch(
 
                   <!-- 工具来源二级拆解：普通工具 / MCP / Skill -->
                   <div
-                    v-if="row.type === 'TOOL' && toolRowExpanded && toolGroupRows.length"
+                    v-if="row.type === 'TOOL' && toolRowExpanded && (toolGroupRows.length || ordinaryToolRows.length)"
                     data-testid="token-audit-tool-sources"
                     class="mt-1.5 space-y-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
                   >
@@ -461,55 +444,16 @@ watch(
                       <span>{{ t('chat.tokenAudit.byToolSource') }}</span>
                       <span>{{ t('chat.tokenAudit.ratio') }}</span>
                     </div>
-                    <div v-for="group in toolGroupRows" :key="group.kind" class="space-y-1">
-                      <button
-                        type="button"
-                        :aria-expanded="isGroupExpanded(group.kind)"
-                        class="flex w-full items-center justify-between gap-2 text-left"
-                        @click="toggleGroup(group.kind)"
-                      >
-                        <span class="flex min-w-0 items-center gap-1">
-                          <span class="shrink-0 text-lx-fs-sm font-medium text-lx-primary">{{ t(group.labelKey) }}</span>
-                          <span
-                            v-if="group.itemCount > 0"
-                            class="shrink-0 rounded border border-lx-border-subtle bg-lx-surface-elevated px-1 text-lx-fs-2xs font-normal text-lx-muted"
-                          >{{ t('chat.tokenAudit.itemCount', {count: group.itemCount}) }}</span>
-                          <svg
-                            v-if="group.itemCount > 0"
-                            class="h-2.5 w-2.5 shrink-0 text-lx-faint transition-transform"
-                            :class="isGroupExpanded(group.kind) ? 'rotate-180' : ''"
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
-                          >
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </span>
-                        <span class="flex shrink-0 items-center gap-1.5 font-mono">
-                          <span class="text-lx-fs-sm font-medium text-lx-primary">{{ formatTokenAmount(group.tokens) }}</span>
-                          <span v-if="ratioText(group.ratio)" class="w-9 text-right text-lx-fs-2xs text-lx-faint">
-                            {{ ratioText(group.ratio) }}
-                          </span>
-                        </span>
-                      </button>
-                      <div
-                        v-if="group.itemCount > 0 && isGroupExpanded(group.kind)"
-                        class="ml-1 space-y-0.5 border-l border-lx-border-subtle py-0.5 pl-2"
-                      >
-                        <div
-                          v-for="item in group.items"
-                          :key="item.toolName"
-                          class="flex items-center justify-between gap-2"
-                        >
-                          <span class="truncate font-mono text-lx-fs-xs text-lx-secondary" :title="item.toolName">
-                            {{ item.toolName }}
-                          </span>
-                          <span class="flex shrink-0 items-center gap-1.5 font-mono text-lx-fs-2xs">
-                            <span class="text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
-                            <span v-if="ratioText(item.ratio)" class="w-8 text-right text-lx-faint">
-                              {{ ratioText(item.ratio) }}
-                            </span>
-                          </span>
-                        </div>
-                      </div>
+                    <div v-for="item in ordinaryToolRows" :key="item.toolName" class="flex items-center justify-between gap-2">
+                      <span class="truncate font-mono text-lx-fs-xs text-lx-secondary" :title="item.toolName">{{ item.toolName }}</span>
+                      <span class="font-mono text-lx-fs-xs text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
+                    </div>
+                    <div v-for="group in toolGroupRows" :key="group.kind" class="flex items-center justify-between gap-2">
+                      <span class="text-lx-fs-sm font-medium text-lx-primary">{{ t(group.labelKey) }}</span>
+                      <span class="flex shrink-0 items-center gap-1.5 font-mono">
+                        <span class="text-lx-fs-sm font-medium text-lx-primary">{{ formatTokenAmount(group.tokens) }}</span>
+                        <span v-if="ratioText(group.ratio)" class="w-9 text-right text-lx-fs-2xs text-lx-faint">{{ ratioText(group.ratio) }}</span>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -543,10 +487,6 @@ watch(
                   >
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                   </svg>
-                </span>
-                <span class="flex shrink-0 items-center gap-2 font-mono">
-                  <span v-if="overheadTokensText" class="text-lx-fs-sm font-semibold text-lx-primary">{{ overheadTokensText }}</span>
-                  <span v-if="overheadRatioText" class="w-9 text-right text-lx-fs-xs text-lx-faint">{{ overheadRatioText }}</span>
                 </span>
               </button>
 

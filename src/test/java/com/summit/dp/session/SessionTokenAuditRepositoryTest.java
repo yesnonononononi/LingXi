@@ -3,6 +3,7 @@ package com.summit.dp.session;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.session.domain.model.SessionTokenAudit;
+import com.summit.dp.session.application.convert.TokenAuditFrameworkViewConverter;
 import com.summit.dp.session.domain.model.TokenAuditGroupKind;
 import com.summit.dp.session.domain.model.TokenAuditPersistedState;
 import com.summit.dp.session.domain.model.TokenAuditReconciler;
@@ -60,6 +61,22 @@ class SessionTokenAuditRepositoryTest {
     @AfterEach
     void shutdown() {
         database.shutdown();
+    }
+
+    @Test
+    void frameworkDocumentSurvivesInsertUpdateAndNullReplacement() {
+        SessionTokenAudit first = collected(List.of("search_web"));
+        String document = TokenAuditFrameworkViewConverter.write(SessionTokenAuditApiTest.frameworkDocument());
+        first.changeFrameworkDocument(document);
+        repository.replaceSnapshot(first);
+        assertEquals(document, repository.findBySessionId(SESSION_ID).orElseThrow().getFrameworkDocument());
+        SessionTokenAudit second = collected(List.of("read_file"));
+        second.changeFrameworkDocument(document.replace("0.0412345", "0.87654321"));
+        repository.replaceSnapshot(second);
+        assertEquals(second.getFrameworkDocument(), repository.findBySessionId(SESSION_ID).orElseThrow()
+                .getFrameworkDocument());
+        repository.replaceSnapshot(collected(List.of()));
+        assertNull(repository.findBySessionId(SESSION_ID).orElseThrow().getFrameworkDocument());
     }
 
     @Test

@@ -5,7 +5,6 @@ import type {
   TokenAuditCategory,
   TokenAuditCategoryType,
   TokenAuditDisplayState,
-  TokenAuditReconciliation,
   TokenAuditRequestOverhead,
   TokenAuditToolBreakdown,
   TokenAuditToolGroup,
@@ -116,7 +115,6 @@ const normalizeToolItem = (raw: unknown): TokenAuditToolItem | null => {
   return {
     toolName,
     tokens: toTokenAuditNumber(readField(raw, 'tokens')),
-    ratio: toTokenAuditNumber(readField(raw, 'ratio')),
     argumentTokens: toTokenAuditNumber(readField(raw, 'argumentTokens')),
     outputTokens: toTokenAuditNumber(readField(raw, 'outputTokens')),
   };
@@ -127,16 +125,18 @@ const normalizeToolGroup = (raw: unknown): TokenAuditToolGroup | null => {
   if (!isRecord(raw)) return null;
   const kind = readField(raw, 'groupKind');
   if (typeof kind !== 'string' || !(KNOWN_TOOL_GROUP_KINDS as readonly string[]).includes(kind)) return null;
-  const rawItems = readField(raw, 'items');
-  const items = Array.isArray(rawItems)
-    ? rawItems.map(normalizeToolItem).filter((item): item is TokenAuditToolItem => item !== null)
-    : null;
   return {
     groupKind: kind as TokenAuditToolGroupKind,
     tokens: toTokenAuditNumber(readField(raw, 'tokens')),
     ratio: toTokenAuditNumber(readField(raw, 'ratio')),
-    items,
   };
+};
+
+const normalizeOrdinaryTools = (raw: unknown): {items: TokenAuditToolItem[] | null} | null => {
+  if (!isRecord(raw)) return null;
+  const items = readField(raw, 'items');
+  return {items: Array.isArray(items)
+    ? items.map(normalizeToolItem).filter((item): item is TokenAuditToolItem => item !== null) : null};
 };
 
 /** 归出「工具返回消息」的二级构成。 */
@@ -147,7 +147,7 @@ const normalizeToolBreakdown = (raw: unknown): TokenAuditToolBreakdown | null =>
     ratio: toTokenAuditNumber(readField(raw, 'ratio')),
     mcp: normalizeToolGroup(readField(raw, 'mcp')),
     skill: normalizeToolGroup(readField(raw, 'skill')),
-    ordinary: normalizeToolGroup(readField(raw, 'ordinary')),
+    ordinary: normalizeOrdinaryTools(readField(raw, 'ordinary')),
   };
 };
 
@@ -168,39 +168,10 @@ const normalizeCategory = (raw: unknown): TokenAuditCategory | null => {
 const normalizeRequestOverhead = (raw: unknown): TokenAuditRequestOverhead | null => {
   if (!isRecord(raw)) return null;
   return {
-    tokens: toTokenAuditNumber(readField(raw, 'tokens')),
-    ratio: toTokenAuditNumber(readField(raw, 'ratio')),
     itemCount: toTokenAuditNumber(readField(raw, 'itemCount')),
     toolDefinition: normalizeAmount(readField(raw, 'toolDefinition')),
     mcpToolDefinition: normalizeAmount(readField(raw, 'mcpToolDefinition')),
-    framingResidualTokens: toTokenAuditNumber(readField(raw, 'framingResidualTokens')),
   };
-};
-
-/**
- * 归出对账信息。
- *
- * <p>面板不渲染这些字段，但仍一律归一：一是「同一份 payload 只有一种数值形态」这条不变式要成立，
- * 二是后端今后若把它们接进渲染，不会重演字符串事故。未知键（后端新增）原样保留，
- * 其中「数字形态」的值同样按同一规则收敛。</p>
- */
-const normalizeReconciliation = (raw: unknown): TokenAuditReconciliation | null => {
-  if (!isRecord(raw)) return null;
-  const result: TokenAuditReconciliation = {
-    totalTokens: null,
-    messagesTokens: null,
-    requestOverheadTokens: null,
-    argumentOverlapTokens: null,
-    toolGroupingDrift: null,
-    toolDefinitionTokens: null,
-    mcpToolDefinitionTokens: null,
-    framingResidualTokens: null,
-  };
-  for (const [key, value] of Object.entries(raw)) {
-    // 数字或纯数字串 → 收敛为数值；其它形态（含非数字串、null）→ null。
-    result[key] = typeof value === 'number' || typeof value === 'string' ? toTokenAuditNumber(value) : null;
-  }
-  return result;
 };
 
 /** 模块级单例：sessionId → 最新推送。整体替换 Map 以触发 Vue 响应式更新。 */
@@ -272,10 +243,8 @@ export function normalizeTokenAuditSnapshot(
     messages: Array.isArray(rawMessages)
       ? rawMessages.map(normalizeCategory).filter((item): item is TokenAuditCategory => item !== null)
       : null,
-    messagesTotalTokens: toTokenAuditNumber(readField(raw, 'messagesTotalTokens')),
     tools: normalizeToolBreakdown(readField(raw, 'tools')),
     requestOverhead: normalizeRequestOverhead(readField(raw, 'requestOverhead')),
-    reconciliation: normalizeReconciliation(readField(raw, 'reconciliation')),
   };
 }
 

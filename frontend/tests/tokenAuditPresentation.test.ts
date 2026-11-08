@@ -23,9 +23,9 @@ import {
   resolveCapturingDrift,
   resolveContextSummary,
   resolveMessageRows,
-  resolveMessagesTotalText,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
+  resolveOrdinaryToolRows,
 } from '../src/views/chat/tokenAuditPresentation';
 import {
   clearTokenAuditStreamEntry,
@@ -47,14 +47,11 @@ const fullTools = (): TokenAuditToolBreakdown => ({
   tokens: 73080,
   ratio: 0.512,
   ordinary: {
-    groupKind: 'ORDINARY',
-    tokens: 24180,
-    ratio: 0.331,
     items: [
-      {toolName: 'search_web', tokens: 9420, ratio: 0.39},
-      {toolName: 'read_file', tokens: 6850, ratio: 0.283},
-      {toolName: 'execute_code', tokens: 4960, ratio: 0.205},
-      {toolName: 'grep_search', tokens: 2950, ratio: 0.122},
+      {toolName: 'search_web', tokens: 9420},
+      {toolName: 'read_file', tokens: 6850},
+      {toolName: 'execute_code', tokens: 4960},
+      {toolName: 'grep_search', tokens: 2950},
     ],
   },
   mcp: {groupKind: 'MCP', tokens: 34700, ratio: 0.475, items: []},
@@ -77,15 +74,11 @@ const collectedAudit = (): SessionTokenAuditSnapshot => ({
     {type: 'AI', tokens: 38450, ratio: 0.269, expandable: false},
     {type: 'TOOL', tokens: 73080, ratio: 0.512, expandable: true},
   ],
-  messagesTotalTokens: 142850,
   tools: fullTools(),
   requestOverhead: {
-    tokens: 15200,
-    ratio: 0.106,
     itemCount: 2,
     toolDefinition: {tokens: 10400, ratio: 0.684},
     mcpToolDefinition: {tokens: 4800, ratio: 0.316},
-    framingResidualTokens: 0,
   },
 });
 
@@ -170,8 +163,6 @@ test('resolveMessageRows：tokens 缺失的行整行丢弃，不渲染 0', () =>
 });
 
 test('resolveMessagesTotalText：缺 messagesTotalTokens 返回空串', () => {
-  assert.equal(resolveMessagesTotalText(collectedAudit()), '142,850');
-  assert.equal(resolveMessagesTotalText({sessionId: '1', displayState: 'NOT_COLLECTED'}), '');
 });
 
 // ─────────────────────────── 工具来源（「N 类」/「N 项」） ───────────────────────────
@@ -191,34 +182,16 @@ test('countToolGroupKinds：显式 null 分组不计入（null = 不存在）', 
   assert.equal(countToolGroupKinds(tools), 2);
 });
 
-test('resolveToolGroupRows：「N 项」取 items 长度（调用次数已从契约移除）', () => {
-  const rows = resolveToolGroupRows(fullTools());
-  assert.deepEqual(rows.map((row) => row.kind), ['ORDINARY', 'MCP', 'SKILL']);
-  assert.equal(rows[0]!.itemCount, 4);
-  // MCP / Skill 的分组对象存在但 items 为空 → 0 项，列不展开
-  assert.equal(rows[1]!.itemCount, 0);
-  assert.equal(rows[2]!.itemCount, 0);
-  assert.equal(rows[0]!.items[0]!.toolName, 'search_web');
-  assert.equal(rows[0]!.items[0]!.tokens, 9420);
-});
-
-test('resolveToolGroupRows：分组 tokens 为真实 0 时仍渲染该行（0 是已知值）', () => {
-  const tools: TokenAuditToolBreakdown = {
-    tokens: 0,
-    ordinary: {groupKind: 'ORDINARY', tokens: 0, items: []},
-  };
-  const rows = resolveToolGroupRows(tools);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0]!.tokens, 0);
-  assert.equal(rows[0]!.ratio, null);
-});
-
-test('resolveToolGroupRows：items 为 null 时按 0 项处理', () => {
-  const tools: TokenAuditToolBreakdown = {
-    tokens: 100,
-    ordinary: {groupKind: 'ORDINARY', tokens: 100, items: null},
-  };
-  assert.equal(resolveToolGroupRows(tools)[0]!.itemCount, 0);
+test('普通工具仅展示逐项计数，MCP 与 Skill 保留框架分组比例', () => {
+  const groups = resolveToolGroupRows(fullTools());
+  assert.deepEqual(groups.map(row => row.kind), ['MCP', 'SKILL']);
+  assert.equal(groups[0]!.tokens, 34700);
+  assert.equal(groups[0]!.ratio, 0.475);
+  const items = resolveOrdinaryToolRows(fullTools());
+  assert.equal(items.length, 4);
+  assert.deepEqual(items[0], {toolName: 'search_web', tokens: 9420});
+  assert.deepEqual(resolveOrdinaryToolRows(null), []);
+  assert.equal(resolveToolGroupRows({mcp: {groupKind: 'MCP', tokens: 0, items: []}})[0]!.tokens, 0);
 });
 
 // ─────────────────────────── 其他消息（请求开销） ───────────────────────────
@@ -236,108 +209,34 @@ test('resolveToolDefinitionRows：缺失的定义项跳过，不渲染 0', () =>
   assert.equal(both[0]!.labelKey, 'chat.tokenAudit.definition.kernel');
   assert.equal(both[0]!.tokens, 10400);
 
-  const onlyKernel = resolveToolDefinitionRows({tokens: 15200, itemCount: 2, toolDefinition: {tokens: 10400}});
+  const onlyKernel = resolveToolDefinitionRows({itemCount: 1, toolDefinition: {tokens: 10400}});
   assert.deepEqual(onlyKernel.map((row) => row.key), ['kernel']);
   assert.equal(onlyKernel[0]!.ratio, null);
 
   assert.deepEqual(resolveToolDefinitionRows(null), []);
 });
 
-// ─────────────── 请求框架残差（派生行，让加式在界面上闭合） ───────────────
-
-/** 构造「其他消息」小节：内核 + MCP + 指定残差。 */
-const overheadWithFraming = (framing: number | null): TokenAuditRequestOverhead => ({
-  tokens: 5350,
-  ratio: 0.037,
-  itemCount: 2,
-  toolDefinition: {tokens: 3200, ratio: 0.598},
-  mcpToolDefinition: {tokens: 2100, ratio: 0.393},
-  framingResidualTokens: framing,
-});
-
-test('resolveToolDefinitionRows：残差 50 → 渲染第三行，tokens=50，ratio=null（前端不做除法）', () => {
-  const rows = resolveToolDefinitionRows(overheadWithFraming(50));
-  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp', 'framing']);
-  assert.equal(rows[2]!.labelKey, 'chat.tokenAudit.definition.framing');
-  assert.equal(rows[2]!.tokens, 50);
-  assert.equal(rows[2]!.ratio, null, '后端未给残差 ratio，前端不得自己除');
-  // 加式在界面上闭合：3200 + 2100 + 50 = 5350
-  assert.equal(rows.reduce((sum, row) => sum + row.tokens, 0), 5350);
-});
-
-test('resolveToolDefinitionRows：残差 0 → 不渲染第三行（0 是噪声）', () => {
-  const rows = resolveToolDefinitionRows(overheadWithFraming(0));
-  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp']);
-});
-
-test('resolveToolDefinitionRows：残差 null → 不渲染第三行（未知不补 0）', () => {
-  const rows = resolveToolDefinitionRows(overheadWithFraming(null));
-  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp']);
-
-  // 字段整体缺失同样不渲染
-  const missing = resolveToolDefinitionRows({
-    tokens: 5350, itemCount: 2,
-    toolDefinition: {tokens: 3200}, mcpToolDefinition: {tokens: 2100},
-  });
-  assert.deepEqual(missing.map((row) => row.key), ['kernel', 'mcp']);
-});
-
-test('resolveToolDefinitionRows：残差为负数（-20）→ 照常渲染，不吞', () => {
-  const rows = resolveToolDefinitionRows(overheadWithFraming(-20));
-  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp', 'framing']);
-  assert.equal(rows[2]!.tokens, -20);
-  assert.equal(rows[2]!.ratio, null);
-});
-
-test('resolveToolDefinitionRows：残差以字符串 "50" 到达 → 归一后仍渲染第三行', () => {
+test('框架比例原样展示：父级无总量时普通工具明细仍可展开，残差不展示', () => {
   const snapshot = normalizeTokenAuditSnapshot({
-    sessionId: 's-framing',
-    displayState: 'COLLECTED',
-    requestOverhead: {
-      tokens: '5350',
-      ratio: '0.037',
-      itemCount: '2',
-      toolDefinition: {tokens: '3200', ratio: '0.598'},
-      mcpToolDefinition: {tokens: '2100', ratio: '0.393'},
-      framingResidualTokens: '50',
-    },
-  }, null);
-  assert.ok(snapshot);
-  assert.equal(snapshot!.requestOverhead!.framingResidualTokens, 50);
-  const rows = resolveToolDefinitionRows(snapshot!.requestOverhead);
-  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp', 'framing']);
-  assert.equal(rows[2]!.tokens, 50);
-  assert.equal(rows[2]!.ratio, null);
-
-  // 字符串 "0" 归一为 0 → 按「0 不渲染」处理
-  const zero = normalizeTokenAuditSnapshot({
-    sessionId: 's-framing-zero', displayState: 'COLLECTED',
-    requestOverhead: {tokens: '5350', itemCount: '2', framingResidualTokens: '0'},
-  }, null);
-  assert.deepEqual(resolveToolDefinitionRows(zero!.requestOverhead).map((row) => row.key), []);
-
-  // 非数字字符串 → null → 不渲染
-  const junk = normalizeTokenAuditSnapshot({
-    sessionId: 's-framing-junk', displayState: 'COLLECTED',
-    requestOverhead: {tokens: '5350', itemCount: '2', framingResidualTokens: 'abc'},
-  }, null);
-  assert.equal(junk!.requestOverhead!.framingResidualTokens, null);
-  assert.deepEqual(resolveToolDefinitionRows(junk!.requestOverhead).map((row) => row.key), []);
-});
-
-test('残差行不计入「N 项」：itemCount 仍取后端字段（内核 + MCP）', () => {
-  const snapshot = normalizeTokenAuditSnapshot({
-    sessionId: 's-count', displayState: 'COLLECTED',
-    requestOverhead: {
-      tokens: '5350', itemCount: '2',
-      toolDefinition: {tokens: '3200'}, mcpToolDefinition: {tokens: '2100'},
-      framingResidualTokens: '50',
-    },
-  }, null);
-  assert.equal(snapshot!.requestOverhead!.itemCount, 2, '后端字段原样，不被派生行撑大');
-  const rows = resolveToolDefinitionRows(snapshot!.requestOverhead);
-  assert.equal(rows.length, 3, '渲染 3 行');
-  assert.equal(rows.filter((row) => row.key !== 'framing').length, 2, '但「N 项」只数内核 + MCP');
+    sessionId: 'framework', displayState: 'COLLECTED',
+    tools: {tokens: 100, ratio: 0.012345,
+      ordinary: {groupKind: 'ORDINARY', items: [{toolName: 'example', tokens: 13}]},
+      mcp: {groupKind: 'MCP', tokens: 80, ratio: 0.008765, items: []}},
+    requestOverhead: {itemCount: 2, toolDefinition: {tokens: 17, ratio: 0.0012345},
+      mcpToolDefinition: {tokens: 23, ratio: 0.0023456}, framingResidualTokens: -50},
+  }, null)!;
+  const groups = resolveToolGroupRows(snapshot.tools);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]!.ratio, 0.008765);
+  assert.deepEqual(resolveOrdinaryToolRows(snapshot.tools), [{toolName: 'example', tokens: 13}]);
+  assert.equal('framingResidualTokens' in snapshot.requestOverhead!, false);
+  assert.equal('ratio' in snapshot.requestOverhead!, false);
+  assert.equal('tokens' in snapshot.requestOverhead!, false);
+  const definitions = resolveToolDefinitionRows(snapshot.requestOverhead);
+  assert.deepEqual(definitions.map(row => row.key), ['kernel', 'mcp']);
+  assert.equal(definitions[0]!.ratio, 0.0012345);
+  assert.equal(definitions[1]!.ratio, 0.0023456);
+  assert.equal(hasOverheadSection(snapshot.requestOverhead), true);
 });
 
 // ─────────────────────────── 兜底状态 ───────────────────────────
@@ -450,7 +349,6 @@ test('推送 payload 缺字段时整行不渲染（与 GET 同一套派生规则
   assert.deepEqual(resolveMessageRows(shown!.messages), [], '消息构成整块不渲染');
   assert.deepEqual(resolveToolGroupRows(shown!.tools), [], '工具来源整块不渲染');
   assert.equal(countToolGroupKinds(shown!.tools), 0);
-  assert.equal(resolveMessagesTotalText(shown), '', '总数缺失即不渲染');
   assert.equal(hasContextSection(shown), false, '上下文段整块不渲染');
   assert.equal(hasOverheadSection(shown!.requestOverhead), false, '请求开销整段不渲染');
   assert.deepEqual(resolveToolDefinitionRows(shown!.requestOverhead), []);
@@ -465,7 +363,7 @@ test('推送 payload 的「N 项」仍取数组长度，且不接受未知字段
   recordTokenAuditSnapshot({...collectedAudit(), type: 'token_audit_snapshot'}, null, 1000);
   const shown = getTokenAuditStreamEntry('1234567890')!.snapshot;
   const rows = resolveToolGroupRows(shown.tools);
-  assert.equal(rows[0]!.itemCount, 4, '普通工具 4 项 = items.length');
+  assert.equal(resolveOrdinaryToolRows(shown.tools).length, 4);
   assert.equal(countToolGroupKinds(shown.tools), 3, '3 类 = 存在的分组数');
   resetTokenAuditStream();
 });
@@ -482,7 +380,6 @@ const stringNumericPayload = (): Record<string, unknown> => ({
   remainingTokens: '51800',
   remainingRatio: '0.259',
   totalTokens: '148200',
-  messagesTotalTokens: '142850',
   driftTokens: '0',
   capturedAt: '2026-11-08T05:00:00.000Z',
   messages: [
@@ -528,7 +425,6 @@ test('数值字段以字符串到达时仍正常渲染：148200 / 200k 与剩余
   assert.equal(snapshot!.liveRatio, 0.741);
   assert.equal(snapshot!.remainingTokens, 51800);
   assert.equal(snapshot!.remainingRatio, 0.259);
-  assert.equal(snapshot!.messagesTotalTokens, 142850);
 
   // 「当前上下文」两行都可见（模板的 v-if 条件即看这两个字段是否为 null）
   const summary = resolveContextSummary(snapshot);
@@ -550,14 +446,11 @@ test('数值字段以字符串到达时仍正常渲染：148200 / 200k 与剩余
   assert.equal(rows.length, 4);
   assert.equal(rows[3]!.tokens, 73080);
   const groups = resolveToolGroupRows(snapshot!.tools);
-  assert.equal(groups[0]!.tokens, 24180);
-  assert.equal(groups[0]!.items[0]!.tokens, 9420);
-  assert.equal(groups[0]!.items[0]!.tokens, 9420);
+  assert.equal(resolveOrdinaryToolRows(snapshot!.tools)[0]!.tokens, 9420);
   assert.equal(snapshot!.tools!.ordinary!.items![0]!.argumentTokens, 120);
   assert.equal(snapshot!.tools!.ordinary!.items![0]!.outputTokens, 980);
   assert.equal(snapshot!.requestOverhead!.itemCount, 2);
   assert.equal(resolveToolDefinitionRows(snapshot!.requestOverhead)[0]!.tokens, 10400);
-  assert.equal(snapshot!.reconciliation!.messagesTokens, 142850);
 });
 
 test('sessionId 保持字符串：雪花 ID 不因「看起来像数字」被转成 number', () => {
@@ -599,7 +492,6 @@ test('非数字字符串 → 未知 → 整行不渲染（不猜 0）', () => {
   assert.equal(snapshot!.liveTotalTokens, null);
   assert.equal(snapshot!.remainingTokens, null);
   assert.equal(snapshot!.liveRatio, null);
-  assert.equal(snapshot!.messagesTotalTokens, null);
 });
 
 test('0 仍是已知值："0" 渲染 0，不当未知', () => {

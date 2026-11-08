@@ -13,9 +13,6 @@ public class TokenAuditToolItemVO {
     private String toolName;
     /** 展示值（框架已去重叠，不含工具调用参数）。 */
     private Integer tokens;
-    /** 占父级（普通工具分组）的比例；父级为 0 或缺失时 null。 */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private Double ratio;
     /** 工具调用参数 token：已计入 AI 项，只读说明，不参与任何求和。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer argumentTokens;

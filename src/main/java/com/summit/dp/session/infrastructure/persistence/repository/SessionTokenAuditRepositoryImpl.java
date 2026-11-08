@@ -67,6 +67,7 @@ public class SessionTokenAuditRepositoryImpl
                 .mcpToolDefinitionTokens(entity.getMcpToolDefinitionTokens())
                 .memoryTokens(entity.getMemoryTokens())
                 .attachmentTokens(entity.getAttachmentTokens())
+                .frameworkDocument(entity.getFrameworkDocument())
                 .capturedAt(entity.getCapturedAt())
                 .failReason(entity.getFailReason())
                 .build();
@@ -165,6 +166,7 @@ public class SessionTokenAuditRepositoryImpl
                 .set(SessionTokenAuditPO::getMcpToolDefinitionTokens, audit.getMcpToolDefinitionTokens())
                 .set(SessionTokenAuditPO::getMemoryTokens, audit.getMemoryTokens())
                 .set(SessionTokenAuditPO::getAttachmentTokens, audit.getAttachmentTokens())
+                .set(SessionTokenAuditPO::getFrameworkDocument, audit.getFrameworkDocument())
                 .set(SessionTokenAuditPO::getCapturedAt, audit.getCapturedAt())
                 .set(SessionTokenAuditPO::getFailReason, audit.getFailReason())
                 .set(SessionTokenAuditPO::getUpdateTime, Instant.now()));
@@ -197,7 +199,7 @@ public class SessionTokenAuditRepositoryImpl
     }
 
     private SessionTokenAudit restore(SessionTokenAuditPO head, List<SessionTokenAuditItem> items) {
-        return SessionTokenAudit.restore(
+        SessionTokenAudit audit = SessionTokenAudit.restore(
                 head.getSessionId(),
                 head.getExecutionId(),
                 TokenAuditPersistedState.fromName(head.getAuditState()),
@@ -214,6 +216,8 @@ public class SessionTokenAuditRepositoryImpl
                 head.getCapturedAt(),
                 head.getFailReason(),
                 items);
+        audit.changeFrameworkDocument(head.getFrameworkDocument());
+        return audit;
     }
 
     private SessionTokenAuditItemPO toItemPO(Long sessionId, SessionTokenAuditItem item) {

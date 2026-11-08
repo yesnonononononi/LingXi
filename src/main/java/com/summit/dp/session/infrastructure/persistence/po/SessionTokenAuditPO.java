@@ -56,6 +56,7 @@ public class SessionTokenAuditPO {
     private Integer memoryTokens;
     /** 用户附件 token。<b>归因明细：已并入 USER 分项，禁止累加。</b>null 表示未知。 */
     private Integer attachmentTokens;
+    private String frameworkDocument;
     private Instant capturedAt;
     private String failReason;
     private Instant createTime;
