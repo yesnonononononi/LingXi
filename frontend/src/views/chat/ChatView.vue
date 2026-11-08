@@ -630,7 +630,7 @@ const {
   handleMessagesWheel,
   handleTouchStart,
   handleTouchMove,
-} = useChatView({ inputAreaRef, messagesContainerRef });
+} = useChatView({ inputAreaRef, messagesContainerRef, subSessionPanelVisible: computed(() => !previewPanelVisible.value) });
 
 const handleSidebarSessionSelect = (id: string): void => {
   if (localSessions.value.some(session => session.subSessions?.some(sub => String(sub.id) === id))) closePreviewPanel();

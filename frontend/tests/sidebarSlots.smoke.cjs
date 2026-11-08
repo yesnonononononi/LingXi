@@ -157,6 +157,9 @@ import SubAgentSidePanel from '${specifierFor(path.resolve(frontendRoot, 'src/co
 import {useChatSubSession} from '${specifierFor(path.resolve(frontendRoot, 'src/views/chat/useChatSubSession.ts'))}';
 import {useSidebarSessionSelection} from '${specifierFor(path.resolve(frontendRoot, 'src/views/chat/useSidebarSessionSelection.ts'))}';
 import {chatApi} from '${specifierFor(path.resolve(frontendRoot, 'src/services/chat.ts'))}';
+import {SessionAPI} from '${specifierFor(path.resolve(frontendRoot, 'src/services/session.ts'))}';
+import {useApplicationSessionState} from '${specifierFor(path.resolve(frontendRoot, 'src/views/chat/useApplicationSessionState.ts'))}';
+import {useApplicationSessionStore} from '${specifierFor(path.resolve(frontendRoot, 'src/stores/applicationSessionStore.ts'))}';
 import '${specifierFor(path.resolve(frontendRoot, 'src/style.css'))}';
 
 localStorage.setItem('lingxi-locale', 'zh-CN');
@@ -273,14 +276,24 @@ window.__render = async (scenarioKey, presetKey = 'expanded') => {
     setup() {
       const sessions = ref([
         {...SESSIONS[0], messages: [], subSessions: [
-          {id: '9007199254740995', name: '实现工程师', runStatus: 'RUNNING', messages: []},
-          {id: '9007199254740997', name: '审查工程师', runStatus: 'SUSPENDED', messages: []},
+          {id: '9007199254740995', name: '实现工程师', runStatus: 'RUNNING', renderStatus: 'RUNNING', isRead: false, version: '1', rootSessionId: 's1', messages: []},
+          {id: '9007199254740997', name: '审查工程师', runStatus: 'SUSPENDED', renderStatus: 'WAITING', isRead: false, version: '1', rootSessionId: 's1', messages: []},
         ]},
-        {...SESSIONS[2], messages: [], subSessions: [{id: '9007199254740999', name: '历史代理', runStatus: 'IDLE', lastOutcome: 'COMPLETED', messages: []}]},
+        {...SESSIONS[2], messages: [], subSessions: [{id: '9007199254740999', name: '历史代理', runStatus: 'IDLE', lastOutcome: 'COMPLETED', renderStatus: 'COMPLETED', isRead: false, version: '1', rootSessionId: 's9', messages: []}]},
       ]);
       const activeId = ref('s1');
       const current = computed(() => sessions.value.find(session => session.id === activeId.value));
       const subs = useChatSubSession({currentActiveSession: current});
+      const application = useApplicationSessionStore();
+      window.__readRequests = [];
+      SessionAPI.read = async (id, version) => {
+        window.__readRequests.push([id, version]);
+        const sub = sessions.value.flatMap(session => session.subSessions ?? []).find(item => String(item.id) === id);
+        return {code: 1, data: {...sub, isRead: true, version: String(BigInt(version) + 1n)}};
+      };
+      useApplicationSessionState(sessions, activeId, computed(() => subs.isSubPanelOpen.value && !subs.isLoadingSubMessages.value ? subs.activeViewingSubSessionId.value : null));
+      window.__publishSubState = state => application.accept(state);
+
       chatApi.fetchSessionMessages = async id => ({ok: true, data: {messages: [], records: [], turns: {},
         turnViews: {[id]: {sessionId: id, turnId: id, status: 'COMPLETED', viewVersion: 1,
           blocks: [{blockId: 'text-'+id, type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '真实子会话轨迹'}]}},
@@ -625,7 +638,7 @@ app.whenReady().then(async () => {
     await runCase('用例9 子代理二级分支：深浅主题、名称状态更新、真实导航与原动画', async () => {
       await evaluate('window.__render("production", "subSessions")');
       for (const theme of ['light', 'dark']) {
-        await evaluate('window.__setTheme(' + JSON.stringify(theme) + ')');
+        await evaluate('window.__subView.isSubPanelOpen.value = false; window.__setTheme(' + JSON.stringify(theme) + ')');
         await wait(450);
         const data = await evaluate(`(() => {
           const buttons = [...document.querySelectorAll('[data-slot="workspace-tree"] button')];
@@ -647,6 +660,17 @@ app.whenReady().then(async () => {
         await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师'))).click()`);
         await wait(450);
         assert.equal(await evaluate('window.__subView.activeViewingSubSessionId.value'), '9007199254740995');
+        assert.equal(await evaluate('window.__subSessions.value[0].subSessions[0].isRead'), true, '浏览子会话必须提交权威已读确认');
+        assert.equal(await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师'))).querySelector('[data-state]')`), null, '当前子会话隐藏状态标记');
+        await evaluate(`document.querySelector('[data-testid="toggle-sub-sessions"][aria-label="第一个会话"]').click()`);
+        await wait(450);
+        assert.equal(await evaluate(`document.querySelector('[data-testid="toggle-sub-sessions"][aria-label="第一个会话"]').getAttribute('aria-expanded')`), 'false');
+        assert.equal(await evaluate(`!![...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师'))`), false, '收起后隐藏本会话全部子代理');
+        assert.equal(await evaluate(`!![...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('历史代理'))`), true, '不影响其他会话分支');
+        assert.equal(await evaluate('window.__subView.isSubPanelOpen.value'), true, '收展不改变正在查看的轨迹');
+        await evaluate(`document.querySelector('[data-testid="toggle-sub-sessions"][aria-label="第一个会话"]').click()`);
+        await wait(450);
+
         assert.equal(await evaluate('document.querySelector(".sub-panel-shell")?.textContent.includes("真实子会话轨迹")'), true, '面板必须显示所选子会话轨迹');
         assert.equal(await evaluate('document.querySelectorAll("button[title=展开子代理协作轨迹与选项]").length'), 0, '原悬浮入口应移除');
         if (theme === 'dark') {
@@ -657,7 +681,16 @@ app.whenReady().then(async () => {
       }
       await evaluate(`window.__subSessions.value[0].subSessions[0].name = '实现工程师（已完成）'; window.__subSessions.value[0].subSessions[0].runStatus = 'IDLE'; window.__subSessions.value[0].subSessions[0].lastOutcome = 'COMPLETED'`);
       await wait(150);
-      assert.equal(await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师（已完成）'))).querySelector('[data-state]').dataset.state`), 'COMPLETED');
+      await evaluate(`window.__publishSubState({...window.__subSessions.value[0].subSessions[0], runStatus: 'IDLE', lastOutcome: 'COMPLETED', renderStatus: 'COMPLETED', isRead: false, version: '3'})`);
+      await wait(150);
+      assert.equal(await evaluate('window.__subSessions.value[0].subSessions[0].isRead'), true, '正在阅读时新完成状态也要确认已读');
+      await evaluate('window.__subView.isSubPanelOpen.value = false');
+      await wait(450);
+      assert.equal(await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师（已完成）'))).querySelector('[data-state]')`), null, '已读终态切走后也不再显示圆点');
+      await evaluate(`window.__publishSubState({...window.__subSessions.value[0].subSessions[0], lastOutcome: 'FAILED', renderStatus: 'FAILED', isRead: false, version: '5'})`);
+      await wait(150);
+      assert.equal(await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师（已完成）'))).querySelector('[data-state]').dataset.state`), 'FAILED', '后台新状态恢复未读标记');
+      assert.equal(await evaluate('window.__subSessions.value[0].subSessions[1].isRead'), false, '兄弟子会话不能被连带标记已读');
       await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('历史代理'))).click()`);
       await wait(450);
       assert.equal(await evaluate('window.__subView.activeViewingSubSessionId.value'), '9007199254740999', '跨所属会话打开指定子代理');

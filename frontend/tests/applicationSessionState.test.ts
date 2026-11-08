@@ -271,3 +271,95 @@ test('当前会话收到完成事件后再次确认已读，切走后保留后�
     (globalThis as any).document = originalDocument;
   }
 });
+
+
+test('应用状态把子会话挂到真实根会话，重载与迟到回执不能回退未读版本', async () => {
+  const {useApplicationSessionStore} = await import('../src/stores/applicationSessionStore');
+  const {useApplicationSessionState} = await import('../src/views/chat/useApplicationSessionState');
+  setActivePinia(createPinia());
+  const application = useApplicationSessionStore();
+  const rootId = String(metadata(1).id);
+  const child = {...metadata(4), id: '2107364703088017410', rootSessionId: rootId, name: '实现代理'};
+  application.accept(child);
+  application.accept({...metadata(1, true)});
+  const sessions = ref<ChatSession[]>([]);
+  const scope = effectScope();
+  try {
+    scope.run(() => useApplicationSessionState(sessions, ref(null)));
+    await nextTick();
+    assert.equal(sessions.value.length, 1, '子会话不能被登记成根会话');
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.id, child.id);
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.isRead, false);
+    const sub = sessions.value[0]!.subSessions![0]!;
+    sub.messages = [{id: 'retained', role: 'assistant', content: '保留轨迹', timestamp: 1}];
+    const messages = sub.messages;
+    application.accept({...child, version: '5', isRead: true});
+    await nextTick();
+    assert.equal(sub.messages, messages);
+    assert.equal(sub.isRead, true);
+    application.accept({...child, version: '4', isRead: false});
+    await nextTick();
+    assert.equal(sub.isRead, true);
+    sessions.value[0]!.subSessions = [{...child, version: '3', isRead: false}];
+    await nextTick();
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.version, '5');
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.isRead, true);
+  } finally { scope.stop(); }
+});
+
+test('仅可见子会话确认已读，兄弟隔离，后台新版本保留未读，隐藏页面不确认', async context => {
+  const originalDocument = globalThis.document;
+  const listeners = new Map<string, () => void>();
+  const page = {visibilityState: 'visible', addEventListener: (name: string, fn: () => void) => listeners.set(name, fn), removeEventListener: (name: string) => listeners.delete(name)};
+  (globalThis as any).document = page;
+  const {SessionAPI} = await import('../src/services/session');
+  const {useApplicationSessionState} = await import('../src/views/chat/useApplicationSessionState');
+  const {useApplicationSessionStore} = await import('../src/stores/applicationSessionStore');
+  setActivePinia(createPinia());
+  const application = useApplicationSessionStore();
+  const rootId = String(metadata(1).id);
+  const child = {...metadata(2), id: '2107364703088017410', rootSessionId: rootId};
+  const sibling = {...child, id: '2107364703088017411'};
+  const sessions = ref([{id: rootId, version: '1', isRead: true, messages: [], subSessions: [child, sibling]}] as ChatSession[]);
+  const visibleSubId = ref<string | null>(null);
+  let fail = false;
+  const read = context.mock.method(SessionAPI, 'read', async (id: string, version?: string) => fail
+    ? {code: 500, errMsg: '写入失败'}
+    : {code: 1, data: {...child, id, version: String(BigInt(version!) + 1n), isRead: true}});
+  const scope = effectScope();
+  try {
+    scope.run(() => useApplicationSessionState(sessions, ref(rootId), visibleSubId));
+    await nextTick(); await turn();
+    assert.equal(read.mock.callCount(), 0, '显示分支不代表阅读子会话');
+    visibleSubId.value = String(child.id);
+    await nextTick(); await turn(); await nextTick();
+    assert.deepEqual(read.mock.calls[0]?.arguments, [child.id, '2']);
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.isRead, true);
+    assert.equal(sessions.value[0]?.subSessions?.[1]?.isRead, false);
+    application.accept({...child, version: '4', isRead: false});
+    await nextTick(); await turn(); await nextTick();
+    assert.equal(read.mock.callCount(), 2, '正在阅读时自动确认新版本');
+    visibleSubId.value = null; await nextTick();
+    application.accept({...child, version: '6', isRead: false});
+    await nextTick(); await turn();
+    assert.equal(read.mock.callCount(), 2);
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.isRead, false);
+    page.visibilityState = 'hidden';
+    visibleSubId.value = String(child.id);
+    await nextTick(); await turn();
+    assert.equal(read.mock.callCount(), 2, '页面隐藏时不能确认子会话');
+    fail = true;
+    page.visibilityState = 'visible'; listeners.get('visibilitychange')?.();
+    await turn(); await nextTick();
+    assert.equal(read.mock.callCount(), 3);
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.isRead, false, '失败不能伪造已读');
+    fail = false;
+    listeners.get('visibilitychange')?.();
+    await turn(); await nextTick();
+    assert.equal(sessions.value[0]?.subSessions?.[0]?.isRead, true);
+  } finally {
+    scope.stop();
+    assert.equal(listeners.size, 0);
+    (globalThis as any).document = originalDocument;
+  }
+});

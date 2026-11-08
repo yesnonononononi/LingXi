@@ -469,10 +469,10 @@ test('跨会话加载期间再次选择，不得重开旧子代理面板', async
 test('二级分支从所属会话读取名称和状态，并排在下一个根会话之前', async () => {
   const owner = makeSession('s1', '所属会话');
   owner.subSessions = [
-    {id: '9007199254740995', name: '实现工程师', runStatus: 'RUNNING'},
-    {id: '9007199254740997', name: '审查工程师', runStatus: 'IDLE', lastOutcome: 'FAILED'},
+    {id: '9007199254740995', name: '实现工程师', runStatus: 'RUNNING', renderStatus: 'RUNNING', isRead: false},
+    {id: '9007199254740997', name: '审查工程师', runStatus: 'IDLE', lastOutcome: 'FAILED', renderStatus: 'FAILED', isRead: false},
   ];
-  await renderSidebar(baseProps({sessions: [owner, makeSession('s2', '后续会话')], activeSessionId: 's1', activeSubSessionId: '9007199254740995'}), html => {
+  await renderSidebar(baseProps({sessions: [owner, makeSession('s2', '后续会话')], activeSessionId: 's1', activeSubSessionId: null}), html => {
     assert.match(html, /data-depth="1"/);
     assert.match(html, /data-state="RUNNING"/);
     assert.match(html, /data-state="FAILED"/);

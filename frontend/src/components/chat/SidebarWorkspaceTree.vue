@@ -18,12 +18,11 @@
  * （`v-model` → `:value` + `@input`），会破坏"逐字迁移"的可审计性；因此内部接口直接传 Ref，
  * 并在文件头显式声明这一约定（仅限内部，不对替换实现开放）。</p>
  */
-import {computed, type Ref} from 'vue';
+import {computed, ref, type Ref} from 'vue';
 import type {BranchedMenuChild, BranchedMenuItem} from '../common/BranchedMenu.vue';
 import BranchedMenu from '../common/BranchedMenu.vue';
 import SessionStateIndicator from './SessionStateIndicator.vue';
 import SidebarSubSessions from './SidebarSubSessions.vue';
-import {toSubItemStatus} from '../../utils/subSessionStatus';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import {t} from '../../i18n';
 import {SESSION_VISIBLE_LIMIT} from '../../composables/sidebar/useSessionVisibility';
@@ -91,7 +90,16 @@ const editingTitle = props.editingTitle;
 const projectGroups = computed(() => props.projectGroups);
 const unassignedSessions = computed(() => props.unassignedSessions);
 const expandedWorkspaces = computed(() => props.expandedWorkspaces);
-const branchedMenuItems = computed(() => props.branchedMenuItems);
+const collapsedSubSessions = ref(new Set<string>());
+const toggleSubSessions = (id: string) => {
+  const next = new Set(collapsedSubSessions.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  collapsedSubSessions.value = next;
+};
+const branchedMenuItems = computed(() => props.branchedMenuItems.map(group => ({...group,
+  children: group.children?.map(session => ({...session, expanded: !collapsedSubSessions.value.has(session.value)})),
+})));
 const branchedOpenIndices = computed(() => props.branchedOpenIndices);
 const editingSessionId = computed(() => props.editingSessionId);
 const activeMenuWorkspaceId = computed(() => props.activeMenuWorkspaceId);
@@ -185,6 +193,7 @@ const emit = emitShim as TreeEmitShim;
             className="w-full"
             @select="handleBranchedSelect"
             @toggle="handleBranchedToggle"
+            @toggleChild="toggleSubSessions($event)"
           >
             <!-- Header Prefix: 文件夹图标 -->
             <template #header-prefix="{ item }">
@@ -279,7 +288,7 @@ const emit = emitShim as TreeEmitShim;
 
             <!-- Item Actions: 重命名与删除 -->
             <template #item-actions="{ item }">
-              <SessionStateIndicator v-if="item.raw" :session="item.raw" :active="String(item.raw.id) === activeSessionId" :subStatus="item.ownerSessionId ? toSubItemStatus(item.raw.runStatus, item.raw.lastOutcome) : undefined" />
+              <SessionStateIndicator v-if="item.raw" :session="item.raw" :active="String(item.raw.id) === (item.ownerSessionId ? activeSubSessionId : activeSessionId)" />
               <div
                 v-if="item.raw && !item.ownerSessionId && editingSessionId !== item.value"
                 class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
@@ -423,8 +432,11 @@ const emit = emitShim as TreeEmitShim;
                         : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
                     ]"
                   >
-                    <!-- Chat Bubble Icon -->
-                    <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="!collapsedSubSessions.has(session.id)"
+                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleSubSessions(session.id)">
+                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="!collapsedSubSessions.has(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+                    </button>
+                    <svg v-else class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                     </svg>
 
@@ -457,7 +469,9 @@ const emit = emitShim as TreeEmitShim;
                     </div>
                   </div>
 
-                  <SidebarSubSessions :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+                  <CollapseTransition>
+                    <SidebarSubSessions v-if="!collapsedSubSessions.has(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+                  </CollapseTransition>
                   </template>
 
                   <!-- 展开显示 / 收起 -->
@@ -490,7 +504,11 @@ const emit = emitShim as TreeEmitShim;
                     : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
                 ]"
               >
-                <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="!collapsedSubSessions.has(session.id)"
+                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleSubSessions(session.id)">
+                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="!collapsedSubSessions.has(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+                    </button>
+                <svg v-else class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
                 <div class="flex-1 truncate">
@@ -518,7 +536,9 @@ const emit = emitShim as TreeEmitShim;
                   </button>
                 </div>
               </div>
-              <SidebarSubSessions :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+              <CollapseTransition>
+                    <SidebarSubSessions v-if="!collapsedSubSessions.has(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+                  </CollapseTransition>
               </template>
               <button
                 v-if="unassignedSessions.length > SESSION_VISIBLE_LIMIT"

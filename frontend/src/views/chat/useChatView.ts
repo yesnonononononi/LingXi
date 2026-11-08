@@ -42,6 +42,7 @@ import type ChatMessageList from '../../components/chat/ChatMessageList.vue';
 const SUBSCRIBE_READY_TIMEOUT_MS = 5000;
 
 export interface ChatViewTemplateRefs {
+  subSessionPanelVisible?: Readonly<Ref<boolean>>;
   inputAreaRef?: Ref<ChatInputCommands | null>;
   messagesContainerRef?: Ref<InstanceType<typeof ScrollCursorLoader> | InstanceType<typeof ChatMessageList> | any>;
 }
@@ -103,7 +104,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   // ---------- 本地响应式状态（视图自有，不来自全局配置） ----------
   const localSessions = ref<ChatSession[]>([]);
   const localActiveId = ref<string | null>(null);
-  useApplicationSessionState(localSessions, localActiveId);
   const localModels = ref<ModelConfig[]>([]);
   const localWorkspaces = ref<WorkspaceVO[]>([]);
   const localActiveWorkspaceId = ref<string | number | null>(null);
@@ -142,6 +142,12 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   } = useChatScroll({ messagesContainerRef });
 
   const subSession = useChatSubSession({ currentActiveSession });
+  useApplicationSessionState(localSessions, localActiveId, computed(() => {
+    if (subSession.isSubSessionDetailOpen.value) return subSession.selectedSubSessionForDetail.value?.id ?? null;
+    return subSession.isSubPanelOpen.value && templateRefs?.subSessionPanelVisible?.value !== false
+      && !subSession.isLoadingSubMessages.value && !subSession.subMessagesError.value
+      ? subSession.activeViewingSubSessionId.value : null;
+  }));
   const subTaskProgress = useSubSessionTaskProgress(subSession.activeViewingSubSessionVO, subSession.isSubPanelOpen);
 
   // ---------- 历史分页 ----------

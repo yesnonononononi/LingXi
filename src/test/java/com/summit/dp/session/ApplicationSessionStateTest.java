@@ -125,15 +125,42 @@ class ApplicationSessionStateTest {
     }
 
     @Test
-    void applicationSnapshotIncludesAllRootSessionsBeyondTheSidebarPage() {
+    void applicationSnapshotIncludesRootAndSubSessionStatesBeyondTheSidebarPage() {
         for (long id = 1000L; id < 1105L; id++) {
             sessions.save(Session.builder().id(id).name("会话" + id).build());
         }
         sessions.save(Session.builder().id(2000L).rootSessionId(11L).name("子会话").build());
         List<SessionVO> snapshot = context.getBean(SessionService.class).applicationStates().getData();
-        assertEquals(107, snapshot.size());
+        assertEquals(108, snapshot.size());
         assertTrue(snapshot.stream().anyMatch(session -> session.getId() == 1104L));
-        assertFalse(snapshot.stream().anyMatch(session -> session.getId() == 2000L));
+        SessionVO child = snapshot.stream().filter(session -> session.getId() == 2000L).findFirst().orElseThrow();
+        assertEquals(11L, child.getRootSessionId());
+        assertTrue(child.isRead());
+    }
+
+    @Test
+    void subSessionReadAndExecutionUpdatesKeepRootAndSiblingUnreadIndependent() {
+        sessions.save(Session.builder().id(2000L).rootSessionId(11L).name("实现代理").build());
+        sessions.save(Session.builder().id(2001L).rootSessionId(11L).name("审查代理").build());
+        save(201L, 2000L, ExecutionStatusCodes.CREATED);
+        save(201L, null, ExecutionStatusCodes.COMPLETED);
+        save(202L, 2001L, ExecutionStatusCodes.CREATED);
+        long childVersion = sessions.findById(2000L).orElseThrow().getVersion();
+        assertFalse(sessions.findById(2000L).orElseThrow().isRead());
+        assertFalse(sessions.findById(2001L).orElseThrow().isRead());
+
+        reads.read(2000L, childVersion);
+        assertTrue(sessions.findById(2000L).orElseThrow().isRead());
+        assertFalse(sessions.findById(2001L).orElseThrow().isRead());
+        assertTrue(sessions.findById(11L).orElseThrow().isRead());
+
+        save(203L, 2000L, ExecutionStatusCodes.CREATED);
+        reads.read(2000L, childVersion);
+        assertFalse(sessions.findById(2000L).orElseThrow().isRead());
+        SessionVO latest = context.getBean(SessionService.class).applicationStates().getData().stream()
+                .filter(session -> session.getId() == 2000L).findFirst().orElseThrow();
+        assertEquals("RUNNING", latest.getRenderStatus());
+        assertFalse(latest.isRead());
     }
 
     @Test

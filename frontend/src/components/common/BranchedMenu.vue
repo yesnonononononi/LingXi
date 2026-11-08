@@ -18,6 +18,7 @@ export interface BranchedMenuChild {
   icon?: IconArray | Component;
   raw?: any;
   children?: BranchedMenuChild[];
+  expanded?: boolean;
   ownerSessionId?: string;
 }
 
@@ -99,6 +100,7 @@ const props = withDefaults(defineProps<BranchedMenuProps>(), {
 const emit = defineEmits<{
   select: [value: string, item: BranchedMenuChild | BranchedMenuItem];
   toggle: [index: number, open: boolean];
+  toggleChild: [value: string, open: boolean];
   'update:active': [value: string];
 }>();
 
@@ -114,7 +116,7 @@ const sectionRows = computed(() => menuItems.value.map(section => {
     for (const item of items) {
       const index = rows.length;
       rows.push({item, depth, parent});
-      append(item.children ?? [], depth + 1, index);
+      if (item.expanded !== false) append(item.children ?? [], depth + 1, index);
     }
   };
   append(section.children ?? [], 0, null);
@@ -152,9 +154,8 @@ const markerRef = ref<HTMLSpanElement | null>(null);
 const heads = ref<(HTMLButtonElement | null)[]>([]);
 let resizeObserver: ResizeObserver | null = null;
 
-const activeSection = computed(() =>
-  sectionRows.value.findIndex(rows => rows.some(row => row.item.value === active.value))
-);
+const containsActive = (item: BranchedMenuChild): boolean => item.value === active.value || !!item.children?.some(containsActive);
+const activeSection = computed(() => menuItems.value.findIndex(section => section.children?.some(containsActive)));
 const markerShown = computed(() => activeSection.value >= 0 && open.value.has(activeSection.value));
 
 const place = (glide: boolean) => {
@@ -228,12 +229,7 @@ const length = (row: MenuRow, k: number) => rowY(k) - r.value
   - (row.parent === null ? 0 : rowY(row.parent) + props.rowHeight / 2)
   + (Math.PI * r.value) / 2 + (props.indent - 8 - props.trunk - r.value);
 const isActivePath = (rows: MenuRow[], index: number): boolean => {
-  let current: number | null = rows.findIndex(row => row.item.value === active.value);
-  while (current !== null && current >= 0) {
-    if (current === index) return true;
-    current = rows[current]!.parent;
-  }
-  return false;
+  return containsActive(rows[index]!.item);
 };
 
 const isIconData = (icon: IconArray | Component): icon is IconArray => Array.isArray(icon);
@@ -300,7 +296,7 @@ const navStyle = computed(
       >
         <div class="min-h-0 overflow-hidden w-full">
           <div
-            class="box-border relative py-1.5 w-full"
+            class="box-border relative py-1.5 w-full overflow-hidden motion-reduce:transition-none [transition:height_var(--bm-fold)_cubic-bezier(0.23,1,0.32,1)]"
             :style="{ height: `${PAD * 2 + sectionRows[i]!.length * rowHeight}px` }"
           >
             <svg
@@ -333,6 +329,13 @@ const navStyle = computed(
               class="group/kid relative flex items-center w-full"
               :data-depth="depth"
             >
+              <button v-if="kid.children?.length" type="button" data-testid="toggle-sub-sessions"
+                class="absolute z-10 flex h-5 w-[15px] items-center justify-center rounded hover:bg-white/10 cursor-pointer"
+                :style="{ left: `${(depth + 1) * indent}px` }" :aria-label="kid.label"
+                :aria-expanded="kid.expanded !== false"
+                @click.stop="emit('toggleChild', kid.value, kid.expanded === false)">
+                <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="kid.expanded !== false ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+              </button>
               <button
                 type="button"
                 class="box-border flex items-center gap-2 bg-transparent m-0 py-0 pr-1.5 rounded-md border-0 outline-none w-full data-[active]:font-medium text-left cursor-pointer [height:var(--bm-row)] [padding-left:var(--bm-indent)] [color:var(--bm-muted)] [font-family:inherit] [-webkit-tap-highlight-color:transparent] [transition:color_200ms_ease,background-color_150ms_ease] hover:[color:var(--bm-ink)] hover:bg-white/[0.04] data-[active]:[color:var(--bm-accent)]"
@@ -342,7 +345,7 @@ const navStyle = computed(
                 :tabindex="open.has(i) ? 0 : -1"
                 @click="select(kid.value, kid)"
               >
-                <span v-if="kid.icon" class="inline-flex flex-none opacity-70 group-data-[active]/kid:opacity-100"
+                <span v-if="kid.icon" class="inline-flex flex-none opacity-70 group-data-[active]/kid:opacity-100" :style="kid.children?.length ? {visibility: 'hidden'} : undefined"
                   :class="kid.value === active ? 'branched-menu-active-glow' : undefined" aria-hidden="true">
                   <HugeiconsIcon v-if="isIconData(kid.icon)" :icon="kid.icon" :size="15" :stroke-width="1.8" />
                   <component :is="kid.icon" v-else />

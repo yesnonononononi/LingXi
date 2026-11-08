@@ -20,6 +20,9 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
 
     List<Session> findRootSessions();
 
+    /** 应用状态快照必须包含子会话，供重连补齐未读状态。 */
+    List<Session> findApplicationSessions();
+
     /** 根会话分页：过滤掉子代理会话，避免同一次委派在列表里重复出现。 */
     IPage<Session> queryRootPage(int current, int size);
 

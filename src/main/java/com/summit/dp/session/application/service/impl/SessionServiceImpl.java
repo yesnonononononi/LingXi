@@ -67,7 +67,7 @@ public class SessionServiceImpl implements SessionService {
 
     @Override
     public Result<List<SessionVO>> applicationStates() {
-        List<Session> sessions = sessionRepository.findRootSessions();
+        List<Session> sessions = sessionRepository.findApplicationSessions();
         Map<Long, List<ExecutionStatus>> states = executionQueryService.latestStatesBySession(
                 sessions.stream().map(Session::getId).toList());
 

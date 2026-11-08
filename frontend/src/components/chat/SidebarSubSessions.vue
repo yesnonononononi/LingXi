@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {SubSessionVO} from '../../types/chat';
-import {toSubItemStatus} from '../../utils/subSessionStatus';
 import {t} from '../../i18n';
 import SessionStateIndicator from './SessionStateIndicator.vue';
 
@@ -19,7 +18,7 @@ const emit = defineEmits<{ select: [id: string] }>();
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
         </svg>
         <span class="min-w-0 flex-1 truncate" :title="sub.name || t('chat.subSessions.fallbackName')">{{ sub.name || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')) }}</span>
-        <SessionStateIndicator :session="sub" :subStatus="toSubItemStatus(sub.runStatus, sub.lastOutcome)" />
+        <SessionStateIndicator :session="sub" :active="String(sub.id) === activeId" />
       </button>
     </div>
   </div>

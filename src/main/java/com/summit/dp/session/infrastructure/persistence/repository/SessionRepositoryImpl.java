@@ -36,6 +36,12 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     }
 
     @Override
+    public List<Session> findApplicationSessions() {
+        return sessionMapper.selectList(Wrappers.<SessionPO>lambdaQuery()
+                .orderByAsc(SessionPO::getId)).stream().map(this::toModel).toList();
+    }
+
+    @Override
     public Optional<Session> lockById(Long sessionId) {
         // 先锁会话行，后续状态投影才能基于最新提交。
         return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
