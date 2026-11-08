@@ -30,9 +30,18 @@ public class SessionTokenAuditVO {
     private Long sessionId;
     /** {@code NOT_COLLECTED} / {@code CAPTURING} / {@code COLLECTED} / {@code FAILED}，恒有值。 */
     private String displayState;
-    /** 实时总量（{@code Session.contextTokenCount}）；null 表示尚未采集。 */
+    /**
+     * 实时已用 token（{@code Session.contextTokenCount}）；null 表示尚未采集。
+     *
+     * <p><b>类型必须是 {@link Integer}，不能是 {@code Long}</b>：本工程的 Jackson 全局把
+     * {@code Long} 序列化成<b>字符串</b>（雪花 ID 超 JS 安全整数，必须字符串）。但 token 数量
+     * 永远达不到 int 上限，用 {@code Long} 会连同「ID 必须字符串」这条规则一起被抄过来，
+     * 于是同一个 VO 里出现 `"148200"`（字符串）与 `148200`（数值）两种 JSON 类型 ——
+     * 前端按 number 解析，字符串那一路会被当成「未知」整行不渲染。
+     * 同语义同类型是本类的硬约束：<b>token 计数一律 {@code Integer}，只有 ID 才是 {@code Long}。</b></p>
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private Long liveTotalTokens;
+    private Integer liveTotalTokens;
     /** 实时上下文上限；null 表示未知。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer liveMaxTokens;
@@ -43,9 +52,12 @@ public class SessionTokenAuditVO {
      * 剩余可用 token = {@code liveMaxTokens − liveTotalTokens}（设计稿「剩余可用 51,800 tok」）。
      *
      * <p>任一为 null 则整体为 null：把「上限未知」当成「剩余 0」会让进度条显示成已占满。</p>
+     *
+     * <p><b>类型与 {@link #liveTotalTokens} 保持一致（{@link Integer}）</b>：两者是同一语义量
+     * 「token 数量」的变形，若一个 Integer 一个 Long，同一条 JSON 里又会一个数值一个字符串。</p>
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private Long remainingTokens;
+    private Integer remainingTokens;
     /** {@code remainingTokens / liveMaxTokens}；上限未知或 {@code <= 0} 时为 null。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Double remainingRatio;

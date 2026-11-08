@@ -56,6 +56,26 @@ class SessionTokenAuditApiTest {
         MockMvc mvc = createMvc();
         mvc.perform(get("/session/{id}/token-audit", SESSION_ID))
                 .andExpect(status().isOk())
+                // 契约钉死：ID 是字符串（雪花超 JS 安全整数），token 计数一律数值。
+                // 这两组断言正是本缺陷的回归守卫：一旦有人把某个 token 计数改回 Long，
+                // Jackson 会把它序列化成字符串，isNumber() 立刻变红。
+                .andExpect(jsonPath("$.data.sessionId").isString())
+                .andExpect(jsonPath("$.data.liveTotalTokens").isNumber())
+                .andExpect(jsonPath("$.data.liveMaxTokens").isNumber())
+                .andExpect(jsonPath("$.data.remainingTokens").isNumber())
+                .andExpect(jsonPath("$.data.totalTokens").isNumber())
+                .andExpect(jsonPath("$.data.messagesTotalTokens").isNumber())
+                .andExpect(jsonPath("$.data.driftTokens").isNumber())
+                .andExpect(jsonPath("$.data.reconciliation.totalTokens").isNumber())
+                .andExpect(jsonPath("$.data.reconciliation.requestOverheadTokens").isNumber())
+                .andExpect(jsonPath("$.data.reconciliation.toolDefinitionTokens").isNumber())
+                .andExpect(jsonPath("$.data.reconciliation.mcpToolDefinitionTokens").isNumber())
+                .andExpect(jsonPath("$.data.reconciliation.framingResidualTokens").isNumber())
+                .andExpect(jsonPath("$.data.requestOverhead.tokens").isNumber())
+                .andExpect(jsonPath("$.data.requestOverhead.itemCount").isNumber())
+                .andExpect(jsonPath("$.data.tools.tokens").isNumber())
+                .andExpect(jsonPath("$.data.tools.ordinary.tokens").isNumber())
+                .andExpect(jsonPath("$.data.messages[0].tokens").isNumber())
                 .andExpect(jsonPath("$.data.sessionId").value(Long.toString(SESSION_ID)))
                 .andExpect(jsonPath("$.data.displayState").value("COLLECTED"))
                 .andExpect(jsonPath("$.data.liveTotalTokens").value(148200))

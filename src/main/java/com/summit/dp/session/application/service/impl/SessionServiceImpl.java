@@ -342,11 +342,29 @@ public class SessionServiceImpl implements SessionService {
                 .teamId(session.getTeamId())
                 .workDir(workspace == null ? null : workspace.workDir())
                 .messageCount(messageCount)
-                .contextTokenCount(session.getContextTokenCount())
+                .contextTokenCount(contextTokensOf(session))
                 .contextMaxTokens(session.getContextMaxTokens())
                 .contextRatio(session.getContextRatio())
                 .build();
 
+    }
+
+    /**
+     * 已用 token 收敛为 {@link Integer}：域模型是 {@code Long}（列 BIGINT），对外 VO 必须与
+     * {@code contextMaxTokens} 同为数值（见 {@code SessionVO#contextTokenCount} 的说明）。
+     *
+     * <p>显式饱和而不是直接强转：{@code Long} 拆箱成 {@code int} 会静默截断成负数，
+     * 让「上下文用量」指示器画出负值。</p>
+     *
+     * @param session 会话实体，不能为空
+     * @return 非负的已用 token；未采集或数据异常时为 {@code null}（未知，不是 0）
+     */
+    private static Integer contextTokensOf(Session session) {
+        Long tokens = session.getContextTokenCount();
+        if (tokens == null || tokens < 0) {
+            return null;
+        }
+        return tokens > Integer.MAX_VALUE ? Integer.MAX_VALUE : tokens.intValue();
     }
 
     /**

@@ -87,7 +87,7 @@ public class SessionTokenAuditQueryService {
      */
     private SessionTokenAuditVO build(Long sessionId, Session session) {
         SessionTokenAudit audit = auditRepository.findBySessionId(sessionId).orElse(null);
-        Long liveTotal = session == null ? null : session.getContextTokenCount();
+        Integer liveTotal = liveTokensOf(session);
         Integer liveMax = session == null ? null : session.getContextMaxTokens();
         Integer messagesTotal = audit == null ? null : audit.getMessagesTokens();
 
@@ -100,7 +100,7 @@ public class SessionTokenAuditQueryService {
                 .remainingTokens(remainingOf(liveTotal, liveMax))
                 .remainingRatio(remainingRatio(remainingOf(liveTotal, liveMax), liveMax))
                 .totalTokens(audit == null ? null : audit.getTotalTokens())
-                .driftTokens(audit == null ? null : audit.driftTokens(liveTotal))
+                .driftTokens(audit == null ? null : audit.driftTokens(asLongOrNull(liveTotal)))
                 .capturedAt(audit == null ? null : audit.getCapturedAt())
                 .failReason(audit == null ? null : audit.getFailReason())
                 .reconciliation(reconciliationOf(audit))
@@ -112,17 +112,53 @@ public class SessionTokenAuditQueryService {
     }
 
     /**
+     * 实时已用 token：{@code Session} 侧是 {@code Long}（列是 BIGINT，与历史数据一致），
+     * 对外 VO 一律 {@code Integer}（见 {@code SessionTokenAuditVO#liveTotalTokens} 的说明）。
+     *
+     * <p><b>为什么这里必须显式收敛而不是直接强转</b>：{@code Long} 自动拆箱成 {@code int}
+     * 会静默截断（超过 int 上限时变负数，前端会画出负的构成）。token 实际不可能超限，
+     * 但这个转换点是唯一可能出错的地方，因此做饱和处理而不是让它悄悄溢出。</p>
+     *
+     * @param session 会话实体，可为 {@code null}
+     * @return 非负的已用 token；会话缺失或尚未采集时为 {@code null}（未知，不是 0）
+     */
+    private static Integer liveTokensOf(Session session) {
+        if (session == null || session.getContextTokenCount() == null) {
+            return null;
+        }
+        long value = session.getContextTokenCount();
+        if (value < 0) {
+            return null;
+        }
+        return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
+    }
+
+    /**
+     * 领域层仍以 {@code Long} 接收实时总量（它同时服务于 {@code Session} 的 BIGINT 口径），
+     * 这里只做一次无损扩大转换。
+     *
+     * @param tokens 已收敛的 token 数，可为 {@code null}
+     * @return 对应的 {@code Long}；入参为 {@code null} 时返回 {@code null}
+     */
+    private static Long asLongOrNull(Integer tokens) {
+        return tokens == null ? null : tokens.longValue();
+    }
+
+    /**
      * 剩余可用 token（设计稿「剩余可用 51,800 tok」）。
+     *
+     * <p><b>null 判断必须走 Integer 的引用比较</b>：任一为 {@code null} 就整体返回 {@code null}，
+     * 绝不能让「上限未知」被拆箱成 0 或算出 {@code 0 − used} 的负数。</p>
      *
      * @param liveTotal 实时已用，可为 null
      * @param liveMax   上下文上限，可为 null
-     * @return {@code liveMax − liveTotal}；任一为 null 时返回 null（未知不是 0）
+     * @return {@code liveMax − liveTotal}（超限时为负，如实给出）；任一为 null 时返回 null
      */
-    private static Long remainingOf(Long liveTotal, Integer liveMax) {
+    private static Integer remainingOf(Integer liveTotal, Integer liveMax) {
         if (liveTotal == null || liveMax == null) {
             return null;
         }
-        return liveMax.longValue() - liveTotal;
+        return liveMax - liveTotal;
     }
 
     /**
@@ -132,7 +168,7 @@ public class SessionTokenAuditQueryService {
      * @param liveMax   上限，可为 null
      * @return {@code remaining / liveMax}；上限缺失或 {@code <= 0} 时返回 null（不除零）
      */
-    private static Double remainingRatio(Long remaining, Integer liveMax) {
+    private static Double remainingRatio(Integer remaining, Integer liveMax) {
         if (remaining == null || liveMax == null || liveMax <= 0) {
             return null;
         }
@@ -203,10 +239,10 @@ public class SessionTokenAuditQueryService {
     }
 
     /** 没有任何快照行时是 {@code NOT_COLLECTED}；有行则交给聚合自己判（FAILED 优先）。 */
-    private static TokenAuditDisplayState resolveDisplayState(SessionTokenAudit audit, Long liveTotal) {
+    private static TokenAuditDisplayState resolveDisplayState(SessionTokenAudit audit, Integer liveTotal) {
         return audit == null
                 ? TokenAuditDisplayState.NOT_COLLECTED
-                : audit.resolveDisplayState(liveTotal);
+                : audit.resolveDisplayState(asLongOrNull(liveTotal));
     }
 
     /** 差额解释：总量缺失（失败 / 未采集）时为 null，避免前端把 0 当成「开销为 0」。 */

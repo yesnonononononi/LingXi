@@ -66,9 +66,14 @@ public class SessionVO {
      * 上下文用量快照（三项同源，来自最近一次终结执行回写的 session 表快照）：
      * 已用 token / 上限 token / 比率（可能大于 1）。任一项为 null 表示尚未采集——
      * 前端「上下文用量」指示器在无 {@code CONTEXT_UPDATE} 事件（历史加载）时以此渲染。
+     *
+     * <p><b>与 {@link #contextMaxTokens} 同为 {@code Integer}</b>：本工程的 Jackson 全局把
+     * {@code Long} 序列化成字符串（ID 必须字符串），token 计数若用 {@code Long} 会变成
+     * {@code "148200"}，与相邻的 {@code 200000}（数值）类型不一致，前端按 number 解析即失效。
+     * token 计数永远到不了 int 上限，因此一律 {@code Integer}；只有 ID 才是 {@code Long}。</p>
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private Long contextTokenCount;
+    private Integer contextTokenCount;
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer contextMaxTokens;
     @JsonInclude(JsonInclude.Include.NON_NULL)
