@@ -93,9 +93,13 @@ class StreamingRetryContractTest {
             String base = "http://127.0.0.1:" + server.getAddress().getPort();
             // 旧实现包一层 StreamingChatModelAdapter(OpenAiStreamingChatModel/AnthropicStreamingChatModel)；
             // 适配器退役后直接用框架自有实现，本地假端点收到的仍是真实线上协议流量。
+            // 超时只在 TIMEOUT 模式下压到 500ms（它就是要触发读超时）。
+            // 其余模式必须给足时间：负载高时 3 秒的读超时是可重试错误，框架会重试并命中第 2 个请求
+            // （假端点对 request>=2 返回成功），于是「本该终态失败的 QUOTA」变成成功 —— 这是假红，
+            // 不是被测行为。30 秒远大于任何一次本地回环往返，且不改变任何断言期望。
             StreamingChatModel model = anthropic
-                    ? anthropicStreamingModel(base, Duration.ofSeconds(3))
-                    : openAiStreamingModel(base + "/v1", mode.endsWith("TIMEOUT") ? Duration.ofMillis(500) : Duration.ofSeconds(3));
+                    ? anthropicStreamingModel(base, Duration.ofSeconds(30))
+                    : openAiStreamingModel(base + "/v1", mode.endsWith("TIMEOUT") ? Duration.ofMillis(500) : Duration.ofSeconds(30));
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId("101")).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
@@ -137,6 +141,12 @@ class StreamingRetryContractTest {
             else runtime.execute(execution);
 
             assertEquals(completed ? 2 : 1, requests.get());
+            // 确定性语义守护（不依赖任何时序）：401 / QUOTA 是终态拒绝，框架绝不允许重发第二次请求。
+            // 上面那行对 retryRefused 也隐含了 1，但这里显式再钉一次 —— 负载下若超时被误判成可重试，
+            // 假端点会收到第 2 次请求，本条会直接报「发了 2 次」，比「没抛异常」更容易定位。
+            if (retryRefused) {
+                assertEquals(1, requests.get(), "终态拒绝必须只打一次请求，重试一次都算错：" + mode);
+            }
             assertEquals(completed ? ExecutionState.COMPLETED : ExecutionState.FAILED, execution.getExecutionState());
             assertEquals(completed ? 2 : 1, execution.getModelAttempts());
             assertEquals(completed ? 5 : 0, execution.getTokenUsage().getTotalTokens());
@@ -228,7 +238,7 @@ class StreamingRetryContractTest {
                 if (mode.endsWith("TRUNCATED")) return;
                 exchange.getResponseBody().write("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"temporary\"}}\n\n".getBytes(StandardCharsets.UTF_8));
                 exchange.getResponseBody().flush();
-                try { retrySeen.await(2, TimeUnit.SECONDS); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
+                try { retrySeen.await(15, TimeUnit.SECONDS); } catch (InterruptedException error) { Thread.currentThread().interrupt(); }
                 exchange.getResponseBody().write("data: {\"id\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"late\"}}]}\n\n".getBytes(StandardCharsets.UTF_8));
                 return;
             }
