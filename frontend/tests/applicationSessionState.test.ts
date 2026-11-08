@@ -26,6 +26,27 @@ test('后台运行态始终可见，当前会话隐藏全部状态标记', () =>
   assert.equal(resolveSessionIndicator({ isRead: undefined, renderStatus: 'FAILED' }), null);
 });
 
+test('根会话汇总所有子会话的运行图标，全部结束后恢复自身标记', () => {
+  const session: Pick<ChatSession, 'isRead' | 'renderStatus' | 'subSessions'> = {
+    isRead: true, renderStatus: 'COMPLETED', subSessions: [
+      {...metadata(1, true), id: 'child-1'},
+      {...metadata(1, true), id: 'child-2', runStatus: 'RUNNING', renderStatus: 'RUNNING'},
+    ],
+  };
+  for (const active of [false, true]) {
+    assert.equal(resolveSessionIndicator(session, active), 'RUNNING');
+  }
+  session.subSessions![0]!.renderStatus = 'RUNNING';
+  session.subSessions![1]!.renderStatus = 'COMPLETED';
+  assert.equal(resolveSessionIndicator(session, true), 'RUNNING');
+  session.subSessions![0]!.renderStatus = 'WAITING';
+  assert.equal(resolveSessionIndicator(session), null);
+  session.isRead = false;
+  session.renderStatus = 'FAILED';
+  assert.equal(resolveSessionIndicator(session), 'FAILED');
+  assert.equal(resolveSessionIndicator(session, true), null);
+});
+
 test('过期快照与已读回执不能覆盖较新的状态，元数据更新保留消息', async () => {
   const { mergeSessionState } = await import('../src/stores/applicationSessionStore');
   const { applySessionState } = await import('../src/views/chat/useApplicationSessionState');
@@ -232,6 +253,46 @@ test('实际侧栏的亮暗主题、工作区与历史列表均隐藏当前会�
       }
       assert.equal(html.includes('session-running-bars'), activeSessionId !== '3');
       }
+      }
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+test('实际侧栏在子会话重跑时显示根会话运行图标，亮暗主题与分组路径一致', async () => {
+  const server = await createServer({ root: new URL('..', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), optimizeDeps: { noDiscovery: true, include: [], entries: [] }, server: { middlewareMode: true, hmr: false }, appType: 'custom' });
+  try {
+    const { default: Tree } = await server.ssrLoadModule('/src/components/chat/SidebarWorkspaceTree.vue');
+    const child = {...metadata(1, true), id: 'child', name: '运行子会话'};
+    const session = {id: 'root', title: '根会话', isRead: true, renderStatus: 'COMPLETED', subSessions: [child]};
+    for (const isDark of [false, true]) {
+      for (const grouped of [false, true]) {
+        for (const activeSessionId of [null, 'root']) {
+          for (const activeSubSessionId of [null, 'child']) {
+            for (const running of [true, false, true]) {
+              child.runStatus = running ? 'RUNNING' : 'IDLE';
+              child.renderStatus = running ? 'RUNNING' : 'COMPLETED';
+              const html = await renderToString(createSSRApp(Tree, {
+                projectGroups: grouped ? [{workspace: {id: 'workspace', name: '工作区'}, sessions: [session]}] : [],
+                unassignedSessions: grouped ? [] : [session], expandedWorkspaces: {workspace: true},
+                branchedMenuItems: [{label: '分组', children: [{label: session.title, value: session.id, raw: session,
+                  children: [{label: child.name, value: child.id, raw: child, ownerSessionId: session.id}]}]}],
+                branchedOpenIndices: [0], editingSessionId: null, editingTitle: ref(''), activeMenuWorkspaceId: null,
+                activeSessionId, activeSubSessionId, isCollapsed: false, isDark,
+                limitSessions: (_key: string, items: unknown[]) => items,
+                isFullyExpanded: () => true, toggleFullyExpanded() {}, toggleWorkspaceExpand() {}, isWorkspaceActive: () => false,
+                handleSelectWorkspace() {}, handleNewSessionInProject() {}, toggleProjectMenu() {}, handleDeleteProject() {},
+                startEdit() {}, saveEdit() {}, handleBranchedSelect() {}, handleBranchedToggle() {}, actions: {},
+              }));
+              const rootHtml = html.slice(0, html.indexOf(child.name));
+              assert.equal(rootHtml.includes('data-state="RUNNING"'), running,
+                `根会话图标: dark=${isDark}, grouped=${grouped}, active=${activeSessionId}, sub=${activeSubSessionId}, running=${running}`);
+              assert.equal(html.split('data-state="RUNNING"').length - 1,
+                running ? (activeSubSessionId === 'child' ? 1 : 2) : 0);
+            }
+          }
+        }
       }
     }
   } finally {
