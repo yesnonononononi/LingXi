@@ -297,4 +297,113 @@
         </plugins>
     </build>
 
+    <!--
+      分批门禁档位（surefire 的 <includes>，按顶层包切分测试类）。
+
+      为什么要有：全量 `mvn -o test` 在本机要跑 312 个测试类，一次超过 30 分钟的执行环境上限，
+      跑不完就等于「没有门禁」。这里把全量固化成 4 条命令，每条都在时限内，合起来正好是全集。
+
+      为什么默认不改：这 4 个 profile **只在显式 -P 时才生效**，默认（不写 -P）时 surefire
+      完全没有 <includes>，行为与加 profile 之前逐字节相同 —— 单跑 `mvn -o test` 仍然是全量。
+      之所以用 profile 而不是改默认 includes，是因为一旦写进默认配置，「按包/按类手动执行」
+      就会被收窄的 includes 反过来压掉（和上面 lingxi.surefire.excluded-groups 是同一个坑）。
+
+      用法（四档的包含集合互不重叠，并集等于 src/test/java 下全部 *Test.java，当前 312 个）：
+        mvn -o test -Pgate-core        # agent / execution / session / shared            135 个
+        mvn -o test -Pgate-services    # model / task / email / mcp / provider / …       68 个
+        mvn -o test -Pgate-workflow    # workflow                                        61 个
+        mvn -o test -Pgate-tools       # toolcall / tools                                48 个
+      对应关系是「3.3.2 一次性核对」的产物：135+68+61+48 = 312，六对交集为空。
+      验收单个类时仍然可以叠加 -Dtest=：-Pgate-tools -Dtest=SomeTest 只会跑该类。
+
+      注意：profile 只负责缩小 include 集合，**不碰** excludedGroups —— network 组
+      （HttpClientNetworkComparisonTest）在每一档里都继续被默认排除，口径与默认门禁一致。
+      四档都不跑 network，需要时仍按 pom 顶部注释里的办法显式打开。
+    -->
+    <profiles>
+        <profile>
+            <id>gate-core</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>com/summit/dp/agent/**/*Test.java</include>
+                                <include>com/summit/dp/execution/**/*Test.java</include>
+                                <include>com/summit/dp/session/**/*Test.java</include>
+                                <include>com/summit/dp/shared/**/*Test.java</include>
+                                <!-- 默认包（com.summit.dp 顶层）的测试类归入本档，保证并集无遗漏 -->
+                                <include>com/summit/dp/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>gate-services</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>com/summit/dp/model/**/*Test.java</include>
+                                <include>com/summit/dp/task/**/*Test.java</include>
+                                <include>com/summit/dp/email/**/*Test.java</include>
+                                <include>com/summit/dp/mcp/**/*Test.java</include>
+                                <include>com/summit/dp/provider/**/*Test.java</include>
+                                <include>com/summit/dp/checklist/**/*Test.java</include>
+                                <include>com/summit/dp/turn/**/*Test.java</include>
+                                <include>com/summit/dp/user_configs/**/*Test.java</include>
+                                <include>com/summit/dp/workspace/**/*Test.java</include>
+                                <include>com/summit/dp/sandbox_security/**/*Test.java</include>
+                                <include>com/summit/dp/personalization/**/*Test.java</include>
+                                <include>com/summit/dp/team/**/*Test.java</include>
+                                <include>com/summit/dp/context/**/*Test.java</include>
+                                <include>com/summit/dp/architecture/**/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>gate-workflow</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>com/summit/dp/workflow/**/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>gate-tools</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>com/summit/dp/toolcall/**/*Test.java</include>
+                                <include>com/summit/dp/tools/**/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>
