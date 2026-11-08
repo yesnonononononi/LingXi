@@ -144,7 +144,7 @@ public class TurnViewAssembler {
             }
             ToolCall toolCall = toolCalls == null ? null : toolCalls.get(request.id());
             blocks.add(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()), request,
-                    ToolFacts.of(toolCall)));
+                    ToolFacts.toFacts(toolCall)));
         }
     }
 
@@ -170,7 +170,7 @@ public class TurnViewAssembler {
         ToolCallRequest request = new ToolCallRequest(facts.toolCallId(), facts.toolName(),
                 facts.requestIndex(), facts.args());
         return Optional.of(buildToolBlock(responseId, BlockOrder.tool(facts.requestIndex()), request,
-                ToolFacts.of(toolCall)));
+                ToolFacts.toFacts(toolCall)));
     }
 
     /**
@@ -214,7 +214,7 @@ public class TurnViewAssembler {
     private record ToolFacts(String toolName, ToolCallStatus status, String rawOutput, Long version) {
 
         /** 领域实体 → 事实；{@code null} 表示行尚未落库。 */
-        static ToolFacts of(ToolCall toolCall) {
+        static ToolFacts toFacts(ToolCall toolCall) {
             if (toolCall == null) {
                 return null;
             }
@@ -223,7 +223,7 @@ public class TurnViewAssembler {
         }
 
         /** 只读投影 → 事实；{@code null} 表示行尚未落库。 */
-        static ToolFacts of(ToolCallBlockView toolCall) {
+        static ToolFacts toFacts(ToolCallBlockView toolCall) {
             if (toolCall == null) {
                 return null;
             }

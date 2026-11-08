@@ -73,12 +73,11 @@ public class ChoiceAnswersValidator {
         return ids;
     }
 
-    public String digest(ChoiceAnswersCommand command) {
-        List<ChoiceAnswersCommand.Answer> sorted = command.answers().stream()
-                .sorted(Comparator.comparing(ChoiceAnswersCommand.Answer::toolCallId)).toList();
+    /** 摘要基于已排序入参：排序只做一次，避免与调用方各排一遍导致两处顺序漂移。 */
+    public String digest(ChoiceAnswersCommand command, List<ChoiceAnswersCommand.Answer> sortedAnswers) {
         try {
             return CommandDigest.build(mapper.writeValueAsString(new ChoiceAnswersCommand(
-                    command.conversationId(), command.responseId(), command.commandId(), sorted)));
+                    command.conversationId(), command.responseId(), command.commandId(), sortedAnswers)));
         } catch (JsonProcessingException error) {
             throw new ClientException("无法解析回答请求，请重新提交");
         }

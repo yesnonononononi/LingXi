@@ -85,7 +85,7 @@ public final class TwoPhaseCommandResolutionStrategy implements SlotResolutionSt
      * @param command     原始决议输入
      * @param disposition T1 给出的恢复处置
      */
-    public DecisionReceipt receiptOf(ApprovalPlan plan, CommandDecision command, ResumeDisposition disposition) {
+    public DecisionReceipt buildReceipt(ApprovalPlan plan, CommandDecision command, ResumeDisposition disposition) {
         ToolCall latest = toolCalls.findById(plan.card().getId()).orElse(plan.card());
         return new DecisionReceipt(command.commandId(), true,
                 plan.approved() ? "APPROVED" : "REJECTED",

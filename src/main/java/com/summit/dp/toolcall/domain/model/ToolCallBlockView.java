@@ -1,7 +1,5 @@
 package com.summit.dp.toolcall.domain.model;
 
-import java.util.Optional;
-
 /**
  * 单块推送用的只读投影：只保留装配一个工具块真正用到的字段。
  *
@@ -25,9 +23,4 @@ public record ToolCallBlockView(
         ToolCallStatus status,
         String rawOutput,
         Long version) {
-
-    /** 便捷取值：把可空记录包成 {@link Optional}。 */
-    public static Optional<ToolCallBlockView> ofNullable(ToolCallBlockView view) {
-        return Optional.ofNullable(view);
-    }
 }

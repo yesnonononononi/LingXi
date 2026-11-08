@@ -57,12 +57,11 @@ public class ToolCallWorkflowService {
             // 普通互动：归属、准备中、已处理、活跃执行与执行态全部由引擎按 v1 契约判定。
             return decisionService.decide(located, approved, text);
         }
-        return decideCommand(conversationId, toolCallId, approved);
+        return decideCommand(conversationId, located, approved);
     }
 
     /** 命令审批：建流 → 交给统一引擎（T1/T2 与恢复全在引擎与策略里）→ 落定回调关流。 */
-    private SseEmitter decideCommand(Long conversationId, String toolCallId, boolean approved) {
-        ToolCall located = toolCallRepository.findById(toolCallId).orElseThrow(ClientException::new);
+    private SseEmitter decideCommand(Long conversationId, ToolCall located, boolean approved) {
         // 先建流再提交：恢复请求在 T1 提交后立刻派发，此时必须已经有连接可接事件。
         SseEmitter emitter = sseEventPublisher.connect(
                 executionLocator.resolveRootSessionId(located.getConversationId()));

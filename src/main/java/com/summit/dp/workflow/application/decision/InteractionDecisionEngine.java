@@ -146,7 +146,7 @@ public class InteractionDecisionEngine {
             throw failure;
         }
         strategy.afterCommit(plan);
-        return strategy.receiptOf(plan, command, disposition[0]);
+        return strategy.buildReceipt(plan, command, disposition[0]);
     }
 
     /**
@@ -171,12 +171,12 @@ public class InteractionDecisionEngine {
             contexts.replace(cards.getFirst().getConversationId(), execution.getMessages());
             if (command.resumeIntent() == ResumeIntent.COORDINATOR) {
                 // 触发来源必须显式声明为人工决策：自动轮次上限不该拦住用户刚做的批准。
-                disposition[0] = resumeCoordinator.accept(executionIdOf(cards.getFirst()),
+                disposition[0] = resumeCoordinator.accept(resolveExecutionId(cards.getFirst()),
                         ResumeTriggerType.APPROVAL_DECISION, command.settledCallback());
             }
         });
         String decision = items.isEmpty() ? null : items.getFirst().outcome().name();
-        return new DecisionReceipt(command.commandId(), true, decision, viewsOf(command), disposition[0]);
+        return new DecisionReceipt(command.commandId(), true, decision, reloadViews(command), disposition[0]);
     }
 
     /**
@@ -294,7 +294,7 @@ public class InteractionDecisionEngine {
      * <p>多选批量是整组回执，逐卡查询是 N 次 select；回执顺序必须稳定（前端按提交顺序渲染），
      * 因此重排不能省。查不到的卡片直接跳过 —— 它已经被并发删除，回执里不该出现空壳。</p>
      */
-    private List<ToolCallVO> viewsOf(SlotDecisionCommand command) {
+    private List<ToolCallVO> reloadViews(SlotDecisionCommand command) {
         List<String> ids = command.cardIds();
         Map<String, ToolCall> byId = toolCalls.listByIds(ids).stream()
                 .collect(Collectors.toMap(ToolCall::getId, card -> card, (first, second) -> first));
@@ -305,7 +305,7 @@ public class InteractionDecisionEngine {
                 .toList();
     }
 
-    private static long executionIdOf(ToolCall card) {
+    private static long resolveExecutionId(ToolCall card) {
         return card.getExecutionId() == null ? 0L : card.getExecutionId();
     }
 

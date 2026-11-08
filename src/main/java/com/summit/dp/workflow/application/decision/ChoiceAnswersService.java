@@ -33,7 +33,7 @@ public class ChoiceAnswersService {
         List<ChoiceAnswersCommand.Answer> sorted = command.answers().stream()
                 .sorted(Comparator.comparing(ChoiceAnswersCommand.Answer::toolCallId)).toList();
         DecisionReceipt receipt = engine.decide(new ChoiceBatchDecision(command.conversationId(),
-                command.responseId(), command.commandId(), sorted, validator.digest(command)), contract);
+                command.responseId(), command.commandId(), sorted, validator.digest(command, sorted)), contract);
         return new ChoiceAnswersReceipt(command.commandId(), receipt.decisionApplied(),
                 receipt.toolCalls(), receipt.resumeDisposition());
     }
