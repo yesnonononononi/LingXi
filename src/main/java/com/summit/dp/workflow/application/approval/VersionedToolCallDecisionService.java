@@ -62,7 +62,7 @@ public class VersionedToolCallDecisionService {
         boolean isCommand = converter.resolveKind(located.getContent()) == ToolCallKind.COMMAND;
         return isCommand
                 ? new CommandDecision(command.conversationId(), command.toolCallId(), command.commandId(),
-                        command.expectedVersion(), command.action(), digest, ResumeIntent.COORDINATOR)
+                        command.expectedVersion(), command.action(), digest, ResumeIntent.COORDINATOR, null)
                 : new ImmediateDecision(command.conversationId(), command.toolCallId(), command.commandId(),
                         command.expectedVersion(), command.action(), command.text(), digest,
                         ResumeIntent.COORDINATOR, null);

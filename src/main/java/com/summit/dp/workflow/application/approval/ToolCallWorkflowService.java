@@ -9,25 +9,23 @@ import com.summit.dp.toolcall.domain.model.ToolCallAction;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.decision.CommandDecision;
+import com.summit.dp.workflow.application.decision.DecisionReceipt;
+import com.summit.dp.workflow.application.decision.InteractionDecisionEngine;
 import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
 import com.summit.dp.workflow.application.decision.ResumeIntent;
-import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.Objects;
 
 /**
  * v1 决策入口：只做输入/输出转换与流管理，业务一律交给统一引擎。
  *
- * <p><b>命令为何单独一条</b>：v1 命令要求「先建流、再提交」，收尾由回调关流。
- * 建流必须发生在提交之前，而提交前又要先完成受理校验 —— 两者顺序相反，
- * 因此命令在这里先走一遍<b>同一份</b>契约闸门（{@link ReactiveDecisionContract}），
- * 再建流，最后交给命令形态策略执行 T1/T2。</p>
+ * <p><b>命令为什么必须单独一条</b>：v1 命令要求「先建流、再提交、恢复落定才关流」。
+ * 受理闸门、幂等三态、执行态与形态判定全部由 {@link InteractionDecisionEngine} 承担 ——
+ * 这里只保留建流、提交与异常收尾三件事，绝不再自建第二套校验。</p>
  */
 @Slf4j
 @Service
@@ -36,7 +34,7 @@ public class ToolCallWorkflowService {
 
     private final ToolCallRepository toolCallRepository;
     private final ToolCallConverter converter;
-    private final TwoPhaseCommandResolutionStrategy commandStrategy;
+    private final InteractionDecisionEngine engine;
     private final ToolCallDecisionService decisionService;
     private final ReactiveDecisionContract contract;
 
@@ -67,34 +65,30 @@ public class ToolCallWorkflowService {
         return decideCommand(conversationId, toolCallId, approved);
     }
 
-    /** 命令审批：同一份受理闸门 → 建流 → 两阶段执行 → 回调关流。 */
+    /** 命令审批：建流 → 交给统一引擎（T1/T2 与恢复全在引擎与策略里）→ 落定回调关流。 */
     private SseEmitter decideCommand(Long conversationId, String toolCallId, boolean approved) {
         ToolCall located = toolCallRepository.findById(toolCallId).orElseThrow(ClientException::new);
-        synchronized (ExecutionCoordination.monitor(String.valueOf(located.getExecutionId()))) {
-            ToolCall toolCall = toolCallRepository.findById(toolCallId).orElseThrow(ClientException::new);
-            throwIf(conversationId != null && !Objects.equals(conversationId, toolCall.getConversationId()),
-                    "会话与工具调用不匹配");
-            contract.admitCard(toolCall);
-            if (!toolCall.isApprovalPending()) {
-                return completedEmitter();
-            }
-            contract.admitExecution(toolCall);
-            // v1 请求级 SSE：先建流再提交，恢复期事件才接得住；收尾由回调关流。
-            SseEmitter emitter = sseEventPublisher.connect(
-                    executionLocator.resolveRootSessionId(toolCall.getConversationId()));
-            try {
-                ToolCallAction action = approved ? ToolCallAction.APPROVE : ToolCallAction.REJECT;
-                commandStrategy.resolve(toolCall, new CommandDecision(toolCall.getConversationId(),
-                        toolCall.getId(), null, null, action,
-                        CommandDigest.build(toolCall.getId(), toolCall.getConversationId(), toolCall.getVersion(),
-                                action.wireValue(), null),
-                        ResumeIntent.COORDINATOR), contract, () -> sseEventPublisher.finish(emitter));
-            } catch (RuntimeException failure) {
-                emitter.completeWithError(failure);
-                throw failure;
-            }
-            return emitter;
+        // 先建流再提交：恢复请求在 T1 提交后立刻派发，此时必须已经有连接可接事件。
+        SseEmitter emitter = sseEventPublisher.connect(
+                executionLocator.resolveRootSessionId(located.getConversationId()));
+        DecisionReceipt receipt;
+        try {
+            ToolCallAction action = approved ? ToolCallAction.APPROVE : ToolCallAction.REJECT;
+            receipt = engine.decide(new CommandDecision(located.getConversationId(), located.getId(), null, null,
+                    action,
+                    CommandDigest.build(located.getId(), located.getConversationId(), located.getVersion(),
+                            action.wireValue(), null),
+                    ResumeIntent.COORDINATOR, () -> sseEventPublisher.finish(emitter)), contract);
+        } catch (RuntimeException failure) {
+            // 决策没落库：这条流不会有任何后续事件，必须当场以错误收尾再原样抛出。
+            emitter.completeWithError(failure);
+            throw failure;
         }
+        if (!receipt.decisionApplied()) {
+            // 幂等 no-op：没有登记恢复，也不会有落定回调，这里直接关流。
+            sseEventPublisher.finish(emitter);
+        }
+        return emitter;
     }
 
     /** 立即完成的流：用于幂等 no-op（已处理的审批不再恢复执行）。 */
