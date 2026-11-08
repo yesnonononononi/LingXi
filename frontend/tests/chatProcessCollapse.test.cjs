@@ -880,6 +880,12 @@ test('深度思考动效：挂起、终态和历史不加载，运行中的对�
     turn.status = status;
     await nextTick();
     assert.equal(Boolean(resolveAnimation()), false, status);
+    if (status === 'CANCELLED') {
+      turn.status = 'ACCEPTED';
+      answer.isComplete = false;
+      await nextTick();
+      assert.ok(resolveAnimation(), 'ACCEPTED 轮次的思考标题也必须加载渐变动画');
+    }
   }
   turn.status = 'RUNNING';
   answer.isComplete = false;
@@ -900,6 +906,7 @@ test('思考正文：引用块内使用 Markdown，逐段追加保留完整内�
   const root = await mountExpanded(t, answer, { isDark: false });
   const resolveBody = () => find(root, node => node.tag === 'markdown' && node.props.thinkingText === true);
   assert.ok(resolveBody(), '思考内容使用独立 Markdown 样式');
+  assert.equal(resolveBody().props.revealInitial, true, '运行中的思考步骤首帧挂载必须开启 revealInitial');
   assert.equal(text(resolveBody()), answer.thoughtSteps[0].content);
   const box = find(root, node => String(node.props.class ?? '').includes('thinking-content'));
   assert.ok(box);
@@ -988,6 +995,7 @@ test('过程文本不跳正文：首片段即时打印，用途确认和工具�
     await nextTick();
     assert.equal(answer.content, '', '用途未确认的文本不能先进入正文');
     assert.ok(resolveProcessText(), '每个片段都必须在过程区即时可见');
+    assert.equal(resolveProcessText().props.revealInitial, true, '流式首包挂载过程文本时必须开启 revealInitial');
     assert.equal(text(resolveProcessText()), expected);
     assert.equal(answer.turnState.texts['text:101'].isBody, undefined, '展示位置不伪造后端用途');
   }
@@ -996,6 +1004,7 @@ test('过程文本不跳正文：首片段即时打印，用途确认和工具�
   await nextTick();
   assert.equal(answer.content, '');
   assert.equal(resolveProcessText() === initialNode, true);
+  assert.equal(resolveProcessText().props.revealInitial, false, '响应文本完结后 revealInitial 回到 false');
   reducer.consume(event({ type: 'AI_MESSAGE', responseId: '101', order: 1, text: '检索完成。', isBody: false }));
   reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));

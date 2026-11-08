@@ -19,6 +19,8 @@ const props = withDefaults(
     processText?: boolean;
     /** 思考内容独立弱化，正文与过程叙述保持各自样式。 */
     thinkingText?: boolean;
+    /** 首帧携带首个未完结流式分片挂载时显式开启首包渐显；未传时按挂载是否为空判定。 */
+    revealInitial?: boolean;
   }>(),
   {
     content: '',
@@ -26,7 +28,8 @@ const props = withDefaults(
     isThinking: false,
     streaming: undefined,
     processText: false,
-    thinkingText: false
+    thinkingText: false,
+    revealInitial: undefined
   }
 );
 const emit = defineEmits<{ 'content-rendered': [] }>();
@@ -34,7 +37,7 @@ const emit = defineEmits<{ 'content-rendered': [] }>();
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
 // 初次挂载时已有内容属于快照；只有从空正文开始接收的首批文字需要显现。
-const revealInitial = !props.content;
+const revealInitial = props.revealInitial ?? !props.content;
 const streaming = computed(() => props.streaming ?? props.isThinking);
 const displayedContent = useThinkingText(() => props.content || '', () => props.thinkingText && streaming.value);
 watch(displayedContent, () => {

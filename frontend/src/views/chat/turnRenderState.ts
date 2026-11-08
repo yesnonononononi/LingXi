@@ -16,8 +16,8 @@ export function getTurnState(bubble: ChatMessage): TurnRenderState {
 
 /** 旧运行快照不能重开终态或解除挂起，恢复必须由恢复事件驱动。 */
 export function applyTurnStatus(bubble: ChatMessage, status: string): void {
-  if (bubble.isComplete && (status === 'RUNNING' || status === 'WAITING')) return;
-  if (bubble.isSuspended && status === 'RUNNING') return;
+  if (bubble.isComplete && (status === 'RUNNING' || status === 'WAITING' || status === 'ACCEPTED')) return;
+  if (bubble.isSuspended && (status === 'RUNNING' || status === 'ACCEPTED')) return;
   if (status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') {
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
@@ -29,7 +29,7 @@ export function applyTurnStatus(bubble: ChatMessage, status: string): void {
     bubble.isSuspended = true;
     bubble.isThinking = false;
     bubble.isExploring = false;
-  } else if (status === 'RUNNING') {
+  } else if (status === 'RUNNING' || status === 'ACCEPTED') {
     bubble.isThinking = true;
     bubble.isSuspended = false;
     bubble.isComplete = false;

@@ -87,6 +87,7 @@ const toggle = (): void => {
           @scroll="step && scroll.handleScroll(step.id, $event)"
         >
           <MarkdownRenderer :content="step.content" :is-dark="isDark" :thinking-text="true" :streaming="isAnimating"
+            :reveal-initial="isAnimating"
             @content-rendered="scroll.isFollowing(step.id) && scroll.scrollToBottom(step.id)" />
         </div>
         <!-- 用户上滑看前文后，新分片不再抢滚动位置；给一个一键回到底部的入口。

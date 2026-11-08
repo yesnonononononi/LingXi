@@ -39,10 +39,12 @@ const GRADIENT_TEXT_COMPONENT = Object.freeze({
   setup: (props, { slots }) => () => h('gradient-text', { ...props }, slots.default?.()),
 });
 const MARKDOWN_RENDERER_COMPONENT = Object.freeze({
-  props: ['content', 'thinkingText', 'processText'],
+  props: ['content', 'thinkingText', 'processText', 'revealInitial', 'streaming'],
   setup: props => () => h('markdown', {
     thinkingText: props.thinkingText,
     processText: props.processText,
+    revealInitial: props.revealInitial,
+    streaming: props.streaming,
   }, props.content),
 });
 const PROMPT_CARD_COMPONENT = Object.freeze({ setup: () => () => h('prompt-card', '审批卡片') });

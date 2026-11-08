@@ -466,3 +466,36 @@ test('★ applyTextPlacement 直接单测：true 不可降级，false 可升级�
   applyTextPlacement(bubble, 'text:202', true);
   assert.equal(getTurnState(bubble).texts['text:202']?.isBody, true, 'false → true 可升级');
 });
+
+test('ACCEPTED 快照进入流式思考态，且旧 ACCEPTED 快照不能重开终态或解除挂起', () => {
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, {
+    sessionId: '7', turnId: '901', status: 'ACCEPTED', viewVersion: '1', blocks: [],
+  });
+  const bubble = messages.find(item => item.role === 'assistant')!;
+  assert.equal(bubble.isThinking, true, 'ACCEPTED 快照必须置位 isThinking 以激活流式动画');
+  assert.equal(bubble.isComplete, false);
+  assert.equal(bubble.isSuspended, false);
+
+  upsertTurnViewIntoMessages(messages, {
+    sessionId: '7', turnId: '901', status: 'WAITING', viewVersion: '2', blocks: [],
+  });
+  assert.equal(bubble.isSuspended, true);
+  assert.equal(bubble.isThinking, false);
+
+  upsertTurnViewIntoMessages(messages, {
+    sessionId: '7', turnId: '901', status: 'ACCEPTED', viewVersion: '3', blocks: [],
+  });
+  assert.equal(bubble.isSuspended, true, '挂起后不得被迟到的 ACCEPTED 快照解除挂起');
+  assert.equal(bubble.isThinking, false);
+
+  upsertTurnViewIntoMessages(messages, {
+    sessionId: '7', turnId: '901', status: 'COMPLETED', viewVersion: '4', blocks: [],
+  });
+  assert.equal(bubble.isComplete, true);
+  upsertTurnViewIntoMessages(messages, {
+    sessionId: '7', turnId: '901', status: 'ACCEPTED', viewVersion: '5', blocks: [],
+  });
+  assert.equal(bubble.isComplete, true, '终态后不得被迟到的 ACCEPTED 快照重开');
+  assert.equal(bubble.isThinking, false);
+});

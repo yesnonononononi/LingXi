@@ -254,10 +254,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     if (eventSessionId && eventSessionId !== String(session.id)) return;
     if (event.type === 'EXECUTION_STARTED' || event.type === 'EXECUTION_RESUME') {
       session.runStatus = 'RUNNING';
+      const startedTurnId = event.metaData?.turnId ? String(event.metaData.turnId) : null;
+      if (startedTurnId && session.turns?.[startedTurnId]) session.turns[startedTurnId].status = 'RUNNING';
       return;
     }
     if (event.type === 'EXECUTION_SUSPENDED') {
       session.runStatus = 'SUSPENDED';
+      const suspendedTurnId = event.metaData?.turnId ? String(event.metaData.turnId) : null;
+      if (suspendedTurnId && session.turns?.[suspendedTurnId]) session.turns[suspendedTurnId].status = 'WAITING';
       return;
     }
     if (isTerminalEvent(event.type)) {

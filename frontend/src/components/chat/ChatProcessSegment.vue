@@ -60,7 +60,7 @@ const previewIsText = computed(() => headline.value.previewKind === 'text');
  * 有 turn 时看 `turn.status`，无 turn 时看 `message.isComplete !== true`。
  */
 const isRunningTurn = computed(() => props.turn
-  ? props.turn.status === 'RUNNING'
+  ? props.turn.status === 'RUNNING' || props.turn.status === 'ACCEPTED'
   : props.message.isComplete !== true);
 </script>
 
