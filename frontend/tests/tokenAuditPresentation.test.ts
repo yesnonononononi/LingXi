@@ -17,6 +17,7 @@ import {
   formatCapturedAt,
   formatRatioPercent,
   formatTokenAmount,
+  formatTokenLimit,
   hasContextSection,
   hasOverheadSection,
   resolveCapturingDrift,
@@ -33,15 +34,16 @@ import {
   recordTokenAuditSnapshot,
   resetTokenAuditStream,
   resolveDisplayedSnapshot,
+  toTokenAuditNumber,
 } from '../src/views/chat/tokenAuditStream';
 import type {
-  SessionTokenAuditVO,
-  TokenAuditRequestOverheadVO,
-  TokenAuditToolBreakdownVO,
+  SessionTokenAuditSnapshot,
+  TokenAuditRequestOverhead,
+  TokenAuditToolBreakdown,
 } from '../src/types/tokenAudit';
 
 /** 构造一份「普通工具 + MCP + Skill」齐全的工具构成。 */
-const fullTools = (): TokenAuditToolBreakdownVO => ({
+const fullTools = (): TokenAuditToolBreakdown => ({
   tokens: 73080,
   ratio: 0.512,
   ordinary: {
@@ -60,7 +62,7 @@ const fullTools = (): TokenAuditToolBreakdownVO => ({
 });
 
 /** 构造一份「已采集」的完整审计 VO。 */
-const collectedAudit = (): SessionTokenAuditVO => ({
+const collectedAudit = (): SessionTokenAuditSnapshot => ({
   sessionId: '1234567890',
   displayState: 'COLLECTED',
   liveTotalTokens: 148200,
@@ -201,7 +203,7 @@ test('resolveToolGroupRows：「N 项」取 items 长度（调用次数已从契
 });
 
 test('resolveToolGroupRows：分组 tokens 为真实 0 时仍渲染该行（0 是已知值）', () => {
-  const tools: TokenAuditToolBreakdownVO = {
+  const tools: TokenAuditToolBreakdown = {
     tokens: 0,
     ordinary: {groupKind: 'ORDINARY', tokens: 0, items: []},
   };
@@ -212,7 +214,7 @@ test('resolveToolGroupRows：分组 tokens 为真实 0 时仍渲染该行（0 �
 });
 
 test('resolveToolGroupRows：items 为 null 时按 0 项处理', () => {
-  const tools: TokenAuditToolBreakdownVO = {
+  const tools: TokenAuditToolBreakdown = {
     tokens: 100,
     ordinary: {groupKind: 'ORDINARY', tokens: 100, items: null},
   };
@@ -225,7 +227,7 @@ test('hasOverheadSection：整节缺失不渲染', () => {
   assert.equal(hasOverheadSection(collectedAudit().requestOverhead), true);
   assert.equal(hasOverheadSection(null), false);
   assert.equal(hasOverheadSection(undefined), false);
-  assert.equal(hasOverheadSection({} as TokenAuditRequestOverheadVO), false);
+  assert.equal(hasOverheadSection({} as TokenAuditRequestOverhead), false);
 });
 
 test('resolveToolDefinitionRows：缺失的定义项跳过，不渲染 0', () => {
@@ -244,7 +246,7 @@ test('resolveToolDefinitionRows：缺失的定义项跳过，不渲染 0', () =>
 // ─────────────────────────── 兜底状态 ───────────────────────────
 
 test('resolveCapturingDrift：仅 CAPTURING 且有差额时给出提示值', () => {
-  const capturing: SessionTokenAuditVO = {...collectedAudit(), displayState: 'CAPTURING', driftTokens: 1234};
+  const capturing: SessionTokenAuditSnapshot = {...collectedAudit(), displayState: 'CAPTURING', driftTokens: 1234};
   assert.equal(resolveCapturingDrift(capturing), 1234);
   assert.equal(resolveCapturingDrift({...capturing, driftTokens: null}), null);
   assert.equal(resolveCapturingDrift(collectedAudit()), null);
@@ -321,7 +323,7 @@ test('推送按事件自带 sessionId 归属，与兜底根会话无关（后端
 test('无推送时回退 GET；有推送时推送优先；手动刷新清掉推送后 GET 立刻生效', () => {
   resetTokenAuditStream();
   const fetched = collectedAudit();
-  const pushed: SessionTokenAuditVO = {...collectedAudit(), liveTotalTokens: 42};
+  const pushed: SessionTokenAuditSnapshot = {...collectedAudit(), liveTotalTokens: 42};
 
   // 无推送 → GET
   assert.equal(resolveDisplayedSnapshot(null, fetched), fetched);
@@ -370,4 +372,197 @@ test('推送 payload 的「N 项」仍取数组长度，且不接受未知字段
   assert.equal(countToolGroupKinds(shown.tools), 3, '3 类 = 存在的分组数');
   resetTokenAuditStream();
 });
+
+// ─────────────── 数值字段以字符串到达（Jackson 把 Long 序列化成字符串） ───────────────
+
+/** 复现线上真实 payload：`liveTotalTokens` / `remainingTokens` 是字符串。 */
+const stringNumericPayload = (): Record<string, unknown> => ({
+  sessionId: '1801439850948198',
+  displayState: 'COLLECTED',
+  liveTotalTokens: '148200',
+  liveMaxTokens: 200000,
+  liveRatio: '0.741',
+  remainingTokens: '51800',
+  remainingRatio: '0.259',
+  totalTokens: '148200',
+  messagesTotalTokens: '142850',
+  driftTokens: '0',
+  capturedAt: '2026-11-08T05:00:00.000Z',
+  messages: [
+    {type: 'SYSTEM', tokens: '12400', ratio: '0.087', expandable: false},
+    {type: 'USER', tokens: '18920', ratio: '0.132', expandable: false},
+    {type: 'AI', tokens: '38450', ratio: '0.269', expandable: false},
+    {type: 'TOOL', tokens: '73080', ratio: '0.512', expandable: true},
+  ],
+  tools: {
+    tokens: '73080',
+    ratio: '0.512',
+    ordinary: {
+      groupKind: 'ORDINARY',
+      tokens: '24180',
+      ratio: '0.331',
+      items: [{toolName: 'search_web', tokens: '9420', ratio: '0.39', argumentTokens: '120', outputTokens: '980'}],
+    },
+    mcp: {groupKind: 'MCP', tokens: '34700', ratio: '0.475', items: []},
+    skill: null,
+  },
+  requestOverhead: {
+    tokens: '15200',
+    ratio: '0.106',
+    itemCount: '2',
+    toolDefinition: {tokens: '10400', ratio: '0.684'},
+    mcpToolDefinition: null,
+    framingResidualTokens: '0',
+  },
+  reconciliation: {
+    totalTokens: '148200',
+    messagesTokens: '142850',
+    requestOverheadTokens: '15200',
+    toolGroupingDrift: '0',
+  },
+});
+
+test('数值字段以字符串到达时仍正常渲染：148200 / 200k 与剩余可用 51,800 tok · 25.9%', () => {
+  const snapshot = normalizeTokenAuditSnapshot(stringNumericPayload(), null);
+  assert.ok(snapshot);
+  // 顶层字段已收敛为数值
+  assert.equal(snapshot!.liveTotalTokens, 148200);
+  assert.equal(snapshot!.liveMaxTokens, 200000);
+  assert.equal(snapshot!.liveRatio, 0.741);
+  assert.equal(snapshot!.remainingTokens, 51800);
+  assert.equal(snapshot!.remainingRatio, 0.259);
+  assert.equal(snapshot!.messagesTotalTokens, 142850);
+
+  // 「当前上下文」两行都可见（模板的 v-if 条件即看这两个字段是否为 null）
+  const summary = resolveContextSummary(snapshot);
+  assert.notEqual(summary.usedTokens, null, '总量行必须可见');
+  assert.equal(summary.usedTokens, 148200);
+  assert.equal(summary.maxTokens, 200000);
+  assert.equal(summary.ratioPercent, '74.1%');
+  assert.equal(summary.barWidth, '74.1%');
+  assert.equal(summary.remainingTokens, 51800, '剩余可用行必须可见');
+  assert.equal(summary.remainingPercent, '25.9%');
+  assert.equal(hasContextSection(snapshot), true);
+
+  // 设计稿呈现：`148,200 / 200k`
+  assert.equal(formatTokenAmount(summary.usedTokens), '148,200');
+  assert.equal(formatTokenLimit(summary.maxTokens), '200k');
+
+  // 嵌套字段同样收敛
+  const rows = resolveMessageRows(snapshot!.messages);
+  assert.equal(rows.length, 4);
+  assert.equal(rows[3]!.tokens, 73080);
+  const groups = resolveToolGroupRows(snapshot!.tools);
+  assert.equal(groups[0]!.tokens, 24180);
+  assert.equal(groups[0]!.items[0]!.tokens, 9420);
+  assert.equal(groups[0]!.items[0]!.tokens, 9420);
+  assert.equal(snapshot!.tools!.ordinary!.items![0]!.argumentTokens, 120);
+  assert.equal(snapshot!.tools!.ordinary!.items![0]!.outputTokens, 980);
+  assert.equal(snapshot!.requestOverhead!.itemCount, 2);
+  assert.equal(resolveToolDefinitionRows(snapshot!.requestOverhead)[0]!.tokens, 10400);
+  assert.equal(snapshot!.reconciliation!.messagesTokens, 142850);
+});
+
+test('sessionId 保持字符串：雪花 ID 不因「看起来像数字」被转成 number', () => {
+  const snapshot = normalizeTokenAuditSnapshot(stringNumericPayload(), null);
+  assert.equal(snapshot!.sessionId, '1801439850948198');
+  assert.equal(typeof snapshot!.sessionId, 'string');
+  // 原始载荷若给的是数值，也只会被拼成字符串（不做数值运算）
+  assert.equal(normalizeTokenAuditSnapshot({sessionId: 123, displayState: 'COLLECTED'}, null)!.sessionId, '123');
+});
+
+test('非数字字符串 → 未知 → 整行不渲染（不猜 0）', () => {
+  for (const bad of ['abc', '', '  ', '12px', '1e5', '0x10', 'NaN']) {
+    const snapshot = normalizeTokenAuditSnapshot({
+      sessionId: 's-bad',
+      displayState: 'COLLECTED',
+      liveTotalTokens: bad,
+      liveMaxTokens: bad,
+      liveRatio: bad,
+      remainingTokens: bad,
+      remainingRatio: bad,
+    }, null);
+    assert.ok(snapshot, `payload(${JSON.stringify(bad)}) 应仍可解析`);
+    assert.equal(snapshot!.liveTotalTokens, null, `${JSON.stringify(bad)} 必须为未知`);
+    assert.equal(snapshot!.remainingTokens, null);
+    assert.equal(snapshot!.remainingRatio, null);
+
+    const summary = resolveContextSummary(snapshot);
+    assert.equal(summary.usedTokens, null, '总量行整行不渲染');
+    assert.equal(summary.remainingTokens, null, '剩余可用行整行不渲染');
+    assert.equal(summary.remainingPercent, null);
+    assert.equal(summary.barWidth, null);
+    assert.equal(hasContextSection(snapshot), false, '整节不渲染');
+  }
+  // null / undefined / 布尔 / 对象同样不猜 0
+  const snapshot = normalizeTokenAuditSnapshot({
+    sessionId: 's-null', displayState: 'COLLECTED',
+    liveTotalTokens: null, remainingTokens: undefined, liveRatio: true, messagesTotalTokens: {},
+  }, null);
+  assert.equal(snapshot!.liveTotalTokens, null);
+  assert.equal(snapshot!.remainingTokens, null);
+  assert.equal(snapshot!.liveRatio, null);
+  assert.equal(snapshot!.messagesTotalTokens, null);
+});
+
+test('0 仍是已知值："0" 渲染 0，不当未知', () => {
+  const snapshot = normalizeTokenAuditSnapshot({
+    sessionId: 's-zero',
+    displayState: 'COLLECTED',
+    liveTotalTokens: '0',
+    liveMaxTokens: '200000',
+    liveRatio: '0',
+    remainingTokens: '0',
+    remainingRatio: '0',
+    totalTokens: '0',
+    messagesTotalTokens: '0',
+  }, null);
+  assert.equal(snapshot!.remainingTokens, 0);
+  assert.equal(snapshot!.liveTotalTokens, 0);
+  assert.equal(snapshot!.remainingRatio, 0);
+
+  const summary = resolveContextSummary(snapshot);
+  assert.equal(summary.usedTokens, 0, '0 是已知值，≠ null');
+  assert.equal(summary.remainingTokens, 0, '剩余 0 也要渲染');
+  assert.equal(summary.ratioPercent, '0.0%');
+  assert.equal(summary.remainingPercent, '0.0%');
+  assert.equal(summary.barWidth, '0.0%');
+  assert.equal(hasContextSection(snapshot), true, '0 也算有实时数据');
+  assert.equal(formatTokenAmount(summary.remainingTokens), '0');
+  // 表单里的 `0` 与「未知」在渲染上必须能区分
+  assert.notEqual(summary.remainingTokens, null);
+});
+
+test('formatTokenLimit：上限简写（200k / 1.2M / 原样小数值），缺失返回空串', () => {
+  assert.equal(formatTokenLimit(200000), '200k');
+  assert.equal(formatTokenLimit(128000), '128k');
+  assert.equal(formatTokenLimit(16384), '16.4k');
+  assert.equal(formatTokenLimit(1_200_000), '1.2M');
+  assert.equal(formatTokenLimit(999), '999');
+  assert.equal(formatTokenLimit(0), '0');
+  assert.equal(formatTokenLimit(null), '');
+  assert.equal(formatTokenLimit(undefined), '');
+  assert.equal(formatTokenLimit(Number.NaN), '');
+});
+
+test('toTokenAuditNumber：只认十进制数值形态，其余一律 null', () => {
+  assert.equal(toTokenAuditNumber(148200), 148200);
+  assert.equal(toTokenAuditNumber('148200'), 148200);
+  assert.equal(toTokenAuditNumber(' 148200 '), 148200);
+  assert.equal(toTokenAuditNumber('0.259'), 0.259);
+  assert.equal(toTokenAuditNumber('.5'), 0.5);
+  assert.equal(toTokenAuditNumber('-42'), -42);
+  assert.equal(toTokenAuditNumber('0'), 0);
+  assert.equal(toTokenAuditNumber(''), null);
+  assert.equal(toTokenAuditNumber('abc'), null);
+  assert.equal(toTokenAuditNumber('1e5'), null);
+  assert.equal(toTokenAuditNumber('0x10'), null);
+  assert.equal(toTokenAuditNumber('12px'), null);
+  assert.equal(toTokenAuditNumber(null), null);
+  assert.equal(toTokenAuditNumber(undefined), null);
+  assert.equal(toTokenAuditNumber(Number.POSITIVE_INFINITY), null);
+  assert.equal(toTokenAuditNumber(true), null);
+  assert.equal(toTokenAuditNumber({}), null);
+});
+
 

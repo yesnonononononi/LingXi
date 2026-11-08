@@ -32,12 +32,13 @@ import {t} from '../../i18n';
 import {isOk} from '../../utils/api';
 import {ApiError, describeKind} from '../../services/interceptor';
 import {TokenAuditAPI} from '../../services/tokenAudit';
-import type {SessionTokenAuditVO, TokenAuditCategoryType, TokenAuditToolGroupKind} from '../../types/tokenAudit';
+import type {SessionTokenAuditSnapshot, TokenAuditCategoryType, TokenAuditToolGroupKind} from '../../types/tokenAudit';
 import {
   formatBarWidth,
   formatCapturedAt,
   formatRatioPercent,
   formatTokenAmount,
+  formatTokenLimit,
   hasContextSection,
   hasOverheadSection,
   resolveCapturingDrift,
@@ -75,7 +76,7 @@ const CATEGORY_DOT_CLASS: Readonly<Record<TokenAuditCategoryType, string>> = {
 };
 
 /** 最近一次 GET 的结果。`null` = 尚无数据（加载中 / 失败 / 未采集）。 */
-const fetched = ref<SessionTokenAuditVO | null>(null);
+const fetched = ref<SessionTokenAuditSnapshot | null>(null);
 /** 是否正在请求。 */
 const loading = ref(false);
 /** 请求失败的用户可见文案；空串表示无错误。 */
@@ -101,7 +102,7 @@ const streamEntry = computed(() => (canLoad.value ? getTokenAuditStreamEntry(pro
  * 实际渲染的快照：推送优先，无推送回退 GET（规则唯一实现在
  * {@link resolveDisplayedSnapshot}，组件不自作判断）。
  */
-const displayed = computed<SessionTokenAuditVO | null>(() =>
+const displayed = computed<SessionTokenAuditSnapshot | null>(() =>
   resolveDisplayedSnapshot(streamEntry.value, fetched.value)
 );
 
@@ -343,7 +344,7 @@ watch(
               <div v-if="contextSummary.usedTokens !== null" class="flex items-baseline font-mono text-lx-fs-md text-lx-primary">
                 <span>{{ formatTokenAmount(contextSummary.usedTokens) }}</span>
                 <span v-if="contextSummary.maxTokens !== null" class="text-lx-muted">
-                  &nbsp;/ {{ formatTokenAmount(contextSummary.maxTokens) }}
+                  &nbsp;/ {{ formatTokenLimit(contextSummary.maxTokens) }}
                 </span>
               </div>
               <div
@@ -353,10 +354,11 @@ watch(
               >
                 <div class="h-full rounded-lx-full bg-lx-accent" :style="{width: contextSummary.barWidth}"></div>
               </div>
-              <!-- 刻度只标「0」与上限：中点数值需要前端做除法，违反渲染铁律 3 -->
+              <!-- 刻度只标「0」与上限：中点数值需要前端做除法，违反渲染铁律 3。
+                   上限用简写（`200k`），与「已用 / 上限」同一形态。 -->
               <div v-if="contextSummary.maxTokens !== null" class="flex items-center justify-between font-mono text-lx-fs-2xs text-lx-faint">
                 <span>0</span>
-                <span>{{ formatTokenAmount(contextSummary.maxTokens) }} {{ t('chat.tokenAudit.tokenUnit') }}</span>
+                <span>{{ formatTokenLimit(contextSummary.maxTokens) }} {{ t('chat.tokenAudit.tokenUnit') }}</span>
               </div>
               <div v-if="contextSummary.remainingTokens !== null" class="flex items-center justify-between gap-2 text-lx-fs-xs">
                 <span class="text-lx-muted">{{ t('chat.tokenAudit.remaining') }}</span>

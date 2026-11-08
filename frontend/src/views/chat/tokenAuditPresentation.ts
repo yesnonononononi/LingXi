@@ -1,19 +1,20 @@
 import {formatClockTime} from '../../utils/format';
 import type {
-  SessionTokenAuditVO,
-  TokenAuditAmountVO,
+  SessionTokenAuditSnapshot,
+  TokenAuditAmount,
   TokenAuditCategoryType,
-  TokenAuditCategoryVO,
-  TokenAuditRequestOverheadVO,
-  TokenAuditToolBreakdownVO,
+  TokenAuditCategory,
+  TokenAuditRequestOverhead,
+  TokenAuditToolBreakdown,
   TokenAuditToolGroupKind,
-  TokenAuditToolGroupVO,
+  TokenAuditToolGroup,
+  TokenAuditToolItem,
 } from '../../types/tokenAudit';
 
 /**
  * 用量审计面板的派生逻辑（纯函数，无 Vue 依赖，便于单测）。
  *
- * <p>本模块只做「后端 VO → 渲染行」的形状转换与文本格式化，<b>绝不</b>：
+ * <p>本模块只做「已归一快照 → 渲染行」的形状转换与文本格式化，<b>绝不</b>：
  * 重算 token 总数、重算占比、用数组长度冒充「N 项」、把 `null` 当 0。
  * 任何一处违反都会让面板显示虚假数据，比不显示更糟。</p>
  *
@@ -100,10 +101,16 @@ const isKnownNumber = (value: number | null | undefined): value is number =>
 /**
  * 判断一个「token 数 + 占比」对象是否可用于渲染。
  *
+ * <p>收窄目标是 `T & {tokens: number}` 而不只是 `T`：归一后的 `tokens` 类型是 `number | null`，
+ * 只收窄对象本身的话，调用方读 `value.tokens` 拿到的仍是 `number | null`，行模型就得跟着放宽 ——
+ * 「能渲染的行一定有确定 token 数」这条不变式就会在类型上失效。</p>
+ *
  * @param value 待判定对象
  * @returns 存在且 tokens 为有限数值时返回 true
  */
-const isRenderableAmount = <T extends TokenAuditAmountVO>(value: T | null | undefined): value is T =>
+const isRenderableAmount = <T extends TokenAuditAmount>(
+  value: T | null | undefined
+): value is T & {tokens: number} =>
   value !== null && value !== undefined && isKnownNumber(value.tokens);
 
 /**
@@ -115,6 +122,36 @@ const isRenderableAmount = <T extends TokenAuditAmountVO>(value: T | null | unde
 export function formatTokenAmount(tokens?: number | null): string {
   if (!isKnownNumber(tokens)) return '';
   return tokens.toLocaleString('en-US');
+}
+
+/**
+ * 保留 1 位小数并去掉多余的 `.0`（`200.0` → `200`、`16.4` 保持）。
+ *
+ * @param value 待格式化数值
+ * @returns 紧凑文本
+ */
+const trimTrailingZero = (value: number): string => {
+  const fixed = value.toFixed(1);
+  return fixed.endsWith('.0') ? fixed.slice(0, -2) : fixed;
+};
+
+/**
+ * 上限/刻度的**简写**形态（设计稿的 `200k`）。
+ *
+ * <p>只做「同一数量的显示单位缩写」，不产生任何新数据：值本身仍取后端字段，
+ * 不是拿别的字段除出来的。用于「当前上下文」标题与刻度上限这类<b>空间紧</b>的位置；
+ * 「已用 / 剩余」这类需要精确读数的位置仍用 {@link formatTokenAmount} 的千分位全量。</p>
+ *
+ * @param tokens token 数；缺失返回空串
+ * @returns 如 `200k`、`1.2M`、`999`，缺失返回空串
+ */
+export function formatTokenLimit(tokens?: number | null): string {
+  if (!isKnownNumber(tokens)) return '';
+  const abs = Math.abs(tokens);
+  // 缩写规则按十进制（与「200k = 200,000」的直觉一致），不做二进制取整。
+  if (abs >= 1_000_000) return `${trimTrailingZero(tokens / 1_000_000)}M`;
+  if (abs >= 1_000) return `${trimTrailingZero(tokens / 1_000)}k`;
+  return String(tokens);
 }
 
 /**
@@ -158,10 +195,10 @@ export function formatCapturedAt(value?: string | number | null): string {
 /**
  * 「当前上下文」小节派生。
  *
- * @param audit 审计 VO
+ * @param audit 已归一快照
  * @returns 已归一化的展示字段；无实时数据时各数值字段为 null
  */
-export function resolveContextSummary(audit?: SessionTokenAuditVO | null): TokenAuditContextSummary {
+export function resolveContextSummary(audit?: SessionTokenAuditSnapshot | null): TokenAuditContextSummary {
   const used = isKnownNumber(audit?.liveTotalTokens) ? audit.liveTotalTokens : null;
   const max = isKnownNumber(audit?.liveMaxTokens) ? audit.liveMaxTokens : null;
   const ratio = isKnownNumber(audit?.liveRatio) ? audit.liveRatio : null;
@@ -183,10 +220,11 @@ export function resolveContextSummary(audit?: SessionTokenAuditVO | null): Token
  * @param messages 后端分项数组
  * @returns 可直接渲染的行；无有效分项时返回空数组
  */
-export function resolveMessageRows(messages?: TokenAuditCategoryVO[] | null): TokenAuditMessageRow[] {
+export function resolveMessageRows(messages?: TokenAuditCategory[] | null): TokenAuditMessageRow[] {
   if (!Array.isArray(messages)) return [];
   return messages
-    .filter((item): item is TokenAuditCategoryVO => isRenderableAmount(item) && !!CATEGORY_LABEL_KEY[item.type])
+    .filter((item): item is TokenAuditCategory & {tokens: number} =>
+      isRenderableAmount(item) && !!CATEGORY_LABEL_KEY[item.type])
     .sort((a, b) => CATEGORY_ORDER.indexOf(a.type) - CATEGORY_ORDER.indexOf(b.type))
     .map((item) => ({
       type: item.type,
@@ -203,16 +241,18 @@ export function resolveMessageRows(messages?: TokenAuditCategoryVO[] | null): To
  * @param tools 工具构成
  * @returns 按 {@link TOOL_GROUP_ORDER} 定序的分组列表
  */
-const collectToolGroups = (tools?: TokenAuditToolBreakdownVO | null): TokenAuditToolGroupVO[] => {
+const collectToolGroups = (
+  tools?: TokenAuditToolBreakdown | null
+): (TokenAuditToolGroup & {tokens: number})[] => {
   if (!tools) return [];
-  const byKind: Record<TokenAuditToolGroupKind, TokenAuditToolGroupVO | null | undefined> = {
+  const byKind: Record<TokenAuditToolGroupKind, TokenAuditToolGroup | null | undefined> = {
     ORDINARY: tools.ordinary,
     MCP: tools.mcp,
     SKILL: tools.skill,
   };
   return TOOL_GROUP_ORDER
     .map((kind) => byKind[kind])
-    .filter((group): group is TokenAuditToolGroupVO => isRenderableAmount(group));
+    .filter((group): group is TokenAuditToolGroup & {tokens: number} => isRenderableAmount(group));
 };
 
 /**
@@ -221,7 +261,7 @@ const collectToolGroups = (tools?: TokenAuditToolBreakdownVO | null): TokenAudit
  * @param tools 工具构成
  * @returns 非空分组数（0..3）
  */
-export function countToolGroupKinds(tools?: TokenAuditToolBreakdownVO | null): number {
+export function countToolGroupKinds(tools?: TokenAuditToolBreakdown | null): number {
   return collectToolGroups(tools).length;
 }
 
@@ -231,10 +271,13 @@ export function countToolGroupKinds(tools?: TokenAuditToolBreakdownVO | null): n
  * @param tools 工具构成
  * @returns 可直接渲染的分组行；无分组时返回空数组
  */
-export function resolveToolGroupRows(tools?: TokenAuditToolBreakdownVO | null): TokenAuditToolGroupRow[] {
+export function resolveToolGroupRows(tools?: TokenAuditToolBreakdown | null): TokenAuditToolGroupRow[] {
   return collectToolGroups(tools).map((group) => {
     const items = Array.isArray(group.items)
-      ? group.items.filter((item) => isRenderableAmount(item) && typeof item.toolName === 'string')
+      ? group.items.filter(
+          (item): item is TokenAuditToolItem & {tokens: number} =>
+            isRenderableAmount(item) && typeof item.toolName === 'string'
+        )
       : [];
     return {
       kind: group.groupKind,
@@ -259,7 +302,7 @@ export function resolveToolGroupRows(tools?: TokenAuditToolBreakdownVO | null): 
  * @returns 可渲染的定义行（内核 / MCP），缺失项直接跳过
  */
 export function resolveToolDefinitionRows(
-  overhead?: TokenAuditRequestOverheadVO | null
+  overhead?: TokenAuditRequestOverhead | null
 ): TokenAuditDefinitionRow[] {
   if (!overhead) return [];
   const rows: TokenAuditDefinitionRow[] = [];
@@ -288,7 +331,7 @@ export function resolveToolDefinitionRows(
  * @param overhead 请求开销小节
  * @returns 可渲染返回 true
  */
-export function hasOverheadSection(overhead?: TokenAuditRequestOverheadVO | null): boolean {
+export function hasOverheadSection(overhead?: TokenAuditRequestOverhead | null): boolean {
   if (!overhead) return false;
   return isKnownNumber(overhead.tokens) || isKnownNumber(overhead.itemCount);
 }
@@ -296,10 +339,10 @@ export function hasOverheadSection(overhead?: TokenAuditRequestOverheadVO | null
 /**
  * `CAPTURING` 态需要提示的追平差额。
  *
- * @param audit 审计 VO
+ * @param audit 已归一快照
  * @returns 差额 token 数；非 CAPTURING 态或差额未知返回 null
  */
-export function resolveCapturingDrift(audit?: SessionTokenAuditVO | null): number | null {
+export function resolveCapturingDrift(audit?: SessionTokenAuditSnapshot | null): number | null {
   if (audit?.displayState !== 'CAPTURING') return null;
   return isKnownNumber(audit.driftTokens) ? audit.driftTokens : null;
 }
@@ -307,10 +350,10 @@ export function resolveCapturingDrift(audit?: SessionTokenAuditVO | null): numbe
 /**
  * 是否展示「当前上下文」小节。
  *
- * @param audit 审计 VO
+ * @param audit 已归一快照
  * @returns 任一实时字段已知即为 true（`NOT_COLLECTED` 也能只有这一节）
  */
-export function hasContextSection(audit?: SessionTokenAuditVO | null): boolean {
+export function hasContextSection(audit?: SessionTokenAuditSnapshot | null): boolean {
   if (!audit) return false;
   return isKnownNumber(audit.liveTotalTokens) || isKnownNumber(audit.liveMaxTokens);
 }
@@ -318,10 +361,10 @@ export function hasContextSection(audit?: SessionTokenAuditVO | null): boolean {
 /**
  * 消息构成标题右侧的总量文本。
  *
- * @param audit 审计 VO
+ * @param audit 已归一快照
  * @returns 如 `142,850`；缺失返回空串
  */
-export function resolveMessagesTotalText(audit?: SessionTokenAuditVO | null): string {
+export function resolveMessagesTotalText(audit?: SessionTokenAuditSnapshot | null): string {
   return formatTokenAmount(audit?.messagesTotalTokens ?? null);
 }
 
