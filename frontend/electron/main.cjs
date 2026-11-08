@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage, systemPreferences } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
@@ -49,14 +49,8 @@ let backendStopped = false;
 let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
-/**
- * 项目页面预览（阶段一）诊断通道：只上报目标 iframe 的加载事件。
- *
- * <p>不拦 will-navigate 也不改 setWindowOpenHandler —— 现有的外链策略（http/https 交给系统浏览器、
- * 其余 deny/allow 原样）已经能挡住 iframe 发起的顶层弹窗；iframe 自身的顶层导航由渲染层
- * sandbox（不含 allow-top-navigation）限制。这里不再加第二道会误伤现有外链的闸门。</p>
- */
-const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow });
+/** 网页独立于主页面，保留主窗口原有外链策略。 */
+const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session });
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.argv.includes('--dev');

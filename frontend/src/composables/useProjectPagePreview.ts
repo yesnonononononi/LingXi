@@ -1,14 +1,4 @@
-/**
- * 项目页面预览的唯一状态源（阶段一）。
- *
- * <p>职责边界：本 composable 只持有「地址 / 提交后的地址 / 加载状态 / 加载尝试序号 / 订阅句柄」，
- * 不直接操作 DOM —— iframe 由 {@code ProjectPagePreview.vue} 渲染，以 {@code generation} 作 key。</p>
- *
- * <p>加载状态口径（硬性）：只允许「正在尝试加载 / 加载等待超时 / 已收到页面加载事件 / 已确认失败」。
- * iframe 的 {@code load} 事件与 HTTP 200 都不等于业务可用；界面另有一行固定说明「浏览模式 · 编辑能力尚未接入」。</p>
- *
- * <p>失败诊断只认主进程 {@code did-fail-load}（子 frame、目标 origin 匹配）——没有诊断证据时不编造原因。</p>
- */
+/** 页面状态以主进程事件为准，换代后旧视图的事件不得覆盖当前页面。 */
 import {computed, getCurrentInstance, onBeforeUnmount, ref} from 'vue';
 import type {ComputedRef} from 'vue';
 import {t} from '../i18n';
@@ -16,12 +6,13 @@ import type {ElectronProjectPageAPI} from '../utils/platform';
 import type {
   ProjectPageDiagnosticEvent,
   ProjectPageLoadState,
+  ProjectPageLayout,
   ProjectPagePreviewApi,
   ProjectPageRejectReason,
   ProjectPageUrlResult,
 } from '../types/projectPagePreview';
 
-/** 加载等待超时毫秒数；超时只改变提示，**不销毁** iframe（迟到的成功仍可更新状态）。 */
+/** 加载等待超时毫秒数；超时只改变提示，**不销毁**网页视图（迟到的成功仍可更新状态）。 */
 export const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
 
 /** Chromium 错误码 → 便于理解的检查建议；未收录的码只回显主进程给的描述。 */
@@ -125,6 +116,7 @@ export function useProjectPagePreview(
   const failureCode = ref<number>(0);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribe: (() => void) | undefined;
+  let currentLayout: ProjectPageLayout = {visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}};
 
   const clearTimer = (): void => {
     if (timer !== undefined) {
@@ -155,18 +147,6 @@ export function useProjectPagePreview(
     }, timeoutMs);
   };
 
-  /** 释放主进程订阅：先退订再忘掉 origin，避免把旧 origin 丢掉。 */
-  const releaseSubscription = (): void => {
-    const bridge = getProjectPageBridge();
-    const origin = committedOrigin.value;
-    unsubscribe?.();
-    unsubscribe = undefined;
-    if (bridge && origin) {
-      // 退订失败不影响界面状态；主进程在 webContents destroyed 时也会自行摘监听器。
-      void Promise.resolve(bridge.unwatch()).catch(() => undefined);
-    }
-  };
-
   /**
    * 主进程诊断事件的唯一归并入口。
    *
@@ -178,6 +158,16 @@ export function useProjectPagePreview(
       return;
     }
     if (event.generation !== generation.value) {
+      return;
+    }
+    if (event.type === 'did-navigate' && event.url) {
+      const result = validateProjectPageUrl(event.url);
+      if (result.ok) {
+        // 用户正在编辑的新地址不能被后台导航覆盖。
+        if (addressInput.value === committedUrl.value) addressInput.value = result.url;
+        committedUrl.value = result.url;
+        committedOrigin.value = result.origin;
+      }
       return;
     }
     if (event.type === 'did-fail-load') {
@@ -200,9 +190,8 @@ export function useProjectPagePreview(
       return;
     }
     if (event.type === 'did-start-loading') {
-      if (loadState.value === 'failed') {
-        return;
-      }
+      failureDetail.value = '';
+      failureCode.value = 0;
       // 同一代内页面又发起了一次加载：语义上确实重新开始等了，状态回到 loading，
       // 并且**必须重新起超时计时器** —— 否则这次等待没有任何兜底，界面会永久停在「正在尝试加载…」。
       loadState.value = 'loading';
@@ -210,34 +199,36 @@ export function useProjectPagePreview(
     }
   };
 
-  /**
-   * 建立订阅（只订阅一次），并把当前的 origin + generation 交给主进程做 frame 匹配。
-   *
-   * <p>桌面端缺失（Web 开发模式）时静默跳过：页面仍能加载，只是没有主进程诊断。</p>
-   */
-  const ensureSubscription = (): void => {
-    const bridge = getProjectPageBridge();
-    if (!bridge) {
-      return;
-    }
-    if (!unsubscribe) {
-      try {
-        unsubscribe = bridge.onEvent(applyDiagnosticEvent);
-      } catch {
-        unsubscribe = undefined;
-      }
-    }
-    void Promise.resolve(
-      bridge.watch({origin: committedOrigin.value, generation: generation.value}),
-    ).catch(() => undefined);
+  const reportBridgeFailure = (attempt: number, error: unknown): void => {
+    applyDiagnosticEvent({type: 'did-fail-load', generation: attempt,
+      errorDescription: error instanceof Error ? error.message : String(error)});
   };
 
-  /**
-   * 发起一次新的加载尝试：换代 → 换 iframe 实例 → 起超时计时器 → 重新订阅。
-   *
-   * @param url 已校验通过的完整地址。
-   * @param origin 该地址的 origin。
-   */
+  const updateLayout = (layout: ProjectPageLayout): void => {
+    currentLayout = layout;
+    const bridge = getProjectPageBridge();
+    if (!bridge || !committedUrl.value) return;
+    const attempt = generation.value;
+    void bridge.layout({...layout, generation: attempt}).then(result => {
+      if (!result.ok) reportBridgeFailure(attempt, result.error);
+    }).catch(error => reportBridgeFailure(attempt, error));
+  };
+
+  /** 监听先于加载，避免快速页面的完成事件丢失。 */
+  const navigate = (url: string, attempt: number): void => {
+    const bridge = getProjectPageBridge();
+    if (!bridge) return;
+    try {
+      unsubscribe ??= bridge.onEvent(applyDiagnosticEvent);
+      void bridge.navigate({url, generation: attempt}).then(result => {
+        if (!result.ok) reportBridgeFailure(attempt, result.error);
+        else if (generation.value === attempt) updateLayout(currentLayout);
+      }).catch(error => reportBridgeFailure(attempt, error));
+    } catch (error) {
+      reportBridgeFailure(attempt, error);
+    }
+  };
+
   const startAttempt = (url: string, origin: string): void => {
     clearTimer();
     generation.value += 1;
@@ -250,7 +241,7 @@ export function useProjectPagePreview(
     failureCode.value = 0;
     open.value = true;
     armTimeout(attempt);
-    ensureSubscription();
+    navigate(url, attempt);
   };
 
   const updateAddress = (value: string): void => {
@@ -281,8 +272,11 @@ export function useProjectPagePreview(
 
   const close = (): void => {
     clearTimer();
-    releaseSubscription();
+    unsubscribe?.();
+    unsubscribe = undefined;
     generation.value += 1;
+    const bridge = getProjectPageBridge();
+    if (bridge) void bridge.close({generation: generation.value}).catch(() => undefined);
     committedUrl.value = '';
     committedOrigin.value = '';
     loadState.value = 'idle';
@@ -290,15 +284,6 @@ export function useProjectPagePreview(
     failureDetail.value = '';
     failureCode.value = 0;
     open.value = false;
-  };
-
-  const handleFrameLoad = (): void => {
-    if (!committedUrl.value) {
-      return;
-    }
-    // iframe 的 load 事件是弱证据：被拒绝嵌入 / 连接失败时它同样会触发，
-    // 因此同一代内已确认失败时不覆盖失败结论。
-    applyDiagnosticEvent({type: 'did-finish-load', generation: generation.value});
   };
 
   const statusText: ComputedRef<string> = computed(() => t(STATE_KEYS[loadState.value]));
@@ -330,7 +315,7 @@ export function useProjectPagePreview(
     updateAddress,
     reload,
     close,
-    handleFrameLoad,
+    updateLayout,
     applyDiagnosticEvent,
   };
 

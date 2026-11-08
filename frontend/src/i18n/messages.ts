@@ -309,6 +309,7 @@ export const messages: MessageSchema = {
     projectPagePreview: {
       title: '项目页面预览',
       frameTitle: '项目页面预览',
+      desktopRequired: '请在 LingXi 桌面客户端中打开网页预览。',
       addressAria: '项目页面地址',
       addressPlaceholder: 'https://example.com 或 http://localhost:5173/',
       openAddress: '打开',
@@ -321,7 +322,7 @@ export const messages: MessageSchema = {
       statusTimeout: '加载等待超时',
       statusFailed: '已确认失败',
       hintTimeout: '等待超时：请检查网络、目标网站或本机服务是否可访问，确认地址与端口后点击「重新加载」。迟到成功的加载仍会更新状态。',
-      failureBlockedByResponse: '页面拒绝被嵌入：目标网站的 X-Frame-Options 或 CSP frame-ancestors 不允许当前预览。',
+      failureBlockedByResponse: '网站阻止了当前页面的加载，请检查目标地址与网站访问策略。',
       failureConnectionRefused: '无法连接该地址：请确认目标网站或本机服务可访问、端口正确。',
       failureConnectionTimeout: '连接超时：请检查网络与目标网站或本机服务状态。',
       failureConnectionReset: '连接被重置：请检查网络与目标网站或本机服务状态。',
@@ -1581,6 +1582,7 @@ export const messages: MessageSchema = {
     projectPagePreview: {
       title: 'Project page preview',
       frameTitle: 'Project page preview',
+      desktopRequired: 'Open webpage previews in the LingXi desktop app.',
       addressAria: 'Project page address',
       addressPlaceholder: 'https://example.com or http://localhost:5173/',
       openAddress: 'Open',
@@ -1593,7 +1595,7 @@ export const messages: MessageSchema = {
       statusTimeout: 'Timed out while waiting to load',
       statusFailed: 'Load failure confirmed',
       hintTimeout: 'Timeout: check the network, target website or local server, address and port, then press Reload. A late successful load still updates the state.',
-      failureBlockedByResponse: 'The page refused to be embedded: the target website X-Frame-Options or CSP frame-ancestors policy does not allow this preview.',
+      failureBlockedByResponse: 'The website blocked this page from loading. Check the target address and website access policy.',
       failureConnectionRefused: 'Cannot connect to this address: check that the target website or local server is reachable and the port is correct.',
       failureConnectionTimeout: 'Connection timed out: check the network and target website or local server.',
       failureConnectionReset: 'Connection reset: check the network and target website or local server.',

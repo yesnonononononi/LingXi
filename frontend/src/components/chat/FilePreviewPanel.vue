@@ -42,6 +42,7 @@ const panelTitle = computed(() => (isPageMode.value ? t('projectPagePreview.titl
 const CodePreview = defineAsyncComponent(() => import('../common/CodePreview.vue'));
 const maximized = ref(false);
 const panelWidth = ref(540);
+const resizing = ref(false);
 const { copy, isCopied } = useCopyFeedback();
 let dragStart: { x: number; width: number } | undefined;
 
@@ -62,6 +63,7 @@ const moveResize = (event: PointerEvent) => {
 };
 const stopResize = () => {
   dragStart = undefined;
+  resizing.value = false;
   window.removeEventListener('pointermove', moveResize);
   window.removeEventListener('pointerup', stopResize);
   window.removeEventListener('pointercancel', stopResize);
@@ -69,6 +71,7 @@ const stopResize = () => {
 const startResize = (event: PointerEvent) => {
   if (event.button !== 0) return;
   event.preventDefault();
+  resizing.value = true;
   dragStart = { x: event.clientX, width: panelWidth.value };
   window.addEventListener('pointermove', moveResize);
   window.addEventListener('pointerup', stopResize);
@@ -140,16 +143,8 @@ onBeforeUnmount(stopResize);
       </footer>
       <div v-if="active?.data?.truncated" class="preview-truncated">{{ t('filePreview.truncated') }}</div>
     </template>
-    <!--
-      页面正文用 v-show 而不是 v-if：切到文件模式只隐藏、不卸载，iframe 实例与其输入/登录状态得以保留；
-      真正销毁实例的入口只有「关闭」「重新加载」（换 generation）与切换会话/工作区。
-      v-show 必须落在 ProjectPagePreview 的**根元素**上（也就是 .project-page-preview 自己）：
-      如果只把它挂在某个外层包裹 div 上，祖先 display:none 并不会改变子元素自身的计算样式，
-      「页面正文已隐藏」这件事就无法从 .project-page-preview 上观察到，测试与调试都会误判。
-      高度一律用显式选择器，不用 `.page-preview-body > *` 这类通配符 —— 那会把地址栏/状态行/frame-area
-      三块各撑成 1/3，iframe 只剩面板高度的三分之一。
-    -->
-    <ProjectPagePreview v-show="isPageMode" class="page-preview-frame" />
+    <!-- 隐藏只暂停显示，页面状态由主进程保留；拖拽时让指针事件留在主页面。 -->
+    <ProjectPagePreview v-show="isPageMode" :active="isPageMode && !resizing" class="page-preview-frame" />
   </aside>
 </template>
 

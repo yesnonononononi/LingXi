@@ -5,7 +5,7 @@ import type {ComputedRef, InjectionKey, Ref} from 'vue';
  *
  * <ul>
  *   <li>{@code file}：现有的文件标签 + 代码预览（阶段一不改变其行为）。</li>
- *   <li>{@code page}：项目页面 iframe 预览。</li>
+ *   <li>{@code page}：项目页面原生视图预览。</li>
  * </ul>
  */
 export type PreviewPanelMode = 'file' | 'page';
@@ -25,19 +25,27 @@ export type ProjectPageUrlResult =
 /**
  * 加载状态，只有计划书允许的四种表达 + 初始空闲。
  *
- * <p>注意：iframe 的 {@code load} 事件与 HTTP 200 都不等于业务可用，
+ * <p>注意：页面加载事件与 HTTP 200 都不等于业务可用，
  * 因此 {@code loaded} 的界面文案只能写「已收到页面加载事件」。</p>
  */
 export type ProjectPageLoadState = 'idle' | 'loading' | 'loaded' | 'timeout' | 'failed';
 
 /** 主进程上报的诊断事件类型。 */
-export type ProjectPageDiagnosticType = 'did-start-loading' | 'did-finish-load' | 'did-fail-load';
+export type ProjectPageDiagnosticType = 'did-start-loading' | 'did-finish-load' | 'did-fail-load' | 'did-navigate';
 
-/** 渲染层发给主进程的订阅请求（带 generation，用于丢弃迟到结果）。 */
-export interface ProjectPageWatchRequest {
-  /** 目标页面 origin（主进程据此只匹配该 origin 的**子 frame**）。 */
-  origin: string;
-  /** 加载尝试序号；事件原样回传，渲染层丢弃非当前代的事件。 */
+/** 换代加载，迟到的旧页面事件不能影响当前地址。 */
+export interface ProjectPageNavigateRequest {
+  url: string;
+  generation: number;
+}
+
+/** 坐标以主页面 CSS 像素传递，主进程按缩放比例转换。 */
+export interface ProjectPageLayout {
+  visible: boolean;
+  bounds: {x: number; y: number; width: number; height: number};
+}
+
+export interface ProjectPageLayoutRequest extends ProjectPageLayout {
   generation: number;
 }
 
@@ -45,18 +53,12 @@ export interface ProjectPageWatchRequest {
 export interface ProjectPageDiagnosticEvent {
   type: ProjectPageDiagnosticType;
   generation: number;
-  /** 目标 frame 的地址（did-start-loading 可能为空）。 */
+  /** 当前网页的地址（did-start-loading 可能为空）。 */
   url?: string;
   /** did-fail-load 的 Chromium 错误码。 */
   errorCode?: number;
   /** did-fail-load 的错误描述（Electron 原文，不翻译、不改写）。 */
   errorDescription?: string;
-}
-
-/** 主进程订阅成功后的回执。 */
-export interface ProjectPageWatchResult {
-  origin: string;
-  generation: number;
 }
 
 /** 页面预览 IPC 的统一返回形状。 */
@@ -75,11 +77,11 @@ export interface ProjectPagePreviewApi {
   readonly addressInput: Ref<string>;
   /** 已提交且被接受的页面地址；空串表示还没成功提交过。 */
   readonly committedUrl: Ref<string>;
-  /** 已提交地址的 origin，用于主进程 frame 匹配。 */
+  /** 当前网页的 origin。 */
   readonly committedOrigin: Ref<string>;
   /** 当前加载状态。 */
   readonly loadState: Ref<ProjectPageLoadState>;
-  /** 当前加载尝试序号；iframe 以它作 key，reload 即换代重建实例。 */
+  /** 当前加载尝试序号；旧原生视图的迟到事件据此失效。 */
   readonly generation: Ref<number>;
   /** 地址校验失败的可见文案（空串表示没有错误）。 */
   readonly addressError: Ref<string>;
@@ -98,12 +100,12 @@ export interface ProjectPagePreviewApi {
   openAddress: (address?: string) => void;
   /** 更新地址输入内容并清掉上一次的校验错误。 */
   updateAddress: (value: string) => void;
-  /** 用当前已提交地址重新发起一次加载尝试（换代重建 iframe）。 */
+  /** 用当前网页地址重新加载。 */
   reload: () => void;
-  /** 关闭并销毁页面实例、释放订阅；地址输入内容保留。 */
+  /** 关闭并释放原生视图；地址输入内容保留。 */
   close: () => void;
-  /** iframe 自身 load 事件入口（弱证据，失败已被确认时不得覆盖）。 */
-  handleFrameLoad: () => void;
+  /** 隐藏只改变视图可见性，不能销毁页面输入和登录状态。 */
+  updateLayout: (layout: ProjectPageLayout) => void;
   /** 主进程诊断事件的唯一归并入口（内含 generation 失效保护）。 */
   applyDiagnosticEvent: (event: ProjectPageDiagnosticEvent) => void;
 }

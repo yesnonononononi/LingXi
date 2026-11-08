@@ -26,13 +26,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** 重启应用（数据目录变更后需要重启才生效）；主进程会校验调用来源 */
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
-  /**
-   * 项目页面预览（阶段一）：主进程只回传**目标 iframe** 的加载诊断事件。
-   * watch 带上 origin + generation，事件里的 generation 由渲染层用来丢弃迟到结果。
-   */
+  /** 仅主页面使用，网页视图不加载此 preload。 */
   projectPage: {
-    watch: (request) => ipcRenderer.invoke('project-page:watch', request),
-    unwatch: () => ipcRenderer.invoke('project-page:unwatch'),
+    navigate: (request) => ipcRenderer.invoke('project-page:navigate', request),
+    layout: (request) => ipcRenderer.invoke('project-page:layout', request),
+    close: (request) => ipcRenderer.invoke('project-page:close', request),
     onEvent: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('project-page:event', listener);

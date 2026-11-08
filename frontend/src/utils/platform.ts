@@ -9,8 +9,8 @@ import type {FilePreviewData, FilePreviewRequest, NativeFileResult} from '../typ
 import type {
   ProjectPageDiagnosticEvent,
   ProjectPageIpcResult,
-  ProjectPageWatchRequest,
-  ProjectPageWatchResult,
+  ProjectPageNavigateRequest,
+  ProjectPageLayoutRequest,
 } from '../types/projectPagePreview';
 import type {UpdateActionResult, UpdateLookupResult, UpdateStatePayload} from '../types/update';
 
@@ -78,16 +78,11 @@ export interface ElectronBackgroundAPI {
   clear: () => Promise<BackgroundClearResult>;
 }
 
-/**
- * 项目页面预览（阶段一）的主进程通道。
- *
- * <p>只做诊断：`watch` 把目标 origin + generation 交给主进程，主进程按「子 frame + origin 匹配」
- * 推送 `did-start-loading` / `did-finish-load` / `did-fail-load`。渲染层用 generation 丢弃迟到结果。</p>
- */
+/** 网页视图仅在主进程创建，远程页面不持有此通道。 */
 export interface ElectronProjectPageAPI {
-  watch: (request: ProjectPageWatchRequest) => Promise<ProjectPageIpcResult<ProjectPageWatchResult>>;
-  unwatch: () => Promise<ProjectPageIpcResult<{ released: boolean }>>;
-  /** 订阅诊断事件；返回取消订阅函数。 */
+  navigate: (request: ProjectPageNavigateRequest) => Promise<ProjectPageIpcResult<{generation: number}>>;
+  layout: (request: ProjectPageLayoutRequest) => Promise<ProjectPageIpcResult<{applied: boolean}>>;
+  close: (request: {generation: number}) => Promise<ProjectPageIpcResult<{released: boolean}>>;
   onEvent: (callback: (event: ProjectPageDiagnosticEvent) => void) => () => void;
 }
 
@@ -111,7 +106,7 @@ export interface ElectronAPI {
   customTitleBar?: boolean;
   /** 主页背景（选图 / 读图 / 清除）。Web 端为 undefined，调用方需判空。 */
   background?: ElectronBackgroundAPI;
-  /** 项目页面预览诊断通道。Web 端为 undefined，调用方需判空。 */
+  /** 项目页面原生视图通道。Web 端为 undefined，调用方需判空。 */
   projectPage?: ElectronProjectPageAPI;
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
   updater?: ElectronUpdaterAPI;

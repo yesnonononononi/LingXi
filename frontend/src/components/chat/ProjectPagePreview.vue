@@ -1,39 +1,66 @@
 <script setup lang="ts">
-/**
- * 项目页面预览正文（阶段一）。
- *
- * <p>只负责渲染：地址输入、[打开]、[重新加载]、状态行、iframe。
- * 全部状态来自 {@link PROJECT_PAGE_PREVIEW_KEY} 注入的 composable（ChatView 持有的唯一真源），
- * 组件自身不持有地址或加载状态 —— 否则关掉面板再打开就会拿到两份不同的真相。</p>
- *
- * <p>iframe 的安全口径：</p>
- * <ul>
- *   <li>sandbox 只放行 allow-scripts / allow-same-origin / allow-forms / allow-modals：
- *       项目页面需要跑自己的脚本、读自己的同源资源、提交表单和调用 alert 类原生弹窗；
- *       但**不**给 allow-top-navigation（不能把 LingXi 主页面导航走）、
- *       不给 allow-popups（OAuth 弹窗阶段一不承诺）、不给 allow-downloads。</li>
- *   <li>referrerpolicy=no-referrer：不把 LingXi 的地址带给用户项目页面。</li>
- *   <li>不给页面任何 Node / Electron 能力：nodeIntegration 关闭由 BrowserWindow 决定，
- *       iframe 本身也没有 preload。</li>
- * </ul>
- */
-import {computed, inject} from 'vue';
+/** 原生视图不参与 DOM 排版，面板只同步占位区域与可见性。 */
+import {computed, inject, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {t} from '../../i18n';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 
-const injected = inject(PROJECT_PAGE_PREVIEW_KEY, null);
-/**
- * 状态来源：正常场景由 ChatView provide 同一份；独立挂载（如冒烟用例只挂面板）时自建一份兜底实例，
- * 保证组件永远有可用状态，而不是抛错把整块面板拖死。
- */
-const preview = injected ?? useProjectPagePreview();
+const props = withDefaults(defineProps<{active?: boolean}>(), {active: true});
+const preview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
+const nativeAvailable = typeof window.electronAPI?.projectPage?.navigate === 'function';
+const frameArea = ref<HTMLElement | null>(null);
+let animationFrame = 0;
+let resizeObserver: ResizeObserver | undefined;
+let mutationObserver: MutationObserver | undefined;
+let lastLayout = '';
 
+const syncViewport = (): void => {
+  animationFrame = 0;
+  const element = frameArea.value;
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  // 原生视图位于 DOM 上方；弹窗显示期间隐藏，避免遮挡确认按钮。
+  const modalOpen = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"], dialog[open]'))
+    .some(modal => modal.getClientRects().length > 0 && getComputedStyle(modal).visibility !== 'hidden');
+  const layout = {
+    visible: props.active && rect.width > 2 && rect.height > 2 && !modalOpen && getComputedStyle(element).visibility !== 'hidden',
+    bounds: {x: rect.x + 1, y: rect.y + 1, width: Math.max(0, rect.width - 2), height: Math.max(0, rect.height - 2)},
+  };
+  const signature = JSON.stringify([preview.generation.value, layout]);
+  if (signature === lastLayout) return;
+  lastLayout = signature;
+  preview.updateLayout(layout);
+};
+
+const scheduleViewport = (): void => {
+  if (!animationFrame) animationFrame = requestAnimationFrame(syncViewport);
+};
+
+watch(() => [props.active, preview.generation.value, preview.committedUrl.value], scheduleViewport, {flush: 'post'});
+onMounted(() => {
+  resizeObserver = new ResizeObserver(scheduleViewport);
+  if (frameArea.value) resizeObserver.observe(frameArea.value);
+  mutationObserver = new MutationObserver(scheduleViewport);
+  mutationObserver.observe(document.body, {subtree: true, childList: true, attributes: true,
+    attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-modal']});
+  window.addEventListener('resize', scheduleViewport);
+  window.addEventListener('scroll', scheduleViewport, true);
+  document.addEventListener('transitionend', scheduleViewport, true);
+  scheduleViewport();
+});
+onBeforeUnmount(() => {
+  if (animationFrame) cancelAnimationFrame(animationFrame);
+  resizeObserver?.disconnect();
+  mutationObserver?.disconnect();
+  window.removeEventListener('resize', scheduleViewport);
+  window.removeEventListener('scroll', scheduleViewport, true);
+  document.removeEventListener('transitionend', scheduleViewport, true);
+  preview.updateLayout({visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}});
+});
 
 const {
   addressInput,
   committedUrl,
-  generation,
   loadState,
   addressError,
   statusText,
@@ -41,13 +68,7 @@ const {
   openAddress,
   updateAddress,
   reload,
-  handleFrameLoad,
 } = preview;
-
-/** sandbox 白名单（顺序即语义，便于阅读）。 */
-const FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals';
-
-const frameTitle = computed(() => t('projectPagePreview.frameTitle'));
 
 /** 状态行的样式档：超时/失败要显眼，加载中弱化。 */
 const stateClass = computed(() => `state-${loadState.value}`);
@@ -77,12 +98,12 @@ const submit = (): void => {
         :aria-invalid="addressError ? 'true' : 'false'"
         @input="onAddressInput"
       />
-      <button type="submit" class="primary" :aria-label="t('projectPagePreview.openAddress')">
+      <button type="submit" class="primary" :disabled="!nativeAvailable" :aria-label="t('projectPagePreview.openAddress')">
         {{ t('projectPagePreview.openAddress') }}
       </button>
       <button
         type="button"
-        :disabled="!committedUrl"
+        :disabled="!nativeAvailable || !committedUrl"
         :aria-label="t('projectPagePreview.reload')"
         @click="reload"
       >
@@ -99,22 +120,9 @@ const submit = (): void => {
 
     <p v-if="diagnoseText" class="diagnose-text" role="note">{{ diagnoseText }}</p>
 
-    <div class="frame-area">
-      <!--
-        key 用 generation：每次加载尝试/重新加载都换一个新实例（重新加载必须恢复页面初始化行为）；
-        隐藏面板或切换文件模式不会改变 generation，实例因此保留输入与登录状态。
-      -->
-      <iframe
-        v-if="committedUrl"
-        :key="generation"
-        class="page-frame"
-        :src="committedUrl"
-        :title="frameTitle"
-        :sandbox="FRAME_SANDBOX"
-        referrerpolicy="no-referrer"
-        @load="handleFrameLoad"
-      ></iframe>
-      <div v-else class="frame-placeholder">{{ t('projectPagePreview.emptyHint') }}</div>
+    <div ref="frameArea" class="frame-area" :aria-label="t('projectPagePreview.frameTitle')">
+      <div v-if="!nativeAvailable" class="frame-placeholder">{{ t('projectPagePreview.desktopRequired') }}</div>
+      <div v-else-if="!committedUrl" class="frame-placeholder">{{ t('projectPagePreview.emptyHint') }}</div>
     </div>
   </div>
 </template>
@@ -136,6 +144,5 @@ const submit = (): void => {
 .browse-mode { opacity: .85; }
 .diagnose-text { margin: 0; font-size: var(--lx-font-size-sm); color: #b45309; }
 .frame-area { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--file-line, #e4e4e7); border-radius: 10px; background: #fff; }
-.page-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 .frame-placeholder { height: 100%; display: grid; place-items: center; padding: 0 20px; font-size: var(--lx-font-size-md); color: var(--file-muted, #71717a); text-align: center; }
 </style>
