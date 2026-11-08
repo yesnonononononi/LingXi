@@ -39,6 +39,16 @@ public class SessionTokenAuditVO {
     /** {@code liveTotalTokens / liveMaxTokens}，可 &gt; 1；上限未知时为 null（不除零）。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Double liveRatio;
+    /**
+     * 剩余可用 token = {@code liveMaxTokens − liveTotalTokens}（设计稿「剩余可用 51,800 tok」）。
+     *
+     * <p>任一为 null 则整体为 null：把「上限未知」当成「剩余 0」会让进度条显示成已占满。</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Long remainingTokens;
+    /** {@code remainingTokens / liveMaxTokens}；上限未知或 {@code <= 0} 时为 null。 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Double remainingRatio;
     /** 快照总量（框架口径：消息 + 工具定义 + 请求框架）。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer totalTokens;
@@ -54,6 +64,17 @@ public class SessionTokenAuditVO {
     /** 差额解释；{@code NOT_COLLECTED} 时为 null。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditReconciliationVO reconciliation;
+    /**
+     * 设计稿的「其他消息」面板：非消息请求开销的工具定义构成。
+     *
+     * <p><b>刻意不放进 {@link #messages}</b>：四类分项之和必须恰等于
+     * {@link #messagesTotalTokens}，而这块是「总量比四类之和多出来」的部分，
+     * 混进数组会让那条恒等式不成立（设计稿也用 {@code border-t} 把它单独隔开）。</p>
+     *
+     * <p>无快照或总量未知时为 null（此时谈不上「构成」）。</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private TokenAuditRequestOverheadVO requestOverhead;
     /** 四类分项：恒为 4 条、固定顺序 SYSTEM / USER / AI / TOOL。 */
     private List<TokenAuditCategoryVO> messages;
     /** 四类之和（= {@code reconciliation.messagesTokens}）；无快照时为 null。 */

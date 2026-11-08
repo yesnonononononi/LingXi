@@ -12,7 +12,9 @@ import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.SessionTokenAuditVO;
 import com.summit.dp.shared.vo.TokenAuditCategoryVO;
+import com.summit.dp.shared.vo.TokenAuditOverheadItemVO;
 import com.summit.dp.shared.vo.TokenAuditReconciliationVO;
+import com.summit.dp.shared.vo.TokenAuditRequestOverheadVO;
 import com.summit.dp.shared.vo.TokenAuditToolBreakdownVO;
 import com.summit.dp.shared.vo.TokenAuditToolGroupVO;
 import com.summit.dp.shared.vo.TokenAuditToolItemVO;
@@ -95,14 +97,108 @@ public class SessionTokenAuditQueryService {
                 .liveTotalTokens(liveTotal)
                 .liveMaxTokens(liveMax)
                 .liveRatio(ratio(liveTotal, liveMax))
+                .remainingTokens(remainingOf(liveTotal, liveMax))
+                .remainingRatio(remainingRatio(remainingOf(liveTotal, liveMax), liveMax))
                 .totalTokens(audit == null ? null : audit.getTotalTokens())
                 .driftTokens(audit == null ? null : audit.driftTokens(liveTotal))
                 .capturedAt(audit == null ? null : audit.getCapturedAt())
                 .failReason(audit == null ? null : audit.getFailReason())
                 .reconciliation(reconciliationOf(audit))
+                .requestOverhead(requestOverheadOf(audit, messagesTotal))
                 .messages(categoryViews(audit, messagesTotal))
                 .messagesTotalTokens(messagesTotal)
                 .tools(toolsOf(audit, messagesTotal))
+                .build();
+    }
+
+    /**
+     * 剩余可用 token（设计稿「剩余可用 51,800 tok」）。
+     *
+     * @param liveTotal 实时已用，可为 null
+     * @param liveMax   上下文上限，可为 null
+     * @return {@code liveMax − liveTotal}；任一为 null 时返回 null（未知不是 0）
+     */
+    private static Long remainingOf(Long liveTotal, Integer liveMax) {
+        if (liveTotal == null || liveMax == null) {
+            return null;
+        }
+        return liveMax.longValue() - liveTotal;
+    }
+
+    /**
+     * 剩余占比（设计稿「25.9%」）。
+     *
+     * @param remaining 剩余量，可为 null
+     * @param liveMax   上限，可为 null
+     * @return {@code remaining / liveMax}；上限缺失或 {@code <= 0} 时返回 null（不除零）
+     */
+    private static Double remainingRatio(Long remaining, Integer liveMax) {
+        if (remaining == null || liveMax == null || liveMax <= 0) {
+            return null;
+        }
+        return remaining.doubleValue() / liveMax.doubleValue();
+    }
+
+    /**
+     * 设计稿的「其他消息」面板：非消息请求开销的构成。
+     *
+     * <p><b>口径逐条对齐设计稿</b>：</p>
+     * <ul>
+     *   <li>父项占比分母是 {@code messagesTotalTokens}（15,200 / 142,850 = 10.6%），
+     *       不是 {@code totalTokens}；</li>
+     *   <li>两个子项占比分母是<b>父项自身</b>（10,400 / 15,200 = 68.4%）；</li>
+     *   <li>子项缺失即整个子对象不下发，{@code itemCount} 相应减少；</li>
+     *   <li>{@code framingResidualTokens} 如实下发（前端「非 0 才渲染第三行」）。</li>
+     * </ul>
+     *
+     * <p>数值与 {@link #reconciliationOf(SessionTokenAudit)} 同源（同一组落库列），
+     * 不存在两处各算一遍的可能。</p>
+     *
+     * @param audit          快照，可为 null
+     * @param messagesTotal  四类之和，可为 null
+     * @return 构成视图；无快照 / 总量未知 / 请求开销未知时为 null
+     */
+    private static TokenAuditRequestOverheadVO requestOverheadOf(SessionTokenAudit audit,
+                                                                 Integer messagesTotal) {
+        if (audit == null || audit.getTotalTokens() == null
+                || audit.getRequestOverheadTokens() == null) {
+            return null;
+        }
+        Integer overhead = audit.getRequestOverheadTokens();
+        TokenAuditOverheadItemVO toolDefinition = overheadItem(audit.getToolDefinitionTokens(), overhead);
+        TokenAuditOverheadItemVO mcpDefinition =
+                overheadItem(audit.getMcpToolDefinitionTokens(), overhead);
+        int itemCount = 0;
+        if (toolDefinition != null) {
+            itemCount++;
+        }
+        if (mcpDefinition != null) {
+            itemCount++;
+        }
+        return TokenAuditRequestOverheadVO.builder()
+                .tokens(overhead)
+                .ratio(ratio(overhead, messagesTotal))
+                .itemCount(itemCount)
+                .toolDefinition(toolDefinition)
+                .mcpToolDefinition(mcpDefinition)
+                .framingResidualTokens(audit.framingResidualTokens())
+                .build();
+    }
+
+    /**
+     * 单个工具定义子项。
+     *
+     * @param tokens   子项 token，可为 null（框架未给出）
+     * @param overhead 父项「其他消息」总量，可为 null
+     * @return 子项视图；{@code tokens} 为 null 时返回 null（<b>整个子项不下发</b>，不造 0 值行）
+     */
+    private static TokenAuditOverheadItemVO overheadItem(Integer tokens, Integer overhead) {
+        if (tokens == null) {
+            return null;
+        }
+        return TokenAuditOverheadItemVO.builder()
+                .tokens(tokens)
+                .ratio(ratio(tokens, overhead))
                 .build();
     }
 
@@ -124,6 +220,9 @@ public class SessionTokenAuditQueryService {
                 .requestOverheadTokens(audit.getRequestOverheadTokens())
                 .argumentOverlapTokens(audit.getOverlapTokens())
                 .toolGroupingDrift(audit.getToolGroupingDrift())
+                .toolDefinitionTokens(audit.getToolDefinitionTokens())
+                .mcpToolDefinitionTokens(audit.getMcpToolDefinitionTokens())
+                .framingResidualTokens(audit.framingResidualTokens())
                 .build();
     }
 

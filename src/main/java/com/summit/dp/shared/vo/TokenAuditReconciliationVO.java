@@ -35,4 +35,24 @@ public class TokenAuditReconciliationVO {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer toolGroupingDrift;
+    /**
+     * 随请求下发的工具定义 token（名称 / 描述 / schema）。
+     *
+     * <p><b>属于非消息请求开销</b>：它和消息一起占上下文，但不属于 SYSTEM/USER/AI/TOOL 任何一类
+     * —— 这正是「总量比四类之和多出来」的那部分。缺省（{@code null}）表示框架未给出该项审计，
+     * 前端应整块隐藏而不是显示 0。</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer toolDefinitionTokens;
+    /** 随请求下发的 MCP 工具定义 token；属于非消息请求开销，{@code null} 表示未知。 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer mcpToolDefinitionTokens;
+    /**
+     * 请求框架残差（派生值，<b>不落库</b>）：{@code requestOverheadTokens − toolDefinitionTokens
+     * − mcpToolDefinitionTokens}。即「非消息请求开销里扣掉两项工具定义后剩下的框架成本」
+     * （角色标记、分隔符、primer 等）。可负：与请求开销同源，扣不干净时就是负的。
+     * 两项工具定义任一未知时为 {@code null}（不拿部分已知去凑一个残差值）。
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer framingResidualTokens;
 }

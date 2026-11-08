@@ -16,13 +16,15 @@ import java.util.Map;
  * 请求开销的减法、分组与工具名的父子一致）。把这几步集中在纯静态方法里，
  * 才可能被 Pitest 的默认扫描包覆盖，也才可能在框架口径变化时一处修完全局生效。</p>
  *
- * <p><b>四条恒等式（本类强制保证，任何改动都必须让它们继续成立）</b>：</p>
+ * <p><b>五条恒等式（本类强制保证，任何改动都必须让它们继续成立）</b>：</p>
  * <ol>
  *   <li>{@code messagesTokens = SYSTEM + USER + AI + TOOL}（四类求和在领域层算，不落库）</li>
  *   <li>{@code totalTokens = messagesTokens + requestOverheadTokens}，
  *       其中请求开销由 <b>减法</b>得出（{@code total - messages}），永不存在「不明差额」</li>
  *   <li>{@code TOOL = Σ(工具分组展示值)}，分组缺失时退化为框架工具视图的去重叠值</li>
  *   <li>{@code 普通工具分组 = Σ(各工具名展示值)}（子项优先，保证百分比之和恰为 100%）</li>
+ *   <li>{@code requestOverheadTokens = toolDefinitionTokens + mcpToolDefinitionTokens
+ *       + framingResidualTokens}（框架 e9c6ec6 起；后者的存在性由前两者是否已知决定）</li>
  * </ol>
  *
  * <p><b>框架口径已变（{@code d32ff83}）</b>：{@code ToolElement.totalTokens} / {@code ToolAuditDocument.toolTokens}
@@ -105,18 +107,23 @@ public final class TokenAuditReconciler {
      * 该值是框架口径的「模型输入总量」（消息 + 工具定义 + 请求框架），由转换器负责取值，
      * 取不到时传 0，本类会退化成「请求开销 = 0」而不是造出一个巨大的负残差。</p>
      *
-     * @param systemTokens           系统提示词 token
-     * @param userTokens             用户消息 token
-     * @param assistantTokens        AI 消息 token（含工具调用参数）
-     * @param toolDocumentTokens     框架工具视图总量（框架已去重叠，不含参数）
-     * @param argumentOverlapTokens  工具调用参数 token 合计（只读归因，不参与任何运算）
-     * @param totalTokens            框架口径的模型输入总量；0 表示框架没给
-     * @param maxTokens              审计当时的模型上下文上限；0 表示未知
-     * @param groups                 工具分组测量值，可为空集合
+     * @param systemTokens            系统提示词 token
+     * @param userTokens              用户消息 token
+     * @param assistantTokens         AI 消息 token（含工具调用参数）
+     * @param toolDocumentTokens      框架工具视图总量（框架已去重叠，不含参数）
+     * @param argumentOverlapTokens   工具调用参数 token 合计（只读归因，不参与任何运算）
+     * @param totalTokens             框架口径的模型输入总量；0 表示框架没给
+     * @param maxTokens               审计当时的模型上下文上限；0 表示未知
+     * @param groups                  工具分组测量值，可为空集合
+     * @param toolDefinitionTokens    随请求下发的工具定义 token；<b>null 表示「框架未给出」</b>
+     *                                （元素缺失、{@code NO_DATA} 或 {@code FAILED}），
+     *                                <b>绝不允许用 0 顶替</b>
+     * @param mcpToolDefinitionTokens 随请求下发的 MCP 工具定义 token；null 同义
      */
     public record Measurement(int systemTokens, int userTokens, int assistantTokens,
                               int toolDocumentTokens, int argumentOverlapTokens,
-                              int totalTokens, int maxTokens, List<GroupMeasurement> groups) {
+                              int totalTokens, int maxTokens, List<GroupMeasurement> groups,
+                              Integer toolDefinitionTokens, Integer mcpToolDefinitionTokens) {
 
         public Measurement {
             requireNonNegative(systemTokens, "系统提示词 token");
@@ -126,8 +133,31 @@ public final class TokenAuditReconciler {
             requireNonNegative(argumentOverlapTokens, "工具参数 token");
             requireNonNegative(totalTokens, "模型输入总量");
             requireNonNegative(maxTokens, "上下文上限");
+            // 新口径（框架 e9c6ec6）新增的两项「随请求下发的工具定义」：未知用 null 表达，
+            // 已知时不得为负（负数只可能是框架测量异常或转换器写错，不该被静默画进构成图）。
+            requireNonNegativeOrNull(toolDefinitionTokens, "工具定义 token");
+            requireNonNegativeOrNull(mcpToolDefinitionTokens, "MCP 工具定义 token");
             // 参数与工具视图总量在新口径下是独立的两个量，不做大小比较。
             groups = groups == null ? List.of() : List.copyOf(groups);
+        }
+
+        /**
+         * 兼容构造：不带「工具定义」两项时一律按<b>未知</b>（null）处理。
+         *
+         * @param systemTokens           系统提示词 token
+         * @param userTokens             用户消息 token
+         * @param assistantTokens        AI 消息 token
+         * @param toolDocumentTokens     框架工具视图总量
+         * @param argumentOverlapTokens  工具调用参数 token
+         * @param totalTokens            模型输入总量
+         * @param maxTokens              上下文上限
+         * @param groups                 工具分组测量值
+         */
+        public Measurement(int systemTokens, int userTokens, int assistantTokens,
+                           int toolDocumentTokens, int argumentOverlapTokens,
+                           int totalTokens, int maxTokens, List<GroupMeasurement> groups) {
+            this(systemTokens, userTokens, assistantTokens, toolDocumentTokens, argumentOverlapTokens,
+                    totalTokens, maxTokens, groups, null, null);
         }
     }
 
@@ -142,13 +172,42 @@ public final class TokenAuditReconciler {
      * @param toolGroupingDrift     诊断值：框架工具视图展示值 − 各分组展示值之和
      *                              （常态为负：每个分组独立测量各带一个 primer，
      *                              量级 3 × (分组数 − 1)；不为 0 也不影响其余恒等式）
+     * @param toolDefinitionTokens    随请求下发的工具定义 token；null = 未知（框架未给出）
+     * @param mcpToolDefinitionTokens 随请求下发的 MCP 工具定义 token；null = 未知
+     * @param framingResidualTokens   请求框架残差，由恒等式 B 的减法派生，<b>不落库</b>；
+     *                                两项工具定义任一未知时为 null（未知就整体未知，
+     *                                拿部分已知去凑一个「残差」只会骗人）
      * @param items                 明细行（4 条消息行 + 0~3 条分组行 + N 条工具名行）
      */
     public record Result(int totalTokens, int maxTokens, int messagesTokens, int requestOverheadTokens,
-                         int overlapTokens, int toolGroupingDrift, List<SessionTokenAuditItem> items) {
+                         int overlapTokens, int toolGroupingDrift, Integer toolDefinitionTokens,
+                         Integer mcpToolDefinitionTokens, Integer framingResidualTokens,
+                         List<SessionTokenAuditItem> items) {
 
         public Result {
+            requireNonNegativeOrNull(toolDefinitionTokens, "工具定义 token");
+            requireNonNegativeOrNull(mcpToolDefinitionTokens, "MCP 工具定义 token");
             items = items == null ? List.of() : List.copyOf(items);
+        }
+
+        /**
+         * 兼容构造：不带「工具定义」三项时一律按未知（null）处理。
+         *
+         * <p>保留它是因为「没有工具定义审计」本身是合法状态（老框架、审计失败），
+         * 此时恒等式 B 不参与校验，其余三条恒等式照常成立。</p>
+         *
+         * @param totalTokens           总量
+         * @param maxTokens             上下文上限
+         * @param messagesTokens        四类分项之和
+         * @param requestOverheadTokens 请求开销
+         * @param overlapTokens         参数 token
+         * @param toolGroupingDrift     归因漂移
+         * @param items                 明细行
+         */
+        public Result(int totalTokens, int maxTokens, int messagesTokens, int requestOverheadTokens,
+                      int overlapTokens, int toolGroupingDrift, List<SessionTokenAuditItem> items) {
+            this(totalTokens, maxTokens, messagesTokens, requestOverheadTokens, overlapTokens,
+                    toolGroupingDrift, null, null, null, items);
         }
     }
 
@@ -181,6 +240,16 @@ public final class TokenAuditReconciler {
         int totalTokens = measurement.totalTokens() > 0 ? measurement.totalTokens() : messagesTokens;
         int requestOverheadTokens = totalTokens - messagesTokens;
 
+        // 恒等式 5（框架 e9c6ec6）：请求开销 = 工具定义 + MCP 工具定义 + 请求框架残差。
+        // 残差由减法派生、不落库；两项工具定义任一未知时整体为未知（null），
+        // 拿「部分已知」去凑一个残差只会把未知伪装成已知。
+        Integer toolDefinitionTokens = measurement.toolDefinitionTokens();
+        Integer mcpToolDefinitionTokens = measurement.mcpToolDefinitionTokens();
+        Integer framingResidualTokens =
+                framingResidual(requestOverheadTokens, toolDefinitionTokens, mcpToolDefinitionTokens);
+        verifyDecomposition(requestOverheadTokens, toolDefinitionTokens, mcpToolDefinitionTokens,
+                framingResidualTokens);
+
         // TOOL 消息行存 toolDisplayTokens：有分组时即 Σ分组展示值，保证前端「子项求和 == 父项」；
         // 与框架总量的差额（toolGroupingDrift）单独落库，不在这里掰平。
         // 框架已去重叠（d32ff83），resultTokens() 不再做减法。
@@ -197,7 +266,60 @@ public final class TokenAuditReconciler {
         messageRows.addAll(items);
 
         return new Result(totalTokens, measurement.maxTokens(), messagesTokens, requestOverheadTokens,
-                measurement.argumentOverlapTokens(), toolGroupingDrift, messageRows);
+                measurement.argumentOverlapTokens(), toolGroupingDrift,
+                toolDefinitionTokens, mcpToolDefinitionTokens, framingResidualTokens, messageRows);
+    }
+
+    /**
+     * 恒等式 5 的派生：请求框架残差 = 请求开销 − 工具定义 − MCP 工具定义。
+     *
+     * <p><b>为什么由减法派生而不落库</b>：它是「扣掉两项已知开销后剩下的部分」，
+     * 存下来只会多一份可能与另外两列对不上的事实。查询期用同样的减法现算即可。</p>
+     *
+     * <p><b>为什么可能是负数</b>：与 {@code requestOverheadTokens} 同源 —— 当请求开销本身很小，
+     * 或框架把某段 primer 在两个元素里各算了一次时，残差会转负。这与「未知」是两回事，
+     * 因此不套用「非负校验」，只要求三项之和能回到请求开销（见 {@link #verifyDecomposition}）。</p>
+     *
+     * @param requestOverhead        请求开销，可为 null
+     * @param toolDefinitionTokens   工具定义 token，可为 null（未知）
+     * @param mcpToolDefinitionTokens MCP 工具定义 token，可为 null（未知）
+     * @return 残差；任一入参为 null 时返回 null
+     */
+    public static Integer framingResidual(Integer requestOverhead, Integer toolDefinitionTokens,
+                                          Integer mcpToolDefinitionTokens) {
+        if (requestOverhead == null || toolDefinitionTokens == null || mcpToolDefinitionTokens == null) {
+            return null;
+        }
+        return requestOverhead - toolDefinitionTokens - mcpToolDefinitionTokens;
+    }
+
+    /**
+     * 校验恒等式 5：三项之和必须精确回到请求开销。
+     *
+     * <p><b>这不是死代码</b>：残差是派生的，因此该断言恒成立 —— 除非派生被改坏（符号写反、
+     * 少减一项）或整数溢出。成功路径的用例把它钉住，任何破坏「请求开销可被精确拆成三项」的改动
+     * 都会在这里立刻变红，而不是等到前端把构成图画歪才被发现。差额会写进异常文案，便于定位。</p>
+     *
+     * @param requestOverhead        请求开销
+     * @param toolDefinitionTokens   工具定义 token，可为 null
+     * @param mcpToolDefinitionTokens MCP 工具定义 token，可为 null
+     * @param framingResidualTokens  派生残差，可为 null
+     * @throws ClientException 三项之和不等于请求开销
+     */
+    public static void verifyDecomposition(int requestOverhead, Integer toolDefinitionTokens,
+                                           Integer mcpToolDefinitionTokens,
+                                           Integer framingResidualTokens) {
+        if (toolDefinitionTokens == null || mcpToolDefinitionTokens == null
+                || framingResidualTokens == null) {
+            return;
+        }
+        int decomposed = toolDefinitionTokens + mcpToolDefinitionTokens + framingResidualTokens;
+        if (decomposed != requestOverhead) {
+            throw new ClientException("token 审计恒等式不成立：非消息请求开销 " + requestOverhead
+                    + " ≠ 工具定义 " + toolDefinitionTokens + " + MCP 工具定义 "
+                    + mcpToolDefinitionTokens + " + 请求框架残差 " + framingResidualTokens
+                    + "（差额 " + (requestOverhead - decomposed) + "）");
+        }
     }
 
     /**
@@ -236,6 +358,19 @@ public final class TokenAuditReconciler {
 
     private static void requireNonNegative(int value, String label) {
         if (value < 0) {
+            throw new ClientException("token 审计测量值的" + label + "不能为负数: " + value);
+        }
+    }
+
+    /**
+     * 可空值的非负校验：null 表示「未知」，是合法状态；一旦有值就不许为负。
+     *
+     * @param value 待校验值，可为 null
+     * @param label 出错时的字段说明
+     * @throws ClientException 值存在且为负数
+     */
+    private static void requireNonNegativeOrNull(Integer value, String label) {
+        if (value != null && value < 0) {
             throw new ClientException("token 审计测量值的" + label + "不能为负数: " + value);
         }
     }

@@ -92,7 +92,8 @@ class MailReceiptBackfillMigrationTest {
 
             int firstRun = initializer.initialize(database);
             int secondRun = initializer.initialize(database);
-            assertEquals(1, firstRun, "第一次升级只应执行 V7 一条脚本");
+            assertEquals(2, firstRun,
+                    "第一次升级应执行 V7（邮件回执回填）与 V8（会话 token 审计）两条脚本");
             assertEquals(0, secondRun, "再次启动不应重复执行任何脚本");
 
             SqlSessionFactory factory = database.sessionFactory(EmailMapper.class, EmailMessageMapper.class,

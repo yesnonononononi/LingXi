@@ -63,6 +63,8 @@ public class SessionTokenAuditRepositoryImpl
                 .requestOverheadTokens(entity.getRequestOverheadTokens())
                 .overlapTokens(entity.getOverlapTokens())
                 .toolGroupingDrift(entity.getToolGroupingDrift())
+                .toolDefinitionTokens(entity.getToolDefinitionTokens())
+                .mcpToolDefinitionTokens(entity.getMcpToolDefinitionTokens())
                 .capturedAt(entity.getCapturedAt())
                 .failReason(entity.getFailReason())
                 .build();
@@ -157,6 +159,8 @@ public class SessionTokenAuditRepositoryImpl
                 .set(SessionTokenAuditPO::getRequestOverheadTokens, audit.getRequestOverheadTokens())
                 .set(SessionTokenAuditPO::getOverlapTokens, audit.getOverlapTokens())
                 .set(SessionTokenAuditPO::getToolGroupingDrift, audit.getToolGroupingDrift())
+                .set(SessionTokenAuditPO::getToolDefinitionTokens, audit.getToolDefinitionTokens())
+                .set(SessionTokenAuditPO::getMcpToolDefinitionTokens, audit.getMcpToolDefinitionTokens())
                 .set(SessionTokenAuditPO::getCapturedAt, audit.getCapturedAt())
                 .set(SessionTokenAuditPO::getFailReason, audit.getFailReason())
                 .set(SessionTokenAuditPO::getUpdateTime, Instant.now()));
@@ -199,6 +203,8 @@ public class SessionTokenAuditRepositoryImpl
                 head.getRequestOverheadTokens(),
                 head.getOverlapTokens(),
                 head.getToolGroupingDrift(),
+                head.getToolDefinitionTokens(),
+                head.getMcpToolDefinitionTokens(),
                 head.getCapturedAt(),
                 head.getFailReason(),
                 items);

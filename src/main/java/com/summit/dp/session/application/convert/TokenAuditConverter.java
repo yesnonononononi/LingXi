@@ -2,6 +2,7 @@ package com.summit.dp.session.application.convert;
 
 import com.summit.core.audit.AuditStatus;
 import com.summit.core.audit.DocumentElement;
+import com.summit.core.audit.token.OtherTokens;
 import com.summit.core.audit.token.TokenAuditDocument;
 import com.summit.core.audit.token.tool.ToolAuditDocument;
 import com.summit.core.audit.token.tool.ToolElement;
@@ -71,7 +72,7 @@ public class TokenAuditConverter {
         Map<String, Integer> counts = toolCallCounts == null ? Map.of() : toolCallCounts;
         if (document == null) {
             return new Measurement(0, 0, 0, 0, 0, liveTotalTokens(session), liveMaxTokens(session),
-                    List.of());
+                    List.of(), null, null);
         }
         ToolParts tool = toolParts(document.toolTokens(), counts);
         return new Measurement(
@@ -82,7 +83,52 @@ public class TokenAuditConverter {
                 tool.argumentTokens(),
                 liveTotalTokens(session),
                 liveMaxTokens(session),
-                tool.groups());
+                tool.groups(),
+                toolDefinitionTokensOf(document),
+                mcpToolDefinitionTokensOf(document));
+    }
+
+    /**
+     * 随请求下发的工具定义 token（框架 {@code e9c6ec6} 新增）。
+     *
+     * <p><b>未知必须保持 null</b>：{@code otherTokens} 整体缺失、元素为 {@code null}、
+     * 状态不是 {@code SUCCESS}（{@code NO_DATA} / {@code FAILED}）都表示「框架没给出」。
+     * 这时候写 0 会让前端画出一条「工具定义 0 token」的假柱子，比缺数据更糟。</p>
+     *
+     * @param document 框架审计文档
+     * @return 非负值；未知时为 null
+     */
+    private static Integer toolDefinitionTokensOf(TokenAuditDocument document) {
+        OtherTokens other = document.otherTokens();
+        return other == null ? null : nullableIntOf(other.toolDefinitionTokens());
+    }
+
+    /**
+     * 随请求下发的 MCP 工具定义 token；未知（缺失 / 未成功）时为 null。
+     *
+     * @param document 框架审计文档
+     * @return 非负值；未知时为 null
+     */
+    private static Integer mcpToolDefinitionTokensOf(TokenAuditDocument document) {
+        OtherTokens other = document.otherTokens();
+        return other == null ? null : nullableIntOf(other.mcpToolDefinitionTokens());
+    }
+
+    /**
+     * 可空整数的元素读取：只认 {@code SUCCESS} 且带载荷的元素，其余一律返回 null。
+     *
+     * <p>框架给出负数说明数据异常，此处按「未知」处理而不是夹成 0，也不是抛错 ——
+     * 夹成 0 会造假数据，抛错会让一次脏数据毁掉整份快照。</p>
+     *
+     * @param element 文档元素，可为 null
+     * @return 非负值；未知时为 null
+     */
+    private static Integer nullableIntOf(DocumentElement<Integer> element) {
+        Integer value = metaOf(element);
+        if (value == null || value < 0) {
+            return null;
+        }
+        return value;
     }
 
     /**

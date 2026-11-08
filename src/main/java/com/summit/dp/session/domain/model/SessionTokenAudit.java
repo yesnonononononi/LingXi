@@ -50,6 +50,16 @@ public class SessionTokenAudit {
      * 只能在采集瞬间算出来并存下来。</p>
      */
     private Integer toolGroupingDrift;
+    /**
+     * 随请求下发的工具定义 token（框架 {@code e9c6ec6} 的 {@code OtherTokens}）。
+     *
+     * <p><b>null 表示「未知」</b>（框架未给出 / 该项审计失败），绝不能用 0 顶替：
+     * 0 会让前端画出一条不存在的「工具定义零开销」。
+     * 与 {@link #mcpToolDefinitionTokens} 一起构成恒等式 B 的两项已知开销。</p>
+     */
+    private Integer toolDefinitionTokens;
+    /** 随请求下发的 MCP 工具定义 token；null 表示未知（同 {@link #toolDefinitionTokens}）。 */
+    private Integer mcpToolDefinitionTokens;
     private Instant capturedAt;
     private String failReason;
     private final List<SessionTokenAuditItem> items;
@@ -57,7 +67,8 @@ public class SessionTokenAudit {
     private SessionTokenAudit(Long sessionId, Long executionId, TokenAuditPersistedState state,
                               Integer totalTokens, Integer maxTokens, Integer messagesTokens,
                               Integer requestOverheadTokens, Integer overlapTokens,
-                              Integer toolGroupingDrift, Instant capturedAt,
+                              Integer toolGroupingDrift, Integer toolDefinitionTokens,
+                              Integer mcpToolDefinitionTokens, Instant capturedAt,
                               String failReason, List<SessionTokenAuditItem> items) {
         if (sessionId == null) {
             throw new ClientException("token 审计快照必须归属一个会话");
@@ -71,6 +82,8 @@ public class SessionTokenAudit {
         this.requestOverheadTokens = requestOverheadTokens;
         this.overlapTokens = overlapTokens;
         this.toolGroupingDrift = toolGroupingDrift;
+        this.toolDefinitionTokens = toolDefinitionTokens;
+        this.mcpToolDefinitionTokens = mcpToolDefinitionTokens;
         this.capturedAt = capturedAt;
         this.failReason = failReason;
         this.items = new ArrayList<>(Objects.requireNonNullElse(items, List.of()));
@@ -93,6 +106,7 @@ public class SessionTokenAudit {
         return new SessionTokenAudit(sessionId, executionId, TokenAuditPersistedState.COLLECTED,
                 result.totalTokens(), toMaxTokens(result.maxTokens()), result.messagesTokens(),
                 result.requestOverheadTokens(), result.overlapTokens(), result.toolGroupingDrift(),
+                result.toolDefinitionTokens(), result.mcpToolDefinitionTokens(),
                 Objects.requireNonNullElseGet(capturedAt, Instant::now), null, result.items());
     }
 
@@ -110,7 +124,7 @@ public class SessionTokenAudit {
     public static SessionTokenAudit failure(Long sessionId, Long executionId, String reason,
                                             Instant capturedAt) {
         return new SessionTokenAudit(sessionId, executionId, TokenAuditPersistedState.FAILED,
-                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null,
                 Objects.requireNonNullElseGet(capturedAt, Instant::now),
                 normalizeFailReason(reason), List.of());
     }
@@ -122,11 +136,12 @@ public class SessionTokenAudit {
                                             TokenAuditPersistedState state, Integer totalTokens,
                                             Integer maxTokens, Integer messagesTokens,
                                             Integer requestOverheadTokens, Integer overlapTokens,
-                                            Integer toolGroupingDrift, Instant capturedAt,
+                                            Integer toolGroupingDrift, Integer toolDefinitionTokens,
+                                            Integer mcpToolDefinitionTokens, Instant capturedAt,
                                             String failReason, List<SessionTokenAuditItem> items) {
         return new SessionTokenAudit(sessionId, executionId, state, totalTokens, maxTokens,
-                messagesTokens, requestOverheadTokens, overlapTokens, toolGroupingDrift, capturedAt,
-                failReason, items);
+                messagesTokens, requestOverheadTokens, overlapTokens, toolGroupingDrift,
+                toolDefinitionTokens, mcpToolDefinitionTokens, capturedAt, failReason, items);
     }
 
     /**
@@ -147,9 +162,24 @@ public class SessionTokenAudit {
         this.requestOverheadTokens = null;
         this.overlapTokens = null;
         this.toolGroupingDrift = null;
+        this.toolDefinitionTokens = null;
+        this.mcpToolDefinitionTokens = null;
         this.failReason = normalizeFailReason(reason);
         this.capturedAt = Instant.now();
         this.items.clear();
+    }
+
+    /**
+     * 请求框架残差（恒等式 5 的派生值，<b>不落库</b>）：请求开销 − 工具定义 − MCP 工具定义。
+     *
+     * <p>与采集期同一套减法（{@link TokenAuditReconciler#framingResidual}），保证「采集时算的」
+     * 与「查询时算的」不可能漂移。任一项未知即整体未知（null），不拿部分已知去凑数。</p>
+     *
+     * @return 残差（可负）；任一项为 null 时返回 null
+     */
+    public Integer framingResidualTokens() {
+        return TokenAuditReconciler.framingResidual(requestOverheadTokens, toolDefinitionTokens,
+                mcpToolDefinitionTokens);
     }
 
     /**

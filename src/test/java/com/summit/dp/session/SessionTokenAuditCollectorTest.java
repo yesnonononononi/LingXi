@@ -91,7 +91,7 @@ class SessionTokenAuditCollectorTest {
     void staleCollectionIsSkipped() {
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
         SessionTokenAudit newer = SessionTokenAudit.restore(SESSION_ID, 9L,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, 0,
+                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, 0, null, null,
                 Instant.now().plusSeconds(3600), null, List.of());
         when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(newer));
 
@@ -105,8 +105,8 @@ class SessionTokenAuditCollectorTest {
     @DisplayName("已有 COLLECTED 时失败只记日志：不改库、不广播（硬规则）")
     void failureKeepsCollectedSnapshot() {
         SessionTokenAudit collected = SessionTokenAudit.restore(SESSION_ID, 1L,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, 0, Instant.now(), null,
-                List.of());
+                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, 0, null, null, Instant.now(),
+                null, List.of());
         when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(collected));
 
         collector.markFailed("1", "AUDIT_ERROR", "偶发失败", metadata());

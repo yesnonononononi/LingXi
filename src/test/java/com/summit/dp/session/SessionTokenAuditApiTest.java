@@ -75,6 +75,11 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.reconciliation.requestOverheadTokens").value(14830))
                 .andExpect(jsonPath("$.data.reconciliation.argumentOverlapTokens").value(5900))
                 .andExpect(jsonPath("$.data.reconciliation.toolGroupingDrift").value(-6))
+                // 框架 e9c6ec6：工具定义随请求下发，属于非消息请求开销（不进 messagesTokens）。
+                .andExpect(jsonPath("$.data.reconciliation.toolDefinitionTokens").value(8200))
+                .andExpect(jsonPath("$.data.reconciliation.mcpToolDefinitionTokens").value(3100))
+                .andExpect(jsonPath("$.data.reconciliation.framingResidualTokens")
+                        .value(148200 - 133370 - 8200 - 3100))
                 .andExpect(jsonPath("$.data.tools.tokens").value(63620))
                 .andExpect(jsonPath("$.data.tools.mcp.tokens").value(34700))
                 .andExpect(jsonPath("$.data.tools.skill.tokens").value(14200))
@@ -82,6 +87,71 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.tools.ordinary.items.length()").value(2))
                 .andExpect(jsonPath("$.data.tools.ordinary.items[0].toolName").value("search_web"))
                 .andExpect(jsonPath("$.data.tools.ordinary.items[1].toolName").value("read_file"));
+    }
+
+    @Test
+    @DisplayName("设计稿「其他消息」：不在 messages 数组里，占比分母是 messagesTotalTokens，两子项加总为父项")
+    void requestOverheadPanelMatchesDesign() throws Exception {
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(collected()));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).contextTokenCount(148200L).contextMaxTokens(200000)
+                        .build()));
+
+        // 本夹具：requestOverhead = 148200 − 133370 = 14830；内核 8200、MCP 3100、残差 3530。
+        int messagesTotal = 133370;
+        int overhead = 148200 - messagesTotal;
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.requestOverhead.tokens").value(overhead))
+                .andExpect(jsonPath("$.data.requestOverhead.ratio")
+                        .value((double) overhead / messagesTotal))
+                .andExpect(jsonPath("$.data.requestOverhead.itemCount").value(2))
+                .andExpect(jsonPath("$.data.requestOverhead.toolDefinition.tokens").value(8200))
+                .andExpect(jsonPath("$.data.requestOverhead.toolDefinition.ratio")
+                        .value((double) 8200 / overhead))
+                .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition.tokens").value(3100))
+                .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition.ratio")
+                        .value((double) 3100 / overhead))
+                .andExpect(jsonPath("$.data.requestOverhead.framingResidualTokens")
+                        .value(overhead - 8200 - 3100))
+                // 「其他消息」绝不能进 messages 数组：四类之和必须仍等于 messagesTotalTokens。
+                .andExpect(jsonPath("$.data.messages.length()").value(4))
+                .andExpect(jsonPath("$.data.messagesTotalTokens").value(messagesTotal))
+                // 剩余可用：200000 − 148200 = 51800，占 25.9%。
+                .andExpect(jsonPath("$.data.remainingTokens").value(51800))
+                .andExpect(jsonPath("$.data.remainingRatio").value((double) 51800 / 200000));
+    }
+
+    @Test
+    @DisplayName("工具定义未知时：子项整个不出现、itemCount 减一、残差为 null（不造 0 值行）")
+    void unknownDefinitionsOmitSubItem() throws Exception {
+        int ordinary = 9420 + 5300;
+        Measurement measurement = new Measurement(12300, 18450, 39000, 63614, 5900, 148200, 200000,
+                List.of(new GroupMeasurement(TokenAuditGroupKind.MCP, 34700, 2100, 33000, 12, List.of()),
+                        new GroupMeasurement(TokenAuditGroupKind.SKILL, 14200, 800, 13000, 3,
+                                List.of()),
+                        new GroupMeasurement(TokenAuditGroupKind.ORDINARY, ordinary, 3000,
+                                ordinary - 560, 5, List.of())),
+                8200, null);
+        SessionTokenAudit audit = SessionTokenAudit.capture(SESSION_ID, 1L,
+                TokenAuditReconciler.reconcile(measurement), CAPTURED_AT);
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(SessionTokenAudit
+                .restore(SESSION_ID, 1L, TokenAuditPersistedState.COLLECTED, audit.getTotalTokens(),
+                        audit.getMaxTokens(), audit.getMessagesTokens(),
+                        audit.getRequestOverheadTokens(), audit.getOverlapTokens(),
+                        audit.getToolGroupingDrift(), audit.getToolDefinitionTokens(),
+                        audit.getMcpToolDefinitionTokens(), audit.getCapturedAt(),
+                        audit.getFailReason(), audit.getItems())));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).build()));
+
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.requestOverhead.toolDefinition.tokens").value(8200))
+                .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition").doesNotExist())
+                .andExpect(jsonPath("$.data.requestOverhead.itemCount").value(1))
+                .andExpect(jsonPath("$.data.requestOverhead.framingResidualTokens").doesNotExist())
+                // 实时量缺失时剩余量与剩余占比同样缺省，不得用 0 顶替。
+                .andExpect(jsonPath("$.data.remainingTokens").doesNotExist())
+                .andExpect(jsonPath("$.data.remainingRatio").doesNotExist());
     }
 
     @Test
@@ -169,13 +239,15 @@ class SessionTokenAuditApiTest {
                         new GroupMeasurement(TokenAuditGroupKind.ORDINARY, ordinary, 3000,
                                 ordinary - 560, 5, List.of(
                                 new ItemMeasurement("search_web", 9420, 2100, 8700, 3),
-                                new ItemMeasurement("read_file", 5300, 900, 4600, 2)))));
+                                new ItemMeasurement("read_file", 5300, 900, 4600, 2)))),
+                8200, 3100);
         Result result = TokenAuditReconciler.reconcile(measurement);
         SessionTokenAudit audit = SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
         return SessionTokenAudit.restore(SESSION_ID, 1L, TokenAuditPersistedState.COLLECTED,
                 audit.getTotalTokens(), audit.getMaxTokens(), audit.getMessagesTokens(),
                 audit.getRequestOverheadTokens(), audit.getOverlapTokens(),
-                audit.getToolGroupingDrift(), audit.getCapturedAt(), audit.getFailReason(),
+                audit.getToolGroupingDrift(), audit.getToolDefinitionTokens(),
+                audit.getMcpToolDefinitionTokens(), audit.getCapturedAt(), audit.getFailReason(),
                 audit.getItems());
     }
 }

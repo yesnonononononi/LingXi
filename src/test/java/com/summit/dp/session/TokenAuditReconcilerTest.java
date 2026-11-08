@@ -15,8 +15,10 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,6 +55,9 @@ class TokenAuditReconcilerTest {
     private static final int MESSAGES = SYSTEM + USER + AI + TOOL;
     private static final int LIVE_TOTAL = 142850;
     private static final int MAX_TOKENS = 200000;
+    /** 随请求下发的工具定义 token（框架 {@code OtherTokens}）。 */
+    private static final int TOOL_DEFINITION = 8200;
+    private static final int MCP_TOOL_DEFINITION = 3100;
 
     @Test
     @DisplayName("恒等式 1：四类分项之和等于 messagesTokens，且四行顺序固定")
@@ -179,6 +184,96 @@ class TokenAuditReconcilerTest {
     }
 
     @Test
+    @DisplayName("恒等式 5：请求开销 = 工具定义 + MCP 工具定义 + 请求框架残差（残差由减法派生）")
+    void requestOverheadSplitsIntoDefinitionsPlusResidual() {
+        Result result = TokenAuditReconciler.reconcile(measurementWithDefinitions());
+
+        assertEquals(TOOL_DEFINITION, result.toolDefinitionTokens());
+        assertEquals(MCP_TOOL_DEFINITION, result.mcpToolDefinitionTokens());
+        assertEquals(LIVE_TOTAL - MESSAGES - TOOL_DEFINITION - MCP_TOOL_DEFINITION,
+                result.framingResidualTokens(), "残差必须是「请求开销 − 两项工具定义」的减法结果");
+        assertEquals(result.requestOverheadTokens(),
+                result.toolDefinitionTokens() + result.mcpToolDefinitionTokens()
+                        + result.framingResidualTokens(),
+                "三项之和必须精确回到请求开销");
+        // 恒等式 2 仍然独立成立：总量 = 消息 + 请求开销，工具定义不重复计入消息。
+        assertEquals(result.totalTokens(),
+                result.messagesTokens() + result.requestOverheadTokens());
+        assertEquals(MESSAGES, result.messagesTokens(),
+                "工具定义属于非消息开销，绝不能进 messagesTokens");
+    }
+
+    @Test
+    @DisplayName("恒等式 5：任一项工具定义为未知（null）时残差必须为 null，不得拿半份数据凑数")
+    void framingResidualIsUnknownWhenEitherDefinitionUnknown() {
+        Result bothUnknown = TokenAuditReconciler.reconcile(measurementWithGroups());
+        assertNull(bothUnknown.toolDefinitionTokens());
+        assertNull(bothUnknown.mcpToolDefinitionTokens());
+        assertNull(bothUnknown.framingResidualTokens(), "两项都未知时残差必须为 null，不能是 0");
+
+        Result onlyTools = TokenAuditReconciler.reconcile(new Measurement(SYSTEM, USER, AI,
+                TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), TOOL_DEFINITION, null));
+        assertEquals(TOOL_DEFINITION, onlyTools.toolDefinitionTokens());
+        assertNull(onlyTools.mcpToolDefinitionTokens());
+        assertNull(onlyTools.framingResidualTokens(), "MCP 未知时同样整体未知");
+
+        Result onlyMcp = TokenAuditReconciler.reconcile(new Measurement(SYSTEM, USER, AI,
+                TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), null,
+                MCP_TOOL_DEFINITION));
+        assertNull(onlyMcp.toolDefinitionTokens());
+        assertNull(onlyMcp.framingResidualTokens());
+    }
+
+    @Test
+    @DisplayName("工具定义已知时不得为负；已知为 0 是合法值（真的没有工具定义）")
+    void toolDefinitionRejectsNegativeButAcceptsZero() {
+        assertThrows(ClientException.class, () -> new Measurement(0, 0, 0, 0, 0, 0, 0, List.of(),
+                -1, null));
+        assertThrows(ClientException.class, () -> new Measurement(0, 0, 0, 0, 0, 0, 0, List.of(),
+                null, -1));
+        assertThrows(ClientException.class, () -> new Result(0, 0, 0, 0, 0, 0, -1, 0, 0, List.of()));
+        assertThrows(ClientException.class, () -> new Result(0, 0, 0, 0, 0, 0, 0, -1, 0, List.of()));
+
+        Result zero = TokenAuditReconciler.reconcile(new Measurement(0, 0, 0, 0, 0, 0, 0, List.of(),
+                0, 0));
+        assertEquals(0, zero.toolDefinitionTokens(), "0 是「确实没有工具定义」，必须与未知区分开");
+        assertEquals(0, zero.mcpToolDefinitionTokens());
+        assertEquals(0, zero.framingResidualTokens(), "请求开销 0 − 0 − 0 = 0");
+    }
+
+    @Test
+    @DisplayName("恒等式 5 的残差可为负（扣不干净时如实为负），且分解校验仍然通过")
+    void framingResidualCanBeNegative() {
+        // 只有系统提示词 500 token，总量 1500 → 请求开销 1000；
+        // 而两项工具定义合计 11300，残差必然为负（−10300）。负残差是真实存在的事实，不许掰成 0。
+        Measurement tight = new Measurement(500, 0, 0, 0, 0, 1500, 0, List.of(),
+                TOOL_DEFINITION, MCP_TOOL_DEFINITION);
+        Result result = TokenAuditReconciler.reconcile(tight);
+
+        assertEquals(500, result.messagesTokens());
+        assertEquals(1000, result.requestOverheadTokens());
+        assertEquals(1000 - TOOL_DEFINITION - MCP_TOOL_DEFINITION, result.framingResidualTokens());
+        assertTrue(result.framingResidualTokens() < 0, "残差是减法派生的，允许为负");
+    }
+
+    @Test
+    @DisplayName("分解校验：三项之和对不上请求开销时抛 ClientException 并指出差额")
+    void decompositionCheckReportsDifference() {
+        assertEquals(18550, 8200 + 3100 + 7250, "先确认示例数字自洽");
+        assertDoesNotThrow(() -> TokenAuditReconciler.verifyDecomposition(18550, 8200, 3100, 7250));
+
+        ClientException bothUnknown = assertThrows(ClientException.class,
+                () -> TokenAuditReconciler.verifyDecomposition(18550, 8200, 3100, 7000));
+        assertTrue(bothUnknown.getMessage().contains("差额 250"),
+                "异常必须指出差额，便于定位是哪个环节算歪了: " + bothUnknown.getMessage());
+
+        // 任一未知时不校验（未知不是「对不上」）。
+        assertDoesNotThrow(() -> TokenAuditReconciler.verifyDecomposition(18550, null, 3100, 7250));
+        assertDoesNotThrow(() -> TokenAuditReconciler.verifyDecomposition(18550, 8200, null, 7250));
+        assertDoesNotThrow(() -> TokenAuditReconciler.verifyDecomposition(18550, 8200, 3100, null));
+    }
+
+    @Test
     @DisplayName("空输入与非法输入：null 抛错、负数抛错、空分组正常换算")
     void invalidInputRejected() {
         assertThrows(ClientException.class, () -> TokenAuditReconciler.reconcile(null));
@@ -244,6 +339,12 @@ class TokenAuditReconcilerTest {
     private static Measurement measurementWithGroups() {
         return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
                 groups());
+    }
+
+    /** 带「工具定义」两项的测量值（框架 {@code e9c6ec6} 起可用）。 */
+    private static Measurement measurementWithDefinitions() {
+        return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
+                groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION);
     }
 
     private static List<GroupMeasurement> groups() {

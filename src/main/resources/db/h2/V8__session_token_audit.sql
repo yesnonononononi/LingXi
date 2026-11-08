@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS session_token_audit (
     -- 它只在该处体现，不进 request_overhead_tokens，一旦分组归因写错（例如某工具被重复计入）
     -- 这一列会先变而 request_overhead 不响 —— 这正是它存在的意义。
     tool_grouping_drift     INTEGER NULL,
+    -- 随请求下发的工具定义（名称 / 描述 / schema）token：属于「非消息请求开销」的一部分，
+    -- 不进 messages_tokens。NULL = 框架未给出或该项审计失败；绝不能用 0 顶替，
+    -- 0 会让前端画出一条不存在的「工具定义零开销」。
+    tool_definition_tokens     INTEGER NULL,
+    -- 随请求下发的 MCP 工具定义 token（MCP server 暴露的工具的 schema 开销）。
+    mcp_tool_definition_tokens INTEGER NULL,
     captured_at             TIMESTAMP(3) NULL,
     fail_reason             VARCHAR(512) NULL,
     create_time             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

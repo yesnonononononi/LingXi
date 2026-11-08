@@ -42,6 +42,13 @@ public class SessionTokenAuditPO {
      * 只作诊断，不进 {@code request_overhead_tokens}，也不参与任何恒等式求和。
      */
     private Integer toolGroupingDrift;
+    /**
+     * 随请求下发的工具定义 token（框架 {@code e9c6ec6}）。null 表示「未知」，
+     * 不是 0 —— 0 会让前端画出「工具定义零开销」的假柱子。
+     */
+    private Integer toolDefinitionTokens;
+    /** 随请求下发的 MCP 工具定义 token；null 表示未知。 */
+    private Integer mcpToolDefinitionTokens;
     private Instant capturedAt;
     private String failReason;
     private Instant createTime;

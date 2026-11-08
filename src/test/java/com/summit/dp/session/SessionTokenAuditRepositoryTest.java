@@ -80,10 +80,19 @@ class SessionTokenAuditRepositoryTest {
                 "归因漂移必须跟着快照落库（V6 新增列），否则这条绊线读库即丢");
         assertEquals(9, loaded.getItems().size(), "4 消息 + 3 分组 + 2 工具名");
         assertEquals(2, loaded.toolItems().size());
+        // 框架 e9c6ec6：工具定义两项必须落库并读回真值（未知才会是 null）。
+        assertEquals(8200, loaded.getToolDefinitionTokens());
+        assertEquals(3100, loaded.getMcpToolDefinitionTokens());
+        assertEquals(21550 - 8200 - 3100, loaded.framingResidualTokens(),
+                "残差由落库值现算，读回后必须与采集期一致");
         assertEquals("1", database.queryString("SELECT COUNT(*) FROM session_token_audit"),
                 "头表一个会话只能有一行");
         assertEquals("0", database.queryString(
                 "SELECT COUNT(*) FROM session_token_audit WHERE fail_reason IS NOT NULL"));
+        assertEquals("0", database.queryString(
+                "SELECT COUNT(*) FROM session_token_audit"
+                        + " WHERE tool_definition_tokens IS NULL OR mcp_tool_definition_tokens IS NULL"),
+                "本夹具两项已知，库里不允许出现 NULL");
     }
 
     @Test
@@ -165,7 +174,8 @@ class SessionTokenAuditRepositoryTest {
                 List.of(new GroupMeasurement(TokenAuditGroupKind.MCP, 34700, 2100, 33000, 12, List.of()),
                         new GroupMeasurement(TokenAuditGroupKind.SKILL, 14200, 800, 13000, 3,
                                 List.of()),
-                        ordinaryGroup));
+                        ordinaryGroup),
+                8200, 3100);
         Result result = TokenAuditReconciler.reconcile(measurement);
         return SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
     }

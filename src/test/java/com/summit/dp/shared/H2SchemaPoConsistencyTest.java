@@ -259,6 +259,21 @@ class H2SchemaPoConsistencyTest {
                                 + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
                                 + " AND COLUMN_NAME = 'TOOL_GROUPING_DRIFT'"),
                 "tool_grouping_drift 必须可空：失败态与大文本升级前的历史行都没有该值");
+
+        // 工具定义两项（框架 e9c6ec6）：可空 INTEGER —— NULL 表示「框架没给」，
+        // 用 NOT NULL DEFAULT 0 会把未知伪装成「确实 0 token」，前端会画出一条假柱子。
+        for (String column : new String[] {"TOOL_DEFINITION_TOKENS", "MCP_TOOL_DEFINITION_TOKENS"}) {
+            assertEquals("INTEGER", database.queryString(
+                            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS"
+                                    + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
+                                    + " AND COLUMN_NAME = '" + column + "'"),
+                    column + " 必须是 INTEGER（token 计数，且要能与 NULL 区分）");
+            assertEquals("YES", database.queryString(
+                            "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS"
+                                    + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
+                                    + " AND COLUMN_NAME = '" + column + "'"),
+                    column + " 必须可空：未知就是 NULL，不能用 0 冒充");
+        }
     }
 
     /** 开一个已建库、类型处理器走生产代码（{@code MyBatisTypeHandlers.registerAll(config, H2)}）的会话工厂。 */
