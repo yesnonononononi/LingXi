@@ -37,6 +37,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.approval.ApprovalFinalizer;
 import com.summit.dp.workflow.application.approval.ApprovedCommandRestorer;
+import com.summit.dp.workflow.application.approval.ApprovalPlan;
 import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
 import com.summit.dp.workflow.application.approval.CommandOutcomeResolver;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
@@ -133,6 +134,24 @@ class CommandApprovalExecutorTest {
         executor = buildExecutor();
     }
 
+    /**
+     * 按引擎的真实顺序驱动命令审批：prepare → 事务内 writeT1 → 提交之后 afterCommit。
+     *
+     * <p>生产里这三步由 {@code InteractionDecisionEngine#decideTwoPhase} 调用，事务边界也在引擎；
+     * 本用例用同一个顺序，只把事务模板换成直通桩，以便单独验编排器自己的护栏。
+     * 引擎粘合层本身由 {@code CommandTwoPhaseGuardTest}（真实 H2 + 真实事务）覆盖。</p>
+     */
+    private void decide(CommandApprovalExecutor target, ToolCall toolCall, boolean approved,
+                        String commandId, String digest, Runnable completion) {
+        ApprovalPlan plan = target.prepare(toolCall, approved, commandId, digest, completion);
+        try {
+            transactions.executeWithoutResult(status -> target.writeT1(plan));
+        } catch (RuntimeException | Error failure) {
+            target.abandonT1(plan);
+            throw failure;
+        }
+        target.afterCommit(plan);
+    }
     private CommandApprovalExecutor buildExecutor() {
         return buildExecutor(workspaces);
     }
@@ -169,7 +188,7 @@ class CommandApprovalExecutorTest {
         when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("已执行"));
 
         CountDownLatch finished = new CountDownLatch(1);
-        executor.decide(toolCall, true, null, null, finished::countDown);
+        decide(executor, toolCall, true, null, null, finished::countDown);
         assertTrue(finished.await(5, TimeUnit.SECONDS));
         ArgumentCaptor<ToolCallStartEvent> start = ArgumentCaptor.forClass(ToolCallStartEvent.class);
         ArgumentCaptor<ToolCallEndEvent> end = ArgumentCaptor.forClass(ToolCallEndEvent.class);
@@ -197,7 +216,7 @@ class CommandApprovalExecutorTest {
         Workspace otherWorkspace = workspace("other");
         when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(otherWorkspace);
 
-        ClientException ex = assertThrows(ClientException.class, () -> executor.decide(toolCall, true, null, null, null));
+        ClientException ex = assertThrows(ClientException.class, () -> decide(executor, toolCall, true, null, null, null));
 
         assertTrue(ex.getMessage().contains("命令执行环境已变化"));
         verify(commandExecutor, never()).execute(any());
@@ -216,7 +235,7 @@ class CommandApprovalExecutorTest {
         Workspace matchedWorkspace = workspace("workspace");
         when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(matchedWorkspace);
 
-        ClientException ex = assertThrows(ClientException.class, () -> executor.decide(toolCall, true, null, null, null));
+        ClientException ex = assertThrows(ClientException.class, () -> decide(executor, toolCall, true, null, null, null));
 
         assertTrue(ex.getMessage().contains("命令审批参数不一致"));
         verify(commandExecutor, never()).execute(any());
@@ -239,7 +258,7 @@ class CommandApprovalExecutorTest {
         when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
 
         CountDownLatch finished = new CountDownLatch(1);
-        executor.decide(toolCall, true, null, null, finished::countDown);
+        decide(executor, toolCall, true, null, null, finished::countDown);
 
         assertTrue(finished.await(5, TimeUnit.SECONDS), "收尾回调必须被触发（v1 靠它关流）");
         verify(commandExecutor, never()).execute(any());
@@ -265,7 +284,7 @@ class CommandApprovalExecutorTest {
         doThrow(failure).when(transactions).executeWithoutResult(any());
 
         assertSame(failure, assertThrows(NoClassDefFoundError.class,
-                () -> executor.decide(toolCall, true, null, null, null)));
+                () -> decide(executor, toolCall, true, null, null, null)));
 
         verify(executionRepository).unregister(signal);
         verify(commandExecutor, never()).execute(any());
@@ -309,9 +328,9 @@ class CommandApprovalExecutorTest {
         };
 
         if (linkageFailure) {
-            assertThrows(NoClassDefFoundError.class, () -> failing.decide(toolCall, true, null, null, null));
+            assertThrows(NoClassDefFoundError.class, () -> decide(failing, toolCall, true, null, null, null));
         } else {
-            assertThrows(IllegalStateException.class, () -> failing.decide(toolCall, true, null, null, null));
+            assertThrows(IllegalStateException.class, () -> decide(failing, toolCall, true, null, null, null));
         }
 
         verify(commandExecutor, never()).execute(any());
@@ -346,7 +365,7 @@ class CommandApprovalExecutorTest {
         when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("已执行"));
 
         CountDownLatch finished = new CountDownLatch(1);
-        buildExecutor(resolver).decide(toolCall, true, null, null, finished::countDown);
+        decide(buildExecutor(resolver), toolCall, true, null, null, finished::countDown);
 
         assertTrue(finished.await(5, TimeUnit.SECONDS), "审批必须走完异步收尾，而不是在恢复阶段抛异常");
         verify(commandExecutor).execute(any());
@@ -373,7 +392,7 @@ class CommandApprovalExecutorTest {
 
         CountDownLatch finished = new CountDownLatch(1);
         assertThrows(ClientException.class,
-                () -> buildExecutor(resolver).decide(toolCall, true, null, null, finished::countDown));
+                () -> decide(buildExecutor(resolver), toolCall, true, null, null, finished::countDown));
         verify(commandExecutor, org.mockito.Mockito.never()).execute(any());
     }
 

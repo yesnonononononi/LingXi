@@ -164,7 +164,7 @@ class DecisionEngineEquivalenceGuardTest {
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate(
                         provider(executions), provider(activity))));
-        workflowService = new ToolCallWorkflowService(tools, converter, commandStrategy,
+        workflowService = new ToolCallWorkflowService(tools, converter, engine,
                 new ToolCallDecisionService(locator(), sseEventPublisher, engine, reactive),
                 reactive, sseEventPublisher, locator());
         versionedService = new VersionedToolCallDecisionService(tools, converter, engine,

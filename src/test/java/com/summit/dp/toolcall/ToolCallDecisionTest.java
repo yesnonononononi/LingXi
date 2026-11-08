@@ -159,7 +159,7 @@ class ToolCallDecisionTest {
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
                 provider(executionRepository), modelContextService, transactions, coordinator(resumer),
                 new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
-        service = new ToolCallWorkflowService(toolCallRepository, converter, commandStrategy,
+        service = new ToolCallWorkflowService(toolCallRepository, converter, engine,
                 new ToolCallDecisionService(executionIdentity, sseEventPublisher, engine, contract),
                 contract, sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。

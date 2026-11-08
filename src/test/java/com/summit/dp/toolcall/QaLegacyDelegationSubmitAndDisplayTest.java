@@ -14,13 +14,11 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
-import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
+import com.summit.dp.workflow.application.decision.InteractionDecisionEngine;
 import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
 import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
-import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
 import com.summit.dp.workflow.application.approval.ToolCallDecisionService;
 import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
-import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
 import com.summit.dp.workflow.application.approval.ToolCallWorkflowService;
 import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -74,8 +72,9 @@ class QaLegacyDelegationSubmitAndDisplayTest {
         ReactiveDecisionContract contract = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(mock(ExecutionRepository.class)),
                         provider(mock(ExecutionActivity.class)))));
-        ToolCallWorkflowService service = new ToolCallWorkflowService(repository, converter,
-                new TwoPhaseCommandResolutionStrategy(commandExecutor, repository, converter), decisionService,
+        // 命令形态不进这条链路（用例验的是「不可识别形态」），引擎只需要存在。
+        InteractionDecisionEngine engine = mock(InteractionDecisionEngine.class);
+        ToolCallWorkflowService service = new ToolCallWorkflowService(repository, converter, engine, decisionService,
                 contract, sse, identity);
 
         ClientException failure = assertThrows(ClientException.class,
