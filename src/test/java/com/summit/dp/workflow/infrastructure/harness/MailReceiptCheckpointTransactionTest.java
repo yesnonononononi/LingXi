@@ -29,8 +29,10 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -78,6 +80,8 @@ class MailReceiptCheckpointTransactionTest {
         repository.mailReceipts = new StaticListableBeanFactory(Map.of("flusher", flusher))
                 .getBeanProvider(MailReceiptFlusher.class);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));
+        // 事务管理器字段注入：保存路径自己开事务时走的就是它，回执要跟它同一个事务。
+        injectTransactionManager(repository, transactions.getTransactionManager());
 
         new EmailRepositoryImpl(session.getMapper(EmailMapper.class)).save(Email.builder()
                 .id(MAILBOX_ID).workflowExecutionId(SESSION_ID).recipientAgentId(AGENT_ID)
@@ -126,6 +130,18 @@ class MailReceiptCheckpointTransactionTest {
     private EmailMessage message(long id, String content) {
         return EmailMessage.builder().id(id).emailId(MAILBOX_ID).senderId(8L).content(content)
                 .status(EmailMessage.EMStatus.PENDING).createAt(Instant.now()).build();
+    }
+
+    /** 事务管理器是私有字段注入：用反射复刻生产装配，让保存路径自己开事务。 */
+    private static void injectTransactionManager(LocalExecutionRepository repository,
+                                                 PlatformTransactionManager transactionManager) {
+        try {
+            Field field = LocalExecutionRepository.class.getDeclaredField("transactionManager");
+            field.setAccessible(true);
+            field.set(repository, transactionManager);
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("测试装配事务管理器失败", failure);
+        }
     }
 
     /** 已投递登记用逗号文本：顺带验证属性解析容忍快照往返后的文本形态。 */

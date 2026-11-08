@@ -54,6 +54,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -191,6 +192,12 @@ class MailReceiptDeliveryGuardTest {
         assertEquals(List.of(SMALL_MESSAGE_ID, BIG_MESSAGE_ID),
                 polled.stream().map(EmailMessageVO::getId).toList(),
                 "注入顺序按 create_at、id 稳定排列，不是水位过滤");
+
+        // 只认领「大 id」这一条：高水位实现会把小 id 一起挡掉，回执实现只跳过已认领的那条。
+        flusher.flush(executionWithDelivered("907", List.of(BIG_MESSAGE_ID)));
+        assertEquals(List.of(SMALL_MESSAGE_ID),
+                mail.pollPendingItems(execution("908")).stream().map(EmailMessageVO::getId).toList(),
+                "已认领的只是大 id，小 id 仍必须被投递");
     }
 
     // ---------- ③ 受理事务回滚与重试 ----------
@@ -230,8 +237,53 @@ class MailReceiptDeliveryGuardTest {
                 "重复调用必须幂等返回 null");
     }
 
-    // ---------- ④ 零额外 SQL / SQL 条数 ----------
+    // ---------- ④ G1 顺序守卫：属性就绪必须早于任何一次保存 ----------
 
+    @Test
+    @DisplayName("受理顺序：保存新执行时它的自动接续计数已经就绪，且旧执行已登记本批已投递")
+    void admissionPreparesAttributesBeforeAnySave() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "顺序守卫输入", new MailSendContext(SESSION_ID, 8L, null))
+                .getData();
+        Execution previous = execution(PREVIOUS_EXECUTION_ID);
+        List<EmailMessageVO> batch = mail.pollPendingItems(previous);
+        assertEquals(List.of(sent.getId()), batch.stream().map(EmailMessageVO::getId).toList());
+
+        // 记录「第一次保存发生时」两份执行各自的属性取值：顺序错的话这里都会读到空。
+        Map<String, Object> admittedAtSave = new HashMap<>();
+        Map<String, Object> previousAtSave = new HashMap<>();
+        ChatTurnRepository turns = mock(ChatTurnRepository.class);
+        when(turns.findByCommandId(anyString())).thenReturn(Optional.empty());
+        PreparedChatExecutor executor = mock(PreparedChatExecutor.class);
+        Execution nextExecution = execution(NEXT_EXECUTION_ID);
+        RuntimeContext context = contextOf(nextExecution);
+        when(executor.admit(any(RuntimeContext.class), anyString())).thenReturn(context);
+        ExecutionRepository executions = mock(ExecutionRepository.class);
+        AtomicInteger saves = new AtomicInteger();
+        doAnswer(invocation -> {
+            Execution saved = invocation.getArgument(0);
+            if (saves.incrementAndGet() == 1) {
+                admittedAtSave.putAll(InputAutomationPolicy.attributes(saved));
+                previousAtSave.putAll(InputAutomationPolicy.attributes(previous));
+            }
+            return null;
+        }).when(executions).save(any(Execution.class));
+
+        InputTurnAdmission target = new InputTurnAdmission(executor, turns,
+                new StaticListableBeanFactory(Map.of("executions", executions))
+                        .getBeanProvider(ExecutionRepository.class), mail, background);
+        ProxyFactory proxy = new ProxyFactory(target);
+        proxy.addAdvice(new TransactionInterceptor(transactions, new AnnotationTransactionAttributeSource()));
+        ((InputTurnAdmission) proxy.getProxy()).admit(context, previous, "auto-input:order", batch, List.of());
+
+        assertEquals(0, InputAutomationPolicy.autoRounds(previous),
+                "旧执行的自动接续计数不该被改写");
+        assertEquals(1, admittedAtSave.get(InputAutomationPolicy.AUTO_ROUNDS),
+                "第一次保存新执行时，自动接续计数必须已经写好，实际=" + admittedAtSave);
+        assertEquals(List.of(sent.getId()), previousAtSave.get(ExecutionAttributes.DELIVERED_MAIL_IDS),
+                "第一次保存时旧执行必须已登记本批已投递（否则回执会在错误的时机落库），实际=" + previousAtSave);
+    }
+
+    // ---------- ⑤ 零额外 SQL / SQL 条数 ----------
     @Test
     @DisplayName("没有待写回执的执行：flush 一次库都不查（普通连续轮次零额外 SQL）")
     void flushWithoutDeliveredIdsRunsNoSql() {
