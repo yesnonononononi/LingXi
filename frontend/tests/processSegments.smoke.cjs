@@ -3,11 +3,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
 
-const output = path.resolve(__dirname, '../.run/process-segments');
-app.setPath('userData', path.join(output, 'profile'));
+const output = path.resolve(__dirname, process.env.PROCESS_SCROLL_MUTATION ? '../.run/process-segments-' + process.env.PROCESS_SCROLL_MUTATION : '../.run/process-segments');
+app.setPath('userData', path.join(output, 'profile', String(process.pid)));
 app.on('window-all-closed', () => {});
 let window;
-const deadline = setTimeout(() => { console.error('分段过程区验证超时'); app.exit(1); }, 90000);
+const deadline = setTimeout(() => { console.error('分段过程区验证超时'); app.exit(1); }, 180000);
 
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
@@ -62,9 +62,18 @@ window.showManyProcesses = async (count = 60) => {
   mountKey.value++; await window.flush();
 };
 window.appendProcesses = async () => {
+  const start = message.value.toolCalls.length;
   message.value.toolCalls.push(...Array.from({length:40}, (_, index) => ({
-    id:'extra-' + index,toolName:AgentToolName.ReadFile,order:2100 + index,status:'success',
+    id:'extra-' + start + '-' + index,toolName:AgentToolName.ReadFile,order:2100 + start + index,status:'success',
     args:{path:'extra-file-' + index + '.java'}})));
+  await window.flush();
+};
+window.addStreamingThought = async () => {
+  message.value.thoughtSteps = [{id:'live-tail',order:10000,title:'思考',status:'running',content:'开始核对。'}];
+  await window.flush();
+};
+window.growStreamingThought = async () => {
+  message.value.thoughtSteps[0].content += '\\n\\n' + '流式核对最新过程。\\n\\n'.repeat(5);
   await window.flush();
 };
 window.showCompactProcess = async kind => {
@@ -87,7 +96,22 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
   const { build } = await import('vite');
   const { default: vue } = await import('@vitejs/plugin-vue');
-  await build({ configFile: false, root: output, base: './', plugins: [vue()], logLevel: 'error',
+  const mutationPlugin = {name:'process-scroll-mutation', enforce:'pre', transform(source, id) {
+    if (process.env.PROCESS_SCROLL_MUTATION === 'resize' && id.endsWith('/ChatProcessSegment.vue')) {
+      const needle = "if (streamScroll.isFollowing('details')) streamScroll.scrollToBottom('details');";
+      assert.ok(source.includes(needle), '变异必须覆盖内容尺寸变化跟随');
+      return source.replace(needle, '/* 变异：不处理内容尺寸变化 */');
+    }
+    if (process.env.PROCESS_SCROLL_MUTATION === 'follow' && id.endsWith('/ChatProcessSegment.vue')) {
+      const start = source.indexOf('const streamScroll = useStreamStickyScroll({');
+      const end = source.indexOf('const headline = computed(', start);
+      assert.ok(start >= 0 && end > start, '变异必须覆盖过程框跟随逻辑');
+      return source.slice(0, start) + `const streamScroll = {handleScroll: () => {}};
+watch(detailsBox, box => { if (box) box.scrollTop = box.scrollHeight; }, {flush:'post'});
+` + source.slice(end);
+    }
+  }};
+  await build({ configFile: false, root: output, base: './', plugins: [mutationPlugin, vue()], logLevel: 'error',
     resolve: { dedupe: ['vue'] }, build: { target: 'esnext', outDir: path.join(output, 'dist'), emptyOutDir: true } });
   window = new BrowserWindow({ width: 1000, height: 680, show: false,
     webPreferences: { contextIsolation: true, offscreen: true, backgroundThrottling: false } });
@@ -246,8 +270,9 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     }
     const scrolled = await evaluate(`(() => {
       const boxes = [...document.querySelectorAll('[data-testid=process-segment-details]')];
-      boxes.forEach(box => { box.scrollTop = 0; });
+      boxes.forEach(box => { box.scrollTop = 0; box.dispatchEvent(new Event('scroll')); });
       boxes[0].scrollTop = boxes[0].scrollHeight;
+      boxes[0].dispatchEvent(new Event('scroll'));
       const last = boxes[0].firstElementChild.lastElementChild.getBoundingClientRect();
       const bounds = boxes[0].getBoundingClientRect();
       return {first:boxes[0].scrollTop, second:boxes[1].scrollTop,
@@ -262,7 +287,23 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     assert.deepEqual(appended.map(box => box.height), boxes.map(box => box.height), '增量过程不能继续撑高展开框');
     assert.ok(appended[1].content > boxes[1].content, '增量内容仍可在第二段中查看');
     assert.equal(appended[1].top, 0, '用户上翻后追加过程不能强行拉回底部');
-    measurements.push({name, boxes, scrolled, appended});
+    await evaluate(`(() => { const box = document.querySelectorAll('[data-testid=process-segment-details]')[1];
+      box.scrollTop = box.scrollHeight; box.dispatchEvent(new Event('scroll')); return window.flush(); })()`);
+    await evaluate('window.appendProcesses()');
+    const following = (await readScrollGeometry())[1];
+    assert.ok(following.content > appended[1].content, '跟随检查必须有真实新增过程');
+    assert.ok(Math.abs(following.content - following.height - following.top) <= 1, '回到底部后新增过程必须自动跟随');
+    await evaluate('window.addStreamingThought()');
+    const beforeGrowth = (await readScrollGeometry())[1];
+    await evaluate('window.growStreamingThought()');
+    const afterGrowth = (await readScrollGeometry())[1];
+    assert.ok(afterGrowth.content > beforeGrowth.content + 20, '同一思考内容增长必须改变外层实际布局');
+    assert.ok(Math.abs(afterGrowth.content - afterGrowth.height - afterGrowth.top) <= 1, '条目数不变时也跟随思考内容增长');
+    await evaluate(`(() => { const box = document.querySelectorAll('[data-testid=process-segment-details]')[1];
+      box.scrollTop = 0; box.dispatchEvent(new Event('scroll')); return window.flush(); })()`);
+    await evaluate('window.growStreamingThought()');
+    assert.equal((await readScrollGeometry())[1].top, 0, '手动上翻后内部流式排版不能抢位置');
+    measurements.push({name, boxes, scrolled, appended, following, beforeGrowth, afterGrowth});
     await fs.writeFile(path.join(output, name + '.png'), (await window.webContents.capturePage()).toPNG());
     await evaluate(`document.querySelectorAll('[data-testid=process-segment-toggle]').forEach(button => button.click()); window.flush()`);
     assert.equal(await evaluate(`document.querySelectorAll('[data-testid=process-segment-details]').length`), 0, '折叠后释放固定高度');
@@ -279,6 +320,6 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   }
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, 'measurements.json'), JSON.stringify(measurements, null, 2));
-  console.log('过程区：空内容与短内容自然收缩、长内容限高滚动、展开定位底部、深浅主题及窄屏验证通过。截图：' + output);
+  console.log('过程区：自然收缩、限高滚动、新增过程与流式内容自动跟随、上翻暂停及回底恢复、深浅主题与窄屏验证通过。截图：' + output);
   clearTimeout(deadline); window.destroy(); app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); if (window) window.destroy(); app.exit(1); });

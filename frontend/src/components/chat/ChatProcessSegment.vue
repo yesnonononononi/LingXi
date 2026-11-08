@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue';
+import {computed, onBeforeUnmount, ref, watch} from 'vue';
 import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
 import type {ProcessSegmentView} from '../../utils/processViewModel';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
+import {useStreamStickyScroll} from '../../composables/useStreamStickyScroll';
 import {t} from '../../i18n';
 
 const props = withDefaults(defineProps<{
@@ -31,10 +32,23 @@ const segment = computed(() => props.view.segment);
 const mode = computed(() => props.view.mode);
 const expanded = ref(false);
 const detailsBox = ref<HTMLElement | null>(null);
-// 每次展开先呈现最新过程，后续更新保留用户主动上翻的位置。
+const streamScroll = useStreamStickyScroll({
+  streamSignature: () => String(segment.value.detailItems.length),
+  boxIds: () => ['details'],
+});
+let contentObserver: ResizeObserver | null = null;
+// 外框限高后尺寸不再增长，必须同时观察内部内容才能跟随流式排版。
 watch(detailsBox, box => {
-  if (box) box.scrollTop = box.scrollHeight;
+  contentObserver?.disconnect();
+  streamScroll.setBoxRef('details', box);
+  if (!box || typeof ResizeObserver === 'undefined') return;
+  contentObserver = new ResizeObserver(() => {
+    if (streamScroll.isFollowing('details')) streamScroll.scrollToBottom('details');
+  });
+  contentObserver.observe(box);
+  if (box.firstElementChild) contentObserver.observe(box.firstElementChild);
 }, {flush: 'post'});
+onBeforeUnmount(() => contentObserver?.disconnect());
 const headline = computed(() => props.view.headline);
 // 标题/预览/状态全部来自视图模型，组件只决定排版：长正文右对齐溢出，短值截断。
 const title = computed(() => headline.value.title);
@@ -90,7 +104,8 @@ const isRunningTurn = computed(() => props.turn
       <div v-if="visible && expanded" class="mt-1">
         <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。 -->
         <div class="max-h-[min(480px,70dvh)] overflow-y-auto overscroll-y-contain pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
-          ref="detailsBox" data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')">
+          ref="detailsBox" data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')"
+          @scroll.self="streamScroll.handleScroll('details', $event)">
           <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"
             :file-edits="message.fileEdits" :is-message-complete="message.isComplete"
             :message-is-suspended="Boolean(message.isSuspended)" :is-running-turn="isRunningTurn"
