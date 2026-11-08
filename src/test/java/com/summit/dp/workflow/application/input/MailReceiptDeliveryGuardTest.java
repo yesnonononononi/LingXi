@@ -172,6 +172,45 @@ class MailReceiptDeliveryGuardTest {
                 "判定只看回执表，不依赖执行私有属性");
     }
 
+    @Test
+    @DisplayName("status 已是 CONSUMED 但没有回执：仍必须投递一次（清理不等于已投递）")
+    void consumedStatusWithoutReceiptStillDeliveredOnce() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "状态被清理但没留回执",
+                new MailSendContext(SESSION_ID, 8L, null)).getData();
+        // 模拟历史清理：行还在，但 status 已是 CONSUMED，且没有任何回执。
+        messages.consumeByIds(List.of(sent.getId()));
+
+        assertEquals(List.of(sent.getId()),
+                mail.pollPendingItems(execution("911")).stream().map(EmailMessageVO::getId).toList(),
+                "判据是回执表而不是 status：已被清理但未记录回执的邮件必须仍投递一次");
+
+        flusher.flush(executionWithDelivered("912", List.of(sent.getId())));
+        assertTrue(mail.pollPendingItems(execution("913")).isEmpty(),
+                "回执落库之后才不再投递");
+    }
+
+    @Test
+    @DisplayName("注入后、检查点落库前崩溃：重启重新注入；回执落库后重启不重复")
+    void crashBeforeCheckpointReinjectsAfterRestart() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "崩溃窗口邮件",
+                new MailSendContext(SESSION_ID, 8L, null)).getData();
+        Execution previous = execution("914");
+        List<EmailMessageVO> batch = mail.pollPendingItems(previous);
+        assertEquals(List.of(sent.getId()), batch.stream().map(EmailMessageVO::getId).toList());
+        // 已注入模型上下文、已登记内存属性，但检查点没落库、回执没写 —— 此刻进程崩溃。
+        mail.markConsumed(previous, batch);
+
+        MailInputChannel restarted = new MailInputChannel((EmailService) transactionalProxy(
+                new EmailServiceImpl(mailboxes, messages)));
+        assertEquals(1, restarted.pollPendingItems(execution("915")).size(),
+                "未提交的回执不得吞掉输入：重启后必须重新注入（重复而非丢失）");
+
+        // 检查点提交那次事务里写回执。
+        flusher.flush(previous);
+        assertTrue(restarted.pollPendingItems(execution("916")).isEmpty(),
+                "回执与检查点一起落库后，重启不再重复注入");
+    }
+
     // ---------- ② 反序提交：证明没有 id 高水位 ----------
 
     @Test
