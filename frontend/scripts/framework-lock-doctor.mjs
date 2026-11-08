@@ -166,6 +166,7 @@ export function resolveFrameworkPath(id, env = process.env) {
  * 这样「什么算 WARN、什么算 FAIL、文案怎么写」可以在单测里穷举，不必造真实 git 仓。</p>
  *
  * @param {{id: string, ref: string, refPresent: boolean, remoteContains: boolean,
+ *   fetchOk?: boolean,
  *   head: string|null, refIsAncestorOfHead: boolean, headIsAncestorOfRef: boolean,
  *   commitsAhead: number|null}} probe 探测结果
  * @returns {{id: string, scope: string, status: string, message: string}}
@@ -180,6 +181,12 @@ export function classifyLocalProbe(probe) {
   if (!remoteContains) {
     return {...base, status: STATUS.FAIL,
       message: `锁定向未推送的 commit ${shortRef(ref)}：别人 clone 拉不到，先 push 再重新锁定`};
+  }
+  if (probe.fetchOk === false) {
+    // 查到了「包含」，但这次没能刷新远端引用 —— 那个结论可能来自陈旧引用，
+    // 不足以支撑「已推送」。宁可报 WARN 说清不确定性，也不要给出假的安心。
+    return {...base, status: STATUS.WARN,
+      message: `已推送状态无法确认（git fetch 失败，远端跟踪分支可能已陈旧）：${shortRef(ref)}；联网后重跑本检查，或用 --remote 权威核对`};
   }
   if (!head) {
     return {...base, status: STATUS.FAIL,
@@ -383,12 +390,15 @@ export function probeLocalFramework(entry, deps) {
     const result = run(['branch', '-r', '--contains', ref]);
     return result.status === 0 && result.stdout.trim() !== '';
   };
-  let remoteContains = containsOf();
-  if (!remoteContains) {
-    // 本地分支引用可能是滞后的：抓一次远端再判，避免误报。
-    run(['fetch', '--prune', 'origin']);
-    remoteContains = containsOf();
-  }
+  // 远端跟踪分支可能是滞后的，而且**两个方向都会错**：
+  //   - 查到「不包含」时若不抓：把「其实已推送」误报成 FAIL；
+  //   - 查到「包含」时若不抓：本地残留的旧引用仍可能包含该提交，于是把
+  //     「根本没推送」误判成「已推送」（实测撞到过：锁定的 commit 远端三个分支
+  //     全都不含它，本地哨兵却因为陈旧引用报了 WARN）。
+  // 所以一律先抓一次再判，并把抓取是否成功带进判定：抓不动就不能宣称「已推送」。
+  const fetchResult = run(['fetch', '--prune', 'origin']);
+  const fetchOk = fetchResult.status === 0;
+  const remoteContains = containsOf();
 
   const headResult = run(['rev-parse', 'HEAD']);
   const head = headResult.status === 0 ? headResult.stdout.trim() : '';
@@ -406,7 +416,7 @@ export function probeLocalFramework(entry, deps) {
   }
 
   return classifyLocalProbe({
-    id: entry.id, ref, refPresent: true, remoteContains, head,
+    id: entry.id, ref, refPresent: true, remoteContains, fetchOk, head,
     refIsAncestorOfHead, headIsAncestorOfRef, commitsAhead,
   });
 }

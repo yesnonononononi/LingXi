@@ -182,6 +182,7 @@ test('evaluateLocal：注入假 git 复现「本地 HEAD 领先锁文件」→ W
   const {git} = fakeGit({
     'cat-file -e': {status: 0},
     'branch -r --contains': {status: 0, stdout: 'origin/main\n'},
+    'fetch --prune origin': {status: 0},
     'rev-parse HEAD': {status: 0, stdout: `${REF_ADVANCED}\n`},
     'merge-base --is-ancestor': {status: 0}, // ref 是 HEAD 的祖先
     'rev-list --count': {status: 0, stdout: '2\n'},
@@ -198,7 +199,7 @@ test('evaluateLocal：注入假 git 复现「本地 HEAD 领先锁文件」→ W
   }
 });
 
-test('evaluateLocal：远端未包含时先 fetch --prune origin 再判 → 仍 FAIL', async () => {
+test('evaluateLocal：一律先 fetch --prune origin 再判「包含」，顺序不可颠倒', async () => {
   const {evaluateLocal, STATUS, parseFrameworkLock} = await doctorModule;
   const {git, calls} = fakeGit({
     'cat-file -e': {status: 0},
@@ -214,8 +215,38 @@ test('evaluateLocal：远端未包含时先 fetch --prune origin 再判 → 仍 
   });
   assert.equal(results[0].status, STATUS.FAIL);
   assert.match(results[0].message, /未推送/);
-  assert.ok(calls.some((call) => call.args.join(' ') === 'fetch --prune origin'), '必须先抓一次远端再判');
-  assert.equal(calls.filter((call) => call.args.join(' ') === 'branch -r --contains ' + REF_HARNESS).length, 2, '抓取后要复查一次');
+  const fetchIndex = calls.findIndex((call) => call.args.join(' ') === 'fetch --prune origin');
+  const containsIndexes = calls
+    .map((call, index) => (call.args.join(' ') === 'branch -r --contains ' + REF_HARNESS ? index : -1))
+    .filter((index) => index >= 0);
+  assert.ok(fetchIndex >= 0, '必须先抓一次远端再判');
+  assert.equal(containsIndexes.length, 1, '抓取之后只判一次「包含」即可（抓取已在前）');
+  assert.ok(fetchIndex < containsIndexes[0], 'fetch 必须发生在 branch -r --contains 之前');
+});
+
+test('evaluateLocal：fetch 失败但陈旧引用仍「包含」该提交 → WARN 说明无法确认，绝不报「已推送」', async () => {
+  // 真实踩到过的坑：本地残留的旧 origin/* 引用仍包含锁定提交，而远端其实早就没有它。
+  // 若只在「查不到包含」时才 fetch，这里会把「根本没推送」误判成「已推送」。
+  const {classifyLocalProbe, STATUS} = await doctorModule;
+  const result = classifyLocalProbe({
+    id: 'harness', ref: REF_HARNESS, refPresent: true,
+    remoteContains: true, fetchOk: false,
+    head: REF_HARNESS, refIsAncestorOfHead: false, headIsAncestorOfRef: false, commitsAhead: null,
+  });
+  assert.equal(result.status, STATUS.WARN, '抓不动就不能宣称已推送，但也不该武断判 FAIL');
+  assert.match(result.message, /无法确认/);
+  assert.match(result.message, /--remote/);
+});
+
+test('evaluateLocal：抓取成功且引用不包含 → FAIL（原来的误报方向也没退化）', async () => {
+  const {classifyLocalProbe, STATUS} = await doctorModule;
+  const result = classifyLocalProbe({
+    id: 'harness', ref: REF_HARNESS, refPresent: true,
+    remoteContains: false, fetchOk: true,
+    head: REF_HARNESS, refIsAncestorOfHead: false, headIsAncestorOfRef: false, commitsAhead: null,
+  });
+  assert.equal(result.status, STATUS.FAIL);
+  assert.match(result.message, /未推送/);
 });
 
 test('evaluateRemote：fetch 失败 → FAIL，且临时目录一定被清理', async () => {
