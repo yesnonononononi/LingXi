@@ -6,6 +6,7 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopResult;
 import com.summit.dp.workflow.application.input.InputResolver;
+import com.summit.dp.workflow.application.input.SubExecutionResultChannel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +16,8 @@ import org.springframework.stereotype.Component;
 public class SubAgentWaitInterceptor implements LoopInterceptor {
     private final InputResolver inputs;
 
-    @Override public int order() { return -700; }
+    /** 顺序只有一个真源：取通道声明的 order，别在这里再抄一份字面量。 */
+    @Override public int order() { return SubExecutionResultChannel.ORDER; }
     @Override public boolean catchErr() { return false; }
 
     @Override
