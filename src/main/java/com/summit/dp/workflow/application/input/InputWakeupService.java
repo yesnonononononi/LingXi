@@ -7,7 +7,7 @@ import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +29,7 @@ public class InputWakeupService {
     private final InputResolver inputs;
     private final InputAutomationPolicy policy;
     private final InputNoticeReporter notices;
-    private final ObjectProvider<ExecutionResumeCoordinator> resumes;
+    private final ObjectProvider<ResumeAcceptancePort> resumes;
     private final ObjectProvider<InputTurnContinuation> continuations;
     /** 自动唤醒必须过同一套挂起门禁：用户暂停与自动轮次上限都在那里拦。 */
     private final SuspensionGateChain gates;

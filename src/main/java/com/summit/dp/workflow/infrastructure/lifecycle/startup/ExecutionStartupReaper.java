@@ -8,7 +8,7 @@ import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeDispatchPort;
 import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -82,7 +82,7 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
 
     private final ExecutionRepository executionRepository;
     private final ExecutionResumeTaskRepository resumeTaskRepository;
-    private final ExecutionResumeCoordinator resumeCoordinator;
+    private final ResumeDispatchPort resumeDispatch;
     /** 检查点读取口：补做收口要拿到带属性的完整执行，摘要里没有那些字段。 */
     private final com.summit.core.runtime.loop.ExecutionRepository checkpointRepository;
     /** 收口补偿入口：幂等，靠各协作方的状态判据去重。 */
@@ -273,7 +273,7 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
      *   <li>执行行缺失 / 执行已终态 / 代际已变 → 作废。前两者已无恢复对象，后者说明期间又挂起过，
      *       当前挂起边界是合法的等待，不能被旧请求连坐。</li>
      *   <li>{@code READY} / {@code DEFERRED} 且执行<b>仍 SUSPENDED</b> → 交给
-     *       {@link ExecutionResumeCoordinator#dispatch(long)} 按<b>库内来源</b>重投。
+     *       {@link ResumeDispatchPort#redispatch(long)} 按<b>库内来源</b>重投。
      *       门禁不通过自然会再落回 {@code DEFERRED}：人工来源不受 {@code AUTO_ROUNDS} 限制，
      *       {@code USER_PAUSED} 仍拦。</li>
      *   <li>{@code CLAIMED}（已开始跑，崩在运行中），或执行已不在挂起态 → 保持既有安全策略：
@@ -298,7 +298,7 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
                 continue;
             }
             // 已开始跑却崩在运行中：无法确认副作用边界，只收口不重投。
-            resumeCoordinator.closeStartupFailure(task.getExecutionId(),
+            resumeDispatch.closeStartupFailure(task.getExecutionId(),
                     "进程崩溃时恢复未完成，无法确认是否已产生副作用");
             markFailed(task, "进程崩溃时恢复未完成，无法确认是否已产生副作用，只收口不重投");
             handled++;
@@ -333,7 +333,7 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
         }
         log.info("遗留恢复请求按库内来源重投: taskId={}, executionId={}, source={}",
                 task.getId(), task.getExecutionId(), task.effectiveTrigger());
-        resumeCoordinator.dispatch(task.getExecutionId());
+        resumeDispatch.redispatch(task.getExecutionId());
     }
 
     /** 批量读一批请求对应执行的摘要（状态 + 代际），供收口前快照使用。 */

@@ -14,7 +14,7 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
@@ -51,7 +51,7 @@ public class CommandApprovalExecutor {
     private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final ApprovedCommandRestorer commandRestorer;
     private final ModelContextService modelContextService;
-    private final ExecutionResumeCoordinator resumeCoordinator;
+    private final ResumeAcceptancePort resumeAcceptance;
     private final ManagedAsyncExecutor asyncExecutor;
 
     /**
@@ -112,7 +112,7 @@ public class CommandApprovalExecutor {
             modelContextService.replace(conversationId, execution.getMessages());
             // 拒绝同样登记持久化恢复请求，因此关流必须等它落定：否则前端在恢复真正开始前
             // 就收到流结束，与批准路径（落定后才关）行为不一致。回调交给协调器保管。
-            return resumeCoordinator.accept(card.getExecutionId(), ResumeTriggerType.APPROVAL_DECISION,
+            return resumeAcceptance.accept(card.getExecutionId(), ResumeTriggerType.APPROVAL_DECISION,
                     plan.completion());
         }
         if (!ExecutionToolSlot.write(execution, card.getId(), card.getToolName(),

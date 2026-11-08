@@ -14,7 +14,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import lombok.RequiredArgsConstructor;
@@ -48,7 +48,7 @@ public class InteractionDecisionEngine {
     private final ObjectProvider<ExecutionRepository> executions;
     private final ModelContextService contexts;
     private final TransactionTemplate transactions;
-    private final ExecutionResumeCoordinator resumeCoordinator;
+    private final ResumeAcceptancePort resumeAcceptance;
     private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final ImmediateSlotResolutionStrategy immediate;
     private final TwoPhaseCommandResolutionStrategy twoPhase;
@@ -150,7 +150,7 @@ public class InteractionDecisionEngine {
             contexts.replace(cards.getFirst().getConversationId(), execution.getMessages());
             if (command.resumeIntent() == ResumeIntent.COORDINATOR) {
                 // 触发来源必须显式声明为人工决策：自动轮次上限不该拦住用户刚做的批准。
-                disposition[0] = resumeCoordinator.accept(resolveExecutionId(cards.getFirst()),
+                disposition[0] = resumeAcceptance.accept(resolveExecutionId(cards.getFirst()),
                         ResumeTriggerType.APPROVAL_DECISION, command.settledCallback());
             }
         });

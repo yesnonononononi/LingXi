@@ -15,7 +15,7 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
 import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import lombok.RequiredArgsConstructor;
@@ -45,7 +45,7 @@ public class ApprovalFinalizer {
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionControl> executionControl;
     private final SuspendedExecutionResumer resumer;
-    private final ExecutionResumeCoordinator resumeCoordinator;
+    private final ResumeAcceptancePort resumeAcceptance;
 
     /**
      * 落定 T2 并广播工具结束事件。
@@ -97,7 +97,7 @@ public class ApprovalFinalizer {
         if (!resumer.isSuspended(latest)) {
             return false;
         }
-        return resumeCoordinator.accept(Objects.requireNonNullElse(
+        return resumeAcceptance.accept(Objects.requireNonNullElse(
                 ExecutionIdentity.numericOrNull(latest.getId()), 0L), ResumeTriggerType.APPROVAL_DECISION)
                 == ResumeDisposition.QUEUED;
     }

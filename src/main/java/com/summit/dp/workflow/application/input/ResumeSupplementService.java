@@ -14,7 +14,7 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
@@ -39,7 +39,7 @@ public class ResumeSupplementService {
     private final ObjectProvider<ExecutionRepository> executions;
     private final ObjectProvider<ExecutionActivity> activity;
     private final UnresolvedToolSuspensionGate unresolvedToolGate;
-    private final ExecutionResumeCoordinator coordinator;
+    private final ResumeAcceptancePort resumeAcceptance;
     private final TransactionTemplate transactions;
     private final ObjectMapper json;
     /** 检查点之外的脏版本事实：让拦截器能证明「没有新补充」从而零查库。 */
@@ -89,7 +89,7 @@ public class ResumeSupplementService {
                 noteAppendedAfterCommit(turn.getExecutionId(), message.getId());
                 // 补充要求是「外部输入到位」，不是人撤销暂停：按自动唤醒处理 —— 该被暂停与轮次上限
                 // 拦住时保持挂起（内容已落库，用户仍可手动恢复），避免一条补充把中断意图顶回去。
-                coordinator.accept(turn.getExecutionId(), ResumeTriggerType.AUTO_INPUT_WAKEUP);
+                resumeAcceptance.accept(turn.getExecutionId(), ResumeTriggerType.AUTO_INPUT_WAKEUP);
                 return String.valueOf(message.getId());
             });
         }
