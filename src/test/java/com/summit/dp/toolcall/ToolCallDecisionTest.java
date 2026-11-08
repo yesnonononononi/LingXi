@@ -30,6 +30,7 @@ import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.exception.ClientException;
@@ -40,6 +41,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.approval.*;
+import com.summit.dp.workflow.application.decision.*;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
@@ -145,14 +147,22 @@ class ToolCallDecisionTest {
                 modelContextService,
                 coordinator(resumer),
                 asyncExecutor);
-        service = new ToolCallWorkflowService(toolCallRepository,
-                converter, commandApprovalExecutor,
-                new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
-                        modelContextService, sseEventPublisher, transactions,
-                        provider(executionRepository), new UnresolvedToolSuspensionGate(toolCallRepository), resumer,
-                        asyncExecutor),
-                new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository), provider(activity))),
-                sseEventPublisher, executionIdentity);
+        // 统一引擎：判定与落库在这里，v1 只保留流式适配与「恢复跑完再关流」的时序。
+        CardAvailabilityPolicy availability = new CardAvailabilityPolicy(
+                new HarnessExecutionGate(provider(executionRepository), provider(activity)));
+        ReactiveDecisionContract contract = new ReactiveDecisionContract( availability);
+        ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
+                new ChoiceAnswersValidator(mapper, mock(MessageRepository.class)),
+                toolCallRepository);
+        TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
+                commandApprovalExecutor, toolCallRepository, converter);
+        InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
+                provider(executionRepository), modelContextService, transactions, coordinator(resumer),
+                new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
+        service = new ToolCallWorkflowService(toolCallRepository, converter, commandStrategy,
+                new ToolCallDecisionService(executionIdentity, sseEventPublisher, provider(executionRepository),
+                        new UnresolvedToolSuspensionGate(toolCallRepository), resumer, asyncExecutor, engine, contract),
+                contract, sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
         when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(resumeTask());
         when(resumeTaskRepository.findByExecutionId(3L)).thenReturn(List.of(resumeTask()));

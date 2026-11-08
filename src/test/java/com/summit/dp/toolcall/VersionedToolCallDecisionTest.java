@@ -60,6 +60,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import com.summit.dp.session.domain.repo.MessageRepository;
+import com.summit.dp.workflow.application.decision.*;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
@@ -146,10 +148,15 @@ class VersionedToolCallDecisionTest {
                 modelContextService,
                 resumeCoordinator,
                 asyncExecutor);
-        service = new VersionedToolCallDecisionService(toolCallRepository,
-                converter, modelContextService,
-                sseEventPublisher, transactions, provider(executionRepository),
-                new UnresolvedToolSuspensionGate(toolCallRepository), resumeCoordinator, commandApprovalExecutor);
+        VersionedDecisionContract contract = new VersionedDecisionContract(converter);
+        ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
+                new ChoiceAnswersValidator(mapper, mock(MessageRepository.class)), toolCallRepository);
+        TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
+                commandApprovalExecutor, toolCallRepository, converter);
+        InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
+                provider(executionRepository), modelContextService, transactions, resumeCoordinator,
+                new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
+        service = new VersionedToolCallDecisionService(toolCallRepository, converter, engine, contract);
     }
 
     // ------------------------------------------------------------------

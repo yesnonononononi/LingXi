@@ -24,6 +24,17 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.approval.ToolCallDecisionService;
+import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.session.domain.repo.MessageRepository;
+import com.summit.dp.workflow.application.approval.ChoiceAnswersValidator;
+import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
+import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
+import com.summit.dp.workflow.application.decision.InteractionDecisionEngine;
+import com.summit.dp.workflow.application.decision.ImmediateSlotResolutionStrategy;
+import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
+import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -120,10 +131,10 @@ class ToolCallDecisionAsyncContractTest {
     @Test
     @DisplayName("恢复跑完之后才关流：connect → resume → finish，且两者都跑在受管线程上")
     void resumeRunsBeforeEmitterIsFinished() throws Exception {
-        ToolCallDecisionService service = service();
         ToolCall plan = planCall();
+        ToolCallDecisionService service = service(plan);
 
-        service.decide(plan, ToolCallKind.PLAN, true, "可以");
+        service.decide(plan, true, "可以");
 
         awaitEvent("finish");
         assertEquals(List.of("connect", "resume", "finish"), events,
@@ -141,10 +152,10 @@ class ToolCallDecisionAsyncContractTest {
     @DisplayName("执行器已关闭：不抛给调用方、仍开流并立即关流，且留下 warn")
     void closedExecutorStillClosesTheStream() {
         asyncExecutor.shutdown();
-        ToolCallDecisionService service = service();
         ToolCall plan = planCall();
+        ToolCallDecisionService service = service(plan);
 
-        service.decide(plan, ToolCallKind.PLAN, true, "可以");
+        service.decide(plan, true, "可以");
 
         assertEquals(List.of("connect", "finish"), events,
                 "后台段起不来时也必须关流，绝不留一条永不结束的连接，实际: " + events);
@@ -172,7 +183,8 @@ class ToolCallDecisionAsyncContractTest {
         throw new AssertionError("等待事件超时: " + name + "，已有: " + events);
     }
 
-    private ToolCallDecisionService service() {
+    private ToolCallDecisionService service(ToolCall plan) {
+        when(toolCallRepository.findById(TOOL_CALL_ID)).thenReturn(Optional.of(plan));
         TransactionTemplate transactions = mock(TransactionTemplate.class);
         doAnswer(invocation -> {
             ((java.util.function.Consumer<TransactionStatus>) invocation.getArgument(0))
@@ -186,9 +198,18 @@ class ToolCallDecisionAsyncContractTest {
             events.add("resume");
             return null;
         }).when(resumer).resume(any(Execution.class), anyLong());
-        return new ToolCallDecisionService(toolCallRepository, new ToolCallConverter(new ObjectMapper()),
-                executionLocator, modelContextService, sseEventPublisher, transactions,
-                provider(executionRepository), unresolvedGate, resumer, asyncExecutor);
+        ToolCallConverter converter = new ToolCallConverter(new ObjectMapper());
+        ReactiveDecisionContract contract = new ReactiveDecisionContract(
+                new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository),
+                        provider(mock(ExecutionActivity.class)))));
+        InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
+                provider(executionRepository), modelContextService, transactions, mock(ExecutionResumeCoordinator.class),
+                unresolvedGate,
+                new ImmediateSlotResolutionStrategy(converter,
+                        new ChoiceAnswersValidator(new ObjectMapper(), mock(MessageRepository.class)), toolCallRepository),
+                new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), toolCallRepository, converter));
+        return new ToolCallDecisionService(executionLocator, sseEventPublisher, provider(executionRepository),
+                unresolvedGate, resumer, asyncExecutor, engine, contract);
     }
 
     private ToolCall planCall() {

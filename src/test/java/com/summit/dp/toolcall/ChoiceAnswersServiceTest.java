@@ -63,6 +63,8 @@ import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
+import com.summit.dp.workflow.application.decision.*;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
@@ -121,8 +123,14 @@ class ChoiceAnswersServiceTest {
         ObjectProvider<ExecutionRepository> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(executions);
         SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
-        service = new ChoiceAnswersService(tools, new ToolCallConverter(mapper), new ChoiceAnswersValidator(mapper, messages),
-                provider, contexts, coordinator, new UnresolvedToolSuspensionGate(tools), transactions);
+        ToolCallConverter converter = new ToolCallConverter(mapper);
+        ChoiceAnswersValidator validator = new ChoiceAnswersValidator(mapper, messages);
+        VersionedDecisionContract contract = new VersionedDecisionContract(converter);
+        InteractionDecisionEngine engine = new InteractionDecisionEngine(tools, converter, provider, contexts,
+                transactions, coordinator, new UnresolvedToolSuspensionGate(tools),
+                new ImmediateSlotResolutionStrategy(converter, validator, tools),
+                new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), tools, converter));
+        service = new ChoiceAnswersService(validator, engine, contract);
         seed();
     }
 

@@ -13,8 +13,14 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
+import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
 import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
+import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
+import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
 import com.summit.dp.workflow.application.approval.ToolCallDecisionService;
+import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
+import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
 import com.summit.dp.workflow.application.approval.ToolCallWorkflowService;
 import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -65,11 +71,12 @@ class QaLegacyDelegationSubmitAndDisplayTest {
         ToolCall legacy = legacyRow();
         when(repository.findById(legacy.getId())).thenReturn(Optional.of(legacy));
 
-        ToolCallWorkflowService service = new ToolCallWorkflowService(repository, converter,
-                commandExecutor, decisionService,
+        ReactiveDecisionContract contract = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(mock(ExecutionRepository.class)),
-                        provider(mock(ExecutionActivity.class)))),
-                sse, identity);
+                        provider(mock(ExecutionActivity.class)))));
+        ToolCallWorkflowService service = new ToolCallWorkflowService(repository, converter,
+                new TwoPhaseCommandResolutionStrategy(commandExecutor, repository, converter), decisionService,
+                contract, sse, identity);
 
         ClientException failure = assertThrows(ClientException.class,
                 () -> service.decide(2L, legacy.getId(), true, "批准"),
