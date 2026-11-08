@@ -118,31 +118,37 @@ class DecisionConflictHttpContractTest {
     @Test
     @DisplayName("STATE_CONFLICT：HTTP 200 + code 4090 + data 空 + 既有文案")
     void stateConflictIsHttp200WithCode4090() throws Exception {
-        assertConflict(DecisionErrorCode.STATE_CONFLICT, "卡片已被其他操作更新，请刷新后重试");
+        assertConflict(4090, DecisionErrorCode.STATE_CONFLICT, "卡片已被其他操作更新，请刷新后重试");
     }
 
     @Test
     @DisplayName("DECISION_ALREADY_APPLIED：HTTP 200 + code 4091 + 既有文案")
     void alreadyAppliedIsHttp200WithCode4091() throws Exception {
-        assertConflict(DecisionErrorCode.DECISION_ALREADY_APPLIED, "该互动已有结论，请查看最新状态");
+        assertConflict(4091, DecisionErrorCode.DECISION_ALREADY_APPLIED, "该互动已有结论，请查看最新状态");
     }
 
     @Test
     @DisplayName("INTERACTION_NOT_READY：HTTP 200 + code 4092 + 既有文案")
     void notReadyIsHttp200WithCode4092() throws Exception {
-        assertConflict(DecisionErrorCode.INTERACTION_NOT_READY, "互动尚未就绪，请等待执行暂停后再提交");
+        assertConflict(4092, DecisionErrorCode.INTERACTION_NOT_READY, "互动尚未就绪，请等待执行暂停后再提交");
     }
 
     @Test
     @DisplayName("EXECUTION_ENDED：HTTP 200 + code 4093 + 既有文案")
     void executionEndedIsHttp200WithCode4093() throws Exception {
-        assertConflict(DecisionErrorCode.EXECUTION_ENDED, "执行已结束，该决策不会再生效");
+        assertConflict(4093, DecisionErrorCode.EXECUTION_ENDED, "执行已结束，该决策不会再生效");
+    }
+
+    @Test
+    @DisplayName("RESUME_FAILED：HTTP 200 + code 4094 + data 空 + 既有文案")
+    void resumeFailedIsHttp200WithCode4094() throws Exception {
+        assertConflict(4094, DecisionErrorCode.RESUME_FAILED, "决策已保存，但恢复执行失败，请重试恢复");
     }
 
     @Test
     @DisplayName("COMMAND_CONFLICT：HTTP 200 + code 4095 + 既有文案")
     void commandConflictIsHttp200WithCode4095() throws Exception {
-        assertConflict(DecisionErrorCode.COMMAND_CONFLICT, "同一命令标识对应了不同的请求内容，请刷新后重新提交");
+        assertConflict(4095, DecisionErrorCode.COMMAND_CONFLICT, "同一命令标识对应了不同的请求内容，请刷新后重新提交");
     }
 
     @Test
@@ -164,8 +170,19 @@ class DecisionConflictHttpContractTest {
                 .andExpect(jsonPath("$.errMsg").value("卡片已被其他操作更新，请刷新后重试"));
     }
 
-    /** 逐码断言：状态、业务码、data 为空、文案四件套。 */
-    private void assertConflict(DecisionErrorCode code, String expectedMessage) throws Exception {
+    /**
+     * 逐码断言：状态、业务码、data 为空、文案四件套。
+     *
+     * <p><b>业务码必须是调用方写死的字面量</b>，不能取 {@code code.code()}：拿被测枚举自证的话，
+     * 有人把 {@code STATE_CONFLICT} 从 4090 改成别的数字时用例仍全绿，而前端按业务码判定的
+     * 契约已经断了。枚举在这里只用来构造异常。</p>
+     *
+     * @param expectedCode    期望业务码，调用方写死的字面量（4090~4095）
+     * @param code            用来构造异常的枚举值
+     * @param expectedMessage 期望文案，同样是字面量
+     */
+    private void assertConflict(int expectedCode, DecisionErrorCode code, String expectedMessage)
+            throws Exception {
         VersionedToolCallDecisionService service = mock(VersionedToolCallDecisionService.class);
         when(service.decide(any())).thenThrow(new DecisionConflictException(code, code.message()));
         MockMvc mvc = MockMvcBuilders
@@ -177,7 +194,7 @@ class DecisionConflictHttpContractTest {
         mvc.perform(post("/tool-call/decisions").contentType(MediaType.APPLICATION_JSON)
                         .content(body(TOOL_CALL_ID, "cmd-" + code.name(), 1L)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(code.code()))
+                .andExpect(jsonPath("$.code").value(expectedCode))
                 .andExpect(jsonPath("$.data").doesNotExist())
                 .andExpect(jsonPath("$.errMsg").value(expectedMessage));
     }
