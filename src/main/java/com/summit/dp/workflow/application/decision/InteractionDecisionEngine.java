@@ -12,8 +12,6 @@ import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.application.approval.ApprovalPlan;
-import com.summit.dp.workflow.application.approval.ExecutionToolSlot;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;

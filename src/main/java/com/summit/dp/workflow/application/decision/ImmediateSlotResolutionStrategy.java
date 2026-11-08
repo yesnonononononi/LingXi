@@ -11,8 +11,6 @@ import com.summit.dp.toolcall.domain.model.ToolCallAction;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.application.approval.ChoiceAnswersValidator;
-import com.summit.dp.workflow.application.approval.ExecutionToolSlot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

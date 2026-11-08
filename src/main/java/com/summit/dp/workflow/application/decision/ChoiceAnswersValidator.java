@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.application.approval;
+package com.summit.dp.workflow.application.decision;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

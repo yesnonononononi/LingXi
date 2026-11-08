@@ -8,7 +8,7 @@ import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.TokenInfo;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;

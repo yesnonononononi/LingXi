@@ -8,7 +8,7 @@ import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;

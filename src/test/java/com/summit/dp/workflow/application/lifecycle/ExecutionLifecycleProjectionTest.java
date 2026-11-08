@@ -13,7 +13,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;

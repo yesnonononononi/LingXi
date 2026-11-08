@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.application.approval;
+package com.summit.dp.workflow.application.decision;
 
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.tool.ToolExecution;

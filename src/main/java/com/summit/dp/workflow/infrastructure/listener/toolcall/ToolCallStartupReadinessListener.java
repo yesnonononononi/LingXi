@@ -5,7 +5,7 @@ import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

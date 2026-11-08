@@ -27,7 +27,7 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;

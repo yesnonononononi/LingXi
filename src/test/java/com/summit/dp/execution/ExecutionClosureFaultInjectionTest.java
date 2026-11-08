@@ -39,7 +39,7 @@ import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;

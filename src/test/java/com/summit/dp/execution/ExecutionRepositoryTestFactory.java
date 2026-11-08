@@ -9,7 +9,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;

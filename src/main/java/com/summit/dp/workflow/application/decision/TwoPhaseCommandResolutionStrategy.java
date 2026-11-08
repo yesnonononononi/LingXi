@@ -7,8 +7,6 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.application.approval.ApprovalPlan;
-import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

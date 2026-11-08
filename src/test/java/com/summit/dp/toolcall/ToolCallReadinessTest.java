@@ -15,7 +15,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

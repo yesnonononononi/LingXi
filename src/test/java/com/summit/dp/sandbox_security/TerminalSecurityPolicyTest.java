@@ -17,7 +17,7 @@ import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
+import com.summit.dp.workflow.application.decision.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;

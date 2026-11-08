@@ -1,14 +1,9 @@
-package com.summit.dp.workflow.application.approval;
+package com.summit.dp.workflow.application.decision;
 
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;
-import com.summit.dp.workflow.application.decision.DecisionReceipt;
-import com.summit.dp.workflow.application.decision.ImmediateDecision;
-import com.summit.dp.workflow.application.decision.InteractionDecisionEngine;
-import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
-import com.summit.dp.workflow.application.decision.ResumeIntent;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

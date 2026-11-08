@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.application.approval;
+package com.summit.dp.workflow.application.decision;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.event.RuntimeEventPublisher;

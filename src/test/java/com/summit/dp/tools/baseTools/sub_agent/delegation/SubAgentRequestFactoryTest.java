@@ -60,7 +60,7 @@ import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
-import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
+import com.summit.dp.workflow.application.decision.CommandApprovalRegistrar;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;

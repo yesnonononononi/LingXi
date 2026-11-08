@@ -1,11 +1,7 @@
-package com.summit.dp.workflow.application.approval;
+package com.summit.dp.workflow.application.decision;
 
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersCommand;
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersReceipt;
-import com.summit.dp.workflow.application.decision.ChoiceBatchDecision;
-import com.summit.dp.workflow.application.decision.DecisionReceipt;
-import com.summit.dp.workflow.application.decision.InteractionDecisionEngine;
-import com.summit.dp.workflow.application.decision.VersionedDecisionContract;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

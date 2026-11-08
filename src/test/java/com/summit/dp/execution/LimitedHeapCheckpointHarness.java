@@ -19,7 +19,7 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMap
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;

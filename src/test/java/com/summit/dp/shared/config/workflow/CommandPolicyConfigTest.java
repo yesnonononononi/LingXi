@@ -21,7 +21,7 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
+import com.summit.dp.workflow.application.decision.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;

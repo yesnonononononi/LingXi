@@ -35,7 +35,7 @@ import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
