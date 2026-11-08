@@ -15,6 +15,7 @@ import {useBackgroundTasks} from './useBackgroundTasks';
 import {useSubSessionTaskProgress} from './useSubSessionTaskProgress';
 import {useChecklist} from './useChecklist';
 import {acceptsChatEvent} from './chatExecutionState';
+import {recordTokenAuditSnapshot} from './tokenAuditStream';
 import {useChatSessionList} from './useChatSessionList';
 import {useChatWorkspace} from './useChatWorkspace';
 import {useChatSubSession} from './useChatSubSession';
@@ -258,6 +259,29 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   };
 
   /**
+   * 收下会话级流上的用量审计快照（`token_audit_snapshot`）。
+   *
+   * <p><b>为什么在 `onEvent` 里最早分流</b>：本事件不属于聊天渲染状态机（无 turnId、无正文、不进
+   * streamRouter），只喂给面板的响应式存储。它放在 `acceptsChatEvent` 之前是刻意的 ——
+   * 那个过滤器按 invalidatedTurnIds 判轮次归属，本事件根本没有轮次；将来过滤器若收紧成
+   * 「无 turnId 即丢弃」，面板会静默失去实时性，而这里不会。</p>
+   *
+   * <p><b>会话归属</b>：以事件体自带的 `sessionId` 为准（后端按根会话路由，看子会话时该帧也落根流）。
+   * <b>假设</b>：若后端某天不再下发 `sessionId`，则回退到「当前根会话」—— 那是此刻唯一可用的归属线索；
+   * 两者都解析不出来时 {@link recordTokenAuditSnapshot} 会丢弃该帧，绝不挂到别的会话上。</p>
+   *
+   * @param event 会话级流上的业务事件
+   * @returns 是否已消费该事件（true 表示调用方应立刻 return，不再进入聊天状态机）
+   */
+  const takeTokenAuditSnapshot = (event: AgentEvent): boolean => {
+    if (event.type !== 'token_audit_snapshot') return false;
+    const session = currentActiveSession.value;
+    const fallbackRootId = session ? resolveRootSessionId(session) ?? String(session.id) : null;
+    recordTokenAuditSnapshot(event, fallbackRootId);
+    return true;
+  };
+
+  /**
    * 通知点击后的会话跳转入口。
    *
    * <p>{@link useChatSessionList} 在本函数更靠下的位置才创建，所以这里先留一个可变量，
@@ -289,6 +313,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       subTaskProgress.onTaskChanged(event);
     },
     onEvent: (event) => {
+      // 用量审计快照只喂面板存储，不参与聊天状态机：命中即 return，见 takeTokenAuditSnapshot 的说明。
+      if (takeTokenAuditSnapshot(event)) return;
       if (!acceptsChatEvent(currentActiveSession.value, event)) return;
       checklist.onEvent(event);
       subTaskProgress.onEvent(event);

@@ -604,6 +604,7 @@ export const messages: MessageSchema = {
       },
       tokenAudit: {
         title: '用量审计',
+        live: '实时',
         open: '打开用量审计面板',
         collapse: '收起用量审计面板',
         refresh: '刷新用量审计',
@@ -1919,6 +1920,7 @@ export const messages: MessageSchema = {
       },
       tokenAudit: {
         title: 'Token audit',
+        live: 'Live',
         open: 'Open token audit panel',
         collapse: 'Collapse token audit panel',
         refresh: 'Refresh token audit',

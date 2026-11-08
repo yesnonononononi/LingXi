@@ -68,7 +68,7 @@ export interface TokenAuditToolGroupRow {
   labelKey: string;
   tokens: number;
   ratio?: number | null;
-  /** 「N 项」= 明细数组长度，绝不取 `callCount`。 */
+  /** 「N 项」= 明细数组长度；调用次数已从契约移除，不得再作为口径。 */
   itemCount: number;
   items: TokenAuditToolItemRow[];
 }
@@ -216,7 +216,7 @@ const collectToolGroups = (tools?: TokenAuditToolBreakdownVO | null): TokenAudit
 };
 
 /**
- * 「工具返回消息 [N 类]」的 N：**存在的分组个数**，不是工具明细个数、也不是 callCount。
+ * 「工具返回消息 [N 类]」的 N：**存在的分组个数**，不是工具明细个数、也不是调用次数（该字段已从契约移除）。
  *
  * @param tools 工具构成
  * @returns 非空分组数（0..3）
@@ -241,7 +241,7 @@ export function resolveToolGroupRows(tools?: TokenAuditToolBreakdownVO | null): 
       labelKey: TOOL_GROUP_LABEL_KEY[group.groupKind] ?? TOOL_GROUP_LABEL_KEY.ORDINARY,
       tokens: group.tokens,
       ratio: group.ratio ?? null,
-      // 「N 项」只认数组长度，callCount 恒为 0 已废弃。
+      // 「N 项」只认数组长度；调用次数已从契约移除，不再参与任何计数。
       itemCount: items.length,
       items: items.map((item) => ({
         toolName: item.toolName,

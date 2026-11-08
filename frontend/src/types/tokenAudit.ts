@@ -7,7 +7,8 @@
  * <p>三条渲染铁律（类型层面同样要守）：</p>
  * <ol>
  *   <li>`null` / `undefined` 表示「不知道」，**不等于 0**。字段缺失时整行不渲染。</li>
- *   <li>`callCount` 当前恒为 0（后端未采集），**任何位置都不得渲染**。</li>
+ *   <li>调用次数（`callCount`）**已从契约移除，后端不再下发**：前端不得声明、读取或渲染它。
+ *       需要「N 项」时取明细数组长度，需要「N 类」时取存在的分组个数。</li>
  *   <li>所有数值与百分比一律取后端算好的字段，前端不做除法/减法；
  *       仅允许把 ratio 乘 100 转成百分数文本、以及直接用 ratio 当进度条宽度。</li>
  * </ol>
@@ -34,11 +35,6 @@ export interface TokenAuditAmountVO {
 export interface TokenAuditToolItemVO extends TokenAuditAmountVO {
   /** 工具机器名（如 `search_web`），原样展示，不做展示名映射。 */
   toolName: string;
-  /**
-   * 调用次数。**当前恒为 0（后端未采集），不得渲染**。
-   * 声明为可选只为不逼迫调用方构造它；渲染层禁止读取。
-   */
-  callCount?: number;
   /** 入参 token，只读说明字段，不参与任何求和。 */
   argumentTokens?: number | null;
   /** 出参 token，只读说明字段，不参与任何求和。 */
@@ -49,8 +45,6 @@ export interface TokenAuditToolItemVO extends TokenAuditAmountVO {
 export interface TokenAuditToolGroupVO extends TokenAuditAmountVO {
   /** 分组种类，决定「N 项」以外的展示文案。 */
   groupKind: TokenAuditToolGroupKind;
-  /** 调用次数。**当前恒为 0（后端未采集），不得渲染**。 */
-  callCount?: number;
   /** 组内工具明细；缺失或空数组表示没有明细可展开。 */
   items?: TokenAuditToolItemVO[] | null;
 }

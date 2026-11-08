@@ -3,13 +3,22 @@
  * 用量审计浮动面板。
  *
  * <p>右侧浮动抽屉，展示一次「上下文快照」口径的 token 构成：当前上下文占用、
- * 消息构成（系统 / 用户 / 模型 / 工具返回）、工具来源二级拆解，以及其他消息（请求开销）。
- * 数据来源单一：`GET /session/{id}/token-audit`（见 {@link TokenAuditAPI}）。</p>
+ * 消息构成（系统 / 用户 / 模型 / 工具返回）、工具来源二级拆解，以及其他消息（请求开销）。</p>
+ *
+ * <p><b>数据来源两条，解析/渲染只有一条</b>：</p>
+ * <ol>
+ *   <li>打开面板 / 点「立即重取」→ `GET /session/{id}/token-audit`（见 {@link TokenAuditAPI}）；</li>
+ *   <li>会话级流上的 `token_audit_snapshot` 推送（与 GET 的 `data` 完全同构，见
+ *       {@link module:views/chat/tokenAuditStream}）。</li>
+ * </ol>
+ * <p>两条来源都先过 {@link normalizeTokenAuditSnapshot}，之后共用同一套派生函数与模板 ——
+ * <b>不存在第二份渲染逻辑</b>。展示源选择规则见 {@link resolveDisplayedSnapshot}：推送优先，
+ * 无推送回退 GET；手动刷新会先丢弃推送记录，让「立即重取」的结果立刻可见。</p>
  *
  * <p><b>渲染铁律</b>（做错就是 bug，与后端契约同步变更时必须重新核对）：</p>
  * <ol>
  *   <li>「N 项」一律取数组/契约字段：类别数取存在的分组个数、工具项数取 `items.length`、
- *       其他消息项数取 `requestOverhead.itemCount`。<b>永不使用 `callCount`</b>（后端恒为 0）。</li>
+ *       其他消息项数取 `requestOverhead.itemCount`。调用次数已从契约移除，任何位置都不参与计数。</li>
  *   <li>`null`/`undefined` = 「不知道」，不等于 0：字段缺失就整行不渲染，不画 0% 空进度条。</li>
  *   <li>数值与百分比全部消费后端字段，前端不做除法/减法；仅把 ratio 乘 100 转百分数文本、
  *       以及直接拿 ratio 当进度条宽度。</li>
@@ -39,6 +48,12 @@ import {
   resolveToolGroupRows,
   countToolGroupKinds,
 } from '../../views/chat/tokenAuditPresentation';
+import {
+  clearTokenAuditStreamEntry,
+  getTokenAuditStreamEntry,
+  normalizeTokenAuditSnapshot,
+  resolveDisplayedSnapshot,
+} from '../../views/chat/tokenAuditStream';
 
 const props = defineProps<{
   /** 是否展开（`v-model:open`）。 */
@@ -59,14 +74,39 @@ const CATEGORY_DOT_CLASS: Readonly<Record<TokenAuditCategoryType, string>> = {
   TOOL: 'bg-lx-primary',
 };
 
-/** 快照数据。`null` = 尚无数据（加载中 / 失败 / 未采集）。 */
-const audit = ref<SessionTokenAuditVO | null>(null);
+/** 最近一次 GET 的结果。`null` = 尚无数据（加载中 / 失败 / 未采集）。 */
+const fetched = ref<SessionTokenAuditVO | null>(null);
 /** 是否正在请求。 */
 const loading = ref(false);
 /** 请求失败的用户可见文案；空串表示无错误。 */
 const errorMessage = ref('');
 /** 竞态令牌：只有最后一次请求的响应会被采用。 */
 let requestSeq = 0;
+
+/** 会话 ID 是否可用。 */
+const canLoad = computed<boolean>(() => {
+  const id = props.sessionId;
+  return id !== null && id !== undefined && String(id).trim() !== '';
+});
+
+/**
+ * 该会话最近一次流推送（响应式：读的是模块级 Map，推送一到就重算）。
+ *
+ * <p>注意键用**面板当前会话**的 id：后端按根会话推送，而 ChatView 传进来的正是它订阅的会话，
+ * 二者一致；看子会话时事件落根流，面板也挂在根会话上下文里。</p>
+ */
+const streamEntry = computed(() => (canLoad.value ? getTokenAuditStreamEntry(props.sessionId) : null));
+
+/**
+ * 实际渲染的快照：推送优先，无推送回退 GET（规则唯一实现在
+ * {@link resolveDisplayedSnapshot}，组件不自作判断）。
+ */
+const displayed = computed<SessionTokenAuditVO | null>(() =>
+  resolveDisplayedSnapshot(streamEntry.value, fetched.value)
+);
+
+/** 当前展示的数据是否来自流推送 —— 仅用于头部的「实时」角标，不影响任何数值。 */
+const isStreamDriven = computed<boolean>(() => streamEntry.value !== null);
 
 /** 「工具返回消息」二级拆解是否展开。 */
 const toolRowExpanded = ref(false);
@@ -75,14 +115,8 @@ const overheadExpanded = ref(false);
 /** 各工具来源分组的展开态（按分组种类键控）。 */
 const expandedGroups = ref<Record<string, boolean>>({});
 
-/** 会话 ID 是否可用。 */
-const canLoad = computed<boolean>(() => {
-  const id = props.sessionId;
-  return id !== null && id !== undefined && String(id).trim() !== '';
-});
-
 /** 采集状态；无数据时按「未采集」处理，绝不臆造 COLLECTED。 */
-const displayState = computed<string>(() => audit.value?.displayState ?? 'NOT_COLLECTED');
+const displayState = computed<string>(() => displayed.value?.displayState ?? 'NOT_COLLECTED');
 const isFailed = computed<boolean>(() => displayState.value === 'FAILED');
 const isNotCollected = computed<boolean>(() => displayState.value === 'NOT_COLLECTED');
 /** 只有「已采集 / 追平中」才展示快照分项：未采集与采集失败都不得画分项（哪怕后端带了零值）。 */
@@ -90,28 +124,28 @@ const showBreakdown = computed<boolean>(
   () => displayState.value === 'COLLECTED' || displayState.value === 'CAPTURING'
 );
 
-const contextSummary = computed(() => resolveContextSummary(audit.value));
-const showContext = computed<boolean>(() => hasContextSection(audit.value));
+const contextSummary = computed(() => resolveContextSummary(displayed.value));
+const showContext = computed<boolean>(() => hasContextSection(displayed.value));
 
-const messageRows = computed(() => resolveMessageRows(audit.value?.messages));
-const toolGroupRows = computed(() => resolveToolGroupRows(audit.value?.tools));
-const toolKindCount = computed<number>(() => countToolGroupKinds(audit.value?.tools));
-const messagesTotalText = computed<string>(() => resolveMessagesTotalText(audit.value));
-const capturedAtText = computed<string>(() => formatCapturedAt(audit.value?.capturedAt));
-const capturingDrift = computed<number | null>(() => resolveCapturingDrift(audit.value));
+const messageRows = computed(() => resolveMessageRows(displayed.value?.messages));
+const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools));
+const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
+const messagesTotalText = computed<string>(() => resolveMessagesTotalText(displayed.value));
+const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
+const capturingDrift = computed<number | null>(() => resolveCapturingDrift(displayed.value));
 
-const showOverhead = computed<boolean>(() => hasOverheadSection(audit.value?.requestOverhead));
-const definitionRows = computed(() => resolveToolDefinitionRows(audit.value?.requestOverhead));
-const overheadTokensText = computed<string>(() => formatTokenAmount(audit.value?.requestOverhead?.tokens ?? null));
-const overheadRatioText = computed<string>(() => formatRatioPercent(audit.value?.requestOverhead?.ratio ?? null));
+const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
+const definitionRows = computed(() => resolveToolDefinitionRows(displayed.value?.requestOverhead));
+const overheadTokensText = computed<string>(() => formatTokenAmount(displayed.value?.requestOverhead?.tokens ?? null));
+const overheadRatioText = computed<string>(() => formatRatioPercent(displayed.value?.requestOverhead?.ratio ?? null));
 const overheadItemCount = computed<number | null>(() => {
-  const count = audit.value?.requestOverhead?.itemCount;
+  const count = displayed.value?.requestOverhead?.itemCount;
   return typeof count === 'number' && Number.isFinite(count) ? count : null;
 });
 
 /** FAILED 态的失败原因文案；后端未给原因时也不留空行。 */
 const failText = computed<string>(() => {
-  const reason = audit.value?.failReason;
+  const reason = displayed.value?.failReason;
   const text = reason !== null && reason !== undefined ? String(reason).trim() : '';
   return text === '' ? t('chat.tokenAudit.failedFallback') : t('chat.tokenAudit.failed', {reason: text});
 });
@@ -124,12 +158,17 @@ const resetExpansion = (): void => {
 };
 
 /**
- * 拉取用量审计数据。
+ * 立即重取一次（打开面板、点刷新、切换会话都走这里）。
+ *
+ * <p><b>为什么先丢弃推送记录</b>：展示源规则是「推送优先」。若不清，用户点「立即重取」后
+ * 看到的仍是上一条推送 —— 一个点了没反应的刷新按钮。丢弃后 GET 结果立刻可见，
+ * 下一次推送到达时再自然接管。</p>
  *
  * <p>并发安全：连续刷新/切换会话时只采纳最后一次请求的响应，避免旧响应覆盖新会话数据。</p>
  */
 const load = async (): Promise<void> => {
   if (!canLoad.value) return;
+  clearTokenAuditStreamEntry(props.sessionId);
   const seq = ++requestSeq;
   loading.value = true;
   errorMessage.value = '';
@@ -137,16 +176,17 @@ const load = async (): Promise<void> => {
     const res = await TokenAuditAPI.tokenAudit(props.sessionId);
     if (seq !== requestSeq) return;
     if (!isOk(res?.code)) {
-      audit.value = null;
+      fetched.value = null;
       errorMessage.value = describeKind('business');
       return;
     }
-    audit.value = res.data ?? null;
+    // 与流推送同一个解析入口：两条来源形状一致，模板不需要分支。
+    fetched.value = normalizeTokenAuditSnapshot(res.data, props.sessionId);
     // 数据换了，旧的展开态不再适用。
     resetExpansion();
   } catch (error) {
     if (seq !== requestSeq) return;
-    audit.value = null;
+    fetched.value = null;
     errorMessage.value = error instanceof ApiError ? describeKind(error.kind) : t('chat.tokenAudit.loadFailed');
   } finally {
     if (seq === requestSeq) loading.value = false;
@@ -183,6 +223,8 @@ const ratioText = (ratio?: number | null): string => formatRatioPercent(ratio);
 const barWidth = (ratio?: number | null): string | null => formatBarWidth(ratio);
 
 // 打开就拉一次；切换会话时先清空再按需重拉（关闭状态下不请求，省一次往返）。
+// 流推送无需订阅/退订：存储是模块级单例，推送由 useChatView 在会话级流上统一落库，
+// 这里只读（不新增连接、也不因面板开关而改变流的行为）。
 watch(
   () => props.open,
   (open) => {
@@ -194,7 +236,7 @@ watch(
 watch(
   () => props.sessionId,
   () => {
-    audit.value = null;
+    fetched.value = null;
     errorMessage.value = '';
     resetExpansion();
     if (props.open) void load();
@@ -218,6 +260,15 @@ watch(
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19V5m0 14h16M8 15V9m4 6V6m4 9v-4" />
           </svg>
           <span>{{ t('chat.tokenAudit.title') }}</span>
+          <!-- 数据来自流推送时给个角标：用户能分清「这是刚推来的」还是「打开时取的那份」 -->
+          <span
+            v-if="isStreamDriven"
+            data-testid="token-audit-live"
+            class="flex items-center gap-1 rounded-lx-full border border-lx-border-subtle bg-lx-success-soft px-1.5 py-0.5 text-lx-fs-2xs font-normal text-lx-success"
+          >
+            <span class="inline-block h-1 w-1 rounded-lx-full bg-lx-success"></span>
+            {{ t('chat.tokenAudit.live') }}
+          </span>
         </h3>
         <div class="flex items-center gap-1">
           <button
@@ -257,9 +308,10 @@ watch(
 
       <!-- 内容区：浮层内部独立滚动 -->
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2.5">
-        <!-- 请求失败 / 网络错误：整体降级为一行提示 + 重试，绝不留白 -->
+        <!-- 请求失败 / 网络错误：整体降级为一行提示 + 重试，绝不留白。
+             有流推送的快照时不当场清空内容（`!displayed` 才降级）：刷新失败不该把已在眼前的实时数据抹掉。 -->
         <div
-          v-if="errorMessage"
+          v-if="errorMessage && !displayed"
           data-testid="token-audit-error"
           class="space-y-2 rounded-lx-md border border-lx-danger-border bg-lx-danger-soft px-2.5 py-2 text-lx-fs-sm text-lx-danger"
         >
@@ -278,7 +330,7 @@ watch(
 
           <template v-else>
             <!-- 首次加载占位（有数据时的刷新走头部转圈，不闪内容） -->
-            <p v-if="loading && !audit" class="text-lx-fs-sm text-lx-muted">{{ t('chat.tokenAudit.loading') }}</p>
+            <p v-if="loading && !displayed" class="text-lx-fs-sm text-lx-muted">{{ t('chat.tokenAudit.loading') }}</p>
 
             <!-- 1. 当前上下文：任何状态都保留（后端有实时数据才渲染） -->
             <section v-if="showContext" data-testid="token-audit-context" class="space-y-1.5">

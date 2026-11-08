@@ -306,6 +306,34 @@ export interface InvokeRetryEvent extends EventInterface {
 }
 
 /**
+ * 业务事件：用量审计快照（设计 §5.1）。
+ *
+ * <p>⚠️ **不是框架事件**：事件名由后端 {@code TokenAuditBroadcaster#EVENT_NAME} 定义为字面量
+ * {@code token_audit_snapshot}，走<b>会话级流同一条连接</b>下发（不另开连接）。事件体即
+ * {@code SessionTokenAuditVO}（字段平铺、无外层信封），与
+ * {@code GET /session/{id}/token-audit} 的 {@code data} <b>完全同构</b> ——
+ * 前端因此只有一条解析/渲染路径。</p>
+ *
+ * <p>注意它<b>不带</b> {@link EventInterface} 的执行信封（{@code executionId} / {@code timestamp}）：
+ * 它描述的是「会话当前的 token 构成」，与某次执行无关，强行补两个假字段会让类型说谎。
+ * 会话归属以事件体自带的 {@code sessionId} 为准；真缺时由消费侧回退到当前根会话（见 useChatView）。</p>
+ *
+ * <p>路由：后端按<b>根会话</b>推送 —— 看子会话时该帧也落在根会话的流上，
+ * 因此消费侧不能按「当前可视会话」过滤掉它。</p>
+ */
+export type TokenAuditSnapshotEvent = import('./tokenAudit').SessionTokenAuditVO & {
+  type: 'token_audit_snapshot';
+  /**
+   * 框架信封里的归属信息可能被一并透传；本事件**不依赖**它
+   * （会话归属以事件体自带的 {@code sessionId} 为准）。
+   *
+   * <p>这里保留为可选字段，是因为 {@link AgentEvent} 联合的多个消费方统一读 {@code event.metaData}：
+   * 若本成员完全没有该字段，整条联合的 {@code .metaData} 访问都会编译不过。</p>
+   */
+  metaData?: EventMetaData;
+};
+
+/**
  * 事件类型 → 接口 的映射表。
  *
  * <p>消费侧用 {@code AgentEventMap[T]} 拿到确定类型；{@link RuntimeEventType} 由它派生，
@@ -334,6 +362,11 @@ export interface AgentEventMap {
    */
   TURN_SNAPSHOT: TurnSnapshotEvent;
   BLOCK_UPSERT: BlockUpsertEvent;
+  /**
+   * 业务事件：用量审计快照。事件名是后端契约里的**小写字面量**（SSE 事件名即 `isAgentEventType`
+   * 的匹配依据），因此这里不能用 UPPER_SNAKE 风格，改了就收不到帧。
+   */
+  token_audit_snapshot: TokenAuditSnapshotEvent;
 }
 
 /** 全部运行时事件类型的字面量联合（派生自 {@link AgentEventMap}，勿手写）。 */
@@ -352,8 +385,12 @@ export type AgentEvent = AgentEventMap[RuntimeEventType];
  * <p>{@code event} 是 SSE 的 event 名（= 事件体 {@code type}），{@code data} 是反序列化后的事件体；
  * 解析失败为 null，原文见 {@code raw}。二者理论上恒等，但解析失败时 {@code data} 为 null，
  * 消费侧必须先判空再按 {@code event} 收窄。</p>
+ *
+ * <p>泛型约束只要求判别式 {@code type}：传输信封并不关心事件体是否带框架执行信封
+ * （`executionId` / `timestamp`）—— 业务事件 {@code token_audit_snapshot} 就是纯粹的会话快照，
+ * 没有那两个字段。写死 {@code extends EventInterface} 会把它挡在 {@link AgentEvent} 之外。</p>
  */
-export interface SseEvent<T extends EventInterface = EventInterface> {
+export interface SseEvent<T extends {type: string} = EventInterface> {
   /** SSE event 名，取值同事件体的 {@code type} */
   event: T['type'];
   /** 反序列化后的事件体；解析失败为 null */
@@ -393,4 +430,6 @@ const AGENT_EVENT_TYPES: Record<RuntimeEventType, true> = {
   // 业务事件：后端 BlockEventType 下发。必须在此登记 —— 未登记会被 toAgentEvent 静默丢弃。
   TURN_SNAPSHOT: true,
   BLOCK_UPSERT: true,
+  // 业务事件：后端 TokenAuditBroadcaster 下发（会话级流，与 GET 的 data 同构）。
+  token_audit_snapshot: true,
 };
