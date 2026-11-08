@@ -187,6 +187,26 @@ public class SessionExecutionRegistry {
         return slot != null && slot.isRunning();
     }
 
+    /**
+     * 该执行在当前进程里是否仍有登记。
+     *
+     * <p>冷启动之后登记表是空的，一律返回 {@code false} —— 调用方只能把它当「无从判断」。</p>
+     */
+    public boolean isRegistered(String executionId) {
+        return executionId != null && slots.containsKey(executionId);
+    }
+
+    /**
+     * 投递归属的存活口径：<b>未结束即算持有者</b>。
+     *
+     * <p>运行中与挂起都算活（挂起期间没有检查点提交，恢复后会继续确认交付）；
+     * 已结束、已取消、未登记都算已消失。与 {@link #isActive} 的区别就在「挂起」这一档。</p>
+     */
+    public boolean isHolderAlive(String executionId) {
+        ExecutionControlSlot slot = executionId == null ? null : slots.get(executionId);
+        return slot != null && !slot.isFinished() && !slot.isCancelled();
+    }
+
     public boolean requireSuspend(String executionId) {
         ExecutionControlSlot slot = slots.get(executionId);
         return slot != null && slot.requireSuspend();

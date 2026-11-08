@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.email.domain.model.EmailMessageReceipt;
 import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
+import com.summit.dp.email.domain.port.MailClaimLiveness;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageReceiptMapper;
 import com.summit.dp.email.infrastructure.persistence.po.EmailMessageReceiptPO;
 import org.springframework.dao.DuplicateKeyException;
@@ -26,9 +27,11 @@ public class EmailMessageReceiptRepositoryImpl
         implements EmailMessageReceiptRepository {
 
     private final EmailMessageReceiptMapper mapper;
+    private final MailClaimLiveness liveness;
 
-    public EmailMessageReceiptRepositoryImpl(EmailMessageReceiptMapper mapper) {
+    public EmailMessageReceiptRepositoryImpl(EmailMessageReceiptMapper mapper, MailClaimLiveness liveness) {
         this.mapper = mapper;
+        this.liveness = liveness;
     }
 
     @Override
@@ -64,7 +67,11 @@ public class EmailMessageReceiptRepositoryImpl
     /**
      * 认领：先按 message_id 读一次，再决定插入、接管还是放弃。
      *
-     * <p>读-写之间可能被并发插入，插入撞唯一索引时<b>重新读取</b>再判一次，绝不沿用旧结论。</p>
+     * <p>归属判据是<b>持有者存活</b>，不是租约年龄：持有者未结束（运行中或挂起）就绝不接管。
+     * 只有证明它已消失（已结束 / 本进程未登记）才允许重新认领；顶层写入一律用条件更新防并发。</p>
+     *
+     * <p>墙钟租约只兜「未登记持有者」这一种情形：冷启动后登记表是空的，分不清对方是崩了还是
+     * 只是还没走到登记，所以先给一个租约期，过了才允许接管。它不是主判据。</p>
      */
     @Override
     public boolean tryClaim(Long messageId, Long emailId, String executionId, Instant now, Duration lease) {
@@ -95,25 +102,40 @@ public class EmailMessageReceiptRepositoryImpl
                     .isNull(EmailMessageReceiptPO::getDeliveredAt));
             return true;
         }
-        Instant staleBefore = now.minus(lease);
-        boolean freshLease = existing.getClaimedAt() != null && existing.getClaimedAt().isAfter(staleBefore);
-        if (freshLease) {
-            // 别人持有有效租约：不得抢，否则两份上下文会各投一次。
+        String holder = existing.getClaimExecutionId();
+        if (holder != null && !canTakeOver(holder, existing.getClaimedAt(), now, lease)) {
             return false;
         }
-        // 过期或空租约：条件更新接管，影响行数为 0 说明又被人抢先，按最新事实放弃。
+        // 条件接管：只有「读到的那个持有者」还成立时才换人，避免两人同时接管。
         int updated = mapper.update(null, Wrappers.<EmailMessageReceiptPO>lambdaUpdate()
                 .set(EmailMessageReceiptPO::getClaimExecutionId, executionId)
                 .set(EmailMessageReceiptPO::getClaimedAt, now)
                 .eq(EmailMessageReceiptPO::getMessageId, messageId)
                 .isNull(EmailMessageReceiptPO::getDeliveredAt)
-                .and(wrapper -> wrapper.isNull(EmailMessageReceiptPO::getClaimedAt)
-                        .or().le(EmailMessageReceiptPO::getClaimedAt, staleBefore)));
+                .and(wrapper -> {
+                    if (holder == null) {
+                        wrapper.isNull(EmailMessageReceiptPO::getClaimExecutionId);
+                    } else {
+                        wrapper.eq(EmailMessageReceiptPO::getClaimExecutionId, holder);
+                    }
+                }));
         return updated == 1;
     }
 
+    /** 能否接管：持有者已结束可以立刻接管；本进程未登记时用租约兜底；其余一律不许。 */
+    private boolean canTakeOver(String holder, Instant claimedAt, Instant now, Duration lease) {
+        if (this.liveness.isHolderAlive(holder)) {
+            return false;
+        }
+        if (!this.liveness.isHolderRegistered(holder)) {
+            // 无从证明对方已死（冷启动后登记表为空）：给一个租约期再接管。
+            return claimedAt == null || !claimedAt.isAfter(now.minus(lease));
+        }
+        return true;
+    }
+
     /**
-     * 确认交付：只更新本执行持有租约的行，绝不覆盖别人的认领与交付。
+     * 确认交付：只更新本执行持有投递权的行，绝不覆盖别人的认领与交付。
      *
      * <p>更新后重新读取并按「归属本执行 + 已交付」判定，冲突时不吞掉、不冒充已交付。</p>
      */
