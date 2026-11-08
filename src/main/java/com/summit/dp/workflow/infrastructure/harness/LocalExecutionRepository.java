@@ -92,7 +92,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
      * <p>可选注入 —— 直接 {@code new} 出来的用例没有事务基础设施，那就保持一次尝试、
      * 不做事务包装（与改造前行为一致）。</p>
      */
-    @Autowired(required = false)
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     /**

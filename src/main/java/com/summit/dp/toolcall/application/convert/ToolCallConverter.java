@@ -38,7 +38,7 @@ public class ToolCallConverter {
 
     private final ObjectMapper objectMapper;
 
-    @Autowired(required = false)
+    @Autowired
     private ToolCallActionResolver actionResolver;
 
     /** 领域对象 → 聚合视图；{@code null} 入参返回 {@code null}。 */

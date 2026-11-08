@@ -35,7 +35,7 @@ public class ModelContextService {
      *
      * <p>可选注入 —— 直接 {@code new} 出来的用例没有事务基础设施，那就只尝试一次。</p>
      */
-    @Autowired(required = false)
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     /**

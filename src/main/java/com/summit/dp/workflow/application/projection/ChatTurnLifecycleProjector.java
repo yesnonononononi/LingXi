@@ -24,7 +24,7 @@ public class ChatTurnLifecycleProjector {
     private final ChatTurnService chatTurnService;
 
     /** 事务管理器：可选注入 —— 直接 {@code new} 出来的用例没有事务基础设施，只跑一次。 */
-    @Autowired(required = false)
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     /**

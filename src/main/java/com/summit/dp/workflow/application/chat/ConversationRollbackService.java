@@ -12,7 +12,6 @@ import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,8 +36,7 @@ public class ConversationRollbackService {
     private final ChatTurnService chatTurnService;
     private final ModelContextService modelContextService;
     private final PreparedChatExecutor chatExecutor;
-    @Autowired(required = false)
-    private SessionRepository sessions;
+    private final SessionRepository sessions;
 
     /** 作废历史与登记新执行必须同事务，受理失败时原对话才能完整保留。 */
     @Transactional
@@ -79,15 +77,13 @@ public class ConversationRollbackService {
                 .map(turn -> String.valueOf(turn.getId())).collect(Collectors.toSet());
         Set<String> invalidatedExecutions = executionIds.stream()
                 .map(String::valueOf).collect(Collectors.toSet());
-        Long historyRevision = null;
-        if (sessions != null) {
-            Session owned = sessions.findById(sessionId).orElseThrow(ClientException::new);
-            long rootId = owned.isSubSession() ? owned.getRootSessionId() : owned.getId();
-            Session root = sessions.findById(rootId).orElseThrow(ClientException::new);
-            root.advanceHistoryRevision();
-            sessions.updateById(root);
-            historyRevision = root.getHistoryRevision();
-        }
+        // 历史版本号必须随回滚一起推进：前端靠它丢弃旧历史缓存，漏推进会继续展示已作废的轮次。
+        Session owned = sessions.findById(sessionId).orElseThrow(ClientException::new);
+        long rootId = owned.isSubSession() ? owned.getRootSessionId() : owned.getId();
+        Session root = sessions.findById(rootId).orElseThrow(ClientException::new);
+        root.advanceHistoryRevision();
+        sessions.updateById(root);
+        Long historyRevision = root.getHistoryRevision();
 
         log.info("回滚会话历史: sessionId={}, turnId={}, removedTurns={}, removedMessages={}, removedCards={}",
                 sessionId, turnId, removedTurns.size(), removedMessages, removedCards);
