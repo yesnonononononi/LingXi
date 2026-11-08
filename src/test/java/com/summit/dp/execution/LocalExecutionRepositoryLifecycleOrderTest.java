@@ -149,7 +149,7 @@ class LocalExecutionRepositoryLifecycleOrderTest {
                 provider(com.summit.dp.execution.domain.repository.ExecutionRepository.class,
                         mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)));
         return new LocalExecutionRepository(checkpointService, new JsonConfig().objectMapper(), store,
-                provider(ExecutionLifecycleProjection.class, projection));
+                provider(ExecutionLifecycleProjection.class, projection), new MailReceiptFlusherStub());
     }
 
     private static Execution execution(ExecutionState state) {

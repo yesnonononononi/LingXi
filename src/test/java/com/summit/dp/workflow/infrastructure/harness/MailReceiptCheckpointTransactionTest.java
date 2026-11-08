@@ -18,16 +18,22 @@ import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
+import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.application.input.MailReceiptFlusher;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -40,7 +46,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 /**
  * 邮件回执必须与检查点同批提交：崩在检查点之前重新投递，提交之后不再重复。
@@ -64,21 +72,20 @@ class MailReceiptCheckpointTransactionTest {
     private EmailMessageReceiptRepository receipts;
     private EmailMessageRepositoryImpl messages;
     private TransactionTemplate transactions;
+    private SqlSessionTemplate session;
 
     @BeforeEach
     void setup() {
         database = H2TestDatabase.create("MailReceiptCheckpointTransactionTest");
         SqlSessionFactory factory = database.sessionFactory(ExecutionMapper.class, EmailMapper.class,
                 EmailMessageMapper.class, EmailMessageReceiptMapper.class);
-        SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
+        session = H2TestDatabase.sqlSession(factory);
 
         messages = new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class));
         receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
         MailReceiptFlusher flusher = new MailReceiptFlusher(receipts, messages);
-        repository = ExecutionRepositoryTestFactory.create(session.getMapper(ExecutionMapper.class), objectMapper);
-        // 回执挂点是包内可见字段：生产由 Spring 字段注入，这里用真实 bean 工厂 provider 注入。
-        repository.mailReceipts = new StaticListableBeanFactory(Map.of("flusher", flusher))
-                .getBeanProvider(MailReceiptFlusher.class);
+        repository = ExecutionRepositoryTestFactory.create(session.getMapper(ExecutionMapper.class), objectMapper,
+                flusher);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));
         // 事务管理器字段注入：保存路径自己开事务时走的就是它，回执要跟它同一个事务。
         injectTransactionManager(repository, transactions.getTransactionManager());
@@ -125,6 +132,22 @@ class MailReceiptCheckpointTransactionTest {
         assertEquals(1L, messages.findUndeliveredByEmailIds(List.of(MAILBOX_ID)).stream()
                         .filter(message -> ROLLBACK_MESSAGE_ID == message.getId()).count(),
                 "回滚后这条邮件必须仍是未投递，重启后能重新注入");
+    }
+
+    @Test
+    @DisplayName("装配缺少邮件回执协作方：构造直接失败，不允许保存时静默跳过")
+    void missingReceiptCollaboratorFailsFast() {
+        ObjectProvider<ExecutionLifecycleProjection> lifecycle =
+                ExecutionRepositoryTestFactory.projectionProvider();
+        ExecutionCheckpointService checkpoints = new ExecutionCheckpointService(
+                new ExecutionRepositoryImpl(session.getMapper(ExecutionMapper.class)),
+                mock(ApplicationEventPublisher.class));
+        LocalFileCheckpointStore store = new LocalFileCheckpointStore(
+                database.toString() + "-missing-flusher", objectMapper);
+
+        assertThrows(NullPointerException.class,
+                () -> new LocalExecutionRepository(checkpoints, objectMapper, store, lifecycle, null),
+                "回执协作方是必需依赖：缺了必须装配失败，而不是「保存成功但输入丢/重放」");
     }
 
     private EmailMessage message(long id, String content) {

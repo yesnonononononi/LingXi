@@ -11,6 +11,7 @@ import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
+import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
@@ -67,7 +68,33 @@ public final class ExecutionRepositoryTestFactory {
                 new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper), mock(ApplicationEventPublisher.class)),
                 objectMapper,
                 checkpointStore,
-                projectionProvider(chatTurnService));
+                projectionProvider(chatTurnService),
+                mailReceipts());
+    }
+
+    /** 给定真实回执协作方：需要断言「回执与检查点同事务」的用例用这条。 */
+    public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
+                                                  MailReceiptFlusher mailReceipts) {
+        return create(mapper, objectMapper, new LocalFileCheckpointStore(tempDataDir().toString(), objectMapper),
+                mock(ChatTurnService.class), mailReceipts);
+    }
+
+    /** 给定检查点存储、轮次服务与回执协作方：三者都真实时用这条。 */
+    public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
+                                                  ExecutionCheckpointStore checkpointStore,
+                                                  ChatTurnService chatTurnService,
+                                                  MailReceiptFlusher mailReceipts) {
+        return new LocalExecutionRepository(
+                new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper), mock(ApplicationEventPublisher.class)),
+                objectMapper,
+                checkpointStore,
+                projectionProvider(chatTurnService),
+                mailReceipts);
+    }
+
+    /** 邮件回执协作方：只记录调用、不写库。仓储已把它作为必需依赖，用例必须显式给出。 */
+    public static MailReceiptFlusherStub mailReceipts() {
+        return new MailReceiptFlusherStub();
     }
 
     /**

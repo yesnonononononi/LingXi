@@ -376,7 +376,7 @@ class ConcurrentCheckpointSaveTransactionTest {
                                          LocalFileCheckpointStore checkpointStore) {
 
             return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore,
-                    ExecutionRepositoryTestFactory.projectionProvider());
+                    ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
         }
 
         @SuppressWarnings("unchecked")

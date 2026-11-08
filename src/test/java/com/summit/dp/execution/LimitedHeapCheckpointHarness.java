@@ -108,7 +108,7 @@ public final class LimitedHeapCheckpointHarness {
                             mock(ApplicationEventPublisher.class)),
                     checkpointMapper,
                     checkpointStore,
-                    ExecutionRepositoryTestFactory.projectionProvider());
+                    ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
 
             List<Message> body = body();
             long fixtureBytes = plainMapper.writeValueAsBytes(

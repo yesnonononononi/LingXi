@@ -16,6 +16,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.execution.MailReceiptFlusherStub;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -123,7 +124,7 @@ class SuccessTerminalGateTest {
                 new ExecutionCheckpointService(executions, mock(ApplicationEventPublisher.class)),
                 new JsonConfig().objectMapper(),
                 new LocalFileCheckpointStore(checkpointDir.toString(), new JsonConfig().objectMapper()),
-                provider(projection(failingTurns)));
+                provider(projection(failingTurns)), new MailReceiptFlusherStub());
     }
 
     @AfterEach

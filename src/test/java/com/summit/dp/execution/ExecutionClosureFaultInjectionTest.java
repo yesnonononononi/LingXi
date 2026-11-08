@@ -310,7 +310,7 @@ class ExecutionClosureFaultInjectionTest {
     }
 
     private LocalExecutionRepository runtime(ExecutionLifecycleProjection projection) {
-        return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore, provider(projection));
+        return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore, provider(projection), new MailReceiptFlusherStub());
     }
 
     private ExecutionLifecycleProjection projection(ToolCallService cards, ChatTurnService turns,

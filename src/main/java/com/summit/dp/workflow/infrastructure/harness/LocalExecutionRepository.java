@@ -17,7 +17,6 @@ import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,11 +30,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /** 本机控制信号与已提交检查点分开保存，恢复时不暴露未提交的消息。 */
 @Repository
-@RequiredArgsConstructor
 @Slf4j
 public class LocalExecutionRepository implements ExecutionRepository, ExecutionActivity {
 
@@ -58,13 +57,34 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private SessionExecutionRegistry executionRegistry = new SessionExecutionRegistry();
 
     /**
-     * 邮件回执落库挂点：回执要与检查点在同一事务里提交（见 {@code commitCheckpoint}）。
+     * 邮件回执协作方：<b>必需依赖</b>。
      *
-     * <p>用字段注入而不是构造参数：本类有大量直接 {@code new} 出来的用例，加构造参数会把它们全部打散；
-     * 字段为 {@code null} 时按「没有回执要写」处理。{@link ObjectProvider} 延迟取用，断开构造期环。</p>
+     * <p>「回执与检查点同事务落库」是生产不变量。装配缺它时必须启动/保存失败，
+     * 不能退化成「保存成功但输入丢/重放」；直接 new 的用例请显式传入真实或明确 fake 的实现。</p>
      */
-    @Autowired(required = false)
-    ObjectProvider<MailReceiptFlusher> mailReceipts;
+    private final MailReceiptFlusher mailReceipts;
+
+    /**
+     * 构造注入：邮件回执协作方是必需依赖，缺失即装配失败。
+     *
+     * @param checkpointService 检查点保存服务
+     * @param objectMapper      正文序列化
+     * @param checkpointStore   正文存储端口
+     * @param lifecycle         业务投影（延迟取用，断开构造期环）
+     * @param mailReceipts      邮件回执协作方，不能为空
+     */
+    public LocalExecutionRepository(ExecutionCheckpointService checkpointService,
+                                    ObjectMapper objectMapper,
+                                    ExecutionCheckpointStore checkpointStore,
+                                    ObjectProvider<ExecutionLifecycleProjection> lifecycle,
+                                    MailReceiptFlusher mailReceipts) {
+        this.checkpointService = checkpointService;
+        this.objectMapper = objectMapper;
+        this.checkpointStore = checkpointStore;
+        this.lifecycle = lifecycle;
+        this.mailReceipts = Objects.requireNonNull(mailReceipts,
+                "邮件回执协作方不能为空：回执与检查点必须同事务落库");
+    }
 
     /**
      * 事务管理器：仅用于「自己拥有事务时，每次重试开一个全新事务」。
@@ -204,23 +224,9 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             // 邮件回执必须与检查点同批提交：回执先在注入时独立落库的话，
             // 「已注入、检查点未提交」崩一次就会因为回执存在而永久丢掉这条输入。
             // 挂在重试动作内部，重试时两者一起重放（失败事务已回滚，不会留半条回执）。
-            flushMailReceipts(execution);
+            mailReceipts.flush(execution);
             return outcome;
         });
-    }
-
-    /** 回执落库的挂点：没有该协作方（直接 new 出来的用例）就跳过。 */
-    private void flushMailReceipts(Execution execution) {
-        ObjectProvider<MailReceiptFlusher> flusher = mailReceipts;
-        if (flusher == null) {
-            return;
-        }
-        // 用 getIfAvailable：这段测试/降级装配里 provider 存在但容器里没有该 bean，
-        // getObject() 会直接抛 NoSuchBeanDefinitionException，把一次保存伪报成失败。
-        MailReceiptFlusher target = flusher.getIfAvailable();
-        if (target != null) {
-            target.flush(execution);
-        }
     }
 
     /**

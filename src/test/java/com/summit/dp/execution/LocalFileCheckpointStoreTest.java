@@ -66,7 +66,7 @@ class LocalFileCheckpointStoreTest {
                     mock(ApplicationEventPublisher.class)),
             mapper,
             checkpointStore,
-            ExecutionRepositoryTestFactory.projectionProvider());
+            ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
 
     @BeforeEach
     void prepareFakeTable() {
