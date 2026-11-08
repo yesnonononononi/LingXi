@@ -31,7 +31,7 @@ public interface EmailMessageReceiptRepository extends RepositoryTemplate<EmailM
     List<EmailMessageReceipt> findByMessageIds(Collection<Long> messageIds);
 
     /**
-     * 逐条认领投递权：拿到（或接管过期租约）返回 {@code true}。
+     * 逐条认领投递权：拿到、或接管已消失持有者的认领，返回 {@code true}。
      *
      * <p>唯一索引 {@code message_id} 是最终裁决；本方法自己重新读取，不在碰撞后沿用旧判断。</p>
      *
@@ -39,13 +39,13 @@ public interface EmailMessageReceiptRepository extends RepositoryTemplate<EmailM
      * @param emailId     消息所属邮箱 id
      * @param executionId 申请认领的执行 id
      * @param now         当前时刻
-     * @param lease       租约有效期
+     * @param lease       未登记持有者的兜底等待时长
      * @return 本执行是否取得了投递权
      */
     boolean tryClaim(Long messageId, Long emailId, String executionId, Instant now, Duration lease);
 
     /**
-     * 确认交付：把本执行持有租约的消息置为已交付。
+     * 确认交付：把投递权属于本执行的消息置为已交付，绝不覆盖别人的认领。
      *
      * @param messageIds        本批消息 id，空集合返回空集合
      * @param executionId       当前执行 id
