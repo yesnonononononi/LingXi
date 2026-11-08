@@ -17,7 +17,6 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.workspace.WorkspaceResolver;
-import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.service.ResumeDisposition;

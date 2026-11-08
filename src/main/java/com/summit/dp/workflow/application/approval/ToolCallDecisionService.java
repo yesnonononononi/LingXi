@@ -1,7 +1,6 @@
 package com.summit.dp.workflow.application.approval;
 
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;

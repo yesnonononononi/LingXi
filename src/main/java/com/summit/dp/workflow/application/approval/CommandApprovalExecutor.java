@@ -263,8 +263,4 @@ public class CommandApprovalExecutor {
         // 收尾段永不运行，关流只能在这里做：否则 v1 的 SSE 会一直挂着等一个不会到来的结束。
         runCompletion(plan.completion());
     }
-
-    private void throwIf(boolean condition, String err) {
-        if (condition) throw new ClientException(err);
-    }
 }

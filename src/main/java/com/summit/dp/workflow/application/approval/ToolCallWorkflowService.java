@@ -91,13 +91,6 @@ public class ToolCallWorkflowService {
         return emitter;
     }
 
-    /** 立即完成的流：用于幂等 no-op（已处理的审批不再恢复执行）。 */
-    private static SseEmitter completedEmitter() {
-        SseEmitter emitter = new SseEmitter(0L);
-        emitter.complete();
-        return emitter;
-    }
-
     private void throwIf(boolean condition, String err) {
         if (condition) {
             throw new ClientException(err);
