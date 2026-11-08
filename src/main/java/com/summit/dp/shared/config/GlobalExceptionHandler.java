@@ -57,6 +57,11 @@ public class GlobalExceptionHandler {
     /**
      * v2 决策冲突：必须回机器可判别业务码，而不是退化成 code 0 的普通文案。
      *
+     * <p><b>响应形态是 HTTP 200 + {@code body.code}=4090~4095</b>，刻意不设 409 状态码：
+     * 前端 {@code frontend/src/services/toolCall.ts} 按 {@code isOk(res.code)} 判定并以
+     * {@code errMsg} 抛错。改了状态码就等于改了客户端契约 —— 由
+     * {@code DecisionConflictHttpContractTest} 逐码挡住。</p>
+     *
      * <p><b>为什么要独立 handler</b>：走 {@link ClientException} 那条路会得到 {@code code: 0}，
      * 前端无法把「版本冲突要刷新」「已决要采纳现有结论」「执行已结束要停止轮询」区分开，
      * 只能对中文做字符串匹配 —— 改一次文案就静默改坏行为。</p>

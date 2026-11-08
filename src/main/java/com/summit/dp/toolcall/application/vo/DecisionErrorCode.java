@@ -3,6 +3,10 @@ package com.summit.dp.toolcall.application.vo;
 /**
  * v2 决策入口的机器可判别业务码。
  *
+ * <p><b>冲突的表达方式是 HTTP 200 + 本业务码</b>（4090~4095），<b>不是 HTTP 409</b>：
+ * 前端 {@code frontend/src/services/toolCall.ts} 按 {@code isOk(res.code)} 判定、用 {@code errMsg}
+ * 抛错。给处理器加 {@code setStatus(409)} 会让前端拿不到 200 分支，属于静默的行为破坏。</p>
+ *
  * <p><b>为什么必须有码，不能只靠中文文案</b>：前端要按「冲突 / 已决 / 未就绪 / 已结束 / 恢复失败」
  * 分别采取不同动作 —— 冲突要刷新卡片，已决要采纳已有结论，未就绪要禁用按钮等一会儿，
  * 已结束要停止轮询。只给一句中文，前端只能对文案做字符串匹配，

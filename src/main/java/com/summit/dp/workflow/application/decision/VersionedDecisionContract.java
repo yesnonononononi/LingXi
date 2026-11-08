@@ -10,7 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * v2 / 多选批量入口契约：冲突一律是「错误码 + 文案 + 实际最新视图」，由全局处理器映射成 409。
+ * v2 / 多选批量入口契约：冲突一律是「错误码 + 文案 + 实际最新视图」，由全局处理器写成
+ * HTTP 200 + body.code=409x（前端按业务码判定，不靠 HTTP 状态分类）。
  *
  * <p>与 v1 的差别只有「怎么表达」，判定顺序与非冲突文案完全一致。</p>
  */

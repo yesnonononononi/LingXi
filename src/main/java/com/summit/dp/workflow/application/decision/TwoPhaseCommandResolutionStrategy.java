@@ -18,8 +18,9 @@ import java.util.List;
  * <p><b>三段的分工</b>：{@link #prepare} 做锁外准备（校验、登记、环境重建），
  * {@link #writeT1} 只提供写入集 —— 由引擎在它自己的事务里调用（事务边界归引擎，
  * 「T1 提交早于副作用」才是一条看得见的不变量），{@link #afterCommit} 在提交之后
- * 派发锁外副作用。副作用本身、T2、恢复仍分别由 {@code CommandOutcomeResolver}、
- * {@code ApprovalFinalizer}、{@code ExecutionResumeCoordinator} 承担。</p>
+ * 派发锁外副作用。副作用本身、T2 仍分别由 {@code CommandOutcomeResolver}、
+ * {@code ApprovalFinalizer} 承担；恢复登记只经 {@code ResumeAcceptancePort}
+ * （实现转交 {@code ExecutionResumeCoordinator}，门禁与消费口仍只在那处）。</p>
  *
  * <p><b>引擎不碰 shell</b>：这里也不。命令执行只在 {@code CommandOutcomeResolver} 里发生，
  * 本类只编排顺序，不新建队列、不持有线程。</p>
