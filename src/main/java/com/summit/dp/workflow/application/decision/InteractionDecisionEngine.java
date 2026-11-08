@@ -27,7 +27,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 互动决策唯一模板：三个入口（v1 SSE / v2 JSON / 多选批量）共用同一份判定顺序。
@@ -262,11 +262,19 @@ public class InteractionDecisionEngine {
         return ResumeDisposition.RUNNING;
     }
 
-    /** 回执里的权威视图：重新读库，避免把内存里可能被后续修改的实例发出去。 */
+    /**
+     * 回执里的权威视图：一次批量查询，再按入参顺序重排后转 VO。
+     *
+     * <p>多选批量是整组回执，逐卡查询是 N 次 select；回执顺序必须稳定（前端按提交顺序渲染），
+     * 因此重排不能省。查不到的卡片直接跳过 —— 它已经被并发删除，回执里不该出现空壳。</p>
+     */
     private List<ToolCallVO> viewsOf(SlotDecisionCommand command) {
-        return command.cardIds().stream()
-                .map(toolCalls::findById)
-                .flatMap(Optional::stream)
+        List<String> ids = command.cardIds();
+        Map<String, ToolCall> byId = toolCalls.listByIds(ids).stream()
+                .collect(Collectors.toMap(ToolCall::getId, card -> card, (first, second) -> first));
+        return ids.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
                 .map(converter::toVO)
                 .toList();
     }
