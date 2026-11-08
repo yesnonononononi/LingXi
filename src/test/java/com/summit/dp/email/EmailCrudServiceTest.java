@@ -108,8 +108,8 @@ class EmailCrudServiceTest {
         SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         emailMapper = session.getMapper(EmailMapper.class);
         messageMapper = session.getMapper(EmailMessageMapper.class);
-        receiptRepository = new EmailMessageReceiptRepositoryImpl(
-                session.getMapper(EmailMessageReceiptMapper.class));
+        receiptRepository = new EmailMessageReceiptRepositoryImpl( 
+                session.getMapper(EmailMessageReceiptMapper.class), new MailClaimLivenessFake());
         emailRepository = new EmailRepositoryImpl(emailMapper);
         messageRepository = new EmailMessageRepositoryImpl(messageMapper);
         service = transactionalService(messageRepository);

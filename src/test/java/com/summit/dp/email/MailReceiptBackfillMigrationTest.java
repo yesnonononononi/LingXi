@@ -125,7 +125,7 @@ class MailReceiptBackfillMigrationTest {
     }
 
     private EmailMessageReceiptRepository receipts(H2TestDatabase database) {
-        return new EmailMessageReceiptRepositoryImpl(mapper(database, EmailMessageReceiptMapper.class));
+        return new EmailMessageReceiptRepositoryImpl(mapper(database, EmailMessageReceiptMapper.class), new MailClaimLivenessFake());
     }
 
     private <T> T mapper(H2TestDatabase database, Class<T> mapperType) {

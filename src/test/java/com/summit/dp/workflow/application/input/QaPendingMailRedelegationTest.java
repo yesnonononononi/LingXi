@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.input;
 
+import com.summit.dp.email.MailClaimLivenessFake;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -255,7 +257,7 @@ class QaPendingMailRedelegationTest {
             SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
             EmailMessageRepositoryImpl messageRows = new EmailMessageRepositoryImpl(
                     session.getMapper(EmailMessageMapper.class));
-            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
+            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class), new MailClaimLivenessFake());
             ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(
                     new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows, receipts));
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));

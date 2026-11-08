@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.dp.email.MailClaimLivenessFake;
+
 import com.summit.dp.shared.support.InputTestSupport;
 import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.baomidou.mybatisplus.annotation.DbType;
@@ -109,7 +111,7 @@ class QaMailboxSessionKeyEndToEndTest {
         emailRepository = new EmailRepositoryImpl(emailMapper);
         messageRepository = new EmailMessageRepositoryImpl(messageMapper);
         receiptRepository = new EmailMessageReceiptRepositoryImpl(
-                session.getMapper(EmailMessageReceiptMapper.class));
+                session.getMapper(EmailMessageReceiptMapper.class), new MailClaimLivenessFake());
         flusher = new MailReceiptFlusher(receiptRepository, messageRepository);
         service = new EmailServiceImpl(emailRepository, messageRepository, receiptRepository);
     }

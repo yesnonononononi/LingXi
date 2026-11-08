@@ -1,5 +1,8 @@
 package com.summit.dp.workflow.application.input;
 
+import com.summit.dp.email.MailClaimLivenessFake;
+import com.summit.dp.email.domain.model.EmailMessageReceipt;
+
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -55,6 +58,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -94,6 +103,7 @@ class MailReceiptDeliveryGuardTest {
     private BackgroundTaskChannel background;
     private TaskRepositoryImpl tasks;
     private MailReceiptFlusher flusher;
+    private final MailClaimLivenessFake liveness = new MailClaimLivenessFake();
     private InputTurnAdmission admission;
     private PlatformTransactionManager transactions;
 
@@ -116,7 +126,7 @@ class MailReceiptDeliveryGuardTest {
         mailboxes = new EmailRepositoryImpl(template.getMapper(EmailMapper.class));
         messages = new EmailMessageRepositoryImpl(template.getMapper(EmailMessageMapper.class));
         receiptMapper = template.getMapper(EmailMessageReceiptMapper.class);
-        receiptRepository = new EmailMessageReceiptRepositoryImpl(receiptMapper);
+        receiptRepository = new EmailMessageReceiptRepositoryImpl(receiptMapper, liveness);
         transactions = new DataSourceTransactionManager(database);
         emails = (EmailService) transactionalProxy(new EmailServiceImpl(mailboxes, messages, receiptRepository));
         mail = new MailInputChannel(emails);
@@ -403,6 +413,134 @@ class MailReceiptDeliveryGuardTest {
     }
 
     /** 独立事务提交：模拟「两次提交各自成事务」，顺序与 id 大小无关。 */
+    // ---------- ⑥ 真实存活判定：持有者未结束就绝不接管 ----------
+
+    @Test
+    @DisplayName("持有者仍存活（认领时间已被推到很久以前）：B 不得接管该邮件")
+    void livingHolderIsNeverTakenOver() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "A 正在跑的邮件", new MailSendContext(SESSION_ID, 8L, null))
+                .getData();
+        liveness.alive("920");
+        assertEquals(List.of(sent.getId()),
+                mail.pollPendingItems(execution("920")).stream().map(EmailMessageVO::getId).toList(),
+                "A 应当认领到这一封");
+
+        // 墙钟上早已过期：旧实现（只看 claimed_at）会在这里把邮件让给 B。
+        MailLeaseTestSupport.expireClaims(receiptMapper);
+        liveness.alive("921");
+        assertTrue(mail.pollPendingItems(execution("921")).isEmpty(),
+                "A 未结束就绝不接管：与认领时间早晚无关");
+    }
+
+    @Test
+    @DisplayName("持有者已结束：B 立刻可接管（无需等租约），接管后仍能确认交付")
+    void finishedHolderIsTakenOverImmediately() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "A 已崩溃的邮件", new MailSendContext(SESSION_ID, 8L, null))
+                .getData();
+        liveness.alive("930");
+        List<EmailMessageVO> batchA = mail.pollPendingItems(execution("930"));
+        assertEquals(List.of(sent.getId()), batchA.stream().map(EmailMessageVO::getId).toList());
+
+        // A 结束（崩溃/已终态）：租约还没过期，B 也应当立刻能接管。
+        liveness.finished("930");
+        liveness.alive("931");
+        Execution resumedB = execution("931");
+        List<EmailMessageVO> batchB = mail.pollPendingItems(resumedB);
+        assertEquals(List.of(sent.getId()), batchB.stream().map(EmailMessageVO::getId).toList(),
+                "持有者已不存在时必须能重新认领，不必等墙钟租约");
+
+        // B 走到检查点提交：交付被确认，不丢。
+        mail.markConsumed(resumedB, batchB);
+        flusher.flush(resumedB);
+        assertNotNull(receiptOf(sent.getId()).getDeliveredAt(), "接管后必须确认交付，不丢输入");
+    }
+
+    @Test
+    @DisplayName("持有者挂起（仍登记、非 running）：B 不得接管；A 恢复后能确认交付")
+    void suspendedHolderKeepsOwnershipUntilItResumes() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "A 挂起的邮件", new MailSendContext(SESSION_ID, 8L, null))
+                .getData();
+        liveness.alive("940");
+        assertEquals(1, mail.pollPendingItems(execution("940")).size(), "A 应认领到这一封");
+
+        liveness.suspended("940");
+        MailLeaseTestSupport.expireClaims(receiptMapper);
+        liveness.alive("941");
+        assertTrue(mail.pollPendingItems(execution("941")).isEmpty(),
+                "挂起也是合法持有者：挂起期间没有检查点提交，恢复后会继续确认");
+
+        // A 恢复并走到检查点提交。
+        Execution resumedA = execution("940");
+        mail.markConsumed(resumedA, List.of(sent));
+        flusher.flush(resumedA);
+        assertNotNull(receiptOf(sent.getId()).getDeliveredAt(), "恢复后的持有者必须能确认交付");
+    }
+
+    @Test
+    @DisplayName("并发：两个独立执行在各自事务里抢同一封，只有一方取得交付权")
+    void concurrentClaimsYieldSingleOwner() throws Exception {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "并发争抢的邮件", new MailSendContext(SESSION_ID, 8L, null))
+                .getData();
+        liveness.alive("950");
+        liveness.alive("951");
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> first = pool.submit(claimTask(barrier, sent.getId(), "950"));
+            Future<Boolean> second = pool.submit(claimTask(barrier, sent.getId(), "951"));
+            int won = (first.get(30, TimeUnit.SECONDS) ? 1 : 0) + (second.get(30, TimeUnit.SECONDS) ? 1 : 0);
+            assertEquals(1, won, "唯一索引裁决：只有一方取得交付权");
+        } finally {
+            pool.shutdownNow();
+        }
+
+        String owner = receiptOf(sent.getId()).getClaimExecutionId();
+        assertTrue(List.of("950", "951").contains(owner), "认领行必须有明确持有者，实际=" + owner);
+        // 未取得交付权的一方不得注入。
+        String loser = "950".equals(owner) ? "951" : "950";
+        assertTrue(mail.pollPendingItems(execution(loser)).isEmpty(),
+                "未取得交付权的一方不得注入该邮件");
+    }
+
+    @Test
+    @DisplayName("冷恢复：认领未交付但持有者已不存在 → 重新投递一次（不丢，也不重复）")
+    void coldRecoveryRedeliversOnceWhenHolderVanished() {
+        EmailMessageVO sent = emails.sendMail(AGENT_ID, "冷恢复邮件", new MailSendContext(SESSION_ID, 8L, null))
+                .getData();
+        liveness.alive("960");
+        assertEquals(1, mail.pollPendingItems(execution("960")).size());
+
+        // 进程重启：持有者在本进程没有任何登记，只留一条未交付的认领。
+        liveness.forgotten("960");
+        MailLeaseTestSupport.expireClaims(receiptMapper);
+        List<EmailMessageVO> recovered = mail.pollPendingItems(execution("961"));
+        assertEquals(List.of(sent.getId()), recovered.stream().map(EmailMessageVO::getId).toList(),
+                "冷恢复必须重新投递一次，不能因为残留下认领行就永久丢掉输入");
+
+        assertTrue(mail.pollPendingItems(execution("962")).isEmpty(),
+                "重新认领之后不得再重复投递一次");
+    }
+
+    /** 一次性任务：两条线程同一时刻各自开事务认领同一封邮件。 */
+    private Callable<Boolean> claimTask(CyclicBarrier barrier, Long messageId, String executionId) {
+        return () -> {
+            barrier.await(10, TimeUnit.SECONDS);
+            return new TransactionTemplate(transactions)
+                    .execute(status -> emails.claimDelivery(messageId, executionId));
+        };
+    }
+
+    private EmailMessageReceipt receiptOf(Long messageId) {
+        return receiptMapper.selectList(null).stream()
+                .filter(po -> messageId.equals(po.getMessageId()))
+                .map(po -> EmailMessageReceipt.builder().id(po.getId()).messageId(po.getMessageId())
+                        .emailId(po.getEmailId()).consumerSessionId(po.getConsumerSessionId())
+                        .deliveredAt(po.getDeliveredAt()).claimExecutionId(po.getClaimExecutionId())
+                        .claimedAt(po.getClaimedAt()).build())
+                .findFirst().orElseThrow(() -> new AssertionError("认领行不存在: messageId=" + messageId));
+    }
+
     private void inOwnTransaction(Runnable action) {
         new TransactionTemplate(transactions).execute(status -> {
             action.run();

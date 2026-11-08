@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.input;
 
+import com.summit.dp.email.MailClaimLivenessFake;
+
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.execution.ExecutionStatusCodes;
@@ -233,7 +235,7 @@ class InputSourceContractTest {
             executionRows = session.getMapper(ExecutionMapper.class);
             EmailMessageRepositoryImpl messageRows = new EmailMessageRepositoryImpl(
                     session.getMapper(EmailMessageMapper.class));
-            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
+            receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class), new MailClaimLivenessFake());
             EmailServiceImpl target = new EmailServiceImpl(
                     new EmailRepositoryImpl(session.getMapper(EmailMapper.class)), messageRows, receipts);
             ProxyFactory proxy = new ProxyFactory(target);

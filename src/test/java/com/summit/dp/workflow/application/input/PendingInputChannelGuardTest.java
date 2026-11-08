@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.input;
 
+import com.summit.dp.email.MailClaimLivenessFake;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -104,7 +106,7 @@ class PendingInputChannelGuardTest {
                 template.getMapper(EmailMessageMapper.class));
         EmailMessageReceiptMapper receiptMapper = template.getMapper(EmailMessageReceiptMapper.class);
         EmailMessageReceiptRepository receiptRepository = new EmailMessageReceiptRepositoryImpl(
-                receiptMapper);
+                receiptMapper, new MailClaimLivenessFake());
         ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(
                 new EmailRepositoryImpl(template.getMapper(EmailMapper.class)), emailMessages, receiptRepository));
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(database),

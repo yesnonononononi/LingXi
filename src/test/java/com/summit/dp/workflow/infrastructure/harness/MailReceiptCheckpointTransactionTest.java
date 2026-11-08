@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.infrastructure.harness;
 
+import com.summit.dp.email.MailClaimLivenessFake;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -82,7 +84,7 @@ class MailReceiptCheckpointTransactionTest {
         session = H2TestDatabase.sqlSession(factory);
 
         messages = new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class));
-        receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class));
+        receipts = new EmailMessageReceiptRepositoryImpl(session.getMapper(EmailMessageReceiptMapper.class), new MailClaimLivenessFake());
         MailReceiptFlusher flusher = new MailReceiptFlusher(receipts, messages);
         repository = ExecutionRepositoryTestFactory.create(session.getMapper(ExecutionMapper.class), objectMapper,
                 flusher);

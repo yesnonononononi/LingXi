@@ -61,6 +61,7 @@ class MailReceiptClaimConcurrencyTest {
     private EmailMessageReceiptMapper receiptMapper;
     private MailInputChannel mail;
     private MailReceiptFlusher flusher;
+    private final MailClaimLivenessFake liveness = new MailClaimLivenessFake();
     private PlatformTransactionManager transactions;
 
     @BeforeEach
@@ -73,7 +74,7 @@ class MailReceiptClaimConcurrencyTest {
         EmailMessageRepositoryImpl messages = new EmailMessageRepositoryImpl(
                 session.getMapper(EmailMessageMapper.class));
         receiptMapper = session.getMapper(EmailMessageReceiptMapper.class);
-        receipts = new EmailMessageReceiptRepositoryImpl(receiptMapper);
+        receipts = new EmailMessageReceiptRepositoryImpl(receiptMapper, liveness);
         transactions = new DataSourceTransactionManager(database);
         emails = proxy(new EmailServiceImpl(new EmailRepositoryImpl(session.getMapper(EmailMapper.class)),
                 messages, receipts));
