@@ -160,8 +160,7 @@ class ToolCallDecisionTest {
                 provider(executionRepository), modelContextService, transactions, coordinator(resumer),
                 new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
         service = new ToolCallWorkflowService(toolCallRepository, converter, commandStrategy,
-                new ToolCallDecisionService(executionIdentity, sseEventPublisher, provider(executionRepository),
-                        new UnresolvedToolSuspensionGate(toolCallRepository), resumer, asyncExecutor, engine, contract),
+                new ToolCallDecisionService(executionIdentity, sseEventPublisher, engine, contract),
                 contract, sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
         when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(resumeTask());

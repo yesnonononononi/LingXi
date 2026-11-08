@@ -121,6 +121,8 @@ class DecisionEngineEquivalenceGuardTest {
     private final List<ExecutionResumeCoordinator> coordinators = new ArrayList<>();
     private ExecutionControl executionControl;
     private SuspendedExecutionResumer resumer;
+    private RecordingSseEventPublisher sseEventPublisher;
+    private ExecutionResumeCoordinator coordinator;
     private ExecutionActivity activity;
 
     @BeforeEach
@@ -140,7 +142,9 @@ class DecisionEngineEquivalenceGuardTest {
         contexts = new ModelContextService(mapper,
                 new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)));
         activity = mock(ExecutionActivity.class);
-        resumer = mock(SuspendedExecutionResumer.class);
+        resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)),
+                contexts, provider(executionControl));
+        sseEventPublisher = new RecordingSseEventPublisher();
         executionControl = mock(ExecutionControl.class);
         doAnswer(invocation -> {
             ((Execution) invocation.getArgument(0)).resumeChecked();
@@ -148,7 +152,7 @@ class DecisionEngineEquivalenceGuardTest {
         }).when(executionControl).beginApproval(any(Execution.class));
         when(executionControl.resume(any(Execution.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ExecutionResumeCoordinator coordinator = coordinator();
+        coordinator = coordinator();
         converter = new ToolCallConverter(mapper);
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
                 new ChoiceAnswersValidator(mapper, new SessionMessageRepositoryImpl(
@@ -161,11 +165,8 @@ class DecisionEngineEquivalenceGuardTest {
                 new CardAvailabilityPolicy(new com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate(
                         provider(executions), provider(activity))));
         workflowService = new ToolCallWorkflowService(tools, converter, commandStrategy,
-                new ToolCallDecisionService(locator(), mock(com.summit.dp.workflow.infrastructure.stream.SseEventPublisher.class),
-                        provider(executions), new UnresolvedToolSuspensionGate(tools),
-                        resumer, new com.summit.dp.shared.concurrent.ManagedAsyncExecutor(),
-                        engine, reactive),
-                reactive, mock(com.summit.dp.workflow.infrastructure.stream.SseEventPublisher.class), locator());
+                new ToolCallDecisionService(locator(), sseEventPublisher, engine, reactive),
+                reactive, sseEventPublisher, locator());
         versionedService = new VersionedToolCallDecisionService(tools, converter, engine,
                 new VersionedDecisionContract(converter));
         choiceService = new ChoiceAnswersService(
@@ -179,6 +180,9 @@ class DecisionEngineEquivalenceGuardTest {
     @AfterEach
     void close() {
         coordinators.forEach(ExecutionResumeCoordinator::close);
+        if (sseEventPublisher != null) {
+            sseEventPublisher.close();
+        }
         coordinators.clear();
         database.shutdown();
     }
@@ -217,11 +221,12 @@ class DecisionEngineEquivalenceGuardTest {
         assertEquals("可以", contextSlot(CONVERSATION_V1, "call-v1").getToolOutput());
         assertEquals("可以", contextSlot(CONVERSATION_V2, "call-v2").getToolOutput());
 
-        // 恢复路径：v1 由入口在关流前直接恢复（时序契约），v2 登记请求行并派发。
-        assertEquals(0L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"),
-                "v1 的恢复在请求线程内完成，不写恢复请求行");
+        // 恢复路径：两条入口都走 Phase3 持久化队列，来源一致。
+        assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"),
+                "v1 的恢复意图必须带 APPROVAL_DECISION 来源落库");
         assertEquals(1L, resumeRows(EXECUTION_V2, "APPROVAL_DECISION"),
-                "v2 的恢复意图必须带来源落库");
+                "v2 的恢复意图必须带 APPROVAL_DECISION 来源落库");
+        awaitStreamsClosed();
     }
 
     // ------------------------------------------------------------------
@@ -238,7 +243,9 @@ class DecisionEngineEquivalenceGuardTest {
         assertTrue(card.getRawOutput().contains("\"APPROVED\""));
         assertEquals("同意执行", slotOf(EXECUTION_V1, "call-v1").getToolOutput());
         assertEquals("同意执行", contextSlot(CONVERSATION_V1, "call-v1").getToolOutput());
-        verify(resumer, timeout(5000).times(1)).resume(any(Execution.class), eq(CONVERSATION_V1));
+        assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"));
+        awaitStreamsClosed();
+        assertEquals(1, sseEventPublisher.finishedCount(), "恢复落定后流必须恰好关一次");
     }
 
     @Test
@@ -250,7 +257,9 @@ class DecisionEngineEquivalenceGuardTest {
         assertEquals(ToolCallStatus.COMPLETED, card.getStatus());
         assertTrue(card.getRawOutput().contains("\"REJECTED\""));
         assertEquals("用户已拒绝该互动", slotOf(EXECUTION_V1, "call-v1").getToolOutput());
-        verify(resumer, timeout(5000).times(1)).resume(any(Execution.class), eq(CONVERSATION_V1));
+        assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"));
+        awaitStreamsClosed();
+        assertEquals(1, sseEventPublisher.finishedCount(), "恢复落定后流必须恰好关一次");
     }
 
     @Test
@@ -499,6 +508,78 @@ class DecisionEngineEquivalenceGuardTest {
     }
 
     // ------------------------------------------------------------------
+    // g) v1 恢复失败/被拒/暂缓：流都必须关闭，控制槽位不泄漏
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("g) v1 恢复启动失败：执行按失败链收口为 FAILED，流关闭，请求行留 FAILED")
+    void v1StartupFailureClosesStream() {
+        when(executionControl.resume(any(Execution.class)))
+                .thenThrow(new IllegalStateException("模拟恢复启动失败"));
+
+        workflowService.decide(CONVERSATION_V1, "call-v1", true, "可以");
+
+        awaitStreamsClosed();
+        assertEquals(1, sseEventPublisher.finishedCount(), "启动失败也必须关流，不能悬挂");
+        assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"), "来源仍必须持久化");
+        assertEquals("FAILED", resumeState(EXECUTION_V1), "启动失败必须收口为 FAILED");
+        // 控制槽位没泄漏：同一卡片再提交不会抛「执行仍在运行」，只会按已决处理。
+        var second = workflowService.decide(CONVERSATION_V1, "call-v1", true, "可以");
+        assertNotNull(second);
+    }
+
+    @Test
+    @DisplayName("g) v1 派发被拒（执行器已关闭）：流关闭，请求行仍留痕")
+    void v1DispatchRejectedClosesStream() {
+        coordinator.close();
+
+        workflowService.decide(CONVERSATION_V1, "call-v1", true, "可以");
+
+        awaitStreamsClosed();
+        assertEquals(1, sseEventPublisher.finishedCount(), "派发被拒也必须关流");
+        assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"));
+    }
+
+    @Test
+    @DisplayName("g) v1 门禁暂缓（用户暂停）：流关闭，请求行留 DEFERRED；解除暂停后可重新排回 READY")
+    void v1DeferredKeepsRequestAndRequiresAgain() {
+        Execution paused = executions.findById(String.valueOf(EXECUTION_V1)).orElseThrow();
+        transactions.executeWithoutResult(status -> {
+            InputAutomationPolicy.putAttribute(paused, InputAutomationPolicy.USER_PAUSED, Boolean.TRUE);
+            executions.save(paused);
+        });
+
+        workflowService.decide(CONVERSATION_V1, "call-v1", true, "可以");
+
+        awaitStreamsClosed();
+        assertEquals(1, sseEventPublisher.finishedCount(), "门禁暂缓也必须关流，否则前端挂到天荒地老");
+        assertEquals("DEFERRED", resumeState(EXECUTION_V1), "暂缓不是失败、也不是作废");
+
+        // 解除暂停后再次受理：同代际的请求必须重新排回 READY（不是新建第二条）。
+        Execution resumed = executions.findById(String.valueOf(EXECUTION_V1)).orElseThrow();
+        transactions.executeWithoutResult(status -> {
+            InputAutomationPolicy.putAttribute(resumed, InputAutomationPolicy.USER_PAUSED, null);
+            executions.save(resumed);
+        });
+        coordinator.accept(EXECUTION_V1, ResumeTriggerType.APPROVAL_DECISION);
+        awaitResumeState(EXECUTION_V1, "READY");
+        assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"), "同代际只允许一条请求");
+    }
+
+    @Test
+    @DisplayName("g) 落定回调恰好一次：连续两次落定只关一次流")
+    void settledCallbackRunsExactlyOnce() {
+        java.util.concurrent.atomic.AtomicInteger settled = new java.util.concurrent.atomic.AtomicInteger();
+        coordinator.close();
+        coordinator.accept(EXECUTION_V1, ResumeTriggerType.APPROVAL_DECISION, settled::incrementAndGet);
+        assertEquals(1, settled.get(), "派发被拒也必须落定");
+
+        // 再次触发派发（执行器已关闭）：落定已消费过，不得重复回调。
+        coordinator.dispatch(EXECUTION_V1);
+        assertEquals(1, settled.get(), "同一 execution 的落定回调只能执行一次");
+    }
+
+    // ------------------------------------------------------------------
     // 装配与断言辅助
     // ------------------------------------------------------------------
 
@@ -592,6 +673,73 @@ class DecisionEngineEquivalenceGuardTest {
                 .map(message -> (ToolMessageEntity) message)
                 .filter(message -> toolCallId.equals(String.valueOf(message.getId())))
                 .findFirst().orElseThrow();
+    }
+
+    /**
+     * 等「恢复落定 → 关流」真的发生。
+     *
+     * <p>断言用真实发布器上的收尾次数：它不是被测类的成员标记，而是「生产环境那次关流真的被调用」的
+     * 可观测事实。非 MVC 环境里 emitter 没有 handler，{@code connectedCount()} 不会因 complete 下降，
+     * 因此用收尾计数作为等价的可观测断言。</p>
+     */
+    private void awaitStreamsClosed() {
+        awaitFinishCount(1);
+    }
+
+    /** 等收尾调用达到期望次数。 */
+    private void awaitFinishCount(int expected) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (sseEventPublisher.finishedCount() >= expected) {
+                return;
+            }
+            try {
+                Thread.sleep(20L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        fail("恢复落定后必须关流，实际关流次数: " + sseEventPublisher.finishedCount());
+    }
+
+    /** 真实发布器 + 可观测收尾计数：连接、推送仍走生产实现。 */
+    static class RecordingSseEventPublisher extends com.summit.dp.workflow.infrastructure.stream.SseEventPublisher {
+
+        private final java.util.concurrent.atomic.AtomicInteger finished = new java.util.concurrent.atomic.AtomicInteger();
+
+        @Override
+        public void finish(org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter) {
+            finished.incrementAndGet();
+            super.finish(emitter);
+        }
+
+        int finishedCount() {
+            return finished.get();
+        }
+    }
+
+    /** 恢复请求行的状态：用真实 SQL 读。 */
+    private String resumeState(long executionId) {
+        return database.queryString("select state from execution_resume_task where execution_id = "
+                + executionId + " order by id desc limit 1");
+    }
+
+    /** 等恢复请求行到达期望状态（派发是异步的）。 */
+    private void awaitResumeState(long executionId, String expected) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (expected.equals(resumeState(executionId))) {
+                return;
+            }
+            try {
+                Thread.sleep(20L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        fail("恢复请求行未到达期望状态 " + expected + "，实际: " + resumeState(executionId));
     }
 
     /** 恢复请求行计数：用真实 SQL 数，不信内存标记。 */

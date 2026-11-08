@@ -57,6 +57,7 @@ import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -84,132 +85,107 @@ class ToolCallDecisionAsyncContractTest {
     private static final String TOOL_CALL_ID = "call-plan";
 
     private final List<String> events = Collections.synchronizedList(new ArrayList<>());
-    private final List<String> workerThreads = new CopyOnWriteArrayList<>();
-
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
     private final ExecutionLocator executionLocator = mock(ExecutionLocator.class);
     private final UnresolvedToolSuspensionGate unresolvedGate = mock(UnresolvedToolSuspensionGate.class);
-    private final SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
+    private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
     private final SseEmitter emitter = mock(SseEmitter.class);
-
-    private ManagedAsyncExecutor asyncExecutor;
-    private Logger logger;
-    private ListAppender<ILoggingEvent> logs;
 
     @BeforeEach
     void setup() {
-        asyncExecutor = new ManagedAsyncExecutor();
-        logger = (Logger) LoggerFactory.getLogger(ToolCallDecisionService.class);
-        logs = new ListAppender<>();
-        logs.start();
-        logger.addAppender(logs);
-
         when(sseEventPublisher.connect(anyLong())).thenAnswer(invocation -> {
             events.add("connect");
             return emitter;
         });
         doAnswer(invocation -> {
-            // 收尾跑在推送线程上；记下是谁关的流。
-            workerThreads.add(Thread.currentThread().getName());
             events.add("finish");
             return null;
         }).when(sseEventPublisher).finish(emitter);
         when(executionLocator.resolveRootSessionId(CONVERSATION_ID)).thenReturn(CONVERSATION_ID);
         when(unresolvedGate.hasUnresolvedSlot(EXECUTION_ID)).thenReturn(false);
-    }
-
-    @AfterEach
-    void shutdown() {
-        logger.detachAppender(logs);
-        logs.stop();
-        asyncExecutor.shutdown();
+        // 协调器受理即记录，回调留待用例手动触发：落定时机由队列决定，不由入口决定。
+        when(coordinator.accept(anyLong(), any(), any())).thenAnswer(invocation -> {
+            events.add("accept");
+            return com.summit.dp.execution.application.service.ResumeDisposition.QUEUED;
+        });
     }
 
     @Test
-    @DisplayName("恢复跑完之后才关流：connect → resume → finish，且两者都跑在受管线程上")
-    void resumeRunsBeforeEmitterIsFinished() throws Exception {
+    @DisplayName("先连接再提交，落定回调之后才关流：connect → accept → finish")
+    void connectThenAcceptThenFinishOnSettled() {
         ToolCall plan = planCall();
         ToolCallDecisionService service = service(plan);
 
         service.decide(plan, true, "可以");
 
-        awaitEvent("finish");
-        assertEquals(List.of("connect", "resume", "finish"), events,
-                "v1 契约要求「先连上 → 恢复跑完 → 再关流」，实际: " + events);
-        assertEquals(2, workerThreads.size(), "resume 与 finish 各记一次线程: " + workerThreads);
-        for (String worker : workerThreads) {
-            assertTrue(worker.startsWith(ManagedAsyncExecutor.THREAD_NAME_PREFIX),
-                    "恢复与关流都必须跑在受管执行器的线程上，实际: " + worker);
-            assertFalse(worker.startsWith("ForkJoinPool.commonPool"),
-                    "不得回落到公共 ForkJoinPool，实际: " + worker);
-        }
+        assertEquals(List.of("connect", "accept"), events,
+                "恢复请求在连接之后提交，且落定前不得关流，实际: " + events);
+        Runnable settled = settledCallback();
+        settled.run();
+        assertEquals(List.of("connect", "accept", "finish"), events,
+                "关流必须由恢复落定驱动，实际: " + events);
     }
 
     @Test
-    @DisplayName("执行器已关闭：不抛给调用方、仍开流并立即关流，且留下 warn")
-    void closedExecutorStillClosesTheStream() {
-        asyncExecutor.shutdown();
+    @DisplayName("决策失败：流以错误收尾并原样抛出，且不登记恢复")
+    void decisionFailureClosesStreamWithErrorAndRethrows() {
         ToolCall plan = planCall();
         ToolCallDecisionService service = service(plan);
+        when(executionRepository.findById(String.valueOf(EXECUTION_ID))).thenReturn(Optional.empty());
 
-        service.decide(plan, true, "可以");
+        assertThrows(com.summit.dp.shared.exception.ClientException.class,
+                () -> service.decide(plan, true, "可以"));
+
+        verify(emitter).completeWithError(any());
+        assertEquals(List.of("connect"), events, "决策失败不得登记恢复，也不得走落定关流");
+        verify(coordinator, never()).accept(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("幂等 no-op（卡片已有结论）：不登记恢复，连接立即关闭")
+    void alreadyDecidedClosesStreamWithoutResume() {
+        ToolCall finished = planCall();
+        finished.complete("{\"outcome\":\"APPROVED\"}");
+        ToolCallDecisionService service = service(finished);
+
+        service.decide(finished, true, "可以");
 
         assertEquals(List.of("connect", "finish"), events,
-                "后台段起不来时也必须关流，绝不留一条永不结束的连接，实际: " + events);
-        assertTrue(events.indexOf("finish") == events.size() - 1, "关流必须是最后一个动作");
-        assertTrue(logs.list.stream().anyMatch(event -> event.getLevel() == Level.WARN
-                        && event.getFormattedMessage().contains("恢复任务未被受理")),
-                "拒绝必须留一条可检索的 warn，实际日志: " + logs.list.stream()
-                        .map(ILoggingEvent::getFormattedMessage).toList());
-        verify(resumer, never()).resume(any(), anyLong());
+                "没有恢复就没有落定回调，入口必须当场关流，实际: " + events);
+        verify(coordinator, never()).accept(anyLong(), any(), any());
     }
 
-    private void awaitEvent(String name) {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            if (events.contains(name)) {
-                return;
-            }
-            try {
-                Thread.sleep(5L);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        throw new AssertionError("等待事件超时: " + name + "，已有: " + events);
+    private Runnable settledCallback() {
+        org.mockito.ArgumentCaptor<Runnable> captor = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(coordinator).accept(anyLong(), any(), captor.capture());
+        return captor.getValue();
     }
 
     private ToolCallDecisionService service(ToolCall plan) {
-        when(toolCallRepository.findById(TOOL_CALL_ID)).thenReturn(Optional.of(plan));
         TransactionTemplate transactions = mock(TransactionTemplate.class);
         doAnswer(invocation -> {
             ((java.util.function.Consumer<TransactionStatus>) invocation.getArgument(0))
                     .accept(mock(TransactionStatus.class));
             return null;
         }).when(transactions).executeWithoutResult(any());
-        Execution execution = suspendedExecution();
-        when(executionRepository.findById(String.valueOf(EXECUTION_ID))).thenReturn(Optional.of(execution));
-        doAnswer(invocation -> {
-            workerThreads.add(Thread.currentThread().getName());
-            events.add("resume");
-            return null;
-        }).when(resumer).resume(any(Execution.class), anyLong());
+        when(toolCallRepository.findById(TOOL_CALL_ID)).thenReturn(Optional.of(plan));
+        when(toolCallRepository.listByIds(any())).thenReturn(List.of(plan));
+        when(executionRepository.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(suspendedExecution()));
         ToolCallConverter converter = new ToolCallConverter(new ObjectMapper());
         ReactiveDecisionContract contract = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository),
                         provider(mock(ExecutionActivity.class)))));
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
-                provider(executionRepository), modelContextService, transactions, mock(ExecutionResumeCoordinator.class),
+                provider(executionRepository), modelContextService, transactions, coordinator,
                 unresolvedGate,
                 new ImmediateSlotResolutionStrategy(converter,
                         new ChoiceAnswersValidator(new ObjectMapper(), mock(MessageRepository.class)), toolCallRepository),
                 new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), toolCallRepository, converter));
-        return new ToolCallDecisionService(executionLocator, sseEventPublisher, provider(executionRepository),
-                unresolvedGate, resumer, asyncExecutor, engine, contract);
+        return new ToolCallDecisionService(executionLocator, sseEventPublisher, engine, contract);
     }
 
     private ToolCall planCall() {
