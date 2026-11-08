@@ -642,6 +642,7 @@ export const messages: MessageSchema = {
         definition: {
           kernel: '内核工具定义',
           mcp: 'MCP 工具定义',
+          framing: '请求框架残差',
         },
       },
       subSessions: {
@@ -1958,6 +1959,7 @@ export const messages: MessageSchema = {
         definition: {
           kernel: 'Kernel tool definitions',
           mcp: 'MCP tool definitions',
+          framing: 'Request framing',
         },
       },
       subSessions: {

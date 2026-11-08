@@ -81,9 +81,14 @@ export interface TokenAuditToolItemRow {
   ratio?: number | null;
 }
 
-/** 「其他消息」里的工具定义构成一行。 */
+/**
+ * 「其他消息」里的工具定义构成一行。
+ *
+ * <p>`key` 的第三个取值 `framing` 是**后端的派生量**（请求框架残差），不是一项独立开销：
+ * 它没有 ratio（后端没给，前端也不许自己除），也不计入「N 项」徽标。</p>
+ */
 export interface TokenAuditDefinitionRow {
-  key: 'kernel' | 'mcp';
+  key: 'kernel' | 'mcp' | 'framing';
   labelKey: string;
   tokens: number;
   ratio?: number | null;
@@ -298,8 +303,23 @@ export function resolveToolGroupRows(tools?: TokenAuditToolBreakdown | null): To
 /**
  * 「其他消息 → 工具定义构成」行派生。
  *
+ * <p>三行顺序固定：内核 → MCP → **请求框架残差**。残差行存在的意义是让
+ * `内核 + MCP + 残差 = 其他消息总量` 这个加式在界面上闭合 —— 少了它，两行占比加起来永远差一截，
+ * 看起来像前端算错了。后端 `TokenAuditReconciler` 已如实下发
+ * `framingResidual = requestOverhead − toolDefinition − mcpToolDefinition`，前端只负责展示。</p>
+ *
+ * <p>残差的渲染规则（与内核/MCP 不同，务必按此实现）：</p>
+ * <ul>
+ *   <li><b>未知（`null`）不渲染</b>：不知道就不画，绝不补 0；</li>
+ *   <li><b>等于 0 不渲染</b>：0 表示两项已精确解释全部开销，多一行「0 tok」纯是噪声；</li>
+ *   <li><b>负数照常渲染</b>：后端注释写明残差可为负（「合并计算 vs 分开计算」的框架差异），
+ *       吞掉负数等于制造新的对不上；</li>
+ *   <li><b>`ratio` 恒为 `null`</b>：后端没有给残差的 ratio（它是派生量）。前端<b>不许</b>自己除 ——
+ *       模板对 `ratio` 为 null 的处理就是「不显示百分比」，这正是我们要的效果。</li>
+ * </ul>
+ *
  * @param overhead 请求开销小节
- * @returns 可渲染的定义行（内核 / MCP），缺失项直接跳过
+ * @returns 可渲染的定义行（内核 / MCP / 框架残差），缺失或无需展示的项直接跳过
  */
 export function resolveToolDefinitionRows(
   overhead?: TokenAuditRequestOverhead | null
@@ -320,6 +340,16 @@ export function resolveToolDefinitionRows(
       labelKey: 'chat.tokenAudit.definition.mcp',
       tokens: overhead.mcpToolDefinition.tokens,
       ratio: overhead.mcpToolDefinition.ratio ?? null,
+    });
+  }
+  // 残差：只展示「已知且非 0」的派生量；`ratio` 故意留 null（后端未给，前端不做除法）。
+  const framing = overhead.framingResidualTokens;
+  if (isKnownNumber(framing) && framing !== 0) {
+    rows.push({
+      key: 'framing',
+      labelKey: 'chat.tokenAudit.definition.framing',
+      tokens: framing,
+      ratio: null,
     });
   }
   return rows;

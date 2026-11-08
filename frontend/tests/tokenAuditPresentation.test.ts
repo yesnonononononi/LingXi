@@ -243,6 +243,103 @@ test('resolveToolDefinitionRows：缺失的定义项跳过，不渲染 0', () =>
   assert.deepEqual(resolveToolDefinitionRows(null), []);
 });
 
+// ─────────────── 请求框架残差（派生行，让加式在界面上闭合） ───────────────
+
+/** 构造「其他消息」小节：内核 + MCP + 指定残差。 */
+const overheadWithFraming = (framing: number | null): TokenAuditRequestOverhead => ({
+  tokens: 5350,
+  ratio: 0.037,
+  itemCount: 2,
+  toolDefinition: {tokens: 3200, ratio: 0.598},
+  mcpToolDefinition: {tokens: 2100, ratio: 0.393},
+  framingResidualTokens: framing,
+});
+
+test('resolveToolDefinitionRows：残差 50 → 渲染第三行，tokens=50，ratio=null（前端不做除法）', () => {
+  const rows = resolveToolDefinitionRows(overheadWithFraming(50));
+  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp', 'framing']);
+  assert.equal(rows[2]!.labelKey, 'chat.tokenAudit.definition.framing');
+  assert.equal(rows[2]!.tokens, 50);
+  assert.equal(rows[2]!.ratio, null, '后端未给残差 ratio，前端不得自己除');
+  // 加式在界面上闭合：3200 + 2100 + 50 = 5350
+  assert.equal(rows.reduce((sum, row) => sum + row.tokens, 0), 5350);
+});
+
+test('resolveToolDefinitionRows：残差 0 → 不渲染第三行（0 是噪声）', () => {
+  const rows = resolveToolDefinitionRows(overheadWithFraming(0));
+  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp']);
+});
+
+test('resolveToolDefinitionRows：残差 null → 不渲染第三行（未知不补 0）', () => {
+  const rows = resolveToolDefinitionRows(overheadWithFraming(null));
+  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp']);
+
+  // 字段整体缺失同样不渲染
+  const missing = resolveToolDefinitionRows({
+    tokens: 5350, itemCount: 2,
+    toolDefinition: {tokens: 3200}, mcpToolDefinition: {tokens: 2100},
+  });
+  assert.deepEqual(missing.map((row) => row.key), ['kernel', 'mcp']);
+});
+
+test('resolveToolDefinitionRows：残差为负数（-20）→ 照常渲染，不吞', () => {
+  const rows = resolveToolDefinitionRows(overheadWithFraming(-20));
+  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp', 'framing']);
+  assert.equal(rows[2]!.tokens, -20);
+  assert.equal(rows[2]!.ratio, null);
+});
+
+test('resolveToolDefinitionRows：残差以字符串 "50" 到达 → 归一后仍渲染第三行', () => {
+  const snapshot = normalizeTokenAuditSnapshot({
+    sessionId: 's-framing',
+    displayState: 'COLLECTED',
+    requestOverhead: {
+      tokens: '5350',
+      ratio: '0.037',
+      itemCount: '2',
+      toolDefinition: {tokens: '3200', ratio: '0.598'},
+      mcpToolDefinition: {tokens: '2100', ratio: '0.393'},
+      framingResidualTokens: '50',
+    },
+  }, null);
+  assert.ok(snapshot);
+  assert.equal(snapshot!.requestOverhead!.framingResidualTokens, 50);
+  const rows = resolveToolDefinitionRows(snapshot!.requestOverhead);
+  assert.deepEqual(rows.map((row) => row.key), ['kernel', 'mcp', 'framing']);
+  assert.equal(rows[2]!.tokens, 50);
+  assert.equal(rows[2]!.ratio, null);
+
+  // 字符串 "0" 归一为 0 → 按「0 不渲染」处理
+  const zero = normalizeTokenAuditSnapshot({
+    sessionId: 's-framing-zero', displayState: 'COLLECTED',
+    requestOverhead: {tokens: '5350', itemCount: '2', framingResidualTokens: '0'},
+  }, null);
+  assert.deepEqual(resolveToolDefinitionRows(zero!.requestOverhead).map((row) => row.key), []);
+
+  // 非数字字符串 → null → 不渲染
+  const junk = normalizeTokenAuditSnapshot({
+    sessionId: 's-framing-junk', displayState: 'COLLECTED',
+    requestOverhead: {tokens: '5350', itemCount: '2', framingResidualTokens: 'abc'},
+  }, null);
+  assert.equal(junk!.requestOverhead!.framingResidualTokens, null);
+  assert.deepEqual(resolveToolDefinitionRows(junk!.requestOverhead).map((row) => row.key), []);
+});
+
+test('残差行不计入「N 项」：itemCount 仍取后端字段（内核 + MCP）', () => {
+  const snapshot = normalizeTokenAuditSnapshot({
+    sessionId: 's-count', displayState: 'COLLECTED',
+    requestOverhead: {
+      tokens: '5350', itemCount: '2',
+      toolDefinition: {tokens: '3200'}, mcpToolDefinition: {tokens: '2100'},
+      framingResidualTokens: '50',
+    },
+  }, null);
+  assert.equal(snapshot!.requestOverhead!.itemCount, 2, '后端字段原样，不被派生行撑大');
+  const rows = resolveToolDefinitionRows(snapshot!.requestOverhead);
+  assert.equal(rows.length, 3, '渲染 3 行');
+  assert.equal(rows.filter((row) => row.key !== 'framing').length, 2, '但「N 项」只数内核 + MCP');
+});
+
 // ─────────────────────────── 兜底状态 ───────────────────────────
 
 test('resolveCapturingDrift：仅 CAPTURING 且有差额时给出提示值', () => {
