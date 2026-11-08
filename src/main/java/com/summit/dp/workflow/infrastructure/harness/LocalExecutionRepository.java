@@ -1,7 +1,8 @@
 package com.summit.dp.workflow.infrastructure.harness;
 
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
-import com.summit.dp.workflow.application.input.MailReceiptFlusher;
+import com.summit.dp.workflow.application.lifecycle.CheckpointCommitParticipant;
+import com.summit.dp.workflow.application.lifecycle.ExecutionSaveFacts;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
@@ -57,33 +58,34 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private SessionExecutionRegistry executionRegistry = new SessionExecutionRegistry();
 
     /**
-     * 邮件回执协作方：<b>必需依赖</b>。
+     * 检查点提交参与方：<b>必需依赖</b>，经 {@link ObjectProvider} 延迟取用断开构造期环。
      *
-     * <p>「回执与检查点同事务落库」是生产不变量。装配缺它时必须启动/保存失败，
-     * 不能退化成「保存成功但输入丢/重放」；直接 new 的用例请显式传入真实或明确 fake 的实现。</p>
+     * <p>「回执与检查点同事务落库」「提交后登记与收口」都是生产不变量。装配缺它时保存必须失败，
+     * 不能退化成「保存成功但输入丢/重放」。延迟取用是因为参与方实现需要投影，
+     * 而投影反过来依赖执行仓储。</p>
      */
-    private final MailReceiptFlusher mailReceipts;
+    private final ObjectProvider<CheckpointCommitParticipant> checkpointParticipants;
 
     /**
-     * 构造注入：邮件回执协作方是必需依赖，缺失即装配失败。
+     * 构造注入：检查点提交参与方是必需依赖，缺失即装配失败。
      *
-     * @param checkpointService 检查点保存服务
-     * @param objectMapper      正文序列化
-     * @param checkpointStore   正文存储端口
-     * @param lifecycle         业务投影（延迟取用，断开构造期环）
-     * @param mailReceipts      邮件回执协作方，不能为空
+     * @param checkpointService     检查点保存服务
+     * @param objectMapper          正文序列化
+     * @param checkpointStore       正文存储端口
+     * @param lifecycle             业务投影（延迟取用，断开构造期环）
+     * @param checkpointParticipants 检查点提交参与方，不能为空
      */
     public LocalExecutionRepository(ExecutionCheckpointService checkpointService,
                                     ObjectMapper objectMapper,
                                     ExecutionCheckpointStore checkpointStore,
                                     ObjectProvider<ExecutionLifecycleProjection> lifecycle,
-                                    MailReceiptFlusher mailReceipts) {
+                                    ObjectProvider<CheckpointCommitParticipant> checkpointParticipants) {
         this.checkpointService = checkpointService;
         this.objectMapper = objectMapper;
         this.checkpointStore = checkpointStore;
         this.lifecycle = lifecycle;
-        this.mailReceipts = Objects.requireNonNull(mailReceipts,
-                "邮件回执协作方不能为空：回执与检查点必须同事务落库");
+        this.checkpointParticipants = Objects.requireNonNull(checkpointParticipants,
+                "检查点提交参与方不能为空：回执与检查点必须同事务落库");
     }
 
     /**
@@ -197,7 +199,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
                 Long rootSessionId = ExecutionAttributes.mailboxSessionId(attributes);
                 boolean terminal = ExecutionStateCodec.isTerminalState(state);
-                afterCommit(() -> executionRegistry.recordExecution(rootSessionId, sessionId, execution.getId(), terminal));
                 boolean withoutControlSlot = !executionRegistry.isActive(execution.getId());
                 // 本方法自己收口的两类时机（其余由 unregister 负责）：
                 //  ①首次落为 FAILED 且没有控制槽位（启动失败，unregister 不会来）；
@@ -205,12 +206,12 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 // 带上「终态」这个前提，非终态落库不会去跑收口脚本。
                 boolean closureDue = persistedTerminal && withoutControlSlot
                         && (firstFailure || closureWasPending);
-                if (closureDue) {
-                    // 收口脚本必须早于框架发布终态事件：框架的顺序是「save(FAILED) → 返回发布任务 → 调用方 run 它」，
-                    // 业务侧没有排序权，只能在这里补上，否则界面会先收到终态、后收到轮次更新。
-                    // 终态事件仍由框架自己发布（活跃保存路径上框架拥有广播权），这里只补业务收口。
-                    afterCommit(() -> projection().completeClosure(execution, false));
-                }
+                // 登记与终态收口都是业务事实，交给应用侧承接：仓储只管检查点读写与文件回收。
+                // 只注册一次，保证「先登记、后收口」的顺序与提交时机都不变。
+                ExecutionSaveFacts facts = new ExecutionSaveFacts(id, sessionId == null ? 0L : sessionId,
+                        rootSessionId, String.valueOf(state), terminal, firstFailure, closureDue,
+                        withoutControlSlot);
+                afterCommit(() -> checkpointParticipants.getObject().afterCommit(execution, facts));
             }
         }
     }
@@ -221,10 +222,10 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         return checkpointSaveRetryTemplate().execute(() -> {
             ExecutionCheckpointService.SaveOutcome outcome = checkpointService.save(id, sessionId, status, fileId,
                     execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt());
-            // 邮件回执必须与检查点同批提交：回执先在注入时独立落库的话，
+            // 参与方的「事务内」动作（邮件回执）必须与检查点同批提交：回执独立落库的话，
             // 「已注入、检查点未提交」崩一次就会因为回执存在而永久丢掉这条输入。
             // 挂在重试动作内部，重试时两者一起重放（失败事务已回滚，不会留半条回执）。
-            mailReceipts.flush(execution);
+            checkpointParticipants.getObject().inTransaction(execution);
             return outcome;
         });
     }
