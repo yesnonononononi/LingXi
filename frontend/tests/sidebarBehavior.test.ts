@@ -5,6 +5,7 @@ import {computed, createSSRApp, ref} from 'vue';
 import {renderToString} from '@vue/server-renderer';
 import {fileURLToPath} from 'node:url';
 import {useSidebarActions} from '../src/composables/sidebar/useSidebarActions';
+import {useSidebarSessionSelection} from '../src/views/chat/useSidebarSessionSelection';
 
 /**
  * Sidebar 行为基线（M1 等价性判据）。
@@ -415,3 +416,68 @@ test('C1-6 点击外部关闭菜单；installClickOutside 幂等，dispose 后�
   }
 });
 
+
+
+test('子代理分支沿用真实子会话 id，不会被当成工作区选择', () => {
+  const { actions, emitted } = makeActions();
+  actions.handleBranchedSelect('9007199254740995', {
+    value: '9007199254740995', label: '代码审查', ownerSessionId: 's1',
+    raw: {id: '9007199254740995', name: '代码审查', runStatus: 'RUNNING'},
+  });
+  assert.deepEqual(emitted, [{event: 'selectSession', args: ['9007199254740995']}]);
+});
+
+test('点击子代理先切所属会话，再打开详情；同一所属会话不重复加载', async () => {
+  const activeId = ref<string | null>('other');
+  const sessions = ref([makeSession('owner', '父会话')]);
+  sessions.value[0].subSessions = [{id: '9007199254740995', name: '代码审查'}];
+  const calls: unknown[][] = [];
+  const select = useSidebarSessionSelection({sessions, activeId,
+    selectSession: async id => {calls.push(['root', id]); activeId.value = id;},
+    selectSubSession: async id => {calls.push(['sub', id]);},
+    closeSubPanel: () => calls.push(['close']),
+  });
+  await select('9007199254740995');
+  assert.deepEqual(calls, [['root', 'owner'], ['sub', '9007199254740995']]);
+  calls.length = 0;
+  await select('9007199254740995');
+  assert.deepEqual(calls, [['sub', '9007199254740995']]);
+  calls.length = 0;
+  await select('owner');
+  assert.deepEqual(calls, [['close'], ['sub', null], ['root', 'owner']]);
+});
+
+test('跨会话加载期间再次选择，不得重开旧子代理面板', async () => {
+  const activeId = ref<string | null>('other');
+  const sessions = ref([makeSession('owner', '父会话'), makeSession('next', '新会话')]);
+  sessions.value[0].subSessions = [{id: '9007199254740995'}];
+  const children: unknown[] = [];
+  let finish: () => void = () => {};
+  const select = useSidebarSessionSelection({sessions, activeId,
+    selectSession: async id => {activeId.value = id; if (id === 'owner') await new Promise<void>(resolve => {finish = resolve;});},
+    selectSubSession: async id => {children.push(id);}, closeSubPanel: () => {},
+  });
+  const oldSelection = select('9007199254740995');
+  await select('next');
+  finish();
+  await oldSelection;
+  assert.equal(activeId.value, 'next');
+  assert.deepEqual(children, [null]);
+});
+
+
+test('二级分支从所属会话读取名称和状态，并排在下一个根会话之前', async () => {
+  const owner = makeSession('s1', '所属会话');
+  owner.subSessions = [
+    {id: '9007199254740995', name: '实现工程师', runStatus: 'RUNNING'},
+    {id: '9007199254740997', name: '审查工程师', runStatus: 'IDLE', lastOutcome: 'FAILED'},
+  ];
+  await renderSidebar(baseProps({sessions: [owner, makeSession('s2', '后续会话')], activeSessionId: 's1', activeSubSessionId: '9007199254740995'}), html => {
+    assert.match(html, /data-depth="1"/);
+    assert.match(html, /data-state="RUNNING"/);
+    assert.match(html, /data-state="FAILED"/);
+    assert.ok(html.indexOf('实现工程师') > html.indexOf('所属会话'));
+    assert.ok(html.indexOf('审查工程师') < html.indexOf('后续会话'));
+    assert.match(html, /aria-current="true"[^>]*data-active/);
+  });
+});

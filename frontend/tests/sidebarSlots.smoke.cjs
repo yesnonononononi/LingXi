@@ -148,10 +148,15 @@ window.__slotReads = [];`;
 
   await fs.mkdir(output, { recursive: true });
 
-  await fs.writeFile(path.join(output, 'entry.js'), `import { createApp, h, nextTick } from 'vue';
+  await fs.writeFile(path.join(output, 'entry.js'), `import { createApp, h, nextTick, ref, computed } from 'vue';
+import {createPinia} from 'pinia';
 import { SIDEBAR_SLOTS_KEY } from '${specifierFor(sidebarTypesPath)}';
 import { useTheme } from '${specifierFor(path.resolve(frontendRoot, 'src/composables/useTheme.ts'))}';
 ${importBlock}
+import SubAgentSidePanel from '${specifierFor(path.resolve(frontendRoot, 'src/components/chat/SubAgentSidePanel.vue'))}';
+import {useChatSubSession} from '${specifierFor(path.resolve(frontendRoot, 'src/views/chat/useChatSubSession.ts'))}';
+import {useSidebarSessionSelection} from '${specifierFor(path.resolve(frontendRoot, 'src/views/chat/useSidebarSessionSelection.ts'))}';
+import {chatApi} from '${specifierFor(path.resolve(frontendRoot, 'src/services/chat.ts'))}';
 import '${specifierFor(path.resolve(frontendRoot, 'src/style.css'))}';
 
 localStorage.setItem('lingxi-locale', 'zh-CN');
@@ -264,7 +269,41 @@ window.__render = async (scenarioKey, presetKey = 'expanded') => {
   const record = event => (...args) => { window.__emits.push([event, ...args]); };
   window.__emits = [];
   window.__slotReads.length = 0;
-  const slotApp = createApp({
+  const slotApp = presetKey === 'subSessions' ? createApp({
+    setup() {
+      const sessions = ref([
+        {...SESSIONS[0], messages: [], subSessions: [
+          {id: '9007199254740995', name: '实现工程师', runStatus: 'RUNNING', messages: []},
+          {id: '9007199254740997', name: '审查工程师', runStatus: 'SUSPENDED', messages: []},
+        ]},
+        {...SESSIONS[2], messages: [], subSessions: [{id: '9007199254740999', name: '历史代理', runStatus: 'IDLE', lastOutcome: 'COMPLETED', messages: []}]},
+      ]);
+      const activeId = ref('s1');
+      const current = computed(() => sessions.value.find(session => session.id === activeId.value));
+      const subs = useChatSubSession({currentActiveSession: current});
+      chatApi.fetchSessionMessages = async id => ({ok: true, data: {messages: [], records: [], turns: {},
+        turnViews: {[id]: {sessionId: id, turnId: id, status: 'COMPLETED', viewVersion: 1,
+          blocks: [{blockId: 'text-'+id, type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '真实子会话轨迹'}]}},
+        hasMore: false, nextCursor: null}});
+      const select = useSidebarSessionSelection({sessions, activeId,
+        selectSession: async id => {subs.resetSubSessionView(); activeId.value = id;},
+        selectSubSession: subs.handleSelectSubSessionOption,
+        closeSubPanel: () => {subs.isSubPanelOpen.value = false;},
+      });
+      window.__subSessions = sessions;
+      window.__subView = subs;
+      window.__setTheme = value => useTheme().setTheme(value);
+      return () => h('div', {class: 'flex h-screen w-screen bg-white dark:bg-black'}, [
+        h(Sidebar, {sessions: sessions.value, workspaces: WORKSPACES, activeSessionId: activeId.value,
+          activeSubSessionId: subs.isSubPanelOpen.value ? subs.activeViewingSubSessionId.value : null,
+          isCollapsed: false, onSelectSession: select}),
+        h('main', {class: 'flex-1'}),
+        h(SubAgentSidePanel, {items: subs.availableSubSessionItems.value, activeSubId: subs.activeViewingSubSessionId.value,
+          subMessages: subs.activeSubSessionMessages.value, isOpen: subs.isSubPanelOpen.value, isDark: useTheme().isDark.value,
+          onToggleOpen: () => {subs.isSubPanelOpen.value = false;}}),
+      ]);
+    }
+  }) : createApp({
     render: () => h(Sidebar, {
       ...PRESETS[presetKey],
       onSelectSession: record('selectSession'),
@@ -279,6 +318,7 @@ window.__render = async (scenarioKey, presetKey = 'expanded') => {
     })
   });
   if (spec.provide !== undefined) slotApp.provide(SIDEBAR_SLOTS_KEY, spec.provide);
+  slotApp.use(createPinia());
   slotApp.mount(host);
   window.__app = slotApp;
   await nextTick();
@@ -580,6 +620,50 @@ app.whenReady().then(async () => {
         `生产注册下的树文本与默认不一致：${JSON.stringify(fingerprint.treeText)}`);
       assert.equal(fingerprint.treeHtml, defaultFingerprint.treeHtml,
         '生产注册下的树 DOM 与默认不一致（身份判断失效会退化成 7 项契约）');
+    });
+
+    await runCase('用例9 子代理二级分支：深浅主题、名称状态更新、真实导航与原动画', async () => {
+      await evaluate('window.__render("production", "subSessions")');
+      for (const theme of ['light', 'dark']) {
+        await evaluate('window.__setTheme(' + JSON.stringify(theme) + ')');
+        await wait(450);
+        const data = await evaluate(`(() => {
+          const buttons = [...document.querySelectorAll('[data-slot="workspace-tree"] button')];
+          const parent = buttons.find(button => button.textContent.includes('第一个会话')) || [...document.querySelectorAll('[data-slot="workspace-tree"] div')].find(element => element.classList.contains('group/session') && element.textContent.includes('第一个会话'));
+          const child = buttons.find(button => button.textContent.includes('实现工程师'));
+          const history = buttons.find(button => button.textContent.includes('历史代理'));
+          return {child: !!child, history: !!history, left: child?.getBoundingClientRect().left,
+            parentLeft: parent?.getBoundingClientRect().left,
+            state: child?.querySelector('[data-state]')?.dataset.state,
+            rename: child?.querySelector('button[title="重命名"]') != null,
+            depth: child?.parentElement.dataset.depth};
+        })()`);
+        assert.equal(data.child, true, '必须显示子代理名');
+        assert.equal(data.history, true, '历史会话也必须有子代理分支');
+        assert.equal(data.state, 'RUNNING', '状态由现有子会话实时值驱动');
+        assert.equal(data.rename, false, '子代理不能触发根会话重命名');
+        if (theme === 'dark') assert.equal(data.depth, '1', '必须位于二级分支');
+        else assert.ok(data.left > data.parentLeft, '子代理必须缩进父会话下方');
+        await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师'))).click()`);
+        await wait(450);
+        assert.equal(await evaluate('window.__subView.activeViewingSubSessionId.value'), '9007199254740995');
+        assert.equal(await evaluate('document.querySelector(".sub-panel-shell")?.textContent.includes("真实子会话轨迹")'), true, '面板必须显示所选子会话轨迹');
+        assert.equal(await evaluate('document.querySelectorAll("button[title=展开子代理协作轨迹与选项]").length'), 0, '原悬浮入口应移除');
+        if (theme === 'dark') {
+          assert.equal(await evaluate('document.querySelectorAll("path.branched-menu-active-glow").length'), 2, '选中连线同时经过父会话和子代理');
+          assert.match(await evaluate('getComputedStyle(document.querySelector("path.branched-menu-active-glow")).transitionProperty'), /stroke-dashoffset/);
+        }
+        await fs.writeFile(path.join(logDir, 'sub-sessions-' + theme + '.png'), (await window.webContents.capturePage()).toPNG());
+      }
+      await evaluate(`window.__subSessions.value[0].subSessions[0].name = '实现工程师（已完成）'; window.__subSessions.value[0].subSessions[0].runStatus = 'IDLE'; window.__subSessions.value[0].subSessions[0].lastOutcome = 'COMPLETED'`);
+      await wait(150);
+      assert.equal(await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('实现工程师（已完成）'))).querySelector('[data-state]').dataset.state`), 'COMPLETED');
+      await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('历史代理'))).click()`);
+      await wait(450);
+      assert.equal(await evaluate('window.__subView.activeViewingSubSessionId.value'), '9007199254740999', '跨所属会话打开指定子代理');
+      await evaluate(`([...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('历史里的会话'))).click()`);
+      await wait(450);
+      assert.equal(await evaluate('document.querySelectorAll(".sub-panel-shell").length'), 0, '点击父会话返回主视图');
     });
 
     await fs.writeFile(path.join(logDir, 'smoke-result.json'),

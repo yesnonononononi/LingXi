@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import type {ChatSession} from '../../types/chat';
+import type {ChatSession, SubItemStatus} from '../../types/chat';
 import {resolveSessionIndicator} from '../../utils/sessionIndicator';
 
-const props = defineProps<{ session: ChatSession; active?: boolean }>();
-const state = computed(() => resolveSessionIndicator(props.session, props.active));
-const labels = { WAITING: '待确认', COMPLETED: '完成', FAILED: '失败', RUNNING: '正在运行' };
+const props = defineProps<{ session: Pick<ChatSession, 'isRead' | 'renderStatus'>; active?: boolean; subStatus?: SubItemStatus }>();
+const subStates = {running: 'RUNNING', suspended: 'SUSPENDED', completed: 'COMPLETED', failed: 'FAILED', cancelled: 'CANCELLED', idle: 'IDLE', unknown: 'UNKNOWN'} as const;
+const state = computed(() => props.subStatus ? subStates[props.subStatus] : resolveSessionIndicator(props.session, props.active));
+const labels = { WAITING: '待确认', COMPLETED: '完成', FAILED: '失败', RUNNING: '正在运行', SUSPENDED: '已挂起', CANCELLED: '已取消', IDLE: '空闲', UNKNOWN: '状态未知' };
 </script>
 
 <template>

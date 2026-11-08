@@ -17,6 +17,8 @@ export interface BranchedMenuChild {
   label: string;
   icon?: IconArray | Component;
   raw?: any;
+  children?: BranchedMenuChild[];
+  ownerSessionId?: string;
 }
 
 export interface BranchedMenuItem {
@@ -101,6 +103,23 @@ const emit = defineEmits<{
 }>();
 
 const menuItems = computed(() => props.items ?? DEFAULT_ITEMS);
+interface MenuRow {
+  item: BranchedMenuChild;
+  depth: number;
+  parent: number | null;
+}
+const sectionRows = computed(() => menuItems.value.map(section => {
+  const rows: MenuRow[] = [];
+  const append = (items: BranchedMenuChild[], depth: number, parent: number | null) => {
+    for (const item of items) {
+      const index = rows.length;
+      rows.push({item, depth, parent});
+      append(item.children ?? [], depth + 1, index);
+    }
+  };
+  append(section.children ?? [], 0, null);
+  return rows;
+}));
 const open = ref<Set<number>>(toSet(props.openIndices ?? props.defaultOpen));
 const active = ref(
   props.active ??
@@ -134,7 +153,7 @@ const heads = ref<(HTMLButtonElement | null)[]>([]);
 let resizeObserver: ResizeObserver | null = null;
 
 const activeSection = computed(() =>
-  menuItems.value.findIndex(it => it.children?.some(kid => kid.value === active.value))
+  sectionRows.value.findIndex(rows => rows.some(row => row.item.value === active.value))
 );
 const markerShown = computed(() => activeSection.value >= 0 && open.value.has(activeSection.value));
 
@@ -192,14 +211,30 @@ const toggle = (i: number) => {
 };
 
 const r = computed(() => Math.min(props.radius, props.rowHeight / 2 - 2));
-const endX = computed(() => props.indent - 8);
 const rowY = (k: number) => PAD + k * props.rowHeight + props.rowHeight / 2;
-const branch = (k: number) =>
-  `M ${props.trunk} ${rowY(k) - r.value} A ${r.value} ${r.value} 0 0 0 ${props.trunk + r.value} ${rowY(k)} H ${endX.value}`;
-const reach = (k: number) =>
-  `M ${props.trunk} 0 V ${rowY(k) - r.value} A ${r.value} ${r.value} 0 0 0 ${props.trunk + r.value} ${rowY(k)} H ${endX.value}`;
-const length = (k: number) => rowY(k) - r.value + (Math.PI * r.value) / 2 + (endX.value - props.trunk - r.value);
-const trunkPath = (count: number) => `M ${props.trunk} 0 V ${rowY(count - 1) - r.value}`;
+const reach = (row: MenuRow, k: number) => {
+  const x = props.trunk + row.depth * props.indent;
+  const start = row.parent === null ? 0 : rowY(row.parent) + props.rowHeight / 2;
+  return `M ${x} ${start} V ${rowY(k) - r.value} A ${r.value} ${r.value} 0 0 0 ${x + r.value} ${rowY(k)} H ${(row.depth + 1) * props.indent - 8}`;
+};
+const backgroundBranch = (rows: MenuRow[], row: MenuRow, k: number) => {
+  const x = props.trunk + row.depth * props.indent;
+  const start = row.parent === null ? 0 : rowY(row.parent) + props.rowHeight / 2;
+  // 同级共用一段主干，避免半透明描边叠加后变亮。
+  const trunk = rows.slice(k + 1).some(next => next.parent === row.parent) ? '' : `M ${x} ${start} V ${rowY(k) - r.value}`;
+  return `${trunk} M ${x} ${rowY(k) - r.value} A ${r.value} ${r.value} 0 0 0 ${x + r.value} ${rowY(k)} H ${(row.depth + 1) * props.indent - 8}`;
+};
+const length = (row: MenuRow, k: number) => rowY(k) - r.value
+  - (row.parent === null ? 0 : rowY(row.parent) + props.rowHeight / 2)
+  + (Math.PI * r.value) / 2 + (props.indent - 8 - props.trunk - r.value);
+const isActivePath = (rows: MenuRow[], index: number): boolean => {
+  let current: number | null = rows.findIndex(row => row.item.value === active.value);
+  while (current !== null && current >= 0) {
+    if (current === index) return true;
+    current = rows[current]!.parent;
+  }
+  return false;
+};
 
 const isIconData = (icon: IconArray | Component): icon is IconArray => Array.isArray(icon);
 
@@ -266,46 +301,44 @@ const navStyle = computed(
         <div class="min-h-0 overflow-hidden w-full">
           <div
             class="box-border relative py-1.5 w-full"
-            :style="{ height: `${PAD * 2 + item.children.length * rowHeight}px` }"
+            :style="{ height: `${PAD * 2 + sectionRows[i]!.length * rowHeight}px` }"
           >
             <svg
               class="top-0 left-0 absolute opacity-0 group-data-[open]/section:opacity-100 overflow-visible pointer-events-none [transition:opacity_200ms_ease] group-data-[open]/section:[transition:opacity_250ms_ease_100ms]"
-              :width="indent"
-              :height="PAD * 2 + item.children.length * rowHeight"
+              :width="indent * (1 + Math.max(0, ...sectionRows[i]!.map(row => row.depth)))"
+              :height="PAD * 2 + sectionRows[i]!.length * rowHeight"
               aria-hidden="true"
             >
               <path
+                v-for="(row, k) in sectionRows[i]"
+                :key="`line-${row.item.value}`"
                 class="fill-none [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:var(--bm-line-w)] [stroke:var(--bm-line)]"
-                :d="trunkPath(item.children.length)"
+                :d="backgroundBranch(sectionRows[i]!, row, k)"
               />
               <path
-                v-for="(kid, k) in item.children"
-                :key="`line-${kid.value}`"
-                class="fill-none [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:var(--bm-line-w)] [stroke:var(--bm-line)]"
-                :d="branch(k)"
-              />
-              <path
-                v-for="(kid, k) in item.children"
-                :key="`reach-${kid.value}`"
+                v-for="(row, k) in sectionRows[i]"
+                :key="`reach-${row.item.value}`"
                 class="fill-none motion-reduce:transition-none [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:var(--bm-line-w)] [stroke:var(--bm-accent)] [transition:stroke-dashoffset_var(--bm-draw)_cubic-bezier(0.23,1,0.32,1)]"
-                :class="kid.value === active ? 'branched-menu-active-glow' : undefined"
-                :d="reach(k)"
+                :class="isActivePath(sectionRows[i]!, k) ? 'branched-menu-active-glow' : undefined"
+                :d="reach(row, k)"
                 :style="{
-                  strokeDasharray: length(k),
-                  strokeDashoffset: kid.value === active ? 0 : length(k)
+                  strokeDasharray: length(row, k),
+                  strokeDashoffset: isActivePath(sectionRows[i]!, k) ? 0 : length(row, k)
                 }"
               />
             </svg>
             <div
-              v-for="kid in item.children"
+              v-for="{item: kid, depth} in sectionRows[i]"
               :key="kid.value"
               class="group/kid relative flex items-center w-full"
+              :data-depth="depth"
             >
               <button
                 type="button"
                 class="box-border flex items-center gap-2 bg-transparent m-0 py-0 pr-1.5 rounded-md border-0 outline-none w-full data-[active]:font-medium text-left cursor-pointer [height:var(--bm-row)] [padding-left:var(--bm-indent)] [color:var(--bm-muted)] [font-family:inherit] [-webkit-tap-highlight-color:transparent] [transition:color_200ms_ease,background-color_150ms_ease] hover:[color:var(--bm-ink)] hover:bg-white/[0.04] data-[active]:[color:var(--bm-accent)]"
                 :aria-current="kid.value === active ? 'true' : undefined"
                 :data-active="kid.value === active ? '' : undefined"
+                :style="{ paddingLeft: `${(depth + 1) * indent}px` }"
                 :tabindex="open.has(i) ? 0 : -1"
                 @click="select(kid.value, kid)"
               >

@@ -18,6 +18,7 @@ import {acceptsChatEvent} from './chatExecutionState';
 import {useChatSessionList} from './useChatSessionList';
 import {useChatWorkspace} from './useChatWorkspace';
 import {useChatSubSession} from './useChatSubSession';
+import {useSidebarSessionSelection} from './useSidebarSessionSelection';
 import {StreamSessionRouter} from './streamSessionRouter';
 import {SessionEventStream, type StreamHealthState} from './sessionEventStream';
 import type {ChatCommand} from '../../services/dto/chat_command';
@@ -641,6 +642,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   // 会话列表就绪后回填通知跳转入口：用户点通知 → 切到产生该通知的会话
   navigateToSession = (sessionId: string) => { void sessionList.handleSelectSession(sessionId); };
 
+  const handleSelectSidebarSession = useSidebarSessionSelection({
+    sessions: localSessions,
+    activeId: localActiveId,
+    selectSession: sessionList.handleSelectSession,
+    selectSubSession: subSession.handleSelectSubSessionOption,
+    closeSubPanel: () => { subSession.isSubPanelOpen.value = false; },
+  });
+
 
   // ---------- 展示层派生（续） ----------
   /** 上下文用量指示器数据（输入框模型选择器左侧展示）。phase/band 供「压缩中」标签按档位消费。 */
@@ -861,6 +870,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     canChangeWorkspace,
     // 会话操作
     handleSelectSession: sessionList.handleSelectSession,
+    handleSelectSidebarSession,
     handleNewSession: sessionList.handleNewSession,
     handleDeleteSession: sessionList.handleDeleteSession,
     handleRenameSession: sessionList.handleRenameSession,

@@ -106,6 +106,10 @@ export function useSidebarActions(options: SidebarActionsOptions): SidebarAction
   };
 
   const handleBranchedSelect = (value: string, item: BranchedMenuChild | BranchedMenuItem) => {
+    if ('ownerSessionId' in item && item.ownerSessionId) {
+      emit('selectSession', value);
+      return;
+    }
     if (value.startsWith('more-')) {
       toggleFullyExpanded(value.slice(5));
       return;

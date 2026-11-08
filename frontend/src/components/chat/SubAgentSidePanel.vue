@@ -208,32 +208,6 @@ defineExpose({
 </script>
 
 <template>
-  <!-- 1. 折叠状态：右侧贴边胶囊按钮 (点击展开) -->
-  <Transition name="sub-panel-tab">
-  <div
-    v-if="!isOpen"
-    class="absolute right-0 top-1/2 -translate-y-1/2 z-30 transition-transform duration-300"
-  >
-    <button
-      @click="emit('toggleOpen')"
-      :class="[
-        'px-2.5 py-2 rounded-l-2xl border-y border-l shadow-md flex items-center gap-1.5 transition-all hover:pr-3.5 cursor-pointer select-none text-xs font-medium',
-        isDark
-          ? 'bg-[#151c28]/95 border-[#28364f] text-blue-300 hover:bg-[#1c2637]'
-          : 'bg-blue-50/95 border-blue-200 text-blue-700 hover:bg-blue-100'
-      ]"
-      :title="t('chat.subAgent.expandTip')"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-      </svg>
-      <div class="w-2 h-2 rounded-full bg-blue-500 lx-live-dot"></div>
-      <span>{{ t('chat.subAgent.title', { count: items.length }) }}</span>
-    </button>
-  </div>
-  </Transition>
-
-  <!-- 2. 展开状态：位于右侧的子 Agent 轨迹与标签面板 (支持左边缘拖拽调整宽度) -->
   <Transition name="sub-panel">
   <div
     v-if="isOpen"
@@ -522,24 +496,12 @@ defineExpose({
   transform: translateX(20px);
 }
 
-.sub-panel-tab-enter-active,
-.sub-panel-tab-leave-active {
-  transition: opacity 180ms ease;
-}
-
-.sub-panel-tab-enter-from,
-.sub-panel-tab-leave-to {
-  opacity: 0;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .sub-panel-shell,
   .sub-panel-enter-active,
   .sub-panel-leave-active,
   .sub-panel-enter-active > aside,
-  .sub-panel-leave-active > aside,
-  .sub-panel-tab-enter-active,
-  .sub-panel-tab-leave-active {
+  .sub-panel-leave-active > aside {
     transition: none;
   }
 }

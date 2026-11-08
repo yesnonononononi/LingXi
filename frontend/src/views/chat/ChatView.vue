@@ -9,11 +9,12 @@
     <Sidebar
       :sessions="localSessions"
       :activeSessionId="localActiveId"
+      :activeSubSessionId="isSubPanelOpen && !previewPanelVisible ? activeViewingSubSessionId : null"
       :workspaces="localWorkspaces"
       :activeWorkspaceId="localActiveWorkspaceId"
       :isCollapsed="isSidebarCollapsed"
       :isDark="displayIsDark"
-      @selectSession="handleSelectSession"
+      @selectSession="handleSidebarSessionSelect"
       @newSession="handleNewSession"
       @deleteSession="handleDeleteSession"
       @renameSession="handleRenameSession"
@@ -587,7 +588,7 @@ const {
   isLoadingMoreSubMessages,
   handleLoadMoreSubSessionHistory,
   canChangeWorkspace,
-  handleSelectSession,
+  handleSelectSidebarSession,
   handleNewSession,
   handleDeleteSession,
   handleRenameSession,
@@ -630,6 +631,11 @@ const {
   handleTouchStart,
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef });
+
+const handleSidebarSessionSelect = (id: string): void => {
+  if (localSessions.value.some(session => session.subSessions?.some(sub => String(sub.id) === id))) closePreviewPanel();
+  void handleSelectSidebarSession(id);
+};
 
 /**
  * 切换会话或工作区必须销毁页面实例。

@@ -51,7 +51,14 @@ export function useSessionVisibility(sources: SessionVisibilitySources): {
       value: String(s.id),
       label: s.title || t('session.newConversation'),
       icon: Comment01Icon,
-      raw: s
+      raw: s,
+      children: (s.subSessions ?? []).filter(sub => String(sub.id) !== String(s.id)).map(sub => ({
+        value: String(sub.id),
+        label: sub.name || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')),
+        icon: Comment01Icon,
+        raw: sub,
+        ownerSessionId: String(s.id),
+      }))
     }));
     if (sessions.length > SESSION_VISIBLE_LIMIT) {
       children.push({

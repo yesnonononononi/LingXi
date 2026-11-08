@@ -2,7 +2,7 @@
 /**
  * 【内部接口 · 无兼容承诺】Sidebar 工作区树的**默认实现**。
  *
- * <p><b>为什么内部 props 这么宽（24 项）：</b>本组件是「把 Sidebar 的一段模板抽成函数」，
+ * <p><b>为什么内部 props 这么宽（25 项）：</b>本组件是「把 Sidebar 的一段模板抽成函数」，
  * 它不是对外契约。对外契约是 `SidebarTreeSlotProps`（7 项，见 types/sidebarSlots.ts），
  * 宿主注册本组件时走的是内部接口；**替换实现只能收到对外契约**，拿不到这里的任何内部状态。
  * 这正是设计文档 §7.0 的方案③（两套接口），也因此本文件**不做** provide/inject 内部上下文——
@@ -22,6 +22,8 @@ import {computed, type Ref} from 'vue';
 import type {BranchedMenuChild, BranchedMenuItem} from '../common/BranchedMenu.vue';
 import BranchedMenu from '../common/BranchedMenu.vue';
 import SessionStateIndicator from './SessionStateIndicator.vue';
+import SidebarSubSessions from './SidebarSubSessions.vue';
+import {toSubItemStatus} from '../../utils/subSessionStatus';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import {t} from '../../i18n';
 import {SESSION_VISIBLE_LIMIT} from '../../composables/sidebar/useSessionVisibility';
@@ -32,7 +34,7 @@ import type {SidebarTreeActions} from '../../types/sidebarSlots';
 defineOptions({ inheritAttrs: false });
 
 /**
- * 内部 props（24 项，**无兼容承诺**，随内部重构自由变动）。
+ * 内部 props（25 项，**无兼容承诺**，随内部重构自由变动）。
  *
  * <p>与对外 `SidebarTreeSlotProps` 的差别：这里给的是组件内既有的 composable 产物与原始 handler，
  * 好让模板能逐字迁移；对外契约给的是装配后的语义模型（`groups`）。两者的唯一联系是
@@ -55,6 +57,7 @@ export interface SidebarWorkspaceTreeInternalProps {
   /** 当前打开三点菜单的 workspace id。 */
   readonly activeMenuWorkspaceId: string | null;
   readonly activeSessionId: string | null;
+  readonly activeSubSessionId?: string | null;
   readonly isCollapsed: boolean;
   readonly isDark: boolean;
   /** `useSessionVisibility.limitSessions`：按上限截断（供 v-for 直接使用）。 */
@@ -168,7 +171,7 @@ const emit = emitShim as TreeEmitShim;
         <div v-else-if="isDark" class="py-1">
           <BranchedMenu
             :items="branchedMenuItems"
-            :active="activeSessionId || ''"
+            :active="activeSubSessionId || activeSessionId || ''"
             :openIndices="branchedOpenIndices"
             color="#a1a1aa"
             accentColor="#ffffff"
@@ -262,7 +265,7 @@ const emit = emitShim as TreeEmitShim;
             <template #item-label="{ item }">
               <div class="flex-1 truncate min-w-0 pr-1">
                 <input
-                  v-if="editingSessionId === item.value"
+                  v-if="!item.ownerSessionId && editingSessionId === item.value"
                   v-model="editingTitle"
                   @blur="saveEdit(item.raw, $event)"
                   @keyup.enter="saveEdit(item.raw, $event)"
@@ -276,9 +279,9 @@ const emit = emitShim as TreeEmitShim;
 
             <!-- Item Actions: 重命名与删除 -->
             <template #item-actions="{ item }">
-              <SessionStateIndicator v-if="item.raw" :session="item.raw" :active="String(item.raw.id) === activeSessionId" />
+              <SessionStateIndicator v-if="item.raw" :session="item.raw" :active="String(item.raw.id) === activeSessionId" :subStatus="item.ownerSessionId ? toSubItemStatus(item.raw.runStatus, item.raw.lastOutcome) : undefined" />
               <div
-                v-if="editingSessionId !== item.value"
+                v-if="item.raw && !item.ownerSessionId && editingSessionId !== item.value"
                 class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
                 @click.stop
               >
@@ -410,9 +413,8 @@ const emit = emitShim as TreeEmitShim;
             <CollapseTransition>
               <div v-if="expandedWorkspaces[String(group.workspace.id)] && group.sessions.length > 0">
                 <div class="pl-4 pr-1 py-0.5 space-y-0.5">
+                  <template v-for="session in limitSessions(String(group.workspace.id), group.sessions)" :key="session.id">
                   <div
-                    v-for="session in limitSessions(String(group.workspace.id), group.sessions)"
-                    :key="session.id"
                     @click="emit('selectSession', session.id)"
                     :class="[
                       'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
@@ -455,6 +457,9 @@ const emit = emitShim as TreeEmitShim;
                     </div>
                   </div>
 
+                  <SidebarSubSessions :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+                  </template>
+
                   <!-- 展开显示 / 收起 -->
                   <button
                     v-if="group.sessions.length > SESSION_VISIBLE_LIMIT"
@@ -475,9 +480,8 @@ const emit = emitShim as TreeEmitShim;
               {{ t('chat.sidebar.history') }}
             </div>
             <div class="space-y-0.5">
+              <template v-for="session in limitSessions('ws-unassigned', unassignedSessions)" :key="session.id">
               <div
-                v-for="session in limitSessions('ws-unassigned', unassignedSessions)"
-                :key="session.id"
                 @click="emit('selectSession', session.id)"
                 :class="[
                   'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
@@ -514,6 +518,8 @@ const emit = emitShim as TreeEmitShim;
                   </button>
                 </div>
               </div>
+              <SidebarSubSessions :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+              </template>
               <button
                 v-if="unassignedSessions.length > SESSION_VISIBLE_LIMIT"
                 @click.stop="toggleFullyExpanded('ws-unassigned')"

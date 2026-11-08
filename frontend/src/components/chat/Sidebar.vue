@@ -26,6 +26,7 @@ import {useSidebarActions} from '../../composables/sidebar/useSidebarActions';
 const props = defineProps<{
   sessions: ChatSession[];
   activeSessionId: string | null;
+  activeSubSessionId?: string | number | null;
   workspaces?: WorkspaceVO[];
   activeWorkspaceId?: string | number | null;
   isCollapsed: boolean;
@@ -224,7 +225,7 @@ const treeGroups = computed<SidebarGroupNode[]>(() => {
 /** `workspaceTree` 插槽 props（对外契约，7 项）。 */
 const treeSlotProps = computed<SidebarTreeSlotProps>(() => ({
   groups: treeGroups.value,
-  activeSessionId: props.activeSessionId,
+  activeSessionId: props.activeSubSessionId == null ? props.activeSessionId : String(props.activeSubSessionId),
   isCollapsed: props.isCollapsed,
   isDark: isDark.value,
   sessionLimit: SESSION_VISIBLE_LIMIT,
@@ -233,7 +234,7 @@ const treeSlotProps = computed<SidebarTreeSlotProps>(() => ({
 }));
 
 /**
- * 工作区树**默认实现**的内部 props（24 项，无兼容承诺）。
+ * 工作区树**默认实现**的内部 props（25 项，无兼容承诺）。
  *
  * <p>`editingTitle` 传的是 Ref 本身（不是 `.value`）：原模板用 `v-model` 双向绑定重命名输入框，
  * 传值会让输入框变成只读。这里在 script 作用域里组对象，模板不会再自动解包，
@@ -249,6 +250,7 @@ const treeDefaultProps = computed<SidebarWorkspaceTreeInternalProps>(() => ({
   editingTitle,
   activeMenuWorkspaceId: activeMenuWorkspaceId.value,
   activeSessionId: props.activeSessionId,
+  activeSubSessionId: props.activeSubSessionId == null ? null : String(props.activeSubSessionId),
   isCollapsed: props.isCollapsed,
   isDark: isDark.value,
   limitSessions,
