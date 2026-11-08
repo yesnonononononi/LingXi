@@ -75,6 +75,7 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -524,7 +525,7 @@ class DecisionEngineEquivalenceGuardTest {
         assertEquals(1L, resumeRows(EXECUTION_V1, "APPROVAL_DECISION"), "来源仍必须持久化");
         assertEquals("FAILED", resumeState(EXECUTION_V1), "启动失败必须收口为 FAILED");
         // 控制槽位没泄漏：同一卡片再提交不会抛「执行仍在运行」，只会按已决处理。
-        var second = workflowService.decide(CONVERSATION_V1, "call-v1", true, "可以");
+        SseEmitter second = workflowService.decide(CONVERSATION_V1, "call-v1", true, "可以");
         assertNotNull(second);
     }
 

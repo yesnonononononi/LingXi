@@ -515,6 +515,31 @@ class CommandTwoPhaseGuardTest {
     }
 
     // ------------------------------------------------------------------
+    // 10) 拒绝路径的关流时机
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("10) v1 拒绝：恢复请求行 1 条（APPROVAL_DECISION），流在恢复落定之后才关")
+    void v1RejectClosesStreamOnlyAfterResumeSettles() {
+        // 把恢复按住在「进行中」：此刻还没有落定，流必须仍然开着。
+        CountDownLatch hold = new CountDownLatch(1);
+        resumer.holdOn(hold);
+
+        workflowService.decide(CONV_V1, CARD_V1, false, "");
+
+        // 拒绝是同步落定的（无副作用、无 T2），返回时恢复请求行已经落库。
+        assertEquals(1L, resumeRows(EXEC_V1), "拒绝也必须登记持久化恢复请求");
+        assertEquals("APPROVAL_DECISION", resumeTrigger(EXEC_V1));
+        awaitResumeStart(EXEC_V1, 1);
+        assertEquals(0, sse.finishedCount(), "恢复还在进行中，此刻绝不能关流");
+
+        hold.countDown();
+        awaitFinishCount(1);
+        assertEquals(1, sse.finishedCount(), "恢复落定后必须关流，且只关一次");
+        assertEquals(1L, resumeRows(EXEC_V1), "关流不得增加恢复请求行");
+    }
+
+    // ------------------------------------------------------------------
     // 装配辅助
     // ------------------------------------------------------------------
 
@@ -717,6 +742,30 @@ class CommandTwoPhaseGuardTest {
         }
     }
 
+    /** 等恢复真的启动到第 expected 次：恢复必须在关流之前发生，否则「落定后才关」无从谈。 */
+    private void awaitResumeStart(long executionId, int expected) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15L);
+        while (System.nanoTime() < deadline) {
+            if (resumeStarts.getOrDefault(String.valueOf(executionId), 0) >= expected) {
+                return;
+            }
+            sleep();
+        }
+        assertEquals(expected, resumeStarts.getOrDefault(String.valueOf(executionId), 0), "恢复未启动");
+    }
+
+    /** 等关流次数达到 expected（关流由恢复落定回调触发，必须异步等待）。 */
+    private void awaitFinishCount(int expected) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15L);
+        while (System.nanoTime() < deadline) {
+            if (sse.finishedCount() >= expected) {
+                return;
+            }
+            sleep();
+        }
+        assertEquals(expected, sse.finishedCount(), "恢复落定后必须关流");
+    }
+
     private static void sleep() {
         try {
             Thread.sleep(20L);
@@ -866,10 +915,16 @@ class CommandTwoPhaseGuardTest {
 
     }
 
-    /** 记录恢复启动次数的恢复器：只数「真的起了一次 loop」。 */
+    /**
+     * 记录恢复启动次数的恢复器：只数「真的起了一次 loop」。
+     *
+     * <p>{@code gate} 非空时，恢复会先停在里面，用来把「恢复进行中」这个瞬间拉长成可断言的窗口 ——
+     * 关流时机只有在恢复尚未落定时才有观察价值。</p>
+     */
     static final class RecordingResumer extends SuspendedExecutionResumer {
 
         private final Map<String, Integer> starts;
+        private final AtomicReference<CountDownLatch> gate = new AtomicReference<>();
 
         RecordingResumer(SessionAttributeRestorer restorer, ModelContextService contexts,
                          ObjectProvider<ExecutionControl> control, Map<String, Integer> starts) {
@@ -877,9 +932,18 @@ class CommandTwoPhaseGuardTest {
             this.starts = starts;
         }
 
+        /** 让下一次（及之后持同一闩的）恢复停住，直到测试放行。 */
+        void holdOn(CountDownLatch latch) {
+            gate.set(latch);
+        }
+
         @Override
         public void resume(Execution execution, Long conversationId) {
             starts.merge(String.valueOf(execution.getId()), 1, Integer::sum);
+            CountDownLatch latch = gate.get();
+            if (latch != null) {
+                await(latch);
+            }
             super.resume(execution, conversationId);
         }
     }

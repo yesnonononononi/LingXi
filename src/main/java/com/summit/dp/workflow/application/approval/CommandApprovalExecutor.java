@@ -1,7 +1,6 @@
 package com.summit.dp.workflow.application.approval;
 
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
@@ -55,10 +54,6 @@ public class CommandApprovalExecutor {
     private final ModelContextService modelContextService;
     private final ExecutionResumeCoordinator resumeCoordinator;
     private final ManagedAsyncExecutor asyncExecutor;
-
-    /** 一次命令审批的受理结论：落定的动作与恢复处置。 */
-    public record CommandApprovalResult(ToolCallOutcome outcome, ResumeDisposition disposition) {
-    }
 
     /**
      * 准备 T1：锁外完成校验、控制信号登记与命令环境重建。
@@ -118,8 +113,10 @@ public class CommandApprovalExecutor {
             toolCallRepository.updateById(card);
             executionRepository.getObject().save(execution);
             modelContextService.replace(conversationId, execution.getMessages());
-            // 拒绝没有副作用、不需要 T2：恢复意图与结论同事务提交。
-            return resumeCoordinator.accept(card.getExecutionId(), ResumeTriggerType.APPROVAL_DECISION);
+            // 拒绝同样登记持久化恢复请求，因此关流必须等它落定：否则前端在恢复真正开始前
+            // 就收到流结束，与批准路径（落定后才关）行为不一致。回调交给协调器保管。
+            return resumeCoordinator.accept(card.getExecutionId(), ResumeTriggerType.APPROVAL_DECISION,
+                    plan.completion());
         }
         if (!ExecutionToolSlot.write(execution, card.getId(), card.getToolName(),
                 CommandOutcomeResolver.APPROVED_PENDING_OUTPUT)) {
@@ -148,13 +145,15 @@ public class CommandApprovalExecutor {
     }
 
     /**
-     * T1 提交之后的动作：派发锁外副作用（批准）或收尾关流（拒绝）。
+     * T1 提交之后的动作：批准派发锁外副作用；拒绝不再自行关流。
      *
      * <p><b>只在事务提交之后调用</b>：派发得比提交早，收尾段就可能读到未提交的受理状态。</p>
+     *
+     * <p><b>拒绝为什么什么都不做</b>：拒绝也登记了持久化恢复请求，关流已交给协调器的落定回调
+     * （见 {@link #writeT1}）。在这里关流会让前端在恢复启动之前就看到流结束。</p>
      */
     public void afterCommit(ApprovalPlan plan) {
         if (!plan.approved()) {
-            runCompletion(plan.completion());
             return;
         }
         try {
