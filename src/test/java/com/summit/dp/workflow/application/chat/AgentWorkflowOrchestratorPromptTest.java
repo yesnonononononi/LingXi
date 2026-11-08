@@ -73,11 +73,11 @@ class AgentWorkflowOrchestratorPromptTest {
         verify(chatAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
         assertEquals("全局规则\n\n# 用户个性化偏好\n\n## 用户偏好与自定义指令\n先给结论",
-                request.getSystemPrompt());
-        assertEquals(context.messageList(), request.getMessages());
-        assertSame(context.pendingUserMessage(), request.getMessages().getLast());
-        assertEquals(input, request.getMessages().getLast().text());
-        assertEquals(1L, request.getMessages().stream().filter(message -> input.equals(message.text())).count());
+                request.getContextSpec().getSystemPrompt());
+        assertEquals(context.messageList(), request.getContextSpec().getContext());
+        assertSame(context.pendingUserMessage(), request.getContextSpec().getContext().getLast());
+        assertEquals(input, request.getContextSpec().getContext().getLast().text());
+        assertEquals(1L, request.getContextSpec().getContext().stream().filter(message -> input.equals(message.text())).count());
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                 ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                 ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
@@ -100,8 +100,8 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(subAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertEquals("全局规则\n\n代码审查助手", request.getSystemPrompt());
-        assertEquals(context.messageList(), request.getMessages());
+        assertEquals("全局规则\n\n代码审查助手", request.getContextSpec().getSystemPrompt());
+        assertEquals(context.messageList(), request.getContextSpec().getContext());
         assertEquals(selected.getToolList(), request.getToolList());
         verifyNoInteractions(chatAgent, teamService);
     }
@@ -127,10 +127,10 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(subAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertTrue(request.getSystemPrompt().startsWith("全局规则\n\n开发团队主理人\n"));
-        assertTrue(request.getSystemPrompt().contains("- id: 6"));
-        assertTrue(request.getSystemPrompt().contains("验证回归用例"));
-        assertEquals(context.messageList(), request.getMessages());
+        assertTrue(request.getContextSpec().getSystemPrompt().startsWith("全局规则\n\n开发团队主理人\n"));
+        assertTrue(request.getContextSpec().getSystemPrompt().contains("- id: 6"));
+        assertTrue(request.getContextSpec().getSystemPrompt().contains("验证回归用例"));
+        assertEquals(context.messageList(), request.getContextSpec().getContext());
         assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.CALL_SUB_AGENT,
                         ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT),
                 request.getToolList());

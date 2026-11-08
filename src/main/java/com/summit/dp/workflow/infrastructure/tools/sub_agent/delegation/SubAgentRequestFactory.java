@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
@@ -105,14 +106,17 @@ public class SubAgentRequestFactory {
 
         Objects.requireNonNull(toolExecution);
         return builder
-                .messages(buildContext(priorMessages, task))
+                .contextSpec(ContextSpec.builder()
+                        .context(buildContext(priorMessages, task))
+                        .systemPrompt(systemPromptBuilder.buildMemberPrompt(
+                                subAgent, team, argument.getPrompt(), workspaceSpec))
+                        .build())
                 .modelConfigSpec(runtimeConfigurations.freezeModel(subAgent.getModelId(), childModel.config()))
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel, resolvedWorkspace.id()))
                         .build())
-                .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt(), workspaceSpec))
                 .toolList(toolListProcessor.process(subAgent.getToolList(), ToolProcessingContext.builder()
                         .member(true).agentId(subAgent.getId())
                         .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null

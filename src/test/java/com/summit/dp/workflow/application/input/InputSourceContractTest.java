@@ -200,8 +200,7 @@ class InputSourceContractTest {
     }
 
     private static LoopContext context(Execution execution) {
-        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal(execution.getId()), () -> 0, execution.getMessages()::addAll);
+        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), new ExecutionControlSignal(execution.getId()), () -> 0, null, execution.getMessages()::addAll);
     }
 
     private static final class Fixture implements AutoCloseable {

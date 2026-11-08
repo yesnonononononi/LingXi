@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 轮次投影的整笔重试：锁冲突换新事务重放，业务失败不重放。
@@ -98,7 +99,7 @@ class ChatTurnLifecycleProjectorRetryTest {
                 .executionState(state)
                 .agentRequest(com.summit.core.agent.AgentRequest.builder()
                         .executionId("940001")
-                        .messages(new java.util.ArrayList<>())
+                        .contextSpec(ContextSpec.builder().context(new java.util.ArrayList<>()).build())
                         .build())
                 .build();
     }

@@ -2,6 +2,7 @@ package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Image;
 import com.summit.core.conf.McpConfig;
@@ -408,8 +409,10 @@ public class RequestPreparer {
         return AgentRequest
                 .builder()
                 .executionId(executionId)
-                .messages(context.messageList())
-                .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization, context.workspace()))
+                .contextSpec(ContextSpec.builder()
+                        .context(context.messageList())
+                        .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization, context.workspace()))
+                        .build())
                 .workspaceSpec(context.workspace())
                 .toolList(toolListProcessor.process(toolList, ToolProcessingContext.builder()
                         .defaultAgent(defaultAgent)

@@ -72,6 +72,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。
@@ -241,8 +242,9 @@ class HttpClientNetworkComparisonTest {
         private Measurement run(Endpoint endpoint, Scenario scenario, boolean anthropic) throws Exception {
             capture.frames.clear();
             String executionId = String.valueOf(IDS.incrementAndGet());
-            AgentRequest request = AgentRequest.builder().messages(List.of(UserMessageEntity.from("question")))
-                    .systemPrompt("Answer the question.")
+            AgentRequest request = AgentRequest.builder().contextSpec(ContextSpec.builder()
+                            .systemPrompt("Answer the question.")
+                            .context(List.of(UserMessageEntity.from("question"))).build())
                     .retryConfig(ModelRetryConfig.builder().enabled(true).maxRetries(2)
                             .initialDelay(Duration.ZERO).maxDelay(Duration.ZERO).build()).build();
             request.runtimeParametersOrDefault().setEventMetaData(Map.of("rootSessionId", "7", "sessionId", "7", "turnId", "900"));

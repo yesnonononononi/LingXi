@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 聊天入口的顺序与失败收口契约。
@@ -108,7 +109,7 @@ class ChatAdmissionOrderTest {
     private static Execution execution(ExecutionState state) {
         AgentRequest request = AgentRequest.builder()
                 .executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("你好")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("你好"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)))
                         .build())

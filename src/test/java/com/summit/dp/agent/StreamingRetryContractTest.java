@@ -58,6 +58,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 模型故障必须贯穿适配器、重试、执行终态和业务事件序列化。
@@ -103,8 +104,9 @@ class StreamingRetryContractTest {
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
                 public void onInvokeRetry(InvokeRetryEvent event) { retrySeen.countDown(); }
             }));
-            AgentRequest request = AgentRequest.builder().messages(List.of(UserMessageEntity.from("question")))
-                    .systemPrompt("Answer the question.")
+            AgentRequest request = AgentRequest.builder().contextSpec(ContextSpec.builder()
+                            .systemPrompt("Answer the question.")
+                            .context(List.of(UserMessageEntity.from("question"))).build())
                     .retryConfig(ModelRetryConfig.builder().enabled(true).maxRetries(2)
                             .initialDelay(Duration.ZERO).maxDelay(Duration.ZERO).build()).build();
             request.runtimeParametersOrDefault().setEventMetaData(Map.of("rootSessionId", "7", "sessionId", "7", "turnId", "900"));

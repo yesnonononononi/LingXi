@@ -34,6 +34,7 @@ import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 并发读取与清理：一边 {@code findById} 一边清理同一条执行，读到的东西必须完整。
@@ -140,7 +141,7 @@ class ConcurrentCheckpointReadAndReclaimTest {
         List<com.summit.core.conversation.message.Message> history =
                 List.of(UserMessageEntity.from("第一段"), UserMessageEntity.from("第二段"));
         return Execution.builder().id(EXECUTION_ID).agentId("chatAgent")
-                .agentRequest(AgentRequest.builder().executionId(EXECUTION_ID).messages(history).build())
+                .agentRequest(AgentRequest.builder().executionId(EXECUTION_ID).contextSpec(ContextSpec.builder().context(history).build()).build())
                 .executionState(ExecutionState.COMPLETED).messages(List.copyOf(history)).build();
     }
 

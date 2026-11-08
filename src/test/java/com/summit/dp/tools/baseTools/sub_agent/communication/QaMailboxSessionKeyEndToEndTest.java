@@ -258,7 +258,7 @@ class QaMailboxSessionKeyEndToEndTest {
 
     private static LoopContext loopContext(Execution execution, List<Message> appended) {
         LoopMessages loopMessages = LoopMessages.builder().execution(execution).build();
-        return new LoopContext(loopMessages, new ExecutionControlSignal(execution.getId()), 0, appended::addAll);
+        return LoopContext.builder().loopMessages(loopMessages).signal(new ExecutionControlSignal(execution.getId())).consecutiveCompactTurns(() -> 0).appendMessage(appended::addAll).build();
     }
 
     private static final WorkspaceSpec TEST_WORKSPACE = new WorkspaceSpec() {

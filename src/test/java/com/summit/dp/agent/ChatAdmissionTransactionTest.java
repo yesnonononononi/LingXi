@@ -67,6 +67,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 受理事务的原子性：轮次、用户消息与执行行必须共同提交 / 共同回滚。
@@ -148,7 +149,7 @@ class ChatAdmissionTransactionTest {
     private static Execution execution(ExecutionState state) {
         AgentRequest request = AgentRequest.builder()
                 .executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("你好")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("你好"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID)))
                         .build())

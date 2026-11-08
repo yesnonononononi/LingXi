@@ -1,6 +1,6 @@
 package com.summit.dp.workflow.infrastructure.memory;
 
-import com.summit.core.adapter.TokenEstimator;
+import com.summit.core.compact.TokenEstimator;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

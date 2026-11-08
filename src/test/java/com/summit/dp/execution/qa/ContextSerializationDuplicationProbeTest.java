@@ -40,6 +40,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * §4.5「检查点与 session_context 重复序列化」的度量探针：<b>先量，再决定动不动</b>。
@@ -218,7 +219,7 @@ class ContextSerializationDuplicationProbeTest {
         List<Message> snapshot = Collections.unmodifiableList(history);
         return Execution.builder().id(String.valueOf(EXECUTION_ID)).agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))
-                        .messages(new ArrayList<>(snapshot))
+                        .contextSpec(ContextSpec.builder().context(new ArrayList<>(snapshot)).build())
                         .runtimeParameters(AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID)))
                                 .build())

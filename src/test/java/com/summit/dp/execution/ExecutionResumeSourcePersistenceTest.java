@@ -67,6 +67,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 恢复请求的<b>触发来源必须随请求落库</b>：审批已受理、进程随后崩溃，
@@ -333,7 +334,7 @@ class ExecutionResumeSourcePersistenceTest {
         history.add(UserMessageEntity.from("请继续"));
         return Execution.builder().id(String.valueOf(EXECUTION_ID)).agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))
-                        .messages(history)
+                        .contextSpec(ContextSpec.builder().context(history).build())
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .executionState(ExecutionState.SUSPENDED).messages(history).build();
@@ -351,7 +352,7 @@ class ExecutionResumeSourcePersistenceTest {
         history.add(UserMessageEntity.from("请继续"));
         return Execution.builder().id(String.valueOf(EXECUTION_ID)).agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))
-                        .messages(history)
+                        .contextSpec(ContextSpec.builder().context(history).build())
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .executionState(ExecutionState.SUSPENDED).messages(history).build();

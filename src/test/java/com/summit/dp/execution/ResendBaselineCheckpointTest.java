@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 历史重发的检查点守卫：多轮执行各自保留自己的正文文件。
@@ -125,7 +126,7 @@ class ResendBaselineCheckpointTest {
     }
 
     private static Execution suspended(String executionId, List<Message> history) {
-        AgentRequest request = AgentRequest.builder().executionId(executionId).messages(new ArrayList<>(history))
+        AgentRequest request = AgentRequest.builder().executionId(executionId).contextSpec(ContextSpec.builder().context(new ArrayList<>(history)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "405")).build()).build();
         return Execution.builder().id(executionId).agentId("chatAgent").agentRequest(request)

@@ -66,7 +66,7 @@ class GenerateImageInterceptorTest {
 
     private LoopContext context(Execution execution,String...ids) {
         List<ToolCallRequest> calls=Arrays.stream(ids).map(id->new ToolCallRequest(id,ToolCatalog.GENERATE_IMAGE,0,"{}")).toList();
-        return new LoopContext(LoopMessages.builder().execution(execution).response(ChatResponseEntity.builder()
-                .aiMessageEntity(AiMessageEntity.builder().toolCalls(calls).build()).build()).build(),null,0,ignored->{});
+        return LoopContext.builder().loopMessages(LoopMessages.builder().execution(execution).response(ChatResponseEntity.builder()
+                .aiMessageEntity(AiMessageEntity.builder().toolCalls(calls).build()).build()).build()).signal(null).consecutiveCompactTurns(() -> 0).appendMessage(ignored->{}).build();
     }
 }

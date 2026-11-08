@@ -233,8 +233,7 @@ class QaDelegationLifecycleInterleavingTest {
         EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(new MailInputChannel(emailService));
         doAnswer(invocation -> {
             Execution root = invocation.getArgument(0);
-            LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
-                    new ExecutionControlSignal(root.getId()), 0, appended::addAll);
+            LoopContext context = LoopContext.builder().loopMessages(LoopMessages.builder().execution(root).build()).signal(new ExecutionControlSignal(root.getId())).consecutiveCompactTurns(() -> 0).appendMessage(appended::addAll).build();
             mailConsumer.onBeforeModelInvoke(context);
             // 回执由检查点保存路径落库；这是「已投递」的可观测等价事实，后续轮次不该再取到它。
             pendingMail.set(null);
@@ -404,7 +403,7 @@ class QaDelegationLifecycleInterleavingTest {
                         .build())
                 .build();
         LoopMessages loopMessages = LoopMessages.builder().execution(execution).build();
-        return new LoopContext(loopMessages, new ExecutionControlSignal(executionId), 0, appended::addAll);
+        return LoopContext.builder().loopMessages(loopMessages).signal(new ExecutionControlSignal(executionId)).consecutiveCompactTurns(() -> 0).appendMessage(appended::addAll).build();
     }
 
     private static Execution childExecution(long childSessionId) {

@@ -367,7 +367,7 @@ class QaPendingMailRedelegationTest {
                                     ExecutionAttributes.SESSION_ID, "10", ExecutionAttributes.AGENT_ID, "7", ExecutionAttributes.TEAM_ID, "3")).build(),
                             null, target.subSessionId(), null, target.priorMessages());
             assertEquals(2, history.size());
-            assertEquals(CURRENT_TASK, request.getMessages().getLast().text());
+            assertEquals(CURRENT_TASK, request.getContextSpec().getContext().getLast().text());
             return request;
         }
 

@@ -149,7 +149,7 @@ class CallSubAgentSessionReuseTest {
         assertTrue(task.target().reused(), "命中已有子会话必须标记复用");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "复用同一子会话 id");
 
-        List<Message> delivered = task.request().getMessages();
+        List<Message> delivered = task.request().getContextSpec().getContext();
         assertEquals(2, delivered.size(), "应为「既有历史 + 本次任务」");
         assertTrue(delivered.get(0).text().contains("上次的任务"));
         assertTrue(delivered.get(1).text().contains("再评估一下上次的方案"));
@@ -169,7 +169,7 @@ class CallSubAgentSessionReuseTest {
         assertFalse(task.target().reused(), "未命中必须标记首派");
         assertNotNull(task.numericSubSessionId());
         assertNotEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "未命中时必须派生新 id");
-        assertEquals(1, task.request().getMessages().size(), "首派上下文只有本次任务");
+        assertEquals(1, task.request().getContextSpec().getContext().size(), "首派上下文只有本次任务");
     }
 
     @Test

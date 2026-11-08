@@ -28,6 +28,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 重发基线只认目标轮次自己的检查点文件。
@@ -45,7 +46,7 @@ class ResendConfigurationReferenceTest {
         List<Message> history = List.of(SystemMessageEntity.builder().text("压缩后的历史").build(),
                 UserMessageEntity.from("目标提问"));
         Execution execution = Execution.builder().id("100").executionState(ExecutionState.SUSPENDED)
-                .agentRequest(AgentRequest.builder().messages(history).build())
+                .agentRequest(AgentRequest.builder().contextSpec(ContextSpec.builder().context(history).build()).build())
                 .messages(history).build();
 
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();

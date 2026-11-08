@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 「提交后只回收正确的旧文件」守卫：同一执行反复保存，目录里只能留下库内引用的那一份。
@@ -74,7 +75,7 @@ class CheckpointFileRetentionTest {
         history.add(com.summit.core.conversation.message.UserMessageEntity.from("第" + (round + 1) + "轮"));
         return com.summit.core.agent.Execution.builder().id(EXECUTION_ID).agentId("chatAgent")
                 .agentRequest(com.summit.core.agent.AgentRequest.builder()
-                        .executionId(EXECUTION_ID).messages(history)
+                        .executionId(EXECUTION_ID).contextSpec(ContextSpec.builder().context(history).build())
                         .runtimeParameters(com.summit.core.agent.AgentRuntimeParameters.builder()
                                 .attributes(java.util.Map.of(ExecutionAttributes.SESSION_ID, "10")).build())
                         .build())

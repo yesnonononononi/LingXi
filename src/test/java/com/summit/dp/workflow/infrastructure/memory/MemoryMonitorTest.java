@@ -1,7 +1,7 @@
 package com.summit.dp.workflow.infrastructure.memory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.adapter.TokenEstimator;
+import com.summit.core.compact.TokenEstimator;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
@@ -168,8 +168,7 @@ class MemoryMonitorTest {
         assertTrue(execution.getMessages().getLast().text().contains("用户长期记忆文件"));
 
         Execution fresh = execution(null);
-        LoopContext failing = LoopContext.withCompactionCounter(LoopMessages.builder().execution(fresh).build(),
-                null, () -> 0, messages -> { throw new IllegalStateException("注入失败"); });
+        LoopContext failing = LoopContext.withCompactionCounter(LoopMessages.builder().execution(fresh).build(), null, () -> 0, null, messages -> { throw new IllegalStateException("注入失败"); });
         assertThrows(IllegalStateException.class, () -> interceptor.onBeforeModelInvoke(failing));
     }
 
@@ -246,8 +245,7 @@ class MemoryMonitorTest {
             spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
             Execution execution = execution(projectRoot);
             IllegalStateException failure = new IllegalStateException("注入失败");
-            LoopContext payload = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                    new ExecutionControlSignal(execution.getId()), () -> 0, messages -> { throw failure; });
+            LoopContext payload = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), new ExecutionControlSignal(execution.getId()), () -> 0, null, messages -> { throw failure; });
 
             assertSame(failure, assertThrows(IllegalStateException.class,
                     () -> spring.getBean(LoopInterceptorProcessor.class).onBeforeModelInvoke(payload)));
@@ -273,9 +271,7 @@ class MemoryMonitorTest {
     }
 
     private LoopContext context(Execution execution, AtomicInteger appends) {
-        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal(execution.getId()), () -> 0,
-                messages -> {
+        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), new ExecutionControlSignal(execution.getId()), () -> 0, null, messages -> {
                     appends.incrementAndGet();
                     execution.getMessages().addAll(messages);
                 });

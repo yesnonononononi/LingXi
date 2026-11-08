@@ -21,6 +21,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 「没能起步的执行怎么收口」的三种角色口径。
@@ -110,7 +111,7 @@ class StartupFailureCloserTest {
 
     private static Execution execution(ExecutionState state) {
         AgentRequest request = AgentRequest.builder().executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("hi")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(new HashMap<>()).build())
                 .build();
         return Execution.builder().id(EXECUTION_ID).agentId("chatAgent").agentRequest(request)

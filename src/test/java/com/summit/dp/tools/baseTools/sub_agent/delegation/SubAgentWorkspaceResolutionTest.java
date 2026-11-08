@@ -98,7 +98,7 @@ class SubAgentWorkspaceResolutionTest {
         assertSame(spec, resolved);
         verify(workspaceService).findByDir("/host/dir");
         assertEquals(9L, ExecutionAttributes.readLong(lastRequest.runtimeParametersOrDefault().getAttributes(), ExecutionAttributes.WORKSPACE_ID));
-        assertTrue(lastRequest.getSystemPrompt().contains("wiki=/host/dir"));
+        assertTrue(lastRequest.getContextSpec().getSystemPrompt().contains("wiki=/host/dir"));
         verify(workspaceService, never()).findById(any());
     }
 

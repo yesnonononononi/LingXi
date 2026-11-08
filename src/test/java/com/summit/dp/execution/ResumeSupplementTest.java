@@ -269,8 +269,7 @@ class ResumeSupplementTest {
         parameters.setEventMetaData(Map.of("event", "保留事件身份"));
         parameters.setAllowOutsideWorkspace(true);
         ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(channel);
-        LoopContext failing = new LoopContext(LoopMessages.builder().execution(staleCheckpoint).build(),
-                new ExecutionControlSignal(EXECUTION_ID), 0, ignored -> { throw new IllegalStateException("模拟追加失败"); });
+        LoopContext failing = LoopContext.builder().loopMessages(LoopMessages.builder().execution(staleCheckpoint).build()).signal(new ExecutionControlSignal(EXECUTION_ID)).consecutiveCompactTurns(() -> 0).appendMessage(ignored -> { throw new IllegalStateException("模拟追加失败"); }).build();
         assertThrows(IllegalStateException.class, () -> interceptor.onBeforeModelInvoke(failing));
         assertEquals(1L, parameters.getAttributes().get(ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID));
 
@@ -324,7 +323,6 @@ class ResumeSupplementTest {
     }
 
     private LoopContext context(Execution execution, List<Message> appended) {
-        return new LoopContext(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal(EXECUTION_ID), 0, appended::addAll);
+        return LoopContext.builder().loopMessages(LoopMessages.builder().execution(execution).build()).signal(new ExecutionControlSignal(EXECUTION_ID)).consecutiveCompactTurns(() -> 0).appendMessage(appended::addAll).build();
     }
 }

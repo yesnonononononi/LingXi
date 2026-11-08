@@ -27,6 +27,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 class ModelContextServiceTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
@@ -116,7 +117,7 @@ class ModelContextServiceTest {
         Execution execution = Execution.create(AgentRequest.builder().executionId("301")
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, 201L)).build())
-                .messages(originalRound)
+                .contextSpec(ContextSpec.builder().context(originalRound).build())
                 .build(), "qa");
         RuntimeException originalFailure;
         JsonParseException parseFailure;

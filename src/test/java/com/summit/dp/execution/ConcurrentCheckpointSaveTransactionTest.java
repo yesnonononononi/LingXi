@@ -74,6 +74,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 
 @SpringJUnitConfig(ConcurrentCheckpointSaveTransactionTest.Config.class)
@@ -287,7 +288,7 @@ class ConcurrentCheckpointSaveTransactionTest {
         List<Message> messages = List.of(UserMessageEntity.from("并发保存用例"));
         AgentRequest request = AgentRequest.builder()
                 .executionId(Long.toString(executionId))
-                .messages(messages)
+                .contextSpec(ContextSpec.builder().context(messages).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(com.summit.dp.execution.ExecutionAttributes.SESSION_ID,
                                 Long.toString(SESSION_ID)))

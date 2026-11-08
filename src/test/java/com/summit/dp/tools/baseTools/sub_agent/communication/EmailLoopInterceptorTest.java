@@ -164,7 +164,7 @@ class EmailLoopInterceptorTest {
                         .build())
                 .build();
         LoopMessages loopMessages = LoopMessages.builder().execution(execution).build();
-        return new LoopContext(loopMessages, new ExecutionControlSignal(executionId), 0, appended::addAll);
+        return LoopContext.builder().loopMessages(loopMessages).signal(new ExecutionControlSignal(executionId)).consecutiveCompactTurns(() -> 0).appendMessage(appended::addAll).build();
     }
 
     private static final WorkspaceSpec TEST_WORKSPACE = new WorkspaceSpec() {

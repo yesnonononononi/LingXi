@@ -92,8 +92,7 @@ class ChecklistReminderRecoveryTest {
     @Test
     void injectionFailureIsReplayedBeforeANewExecutionCanClose() {
         Execution first = execution("1001");
-        LoopContext failed = LoopContext.withCompactionCounter(LoopMessages.builder().execution(first).build(),
-                new ExecutionControlSignal("1001"), () -> 0, messages -> { throw new IllegalStateException("注入失败"); });
+        LoopContext failed = LoopContext.withCompactionCounter(LoopMessages.builder().execution(first).build(), new ExecutionControlSignal("1001"), () -> 0, null, messages -> { throw new IllegalStateException("注入失败"); });
         assertThrows(IllegalStateException.class, () -> reminder.onBeforeComplete(failed));
         assertTrue(reloaded().isRemindStatus());
 
@@ -187,7 +186,6 @@ class ChecklistReminderRecoveryTest {
     }
 
     private LoopContext context(Execution execution) {
-        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal(execution.getId()), () -> 0, messages -> execution.getMessages().addAll(messages));
+        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), new ExecutionControlSignal(execution.getId()), () -> 0, null, messages -> execution.getMessages().addAll(messages));
     }
 }
