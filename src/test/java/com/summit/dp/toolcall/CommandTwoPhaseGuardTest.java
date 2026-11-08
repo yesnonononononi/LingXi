@@ -304,6 +304,9 @@ class CommandTwoPhaseGuardTest {
         assertEquals("APPROVED", command.observedOutcome(), "占位结论必须先落库");
         assertEquals(PLACEHOLDER, command.observedSlot(), "槽位占位输出必须先落库");
         assertNotNull(command.observedDigest(), "决策身份必须先落库");
+        assertNotNull(command.observedResumeRows(), "副作用那一刻必须读得到恢复请求计数");
+        assertEquals(0L, Long.parseLong(command.observedResumeRows()),
+                "T2 还没落结果，此刻不得已有恢复请求行（否则执行会在结论落库前被唤醒）");
         assertEquals(1, command.invocations());
     }
 
@@ -762,6 +765,7 @@ class CommandTwoPhaseGuardTest {
         private final AtomicReference<String> outcome = new AtomicReference<>();
         private final AtomicReference<String> slot = new AtomicReference<>();
         private final AtomicReference<String> digest = new AtomicReference<>();
+        private final AtomicReference<String> resumeRows = new AtomicReference<>();
         private final CountDownLatch observed = new CountDownLatch(1);
         private final AtomicReference<RuntimeException> failure = new AtomicReference<>();
         private final AtomicReference<Runnable> onExecute = new AtomicReference<>();
@@ -786,6 +790,8 @@ class CommandTwoPhaseGuardTest {
             digest.set(database.queryString("select decision_digest from tool_call where id = '"
                     + toolExecution.getId() + "'"));
             slot.set(slotReader.apply(toolExecution.getId()));
+            resumeRows.set(database.queryString("select count(*) from execution_resume_task where execution_id = "
+                    + toolExecution.getExecutionId()));
             observed.countDown();
             Runnable hook = onExecute.get();
             if (hook != null) {
@@ -824,6 +830,10 @@ class CommandTwoPhaseGuardTest {
 
         String observedSlot() {
             return slot.get();
+        }
+
+        String observedResumeRows() {
+            return resumeRows.get();
         }
 
         String observedDigest() {
