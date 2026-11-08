@@ -26,38 +26,40 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 必须先写文件再登记；摘要随工具结束事件发布，不能另发第二份编辑事件。 */
+/**
+ * 必须先写文件再登记；摘要随工具结束事件发布，不能另发第二份编辑事件。
+ */
 @Slf4j
 @RequiredArgsConstructor
 @Component
 @Tool(
-    id = ToolCatalog.EDIT_FILE,
-    name = ToolCatalog.EDIT_FILE,
-    executor = EditFileToolExecutor.class,
-    description = "Edit UTF-8 text using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
-    parameters = @ObjectValue(
-        properties = {
-            @ToolProperty(key = "type", value = @Value(
-                type = ValueType.STRING,
-                description = "INSERT_* : insert content behind or in front of anchor. ",
-                stringValue = @StringValue(enums = {"INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE"}))),
-            @ToolProperty(key = "anchor", value = @Value(
-                type = ValueType.STRING,
-                description = "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file")),
-            @ToolProperty(key = "path", value = @Value(
-                type = ValueType.STRING,
-                description = "File path relative to the workspace root. Do not use absolute paths it is a required parameter")),
-            @ToolProperty(key = "oldText", value = @Value(
-                type = ValueType.STRING,
-                description = "Exact original text, required for REPLACE and DELETE. Must match exactly once.")),
-            @ToolProperty(key = "newText", value = @Value(
-                type = ValueType.STRING,
-                description = "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."))
-        },
-        required = {"type", "path"}),
-    concurrentPolicy = ConcurrentPolicy.SERIAL_MUTATION,
-    maxOutput = 200,
-    timeout = 30L)
+        id = ToolCatalog.EDIT_FILE,
+        name = ToolCatalog.EDIT_FILE,
+        executor = EditFileToolExecutor.class,
+        description = "Edit UTF-8 text using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
+        parameters = @ObjectValue(
+                properties = {
+                        @ToolProperty(key = "type", value = @Value(
+                                type = ValueType.STRING,
+                                description = "INSERT_* : insert content behind or in front of anchor. ",
+                                stringValue = @StringValue(enums = {"INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE"}))),
+                        @ToolProperty(key = "anchor", value = @Value(
+                                type = ValueType.STRING,
+                                description = "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file")),
+                        @ToolProperty(key = "path", value = @Value(
+                                type = ValueType.STRING,
+                                description = "File path relative to the workspace root. Do not use absolute paths it is a required parameter")),
+                        @ToolProperty(key = "oldText", value = @Value(
+                                type = ValueType.STRING,
+                                description = "Exact original text, required for REPLACE and DELETE. Must match exactly once.")),
+                        @ToolProperty(key = "newText", value = @Value(
+                                type = ValueType.STRING,
+                                description = "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."))
+                },
+                required = {"type", "path"}),
+        concurrentPolicy = ConcurrentPolicy.SERIAL_MUTATION,
+        maxOutput = 200,
+        timeout = 30L)
 public class EditFileToolExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final Differ differ;
@@ -97,9 +99,16 @@ public class EditFileToolExecutor implements ToolExecutor {
             }
             files.writeString(target, editRes.getData().newContent(), charset);
 
-            EditOutcome outcome = new EditOutcome(request.getPath(), existed, oldContent,
-                    editRes.getData().newContent(), differ.diff(request.getPath(),
-                    oldContent == null ? "" : oldContent, editRes.getData().newContent()));
+            EditOutcome outcome = new EditOutcome(
+                    target.toAbsolutePath().normalize().toString(),
+                    existed,
+                    oldContent,
+                    editRes.getData().newContent(),
+                    differ.diff(
+                            request.getPath(),
+                            oldContent == null ? "" : oldContent,
+                            editRes.getData().newContent())
+            );
             // 登记必须在落盘之后，不能把未写入的内容当成可回滚记录。
             Serializable recordId = recordEdit(toolExecution, outcome);
             return ToolExecuteResult.success(objectMapper.writeValueAsString(outcome.toSummary()),
@@ -133,7 +142,9 @@ public class EditFileToolExecutor implements ToolExecutor {
         }
     }
 
-    /** 全文不入事件，避免超出 SSE 帧预算；前端通过 recordId 查询记录。 */
+    /**
+     * 全文不入事件，避免超出 SSE 帧预算；前端通过 recordId 查询记录。
+     */
     private Map<String, Object> buildMetadata(EditOutcome outcome, Serializable recordId) {
         Map<String, Object> fileEdit = new LinkedHashMap<>();
         fileEdit.put("filePath", outcome.path());
@@ -145,7 +156,9 @@ public class EditFileToolExecutor implements ToolExecutor {
         return Map.of("fileEdit", fileEdit);
     }
 
-    /** 模型只收摘要，完整差异留给前端，避免重复传输全文并截断结果。 */
+    /**
+     * 模型只收摘要，完整差异留给前端，避免重复传输全文并截断结果。
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record EditSummary(String path, boolean created, Integer plusLines, Integer minusLines,
                                String diffError) {

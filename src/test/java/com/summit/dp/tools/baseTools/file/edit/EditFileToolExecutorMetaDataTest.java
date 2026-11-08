@@ -15,7 +15,9 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,17 +34,22 @@ class EditFileToolExecutorMetaDataTest {
     @Test
     void appliedEditCarriesFileEditSummary() throws Exception {
         Path target = tempDir.resolve("demo.txt");
-        java.nio.file.Files.writeString(target, "alpha\nbeta\n");
+        Files.writeString(target, "alpha\nbeta\n");
 
+        ObjectMapper mapper = new ObjectMapper();
+        FileRecordManager records = fileRecordManager();
         EditFileToolExecutor executor = new EditFileToolExecutor(
-                new ObjectMapper(), differ(), fileRecordManager());
-        ToolExecuteResult result = executor.execute(execution(executor, tempDir, """
-                {"type":"REPLACE","path":"demo.txt","oldText":"beta","newText":"BETA"}"""));
+                mapper, differ(), records);
+        ToolExecution toolExecution = execution(executor, tempDir, """
+                {"type":"REPLACE","path":"demo.txt","oldText":"beta","newText":"BETA"}""");
+        ToolExecuteResult result = executor.execute(toolExecution);
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         Map<String, Object> fileEdit = (Map<String, Object>) result.getToolMetaData().get("fileEdit");
         assertNotNull(fileEdit);
-        assertEquals("demo.txt", fileEdit.get("filePath"));
+        String expectedPath = target.toAbsolutePath().normalize().toString();
+        assertEquals(expectedPath, fileEdit.get("filePath"));
+        assertEquals(expectedPath, mapper.readTree(result.getToolOutput()).path("path").asText());
         assertNotNull(fileEdit.get("plusLines"));
         assertNotNull(fileEdit.get("minusLines"));
         assertTrue((Integer) fileEdit.get("plusLines") > 0);
@@ -51,6 +58,42 @@ class EditFileToolExecutorMetaDataTest {
         // 全文不入事件：元数据里不允许出现内容字段
         assertFalse(fileEdit.containsKey("oldContent"));
         assertFalse(fileEdit.containsKey("newContent"));
+
+        FileRecord record = records.listPendingRecords("1").getFirst();
+        assertEquals(expectedPath, record.filePath());
+        assertTrue(records.reject("1", record.id(), toolExecution.getWorkspace()));
+        assertEquals("alpha\nbeta\n", Files.readString(target));
+    }
+
+    @Test
+    void siblingFilesKeepIndependentPathsAndVersions() throws Exception {
+        Path directory = tempDir.resolve("nested");
+        Files.createDirectories(directory);
+        Path first = directory.resolve("first.txt");
+        Path second = directory.resolve("second.txt");
+        Files.writeString(first, "before");
+        Files.writeString(second, "before");
+        FileRecordManager records = fileRecordManager();
+        EditFileToolExecutor executor = new EditFileToolExecutor(new ObjectMapper(), differ(), records);
+        ToolExecution firstExecution = execution(executor, tempDir, """
+                {"type":"REPLACE","path":"nested/./first.txt","oldText":"before","newText":"after"}""");
+        ToolExecution secondExecution = execution(executor, tempDir, """
+                {"type":"REPLACE","path":"nested/second.txt","oldText":"before","newText":"after"}""");
+
+        ToolExecuteResult firstResult = executor.execute(firstExecution);
+        ToolExecuteResult secondResult = executor.execute(secondExecution);
+        assertTrue(firstResult.isSuccess(), firstResult.getToolOutput());
+        assertTrue(secondResult.isSuccess(), secondResult.getToolOutput());
+        List<FileRecord> pending = records.listPendingRecords("1");
+        assertEquals(2, pending.size());
+        assertEquals(first.toAbsolutePath().normalize().toString(), pending.getFirst().filePath());
+        assertEquals(second.toAbsolutePath().normalize().toString(), pending.getLast().filePath());
+        assertEquals(1, pending.getFirst().version());
+        assertEquals(1, pending.getLast().version());
+        assertTrue(records.reject("1", pending.getFirst().id(), firstExecution.getWorkspace()));
+        assertTrue(records.reject("1", pending.getLast().id(), secondExecution.getWorkspace()));
+        assertEquals("before", Files.readString(first));
+        assertEquals("before", Files.readString(second));
     }
 
     private Differ differ() {
