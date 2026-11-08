@@ -34,33 +34,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * 三条恢复路径（PLAN/CHOICE 决策、COMMAND T2、委派回填）共用的恢复派发口。
  *
- * <p><b>为什么必须先落库再派发</b>：决策事务提交与「把恢复动作派发出去」之间有进程崩溃窗口 ——
- * 用户点了批准、决策已落库，恢复却没派发，进程就死了。恢复请求先写
- * {@code execution_resume_task}，派发只做「唤醒 worker」，两者之间不再有可信的原子性假设。
- * 反过来（先派发后落库）会在崩溃后留下无人认领的恢复。请求行的唯一用途就是这一件事：
- * 重启后区分「正常等待审批的 SUSPENDED」与「已批准但恢复没起步的 SUSPENDED」。</p>
+ * <p>必须先落库再派发：决策事务提交与派发之间有崩溃窗口，先派发后落库会留下无人认领的恢复。
+ * 请求行的唯一用途是重启后区分「正常等审批的 SUSPENDED」与「已批准但恢复没起步的 SUSPENDED」。</p>
  *
- * <p><b>只尝试一次</b>：批准 = 「决策已落库，后端只尝试恢复一次」。启动失败即收口成 FAILED，
- * 不重试、不退避、不轮询。因此重试次数、退避时刻与巡检线程全部取消：恢复不再有
- * 「稍后再来」的中间态，{@code execution_resume_task} 退化为一条纯请求记录。</p>
+ * <p>只尝试一次：启动失败即收口成 FAILED，不重试、不退避、不轮询。</p>
  *
- * <p><b>worker 纪律（每条都是硬约束，改动前逐条确认）</b>：</p>
- * <ol>
- *   <li><b>短事务领取，锁外跑模型</b>：{@code claim} 是一次条件更新就结束；模型调用在
- *       {@link #runOnce} 里，全程不持任何锁。</li>
- *   <li><b>重新读取执行</b>：领取时看到的状态是快照，可能已被 stop 或另一条决策改变。
- *       已终态 / 已不在挂起态 / 代际已变一律让位，不启动第二次 loop。</li>
- *   <li><b>控制槽位是竞争判据</b>：{@link ExecutionActivity#isActive} 为真说明已有 loop
- *       持有该执行的控制槽位，本 worker 让位 —— <b>竞争失败绝不记成执行失败</b>。</li>
- *   <li><b>不外层重复 register</b>：恢复用既有 {@code executionControl.resume} 的登记互斥，
- *       在它之外再 register 一次会与自己抢锁。</li>
- *   <li><b>状态写入按 version 条件</b>：释放锁到框架 register 之间 stop 可能已落库 CANCELLED，
- *       无条件写会把 CANCELLED 改回去。</li>
- * </ol>
+ * <p>worker 纪律（硬约束）：短事务领取、锁外跑模型；领取后重读执行，已终态或代际已变一律让位；
+ * 控制槽位被占则让位，竞争失败绝不记成执行失败；恢复用既有 resume 的登记互斥，不外层再 register；
+ * 状态写入按 version 条件，否则会把并发落库的 CANCELLED 改回去。</p>
  *
- * <p><b>锁回收</b>：本类不用「按 executionId 建锁对象」的 map，直接复用
- * {@link ExecutionCoordination} 的固定 256 条门闩 —— 它按 id 哈希取模，常驻内存恒定，
- * 不存在 map 无限增长的问题。单飞由 {@code claim} 的条件更新保证；派发中的标记用完即回收。</p>
+ * <p>锁回收：复用 {@link ExecutionCoordination} 的固定 256 条门闩（按 id 哈希取模，内存恒定），
+ * 不用按 executionId 建锁对象的 map；单飞由 {@code claim} 的条件更新保证。</p>
  */
 @Slf4j
 @Service

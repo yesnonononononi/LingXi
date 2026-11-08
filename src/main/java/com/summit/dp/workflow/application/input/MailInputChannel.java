@@ -16,21 +16,14 @@ import java.util.Set;
 /**
  * 邮件通道：协作信箱里到达的消息。
  *
- * <h2>文本协议两段都要逐字保留</h2>
+ * <p>两段注入文本（循环内、跨轮次续跑）是给模型看的两份不同话术，只能收到一处，不许改写措辞。</p>
  *
- * <p>循环内注入那段带「收件对象 / 注意事项」，跨轮次续跑那段是「成员 @x 发来消息」——
- * 它们本来就是给模型看的两份不同话术，改造只许把它们收到一处，不许改写措辞。</p>
+ * <p>消费判据是 {@code email_message_receipt}：待处理 = 本邮箱下没有回执的邮件，与 {@code status}
+ * 和 id 大小都无关。用执行私有游标不行 —— 信箱会话级共享、执行每轮新建，新建/重发/旧检查点都没有
+ * 该属性会重放历史；{@code max(mailId)} 也不是提交顺序，小 id 晚提交会被永久挡住。</p>
  *
- * <h2>消费判据：全局回执，不是执行私有游标</h2>
- *
- * <p>上一版把「已投递」记在执行属性（{@code LAST_MAIL_ID} 游标）。信箱是会话级共享资源、
- * 执行每轮新建，于是新建执行 / 重发 / 旧检查点这三条真实入口都没有该属性，游标缺省 0，
- * 整段历史邮件被重放；而且 {@code max(mailId)} 高水位并不等于提交顺序，较小 id 晚提交会被永久挡住。</p>
- *
- * <p>现在权威判据是 {@code email_message_receipt}：待处理 = 本邮箱下没有回执的邮件，与消息
- * {@code status}、与 id 大小都无关。本类只把「本轮已投递」记进执行属性
- * {@link ExecutionAttributes#DELIVERED_MAIL_IDS}（随检查点持久化），供同一轮内去重；
- * 真正的回执由 {@link MailReceiptFlusher} 在检查点提交的同一事务里落库。</p>
+ * <p>本类只把「本轮已投递」记进 {@link ExecutionAttributes#DELIVERED_MAIL_IDS}（随检查点持久化）
+ * 供同轮去重；权威回执由 {@link MailReceiptFlusher} 在检查点提交的同一事务里落库。</p>
  */
 @Component
 @RequiredArgsConstructor
