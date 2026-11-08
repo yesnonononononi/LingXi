@@ -75,6 +75,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.summit.core.agent.ContextSpec;
 
 /** 使用真实 Mapper 验证清理边界、并发重查与独立回收事务。 */
 @SpringJUnitConfig(ExecutionCleanupTest.Config.class)
@@ -466,7 +467,7 @@ class ExecutionCleanupTest {
         return com.summit.core.agent.Execution.builder()
                 .id(executionId)
                 .executionState(com.summit.core.agent.ExecutionState.SUSPENDED)
-                .agentRequest(AgentRequest.builder().messages(history).build())
+                .agentRequest(AgentRequest.builder().contextSpec(ContextSpec.builder().context(history).build()).build())
                 .messages(history)
                 .build();
     }

@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -53,6 +54,7 @@ import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 受理后执行失败的收尾契约（会话级单流改造 v1）。
@@ -89,7 +91,7 @@ class PreparedChatExecutorTest {
 
     {
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                sseEventPublisher, executionIdentity, mock(ExecutionRepository.class));
+                sseEventPublisher, executionIdentity, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
         agentEvents.init();
         // 与生产同序：轮次侧监听器（HIGHEST_PRECEDENCE）在前，SSE 广播在后。
         RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(
@@ -122,7 +124,7 @@ class PreparedChatExecutorTest {
     private static Execution execution(ExecutionState state) {
         AgentRequest request = AgentRequest.builder()
                 .executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("你好")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("你好"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)))
                         .eventMetaData(ExecutionEventMetadata.of(ROOT_SESSION_ID, ROOT_SESSION_ID, TURN_ID, null, 3L))
@@ -208,7 +210,7 @@ class PreparedChatExecutorTest {
             live.connect(ROOT_SESSION_ID);
             int connected = live.connectedCount();
             AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                    live, executionIdentity, mock(ExecutionRepository.class));
+                    live, executionIdentity, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
             agentEvents.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                     new ChatTurnRuntimeListener(chatTurnService), agentEvents));

@@ -51,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 邮件回执必须与检查点同批提交：崩在检查点之前重新投递，提交之后不再重复。
@@ -209,7 +210,7 @@ class MailReceiptCheckpointTransactionTest {
                 .executionState(ExecutionState.CREATED)
                 .messages(new ArrayList<>(messages))
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))
-                        .messages(new ArrayList<>(messages))
+                        .contextSpec(ContextSpec.builder().context(new ArrayList<>(messages)).build())
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .build();

@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.memory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -42,7 +43,9 @@ class MemoryWikiPromptTest {
         BusinessSystemPromptBuilder builder = builder();
         List<Message> history = List.of(UserMessageEntity.from("用户任务"));
         String prompt = builder.buildRootPrompt("角色规则", null, spec(project));
-        AgentRequest request = AgentRequest.builder().messages(history).systemPrompt(prompt).build();
+        AgentRequest request = AgentRequest.builder()
+                .contextSpec(ContextSpec.builder().context(history).systemPrompt(prompt).build())
+                .build();
         assertTrue(prompt.startsWith("固定全局规则\n\n角色规则\n\n"));
         assertTrue(prompt.contains("\"total\":40"));
         assertTrue(prompt.contains("\"returned\":30"));
@@ -52,10 +55,10 @@ class MemoryWikiPromptTest {
         assertTrue(prompt.contains("search_wiki"));
         assertTrue(prompt.contains("load_memory"));
         assertTrue(prompt.contains("模块名.md"));
-        assertSame(history, request.getMessages());
+        assertSame(history, request.getContextSpec().getContext());
         assertTrue(request.runtimeParametersOrDefault().getAttributes().isEmpty());
         Execution restored = json.readValue(json.writeValueAsString(Execution.create(request, "chat")), Execution.class);
-        assertEquals(prompt, restored.getAgentRequest().getSystemPrompt());
+        assertEquals(prompt, restored.getAgentRequest().getContextSpec().getSystemPrompt());
         verify(managers, times(1)).getObject();
     }
 

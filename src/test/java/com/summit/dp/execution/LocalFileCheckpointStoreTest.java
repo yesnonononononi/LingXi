@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 检查点存储端口的守卫用例：流式写入、原子发布、在途登记、无正文缓存、副本隔离。
@@ -228,7 +229,7 @@ class LocalFileCheckpointStoreTest {
     }
 
     private static Execution suspended(String executionId, List<Message> history) {
-        AgentRequest request = AgentRequest.builder().executionId(executionId).messages(new ArrayList<>(history))
+        AgentRequest request = AgentRequest.builder().executionId(executionId).contextSpec(ContextSpec.builder().context(new ArrayList<>(history)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "405")).build()).build();
         return Execution.builder().id(executionId).agentId("chatAgent").agentRequest(request)

@@ -70,7 +70,9 @@ class H2SchemaPoConsistencyTest {
             com.summit.dp.mcp.infrastructure.persistence.po.McpPO.class,
             com.summit.dp.task.infrastructure.persistence.po.TaskPO.class,
             com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO.class,
-            com.summit.dp.checklist.infrastructure.persistence.po.ChecklistStepPO.class);
+            com.summit.dp.checklist.infrastructure.persistence.po.ChecklistStepPO.class,
+            com.summit.dp.session.infrastructure.persistence.po.SessionTokenAuditPO.class,
+            com.summit.dp.session.infrastructure.persistence.po.SessionTokenAuditItemPO.class);
 
     /** 附录 A.2 的大文本列清单（逐列核对，缺一即错）。 */
     private static final List<String> LARGE_TEXT_COLUMNS = List.of(
@@ -94,7 +96,7 @@ class H2SchemaPoConsistencyTest {
     /** 自增主键表（PO 侧 {@code IdType.AUTO}）；其余表主键由应用生成。 */
     private static final Set<String> IDENTITY_TABLES = Set.of(
             "mcp", "provider_config", "model_config", "workspace", "session", "agent", "team", "execution",
-            "execution_resume_task");
+            "execution_resume_task", "session_token_audit_item");
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(\\w+)\\s*\\(([\\s\\S]*?)\\n\\);",
@@ -170,11 +172,11 @@ class H2SchemaPoConsistencyTest {
         assertEquals(List.of("CHECKLIST.UPDATE_AT", "CHECKLIST_STEP.UPDATE_AT"), missing,
                 "只有 checklist/checklist_step 的 update_at 由仓储显式写（SQLite 侧也没有触发器），其余必须带 ON UPDATE");
 
-        assertEquals("16", database.queryString(
+        assertEquals("17", database.queryString(
                         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC'"
                                 + " AND COLUMN_NAME IN ('UPDATE_TIME', 'UPDATED_AT', 'UPDATE_AT')"
                                 + " AND CAST(COLUMN_ON_UPDATE AS VARCHAR) = 'CURRENT_TIMESTAMP'"),
-                "16 张带 SQLite touch 触发器的表必须有等价的 ON UPDATE（少一张就是「H2 上时间不前进」）");
+                "17 张带 SQLite touch 触发器的表必须有等价的 ON UPDATE（少一张就是「H2 上时间不前进」）");
     }
 
     @Test
@@ -245,6 +247,33 @@ class H2SchemaPoConsistencyTest {
                         + " ORDER BY TABLE_NAME"));
         assertEquals(IDENTITY_TABLES, identityTables,
                 "自增表集合必须与 PO 的 IdType.AUTO 完全一致");
+
+        // 归因漂移列（U5）：可空 INTEGER，恒等式 3 成立时该差在库内恒为 0，只能靠采集时落库。
+        assertEquals("INTEGER", database.queryString(
+                        "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS"
+                                + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
+                                + " AND COLUMN_NAME = 'TOOL_GROUPING_DRIFT'"),
+                "tool_grouping_drift 必须是 INTEGER（诊断值有符号，不能用无符号类型）");
+        assertEquals("YES", database.queryString(
+                        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS"
+                                + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
+                                + " AND COLUMN_NAME = 'TOOL_GROUPING_DRIFT'"),
+                "tool_grouping_drift 必须可空：失败态与大文本升级前的历史行都没有该值");
+
+        // 工具定义两项（框架 e9c6ec6）：可空 INTEGER —— NULL 表示「框架没给」，
+        // 用 NOT NULL DEFAULT 0 会把未知伪装成「确实 0 token」，前端会画出一条假柱子。
+        for (String column : new String[] {"TOOL_DEFINITION_TOKENS", "MCP_TOOL_DEFINITION_TOKENS"}) {
+            assertEquals("INTEGER", database.queryString(
+                            "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS"
+                                    + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
+                                    + " AND COLUMN_NAME = '" + column + "'"),
+                    column + " 必须是 INTEGER（token 计数，且要能与 NULL 区分）");
+            assertEquals("YES", database.queryString(
+                            "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS"
+                                    + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SESSION_TOKEN_AUDIT'"
+                                    + " AND COLUMN_NAME = '" + column + "'"),
+                    column + " 必须可空：未知就是 NULL，不能用 0 冒充");
+        }
     }
 
     /** 开一个已建库、类型处理器走生产代码（{@code MyBatisTypeHandlers.registerAll(config, H2)}）的会话工厂。 */

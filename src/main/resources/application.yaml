@@ -134,6 +134,10 @@ lingxi:
     max-member-size: 10
   agent:
     runtime:
+      # 会话级 token 审计：框架侧受 lingxi.agent.runtime.token-audit.enabled 控制且默认关闭，
+      # 不开这一行就永远收不到 onAuditRecorded 事件（现象是代码全对、审计表一直为空且无日志）。
+      token-audit:
+        enabled: true
       tool:
         web-search:
           baseUrl: https://api.tavily.com/search

@@ -27,6 +27,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 class ModelContextServiceTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
@@ -116,7 +117,7 @@ class ModelContextServiceTest {
         Execution execution = Execution.create(AgentRequest.builder().executionId("301")
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, 201L)).build())
-                .messages(originalRound)
+                .contextSpec(ContextSpec.builder().context(originalRound).build())
                 .build(), "qa");
         RuntimeException originalFailure;
         JsonParseException parseFailure;
@@ -144,7 +145,10 @@ class ModelContextServiceTest {
         List<Message> restored = service.find(201L).orElseThrow();
         restored.add(UserMessageEntity.from("继续重试"));
 
-        ContextUsageMetric usage = assertDoesNotThrow(() -> tokenizer.usage(restored, 258000));
+        // 框架升级：usage 新增「工具定义」参数（工具定义也占上下文），此处无工具定义故传空列表，
+        // 与升级前 usage(messages, maxTokens) 的语义等价。
+        ContextUsageMetric usage = assertDoesNotThrow(
+                () -> tokenizer.usage(restored, List.of(), 258000));
         assertNotNull(usage);
         int recoveredCount = tokenizer.count(restored);
         assertTrue(recoveredCount > originalCount);

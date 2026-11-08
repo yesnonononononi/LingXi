@@ -144,8 +144,7 @@ class EmailCrudServiceTest {
         notifier.notifyCommander(child);
         notifier.notifyCommander(child);
         List<Message> appended = new ArrayList<>();
-        LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
-                new ExecutionControlSignal("900"), 0, appended::addAll);
+        LoopContext context = LoopContext.builder().loopMessages(LoopMessages.builder().execution(root).build()).signal(new ExecutionControlSignal("900")).consecutiveCompactTurns(() -> 0).appendMessage(appended::addAll).build();
         EmailLoopInterceptor interceptor = new EmailLoopInterceptor(new MailInputChannel(service));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appended.size());

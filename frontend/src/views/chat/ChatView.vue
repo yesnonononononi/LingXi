@@ -51,7 +51,27 @@
             class="rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900"
             @click="openProjectPagePanel"
           >{{ t('chat.view.projectPagePreview') }}</button>
+          <!-- 用量审计入口：与上面两个入口并排。面板是绝对定位抽屉，故入口始终留在入口行里，
+               收起后由它重新打开（面板自带的「收起」按钮只负责关）。 -->
+          <button
+            v-if="currentActiveSession?.id != null"
+            type="button"
+            data-test="token-audit-entry"
+            :aria-label="t('chat.tokenAudit.open')"
+            :title="t('chat.tokenAudit.open')"
+            :aria-expanded="isTokenAuditOpen"
+            class="rounded-lg border border-lx-border bg-lx-surface px-3 py-1.5 text-xs shadow-sm"
+            @click="isTokenAuditOpen = !isTokenAuditOpen"
+          >{{ t('chat.tokenAudit.title') }}</button>
         </div>
+
+        <!-- 用量审计浮动面板：贴在消息区容器内做绝对定位（与上面的入口行同一坐标系），
+             偏移 top-12 是为了不盖住入口行本身；高度由容器剩余空间约束，内部自行滚动。 -->
+        <TokenAuditPanel
+          v-if="currentActiveSession?.id != null"
+          v-model:open="isTokenAuditOpen"
+          :sessionId="currentActiveSession.id"
+        />
 
         <!-- 初始化数据加载失败：可见失败态（区别于「确实为空」，避免后端宕机时静默显示为空） -->
         <div
@@ -418,6 +438,7 @@ import SubSessionsOverviewDrawer from '../../components/chat/SubSessionsOverview
 import SubSessionDetailDrawer from '../../components/chat/SubSessionDetailDrawer.vue';
 import SessionConnectionNotice from '../../components/chat/SessionConnectionNotice.vue';
 import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
+import TokenAuditPanel from '../../components/chat/TokenAuditPanel.vue';
 
 const inputAreaRef = ref<ChatInputCommands | null>(null);
 /**
@@ -636,6 +657,14 @@ const handleSidebarSessionSelect = (id: string): void => {
   if (localSessions.value.some(session => session.subSessions?.some(sub => String(sub.id) === id))) closePreviewPanel();
   void handleSelectSidebarSession(id);
 };
+
+/**
+ * 用量审计浮动面板的展开态。
+ *
+ * <p>放在页面级而不是面板内部：触发按钮在消息区右上角入口行里，面板本身是绝对定位抽屉，
+ * 二者需要共享同一个开关。默认收起 —— 这是辅助诊断面板，不该默认占屏。</p>
+ */
+const isTokenAuditOpen = ref(false);
 
 /**
  * 切换会话或工作区必须销毁页面实例。

@@ -164,8 +164,7 @@ class BackgroundCommandTest {
                 .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build()).build();
         BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(new BackgroundTaskChannel(repository, new BackgroundTaskNotifications()));
-        notifications.onBeforeModelInvoke(new LoopContext(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal("1"), 0, execution.getMessages()::addAll));
+        notifications.onBeforeModelInvoke(LoopContext.builder().loopMessages(LoopMessages.builder().execution(execution).build()).signal(new ExecutionControlSignal("1")).consecutiveCompactTurns(() -> 0).appendMessage(execution.getMessages()::addAll).build());
         assertEquals(1, execution.getMessages().size());
         assertTrue(execution.getMessages().getFirst().text().contains("status=FAILED, exitCode=7"));
         assertTrue(execution.getMessages().getFirst().text().contains("done"));

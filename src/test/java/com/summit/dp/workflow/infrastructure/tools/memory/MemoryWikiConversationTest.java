@@ -12,6 +12,7 @@ import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.runtime.loop.CheckPointResult;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopResult;
@@ -23,6 +24,7 @@ import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
+import com.summit.runtime.conversation.DefaultTokenizer;
 import com.summit.runtime.interceptor.DefaultInterceptorProcessor;
 import com.summit.runtime.loop.AgentLoopStepRunner;
 import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
@@ -52,8 +54,8 @@ class MemoryWikiConversationTest {
         ToolDefinition<MemoryWikiLoader> definition = AnnotatedToolTestDefinitions.create(MemoryWikiLoader.class, loader);
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
         RuntimeBoundaryChecker boundary = mock(RuntimeBoundaryChecker.class);
-        when(boundary.before(any())).thenReturn(CheckPointResult.continueWith());
-        when(boundary.after(any())).thenReturn(CheckPointResult.continueWith());
+        when(boundary.before(any(), any())).thenReturn(CheckPointResult.continueWith());
+        when(boundary.after(any(), any())).thenReturn(CheckPointResult.continueWith());
         DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
         AtomicInteger modelCalls = new AtomicInteger();
         AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.LOAD_MEMORY)).build();
@@ -71,6 +73,8 @@ class MemoryWikiConversationTest {
                     .workspace(new LocalWorkspace("fallback", System.getProperty("user.dir")))
                     .conversationManager(conversations).toolExecutionManager(tools)
                     .runtimeBoundaryChecker(boundary).runtimeEventPublisher(events)
+                    // 框架升级：runner 每轮都要用 ContextUsageReporter 算上下文基线，未注入时 tokenizer 为 null 会 NPE。
+                    .usage(new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1))
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of()))
                     .invoker(new DefaultChatModelInvoker(command -> {
                         int round = modelCalls.incrementAndGet();

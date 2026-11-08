@@ -74,6 +74,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 
 @SpringJUnitConfig(ConcurrentCheckpointSaveTransactionTest.Config.class)
@@ -114,13 +115,15 @@ class ConcurrentCheckpointSaveTransactionTest {
                 }
                 public ToolRegistry toolRegistry() { return new ToolRegistry(List.of()); }
             };
+            // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, events, 1);
             new RuntimeProcessorTemplate(RuntimeContext.builder().conversationManager(conversations)
                     .executionRepository(runtime)
                     .executionControl(new DefaultExecutionController(() -> null, runtime, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events)
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(),
-                            tokenizer, conversations, null, null))
+                            tokenizer, conversations, null, null, usage, tools.toolRegistry()))
                     .toolExecutionManager(tools)
                     .invoker(new DefaultChatModelInvoker(request -> ChatResponseEntity.builder()
                             .aiMessageEntity(AiMessageEntity.builder().text("执行结果")
@@ -128,7 +131,7 @@ class ConcurrentCheckpointSaveTransactionTest {
                                             ? List.of(new ToolCallRequest("read", ToolCatalog.READ_FILE, 0, "{}"))
                                             : List.of()).build())
                             .tokenUsage(TokenUsageEntity.of(3, 2, 1)).build()))
-                    .usage(new ContextUsageReporter(tokenizer, 100_000, events, 1)).build()).execute(source);
+                    .usage(usage).build()).execute(source);
 
             Execution restored = runtime.findById(source.getId()).orElseThrow();
             assertEquals(ExecutionState.COMPLETED, restored.getExecutionState());
@@ -285,7 +288,7 @@ class ConcurrentCheckpointSaveTransactionTest {
         List<Message> messages = List.of(UserMessageEntity.from("并发保存用例"));
         AgentRequest request = AgentRequest.builder()
                 .executionId(Long.toString(executionId))
-                .messages(messages)
+                .contextSpec(ContextSpec.builder().context(messages).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(com.summit.dp.execution.ExecutionAttributes.SESSION_ID,
                                 Long.toString(SESSION_ID)))

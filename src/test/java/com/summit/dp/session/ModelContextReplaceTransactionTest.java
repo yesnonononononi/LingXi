@@ -56,6 +56,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 
 @SpringJUnitConfig(ModelContextReplaceTransactionTest.Config.class)
@@ -230,7 +231,7 @@ class ModelContextReplaceTransactionTest {
         List<Message> history = new ArrayList<>(List.of(UserMessageEntity.from("并发保存用例正文")));
         AgentRequest request = AgentRequest.builder()
                 .executionId(Long.toString(id))
-                .messages(new ArrayList<>(history))
+                .contextSpec(ContextSpec.builder().context(new ArrayList<>(history)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, Long.toString(SESSION_C)))
                         .build())

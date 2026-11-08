@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import static org.mockito.Mockito.mock;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 512 MiB 受限堆下的真实保存压力夹具（由 {@link LimitedHeapCheckpointOomTest} 在子 JVM 里启动）。
@@ -282,7 +283,7 @@ public final class LimitedHeapCheckpointHarness {
 
     private static Execution execution(String executionId, List<Message> body, ExecutionState state) {
         AgentRequest request = AgentRequest.builder().executionId(executionId)
-                .messages(new ArrayList<>(body))
+                .contextSpec(ContextSpec.builder().context(new ArrayList<>(body)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "900")).build()).build();
         return Execution.builder().id(executionId).agentId("chatAgent").agentRequest(request)

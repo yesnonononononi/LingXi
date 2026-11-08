@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.summit.core.agent.ContextSpec;
 
 class ExecutionJsonTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
@@ -112,14 +113,14 @@ class ExecutionJsonTest {
     @Test
     void preservesRequestHistorySeparatelyFromMutableExecutionHistory() throws Exception {
         Execution original = execution(null, Map.of());
-        original.getAgentRequest().setMessages(List.of(UserMessageEntity.from("original request")));
+        original.getAgentRequest().getContextSpec().setContext(List.of(UserMessageEntity.from("original request")));
         Execution restored = mapper.readValue(mapper.writeValueAsString(original), Execution.class);
         assertEquals(4, restored.getMessages().size());
-        assertEquals("original request", restored.getAgentRequest().getMessages().getFirst().text());
+        assertEquals("original request", restored.getAgentRequest().getContextSpec().getContext().getFirst().text());
         assertDoesNotThrow(() -> restored.getMessages().add(UserMessageEntity.from("next")));
-        assertDoesNotThrow(() -> restored.getAgentRequest().getMessages().add(UserMessageEntity.from("another")));
+        assertDoesNotThrow(() -> restored.getAgentRequest().getContextSpec().getContext().add(UserMessageEntity.from("another")));
         assertEquals(5, restored.getMessages().size());
-        assertEquals(2, restored.getAgentRequest().getMessages().size());
+        assertEquals(2, restored.getAgentRequest().getContextSpec().getContext().size());
     }
 
     @Test
@@ -157,7 +158,7 @@ class ExecutionJsonTest {
                 ToolMessageEntity.builder().id("call-1").name("search").toolOutput("result").build());
         AgentRequest request = AgentRequest.builder().executionId("101").workspaceSpec(spec)
                 .modelConfigSpec(SensitiveDataSpec.builder().id(301L).version(7).build())
-                .messages(history).runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes)
+                .contextSpec(ContextSpec.builder().context(history).build()).runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes)
                         .allowOutsideWorkspace(true).build()).build();
         return Execution.builder().id("101").agentId("chatAgent").agentRequest(request)
                 .executionState(ExecutionState.SUSPENDED).createAt(Instant.parse("2026-09-27T01:02:03.123456789Z"))

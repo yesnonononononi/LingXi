@@ -56,6 +56,7 @@ import static com.summit.dp.execution.ExecutionRepositoryTestFactory.provider;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 class LocalExecutionRepositoryResumeTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
@@ -122,7 +123,7 @@ class LocalExecutionRepositoryResumeTest {
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
                 SystemMessageEntity.builder().text("suspended").build());
-        AgentRequest request = AgentRequest.builder().executionId("305").messages(history)
+        AgentRequest request = AgentRequest.builder().executionId("305").contextSpec(ContextSpec.builder().context(history).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "405")).build()).build();
         return Execution.builder().id("305").agentId("chatAgent").agentRequest(request)
@@ -244,9 +245,9 @@ class LocalExecutionRepositoryResumeTest {
         assertEquals(ExecutionState.SUSPENDED, restored.getExecutionState());
         assertEquals(2, restored.getMessages().size());
         restored.getMessages().add(UserMessageEntity.from("appended"));
-        restored.getAgentRequest().getMessages().add(UserMessageEntity.from("request appended"));
+        restored.getAgentRequest().getContextSpec().getContext().add(UserMessageEntity.from("request appended"));
         assertEquals(3, restored.getMessages().size());
-        assertEquals(3, restored.getAgentRequest().getMessages().size());
+        assertEquals(3, restored.getAgentRequest().getContextSpec().getContext().size());
         assertEquals(2, repository.findById("305").orElseThrow().getMessages().size());
         verify(persistence).update(any(ExecutionPO.class), any());
     }

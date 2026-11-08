@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 门禁链与用户暂停门禁的语义回归。
@@ -140,7 +141,7 @@ class SuspensionGateChainTest {
 
     private static Execution execution(Map<String, Object> attributes) {
         AgentRequest request = AgentRequest.builder().executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("hi")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(new HashMap<>(attributes)).build())
                 .build();

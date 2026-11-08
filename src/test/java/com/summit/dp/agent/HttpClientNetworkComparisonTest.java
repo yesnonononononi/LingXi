@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
@@ -71,6 +72,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。
@@ -211,7 +213,7 @@ class HttpClientNetworkComparisonTest {
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId(anyString())).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
-            AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(ExecutionRepository.class));
+            AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
             bridge.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
                 @Override
@@ -224,21 +226,25 @@ class HttpClientNetworkComparisonTest {
                 public List<ToolExecuteResult> execute(ToolExecuteCommand command) { return List.of(); }
                 public ToolRegistry toolRegistry() { return new ToolRegistry(List.of()); }
             };
+            // 框架升级后 BoundaryChecker 必须显式注入 ContextUsageReporter/ToolRegistry：
+            // null 会在 AgentConfig.maxTokens 缺省时 intValue() 空指针，故复用 runtime 的同一个 reporter。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
             runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(repository).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, repository, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).toolExecutionManager(tools)
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
-                            conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
+                            conversations, null, null, usage, tools.toolRegistry())).usage(usage)
                     .invoker(invokers.select(config).invoker()).build());
         }
 
         private Measurement run(Endpoint endpoint, Scenario scenario, boolean anthropic) throws Exception {
             capture.frames.clear();
             String executionId = String.valueOf(IDS.incrementAndGet());
-            AgentRequest request = AgentRequest.builder().messages(List.of(UserMessageEntity.from("question")))
-                    .systemPrompt("Answer the question.")
+            AgentRequest request = AgentRequest.builder().contextSpec(ContextSpec.builder()
+                            .systemPrompt("Answer the question.")
+                            .context(List.of(UserMessageEntity.from("question"))).build())
                     .retryConfig(ModelRetryConfig.builder().enabled(true).maxRetries(2)
                             .initialDelay(Duration.ZERO).maxDelay(Duration.ZERO).build()).build();
             request.runtimeParametersOrDefault().setEventMetaData(Map.of("rootSessionId", "7", "sessionId", "7", "turnId", "900"));

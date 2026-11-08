@@ -307,6 +307,8 @@ class QaPendingMailRedelegationTest {
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
             InMemoryActiveExecutionRegistry checkpoints = new InMemoryActiveExecutionRegistry(json);
             DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
+            // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
             RuntimeProcessorTemplate runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(checkpoints).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, checkpoints, events, lifecycle))
@@ -314,7 +316,7 @@ class QaPendingMailRedelegationTest {
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor(),
                             new EmailLoopInterceptor(mail), new SubAgentWaitInterceptor(inputs))))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
-                            conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
+                            conversations, null, null, usage, tools().toolRegistry())).usage(usage)
                     .invoker(new DefaultChatModelInvoker(command -> {
                         requests.add(List.copyOf(command.getMessages()));
                         if (mailDuringOpening && requests.size() == 1) {
@@ -365,7 +367,7 @@ class QaPendingMailRedelegationTest {
                                     ExecutionAttributes.SESSION_ID, "10", ExecutionAttributes.AGENT_ID, "7", ExecutionAttributes.TEAM_ID, "3")).build(),
                             null, target.subSessionId(), null, target.priorMessages());
             assertEquals(2, history.size());
-            assertEquals(CURRENT_TASK, request.getMessages().getLast().text());
+            assertEquals(CURRENT_TASK, request.getContextSpec().getContext().getLast().text());
             return request;
         }
 

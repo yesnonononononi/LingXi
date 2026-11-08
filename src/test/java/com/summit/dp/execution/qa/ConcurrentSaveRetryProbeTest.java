@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 
 class ConcurrentSaveRetryProbeTest {
@@ -229,7 +230,7 @@ class ConcurrentSaveRetryProbeTest {
     private static Execution execution(String executionId, String text) {
         List<Message> history = List.of(UserMessageEntity.from(text));
         AgentRequest request = AgentRequest.builder().executionId(executionId)
-                .messages(new java.util.ArrayList<>(history))
+                .contextSpec(ContextSpec.builder().context(new java.util.ArrayList<>(history)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build();
         return Execution.builder().id(executionId).agentId("chatAgent").agentRequest(request)

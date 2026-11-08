@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * execution 的查询列在检查点保存时同步维护。
@@ -79,7 +80,7 @@ class ExecutionSummaryCheckpointTest {
         attributes.putAll(extraAttributes);
         return AgentRequest.builder()
                 .executionId(String.valueOf(EXECUTION_ID))
-                .messages(List.of(UserMessageEntity.from("hi")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                 .modelConfigSpec(SensitiveDataSpec.builder().id(31L).version(1).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.copyOf(attributes)).build())

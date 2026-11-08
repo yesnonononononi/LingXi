@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 生命周期编排的动作语义回归。
@@ -205,7 +206,7 @@ class ExecutionLifecycleOrchestratorImplTest {
 
     private static Execution execution(ExecutionState state, Map<String, Object> attributes) {
         AgentRequest request = AgentRequest.builder().executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("hi")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                 .build();
         return Execution.builder().id(EXECUTION_ID).agentId("chatAgent").agentRequest(request)

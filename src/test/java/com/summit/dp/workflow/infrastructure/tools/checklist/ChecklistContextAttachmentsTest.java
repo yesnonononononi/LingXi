@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.compact.ContextAttachmentProvider;
 import com.summit.core.compact.ContextCompactRequest;
@@ -27,6 +28,8 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.plan.PlanContextAttachmentProvider;
 import com.summit.runtime.agent.AgentConfig;
+import com.summit.core.model.chat.ChatModel;
+import com.summit.runtime.compact.DefaultCompactSummaryApplier;
 import com.summit.runtime.compact.DefaultContextPruner;
 import com.summit.runtime.compact.DefaultModelCompacter;
 import com.summit.runtime.conversation.DefaultConversationManager;
@@ -124,8 +127,7 @@ class ChecklistContextAttachmentsTest {
     @Test
     void aRejectedReminderAppendCannotPublishCheckpointEvidence() {
         ReminderDecision decision = service.remindOnNaturalComplete(delivery.buildContext(execution));
-        LoopContext rejected = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                null, () -> 0, messages -> { throw new IllegalStateException("追加提醒失败"); });
+        LoopContext rejected = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), null, () -> 0, null, messages -> { throw new IllegalStateException("追加提醒失败"); });
 
         assertThrows(IllegalStateException.class, () -> delivery.append(rejected, decision));
         verify(executions, never()).save(any());
@@ -169,8 +171,7 @@ class ChecklistContextAttachmentsTest {
 
     @Test
     void failedSystemAppendDoesNotPreventTheNextAttemptFromRestoringTheSnapshot() {
-        LoopContext rejected = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                null, () -> 0, messages -> { throw new IllegalStateException("追加失败"); });
+        LoopContext rejected = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), null, () -> 0, null, messages -> { throw new IllegalStateException("追加失败"); });
         assertThrows(IllegalStateException.class, () -> injector.injectIfNeeded(rejected, execution));
         injector.injectIfNeeded(context(), execution);
         assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getLast());
@@ -195,10 +196,17 @@ class ChecklistContextAttachmentsTest {
         ContextUsageReporter usage = new ContextUsageReporter(tokenizer, config.maxTokens(), new RuntimeEventPublisher(List.of()), 1);
         DefaultContextPruner pruner = new DefaultContextPruner(config, usage, attachments);
         AtomicReference<ChatRequestEntity> compactRequest = new AtomicReference<>();
-        DefaultModelCompacter compacter = new DefaultModelCompacter(request -> {
+        ChatModel summaryModel = request -> {
             compactRequest.set(request);
             return ChatResponseEntity.builder().aiMessageEntity(AiMessageEntity.builder().text("工作摘要").build()).build();
-        }, conversations, attachments, usage);
+        };
+        DefaultModelCompacter compacter = DefaultModelCompacter.builder()
+                .models(request -> summaryModel)
+                .conversationManager(conversations)
+                .contextAttachmentProvider(attachments)
+                .usage(usage)
+                .summaryApplier(new DefaultCompactSummaryApplier(conversations))
+                .build();
         for (int round = 0; round < 3; round++) {
             service.modify(ChecklistCommand.modify(SESSION, created.getChecklistId(), "更新任务" + round,
                     null, null, null, null));
@@ -264,7 +272,6 @@ class ChecklistContextAttachmentsTest {
     }
 
     private LoopContext context() {
-        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal(execution.getId()), () -> 0, messages -> execution.getMessages().addAll(messages));
+        return LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), new ExecutionControlSignal(execution.getId()), () -> 0, null, messages -> execution.getMessages().addAll(messages));
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.Image;
 import com.summit.core.compact.ContextAttachmentProvider;
@@ -12,6 +13,7 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopResult;
 import com.summit.core.model.DefaultModelProviderNames;
@@ -117,19 +119,23 @@ class ReadImageLoopIntegrationTest {
             AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.READ_IMAGE))
                     .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                             ExecutionAttributes.SESSION_ID, "42", ExecutionAttributes.MODEL_VISION, true)).build())
-                    .messages(List.of(UserMessageEntity.from("inspect sample.bmp", history))).build();
+                    .contextSpec(ContextSpec.builder()
+                            .context(List.of(UserMessageEntity.from("inspect sample.bmp", history))).build()).build();
             Execution execution = Execution.builder().id("image-loop").agentId("test")
-                    .agentRequest(request).messages(new ArrayList<>(request.getMessages())).tokenUsage(TokenUsageEntity.empty()).build();
+                    .agentRequest(request).messages(new ArrayList<>(request.getContextSpec().getContext())).tokenUsage(TokenUsageEntity.empty()).build();
             DefaultTokenizer tokenizer = new DefaultTokenizer();
             DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, events, 1);
             BoundaryChecker budget = new BoundaryChecker(AgentConfig.builder().maxIterations(3).maxTokens(100_000).build(),
-                    tokenizer, conversations, null, null);
+                    tokenizer, conversations, null, null, usage,
+                    new ToolRegistry(List.of(definition)));
             try (DefaultToolExecutionManager tools = new DefaultToolExecutionManager(
                     new ToolExecutionContext(events, new ToolRegistry(List.of(definition)), 4),
                     invocation -> ((ToolExecutor) invocation.getTarget()).execute(invocation.getContext()), List.of())) {
                 RuntimeContext context = RuntimeContext.builder().conversationManager(conversations)
                         .workspace(new LocalWorkspace("test", workspaceRoot.toString())).runtimeEventPublisher(events)
-                        .toolExecutionManager(tools).runtimeBoundaryChecker(budget)
+                        .toolExecutionManager(tools).runtimeBoundaryChecker(budget).usage(usage)
                         .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(
                                 new DefaultLoopInterceptor(), new ImageInjectionInterceptor(cache))))
                         .invoker(new DefaultChatModelInvoker(model)).build();

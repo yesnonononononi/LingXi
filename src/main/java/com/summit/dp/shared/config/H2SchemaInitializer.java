@@ -57,7 +57,7 @@ public class H2SchemaInitializer implements SchemaInitializer {
             "session_context", "user_configs", "agent", "team", "execution", "chat_turn", "tool_call",
             "execution_resume_task", "email", "email_message", "email_message_receipt",
             "runtime_config_revision", "task",
-            "checklist", "checklist_step");
+            "checklist", "checklist_step", "session_token_audit", "session_token_audit_item");
 
     /** 从 SQLite 抄过来的写法一律拒绝：自增、SQL 触发器体、切模式、虚拟列在 H2 都不成立。 */
     private static final Pattern FORBIDDEN_IN_H2 = Pattern.compile(

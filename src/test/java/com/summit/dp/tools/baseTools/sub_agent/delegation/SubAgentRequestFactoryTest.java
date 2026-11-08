@@ -16,6 +16,7 @@ import com.summit.runtime.loop.BoundaryChecker;
 import com.summit.runtime.conversation.DefaultTokenizer;
 import com.summit.runtime.conversation.DefaultConversationManager;
 import com.summit.runtime.context.RuntimeContext;
+import com.summit.runtime.compact.DefaultCompactSummaryApplier;
 import com.summit.runtime.compact.DefaultModelCompacter;
 import com.summit.runtime.compact.DefaultContextPruner;
 import com.summit.runtime.agent.AgentConfig;
@@ -225,8 +226,13 @@ class SubAgentRequestFactoryTest {
             return ChatResponseEntity.builder().aiMessageEntity(AiMessageEntity.builder()
                     .text("{\"summary\":\"历史端口纠错已处理\"}").build()).build();
         };
-        DefaultModelCompacter compacter = new DefaultModelCompacter(summaryModel, conversations,
-                ContextAttachmentProvider.NONE, usage);
+        DefaultModelCompacter compacter = DefaultModelCompacter.builder()
+                .models(req -> summaryModel)
+                .conversationManager(conversations)
+                .contextAttachmentProvider(ContextAttachmentProvider.NONE)
+                .usage(usage)
+                .summaryApplier(new DefaultCompactSummaryApplier(conversations))
+                .build();
         for (int round = 0; round < 2; round++) {
             assertTrue(compacter.compact(new ContextCompactRequest(execution)));
             assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
@@ -253,7 +259,9 @@ class SubAgentRequestFactoryTest {
                 .executionRepository(snapshots).conversationManager(conversations).toolExecutionManager(tools)
                 .executionControl(new DefaultExecutionController(() -> null, snapshots, events, lifecycle))
                 .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).usage(usage)
-                .runtimeBoundaryChecker(new BoundaryChecker(config, tokenizer, conversations, null, null))
+                // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
+                .runtimeBoundaryChecker(new BoundaryChecker(config, tokenizer, conversations, null, null,
+                        usage, tools.toolRegistry()))
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                 .invoker(new DefaultChatModelInvoker(command -> {
                     sent.addAll(command.getMessages());
@@ -342,7 +350,7 @@ class SubAgentRequestFactoryTest {
         assertTrue(tools.contains("read_file"), "Agent 自身配置的工具保留");
 
         // 3) 提示词：与指挥者同一份成员名单 + 成员职责话术
-        String prompt = request.getSystemPrompt();
+        String prompt = request.getContextSpec().getSystemPrompt();
         assertTrue(prompt.contains("### 成员名单(TEAM ROSTER)"), "名单标题与指挥者同一份渲染");
         assertTrue(prompt.contains("- id: 5") && prompt.contains("- name: 产品经理")
                         && prompt.contains("- description: 未提供能力描述"),
@@ -395,7 +403,7 @@ class SubAgentRequestFactoryTest {
         AgentVO member = agent(6L, "架构师", "你是架构师");
         AgentRequest request = build(member, buildTeam(member), parentToolExecution(), List.of());
 
-        List<Message> messages = request.getMessages();
+        List<Message> messages = request.getContextSpec().getContext();
         assertEquals(1, messages.size());
         assertTrue(messages.getFirst().text().contains("请只回复一个词：ok"));
     }
@@ -412,7 +420,7 @@ class SubAgentRequestFactoryTest {
 
         AgentRequest request = build(member, buildTeam(member), parentToolExecution(), prior);
 
-        List<Message> messages = request.getMessages();
+        List<Message> messages = request.getContextSpec().getContext();
         assertEquals(3, messages.size(), "历史两条 + 本次任务一条");
         assertTrue(messages.get(0).text().contains("上次的任务"));
         assertTrue(messages.get(1).text().contains("上次的追问"));

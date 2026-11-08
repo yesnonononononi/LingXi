@@ -3,6 +3,7 @@ package com.summit.dp.qa;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.compact.ContextAttachmentProvider;
@@ -41,6 +42,7 @@ import com.summit.dp.session.infrastructure.persistence.repository.SessionContex
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
+import com.summit.dp.toolcall.api.dto.ToolCallDecisionReceipt;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;
@@ -210,7 +212,7 @@ class ApprovalResumeSuccessMainChainSmokeTest {
         registerPlanCard();
 
         // 第二段：经生产决策入口批准（真实引擎 + 真实事务 + 真实恢复受理）。
-        var receipt = versionedService.decide(new ToolCallDecisionCommand(CONVERSATION_ID, TOOL_CALL_ID,
+        ToolCallDecisionReceipt receipt = versionedService.decide(new ToolCallDecisionCommand(CONVERSATION_ID, TOOL_CALL_ID,
                 "cmd-smoke-approve", 1L, ToolCallAction.APPROVE, "按这个计划执行"));
 
         assertTrue(receipt.decisionApplied(), "首次批准必须真的落库");
@@ -262,7 +264,7 @@ class ApprovalResumeSuccessMainChainSmokeTest {
                 .toolExecutionManager(tools)
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                 .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(6).build(), tokenizer,
-                        conversations, null, null))
+                        conversations, null, null, null, null))
                 .usage(new ContextUsageReporter(tokenizer, 64_000, events, 1))
                 .invoker(new DefaultChatModelInvoker(command -> {
                     seenRequests.add(List.copyOf(command.getMessages()));
@@ -314,7 +316,9 @@ class ApprovalResumeSuccessMainChainSmokeTest {
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(CONVERSATION_ID)))
                         .build())
-                .messages(new ArrayList<>(List.of(UserMessageEntity.from(QUESTION))))
+                .contextSpec(ContextSpec.builder()
+                        .context(new ArrayList<>(List.of(UserMessageEntity.from(QUESTION))))
+                        .build())
                 .build();
         Execution execution = Execution.builder().id(EXECUTION_ID_TEXT).agentId("chatAgent")
                 .agentRequest(request).executionState(ExecutionState.CREATED)

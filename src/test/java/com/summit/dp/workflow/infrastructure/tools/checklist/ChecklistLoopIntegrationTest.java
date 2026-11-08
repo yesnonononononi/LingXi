@@ -35,6 +35,7 @@ import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTa
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
+import com.summit.runtime.conversation.DefaultTokenizer;
 import com.summit.runtime.loop.AgentLoopStepRunner;
 import com.summit.runtime.loop.DefaultLoopInterceptor;
 import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
@@ -212,19 +213,23 @@ class ChecklistLoopIntegrationTest {
             public void checkModelAttempt(Execution execution) {
                 if (execution.getModelAttempts() >= maxAttempts) throw new MaxStepsExceededException("测试预算耗尽");
             }
-            public CheckPointResult before(Execution execution) {
+            public CheckPointResult before(TokenUsageEntity usage, Execution execution) {
                 checkModelAttempt(execution);
                 return CheckPointResult.continueWith();
             }
-            public CheckPointResult after(Execution execution) { return CheckPointResult.continueWith(); }
+            public CheckPointResult after(TokenUsageEntity usage, Execution execution) { return CheckPointResult.continueWith(); }
         };
         List<LoopInterceptor> interceptors = new ArrayList<>(business);
         interceptors.add(new DefaultLoopInterceptor());
+        // 框架升级：runner 每轮都要用 ContextUsageReporter 算上下文基线（之前由 BoundaryChecker 内部兜底），
+        // 未注入 reporter 时 runner 会拿到 tokenizer 为 null 的实例并 NPE，故这里显式给一个。
+        RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
+        ContextUsageReporter usage = new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1);
         return new AgentLoopStepRunner(RuntimeContext.builder()
                 .conversationManager(new DefaultConversationManager((id, ai, results) -> transcripts.incrementAndGet(),
                         ContextAttachmentProvider.NONE))
                 .runtimeBoundaryChecker(boundary).toolExecutionManager(tools)
-                .runtimeEventPublisher(new RuntimeEventPublisher(List.of()))
+                .runtimeEventPublisher(events).usage(usage)
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(interceptors))
                 .invoker(new DefaultChatModelInvoker(model)).build());
     }

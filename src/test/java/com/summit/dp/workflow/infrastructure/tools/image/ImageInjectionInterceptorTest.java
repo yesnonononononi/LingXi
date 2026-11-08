@@ -89,8 +89,7 @@ class ImageInjectionInterceptorTest {
         Execution execution = execution();
         ImageInjectionInterceptor interceptor = interceptor();
         interceptor.onAfterToolCall(context(execution), List.of(read("logo.png", execution)));
-        LoopContext failing = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
-                null, () -> 0, messages -> { throw new IllegalStateException("模拟追加失败"); });
+        LoopContext failing = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), null, () -> 0, null, messages -> { throw new IllegalStateException("模拟追加失败"); });
         assertThrows(IllegalStateException.class, () -> interceptor.onBeforeModelInvoke(failing));
         List<Message> appended = new ArrayList<>();
         interceptor.onBeforeModelInvoke(context(execution, appended));
@@ -214,7 +213,7 @@ class ImageInjectionInterceptorTest {
 
     private LoopContext context(Execution execution, List<Message> appended) {
         LoopMessages messages = LoopMessages.builder().execution(execution).build();
-        return LoopContext.withCompactionCounter(messages, null, () -> 0, appended::addAll);
+        return LoopContext.withCompactionCounter(messages, null, () -> 0, null, appended::addAll);
     }
 
     private void prepareImage(String name) throws IOException {

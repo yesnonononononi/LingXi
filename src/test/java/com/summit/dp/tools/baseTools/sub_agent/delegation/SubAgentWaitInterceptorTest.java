@@ -36,9 +36,7 @@ class SubAgentWaitInterceptorTest {
     private final Execution execution = Execution.builder().id("100").messages(new ArrayList<>())
             .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
                     .attributes(Map.of()).build()).build()).build();
-    private final LoopContext context = LoopContext.withCompactionCounter(
-            LoopMessages.builder().execution(execution).build(),
-            new ExecutionControlSignal("100"), () -> 0, execution.getMessages()::addAll);
+    private final LoopContext context = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), new ExecutionControlSignal("100"), () -> 0, null, execution.getMessages()::addAll);
 
     @Test
     void inputContinuesInTheSameLoopWithoutSuspending() {

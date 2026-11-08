@@ -18,6 +18,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.execution.MailReceiptFlusherStub;
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -117,7 +118,7 @@ class SuccessTerminalGateTest {
 
         ssePublisher = mock(SseEventPublisher.class);
         agentEvents = new AgentEventListener(new JsonConfig().objectMapper(), ssePublisher,
-                mock(com.summit.dp.execution.application.service.ExecutionLocator.class), executions);
+                mock(com.summit.dp.execution.application.service.ExecutionLocator.class), executions, mock(SessionTokenAuditCollector.class));
         events = new RuntimeEventPublisher(List.of(agentEvents));
         agentEvents.init();
 
@@ -295,7 +296,7 @@ class SuccessTerminalGateTest {
     /** 换一个门禁读口构造监听器，用于模拟读库失败 / 恢复。 */
     private AgentEventListener listenerWith(ExecutionRepository gate) {
         AgentEventListener listener = new AgentEventListener(new JsonConfig().objectMapper(),
-                ssePublisher, mock(com.summit.dp.execution.application.service.ExecutionLocator.class), gate);
+                ssePublisher, mock(com.summit.dp.execution.application.service.ExecutionLocator.class), gate, mock(SessionTokenAuditCollector.class));
         listener.init();
         return listener;
     }

@@ -49,6 +49,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import com.summit.core.agent.ContextSpec;
 
 class CompactionOutputLimitTest {
     private final List<ModelConfig> selected = new ArrayList<>();
@@ -191,7 +192,7 @@ class CompactionOutputLimitTest {
     }
 
     private AgentRequest request(int version) {
-        return AgentRequest.builder().messages(List.of(UserMessageEntity.from("历史内容")))
+        return AgentRequest.builder().contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("历史内容"))).build())
                 .modelConfigSpec(new SensitiveDataSpec(7L, version)).build();
     }
 

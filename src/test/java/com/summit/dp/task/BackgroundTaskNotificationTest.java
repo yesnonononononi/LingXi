@@ -97,11 +97,10 @@ class BackgroundTaskNotificationTest {
 
         Execution failing = execution(100L, 10L, false);
         AtomicBoolean failAppend = new AtomicBoolean(true);
-        LoopContext context = new LoopContext(LoopMessages.builder().execution(failing).build(),
-                new ExecutionControlSignal("100"), 0, messages -> {
+        LoopContext context = LoopContext.builder().loopMessages(LoopMessages.builder().execution(failing).build()).signal(new ExecutionControlSignal("100")).consecutiveCompactTurns(() -> 0).appendMessage(messages -> {
                     if (failAppend.get()) throw new ClientException("上下文追加失败");
                     failing.getMessages().addAll(messages);
-                });
+                }).build();
         assertThrows(ClientException.class, () -> interceptor.onBeforeModelInvoke(context));
         assertTrue(notifications.readReceipts(failing).isEmpty());
         failAppend.set(false);
@@ -180,7 +179,7 @@ class BackgroundTaskNotificationTest {
         ToolExecutionManager tools = mock(ToolExecutionManager.class);
         when(tools.toolRegistry()).thenReturn(new ToolRegistry(List.of()));
         RuntimeBoundaryChecker boundary = mock(RuntimeBoundaryChecker.class);
-        when(boundary.before(any())).thenReturn(CheckPointResult.continueWith());
+        when(boundary.before(any(), any())).thenReturn(CheckPointResult.continueWith());
         ExecutionRepository checkpoints = mock(ExecutionRepository.class);
         AtomicReference<byte[]> snapshot = new AtomicReference<>();
         doAnswer(invocation -> {
@@ -243,7 +242,6 @@ class BackgroundTaskNotificationTest {
     }
 
     private static LoopContext context(Execution execution) {
-        return new LoopContext(LoopMessages.builder().execution(execution).build(),
-                new ExecutionControlSignal(execution.getId()), 0, execution.getMessages()::addAll);
+        return LoopContext.builder().loopMessages(LoopMessages.builder().execution(execution).build()).signal(new ExecutionControlSignal(execution.getId())).consecutiveCompactTurns(() -> 0).appendMessage(execution.getMessages()::addAll).build();
     }
 }

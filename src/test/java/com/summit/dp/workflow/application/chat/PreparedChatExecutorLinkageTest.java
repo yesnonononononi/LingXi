@@ -25,6 +25,7 @@ import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /** 依赖加载错误不能只结束工作线程而让持久化状态永久停在运行中。 */
 class PreparedChatExecutorLinkageTest {
@@ -43,7 +44,7 @@ class PreparedChatExecutorLinkageTest {
     @BeforeEach
     void setup() {
         execution = Execution.create(AgentRequest.builder().executionId("12")
-                .messages(List.of(UserMessageEntity.from("诊断")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("诊断"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build(), "chatAgent");
         execution.start();

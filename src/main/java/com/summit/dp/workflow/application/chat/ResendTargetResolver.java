@@ -70,8 +70,10 @@ public class ResendTargetResolver {
     private List<Message> resolveBaseline(Long executionId) {
         Execution execution = executionRepository.findById(String.valueOf(executionId)).orElse(null);
         throwIf(execution == null, "执行快照不存在，无法重发");
-        List<Message> messages = execution.getAgentRequest() == null ? null
-                : execution.getAgentRequest().getMessages();
+        List<Message> messages = execution.getAgentRequest() == null
+                || execution.getAgentRequest().getContextSpec() == null
+                ? null
+                : execution.getAgentRequest().getContextSpec().getContext();
 
         throwIf(messages == null || messages.isEmpty(), "执行快照缺少历史上下文，无法重发");
         for (int i = messages.size() - 1; i >= 0; i--) {

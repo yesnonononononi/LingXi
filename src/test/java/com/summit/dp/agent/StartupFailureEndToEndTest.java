@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -60,6 +61,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 启动失败的端到端链路：服务端收口之后，客户端<b>真的</b>收到 EXECUTION_FAILED。
@@ -142,7 +144,7 @@ class StartupFailureEndToEndTest {
         publisher.connect(ROOT_SESSION_ID);
 
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                publisher, identity, mock(ExecutionRepository.class));
+                publisher, identity, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
         agentEvents.init();
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                 new ChatTurnRuntimeListener(chatTurnService),
@@ -175,7 +177,7 @@ class StartupFailureEndToEndTest {
     private static Execution execution() {
         AgentRequest request = AgentRequest.builder()
                 .executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("你好")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("你好"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)))
                         .eventMetaData(ExecutionEventMetadata.of(ROOT_SESSION_ID, ROOT_SESSION_ID, TURN_ID, null, 3L))

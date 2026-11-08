@@ -114,7 +114,7 @@ class RequestPreparerModelFallbackTest {
         AgentRequest request = preparer.buildRequest("", context, List.of(ToolCatalog.READ_FILE));
         assertTrue(request.getToolList().contains(ToolCatalog.LOAD_MEMORY));
         assertTrue(request.getToolList().contains(ToolCatalog.SEARCH_WIKI));
-        assertTrue(request.getSystemPrompt().contains("wiki=" + context.workspace().workDir()));
+        assertTrue(request.getContextSpec().getSystemPrompt().contains("wiki=" + context.workspace().workDir()));
     }
 
     private static ChatCommand command(Long modelId, Long agentId) {

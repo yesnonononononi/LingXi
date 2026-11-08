@@ -88,13 +88,13 @@ class RequestPreparerExecutionIdentityTest {
                 Optional.of(Personalization.builder().id(LocalInstance.SETTINGS_ROW_ID).title("")
                         .commonAgentName("").replyStyle(ReplyStyle.DEFAULT).customInstruction("").build()));
         RuntimeContext context = preparer.prepare(command());
-        String first = preparer.buildRequest("团队模式", context, List.of()).getSystemPrompt();
+        String first = preparer.buildRequest("团队模式", context, List.of()).getContextSpec().getSystemPrompt();
         assertTrue(first.startsWith("全局规则\n\n# 用户个性化偏好"));
         assertTrue(first.contains("\n灵犀\n"));
         assertTrue(first.contains("\n小林\n"));
         assertTrue(first.contains(ReplyStyle.DIRECT.getContent()));
         assertTrue(first.endsWith("先给结论\n\n团队模式"));
-        assertEquals("全局规则\n\n团队模式", preparer.buildRequest("团队模式", context, List.of()).getSystemPrompt());
+        assertEquals("全局规则\n\n团队模式", preparer.buildRequest("团队模式", context, List.of()).getContextSpec().getSystemPrompt());
         verify(personalizationRepository, never()).save(any());
     }
 
@@ -177,7 +177,7 @@ class RequestPreparerExecutionIdentityTest {
         Long acceptedTurnId = preparer.commitUserMessage(context);
         assertEquals(turnId, acceptedTurnId);
         AgentRequest request = preparer.buildRequest("prompt", context.withTurnId(acceptedTurnId), List.of());
-        assertEquals("全局规则\n\nprompt", request.getSystemPrompt());
+        assertEquals("全局规则\n\nprompt", request.getContextSpec().getSystemPrompt());
         // 完整身份：根会话、会话、轮次与历史代际；来源是 prepare 阶段的一次冷路径读，不含 parentTurnId。
         assertEquals(Map.of(
                         "rootSessionId", Long.toString(SESSION_ID),

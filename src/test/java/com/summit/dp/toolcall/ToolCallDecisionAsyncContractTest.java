@@ -69,6 +69,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * v1 SSE 契约与线程归属：<b>连接先开、恢复跑完、连接才关</b>。
@@ -206,7 +207,7 @@ class ToolCallDecisionAsyncContractTest {
                 .id(TOOL_CALL_ID).name("create_plan").requestIndex(0).arguments("{}").build()));
         return Execution.builder().id(String.valueOf(EXECUTION_ID)).agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))
-                        .messages(context)
+                        .contextSpec(ContextSpec.builder().context(context).build())
                         .runtimeParameters(AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(CONVERSATION_ID)))
                                 .build())

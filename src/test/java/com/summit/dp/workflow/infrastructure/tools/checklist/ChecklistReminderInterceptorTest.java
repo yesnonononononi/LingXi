@@ -201,7 +201,7 @@ class ChecklistReminderInterceptorTest {
 
     private LoopContext context(Execution execution, List<Message> appended) {
         LoopMessages messages = LoopMessages.builder().execution(execution).build();
-        return LoopContext.withCompactionCounter(messages, null, () -> 0, added -> {
+        return LoopContext.withCompactionCounter(messages, null, () -> 0, null, added -> {
             appended.addAll(added);
             execution.getMessages().addAll(added);
         });

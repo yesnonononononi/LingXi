@@ -48,6 +48,7 @@ import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 提交被线程池拒绝后的收口与解锁。
@@ -115,7 +116,7 @@ class SubmitRejectionReleasesSessionTest {
     private static Execution execution(String executionId) {
         AgentRequest request = AgentRequest.builder()
                 .executionId(executionId)
-                .messages(List.of(UserMessageEntity.from("你好")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("你好"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)))
                         .eventMetaData(ExecutionEventMetadata.of(ROOT_SESSION_ID, ROOT_SESSION_ID, TURN_ID, null, 3L))

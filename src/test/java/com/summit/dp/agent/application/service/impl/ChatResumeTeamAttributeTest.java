@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 恢复链路的会话属性回归：{@code resume} 不经过 {@code RequestPreparer}，必须自己把会话行上的
@@ -259,7 +260,7 @@ class ChatResumeTeamAttributeTest {
 
     private static Execution execution(Map<String, Object> attributes) {
         AgentRequest request = AgentRequest.builder().executionId(EXECUTION_ID)
-                .messages(List.of(UserMessageEntity.from("hi")))
+                .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                 .build();
         return Execution.builder().id(EXECUTION_ID).agentId("chatAgent").agentRequest(request)

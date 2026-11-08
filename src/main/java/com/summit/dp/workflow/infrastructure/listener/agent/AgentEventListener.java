@@ -10,6 +10,7 @@ import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.shared.vo.block.BlockOrder;
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.workflow.application.chat.ExecutionErrorText;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import jakarta.annotation.PostConstruct;
@@ -19,7 +20,13 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-/** 实时事件保留框架偏移，补齐展示位置后按根会话推送，执行终结不关闭会话流。 */
+/**
+ * 实时事件保留框架偏移，补齐展示位置后按根会话推送，执行终结不关闭会话流。
+ *
+ * <p><b>迁移标注（过渡接线）</b>：本类对 {@code onAuditRecorded} / {@code onAuditFailed} 的两个覆写
+ * 是<b>过渡接线</b>，待 workflow 统一 {@code ExecutionLifecycleProjectionListener} 落地后迁移到该统一投影，
+ * 届时本类的这两个方法应删除，只保留渲染事件与终态的转发职责。</p>
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -29,6 +36,14 @@ public class AgentEventListener implements RuntimeListener {
     private final ExecutionLocator executionLocator;
     /** 待收口位读口：成功终态能否发布由这一列决定（见 {@code suppressedWhileClosurePending}）。 */
     private final ExecutionRepository executions;
+    /**
+     * token 审计采集器（{@code session} 模块的纯服务）。
+     *
+     * <p><b>为什么工作流可以直接持有它</b>：{@code WorkflowDependencyTest} 只禁止业务模块
+     * 反向依赖工作流，以及工作流直接访问业务的<b>持久化实现</b>；{@code session.application.service}
+     * 属于应用层，与 {@code TurnViewBroadcaster} 直接调用 {@code session.application.*} 同一先例。</p>
+     */
+    private final SessionTokenAuditCollector sessionTokenAuditCollector;
 
     private interface TypedEventMixIn {
         @JsonProperty("type")
@@ -222,6 +237,58 @@ public class AgentEventListener implements RuntimeListener {
     @Override
     public void onContextUpdate(ContextUpdateEvent event) {
         broadcast(event);
+    }
+
+    /**
+     * token 审计成功事件 → 采集并落库（<b>过渡接线</b>，待 workflow 统一
+     * {@code ExecutionLifecycleProjectionListener} 落地后迁移到该统一投影）。
+     *
+     * <p><b>只认 {@link AgentTokenAuditRecordedEvent}</b>：{@link AgentAuditRecordedEvent} 是审计类事件的
+     * 公共父接口，将来可能出现别的审计实现（其他口径 / 其他模型），把它们的载荷当成本口径的
+     * {@code contextAudit} 会污染快照。因此这里用 {@code instanceof} 过滤，其它实现类型直接忽略。</p>
+     *
+     * <p><b>必须吞异常</b>：审计采集是旁路动作，任何失败都不许影响执行终态 ——
+     * 框架的监听器调用发生在状态提交路径上，异常外抛会污染执行结果。这里捕获
+     * {@link RuntimeException} 并记 warn（含 {@code executionId}，便于定位）。</p>
+     *
+     * @param event 审计成功事件（框架回调）
+     */
+    @Override
+    public void onAuditRecorded(AgentAuditRecordedEvent event) {
+        if (!(event instanceof AgentTokenAuditRecordedEvent tokenAudit)) {
+            // 其它审计实现类型不属于本口径：忽略（不是错误，不记 warn 以免噪声）。
+            return;
+        }
+        try {
+            sessionTokenAuditCollector.collect(event.executionId(), tokenAudit.contextAudit(),
+                    event.eventMetaData());
+        } catch (RuntimeException failure) {
+            // 审计失败绝不影响执行终态：落库没做完就等下一次采集，前端仍可 GET 到旧快照。
+            log.warn("token 审计采集失败，已忽略: executionId={}, error={}, message={}",
+                    event.executionId(), failure.getClass().getSimpleName(), failure.getMessage());
+        }
+    }
+
+    /**
+     * token 审计失败事件 → 记失败态（<b>过渡接线</b>，待 workflow 统一
+     * {@code ExecutionLifecycleProjectionListener} 落地后迁移）。
+     *
+     * <p>同样只认 {@link AgentTokenAuditFailedEvent}；同样吞异常只记 warn。</p>
+     *
+     * @param event 审计失败事件（框架回调）
+     */
+    @Override
+    public void onAuditFailed(AgentAuditFailedEvent event) {
+        if (!(event instanceof AgentTokenAuditFailedEvent tokenAudit)) {
+            return;
+        }
+        try {
+            sessionTokenAuditCollector.markFailed(event.executionId(), tokenAudit.errorType(),
+                    tokenAudit.errorMessage(), event.eventMetaData());
+        } catch (RuntimeException failure) {
+            log.warn("token 审计失败态记录失败，已忽略: executionId={}, error={}, message={}",
+                    event.executionId(), failure.getClass().getSimpleName(), failure.getMessage());
+        }
     }
 
     /** 执行终结只广播，连接由会话流自身的生命周期回收。 */

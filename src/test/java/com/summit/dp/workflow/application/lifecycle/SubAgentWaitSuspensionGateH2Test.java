@@ -31,6 +31,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 等待子代理门禁：真 H2 + 真仓储。
@@ -159,7 +160,7 @@ class SubAgentWaitSuspensionGateH2Test {
         String executionId = String.valueOf(ROOT_EXECUTION_ID);
         return Execution.builder().id(executionId).agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId(executionId)
-                        .messages(List.of(UserMessageEntity.from("hi")))
+                        .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .executionState(ExecutionState.SUSPENDED).build();

@@ -21,9 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -39,6 +41,14 @@ class MailReceiptBackfillMigrationTest {
     private static final long MAILBOX_ID = 6101L;
     private static final long OLD_CONSUMED_MESSAGE_ID = 8_000_000_000_000_001L;
     private static final long OLD_PENDING_MESSAGE_ID = 8_000_000_000_000_002L;
+
+    /**
+     * 升级基线：回填用例先建到该版本，再跑全量脚本模拟一次真实升级。
+     *
+     * <p>**这是唯一允许写死的版本号**，且它的含义是「V7 回填脚本之前的最后一条」——
+     * 也就是本用例的场景定义本身，不是「一共要执行几条」这种会随脚本增加而失效的期望值。</p>
+     */
+    private static final int BASELINE_VERSION = 6;
 
     @Test
     @DisplayName("V7 只回填迁移时已存在的 CONSUMED 历史：旧邮件不重放，之后新清理的仍投递一次")
@@ -86,14 +96,30 @@ class MailReceiptBackfillMigrationTest {
     void reinitializingDoesNotBackfillTwice() {
         try (H2TestDatabase database = H2TestDatabase.createWithoutSchema("mail-backfill-idempotent")) {
             H2SchemaInitializer initializer = new H2SchemaInitializer();
-            initializer.initialize(database, initializer.loadScripts().stream()
-                    .filter(script -> script.version() <= 6).toList());
+            List<SchemaScript> allScripts = initializer.loadScripts();
+            initializer.initialize(database, upTo(allScripts, BASELINE_VERSION));
             seedLegacyMail(database);
+
+            // 期望值从 db/h2 目录自身推导，不写死数字：基线之上有几条脚本，第一次升级就必须
+            // 执行几条。新增 V9/V10 时本用例无需改动，而「漏执行」（数量变少）与
+            // 「重复执行」（第二次不再是 0）仍然会被抓住。
+            List<String> expectedUpgradeScripts = allScripts.stream()
+                    .filter(script -> script.version() > BASELINE_VERSION)
+                    .sorted(Comparator.comparingInt(SchemaScript::version))
+                    .map(SchemaScript::filename)
+                    .toList();
+            assertFalse(expectedUpgradeScripts.isEmpty(),
+                    "基线 V" + BASELINE_VERSION + " 之上必须至少还有一条脚本，否则本用例失去意义");
 
             int firstRun = initializer.initialize(database);
             int secondRun = initializer.initialize(database);
-            assertEquals(1, firstRun, "第一次升级只应执行 V7 一条脚本");
+            assertEquals(expectedUpgradeScripts.size(), firstRun,
+                    "第一次升级必须把基线之上的全部脚本各执行一次: " + expectedUpgradeScripts);
             assertEquals(0, secondRun, "再次启动不应重复执行任何脚本");
+
+            // 集合级断言：比数字更能定位问题——少一个名字就是漏执行，多一个就是重复执行/跳版本。
+            assertEquals(expectedUpgradeScripts, upgradedScripts(database),
+                    "版本表里登记的升级脚本必须与 db/h2 目录里基线之上的脚本完全一致");
 
             SqlSessionFactory factory = database.sessionFactory(EmailMapper.class, EmailMessageMapper.class,
                     EmailMessageReceiptMapper.class);
@@ -102,6 +128,31 @@ class MailReceiptBackfillMigrationTest {
                             .selectCount(null).longValue(),
                     "回填幂等：重跑不会多出一条回执");
         }
+    }
+
+    /**
+     * 版本表里已登记的、基线之上的脚本文件名（按版本升序）。
+     *
+     * <p>直接查 {@code schema_version} 而不是依赖 {@code initialize} 的返回值：
+     * 返回值只是条数，分不清「少执行了哪一条」，也无法区分「漏执行」与「重复执行同一版本」。</p>
+     *
+     * @param database 目标库
+     * @return 脚本文件名清单
+     */
+    private static List<String> upgradedScripts(H2TestDatabase database) {
+        return database.queryColumn("SELECT script FROM schema_version WHERE version > "
+                + BASELINE_VERSION + " ORDER BY version");
+    }
+
+    /**
+     * 取版本号不超过上限的脚本（用于先建到基线、再模拟一次真实升级）。
+     *
+     * @param scripts 全部脚本
+     * @param baselineVersion 基线版本号
+     * @return 基线及以下的脚本
+     */
+    private static List<SchemaScript> upTo(List<SchemaScript> scripts, int baselineVersion) {
+        return scripts.stream().filter(script -> script.version() <= baselineVersion).toList();
     }
 
     /** 迁移前的历史数据：一封已消费（旧版已投递过）、一封仍未读。 */

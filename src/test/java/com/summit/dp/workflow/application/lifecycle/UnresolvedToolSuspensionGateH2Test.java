@@ -29,6 +29,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import com.summit.core.agent.ContextSpec;
 
 /**
  * 未决工具门禁的真实 SQL 回归。
@@ -127,7 +128,7 @@ class UnresolvedToolSuspensionGateH2Test {
     void missingExecutionIdFailsLoudly() {
         Execution broken = Execution.builder().id("not-a-number").agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId("not-a-number")
-                        .messages(List.of(UserMessageEntity.from("hi")))
+                        .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(new HashMap<>()).build())
                         .build())
                 .executionState(ExecutionState.SUSPENDED).build();
@@ -152,7 +153,7 @@ class UnresolvedToolSuspensionGateH2Test {
         Map<String, Object> attributes = new HashMap<>();
         return Execution.builder().id(String.valueOf(EXECUTION_ID)).agentId("chatAgent")
                 .agentRequest(AgentRequest.builder().executionId(String.valueOf(EXECUTION_ID))
-                        .messages(List.of(UserMessageEntity.from("hi")))
+                        .contextSpec(ContextSpec.builder().context(List.of(UserMessageEntity.from("hi"))).build())
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .executionState(ExecutionState.SUSPENDED).build();
