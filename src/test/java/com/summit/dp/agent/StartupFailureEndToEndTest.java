@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -142,7 +143,7 @@ class StartupFailureEndToEndTest {
         publisher.connect(ROOT_SESSION_ID);
 
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                publisher, identity, mock(ExecutionRepository.class));
+                publisher, identity, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
         agentEvents.init();
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                 new ChatTurnRuntimeListener(chatTurnService),

@@ -289,7 +289,6 @@ public class SessionTokenAuditQueryService {
                 .groupKind(group.getGroupKind() == null ? null : group.getGroupKind().name())
                 .tokens(groupTokens)
                 .ratio(ratio(groupTokens, toolTokens))
-                .callCount(group.getCallCount())
                 .items(items)
                 .build();
     }
@@ -300,7 +299,6 @@ public class SessionTokenAuditQueryService {
                 .toolName(item.getToolName())
                 .tokens(item.resultTokens())
                 .ratio(item.ratioOf(groupTokens))
-                .callCount(item.getCallCount())
                 .argumentTokens(item.getArgumentTokens())
                 .outputTokens(item.getOutputTokens())
                 .build();

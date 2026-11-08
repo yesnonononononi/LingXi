@@ -16,8 +16,6 @@ public class TokenAuditToolItemVO {
     /** 占父级（普通工具分组）的比例；父级为 0 或缺失时 null。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Double ratio;
-    /** 该工具调用条数；无条数来源时如实为 0。 */
-    private Integer callCount;
     /** 工具调用参数 token：已计入 AI 项，只读说明，不参与任何求和。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer argumentTokens;

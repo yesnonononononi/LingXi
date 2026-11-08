@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
@@ -211,7 +212,7 @@ class HttpClientNetworkComparisonTest {
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId(anyString())).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
-            AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(ExecutionRepository.class));
+            AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
             bridge.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
                 @Override
