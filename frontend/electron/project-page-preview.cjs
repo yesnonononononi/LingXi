@@ -1,11 +1,8 @@
-/** 原生网页使用独立会话，不能继承主页面的 preload 与系统能力。 */
-const CHANNELS = Object.freeze({
-  navigate: 'project-page:navigate',
-  layout: 'project-page:layout',
-  close: 'project-page:close',
-  event: 'project-page:event',
-});
+/** 标签与网页实例由主进程持有，远程内容不能继承主页面的系统能力。 */
+const {randomUUID} = require('node:crypto');
+const CHANNELS = Object.freeze({command: 'project-page:command', layout: 'project-page:layout', event: 'project-page:event'});
 const PARTITION = 'persist:lingxi-project-pages';
+const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
 
 function normalizeTargetUrl(value) {
   if (typeof value !== 'string' || !value.trim()) throw new Error('目标页面地址不能为空');
@@ -36,41 +33,40 @@ function normalizeLayout(request) {
   }};
 }
 
-function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session}) {
+function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
   let previewSession;
 
-  const destroyView = state => {
-    const view = state.view;
-    state.view = null;
-    if (!view) return;
-    if (!state.window.isDestroyed()) state.window.contentView.removeChildView(view);
-    const contents = view.webContents;
-    if (contents && !contents.isDestroyed()) contents.close({waitForBeforeUnload: false});
+  const clearTimer = tab => { clearTimeout(tab.timer); tab.timer = undefined; };
+  const destroyTab = (state, tab) => {
+    state.tabs.delete(tab.id);
+    clearTimer(tab);
+    if (!state.window.isDestroyed()) state.window.contentView.removeChildView(tab.view);
+    if (!tab.contents.isDestroyed()) tab.contents.close({waitForBeforeUnload: false});
   };
-
+  const destroyTabs = state => {
+    for (const tab of [...state.tabs.values()]) destroyTab(state, tab);
+    state.activeTabId = '';
+  };
   const release = state => {
-    destroyView(state);
+    destroyTabs(state);
     state.host.removeListener('destroyed', state.release);
     state.host.removeListener('did-start-navigation', state.hostNavigation);
     states.delete(state.key);
   };
-
   const assertSender = event => {
     const window = getWindow();
-    if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
+    if (!window || window.isDestroyed() || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) {
       throw new Error('页面预览只能从主窗口主框架发起');
     }
     return window;
   };
-
   const getState = window => {
-    const host = window.webContents;
-    let state = states.get(host.id);
+    let state = states.get(window.webContents.id);
     if (!state) {
-      state = {key: host.id, window, host, generation: 0, view: null, layout: null};
+      const host = window.webContents;
+      state = {key: host.id, window, host, generation: 0, revision: 0, closed: true, tabs: new Map(), activeTabId: '', layout: null};
       state.release = () => release(state);
-      // 主页面刷新后旧组件已消失，不能把原生视图留在新页面上。
       state.hostNavigation = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) release(state); };
       host.once('destroyed', state.release);
       host.on('did-start-navigation', state.hostNavigation);
@@ -78,27 +74,46 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     }
     return state;
   };
-
-  const emit = (state, view, generation, payload) => {
-    if (state.view === view && state.generation === generation && !state.host.isDestroyed()) {
-      state.host.send(CHANNELS.event, {...payload, generation});
-    }
+  const snapshot = state => ({
+    generation: state.generation, revision: ++state.revision, activeTabId: state.activeTabId,
+    tabs: [...state.tabs.values()].map(tab => ({
+      id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon,
+      loadState: tab.loadState, isLoading: tab.isLoading, errorCode: tab.errorCode, errorDescription: tab.errorDescription,
+      canGoBack: !tab.contents.isDestroyed() && tab.contents.navigationHistory.canGoBack(),
+      canGoForward: !tab.contents.isDestroyed() && tab.contents.navigationHistory.canGoForward(),
+    })),
+  });
+  const publish = state => {
+    const value = snapshot(state);
+    if (!state.host.isDestroyed()) state.host.send(CHANNELS.event, value);
+    return value;
   };
-
   const applyLayout = state => {
-    if (!state.view || !state.layout) return;
     const scale = state.host.getZoomFactor();
     const [width, height] = state.window.getContentSize();
-    const rect = state.layout.bounds;
+    const rect = state.layout?.bounds ?? {x: 0, y: 0, width: 0, height: 0};
     const x = Math.max(0, Math.min(width, Math.round(rect.x * scale)));
     const y = Math.max(0, Math.min(height, Math.round(rect.y * scale)));
     const right = Math.max(x, Math.min(width, Math.round((rect.x + rect.width) * scale)));
     const bottom = Math.max(y, Math.min(height, Math.round((rect.y + rect.height) * scale)));
-    state.view.setBounds({x, y, width: right - x, height: bottom - y});
-    state.view.setVisible(state.layout.visible && right > x && bottom > y);
+    for (const tab of state.tabs.values()) {
+      tab.view.setBounds({x, y, width: right - x, height: bottom - y});
+      tab.view.setVisible(Boolean(state.layout?.visible && tab.id === state.activeTabId && tab.url && right > x && bottom > y));
+    }
+  };
+  const requireTab = (state, id) => {
+    const tab = state.tabs.get(id);
+    if (!tab) throw new Error('网页标签已关闭，请重新打开');
+    return tab;
+  };
+  const load = (tab, url, options) => {
+    tab.url = normalizeTargetUrl(url);
+    tab.committedNavigation = false;
+    // 加载失败以原生事件为准，取消旧导航产生的 Promise 拒绝不能污染新页面。
+    void tab.contents.loadURL(tab.url, options).catch(() => undefined);
   };
 
-  const createView = (state, generation) => {
+  const createTab = (state, {url, background = false, options} = {}) => {
     if (!previewSession) {
       previewSession = session.fromPartition(PARTITION);
       previewSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -108,83 +123,150 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     const view = new WebContentsView({webPreferences: {
       session: previewSession, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
     }});
-    state.view = view;
+    const tab = {id: randomUUID(), view, contents: view.webContents, url: '', title: '', favicon: '', loadState: 'idle',
+      isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined};
+    state.tabs.set(tab.id, tab);
+    if (!background || !state.activeTabId) state.activeTabId = tab.id;
     view.setVisible(false);
     state.window.contentView.addChildView(view);
-    const contents = view.webContents;
-    const send = payload => emit(state, view, generation, payload);
-    const fail = (errorCode, errorDescription, url) => send({type: 'did-fail-load', errorCode, errorDescription, url});
-    const guardNavigation = (event, url) => {
-      try { normalizeTargetUrl(url); } catch (error) {
-        event.preventDefault();
-        fail(-301, error.message, url);
-      }
+    const contents = tab.contents;
+    const current = () => state.tabs.get(tab.id) === tab;
+    const send = () => { if (current()) { applyLayout(state); publish(state); } };
+    const fail = (code, description) => {
+      if (!current()) return;
+      clearTimer(tab);
+      tab.isLoading = false;
+      tab.loadState = 'failed';
+      tab.errorCode = code;
+      tab.errorDescription = description;
+      send();
+    };
+    const guardNavigation = (event, target) => {
+      try { normalizeTargetUrl(target); } catch (error) { event.preventDefault(); fail(-301, error.message); }
     };
     contents.on('will-navigate', guardNavigation);
     contents.on('will-redirect', guardNavigation);
-    contents.on('did-start-navigation', (_event, url, inPlace, mainFrame) => {
-      if (mainFrame && !inPlace) send({type: 'did-start-loading', url});
+    contents.on('content-bounds-updated', event => event.preventDefault());
+    contents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+      if (!current() || !mainFrame || inPlace) return;
+      clearTimer(tab);
+      tab.committedNavigation = false;
+      tab.isLoading = true;
+      tab.loadState = 'loading';
+      tab.errorCode = 0;
+      tab.errorDescription = '';
+      tab.timer = setTimeout(() => {
+        tab.timer = undefined;
+        if (current() && tab.loadState === 'loading') { tab.loadState = 'timeout'; send(); }
+      }, timeoutMs);
+      send();
     });
-    contents.on('did-navigate', (_event, url) => send({type: 'did-navigate', url}));
-    contents.on('did-navigate-in-page', (_event, url, mainFrame) => {
-      if (mainFrame) send({type: 'did-navigate', url});
-    });
-    contents.on('did-finish-load', () => send({type: 'did-finish-load', url: contents.getURL()}));
-    contents.on('did-fail-load', (_event, code, description, url, mainFrame) => {
-      if (mainFrame && code !== -3) fail(code, description, url);
-    });
-    contents.on('render-process-gone', (_event, details) => fail(0, `网页进程已退出: reason=${details.reason}`, contents.getURL()));
-    const load = url => {
-      void contents.loadURL(url).catch(error => {
-        if (error.code !== 'ERR_ABORTED') fail(error.errno || 0, error.message, url);
-      });
+    const updateUrl = url => {
+      try { tab.url = normalizeTargetUrl(url); } catch { return; }
+      send();
     };
-    // 新窗口链接留在当前预览内，远程页面不能创建带系统能力的窗口。
-    contents.setWindowOpenHandler(({url}) => {
-      try { load(normalizeTargetUrl(url)); } catch (error) { fail(-301, error.message, url); }
+    contents.on('did-navigate', (_event, url) => { tab.committedNavigation = true; updateUrl(url); });
+    contents.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) updateUrl(url); });
+    contents.on('page-title-updated', (_event, title) => { tab.title = title; send(); });
+    contents.on('page-favicon-updated', (_event, favicons) => {
+      tab.favicon = favicons.find(url => { try { normalizeTargetUrl(url); return true; } catch { return false; } }) ?? '';
+      send();
+    });
+    contents.on('did-finish-load', () => {
+      // 旧错误页的完成事件可能迟到，不能结束尚未提交的新导航。
+      if (!current() || !tab.committedNavigation || contents.getURL() !== tab.url) return;
+      clearTimer(tab);
+      tab.isLoading = false;
+      if (tab.loadState !== 'failed') tab.loadState = 'loaded';
+      send();
+    });
+    contents.on('did-stop-loading', () => {
+      if (!current() || contents.isLoadingMainFrame()) return;
+      tab.isLoading = false;
+      if (tab.loadState === 'loading') { clearTimer(tab); tab.loadState = 'stopped'; }
+      send();
+    });
+    contents.on('did-fail-load', (_event, code, description, _url, mainFrame) => { if (mainFrame && code !== -3) fail(code, description); });
+    contents.on('render-process-gone', (_event, details) => fail(0, `网页进程已退出: reason=${details.reason}`));
+    contents.setWindowOpenHandler(details => {
+      if (!current()) return {action: 'deny'};
+      try {
+        const url = normalizeTargetUrl(details.url);
+        const post = details.postBody;
+        const options = {httpReferrer: details.referrer};
+        if (post) {
+          options.postData = post.data;
+          options.extraHeaders = `Content-Type: ${post.contentType}${post.boundary ? '; boundary=' + post.boundary : ''}`;
+        }
+        createTab(state, {url, background: details.disposition === 'background-tab', options});
+        applyLayout(state);
+        publish(state);
+      } catch (error) { fail(-301, error.message); }
       return {action: 'deny'};
     });
-    applyLayout(state);
-    return load;
+    if (url) load(tab, url, options);
+    return tab;
   };
 
+  const command = (state, request) => {
+    switch (request.action) {
+      case 'sync': if (!state.tabs.size) createTab(state); break;
+      case 'create': {
+        const url = request.url === undefined ? undefined : normalizeTargetUrl(request.url);
+        createTab(state, {url}); break;
+      }
+      case 'activate': state.activeTabId = requireTab(state, request.tabId).id; break;
+      case 'close-tab': {
+        const tab = requireTab(state, request.tabId);
+        const ids = [...state.tabs.keys()];
+        const index = ids.indexOf(tab.id);
+        destroyTab(state, tab);
+        if (state.activeTabId === tab.id) state.activeTabId = ids[index + 1] ?? ids[index - 1] ?? '';
+        if (!state.tabs.size) createTab(state);
+        break;
+      }
+      case 'navigate': {
+        const url = normalizeTargetUrl(request.url);
+        const tab = request.tabId ? requireTab(state, request.tabId) : state.tabs.get(state.activeTabId) ?? createTab(state);
+        load(tab, url); break;
+      }
+      case 'back': case 'forward': case 'reload': case 'stop': {
+        const tab = requireTab(state, request.tabId);
+        const contents = tab.contents;
+        if (request.action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
+        if (request.action === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
+        if (request.action === 'reload' && tab.url) contents.reload();
+        if (request.action === 'stop') { clearTimer(tab); contents.stop(); tab.isLoading = false; tab.loadState = 'stopped'; }
+        break;
+      }
+      case 'close': destroyTabs(state); state.closed = true; state.layout = null; break;
+      default: throw new Error('不支持此网页标签操作');
+    }
+    applyLayout(state);
+    return publish(state);
+  };
   const handle = (channel, action) => ipcMain.handle(channel, (event, request) => {
     try {
       const window = assertSender(event);
-      const generation = normalizeGeneration(request && request.generation);
-      return {ok: true, data: action(getState(window), request, generation)};
-    } catch (error) {
-      return {ok: false, error: error.message};
-    }
+      const generation = normalizeGeneration(request?.generation);
+      const state = getState(window);
+      if (generation < state.generation || (state.closed && generation <= state.generation)) throw new Error('页面预览请求已过期');
+      if (generation > state.generation) {
+        destroyTabs(state); state.generation = generation; state.revision = 0; state.closed = false; state.layout = null;
+      }
+      return {ok: true, data: action(state, request)};
+    } catch (error) { return {ok: false, error: error.message}; }
   });
-
-  handle(CHANNELS.navigate, (state, request, generation) => {
-    const url = normalizeTargetUrl(request.url);
-    if (generation <= state.generation) throw new Error('页面预览请求已过期');
-    destroyView(state);
-    state.generation = generation;
-    state.layout = null;
-    createView(state, generation)(url);
-    return {generation};
-  });
-  handle(CHANNELS.layout, (state, request, generation) => {
-    if (generation !== state.generation || !state.view) return {applied: false};
+  handle(CHANNELS.command, command);
+  handle(CHANNELS.layout, (state, request) => {
     state.layout = normalizeLayout(request);
     applyLayout(state);
     return {applied: true};
   });
-  handle(CHANNELS.close, (state, _request, generation) => {
-    if (generation < state.generation) return {released: false};
-    state.generation = generation;
-    destroyView(state);
-    state.layout = null;
-    return {released: true};
-  });
-
   return {close: () => {
     for (const state of [...states.values()]) release(state);
-    for (const channel of [CHANNELS.navigate, CHANNELS.layout, CHANNELS.close]) ipcMain.removeHandler(channel);
+    ipcMain.removeHandler(CHANNELS.command);
+    ipcMain.removeHandler(CHANNELS.layout);
   }};
 }
-
-module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, CHANNELS};
+module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS};

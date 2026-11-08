@@ -1,30 +1,13 @@
-/**
- * 项目页面预览（阶段一）单元测试：地址校验 + 加载状态机 + generation 失效保护。
- *
- * <p>状态机是纯内存逻辑，不需要 DOM：composable 在没有 `window.electronAPI` 时静默跳过主进程订阅，
- * 因此这里直接以「主进程事件」喂给 {@code applyDiagnosticEvent}，验证状态归并口径。</p>
- */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {EventEmitter} from 'node:events';
-import {
-  PROJECT_PAGE_LOAD_TIMEOUT_MS,
-  useProjectPagePreview,
-  validateProjectPageUrl,
-} from '../src/composables/useProjectPagePreview';
-import type {ProjectPagePreviewApi} from '../src/types/projectPagePreview';
-
+import {useProjectPagePreview, validateProjectPageUrl} from '../src/composables/useProjectPagePreview';
+import type {ProjectPageState, ProjectPageTab} from '../src/types/projectPagePreview';
+const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
 const ADDRESS = 'http://localhost:5173/';
-const OTHER_ADDRESS = 'http://127.0.0.1:5180/settings?tab=theme';
-const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, CHANNELS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
-
+const OTHER_ADDRESS = 'https://example.com/other';
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
-
-/** 起一个已提交地址的预览状态机（不触发任何计时器等外部副作用时用小超时避免悬挂）。 */
-function createPreview(timeoutMs = 60000): ProjectPagePreviewApi {
-  return useProjectPagePreview({timeoutMs});
-}
 
 test('URL 校验：接受回环地址并保留 path / query / hash', () => {
   const withQuery = validateProjectPageUrl('http://localhost:5173/settings/profile?tab=theme#section');
@@ -90,253 +73,53 @@ test('URL 校验：拒绝内嵌账号密码、空地址与畸形地址', () => {
   if (!malformed.ok) assert.equal(malformed.reason, 'malformed');
 });
 
-test('默认超时常量为 15 秒', () => {
-  assert.equal(PROJECT_PAGE_LOAD_TIMEOUT_MS, 15000);
-});
-
-test('状态机：提交地址后进入载入，页面加载事件推进到已收到加载事件', () => {
-  const preview = createPreview();
-  assert.equal(preview.loadState.value, 'idle');
-  assert.equal(preview.open.value, false);
-
-  preview.openAddress(ADDRESS);
-  assert.equal(preview.open.value, true);
-  assert.equal(preview.committedUrl.value, 'http://localhost:5173/');
-  assert.equal(preview.committedOrigin.value, 'http://localhost:5173');
-  assert.equal(preview.loadState.value, 'loading');
-  assert.equal(preview.generation.value, 1);
-
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: preview.generation.value, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded');
-  preview.close();
-});
-
-test('状态机：旧代（旧地址）的迟到结果不得覆盖新地址状态', () => {
-  const preview = createPreview();
-  preview.openAddress(ADDRESS);
-  const staleGeneration = preview.generation.value;
-
-  preview.openAddress(OTHER_ADDRESS);
-  const currentGeneration = preview.generation.value;
-  assert.notEqual(currentGeneration, staleGeneration);
-  assert.equal(preview.committedUrl.value, OTHER_ADDRESS);
-  assert.equal(preview.loadState.value, 'loading');
-
-  // 旧地址的迟到失败：必须被 generation 保护丢弃
-  preview.applyDiagnosticEvent({
-    type: 'did-fail-load',
-    generation: staleGeneration,
-    errorCode: -102,
-    errorDescription: 'ERR_CONNECTION_REFUSED',
-  });
-  assert.equal(preview.loadState.value, 'loading', '旧代的失败结果不能改写新地址的状态');
-  assert.equal(preview.diagnoseText.value, '', '旧代证据不能触发诊断提示');
-
-  // 旧地址的迟到成功同样不能把新地址标成已加载
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: staleGeneration, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loading');
-
-  // 当前代的证据才生效
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: currentGeneration, url: OTHER_ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded');
-  preview.close();
-});
-
-test('状态机：已确认失败后迟到完成事件不得覆盖，且失败诊断带原因码提示', () => {
-  const preview = createPreview();
-  preview.openAddress(ADDRESS);
-  preview.applyDiagnosticEvent({
-    type: 'did-fail-load',
-    generation: preview.generation.value,
-    errorCode: -27,
-    errorDescription: 'ERR_BLOCKED_BY_RESPONSE',
-  });
-  assert.equal(preview.loadState.value, 'failed');
-  assert.match(preview.diagnoseText.value, /网站阻止/);
-  assert.match(preview.diagnoseText.value, /ERR_BLOCKED_BY_RESPONSE/);
-
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: preview.generation.value});
-  assert.equal(preview.loadState.value, 'failed', '同一次导航的迟到完成事件不能覆盖已确认失败');
-  preview.close();
-});
-
-test('状态机：连接被拒绝给出服务未启动的提示，而不是猜测被拒绝嵌入', () => {
-  const preview = createPreview();
-  preview.openAddress(ADDRESS);
-  preview.applyDiagnosticEvent({
-    type: 'did-fail-load',
-    generation: preview.generation.value,
-    errorCode: -102,
-    errorDescription: 'ERR_CONNECTION_REFUSED',
-  });
-  assert.equal(preview.loadState.value, 'failed');
-  assert.doesNotMatch(preview.diagnoseText.value, /X-Frame-Options/);
-  preview.close();
-});
-
-test('状态机：等待超时只改提示不销毁实例，迟到的成功仍可更新状态', async () => {
-  const preview = useProjectPagePreview({timeoutMs: 20});
-  preview.openAddress(ADDRESS);
-  const attempt = preview.generation.value;
-  await delay(60);
-  assert.equal(preview.loadState.value, 'timeout');
-  assert.match(preview.diagnoseText.value, /超时/);
-  assert.equal(preview.committedUrl.value, 'http://localhost:5173/', '超时不得销毁 网页地址');
-
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: attempt, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded', '迟到成功的加载可以更新状态');
-  assert.equal(preview.diagnoseText.value, '');
-  preview.close();
-});
-
-test('状态机：loaded 后同代再次 did-start-loading 必须重开超时计时器（不能永久停在加载中）', async () => {
-  const preview = useProjectPagePreview({timeoutMs: 30});
-  preview.openAddress(ADDRESS);
-  const attempt = preview.generation.value;
-
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: attempt, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded');
-
-  // 页内二次加载：loaded 时计时器已 clearTimer，这里若不重开就再没有任何兜底
-  preview.applyDiagnosticEvent({type: 'did-start-loading', generation: attempt, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loading', '又发起了一次加载，语义上确实回到等待');
-
-  await delay(90);
-  assert.equal(preview.loadState.value, 'timeout', '加载等待超过阈值后必须给出结论，而不是永久 loading');
-  assert.match(preview.diagnoseText.value, /超时/);
-  assert.equal(preview.committedUrl.value, 'http://localhost:5173/', '超时提示不得销毁 网页地址');
-
-  // 这次等待里迟到的成功仍可更新状态
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: attempt, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded');
-  preview.close();
-});
-
-test('状态机：同代 did-start-loading 反复出现时，每次都会重置计时窗口', async () => {
-  const preview = useProjectPagePreview({timeoutMs: 80});
-  preview.openAddress(ADDRESS);
-  const attempt = preview.generation.value;
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: attempt, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded');
-
-  // 第一次 start → 计时窗口 80ms；50ms 后再来一次 start → 应重新起表，而不是沿用旧表
-  preview.applyDiagnosticEvent({type: 'did-start-loading', generation: attempt, url: ADDRESS});
-  await delay(50);
-  preview.applyDiagnosticEvent({type: 'did-start-loading', generation: attempt, url: ADDRESS});
-  await delay(50);
-  assert.equal(preview.loadState.value, 'loading', '第二次 start 应重置计时窗口，此刻还没到点');
-  await delay(80);
-  assert.equal(preview.loadState.value, 'timeout');
-  preview.close();
-});
-
-test('状态机：重新加载换代并回到载入态，地址不变', () => {
-  const preview = createPreview();
-  preview.openAddress(ADDRESS);
-  const first = preview.generation.value;
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation: first, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'loaded');
-
-  preview.reload();
-  assert.equal(preview.generation.value, first + 1);
-  assert.equal(preview.committedUrl.value, 'http://localhost:5173/');
-  assert.equal(preview.loadState.value, 'loading');
-  preview.close();
-});
-
-test('状态机：非法地址给可见错误且不改动已提交地址', () => {
-  const preview = createPreview();
-  preview.openAddress(ADDRESS);
-  const generation = preview.generation.value;
-
-  preview.openAddress('ftp://example.com/');
-  assert.notEqual(preview.addressError.value, '');
-  assert.equal(preview.committedUrl.value, 'http://localhost:5173/');
-  assert.equal(preview.generation.value, generation);
-
-  preview.updateAddress('http://localhost:5173/x');
-  assert.equal(preview.addressError.value, '', '编辑地址清掉上一次校验错误');
-  preview.close();
-});
-
-test('状态机：关闭后销毁实例、忽略旧代事件、保留地址输入', () => {
-  const preview = createPreview();
-  preview.openAddress(ADDRESS);
-  const generation = preview.generation.value;
-  preview.close();
-
-  assert.equal(preview.open.value, false);
-  assert.equal(preview.committedUrl.value, '');
-  assert.equal(preview.loadState.value, 'idle');
-  assert.notEqual(preview.generation.value, generation);
-
-  preview.applyDiagnosticEvent({type: 'did-finish-load', generation, url: ADDRESS});
-  assert.equal(preview.loadState.value, 'idle', '关闭后的旧代事件必须被丢弃');
-});
-
-
-test('状态机：跨站跳转更新真实地址，编辑中的输入与旧代事件不被覆盖', () => {
-  const preview = createPreview();
-  try {
-    preview.openAddress(ADDRESS);
-    const generation = preview.generation.value;
-    const target = 'https://example.com/docs#intro';
-    preview.applyDiagnosticEvent({type: 'did-navigate', generation, url: target});
-    assert.equal(preview.committedUrl.value, target);
-    assert.equal(preview.committedOrigin.value, 'https://example.com');
-    assert.equal(preview.addressInput.value, target);
-    preview.updateAddress('https://editing.example/');
-    preview.applyDiagnosticEvent({type: 'did-navigate', generation, url: target + '-next'});
-    assert.equal(preview.committedUrl.value, target + '-next');
-    assert.equal(preview.addressInput.value, 'https://editing.example/');
-    preview.applyDiagnosticEvent({type: 'did-navigate', generation: generation - 1, url: ADDRESS});
-    assert.equal(preview.committedUrl.value, target + '-next');
-    preview.reload();
-    assert.equal(preview.committedUrl.value, target + '-next');
-  } finally { preview.close(); }
-});
-
-test('状态机：失败后重新导航可以恢复加载与完成状态', () => {
-  const preview = createPreview();
-  try {
-    preview.openAddress(ADDRESS);
-    const generation = preview.generation.value;
-    preview.applyDiagnosticEvent({type: 'did-fail-load', generation, errorCode: -102});
-    preview.applyDiagnosticEvent({type: 'did-start-loading', generation, url: OTHER_ADDRESS});
-    assert.equal(preview.loadState.value, 'loading');
-    assert.equal(preview.failureDetail.value, '');
-    preview.applyDiagnosticEvent({type: 'did-finish-load', generation, url: OTHER_ADDRESS});
-    assert.equal(preview.loadState.value, 'loaded');
-  } finally { preview.close(); }
-});
-
-test('主进程布局校验：拒绝非有限数、负尺寸和非法可见性', () => {
-  const valid = {visible: true, bounds: {x: 10.4, y: 20.6, width: 400.2, height: 300.1}};
-  assert.deepEqual(normalizeLayout(valid), {visible: true, bounds: {x: 10, y: 21, width: 400, height: 300}});
-  for (const width of [NaN, Infinity, -1, 100001]) {
-    assert.throws(() => normalizeLayout({...valid, bounds: {...valid.bounds, width}}));
-  }
-  assert.throws(() => normalizeLayout({...valid, visible: 'true'}));
-  assert.equal(normalizeTargetUrl('https://example.com/a?q=1#b'), 'https://example.com/a?q=1#b');
-});
-
-
-test('原生视图 IPC：权限隔离、来源校验、缩放裁剪、保活与换代释放', t => {
+function createHarness(timeoutMs = 15000) {
   const handlers = new Map<string, (...args: any[]) => any>();
-  const events: any[] = [];
+  const events: ProjectPageState[] = [];
   const views: FakeView[] = [];
+  const callbacks = new Set<(state: ProjectPageState) => void>();
   class FakeContents extends EventEmitter {
     id = 1;
     mainFrame = {};
     destroyed = false;
     url = '';
+    options: any;
     open: any;
+    loads = 0;
+    reloads = 0;
+    loading = false;
+    history: string[] = [];
+    index = -1;
+    navigationHistory = {
+      canGoBack: () => this.index > 0,
+      canGoForward: () => this.index < this.history.length - 1,
+      goBack: () => { this.index--; this.finish(this.history[this.index]!); },
+      goForward: () => { this.index++; this.finish(this.history[this.index]!); },
+    };
     isDestroyed() { return this.destroyed; }
     close() { this.destroyed = true; this.emit('destroyed'); }
     getURL() { return this.url; }
+    isLoadingMainFrame() { return this.loading; }
     getZoomFactor() { return 2; }
-    loadURL(url: string) { this.url = url; return Promise.resolve(); }
-    send(_channel: string, payload: unknown) { events.push(payload); }
+    finish(url: string) {
+      this.url = url;
+      this.loading = true;
+      this.emit('did-start-navigation', {}, url, false, true);
+      if (url.endsWith('/hang')) return;
+      this.emit('did-navigate', {}, url);
+      if (url.endsWith('/fail')) this.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', url, true);
+      this.loading = false;
+      this.emit('did-finish-load');
+      this.emit('did-stop-loading');
+    }
+    loadURL(url: string, options: unknown) {
+      this.loads++; this.options = options;
+      this.history.splice(this.index + 1); this.history.push(url); this.index++;
+      this.finish(url); return Promise.resolve();
+    }
+    reload() { this.reloads++; this.finish(this.url); }
+    stop() { this.loading = false; this.emit('did-stop-loading'); }
+    send(_channel: string, state: ProjectPageState) { events.push(state); callbacks.forEach(callback => callback(state)); }
     setWindowOpenHandler(handler: any) { this.open = handler; }
   }
   class FakeView {
@@ -350,8 +133,7 @@ test('原生视图 IPC：权限隔离、来源校验、缩放裁剪、保活与�
   const host = new FakeContents();
   const children: FakeView[] = [];
   const window = {webContents: host, isDestroyed: () => false, getContentSize: () => [1000, 800],
-    contentView: {addChildView: (view: FakeView) => children.push(view),
-      removeChildView: (view: FakeView) => children.splice(children.indexOf(view), 1)}};
+    contentView: {addChildView: (view: FakeView) => children.push(view), removeChildView: (view: FakeView) => children.splice(children.indexOf(view), 1)}};
   const partition = new EventEmitter() as any;
   let requestPermission: any;
   let checkPermission: any;
@@ -359,108 +141,225 @@ test('原生视图 IPC：权限隔离、来源校验、缩放裁剪、保活与�
   partition.setPermissionCheckHandler = (handler: any) => { checkPermission = handler; };
   const registration = registerProjectPagePreview({
     ipcMain: {handle: (channel: string, callback: any) => handlers.set(channel, callback), removeHandler: (channel: string) => handlers.delete(channel)},
-    getWindow: () => window, WebContentsView: FakeView,
+    getWindow: () => window, WebContentsView: FakeView, timeoutMs,
     session: {fromPartition: (name: string) => { assert.equal(name, 'persist:lingxi-project-pages'); return partition; }},
   });
-  t.after(() => registration.close());
   const sender = {sender: host, senderFrame: host.mainFrame};
-  const invoke = (channel: string, request: unknown, event = sender) => handlers.get(channel)!(event, request);
-  const request = {url: ADDRESS, generation: 1};
-  assert.equal(invoke(CHANNELS.navigate, request, {...sender, senderFrame: {}}).ok, false);
-  assert.equal(views.length, 0);
-  assert.equal(invoke(CHANNELS.navigate, request).ok, true);
-  const old = views[0]!;
-  assert.equal(old.options.webPreferences.nodeIntegration, false);
-  assert.equal(old.options.webPreferences.contextIsolation, true);
-  assert.equal(old.options.webPreferences.sandbox, true);
-  assert.equal(old.options.webPreferences.webSecurity, true);
-  assert.equal(old.options.webPreferences.preload, undefined);
-  assert.equal(checkPermission(), false);
-  requestPermission(null, 'media', (allowed: boolean) => assert.equal(allowed, false));
+  const invoke = (action: string, request: any = {}, event = sender) => handlers.get(CHANNELS.command)!(event, {generation: 1, ...request, action});
+  const layout = (request: any) => handlers.get(CHANNELS.layout)!(sender, {generation: 1, ...request});
+  const bridge = {command: async (request: any) => invoke(request.action, request), layout: async (request: any) => layout(request),
+    onEvent: (callback: (state: ProjectPageState) => void) => { callbacks.add(callback); return () => { callbacks.delete(callback); }; }};
+  return {views, events, children, host, sender, invoke, layout, bridge, registration, partition,
+    getState: () => events.at(-1)!, checkPermission: () => checkPermission(), requestPermission: (...args: any[]) => requestPermission(...args)};
+}
+
+test('主进程创建标签并隔离权限，校验来源和网址，元数据只进入所属标签', t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  assert.equal(h.invoke('sync', {}, {...h.sender, senderFrame: {}}).ok, false);
+  assert.equal(h.views.length, 0);
+  const first = h.invoke('sync').data.activeTabId;
+  const second = h.invoke('create', {url: OTHER_ADDRESS}).data.activeTabId;
+  assert.notEqual(first, second);
+  assert.equal(h.views.length, 2);
+  assert.equal(h.checkPermission(), false);
+  h.requestPermission(null, 'media', (allowed: boolean) => assert.equal(allowed, false));
   let blocked = false;
-  partition.emit('will-download', {preventDefault: () => { blocked = true; }});
+  h.partition.emit('will-download', {preventDefault: () => { blocked = true; }});
   assert.equal(blocked, true);
+  const preferences = h.views[0]!.options.webPreferences;
+  assert.equal(preferences.nodeIntegration, false);
+  assert.equal(preferences.contextIsolation, true);
+  assert.equal(preferences.sandbox, true);
+  assert.equal(preferences.webSecurity, true);
+  assert.equal(preferences.preload, undefined);
+  assert.equal(h.views[1]!.options.webPreferences.session, preferences.session);
+  assert.equal(h.invoke('navigate', {tabId: first, url: 'file:///D:/secret'}).ok, false);
+  assert.equal(h.invoke('create', {url: 'https://user:secret@example.com/'}).ok, false);
   for (const eventName of ['will-navigate', 'will-redirect']) {
     blocked = false;
-    old.webContents.emit(eventName, {preventDefault: () => { blocked = true; }}, 'file:///D:/secret.txt');
+    h.views[0]!.webContents.emit(eventName, {preventDefault: () => { blocked = true; }}, 'file:///D:/secret');
     assert.equal(blocked, true);
   }
-  assert.deepEqual(old.webContents.open({url: 'https://other.example/page'}), {action: 'deny'});
-  assert.equal(old.webContents.url, 'https://other.example/page');
-  old.webContents.open({url: 'javascript:alert(1)'});
-  assert.equal(old.webContents.url, 'https://other.example/page');
-  const layout = {generation: 1, visible: true, bounds: {x: 400, y: 100, width: 200, height: 400}};
-  invoke(CHANNELS.layout, layout);
-  assert.deepEqual(old.bounds, {x: 800, y: 200, width: 200, height: 600});
-  assert.equal(old.visible, true);
-  invoke(CHANNELS.layout, {...layout, visible: false});
-  assert.equal(old.visible, false);
-  assert.equal(old.webContents.destroyed, false);
-  invoke(CHANNELS.navigate, {url: OTHER_ADDRESS, generation: 2});
-  const current = views[1]!;
-  assert.equal(old.webContents.destroyed, true);
-  assert.equal(children.length, 1);
-  events.length = 0;
-  old.webContents.emit('did-finish-load');
-  assert.deepEqual(events, []);
-  assert.equal(invoke(CHANNELS.layout, layout).data.applied, false);
-  assert.equal(invoke(CHANNELS.close, {generation: 1}).data.released, false);
-  assert.equal(current.webContents.destroyed, false);
-  current.webContents.emit('did-navigate', {}, 'https://other.example/');
-  assert.deepEqual(events.pop(), {type: 'did-navigate', generation: 2, url: 'https://other.example/'});
-  invoke(CHANNELS.close, {generation: 3});
-  assert.equal(current.webContents.destroyed, true);
-  assert.equal(children.length, 0);
-  assert.equal(invoke(CHANNELS.navigate, {url: ADDRESS, generation: 2}).ok, false);
-  invoke(CHANNELS.navigate, {url: ADDRESS, generation: 4});
-  host.emit('did-start-navigation', {}, 'file:///app/index.html', false, true);
-  assert.equal(views[2]!.webContents.destroyed, true);
-  invoke(CHANNELS.navigate, {url: ADDRESS, generation: 1});
-  host.close();
-  assert.equal(views[3]!.webContents.destroyed, true);
-  assert.equal(children.length, 0);
+  h.views[0]!.webContents.emit('page-title-updated', {}, '后台标签');
+  h.views[0]!.webContents.emit('page-favicon-updated', {}, ['file:///secret.png', 'https://example.com/icon.png']);
+  assert.equal(h.getState().activeTabId, second);
+  assert.equal(h.getState().tabs[0]!.title, '后台标签');
+  assert.equal(h.getState().tabs[0]!.favicon, 'https://example.com/icon.png');
+  assert.equal(h.getState().tabs[1]!.title, '');
 });
 
+test('标签切换保留实例，导航与刷新复用历史，关闭仅释放目标标签', t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  const first = h.invoke('create', {url: ADDRESS}).data.activeTabId;
+  const firstView = h.views[0]!;
+  h.invoke('navigate', {tabId: first, url: OTHER_ADDRESS});
+  assert.equal(h.views.length, 1);
+  assert.equal(h.getState().tabs[0]!.canGoBack, true);
+  h.invoke('back', {tabId: first});
+  assert.equal(h.getState().tabs[0]!.url, ADDRESS);
+  assert.equal(h.getState().tabs[0]!.canGoForward, true);
+  h.invoke('forward', {tabId: first});
+  h.invoke('reload', {tabId: first});
+  assert.equal(firstView.webContents.reloads, 1);
+  assert.equal(firstView.webContents.loads, 2);
+  assert.equal(firstView.webContents.history.length, 2);
+  assert.equal(firstView.webContents.destroyed, false);
+  const second = h.invoke('create', {url: ADDRESS}).data.activeTabId;
+  h.layout({visible: true, bounds: {x: 400, y: 100, width: 200, height: 400}});
+  assert.equal(firstView.visible, false);
+  assert.equal(h.views[1]!.visible, true);
+  assert.deepEqual(h.views[1]!.bounds, {x: 800, y: 200, width: 200, height: 600});
+  h.invoke('activate', {tabId: first});
+  assert.equal(firstView.visible, true);
+  assert.equal(h.views[1]!.visible, false);
+  h.layout({visible: false, bounds: {x: 0, y: 0, width: 200, height: 300}});
+  assert.equal(h.views.every(view => !view.visible), true);
+  h.invoke('close-tab', {tabId: second});
+  assert.equal(h.views[1]!.webContents.destroyed, true);
+  assert.equal(firstView.webContents.destroyed, false);
+  const count = h.events.length;
+  h.views[1]!.webContents.emit('page-title-updated', {}, '迟到事件');
+  assert.equal(h.events.length, count);
+  assert.equal(h.invoke('navigate', {tabId: second, url: ADDRESS}).ok, false);
+  h.invoke('close-tab', {tabId: first});
+  assert.equal(firstView.webContents.destroyed, true);
+  assert.equal(h.getState().tabs.length, 1);
+  assert.notEqual(h.getState().activeTabId, first);
+  assert.equal(h.getState().tabs[0]!.url, '');
+});
 
-test('桌面通道：加载拒绝要显示失败，旧请求回执不能覆盖新页面', async t => {
+test('新窗口链接创建前台或后台标签，保留来源、表单数据与原标签', t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  const first = h.invoke('create', {url: ADDRESS}).data.activeTabId;
+  const contents = h.views[0]!.webContents;
+  assert.deepEqual(contents.open({url: OTHER_ADDRESS, disposition: 'foreground-tab'}), {action: 'deny'});
+  const second = h.getState().activeTabId;
+  assert.notEqual(second, first);
+  assert.equal(contents.url, ADDRESS);
+  const postBody = {contentType: 'application/x-www-form-urlencoded', data: [{type: 'rawData', bytes: Buffer.from('name=test')}]};
+  contents.open({url: 'https://example.com/form', disposition: 'background-tab', postBody, referrer: {url: ADDRESS}});
+  assert.equal(h.getState().activeTabId, second);
+  assert.equal(h.views.length, 3);
+  assert.deepEqual(h.views[2]!.webContents.options.postData, postBody.data);
+  assert.match(h.views[2]!.webContents.options.extraHeaders, /application\/x-www-form-urlencoded/);
+  contents.open({url: 'javascript:alert(1)'});
+  assert.equal(h.views.length, 3);
+});
+
+test('超时与失败按标签隔离，停止加载与迟到成功均可结束等待', async t => {
+  assert.equal(PROJECT_PAGE_LOAD_TIMEOUT_MS, 15000);
+  const h = createHarness(15); t.after(() => h.registration.close());
+  const slow = h.invoke('create', {url: 'https://example.com/hang'}).data.activeTabId;
+  const other = h.invoke('create', {url: 'https://example.com/fail'}).data.activeTabId;
+  await delay(35);
+  assert.equal(h.getState().tabs.find(tab => tab.id === slow)!.loadState, 'timeout');
+  assert.equal(h.getState().tabs.find(tab => tab.id === other)!.loadState, 'failed');
+  h.views[0]!.webContents.emit('did-navigate', {}, 'https://example.com/hang');
+  h.views[0]!.webContents.emit('did-finish-load');
+  assert.equal(h.getState().tabs[0]!.loadState, 'loaded');
+  h.invoke('navigate', {tabId: slow, url: 'https://example.com/hang'});
+  h.invoke('stop', {tabId: slow});
+  assert.equal(h.getState().tabs[0]!.loadState, 'stopped');
+  assert.equal(h.getState().tabs[0]!.isLoading, false);
+  h.invoke('navigate', {tabId: other, url: OTHER_ADDRESS});
+  assert.equal(h.getState().tabs[1]!.loadState, 'loaded');
+});
+
+test('旧错误页的完成与停止事件不能结束尚未提交的新导航', async t => {
+  const h = createHarness(15); t.after(() => h.registration.close());
+  const id = h.invoke('create', {url: 'https://example.com/fail'}).data.activeTabId;
+  h.invoke('navigate', {tabId: id, url: 'https://example.com/hang'});
+  const contents = h.views[0]!.webContents;
+  contents.emit('did-finish-load');
+  contents.emit('did-stop-loading');
+  assert.equal(h.getState().tabs[0]!.loadState, 'loading');
+  assert.equal(h.getState().tabs[0]!.isLoading, true);
+  await delay(35);
+  assert.equal(h.getState().tabs[0]!.loadState, 'timeout');
+  contents.emit('did-navigate', {}, 'https://example.com/hang');
+  contents.loading = false;
+  contents.emit('did-finish-load');
+  assert.equal(h.getState().tabs[0]!.loadState, 'loaded');
+});
+
+test('会话关闭屏蔽旧请求，重新打开及主页面刷新都释放旧实例', t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  h.invoke('create', {url: ADDRESS}); h.invoke('create', {url: OTHER_ADDRESS});
+  h.invoke('close', {generation: 2});
+  assert.equal(h.children.length, 0);
+  assert.equal(h.views.every(view => view.webContents.destroyed), true);
+  assert.equal(h.invoke('sync', {generation: 1}).ok, false);
+  assert.equal(h.invoke('sync', {generation: 2}).ok, false);
+  h.invoke('sync', {generation: 3});
+  assert.equal(h.invoke('close', {generation: 2}).ok, false);
+  assert.equal(h.views[2]!.webContents.destroyed, false);
+  h.host.emit('did-start-navigation', {}, 'file:///app/index.html', false, true);
+  assert.equal(h.views[2]!.webContents.destroyed, true);
+  h.invoke('sync'); h.host.close();
+  assert.equal(h.views[3]!.webContents.destroyed, true);
+});
+
+test('布局校验拒绝非有限数、负尺寸与非法可见性', () => {
+  const valid = {visible: true, bounds: {x: 10.4, y: 20.6, width: 400.2, height: 300.1}};
+  assert.deepEqual(normalizeLayout(valid).bounds, {x: 10, y: 21, width: 400, height: 300});
+  for (const width of [NaN, Infinity, -1, 100001]) assert.throws(() => normalizeLayout({...valid, bounds: {...valid.bounds, width}}));
+  assert.throws(() => normalizeLayout({...valid, visible: 'true'}));
+  assert.equal(normalizeTargetUrl('https://example.com/a?q=1#b'), 'https://example.com/a?q=1#b');
+});
+
+function installBridge(t: any, bridge: any) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const layoutCalls: unknown[] = [];
-  const closeCalls: number[] = [];
-  let resolveFirst: (result: unknown) => void = () => {};
-  let calls = 0;
-  let subscribed = false;
-  Object.defineProperty(globalThis, 'window', {configurable: true, value: {electronAPI: {projectPage: {
-    onEvent: () => { subscribed = true; return () => { subscribed = false; }; },
-    navigate: () => {
-      assert.equal(subscribed, true, '监听必须先于加载');
-      if (++calls === 1) return new Promise(resolve => { resolveFirst = resolve; });
-      return Promise.resolve({ok: true, data: {generation: 2}});
-    },
-    layout: (request: unknown) => { layoutCalls.push(request); return Promise.resolve({ok: true, data: {applied: true}}); },
-    close: ({generation}: {generation: number}) => { closeCalls.push(generation); return Promise.resolve({ok: true, data: {released: true}}); },
-  }}}});
-  t.after(() => {
-    if (previous) Object.defineProperty(globalThis, 'window', previous);
-    else Reflect.deleteProperty(globalThis, 'window');
-  });
-  const preview = createPreview();
-  try {
-    preview.openAddress(ADDRESS);
-    preview.openAddress(OTHER_ADDRESS);
-    resolveFirst({ok: false, error: '旧视图创建失败'});
-    await delay(0);
-    assert.equal(preview.loadState.value, 'loading');
-    assert.equal(preview.failureDetail.value, '');
-    assert.ok(layoutCalls.length > 0);
-    assert.equal((layoutCalls.at(-1) as {generation: number}).generation, preview.generation.value);
-    window.electronAPI!.projectPage!.navigate = async () => ({ok: false, error: '原生视图创建失败'});
-    preview.reload();
-    await delay(0);
-    assert.equal(preview.loadState.value, 'failed');
-    assert.match(preview.failureDetail.value, /原生视图创建失败/);
-  } finally {
-    preview.close();
-    assert.equal(subscribed, false);
-    assert.equal(closeCalls.at(-1), preview.generation.value);
-  }
+  Object.defineProperty(globalThis, 'window', {configurable: true, value: {electronAPI: {projectPage: bridge}}});
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else Reflect.deleteProperty(globalThis, 'window'); });
+}
+
+test('前端按权威快照渲染标签，草稿独立，旧版本和旧会话回执失效', async t => {
+  const h = createHarness(); t.after(() => h.registration.close()); installBridge(t, h.bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  preview.openAddress(ADDRESS);
+  await delay(0);
+  const first = preview.activeTabId.value;
+  assert.equal(first, h.getState().activeTabId);
+  assert.equal(preview.committedUrl.value, ADDRESS);
+  preview.updateAddress('https://editing.example/');
+  preview.createTab(); await delay(0);
+  const second = preview.activeTabId.value;
+  preview.openAddress(OTHER_ADDRESS); await delay(0);
+  assert.equal(preview.tabs.value.length, 2);
+  preview.activateTab(first); await delay(0);
+  assert.equal(preview.addressInput.value, 'https://editing.example/');
+  const stale = {...h.getState(), revision: h.getState().revision - 1, activeTabId: second};
+  preview.applyState(stale);
+  assert.equal(preview.activeTabId.value, first);
+  const closedState = h.getState();
+  preview.close(); preview.openAddress(); await delay(0);
+  preview.applyState(closedState);
+  assert.equal(preview.tabs.value.length, 1);
+  assert.notEqual(preview.activeTabId.value, first);
+});
+
+test('前端不构造临时标签，通道失败可见，后台导航不覆盖编辑内容', async t => {
+  let listener: (state: ProjectPageState) => void = () => {};
+  let resolveRequest: (result: unknown) => void = () => {};
+  const calls: any[] = [];
+  const bridge = {onEvent: (callback: any) => { listener = callback; return () => {}; },
+    command: (request: any) => { calls.push(request); return new Promise(resolve => { resolveRequest = resolve; }); },
+    layout: async () => ({ok: true, data: {applied: true}})};
+  installBridge(t, bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  preview.openAddress();
+  assert.deepEqual(preview.tabs.value, []);
+  assert.equal(preview.activeTabId.value, '');
+  assert.equal(calls[0].action, 'sync');
+  preview.updateAddress('https://pending.example/');
+  resolveRequest({ok: false, error: '网页标签创建失败'}); await delay(0);
+  assert.match(preview.addressError.value, /创建失败/);
+  const tab: ProjectPageTab = {id: 'native-tab', url: '', title: '', favicon: '', loadState: 'idle', isLoading: false,
+    errorCode: 0, errorDescription: '', canGoBack: false, canGoForward: false};
+  listener({generation: preview.generation.value, revision: 1, activeTabId: tab.id, tabs: [tab]});
+  assert.equal(preview.addressInput.value, 'https://pending.example/');
+  preview.updateAddress('https://draft.example/');
+  listener({generation: preview.generation.value, revision: 2, activeTabId: tab.id, tabs: [{...tab, url: OTHER_ADDRESS}]});
+  assert.equal(preview.committedUrl.value, OTHER_ADDRESS);
+  assert.equal(preview.addressInput.value, 'https://draft.example/');
 });

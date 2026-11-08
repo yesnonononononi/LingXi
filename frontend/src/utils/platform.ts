@@ -7,9 +7,9 @@
 
 import type {FilePreviewData, FilePreviewRequest, NativeFileResult} from '../types/filePreview';
 import type {
-  ProjectPageDiagnosticEvent,
+  ProjectPageState,
   ProjectPageIpcResult,
-  ProjectPageNavigateRequest,
+  ProjectPageCommandRequest,
   ProjectPageLayoutRequest,
 } from '../types/projectPagePreview';
 import type {UpdateActionResult, UpdateLookupResult, UpdateStatePayload} from '../types/update';
@@ -80,10 +80,9 @@ export interface ElectronBackgroundAPI {
 
 /** 网页视图仅在主进程创建，远程页面不持有此通道。 */
 export interface ElectronProjectPageAPI {
-  navigate: (request: ProjectPageNavigateRequest) => Promise<ProjectPageIpcResult<{generation: number}>>;
+  command: (request: ProjectPageCommandRequest) => Promise<ProjectPageIpcResult<ProjectPageState>>;
   layout: (request: ProjectPageLayoutRequest) => Promise<ProjectPageIpcResult<{applied: boolean}>>;
-  close: (request: {generation: number}) => Promise<ProjectPageIpcResult<{released: boolean}>>;
-  onEvent: (callback: (event: ProjectPageDiagnosticEvent) => void) => () => void;
+  onEvent: (callback: (event: ProjectPageState) => void) => () => void;
 }
 
 export interface ElectronAPI {

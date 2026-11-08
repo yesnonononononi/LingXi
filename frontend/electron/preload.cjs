@@ -28,9 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   /** 仅主页面使用，网页视图不加载此 preload。 */
   projectPage: {
-    navigate: (request) => ipcRenderer.invoke('project-page:navigate', request),
+    command: (request) => ipcRenderer.invoke('project-page:command', request),
     layout: (request) => ipcRenderer.invoke('project-page:layout', request),
-    close: (request) => ipcRenderer.invoke('project-page:close', request),
     onEvent: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('project-page:event', listener);

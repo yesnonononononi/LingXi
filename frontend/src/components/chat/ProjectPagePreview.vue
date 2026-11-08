@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /** 原生视图不参与 DOM 排版，面板只同步占位区域与可见性。 */
-import {computed, inject, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {t} from '../../i18n';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
+import type {ProjectPageTab} from '../../types/projectPagePreview';
 
 const props = withDefaults(defineProps<{active?: boolean}>(), {active: true});
 const preview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
-const nativeAvailable = typeof window.electronAPI?.projectPage?.navigate === 'function';
+const nativeAvailable = typeof window.electronAPI?.projectPage?.command === 'function';
 const frameArea = ref<HTMLElement | null>(null);
+const addressField = ref<HTMLInputElement | null>(null);
 let animationFrame = 0;
 let resizeObserver: ResizeObserver | undefined;
 let mutationObserver: MutationObserver | undefined;
@@ -36,9 +38,12 @@ const scheduleViewport = (): void => {
   if (!animationFrame) animationFrame = requestAnimationFrame(syncViewport);
 };
 
-watch(() => [props.active, preview.generation.value, preview.committedUrl.value], scheduleViewport, {flush: 'post'});
+watch(() => [props.active, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], scheduleViewport, {flush: 'post'});
 onMounted(() => {
-  resizeObserver = new ResizeObserver(scheduleViewport);
+  resizeObserver = new ResizeObserver(() => {
+    scheduleViewport();
+    document.getElementById(`page-tab-${preview.activeTabId.value}`)?.parentElement?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  });
   if (frameArea.value) resizeObserver.observe(frameArea.value);
   mutationObserver = new MutationObserver(scheduleViewport);
   mutationObserver.observe(document.body, {subtree: true, childList: true, attributes: true,
@@ -59,6 +64,15 @@ onBeforeUnmount(() => {
 });
 
 const {
+  tabs,
+  activeTabId,
+  activeTab,
+  createTab,
+  activateTab,
+  closeTab,
+  goBack,
+  goForward,
+  stop,
   addressInput,
   committedUrl,
   loadState,
@@ -69,6 +83,26 @@ const {
   updateAddress,
   reload,
 } = preview;
+
+const resolveTabTitle = (tab: ProjectPageTab): string => {
+  if (tab.title) return tab.title;
+  if (tab.url) return new URL(tab.url).hostname;
+  return t('projectPagePreview.newTab');
+};
+const moveTab = (direction: number): void => {
+  if (!tabs.value.length) return;
+  const index = tabs.value.findIndex(tab => tab.id === activeTabId.value);
+  const target = tabs.value[(index + direction + tabs.value.length) % tabs.value.length];
+  if (target) activateTab(target.id);
+};
+watch(activeTabId, async () => {
+  const keyboardFocus = document.activeElement?.closest('.page-tabs');
+  await nextTick();
+  const button = document.getElementById(`page-tab-${activeTabId.value}`);
+  button?.parentElement?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  if (!committedUrl.value) addressField.value?.focus();
+  else if (keyboardFocus) button?.focus();
+});
 
 /** 状态行的样式档：超时/失败要显眼，加载中弱化。 */
 const stateClass = computed(() => `state-${loadState.value}`);
@@ -85,8 +119,40 @@ const submit = (): void => {
 
 <template>
   <div class="project-page-preview">
+    <div class="tab-bar">
+      <div class="page-tabs" role="tablist" :aria-label="t('projectPagePreview.tabsLabel')"
+        @keydown.right.prevent="moveTab(1)" @keydown.left.prevent="moveTab(-1)">
+        <div v-for="tab in tabs" :key="tab.id" class="page-tab" :class="{'is-active': tab.id === activeTabId}" role="presentation">
+          <button :id="`page-tab-${tab.id}`" type="button" role="tab" class="tab-label" :aria-selected="tab.id === activeTabId"
+            :tabindex="tab.id === activeTabId ? 0 : -1" aria-controls="project-page-viewport" :title="tab.url || resolveTabTitle(tab)"
+            @click="activateTab(tab.id)" @auxclick.middle.prevent="closeTab(tab.id)">
+            <span v-if="tab.isLoading" class="tab-spinner" aria-hidden="true"></span>
+            <span v-else class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18"/></svg>
+              <img v-if="tab.favicon" :key="tab.favicon" :src="tab.favicon" alt="" referrerpolicy="no-referrer" @error="($event.target as HTMLImageElement).hidden = true" />
+            </span>
+            <span class="tab-title">{{ resolveTabTitle(tab) }}</span>
+          </button>
+          <button type="button" class="close-page-tab" :aria-label="t('projectPagePreview.closeTab', {name: resolveTabTitle(tab)})" @click="closeTab(tab.id)">×</button>
+        </div>
+      </div>
+      <button type="button" class="new-page-tab" :disabled="!nativeAvailable" :aria-label="t('projectPagePreview.newTab')" :title="t('projectPagePreview.newTab')" @click="createTab">＋</button>
+    </div>
     <form class="address-bar" @submit.prevent="submit">
+      <button type="button" class="navigation-button" :disabled="!activeTab?.canGoBack" :aria-label="t('projectPagePreview.back')" :title="t('projectPagePreview.back')" @click="goBack">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 5-7 7 7 7M5 12h15"/></svg>
+      </button>
+      <button type="button" class="navigation-button" :disabled="!activeTab?.canGoForward" :aria-label="t('projectPagePreview.forward')" :title="t('projectPagePreview.forward')" @click="goForward">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 5 7 7-7 7M19 12H4"/></svg>
+      </button>
+      <button v-if="activeTab?.isLoading" type="button" class="navigation-button" :aria-label="t('projectPagePreview.stop')" :title="t('projectPagePreview.stop')" @click="stop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M6 18 18 6"/></svg>
+      </button>
+      <button v-else type="button" class="navigation-button" :disabled="!nativeAvailable || !committedUrl" :aria-label="t('projectPagePreview.reload')" :title="t('projectPagePreview.reload')" @click="reload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7v5"/></svg>
+      </button>
       <input
+        ref="addressField"
         class="address-input"
         type="text"
         name="project-page-address"
@@ -98,16 +164,8 @@ const submit = (): void => {
         :aria-invalid="addressError ? 'true' : 'false'"
         @input="onAddressInput"
       />
-      <button type="submit" class="primary" :disabled="!nativeAvailable" :aria-label="t('projectPagePreview.openAddress')">
+      <button type="submit" class="primary" :disabled="!nativeAvailable || !activeTabId" :aria-label="t('projectPagePreview.openAddress')">
         {{ t('projectPagePreview.openAddress') }}
-      </button>
-      <button
-        type="button"
-        :disabled="!nativeAvailable || !committedUrl"
-        :aria-label="t('projectPagePreview.reload')"
-        @click="reload"
-      >
-        {{ t('projectPagePreview.reload') }}
       </button>
     </form>
 
@@ -120,7 +178,7 @@ const submit = (): void => {
 
     <p v-if="diagnoseText" class="diagnose-text" role="note">{{ diagnoseText }}</p>
 
-    <div ref="frameArea" class="frame-area" :aria-label="t('projectPagePreview.frameTitle')">
+    <div id="project-page-viewport" ref="frameArea" class="frame-area" role="tabpanel" :aria-labelledby="activeTabId ? `page-tab-${activeTabId}` : undefined" :aria-label="t('projectPagePreview.frameTitle')">
       <div v-if="!nativeAvailable" class="frame-placeholder">{{ t('projectPagePreview.desktopRequired') }}</div>
       <div v-else-if="!committedUrl" class="frame-placeholder">{{ t('projectPagePreview.emptyHint') }}</div>
     </div>
@@ -129,6 +187,26 @@ const submit = (): void => {
 
 <style scoped>
 .project-page-preview { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; padding: 12px 16px 14px; }
+.tab-bar { display: flex; align-items: center; gap: 4px; min-width: 0; flex-shrink: 0; }
+.page-tabs { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.page-tab { display: flex; align-items: center; flex: 0 0 170px; min-width: 0; border: 1px solid transparent; border-radius: 9px; background: var(--file-tab, #f4f4f5); color: var(--file-muted, #71717a); }
+.page-tab.is-active { color: inherit; border-color: var(--file-line, #e4e4e7); background: var(--file-bg, #fff); }
+.tab-label { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 8px; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; font-size: var(--lx-font-size-md); }
+.tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-icon, .tab-spinner { position: relative; width: 15px; height: 15px; flex-shrink: 0; }
+.tab-icon svg, .tab-icon img { width: 100%; height: 100%; }
+.tab-icon img { position: absolute; inset: 0; background: var(--file-bg, #fff); object-fit: contain; }
+.tab-icon img[hidden] { display: none; }
+.tab-spinner { border: 1.5px solid var(--file-line, #e4e4e7); border-top-color: currentColor; border-radius: 50%; animation: tab-spin .8s linear infinite; }
+@keyframes tab-spin { to { transform: rotate(360deg); } }
+.close-page-tab, .new-page-tab { flex-shrink: 0; border: 0; background: none; color: inherit; cursor: pointer; border-radius: 6px; font-size: 20px; }
+.close-page-tab { padding: 1px 6px; margin-right: 3px; }
+.new-page-tab { padding: 3px 7px; }
+.close-page-tab:hover, .new-page-tab:hover { background: var(--file-line, #e4e4e7); }
+.tab-bar button:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
+.new-page-tab:disabled { opacity: .45; cursor: default; }
+.address-bar .navigation-button { display: grid; place-items: center; padding: 6px; border-color: transparent; }
+.navigation-button svg { width: 17px; height: 17px; }
 .address-bar { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .address-input { flex: 1; min-width: 0; padding: 6px 10px; font-size: var(--lx-font-size-md); font-family: inherit; color: inherit; background: var(--file-tab, #f4f4f5); border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
 .address-input:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
