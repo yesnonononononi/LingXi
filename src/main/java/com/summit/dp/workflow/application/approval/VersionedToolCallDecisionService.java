@@ -65,7 +65,7 @@ public class VersionedToolCallDecisionService {
                         command.expectedVersion(), command.action(), digest, ResumeIntent.COORDINATOR)
                 : new ImmediateDecision(command.conversationId(), command.toolCallId(), command.commandId(),
                         command.expectedVersion(), command.action(), command.text(), digest,
-                        ResumeIntent.COORDINATOR);
+                        ResumeIntent.COORDINATOR, null);
     }
 
     /** 入口参数校验：缺字段属于客户端错误，不查库也不落库。 */

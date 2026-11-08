@@ -88,7 +88,7 @@ public class ToolCallWorkflowService {
                         toolCall.getId(), null, null, action,
                         CommandDigest.build(toolCall.getId(), toolCall.getConversationId(), toolCall.getVersion(),
                                 action.wireValue(), null),
-                        ResumeIntent.ENTRY_MANAGED), contract, () -> sseEventPublisher.finish(emitter));
+                        ResumeIntent.COORDINATOR), contract, () -> sseEventPublisher.finish(emitter));
             } catch (RuntimeException failure) {
                 emitter.completeWithError(failure);
                 throw failure;

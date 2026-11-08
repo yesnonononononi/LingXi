@@ -1,9 +1,7 @@
 package com.summit.dp.workflow.application.approval;
 
-import com.summit.core.agent.Execution;
-import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;
@@ -12,21 +10,26 @@ import com.summit.dp.workflow.application.decision.ImmediateDecision;
 import com.summit.dp.workflow.application.decision.InteractionDecisionEngine;
 import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
 import com.summit.dp.workflow.application.decision.ResumeIntent;
-import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * v1 互动决策的<b>流式适配器</b>：判定与落库全在 {@link InteractionDecisionEngine}，本类只管流。
  *
- * <p><b>时序是契约</b>：先建流、再把恢复跑完、最后才关流 —— 前端靠「连接仍开着」判断还在恢复。
- * 因此恢复留在本入口（{@link ResumeIntent#ENTRY_MANAGED}），而不是交给恢复协调器入队：
- * 入队后本线程立刻收尾关流，前端会在恢复还没开始时就收到结束。</p>
+ * <p><b>时序是契约，且顺序不可调：先建流 → 再提交决策 → 恢复落定才关流</b>。
+ * 前端靠「连接仍开着」判断还在恢复，所以：</p>
+ * <ol>
+ *   <li><b>先 connect 再 decide</b>：恢复请求在决策事务提交后立刻派发，若此时还没连接，
+ *       恢复期事件就会丢在空气里。</li>
+ *   <li><b>落定驱动关流</b>：恢复改由 Phase3 持久化队列承担
+ *       （{@link ResumeIntent#COORDINATOR}），关流时机由协调器的落定回调给出 ——
+ *       成功、被取代、门禁暂缓、启动失败、中断、派发被拒都会落定，
+ *       因此不存在「恢复结束了但流还开着」或反之。</li>
+ *   <li><b>受理失败原样抛出</b>：先 {@code completeWithError} 再抛，前端既能看到错误也能收到流结束。</li>
+ * </ol>
  */
 @Service
 @RequiredArgsConstructor
@@ -35,10 +38,6 @@ public class ToolCallDecisionService {
 
     private final ExecutionLocator executionLocator;
     private final SseEventPublisher sseEventPublisher;
-    private final ObjectProvider<ExecutionRepository> executionRepository;
-    private final UnresolvedToolSuspensionGate unresolvedToolGate;
-    private final SuspendedExecutionResumer resumer;
-    private final ManagedAsyncExecutor asyncExecutor;
     private final InteractionDecisionEngine engine;
     private final ReactiveDecisionContract contract;
 
@@ -52,37 +51,22 @@ public class ToolCallDecisionService {
      */
     public SseEmitter decide(ToolCall toolCall, boolean approved, String text) {
         long conversationId = toolCall.getConversationId();
-        String executionId = String.valueOf(toolCall.getExecutionId());
-        DecisionReceipt receipt = engine.decide(new ImmediateDecision(conversationId, toolCall.getId(), null, null,
-                approved ? ToolCallAction.APPROVE : ToolCallAction.REJECT, text,
-                v1Digest(toolCall, conversationId, approved, text), ResumeIntent.ENTRY_MANAGED), contract);
-        if (!receipt.decisionApplied()) {
-            // 幂等 no-op：已处理的审批不再恢复执行，也不该开一条永远不会结束的流。
-            return completedEmitter();
-        }
-
-        ExecutionRepository repository = executionRepository.getObject();
-        // 未决判定在事务提交后即已完成：异步段只负责恢复。
-        boolean pending = unresolvedToolGate.hasUnresolvedSlot(toolCall.getExecutionId());
         long rootId = executionLocator.resolveRootSessionId(conversationId);
+        // 先建流：恢复请求在提交后立即派发，此时必须已经有连接可接事件。
         SseEmitter emitter = sseEventPublisher.connect(rootId);
-        boolean accepted = asyncExecutor.tryExecute("工具决策后恢复执行", () -> {
-            try {
-                if (!pending) {
-                    Execution latest = repository.findById(executionId).orElse(null);
-                    if (latest != null) {
-                        resumer.resume(latest, conversationId);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("恢复执行失败: executionId={}, error={}", executionId, e.toString());
-            } finally {
-                sseEventPublisher.finish(emitter);
-            }
-        });
-        if (!accepted) {
-            // 执行器已关闭：后台段不会跑，收尾就没人做。这里当场关流，绝不留一条永不结束的连接。
-            log.warn("恢复任务未被受理，直接关闭本次 SSE 连接: executionId={}", executionId);
+        DecisionReceipt receipt;
+        try {
+            receipt = engine.decide(new ImmediateDecision(conversationId, toolCall.getId(), null, null,
+                    approved ? ToolCallAction.APPROVE : ToolCallAction.REJECT, text,
+                    v1Digest(toolCall, conversationId, approved, text), ResumeIntent.COORDINATOR,
+                    () -> sseEventPublisher.finish(emitter)), contract);
+        } catch (RuntimeException failure) {
+            // 决策没落库：这条流不会有任何恢复事件，必须当场以错误收尾再原样抛出。
+            emitter.completeWithError(failure);
+            throw failure;
+        }
+        if (!receipt.decisionApplied()) {
+            // 幂等 no-op：没有登记恢复，也就不会有落定回调，这里直接关流。
             sseEventPublisher.finish(emitter);
         }
         return emitter;
@@ -92,20 +76,12 @@ public class ToolCallDecisionService {
      * v1 请求摘要。
      *
      * <p>v1 没有 commandId，但摘要仍要落库：它让「同一决策经 v1 与 v2 落库」可以逐字段比对，
-     * 也让日后审计看到一致的事实。构造参数与 v2 同源（v1 无版本号，故传 {@code null}）。</p>
+     * 也让日后审计看到一致的事实。带上观察到的版本，与 v2 的 {@code expectedVersion} 同源。</p>
      */
     private static String v1Digest(ToolCall toolCall, long conversationId, boolean approved, String text) {
-        // 带上读到的版本：v1 虽不校验版本，但摘要要与 v2（客户端传 expectedVersion）同源，
-        // 否则同一决策经两条入口记录出两份不同摘要，等价性无从比对。
         return CommandDigest.build(toolCall.getId(), conversationId, toolCall.getVersion(),
                 (approved ? ToolCallAction.APPROVE : ToolCallAction.REJECT).wireValue(), text);
     }
-
-    /** 立即完成的流：用于幂等 no-op（已处理的审批不再恢复执行）。 */
-    private static SseEmitter completedEmitter() {
-        SseEmitter emitter = new SseEmitter(0L);
-        emitter.complete();
-        return emitter;
-    }
 }
+
 

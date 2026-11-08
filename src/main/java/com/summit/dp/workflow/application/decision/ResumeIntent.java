@@ -9,9 +9,6 @@ package com.summit.dp.workflow.application.decision;
  */
 public enum ResumeIntent {
 
-    /** 事务内登记恢复意图，派发排在事务提交之后。 */
-    COORDINATOR,
-
-    /** 入口自行恢复（v1：恢复跑完才关流，时序是契约的一部分）。 */
-    ENTRY_MANAGED
+    /** 事务内登记恢复意图，派发排在事务提交之后；收尾由落定回调驱动。 */
+    COORDINATOR
 }

@@ -146,7 +146,7 @@ public class InteractionDecisionEngine {
             if (command.resumeIntent() == ResumeIntent.COORDINATOR) {
                 // 触发来源必须显式声明为人工决策：自动轮次上限不该拦住用户刚做的批准。
                 disposition[0] = resumeCoordinator.accept(executionIdOf(cards.getFirst()),
-                        ResumeTriggerType.APPROVAL_DECISION);
+                        ResumeTriggerType.APPROVAL_DECISION, command.resumeSettledCallback());
             }
         });
         String decision = items.isEmpty() ? null : items.getFirst().outcome().name();

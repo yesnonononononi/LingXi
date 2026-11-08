@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -92,6 +93,13 @@ public class ExecutionResumeCoordinator {
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     /** 同执行已在派发中的标记；只防「同一瞬间重复唤醒」，真正的单飞靠 claim 条件更新。 */
     private final Map<String, AtomicBoolean> dispatching = new ConcurrentHashMap<>();
+    /**
+     * 「恢复已落定」回调登记表：执行 → 回调列表。
+     *
+     * <p>落定是一次性的，因此取出即摘除（{@link java.util.concurrent.ConcurrentHashMap#remove}），
+     * 天然保证「恰好一次」：重复 settle 时表里已经没有回调可跑。</p>
+     */
+    private final Map<Long, List<Runnable>> settledCallbacks = new ConcurrentHashMap<>();
     public ExecutionResumeCoordinator(ExecutionResumeTaskRepository taskRepository,
                                       com.summit.dp.execution.domain.repository.ExecutionRepository executions,
                                       SuspendedExecutionResumer resumer,
@@ -126,7 +134,18 @@ public class ExecutionResumeCoordinator {
     }
 
     /**
-     * 受理一次恢复请求并调度唯一一次派发。
+     * 受理一次恢复请求并调度唯一一次派发（无落定回调）。
+     *
+     * @param executionId 执行 ID；0 表示没有可用执行（如命令卡片未挂执行）
+     * @param trigger     触发来源；决定消费端复检时哪些门禁对它生效
+     * @return 本次决策的恢复处置结论，供回执直接下发
+     */
+    public ResumeDisposition accept(long executionId, ResumeTriggerType trigger) {
+        return accept(executionId, trigger, null);
+    }
+
+    /**
+     * 受理一次恢复请求并登记「恢复已落定」回调。
      *
      * <p><b>调用方在决策事务内调用</b>：请求行与决策结论同事务提交，因此不存在
      * 「决策已落库但恢复请求没落库」的窗口。真正派发排在事务提交之后 ——
@@ -136,38 +155,57 @@ public class ExecutionResumeCoordinator {
      * 上限拦住），因此不是「只在内存里传一次」的参数。只放在内存里，进程崩溃后重投就丢了它 ——
      * 人工批准会被按自动唤醒判掉并静默作废，而回执当时说的是「已受理」。</p>
      *
+     * <p><b>落定回调</b>：调用方（如 v1 的请求级 SSE）需要在「恢复真的有了结论」之后才收尾。
+     * 落定包含全部结局：成功、被取代、门禁暂缓、启动失败、中断、派发被拒 ——
+     * 少报任何一种都会让前端挂着一条永不结束的连接。回调<b>恰好执行一次</b>，
+     * 且不参与恢复主流程的错误传播。</p>
+     *
      * @param executionId 执行 ID；0 表示没有可用执行（如命令卡片未挂执行）
      * @param trigger     触发来源；决定消费端复检时哪些门禁对它生效
+     * @param onSettled   恢复落定回调；可为 {@code null}
      * @return 本次决策的恢复处置结论，供回执直接下发
      */
-    public ResumeDisposition accept(long executionId, ResumeTriggerType trigger) {
+    public ResumeDisposition accept(long executionId, ResumeTriggerType trigger, Runnable onSettled) {
         // 缺省来源是编程错误：静默退化成自动唤醒正是「人工批准被轮次上限吞掉」的成因。
         throwIf(trigger == null, "恢复触发来源不能为空");
+        // 先登记再判断：任何一条「当场就有结论」的返回路径都要回调，登记在这之前才不漏。
+        registerSettled(executionId, onSettled);
         if (executionId == 0L) {
+            settle(executionId);
             return ResumeDisposition.ENDED;
         }
         Integer status = readStatus(executionId);
         if (ExecutionStatusCodes.isTerminal(status)) {
+            settle(executionId);
             return ResumeDisposition.ENDED;
         }
         if (unresolvedToolGate.hasUnresolvedSlot(executionId)) {
             // 还有槽位：不派发、不落请求。最后一个槽位落定时它自己的决策会再走一遍 accept。
+            settle(executionId);
             return ResumeDisposition.WAITING_OTHER_TOOLS;
         }
         if (isActive(executionId)) {
             // 活跃循环自己检查输入，退出后再按事实复查。
+            settle(executionId);
             return ResumeDisposition.RUNNING;
         }
         long generation = executions.findResumeGeneration(executionId);
         // 代际为 0 说明这次执行从未真正转入过 SUSPENDED（不应发生），按「无恢复边界」处理：
         // 硬派发会让 loop 拿到一个没有落定槽位的检查点。
         if (generation <= 0L) {
+            settle(executionId);
             return ResumeDisposition.ENDED;
         }
         // 来源与请求同一次写入：重启后重投靠它，而不是靠某个内存参数。
         taskRepository.enqueue(executionId, generation, Instant.now(), trigger.persisted());
         // 请求先随决策事务提交，派发动作排到提交之后；无事务同步时立即执行（单测与直调路径）。
-        frameworkExecutions.getObject().afterCommit(() -> dispatch(executionId));
+        try {
+            frameworkExecutions.getObject().afterCommit(() -> dispatch(executionId));
+        } catch (RuntimeException dispatchFailure) {
+            // 登记派发就失败：请求行虽已落库，但本次没人会去消费它，回调必须当场落定。
+            settle(executionId);
+            throw dispatchFailure;
+        }
         return ResumeDisposition.QUEUED;
     }
 
@@ -204,6 +242,9 @@ public class ExecutionResumeCoordinator {
                 } catch (RuntimeException error) {
                     log.error("恢复请求派发失败: executionId={}, error={}", executionId, error.toString());
                 } finally {
+                    // 全部结局都在这里收口：成功、被取代、门禁暂缓、启动失败、中断、无任务可领。
+                    // 少报任何一种，等着落定的调用方（v1 的 SSE）就会永久悬挂。
+                    settle(executionId);
                     releaseGate(key, gate);
                     // 退出前复查：worker 运行期间新入队的请求可能因门闩 CAS 失败被挡掉，
                     // 此处门闩已释放，重新派发即可领到它（CAS 成功）。只认仍 READY 的请求，
@@ -218,7 +259,41 @@ public class ExecutionResumeCoordinator {
             // 提交被拒（线程池正在关闭）：lambda 永不运行，其 finally 也不会执行 ——
             // 必须在这里同款回收闸门，否则该执行的重试会被 CAS 永久挡住。
             releaseGate(key, gate);
+            // 回调同理：lambda 不跑就没人落定，连接会永久悬挂。
+            settle(executionId);
             log.warn("恢复派发提交被拒，已回收派发闸门: executionId={}", executionId);
+        }
+    }
+
+    /**
+     * 登记落定回调。
+     *
+     * @param executionId 执行 ID
+     * @param onSettled   回调；{@code null} 表示调用方不关心落定
+     */
+    private void registerSettled(long executionId, Runnable onSettled) {
+        if (onSettled == null) {
+            return;
+        }
+        settledCallbacks.computeIfAbsent(executionId, ignored -> new CopyOnWriteArrayList<>()).add(onSettled);
+    }
+
+    /**
+     * 落定：取出并执行该执行登记的全部回调，<b>恰好一次</b>。
+     *
+     * <p>回调来自业务侧（关流等），它的异常不能污染恢复主流程 —— 这里逐条 try/catch 记日志。</p>
+     */
+    private void settle(long executionId) {
+        List<Runnable> callbacks = settledCallbacks.remove(executionId);
+        if (callbacks == null) {
+            return;
+        }
+        for (Runnable callback : callbacks) {
+            try {
+                callback.run();
+            } catch (RuntimeException error) {
+                log.warn("恢复落定回调执行失败: executionId={}, error={}", executionId, error.toString());
+            }
         }
     }
 
@@ -505,9 +580,10 @@ public class ExecutionResumeCoordinator {
         return false;
     }
 
-    /** 关闭时停掉派发线程，避免非托管场景下的线程泄漏。 */
+    /** 关闭时停掉派发线程，避免非托管场景下的线程泄漏；登记表一并清空（进程关闭时连接本来就会断）。 */
     @PreDestroy
     public void close() {
         workers.shutdownNow();
+        settledCallbacks.clear();
     }
 }

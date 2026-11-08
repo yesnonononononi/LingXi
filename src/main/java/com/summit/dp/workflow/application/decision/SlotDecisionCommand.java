@@ -36,4 +36,13 @@ public sealed interface SlotDecisionCommand
 
     /** 恢复意图由谁登记。 */
     ResumeIntent resumeIntent();
+
+    /**
+     * 恢复落定回调：恢复真的有了结论（成功 / 取代 / 暂缓 / 失败 / 中断 / 派发被拒）之后执行一次。
+     *
+     * <p>需要「恢复落定才收尾」的入口（v1 的请求级 SSE）靠它关流；其余入口不关心，返回 {@code null}。</p>
+     */
+    default Runnable resumeSettledCallback() {
+        return null;
+    }
 }
