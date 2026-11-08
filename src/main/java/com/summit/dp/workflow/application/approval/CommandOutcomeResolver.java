@@ -32,6 +32,13 @@ public class CommandOutcomeResolver {
     private static final String CANCELLED_OUTPUT = "命令未执行：执行已取消";
     /** 拒绝时写回工具结果的文案。 */
     private static final String REJECTED_OUTPUT = "用户拒绝，命令未执行";
+    /**
+     * 批准后、命令尚未跑完时写进槽位的占位输出。
+     *
+     * <p><b>为什么必须有</b>：T1 提交后进程可能崩溃，库里必须留下「已受理、结果未知」的事实。
+     * 槽位停在 {@code pending} 会让重启后的执行看起来「根本没人批准过」，与真实状态相反。</p>
+     */
+    public static final String APPROVED_PENDING_OUTPUT = "命令已批准，正在执行";
 
     /**
      * 执行（或刻意不执行）命令并派生业务结论。

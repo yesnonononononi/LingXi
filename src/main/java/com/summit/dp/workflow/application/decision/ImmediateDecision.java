@@ -16,7 +16,7 @@ import java.util.Map;
  * @param text           用户答复原文，可空
  * @param digest         请求摘要；v1 传 {@code null}
  * @param resumeIntent   恢复由谁登记
- * @param onResumeSettled 恢复落定回调；不需要收尾的入口传 {@code null}
+ * @param settledCallback 恢复落定回调；不需要收尾的入口传 {@code null}
  */
 public record ImmediateDecision(
         Long conversationId,
@@ -27,13 +27,8 @@ public record ImmediateDecision(
         String text,
         String digest,
         ResumeIntent resumeIntent,
-        Runnable onResumeSettled
+        Runnable settledCallback
 ) implements SlotDecisionCommand {
-
-    @Override
-    public Runnable resumeSettledCallback() {
-        return this.onResumeSettled;
-    }
 
     @Override
     public List<String> cardIds() {

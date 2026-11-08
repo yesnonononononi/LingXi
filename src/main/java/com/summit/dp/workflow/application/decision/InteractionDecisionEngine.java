@@ -12,6 +12,7 @@ import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.approval.ApprovalPlan;
 import com.summit.dp.workflow.application.approval.ExecutionToolSlot;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
@@ -114,13 +115,40 @@ public class InteractionDecisionEngine {
         SlotResolutionStrategy strategy = strategyFor(target);
         return switch (strategy) {
             case TwoPhaseCommandResolutionStrategy commandStrategy ->
-                    commandStrategy.resolve(target, (CommandDecision) command, contract, null);
+                    decideTwoPhase(commandStrategy, target, (CommandDecision) command, contract);
             case ImmediateSlotResolutionStrategy ignored -> {
                 List<SlotResolutionItem> items =
                         this.immediate.prepareSlotResolutions(execution, cards, command, contract);
                 yield commit(execution, cards, command, items);
             }
         };
+    }
+
+    /**
+     * 命令形态：T1（引擎事务）→ 提交后派发锁外副作用 → T2 由收尾段落结果。
+     *
+     * <p><b>顺序不可调换</b>：T1 必须早于副作用，否则进程崩溃后重启会静默重放已产生
+     * 副作用的命令；T2 必须与真实输出同批提交，否则「执行过但没落库」会被误当成失败重跑。
+     * 这两条都由本方法的三段顺序保证，而不是由某个协作方的自觉保证。</p>
+     *
+     * <p><b>派发在事务之后</b>：{@code writeT1} 返回时事务已提交；此时才派发，
+     * 收尾段读到的受理状态一定已落库。</p>
+     */
+    private DecisionReceipt decideTwoPhase(TwoPhaseCommandResolutionStrategy strategy, ToolCall card,
+                                           CommandDecision command, DecisionEntryContract contract) {
+        ApprovalPlan plan = strategy.prepare(card, command, contract, command.settledCallback());
+        ResumeDisposition[] disposition = new ResumeDisposition[1];
+        try {
+            // T1（引擎事务）：占位输出 + 占位结论 + 版本推进 + 决策身份 + 检查点 + 模型上下文。
+            // 恢复意图不在这里登记 —— 那属于 T2，提前登记会让执行在命令还没跑完时被唤醒。
+            transactions.executeWithoutResult(status -> disposition[0] = strategy.writeT1(plan));
+        } catch (RuntimeException | Error failure) {
+            // T1 失败：释放控制槽位；副作用还没派发过，因此一次都不会执行。
+            strategy.abandonT1(plan);
+            throw failure;
+        }
+        strategy.afterCommit(plan);
+        return strategy.receiptOf(plan, command, disposition[0]);
     }
 
     /**
@@ -146,7 +174,7 @@ public class InteractionDecisionEngine {
             if (command.resumeIntent() == ResumeIntent.COORDINATOR) {
                 // 触发来源必须显式声明为人工决策：自动轮次上限不该拦住用户刚做的批准。
                 disposition[0] = resumeCoordinator.accept(executionIdOf(cards.getFirst()),
-                        ResumeTriggerType.APPROVAL_DECISION, command.resumeSettledCallback());
+                        ResumeTriggerType.APPROVAL_DECISION, command.settledCallback());
             }
         });
         String decision = items.isEmpty() ? null : items.getFirst().outcome().name();

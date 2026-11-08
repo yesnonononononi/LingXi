@@ -61,110 +61,123 @@ public class CommandApprovalExecutor {
     }
 
     /**
-     * 受理一次命令审批。
+     * 准备 T1：锁外完成校验、控制信号登记与命令环境重建。
+     *
+     * <p><b>不重复引擎的闸门</b>：执行态、卡片是否待处理、会话归属、版本、形态都由
+     * {@code InteractionDecisionEngine} 在锁内判定（它已经做完才调到这里）。这里再判一遍
+     * 只会造出第二套文案，用户看到的错误取决于谁先抛 —— 语义等价就删，不等价才留。</p>
+     *
+     * <p><b>登记与重建必须先于事务</b>：命令环境不可重建时要让审批当场失败，绝不能
+     * 带着过期上下文落库；信号登记失败同理。失败时释放信号，不留待审批卡被判为执行中。</p>
      *
      * @param commandId  决策命令身份（v2 幂等重试用；v1 无此概念，传 {@code null}）
      * @param digest     请求摘要（v2 判定「同 ID 不同内容」用；v1 传 {@code null}）
-     * @param completion 异步收尾结束后的回调（v1 用它关流）；可空
+     * @param completion 链路收尾回调（v1 用它关流）；可空
      */
-    public CommandApprovalResult decide(ToolCall toolCall, boolean approved,
-                                        String commandId, String digest, Runnable completion) {
-        return approved
-                ? approve(toolCall, commandId, digest, completion)
-                : reject(toolCall, commandId, digest, completion);
+    public ApprovalPlan prepare(ToolCall toolCall, boolean approved, String commandId, String digest,
+                                Runnable completion) {
+        String executionId = String.valueOf(toolCall.getExecutionId());
+        ExecutionRepository repository = executionRepository.getObject();
+        Execution execution = repository.findById(executionId).orElseThrow(ClientException::new);
+        if (!approved) {
+            // 拒绝没有命令要跑，也不依赖环境可重建：用户拒绝的意愿不依赖执行环境。
+            return new ApprovalPlan(false, execution, toolCall, null, null,
+                    outcomeResolver.run(null, execution, false), completion);
+        }
+        // 环境校验先于登记：审批期间环境被替换则拒绝重放，命令绝不带着过期上下文落地。
+        ToolExecution call = commandRestorer.restore(execution, toolCall);
+        ExecutionControlSignal signal = repository.register(executionId);
+        ApprovalPlan plan = new ApprovalPlan(true, execution, toolCall, call, signal, null, completion);
+        // 决策身份随 T1 落库：这里只把身份写到卡片上，落库由引擎的事务负责。
+        plan.card().attachDecision(commandId, digest);
+        return plan;
     }
 
-    /** 批准：T1 提交先于副作用，命令在提交之后异步执行。 */
-    private CommandApprovalResult approve(ToolCall toolCall, String commandId, String digest, Runnable completion) {
-        ExecutionRepository repository = executionRepository.getObject();
-        String executionId = String.valueOf(toolCall.getExecutionId());
-        // 先校验后登记：stop 与「点批准」竞争时，执行可能已被取消——状态校验前置于 register，
-        // 业务失败走 ClientException（Result.error），而不是 register 的 IllegalStateException 兜成 500。
-        ExecutionControlSignal signal = null;
-        boolean settled = false;
-        try {
-            Execution execution = repository.findById(executionId)
-                    .orElseThrow(ClientException::new);
-            throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行尚未暂停或已结束");
-            ToolCall current = toolCallRepository.findById(toolCall.getId())
-                    .orElseThrow(ClientException::new);
-            throwIf(!current.isApprovalPending(), "该审批已处理");
-            ToolMessageEntity message = ExecutionToolSlot.locate(execution, current.getId(), current.getToolName());
-            throwIf(message == null, "找不到原命令的工具结果，不能执行审批");
-            // 环境校验先于登记：审批期间环境被替换则拒绝重放，命令绝不带着过期上下文落地。
-            ToolExecution call = commandRestorer.restore(execution, current);
+    /**
+     * T1 的写入集：<b>调用方负责事务边界</b>（引擎的 commit 就是这段事务）。
+     *
+     * <p>批准只写占位：槽位占位输出 + APPROVED 占位结论 + 版本推进 + 决策身份 + 检查点 + 模型上下文。
+     * <b>不在这里 accept 恢复</b> —— 恢复属于 T2（真实输出落库之后），提前登记会让执行
+     * 在命令还没跑完时被唤醒。</p>
+     *
+     * <p>拒绝是单事务落定：真实结论 + 检查点 + 上下文 + 恢复意图同生共死，且<b>不调
+     * {@code commandRestorer}</b>（见 {@link #prepare}）。</p>
+     *
+     * @return 本次 T1 的恢复处置；批准恒为 {@code RUNNING}（已进入执行态）
+     */
+    public ResumeDisposition writeT1(ApprovalPlan plan) {
+        ToolCall card = plan.card();
+        Execution execution = plan.execution();
+        long conversationId = card.getConversationId();
+        if (!plan.approved()) {
+            if (!ExecutionToolSlot.write(execution, card.getId(), card.getToolName(),
+                    plan.rejected().result().getToolOutput())) {
+                throw new ClientException("找不到原工具结果，不能恢复执行");
+            }
+            card.complete(plan.rejected().rawOutput());
+            toolCallRepository.updateById(card);
+            executionRepository.getObject().save(execution);
+            modelContextService.replace(conversationId, execution.getMessages());
+            // 拒绝没有副作用、不需要 T2：恢复意图与结论同事务提交。
+            return resumeCoordinator.accept(card.getExecutionId(), ResumeTriggerType.APPROVAL_DECISION);
+        }
+        if (!ExecutionToolSlot.write(execution, card.getId(), card.getToolName(),
+                CommandOutcomeResolver.APPROVED_PENDING_OUTPUT)) {
+            throw new ClientException("找不到原命令的工具结果，不能执行审批");
+        }
+        card.attachOutput(converter.commandOutcome(ToolCallOutcome.APPROVED, null, null));
+        card.markInProgress();
+        toolCallRepository.updateById(card);
+        // beginApproval 负责状态推进与检查点落库：槽位占位与版本随它一起提交。
+        executionControl.getObject().beginApproval(execution);
+        modelContextService.replace(conversationId, execution.getMessages());
+        return ResumeDisposition.RUNNING;
+    }
 
-            signal = repository.register(executionId);
-            ExecutionControlSignal registered = signal;
-            // 事务 T1（提交先于副作用）：决策身份、摘要、结论与 in_progress 同事务落库。
-            // 结论先写 APPROVED 的占位，T2 再覆盖成带输出的实际结果——这正是「执行中重试」能
-            // 查回批准结论、而不是拿到 null 的原因。崩溃也不会静默重放命令。
-            transactions.executeWithoutResult(status -> {
-                current.attachDecision(commandId, digest);
-                current.attachOutput(converter.commandOutcome(ToolCallOutcome.APPROVED, null, null));
-                current.markInProgress();
-                executionControl.getObject().beginApproval(execution);
-                toolCallRepository.updateById(current);
-            });
-            try {
-                dispatchAsync(() -> finish(current, execution, message, call, registered, completion));
-            } catch (RuntimeException | Error dispatchFailure) {
-                // T1 已提交：派发失败必须当场收口，否则执行永久停在 RUNNING、控制槽位泄漏。
-                settleDispatchFailure(current, execution, registered, dispatchFailure);
-                settled = true;
-                throw dispatchFailure;
-            }
-            // 回执只承诺「决策已落库 + 命令已受理」；T1 的 beginApproval 已把执行置 RUNNING。
-            return new CommandApprovalResult(ToolCallOutcome.APPROVED, ResumeDisposition.RUNNING);
-        } catch (RuntimeException | Error e) {
-            // 类加载失败也会回滚 T1，必须释放信号，否则待审批卡会永久被判为执行中。
-            if (signal != null && !settled) {
-                try {
-                    repository.unregister(signal);
-                } catch (RuntimeException | Error cleanupFailure) {
-                    e.addSuppressed(cleanupFailure);
-                }
-            }
-            throw e;
+    /** T1 回滚：释放控制信号，取消未执行的任务。副作用一次都不会跑，因为派发还没发生。 */
+    public void abandonT1(ApprovalPlan plan) {
+        if (plan.signal() == null) {
+            return;
+        }
+        try {
+            executionRepository.getObject().unregister(plan.signal());
+        } catch (RuntimeException | Error cleanupFailure) {
+            log.warn("T1 回滚时释放控制信号失败: executionId={}, error={}",
+                    plan.execution().getId(), cleanupFailure.toString());
         }
     }
 
     /**
-     * 拒绝：单事务落定，命令一次都不执行，也不依赖命令环境可重建。
+     * T1 提交之后的动作：派发锁外副作用（批准）或收尾关流（拒绝）。
      *
-     * <p>与 {@link ToolCallDecisionService} 的 PLAN/CHOICE 路径同形：槽位、结论、检查点、
-     * 模型上下文与恢复意图同事务提交，因此不存在「决策已落库但恢复意图没落库」的窗口。
-     * <b>刻意不调 {@code commandRestorer.restore}</b>：拒绝没有命令要跑，
-     * 让「环境已变化」把一次拒绝挡在门外是错的——用户拒绝的意愿不依赖环境。</p>
+     * <p><b>只在事务提交之后调用</b>：派发得比提交早，收尾段就可能读到未提交的受理状态。</p>
      */
-    private CommandApprovalResult reject(ToolCall toolCall, String commandId, String digest, Runnable completion) {
-        ExecutionRepository repository = executionRepository.getObject();
-        long conversationId = toolCall.getConversationId();
-        String executionId = String.valueOf(toolCall.getExecutionId());
-        Execution execution = repository.findById(executionId)
-                .orElseThrow(ClientException::new);
-        throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行尚未暂停或已结束");
-        // 拒绝文案与结论复用命令结论派生：写读同源，措辞只在 CommandOutcomeResolver 定义一次。
-        CommandOutcomeResolver.CommandExecution rejected = outcomeResolver.run(null, execution, false);
-
-        ResumeDisposition[] disposition = new ResumeDisposition[1];
-        transactions.executeWithoutResult(status -> {
-            ToolCall current = toolCallRepository.findById(toolCall.getId()).orElseThrow(ClientException::new);
-            throwIf(!current.isApprovalPending(), "该审批已处理");
-            throwIf(!ExecutionToolSlot.write(execution, current.getId(), current.getToolName(),
-                    rejected.result().getToolOutput()), "找不到原工具结果，不能恢复执行");
-            current.attachDecision(commandId, digest);
-            current.complete(rejected.rawOutput());
-            toolCallRepository.updateById(current);
-            repository.save(execution);
-            modelContextService.replace(conversationId, execution.getMessages());
-            disposition[0] = resumeCoordinator.accept(current.getExecutionId(),
-                    ResumeTriggerType.APPROVAL_DECISION);
-        });
-        if (completion != null) {
-            completion.run();
+    public void afterCommit(ApprovalPlan plan) {
+        if (!plan.approved()) {
+            runCompletion(plan.completion());
+            return;
         }
-        return new CommandApprovalResult(ToolCallOutcome.REJECTED, disposition[0]);
+        try {
+            dispatchAsync(() -> finish(plan.card(), plan.execution(), plan.call(), plan.signal(),
+                    plan.completion()));
+        } catch (RuntimeException | Error dispatchFailure) {
+            // T1 已提交：派发失败必须当场收口，否则执行永久停在 RUNNING、控制槽位泄漏、
+            // 而调用方（v1 的 SSE）会一直等一个永远不会到来的收尾。
+            settleDispatchFailure(plan, dispatchFailure);
+            throw dispatchFailure;
+        }
+    }
+
+    /** 收尾回调只跑一次，且它的异常不得污染审批主流程。 */
+    private static void runCompletion(Runnable completion) {
+        if (completion == null) {
+            return;
+        }
+        try {
+            completion.run();
+        } catch (RuntimeException error) {
+            log.warn("命令审批收尾回调失败: error={}", error.toString());
+        }
     }
 
     /**
@@ -172,11 +185,12 @@ public class CommandApprovalExecutor {
      * <b>执行副作用</b>（{@link CommandOutcomeResolver}）→ <b>事务 T2</b>
      * （{@link ApprovalFinalizer}）→ <b>释放信号并恢复</b>。
      *
-     * <p>副作用夹在 T1（{@link #approve} 内）与 T2 之间：T1 先提交受理状态，崩溃才不会静默重放命令；
+     * <p>副作用夹在 T1（{@link #writeT1}）与 T2 之间：T1 先提交受理状态，崩溃才不会静默重放命令；
      * T2 再落结果。三段分处三个协作类，本方法只保留「顺序」本身。</p>
      */
-    private void finish(ToolCall toolCall, Execution execution, ToolMessageEntity message,
-                        ToolExecution call, ExecutionControlSignal signal, Runnable completion) {
+    private void finish(ToolCall toolCall, Execution execution, ToolExecution call,
+                        ExecutionControlSignal signal, Runnable completion) {
+        ToolMessageEntity message = ExecutionToolSlot.locate(execution, toolCall.getId(), toolCall.getToolName());
         ExecutionRepository repository = executionRepository.getObject();
         long conversationId = toolCall.getConversationId();
         String executionId = execution.getId();
@@ -236,18 +250,19 @@ public class CommandApprovalExecutor {
     }
 
     /** 异步派发失败：T1 已提交，必须把执行收成失败并释放控制槽位，不能留下 RUNNING 泄漏。 */
-    private void settleDispatchFailure(ToolCall toolCall, Execution execution,
-                                       ExecutionControlSignal signal, Throwable failure) {
+    private void settleDispatchFailure(ApprovalPlan plan, Throwable failure) {
         try {
-            finalizer.failApproval(toolCall, execution, failure.getMessage());
+            finalizer.failApproval(plan.card(), plan.execution(), failure.getMessage());
         } catch (RuntimeException | Error saveFailure) {
             failure.addSuppressed(saveFailure);
         }
         try {
-            executionRepository.getObject().unregister(signal);
+            executionRepository.getObject().unregister(plan.signal());
         } catch (RuntimeException | Error cleanupFailure) {
             failure.addSuppressed(cleanupFailure);
         }
+        // 收尾段永不运行，关流只能在这里做：否则 v1 的 SSE 会一直挂着等一个不会到来的结束。
+        runCompletion(plan.completion());
     }
 
     private void throwIf(boolean condition, String err) {
