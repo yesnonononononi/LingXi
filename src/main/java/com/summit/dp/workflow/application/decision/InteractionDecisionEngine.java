@@ -29,31 +29,14 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * 互动决策唯一模板：三个入口（v1 SSE / v2 JSON / 多选批量）共用同一份判定顺序。
+ * 互动决策唯一模板：v1 / v2 / 多选批量三个入口共用同一份判定顺序。
  *
- * <h2>顺序即不变量</h2>
+ * <p>顺序即不变量：参数校验 → 会话归属 → 执行级门闩 → 锁内重读 → 幂等三态 → 状态/版本/形态校验 →
+ * 策略算槽位 → 单事务写入 → 统一回执。锁内重读不能省：等门闩期间对方可能已落定结论。</p>
  *
- * <ol>
- *   <li><b>入口参数校验</b>：缺字段直接拒绝，不查库。</li>
- *   <li><b>会话归属</b>：拿 A 会话的卡片 id 到 B 会话提交必须被挡住。</li>
- *   <li><b>执行级门闩</b>（{@link ExecutionCoordination}）：同一执行的多张卡片串行。</li>
- *   <li><b>锁内重读</b>：等待期间另一方可能已经落定结论，不能沿用锁外读到的事实。</li>
- *   <li><b>幂等三态</b>：同命令同摘要回放首次结论、同命令不同摘要冲突、他人命令抢已决互动回实际视图。</li>
- *   <li><b>状态 / 版本 / 形态校验</b>：按入口契约表达冲突。</li>
- *   <li><b>策略算槽位决议</b>（纯函数，不写库）。</li>
- *   <li><b>单事务写</b>：槽位 + 结论 + 检查点 + 模型上下文 + 恢复意图。</li>
- *   <li><b>统一回执</b>：含恢复处置。</li>
- * </ol>
- *
- * <h2>并发正确性来自乐观锁，不是进程内门闩</h2>
- *
- * <p>门闩只减少无谓竞争；真正的正确性靠 {@code tool_call} 的 {@code eq(version)} 条件更新 ——
- * 门闩在多进程下不成立，条件更新在任何部署形态下都成立。</p>
- *
- * <h2>引擎不负责什么</h2>
- *
- * <p>命令副作用执行、SSE 连接管理、命令环境重建都不在这里：它们分别在
- * {@link TwoPhaseCommandResolutionStrategy}、各入口适配器与 {@code ApprovedCommandRestorer}。</p>
+ * <p>正确性来自 {@code tool_call} 的条件更新（{@code eq(version)}），进程内门闩只减少无谓竞争，
+ * 多进程下不成立。命令副作用、SSE 连接与命令环境重建不在本类，见
+ * {@link TwoPhaseCommandResolutionStrategy} 与各入口适配器。</p>
  */
 @Slf4j
 @Service
@@ -125,12 +108,8 @@ public class InteractionDecisionEngine {
     /**
      * 命令形态：T1（引擎事务）→ 提交后派发锁外副作用 → T2 由收尾段落结果。
      *
-     * <p><b>顺序不可调换</b>：T1 必须早于副作用，否则进程崩溃后重启会静默重放已产生
-     * 副作用的命令；T2 必须与真实输出同批提交，否则「执行过但没落库」会被误当成失败重跑。
-     * 这两条都由本方法的三段顺序保证，而不是由某个协作方的自觉保证。</p>
-     *
-     * <p><b>派发在事务之后</b>：{@code writeT1} 返回时事务已提交；此时才派发，
-     * 收尾段读到的受理状态一定已落库。</p>
+     * <p>顺序不可调换：T1 必须早于副作用（否则崩溃重启会静默重放已产生副作用的命令），
+     * T2 必须与真实输出同批提交（否则「执行过但没落库」会被当成失败重跑）。</p>
      */
     private DecisionReceipt decideTwoPhase(TwoPhaseCommandResolutionStrategy strategy, ToolCall card,
                                            CommandDecision command, DecisionEntryContract contract) {

@@ -67,6 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ExecutionResumeCoordinator {
 
     private final ExecutionResumeTaskRepository taskRepository;
+    /** 业务执行仓储；与框架 {@code core.runtime.loop.ExecutionRepository} 同名，只能写全名区分。 */
     private final com.summit.dp.execution.domain.repository.ExecutionRepository executions;
     private final SuspendedExecutionResumer resumer;
     private final ExecutionControl executionControl;
