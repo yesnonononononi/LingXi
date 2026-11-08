@@ -161,7 +161,77 @@ class SessionTokenAuditRepositoryTest {
     }
 
     /** 一个自洽的成功快照（新口径：工具总量不含参数），工具名清单可切换以验证删旧插新。 */
+    @Test
+    @DisplayName("归因明细列：两值非空时往返一致，且不改变任何合计")
+    void attributionColumnsRoundTrip() {
+        repository.replaceSnapshot(collected(List.of("search_web"), 777, 889));
+
+        SessionTokenAudit loaded = repository.findBySessionId(SESSION_ID).orElseThrow();
+        assertEquals(777, loaded.getMemoryTokens(), "记忆正文 token 必须跟着快照落库");
+        assertEquals(889, loaded.getAttachmentTokens(), "附件 token 必须跟着快照落库");
+        // 归因明细不进任何合计：读回后的三条恒等式与不带它们时完全一致。
+        assertEquals(122650, loaded.getMessagesTokens());
+        assertEquals(148200, loaded.getTotalTokens());
+        assertEquals(25550, loaded.getRequestOverheadTokens());
+        assertEquals(loaded.getTotalTokens(),
+                loaded.getMessagesTokens() + loaded.getRequestOverheadTokens());
+        assertEquals("0", database.queryString(
+                "SELECT COUNT(*) FROM session_token_audit WHERE memory_tokens IS NULL"
+                        + " OR attachment_tokens IS NULL"),
+                "本夹具两项已知，库里不允许出现 NULL");
+    }
+
+    @Test
+    @DisplayName("归因明细列可空：未知写 NULL 而不是 0，且能被 upsert 重新写回 NULL")
+    void attributionColumnsStayNullableAndCanBeCleared() {
+        repository.replaceSnapshot(collected(List.of("search_web"), 777, 889));
+        repository.replaceSnapshot(collected(List.of("search_web"), null, null));
+
+        SessionTokenAudit loaded = repository.findBySessionId(SESSION_ID).orElseThrow();
+        assertNull(loaded.getMemoryTokens(), "未知必须读回 null，绝不能被写成 0");
+        assertNull(loaded.getAttachmentTokens());
+        assertEquals("1", database.queryString(
+                "SELECT COUNT(*) FROM session_token_audit"
+                        + " WHERE memory_tokens IS NULL AND attachment_tokens IS NULL"),
+                "整行替换必须能把上一轮的值写回 NULL（这正是 updateById 做不到的地方）");
+        // 只清空归因列，其余列不受影响。
+        assertEquals(122650, loaded.getMessagesTokens());
+        assertEquals(8200, loaded.getToolDefinitionTokens());
+    }
+
+    @Test
+    @DisplayName("失败快照：归因列必须为 NULL（失败就是不知道，不用 0 冒充）")
+    void failedSnapshotHasNullAttribution() {
+        repository.replaceSnapshot(collected(List.of("search_web"), 777, 889));
+        repository.markFailed(SESSION_ID, 9L, "AUDIT_ERROR: 采集失败");
+
+        // 已有成功快照时失败不覆盖，因此先单独验一个全新会话的失败行。
+        long freshSession = SESSION_ID + 1;
+        repository.markFailed(freshSession, 9L, "AUDIT_ERROR: 采集失败");
+        SessionTokenAudit failed = repository.findBySessionId(freshSession).orElseThrow();
+
+        assertEquals(TokenAuditPersistedState.FAILED, failed.getState());
+        assertNull(failed.getMemoryTokens());
+        assertNull(failed.getAttachmentTokens());
+        assertEquals("1", database.queryString(
+                "SELECT COUNT(*) FROM session_token_audit WHERE audit_state = 'FAILED'"
+                        + " AND memory_tokens IS NULL AND attachment_tokens IS NULL"));
+    }
+
     private static SessionTokenAudit collected(List<String> toolNames) {
+        return collected(toolNames, null, null);
+    }
+
+    /**
+     * 同上的成功快照，但显式指定两个归因明细值。
+     *
+     * @param toolNames        工具名清单
+     * @param memoryTokens     记忆正文 token；null 表示未知
+     * @param attachmentTokens 附件 token；null 表示未知
+     * @return 快照
+     */
+    private static SessionTokenAudit collected(List<String> toolNames, Integer memoryTokens,
+                                               Integer attachmentTokens) {
         int ordinary = 0;
         List<ItemMeasurement> items = new java.util.ArrayList<>();
         for (String name : toolNames) {
@@ -175,7 +245,7 @@ class SessionTokenAuditRepositoryTest {
                         new GroupMeasurement(TokenAuditGroupKind.SKILL, 14200, 800, 13000, 3,
                                 List.of()),
                         ordinaryGroup),
-                8200, 3100);
+                8200, 3100, memoryTokens, attachmentTokens);
         Result result = TokenAuditReconciler.reconcile(measurement);
         return SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
     }

@@ -85,7 +85,9 @@ public class TokenAuditConverter {
                 liveMaxTokens(session),
                 tool.groups(),
                 toolDefinitionTokensOf(document),
-                mcpToolDefinitionTokensOf(document));
+                mcpToolDefinitionTokensOf(document),
+                memoryTokensOf(document),
+                attachmentTokensOf(document));
     }
 
     /**
@@ -112,6 +114,33 @@ public class TokenAuditConverter {
     private static Integer mcpToolDefinitionTokensOf(TokenAuditDocument document) {
         OtherTokens other = document.otherTokens();
         return other == null ? null : nullableIntOf(other.mcpToolDefinitionTokens());
+    }
+
+    /**
+     * 记忆正文 token（框架 {@code OtherTokens.memoryTokens}）：<b>归因明细</b>，
+     * 框架已把它并入 systemTokens，这里只读取、不参与任何换算。
+     *
+     * <p>业务侧当前不往 systemPrompt 拼记忆正文（记忆走「容量提醒 + 按需 wiki 工具」），
+     * 因此该值通常为 0；但 0 是真实测量结果，与「null（未知）」必须区分开。</p>
+     *
+     * @param document 框架审计文档
+     * @return 非负值；未知时为 null
+     */
+    private static Integer memoryTokensOf(TokenAuditDocument document) {
+        OtherTokens other = document.otherTokens();
+        return other == null ? null : nullableIntOf(other.memoryTokens());
+    }
+
+    /**
+     * 用户附件 token（框架 {@code OtherTokens.attachmentTokens}）：<b>归因明细</b>，
+     * 框架已把它并入 userTokens，这里只读取、不参与任何换算。
+     *
+     * @param document 框架审计文档
+     * @return 非负值；未知时为 null
+     */
+    private static Integer attachmentTokensOf(TokenAuditDocument document) {
+        OtherTokens other = document.otherTokens();
+        return other == null ? null : nullableIntOf(other.attachmentTokens());
     }
 
     /**

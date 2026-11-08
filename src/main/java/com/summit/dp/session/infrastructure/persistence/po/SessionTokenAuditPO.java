@@ -49,6 +49,13 @@ public class SessionTokenAuditPO {
     private Integer toolDefinitionTokens;
     /** 随请求下发的 MCP 工具定义 token；null 表示未知。 */
     private Integer mcpToolDefinitionTokens;
+    /**
+     * 记忆正文 token（框架 {@code e9c6ec6}）。<b>归因明细：已并入 SYSTEM 分项，
+     * 禁止累加进任何分类合计或恒等式。</b>null 表示未知，不是 0。
+     */
+    private Integer memoryTokens;
+    /** 用户附件 token。<b>归因明细：已并入 USER 分项，禁止累加。</b>null 表示未知。 */
+    private Integer attachmentTokens;
     private Instant capturedAt;
     private String failReason;
     private Instant createTime;

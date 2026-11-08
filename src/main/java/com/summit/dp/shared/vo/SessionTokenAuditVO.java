@@ -77,6 +77,17 @@ public class SessionTokenAuditVO {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditReconciliationVO reconciliation;
     /**
+     * 上下文归因明细：记忆正文 token 与用户附件 token。
+     *
+     * <p><b>归因明细，不得累加进分类合计</b>：它们已分别包含在 SYSTEM / USER 两项里，
+     * 只是说明「合计里有多少来自记忆 / 附件」。放进 {@link #messages} 会让四类之和
+     * 超过 {@link #messagesTotalTokens}；放进 {@link #reconciliation} 会破坏请求开销恒等式。</p>
+     *
+     * <p>两项皆未知时为 null（前端隐藏该块）；{@code null} 不等于 0。</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private TokenAuditContextAttributionVO contextAttribution;
+    /**
      * 设计稿的「其他消息」面板：非消息请求开销的工具定义构成。
      *
      * <p><b>刻意不放进 {@link #messages}</b>：四类分项之和必须恰等于

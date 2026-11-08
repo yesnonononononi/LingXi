@@ -65,6 +65,8 @@ public class SessionTokenAuditRepositoryImpl
                 .toolGroupingDrift(entity.getToolGroupingDrift())
                 .toolDefinitionTokens(entity.getToolDefinitionTokens())
                 .mcpToolDefinitionTokens(entity.getMcpToolDefinitionTokens())
+                .memoryTokens(entity.getMemoryTokens())
+                .attachmentTokens(entity.getAttachmentTokens())
                 .capturedAt(entity.getCapturedAt())
                 .failReason(entity.getFailReason())
                 .build();
@@ -161,6 +163,8 @@ public class SessionTokenAuditRepositoryImpl
                 .set(SessionTokenAuditPO::getToolGroupingDrift, audit.getToolGroupingDrift())
                 .set(SessionTokenAuditPO::getToolDefinitionTokens, audit.getToolDefinitionTokens())
                 .set(SessionTokenAuditPO::getMcpToolDefinitionTokens, audit.getMcpToolDefinitionTokens())
+                .set(SessionTokenAuditPO::getMemoryTokens, audit.getMemoryTokens())
+                .set(SessionTokenAuditPO::getAttachmentTokens, audit.getAttachmentTokens())
                 .set(SessionTokenAuditPO::getCapturedAt, audit.getCapturedAt())
                 .set(SessionTokenAuditPO::getFailReason, audit.getFailReason())
                 .set(SessionTokenAuditPO::getUpdateTime, Instant.now()));
@@ -205,6 +209,8 @@ public class SessionTokenAuditRepositoryImpl
                 head.getToolGroupingDrift(),
                 head.getToolDefinitionTokens(),
                 head.getMcpToolDefinitionTokens(),
+                head.getMemoryTokens(),
+                head.getAttachmentTokens(),
                 head.getCapturedAt(),
                 head.getFailReason(),
                 items);

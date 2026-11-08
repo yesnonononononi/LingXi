@@ -72,6 +72,8 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.reconciliation.mcpToolDefinitionTokens").isNumber())
                 .andExpect(jsonPath("$.data.reconciliation.framingResidualTokens").isNumber())
                 .andExpect(jsonPath("$.data.requestOverhead.tokens").isNumber())
+                .andExpect(jsonPath("$.data.contextAttribution.memoryTokens").isNumber())
+                .andExpect(jsonPath("$.data.contextAttribution.attachmentTokens").isNumber())
                 .andExpect(jsonPath("$.data.requestOverhead.itemCount").isNumber())
                 .andExpect(jsonPath("$.data.tools.tokens").isNumber())
                 .andExpect(jsonPath("$.data.tools.ordinary.tokens").isNumber())
@@ -106,7 +108,12 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.tools.ordinary.tokens").value(14720))
                 .andExpect(jsonPath("$.data.tools.ordinary.items.length()").value(2))
                 .andExpect(jsonPath("$.data.tools.ordinary.items[0].toolName").value("search_web"))
-                .andExpect(jsonPath("$.data.tools.ordinary.items[1].toolName").value("read_file"));
+                .andExpect(jsonPath("$.data.tools.ordinary.items[1].toolName").value("read_file"))
+                // 归因明细：记忆 / 附件已含在 SYSTEM / USER 里，这里只做说明，
+                // 因此数值与上面两类合计毫无关系，也绝不能参与 messagesTotalTokens。
+                .andExpect(jsonPath("$.data.contextAttribution.memoryTokens").value(777))
+                .andExpect(jsonPath("$.data.contextAttribution.attachmentTokens").value(889))
+                .andExpect(jsonPath("$.data.messagesTotalTokens").value(133370));
     }
 
     @Test
@@ -260,14 +267,15 @@ class SessionTokenAuditApiTest {
                                 ordinary - 560, 5, List.of(
                                 new ItemMeasurement("search_web", 9420, 2100, 8700, 3),
                                 new ItemMeasurement("read_file", 5300, 900, 4600, 2)))),
-                8200, 3100);
+                8200, 3100, 777, 889);
         Result result = TokenAuditReconciler.reconcile(measurement);
         SessionTokenAudit audit = SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
         return SessionTokenAudit.restore(SESSION_ID, 1L, TokenAuditPersistedState.COLLECTED,
                 audit.getTotalTokens(), audit.getMaxTokens(), audit.getMessagesTokens(),
                 audit.getRequestOverheadTokens(), audit.getOverlapTokens(),
                 audit.getToolGroupingDrift(), audit.getToolDefinitionTokens(),
-                audit.getMcpToolDefinitionTokens(), audit.getCapturedAt(), audit.getFailReason(),
+                audit.getMcpToolDefinitionTokens(), audit.getMemoryTokens(),
+                audit.getAttachmentTokens(), audit.getCapturedAt(), audit.getFailReason(),
                 audit.getItems());
     }
 }

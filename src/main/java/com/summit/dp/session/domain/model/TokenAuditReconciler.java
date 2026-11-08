@@ -123,7 +123,8 @@ public final class TokenAuditReconciler {
     public record Measurement(int systemTokens, int userTokens, int assistantTokens,
                               int toolDocumentTokens, int argumentOverlapTokens,
                               int totalTokens, int maxTokens, List<GroupMeasurement> groups,
-                              Integer toolDefinitionTokens, Integer mcpToolDefinitionTokens) {
+                              Integer toolDefinitionTokens, Integer mcpToolDefinitionTokens,
+                              Integer memoryTokens, Integer attachmentTokens) {
 
         public Measurement {
             requireNonNegative(systemTokens, "系统提示词 token");
@@ -137,6 +138,10 @@ public final class TokenAuditReconciler {
             // 已知时不得为负（负数只可能是框架测量异常或转换器写错，不该被静默画进构成图）。
             requireNonNegativeOrNull(toolDefinitionTokens, "工具定义 token");
             requireNonNegativeOrNull(mcpToolDefinitionTokens, "MCP 工具定义 token");
+            // 归因明细（框架 e9c6ec6）：已知时同样不得为负。它们是 system / user 合计的
+            // 明细拆分，绝不会被加进任何分类合计，因此这里只做合法性校验、不参与任何求和。
+            requireNonNegativeOrNull(memoryTokens, "记忆正文 token");
+            requireNonNegativeOrNull(attachmentTokens, "附件 token");
             // 参数与工具视图总量在新口径下是独立的两个量，不做大小比较。
             groups = groups == null ? List.of() : List.copyOf(groups);
         }
@@ -157,7 +162,30 @@ public final class TokenAuditReconciler {
                            int toolDocumentTokens, int argumentOverlapTokens,
                            int totalTokens, int maxTokens, List<GroupMeasurement> groups) {
             this(systemTokens, userTokens, assistantTokens, toolDocumentTokens, argumentOverlapTokens,
-                    totalTokens, maxTokens, groups, null, null);
+                    totalTokens, maxTokens, groups, null, null, null, null);
+        }
+
+        /**
+         * 兼容构造：不带「归因明细」两项（记忆 / 附件）时按未知（null）处理。
+         *
+         * @param systemTokens            系统提示词 token
+         * @param userTokens              用户消息 token
+         * @param assistantTokens         AI 消息 token
+         * @param toolDocumentTokens      框架工具视图总量
+         * @param argumentOverlapTokens   工具调用参数 token
+         * @param totalTokens             模型输入总量
+         * @param maxTokens               上下文上限
+         * @param groups                  工具分组测量值
+         * @param toolDefinitionTokens    工具定义 token
+         * @param mcpToolDefinitionTokens MCP 工具定义 token
+         */
+        public Measurement(int systemTokens, int userTokens, int assistantTokens,
+                           int toolDocumentTokens, int argumentOverlapTokens,
+                           int totalTokens, int maxTokens, List<GroupMeasurement> groups,
+                           Integer toolDefinitionTokens, Integer mcpToolDefinitionTokens) {
+            this(systemTokens, userTokens, assistantTokens, toolDocumentTokens, argumentOverlapTokens,
+                    totalTokens, maxTokens, groups, toolDefinitionTokens, mcpToolDefinitionTokens,
+                    null, null);
         }
     }
 
@@ -177,16 +205,23 @@ public final class TokenAuditReconciler {
      * @param framingResidualTokens   请求框架残差，由恒等式 B 的减法派生，<b>不落库</b>；
      *                                两项工具定义任一未知时为 null（未知就整体未知，
      *                                拿部分已知去凑一个「残差」只会骗人）
+     * @param memoryTokens            记忆正文 token（{@code OtherTokens.memoryTokens}）；null = 未知
+     * @param attachmentTokens        用户附件 token（{@code OtherTokens.attachmentTokens}）；null = 未知
      * @param items                 明细行（4 条消息行 + 0~3 条分组行 + N 条工具名行）
      */
     public record Result(int totalTokens, int maxTokens, int messagesTokens, int requestOverheadTokens,
                          int overlapTokens, int toolGroupingDrift, Integer toolDefinitionTokens,
                          Integer mcpToolDefinitionTokens, Integer framingResidualTokens,
+                         Integer memoryTokens, Integer attachmentTokens,
                          List<SessionTokenAuditItem> items) {
 
         public Result {
             requireNonNegativeOrNull(toolDefinitionTokens, "工具定义 token");
             requireNonNegativeOrNull(mcpToolDefinitionTokens, "MCP 工具定义 token");
+            // 归因明细：只校验合法性。二者已分别包含在 systemTokens / userTokens 里，
+            // 绝不参与 messagesTokens、requestOverheadTokens、totalTokens 的任何求和。
+            requireNonNegativeOrNull(memoryTokens, "记忆正文 token");
+            requireNonNegativeOrNull(attachmentTokens, "附件 token");
             items = items == null ? List.of() : List.copyOf(items);
         }
 
@@ -207,7 +242,30 @@ public final class TokenAuditReconciler {
         public Result(int totalTokens, int maxTokens, int messagesTokens, int requestOverheadTokens,
                       int overlapTokens, int toolGroupingDrift, List<SessionTokenAuditItem> items) {
             this(totalTokens, maxTokens, messagesTokens, requestOverheadTokens, overlapTokens,
-                    toolGroupingDrift, null, null, null, items);
+                    toolGroupingDrift, null, null, null, null, null, items);
+        }
+
+        /**
+         * 兼容构造：不带「归因明细」两项（记忆 / 附件）时按未知（null）处理。
+         *
+         * @param totalTokens            总量
+         * @param maxTokens              上下文上限
+         * @param messagesTokens         四类分项之和
+         * @param requestOverheadTokens  请求开销
+         * @param overlapTokens          参数 token
+         * @param toolGroupingDrift      归因漂移
+         * @param toolDefinitionTokens   工具定义 token
+         * @param mcpToolDefinitionTokens MCP 工具定义 token
+         * @param framingResidualTokens  请求框架残差
+         * @param items                  明细行
+         */
+        public Result(int totalTokens, int maxTokens, int messagesTokens, int requestOverheadTokens,
+                      int overlapTokens, int toolGroupingDrift, Integer toolDefinitionTokens,
+                      Integer mcpToolDefinitionTokens, Integer framingResidualTokens,
+                      List<SessionTokenAuditItem> items) {
+            this(totalTokens, maxTokens, messagesTokens, requestOverheadTokens, overlapTokens,
+                    toolGroupingDrift, toolDefinitionTokens, mcpToolDefinitionTokens,
+                    framingResidualTokens, null, null, items);
         }
     }
 
@@ -267,7 +325,8 @@ public final class TokenAuditReconciler {
 
         return new Result(totalTokens, measurement.maxTokens(), messagesTokens, requestOverheadTokens,
                 measurement.argumentOverlapTokens(), toolGroupingDrift,
-                toolDefinitionTokens, mcpToolDefinitionTokens, framingResidualTokens, messageRows);
+                toolDefinitionTokens, mcpToolDefinitionTokens, framingResidualTokens,
+                measurement.memoryTokens(), measurement.attachmentTokens(), messageRows);
     }
 
     /**

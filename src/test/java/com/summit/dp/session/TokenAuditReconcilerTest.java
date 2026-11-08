@@ -18,6 +18,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -58,6 +59,12 @@ class TokenAuditReconcilerTest {
     /** 随请求下发的工具定义 token（框架 {@code OtherTokens}）。 */
     private static final int TOOL_DEFINITION = 8200;
     private static final int MCP_TOOL_DEFINITION = 3100;
+    /**
+     * 归因明细两项的取值：<b>故意选成无法与任何既有常数混淆的互质数</b>，
+     * 一旦有人把它们加进分类合计，下面的回归守卫就会精确报出差值。
+     */
+    private static final int MEMORY = 777;
+    private static final int ATTACHMENT = 889;
 
     @Test
     @DisplayName("恒等式 1：四类分项之和等于 messagesTokens，且四行顺序固定")
@@ -336,6 +343,61 @@ class TokenAuditReconcilerTest {
         assertEquals(200, toolRow(result).resultTokens());
     }
 
+    @Test
+    @DisplayName("归因明细回归守卫：记忆 / 附件两项绝不参与任何合计与恒等式")
+    void attributionDetailsNeverJoinAnyTotal() {
+        Result without = TokenAuditReconciler.reconcile(measurementWithDefinitions());
+        Result with = TokenAuditReconciler.reconcile(measurementWithAttribution());
+
+        // 两项必须原样透传（落库与下发的都是框架给出的真实测量值）。
+        assertEquals(MEMORY, with.memoryTokens());
+        assertEquals(ATTACHMENT, with.attachmentTokens());
+        assertNull(without.memoryTokens(), "没给就是未知，不是 0");
+        assertNull(without.attachmentTokens(), "没给就是未知，不是 0");
+
+        // 以下每一项都必须与「没有归因明细」时逐字节相同：
+        // 记住 MEMORY=777 / ATTACHMENT=889 是刻意选的互质数，
+        // 一旦有人把任一值加进分类合计、请求开销或总量，这里的等式必然报出差值。
+        assertEquals(without.messagesTokens(), with.messagesTokens(),
+                "四类合计绝不能包含记忆 / 附件（它们已含在 SYSTEM / USER 里）");
+        assertEquals(without.totalTokens(), with.totalTokens(),
+                "快照总量绝不能包含归因明细");
+        assertEquals(without.requestOverheadTokens(), with.requestOverheadTokens(),
+                "请求开销绝不能包含归因明细");
+        assertEquals(without.toolGroupingDrift(), with.toolGroupingDrift());
+        assertEquals(without.framingResidualTokens(), with.framingResidualTokens());
+        assertEquals(without.overlapTokens(), with.overlapTokens());
+        assertEquals(MESSAGES, with.messagesTokens());
+        assertEquals(LIVE_TOTAL, with.totalTokens());
+
+        // 四条恒等式在带归因明细时依然逐条成立。
+        assertEquals(with.totalTokens(), with.messagesTokens() + with.requestOverheadTokens());
+        // 构造数据的「必然不等」：两个归因值既不等于 SYSTEM 也不等于 USER，
+        // 因此若有人把它们当子项再加一遍，同一行就会变成 12300+777 / 18450+889 而立刻报错。
+        assertEquals(SYSTEM, categoryRow(with, TokenAuditCategory.SYSTEM).resultTokens(),
+                "SYSTEM 行不得被记忆正文 token 撑大（框架已把它含在这一类里）");
+        assertEquals(USER, categoryRow(with, TokenAuditCategory.USER).resultTokens(),
+                "USER 行不得被附件 token 撑大");
+    }
+
+    @Test
+    @DisplayName("归因明细：负数按入参非法拒绝（未知只能用 null 表达）")
+    void attributionRejectsNegative() {
+        assertThrows(ClientException.class, () -> new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT,
+                ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION,
+                -1, ATTACHMENT));
+        assertThrows(ClientException.class, () -> new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT,
+                ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION,
+                MEMORY, -1));
+        // 0 是合法测量值（确实没有记忆正文 / 附件），必须与「未知」区分开。
+        Measurement zero = new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL,
+                MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, 0, 0);
+        Result result = TokenAuditReconciler.reconcile(zero);
+        assertEquals(0, result.memoryTokens());
+        assertEquals(0, result.attachmentTokens());
+        assertEquals(MESSAGES, result.messagesTokens(), "0 也不得改变合计");
+    }
+
     private static Measurement measurementWithGroups() {
         return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
                 groups());
@@ -345,6 +407,12 @@ class TokenAuditReconcilerTest {
     private static Measurement measurementWithDefinitions() {
         return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
                 groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION);
+    }
+
+    /** 带「归因明细」两项的测量值（其余与 {@link #measurementWithDefinitions()} 完全一致）。 */
+    private static Measurement measurementWithAttribution() {
+        return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
+                groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, MEMORY, ATTACHMENT);
     }
 
     private static List<GroupMeasurement> groups() {
@@ -366,11 +434,16 @@ class TokenAuditReconcilerTest {
     }
 
     private static SessionTokenAuditItem toolRow(Result result) {
+        return categoryRow(result, TokenAuditCategory.TOOL);
+    }
+
+    /** 取某一类消息行；找不到直接失败（夹具 bug 不该被静默吞掉）。 */
+    private static SessionTokenAuditItem categoryRow(Result result, TokenAuditCategory category) {
         SessionTokenAuditItem row = messageRows(result).stream()
-                .filter(item -> item.getCategory() == TokenAuditCategory.TOOL)
+                .filter(item -> item.getCategory() == category)
                 .findFirst()
                 .orElse(null);
-        assertNotNull(row, "必须有 TOOL 消息行");
+        assertNotNull(row, "必须有 " + category + " 消息行");
         return row;
     }
 }

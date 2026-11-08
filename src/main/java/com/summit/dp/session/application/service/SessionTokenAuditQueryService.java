@@ -12,6 +12,7 @@ import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.SessionTokenAuditVO;
 import com.summit.dp.shared.vo.TokenAuditCategoryVO;
+import com.summit.dp.shared.vo.TokenAuditContextAttributionVO;
 import com.summit.dp.shared.vo.TokenAuditOverheadItemVO;
 import com.summit.dp.shared.vo.TokenAuditReconciliationVO;
 import com.summit.dp.shared.vo.TokenAuditRequestOverheadVO;
@@ -104,6 +105,7 @@ public class SessionTokenAuditQueryService {
                 .capturedAt(audit == null ? null : audit.getCapturedAt())
                 .failReason(audit == null ? null : audit.getFailReason())
                 .reconciliation(reconciliationOf(audit))
+                .contextAttribution(contextAttributionOf(audit))
                 .requestOverhead(requestOverheadOf(audit, messagesTotal))
                 .messages(categoryViews(audit, messagesTotal))
                 .messagesTotalTokens(messagesTotal)
@@ -259,6 +261,33 @@ public class SessionTokenAuditQueryService {
                 .toolDefinitionTokens(audit.getToolDefinitionTokens())
                 .mcpToolDefinitionTokens(audit.getMcpToolDefinitionTokens())
                 .framingResidualTokens(audit.framingResidualTokens())
+                .build();
+    }
+
+    /**
+     * 上下文归因明细：记忆正文与用户附件。
+     *
+     * <p><b>刻意不并入任何分类或对账对象</b>：这两个值已分别包含在 SYSTEM / USER 合计中，
+     * 只是「合计里有多少来自记忆 / 附件」的拆分说明。放进 {@code messages} 会让四类之和
+     * 大于 {@code messagesTotalTokens}，放进 {@code reconciliation} 会破坏请求开销恒等式。</p>
+     *
+     * <p>两项都未知（null）时整体为 null，前端据此隐藏该块 —— 用 0 会画出「零开销」的假项。</p>
+     *
+     * @param audit 快照；无快照时为 null
+     * @return 归因明细视图；两项皆未知时为 null
+     */
+    private static TokenAuditContextAttributionVO contextAttributionOf(SessionTokenAudit audit) {
+        if (audit == null) {
+            return null;
+        }
+        Integer memory = audit.getMemoryTokens();
+        Integer attachment = audit.getAttachmentTokens();
+        if (memory == null && attachment == null) {
+            return null;
+        }
+        return TokenAuditContextAttributionVO.builder()
+                .memoryTokens(memory)
+                .attachmentTokens(attachment)
                 .build();
     }
 

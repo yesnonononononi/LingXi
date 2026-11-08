@@ -60,6 +60,22 @@ public class SessionTokenAudit {
     private Integer toolDefinitionTokens;
     /** 随请求下发的 MCP 工具定义 token；null 表示未知（同 {@link #toolDefinitionTokens}）。 */
     private Integer mcpToolDefinitionTokens;
+    /**
+     * 记忆正文 token（框架 {@code e9c6ec6} 的 {@code OtherTokens.memoryTokens}）。
+     *
+     * <p><b>归因明细，不是独立开销</b>：框架已把它并入 {@code SYSTEM} 分项，因此
+     * <b>绝不能加到 {@link #messagesTokens}、{@link #requestOverheadTokens} 或 {@link #totalTokens} 上</b>，
+     * 也不能参与任何恒等式。它只回答「SYSTEM 里有多少是记忆正文」。</p>
+     *
+     * <p>null 表示「未知」（框架未给出 / 该元素审计失败），不用 0 顶替。</p>
+     */
+    private Integer memoryTokens;
+    /**
+     * 用户附件 token（框架 {@code e9c6ec6} 的 {@code OtherTokens.attachmentTokens}）。
+     *
+     * <p>同 {@link #memoryTokens}：<b>已并入 {@code USER} 分项，纯归因明细，禁止累加</b>。</p>
+     */
+    private Integer attachmentTokens;
     private Instant capturedAt;
     private String failReason;
     private final List<SessionTokenAuditItem> items;
@@ -68,7 +84,8 @@ public class SessionTokenAudit {
                               Integer totalTokens, Integer maxTokens, Integer messagesTokens,
                               Integer requestOverheadTokens, Integer overlapTokens,
                               Integer toolGroupingDrift, Integer toolDefinitionTokens,
-                              Integer mcpToolDefinitionTokens, Instant capturedAt,
+                              Integer mcpToolDefinitionTokens, Integer memoryTokens,
+                              Integer attachmentTokens, Instant capturedAt,
                               String failReason, List<SessionTokenAuditItem> items) {
         if (sessionId == null) {
             throw new ClientException("token 审计快照必须归属一个会话");
@@ -84,6 +101,8 @@ public class SessionTokenAudit {
         this.toolGroupingDrift = toolGroupingDrift;
         this.toolDefinitionTokens = toolDefinitionTokens;
         this.mcpToolDefinitionTokens = mcpToolDefinitionTokens;
+        this.memoryTokens = memoryTokens;
+        this.attachmentTokens = attachmentTokens;
         this.capturedAt = capturedAt;
         this.failReason = failReason;
         this.items = new ArrayList<>(Objects.requireNonNullElse(items, List.of()));
@@ -107,6 +126,7 @@ public class SessionTokenAudit {
                 result.totalTokens(), toMaxTokens(result.maxTokens()), result.messagesTokens(),
                 result.requestOverheadTokens(), result.overlapTokens(), result.toolGroupingDrift(),
                 result.toolDefinitionTokens(), result.mcpToolDefinitionTokens(),
+                result.memoryTokens(), result.attachmentTokens(),
                 Objects.requireNonNullElseGet(capturedAt, Instant::now), null, result.items());
     }
 
@@ -124,7 +144,7 @@ public class SessionTokenAudit {
     public static SessionTokenAudit failure(Long sessionId, Long executionId, String reason,
                                             Instant capturedAt) {
         return new SessionTokenAudit(sessionId, executionId, TokenAuditPersistedState.FAILED,
-                null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
                 Objects.requireNonNullElseGet(capturedAt, Instant::now),
                 normalizeFailReason(reason), List.of());
     }
@@ -137,11 +157,47 @@ public class SessionTokenAudit {
                                             Integer maxTokens, Integer messagesTokens,
                                             Integer requestOverheadTokens, Integer overlapTokens,
                                             Integer toolGroupingDrift, Integer toolDefinitionTokens,
-                                            Integer mcpToolDefinitionTokens, Instant capturedAt,
+                                            Integer mcpToolDefinitionTokens, Integer memoryTokens,
+                                            Integer attachmentTokens, Instant capturedAt,
                                             String failReason, List<SessionTokenAuditItem> items) {
         return new SessionTokenAudit(sessionId, executionId, state, totalTokens, maxTokens,
                 messagesTokens, requestOverheadTokens, overlapTokens, toolGroupingDrift,
-                toolDefinitionTokens, mcpToolDefinitionTokens, capturedAt, failReason, items);
+                toolDefinitionTokens, mcpToolDefinitionTokens, memoryTokens, attachmentTokens,
+                capturedAt, failReason, items);
+    }
+
+    /**
+     * 兼容重载：不带「归因明细」两项（记忆 / 附件）时按未知（null）还原。
+     *
+     * <p>用于只关心其余列的调用方（例如构造夹具）；业务读库一律走全参版本，
+     * 否则会丢掉这两列 —— 它们读回来是诊断归因唯一的证据。</p>
+     *
+     * @param sessionId               会话标识
+     * @param executionId             产出快照的执行
+     * @param state                   持久状态
+     * @param totalTokens             快照总量
+     * @param maxTokens               上下文上限
+     * @param messagesTokens          四类分项之和
+     * @param requestOverheadTokens   请求开销
+     * @param overlapTokens           参数 token
+     * @param toolGroupingDrift       归因漂移
+     * @param toolDefinitionTokens    工具定义 token
+     * @param mcpToolDefinitionTokens MCP 工具定义 token
+     * @param capturedAt              采集时刻
+     * @param failReason              失败原因
+     * @param items                   明细行
+     * @return 还原后的快照（记忆 / 附件两项为 null）
+     */
+    public static SessionTokenAudit restore(Long sessionId, Long executionId,
+                                            TokenAuditPersistedState state, Integer totalTokens,
+                                            Integer maxTokens, Integer messagesTokens,
+                                            Integer requestOverheadTokens, Integer overlapTokens,
+                                            Integer toolGroupingDrift, Integer toolDefinitionTokens,
+                                            Integer mcpToolDefinitionTokens, Instant capturedAt,
+                                            String failReason, List<SessionTokenAuditItem> items) {
+        return restore(sessionId, executionId, state, totalTokens, maxTokens, messagesTokens,
+                requestOverheadTokens, overlapTokens, toolGroupingDrift, toolDefinitionTokens,
+                mcpToolDefinitionTokens, null, null, capturedAt, failReason, items);
     }
 
     /**
@@ -164,6 +220,8 @@ public class SessionTokenAudit {
         this.toolGroupingDrift = null;
         this.toolDefinitionTokens = null;
         this.mcpToolDefinitionTokens = null;
+        this.memoryTokens = null;
+        this.attachmentTokens = null;
         this.failReason = normalizeFailReason(reason);
         this.capturedAt = Instant.now();
         this.items.clear();
