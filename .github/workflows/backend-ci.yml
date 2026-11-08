@@ -14,6 +14,8 @@ on:
       - 'frontend/tests/frameworkDependencies.test.cjs'
       - 'frontend/tests/backendRuntimeMaven.test.cjs'
       - 'frontend/tests/developmentIsolation.test.cjs'
+      - 'frontend/scripts/framework-lock-doctor.mjs'
+      - 'frontend/tests/frameworkLockDoctor.test.cjs'
       # 开发初始化/迁移链：本流水线里的「开发隔离与 Maven 运行时守护」直接跑它们，
       # 改脚本不触发就等于守护对它守护的对象不可见。只列链上真实文件，不整目录。
       - 'scripts/*.ps1'
@@ -37,6 +39,8 @@ on:
       - 'frontend/tests/frameworkDependencies.test.cjs'
       - 'frontend/tests/backendRuntimeMaven.test.cjs'
       - 'frontend/tests/developmentIsolation.test.cjs'
+      - 'frontend/scripts/framework-lock-doctor.mjs'
+      - 'frontend/tests/frameworkLockDoctor.test.cjs'
       - 'scripts/*.ps1'
       - 'scripts/*.java'
       - 'scripts/lib/**'
@@ -71,6 +75,13 @@ jobs:
       - name: 安装构建测试依赖
         working-directory: frontend
         run: npm ci --ignore-scripts
+      - name: 框架锁文件体检（本地漂移 + 远端可达性）
+        # 位置刻意放在「验证源码锁定与 Maven 调用」之前：锁文件指向的 commit 若远端拉不到，
+        # 必须在这里立刻给出明确根因（"锁定的 commit 远端拉不到…先 push 或重新锁定"）。
+        # 放到后面的话要等 backend:verify 深处 git fetch 失败，报错埋在克隆输出里，看不出是哪一行锁写错了。
+        # CI runner 上没有本地框架仓，本地漂移检查会自动 SKIP，只有远端可达性检查生效。
+        working-directory: frontend
+        run: npm run framework:doctor -- --remote
       - name: 验证源码锁定与 Maven 调用
         working-directory: frontend
         run: npm run test:framework-deps
