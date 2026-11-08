@@ -1,5 +1,9 @@
 package com.summit.dp.workflow.application.input;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -39,7 +43,7 @@ class InputWakeupServiceTest {
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
     private final InputWakeupService service = new InputWakeupService(provider(ExecutionRepository.class, executions),
             provider(ExecutionActivity.class, activity), inputs, new InputAutomationPolicy(registry), notices,
-            provider(ExecutionResumeCoordinator.class, resumes), provider(InputTurnContinuation.class, continuations),
+            provider(ResumeAcceptancePort.class, new CoordinatorResumeAcceptance(resumes)), provider(InputTurnContinuation.class, continuations),
             new SuspensionGateChain(List.of(new UserPauseSuspensionGate())));
 
     @AfterEach void close() { service.close(); }

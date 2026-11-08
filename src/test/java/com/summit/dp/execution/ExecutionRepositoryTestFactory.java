@@ -12,6 +12,9 @@ import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.input.MailReceiptFlusher;
+import com.summit.dp.workflow.application.lifecycle.CheckpointCommitParticipant;
+import com.summit.dp.workflow.application.lifecycle.CheckpointLifecycleCoordinator;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
@@ -64,12 +67,7 @@ public final class ExecutionRepositoryTestFactory {
     public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
                                                   ExecutionCheckpointStore checkpointStore,
                                                   ChatTurnService chatTurnService) {
-        return new LocalExecutionRepository(
-                new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper), mock(ApplicationEventPublisher.class)),
-                objectMapper,
-                checkpointStore,
-                projectionProvider(chatTurnService),
-                mailReceipts());
+        return create(mapper, objectMapper, checkpointStore, chatTurnService, mailReceipts());
     }
 
     /** 给定真实回执协作方：需要断言「回执与检查点同事务」的用例用这条。 */
@@ -89,7 +87,28 @@ public final class ExecutionRepositoryTestFactory {
                 objectMapper,
                 checkpointStore,
                 projectionProvider(chatTurnService),
-                mailReceipts);
+                participants(mailReceipts, projectionProvider(chatTurnService)));
+    }
+
+    /**
+     * 与生产同构的构造口：检查点服务、存储、投影与回执协作方都由用例给出。
+     *
+     * <p>参与方必须与仓储共用<b>同一个</b>投影实例，否则用例观察不到收口脚本 —— 那就测的是
+     * fake 的回声，不是真实行为。</p>
+     */
+    public static LocalExecutionRepository create(ExecutionCheckpointService checkpointService,
+                                                  ObjectMapper objectMapper,
+                                                  ExecutionCheckpointStore checkpointStore,
+                                                  ObjectProvider<ExecutionLifecycleProjection> lifecycle,
+                                                  MailReceiptFlusher mailReceipts) {
+        return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore, lifecycle,
+                participants(mailReceipts, lifecycle));
+    }
+
+    /** 检查点提交参与方：事务内回执 flush + 提交后登记与收口，全部走生产实现。 */
+    public static ObjectProvider<CheckpointCommitParticipant> participants(
+            MailReceiptFlusher mailReceipts, ObjectProvider<ExecutionLifecycleProjection> lifecycle) {
+        return provider(new CheckpointLifecycleCoordinator(mailReceipts, new SessionExecutionRegistry(), lifecycle));
     }
 
     /** 邮件回执协作方：只记录调用、不写库。仓储已把它作为必需依赖，用例必须显式给出。 */

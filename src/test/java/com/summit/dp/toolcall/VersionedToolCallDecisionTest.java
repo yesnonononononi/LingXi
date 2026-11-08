@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -142,11 +144,11 @@ class VersionedToolCallDecisionTest {
                 provider(executionControl), provider(executionRepository),
                 new CommandOutcomeResolver(converter, runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
-                        runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
+                        runtimeEvents, transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(resumeCoordinator)),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
-                resumeCoordinator,
+                new CoordinatorResumeAcceptance(resumeCoordinator),
                 asyncExecutor);
         VersionedDecisionContract contract = new VersionedDecisionContract(converter);
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
@@ -154,7 +156,7 @@ class VersionedToolCallDecisionTest {
         TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
                 commandApprovalExecutor, toolCallRepository, converter);
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
-                provider(executionRepository), modelContextService, transactions, resumeCoordinator,
+                provider(executionRepository), modelContextService, transactions, new CoordinatorResumeAcceptance(resumeCoordinator),
                 new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
         service = new VersionedToolCallDecisionService(toolCallRepository, converter, engine, contract);
     }

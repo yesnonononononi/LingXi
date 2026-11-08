@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -141,11 +143,11 @@ class ToolCallDecisionTest {
                 new CommandOutcomeResolver(converter, runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer,
-                        coordinator(resumer)),
+                        new CoordinatorResumeAcceptance(coordinator(resumer))),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
-                coordinator(resumer),
+                new CoordinatorResumeAcceptance(coordinator(resumer)),
                 asyncExecutor);
         // 统一引擎：判定与落库在这里，v1 只保留流式适配与「恢复跑完再关流」的时序。
         CardAvailabilityPolicy availability = new CardAvailabilityPolicy(
@@ -157,7 +159,7 @@ class ToolCallDecisionTest {
         TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
                 commandApprovalExecutor, toolCallRepository, converter);
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
-                provider(executionRepository), modelContextService, transactions, coordinator(resumer),
+                provider(executionRepository), modelContextService, transactions, new CoordinatorResumeAcceptance(coordinator(resumer)),
                 new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
         service = new ToolCallWorkflowService(toolCallRepository, converter, engine,
                 new ToolCallDecisionService(executionIdentity, sseEventPublisher, engine, contract),

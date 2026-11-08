@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -124,7 +126,7 @@ class ResumeSupplementTest {
         versions = new ResumeSupplementVersionRegistry();
         channel = new ResumeSupplementChannel(messages, turns, json, versions);
         service = new ResumeSupplementService(turns, messages, provider(executions), provider(executions),
-                unresolvedToolGate, coordinator, new TransactionTemplate(new DataSourceTransactionManager(database)), json,
+                unresolvedToolGate, new CoordinatorResumeAcceptance(coordinator), new TransactionTemplate(new DataSourceTransactionManager(database)), json,
                 versions);
     }
 

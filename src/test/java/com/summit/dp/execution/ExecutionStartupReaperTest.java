@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
@@ -223,7 +225,7 @@ class ExecutionStartupReaperTest {
 
     private ExecutionStartupReaper reaper() {
         // 本类只关心启动段自身的判定；待收口补偿由专门用例覆盖，这里给一个不执行任务的执行器。
-        return new ExecutionStartupReaper(repository, resumeTaskRepository, resumeCoordinator,
+        return new ExecutionStartupReaper(repository, resumeTaskRepository, new CoordinatorResumeAcceptance(resumeCoordinator),
                 mock(com.summit.core.runtime.loop.ExecutionRepository.class),
                 mock(com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection.class),
                 new com.summit.dp.shared.concurrent.ManagedAsyncExecutor() {

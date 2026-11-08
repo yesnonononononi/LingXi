@@ -112,7 +112,7 @@ class LocalExecutionRepositoryResumeTest {
     private final LocalFileCheckpointStore checkpointStore =
             new LocalFileCheckpointStore(dataDir.toString(), mapper);
     private final LocalExecutionRepository repository =
-            new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
+            ExecutionRepositoryTestFactory.create(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
                     checkpointStore,
                     provider(new ExecutionLifecycleProjection(
                             provider(readiness), provider(tools), provider(subExecutionLifecycle),
@@ -609,7 +609,7 @@ class LocalExecutionRepositoryResumeTest {
     @Test
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
-        LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
+        LocalExecutionRepository isolated = ExecutionRepositoryTestFactory.create(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
                 checkpointStore,
                 provider(new ExecutionLifecycleProjection(provider(failing), provider(tools),
                         provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),

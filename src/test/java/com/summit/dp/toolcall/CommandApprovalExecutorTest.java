@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -161,11 +163,11 @@ class CommandApprovalExecutorTest {
                 provider(executionControl), provider(executionRepository),
                 new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
-                        runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
+                        runtimeEvents, transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(resumeCoordinator)),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, resolver, provider(toolRegistry)),
                 modelContextService,
-                resumeCoordinator,
+                new CoordinatorResumeAcceptance(resumeCoordinator),
                 asyncExecutor);
     }
 
@@ -313,11 +315,11 @@ class CommandApprovalExecutorTest {
                 provider(executionControl), provider(executionRepository),
                 new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
-                        runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
+                        runtimeEvents, transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(resumeCoordinator)),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
-                resumeCoordinator,
+                new CoordinatorResumeAcceptance(resumeCoordinator),
                 asyncExecutor) {
             @Override
             protected void dispatchAsync(Runnable task) {

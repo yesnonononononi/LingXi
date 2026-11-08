@@ -9,6 +9,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.ExecutionCompleteEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
@@ -120,7 +121,7 @@ class SuccessTerminalGateTest {
         events = new RuntimeEventPublisher(List.of(agentEvents));
         agentEvents.init();
 
-        runtime = new LocalExecutionRepository(
+        runtime = ExecutionRepositoryTestFactory.create(
                 new ExecutionCheckpointService(executions, mock(ApplicationEventPublisher.class)),
                 new JsonConfig().objectMapper(),
                 new LocalFileCheckpointStore(checkpointDir.toString(), new JsonConfig().objectMapper()),

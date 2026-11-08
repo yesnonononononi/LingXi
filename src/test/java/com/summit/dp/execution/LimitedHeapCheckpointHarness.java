@@ -103,7 +103,7 @@ public final class LimitedHeapCheckpointHarness {
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
             LocalFileCheckpointStore checkpointStore =
                     new LocalFileCheckpointStore(dataDir.toString(), checkpointMapper);
-            LocalExecutionRepository repository = new LocalExecutionRepository(
+            LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
                     new ExecutionCheckpointService(new ExecutionRepositoryImpl(executions),
                             mock(ApplicationEventPublisher.class)),
                     checkpointMapper,

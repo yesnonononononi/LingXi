@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.application.lifecycle.ResumeDispatchPort;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -246,7 +248,7 @@ class ExecutionStartupReaperBatchTest {
         when(checkpoints.findById(any())).thenAnswer(invocation -> Optional.of(
                 terminalExecution(invocation.getArgument(0))));
         return new ExecutionStartupReaper(executions, resumeTasks,
-                mock(ExecutionResumeCoordinator.class), checkpoints, projection, executor);
+                mock(ResumeDispatchPort.class), checkpoints, projection, executor);
     }
 
     private static Execution terminalExecution(String executionId) {

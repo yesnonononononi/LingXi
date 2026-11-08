@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -127,7 +129,7 @@ class ChoiceAnswersServiceTest {
         ChoiceAnswersValidator validator = new ChoiceAnswersValidator(mapper, messages);
         VersionedDecisionContract contract = new VersionedDecisionContract(converter);
         InteractionDecisionEngine engine = new InteractionDecisionEngine(tools, converter, provider, contexts,
-                transactions, coordinator, new UnresolvedToolSuspensionGate(tools),
+                transactions, new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools),
                 new ImmediateSlotResolutionStrategy(converter, validator, tools),
                 new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), tools, converter));
         service = new ChoiceAnswersService(validator, engine, contract);

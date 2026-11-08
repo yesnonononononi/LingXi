@@ -61,7 +61,7 @@ class LocalFileCheckpointStoreTest {
     /** 假的 execution 表：id → 那一行（含检查点文件标识）。 */
     private final Map<Long, ExecutionPO> rows = new ConcurrentHashMap<>();
 
-    private final LocalExecutionRepository repository = new LocalExecutionRepository(
+    private final LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
             new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence),
                     mock(ApplicationEventPublisher.class)),
             mapper,

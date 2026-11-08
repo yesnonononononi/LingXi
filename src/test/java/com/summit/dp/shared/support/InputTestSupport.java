@@ -1,5 +1,9 @@
 package com.summit.dp.shared.support;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
+
 import java.util.Map;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -44,7 +48,7 @@ public final class InputTestSupport {
                                             ExecutionActivity activity, SessionExecutionRegistry registry, EmailService emails) {
         return new InputWakeupService(provider(ExecutionRepository.class, executions), provider(ExecutionActivity.class, activity),
                 collaboration(registry, emails), new InputAutomationPolicy(registry), mock(InputNoticeReporter.class),
-                provider(ExecutionResumeCoordinator.class, coordinator),
+                provider(ResumeAcceptancePort.class, new CoordinatorResumeAcceptance(coordinator)),
                 provider(InputTurnContinuation.class, mock(InputTurnContinuation.class)),
                 new SuspensionGateChain(List.of(new UserPauseSuspensionGate())));
     }

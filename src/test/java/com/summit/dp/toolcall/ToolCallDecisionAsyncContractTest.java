@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -180,7 +182,7 @@ class ToolCallDecisionAsyncContractTest {
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository),
                         provider(mock(ExecutionActivity.class)))));
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
-                provider(executionRepository), modelContextService, transactions, coordinator,
+                provider(executionRepository), modelContextService, transactions, new CoordinatorResumeAcceptance(coordinator),
                 unresolvedGate,
                 new ImmediateSlotResolutionStrategy(converter,
                         new ChoiceAnswersValidator(new ObjectMapper(), mock(MessageRepository.class)), toolCallRepository),

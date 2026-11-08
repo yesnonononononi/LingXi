@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -211,7 +213,7 @@ class ExecutionStartupReaperResumeSourceTest {
                 provider(ExecutionRepository.class, frameworkExecutions),
                 provider(ExecutionActivity.class, activity),
                 new StartupFailureCloser(executionControl)));
-        return new ExecutionStartupReaper(executions, tasks, coordinator, frameworkExecutions,
+        return new ExecutionStartupReaper(executions, tasks, new CoordinatorResumeAcceptance(coordinator), frameworkExecutions,
                 mock(com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection.class),
                 new ManagedAsyncExecutor() {
                     @Override

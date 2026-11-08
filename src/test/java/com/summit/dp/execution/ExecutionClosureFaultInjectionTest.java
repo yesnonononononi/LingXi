@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.application.lifecycle.ResumeDispatchPort;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -310,7 +312,7 @@ class ExecutionClosureFaultInjectionTest {
     }
 
     private LocalExecutionRepository runtime(ExecutionLifecycleProjection projection) {
-        return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore, provider(projection), new MailReceiptFlusherStub());
+        return ExecutionRepositoryTestFactory.create(checkpointService, objectMapper, checkpointStore, provider(projection), new MailReceiptFlusherStub());
     }
 
     private ExecutionLifecycleProjection projection(ToolCallService cards, ChatTurnService turns,
@@ -331,7 +333,7 @@ class ExecutionClosureFaultInjectionTest {
                                          ExecutionLifecycleProjection projection) {
         // 本类验证的是收口脚本与补偿的语义，不是异步策略：让受管执行器当场跑完，断言才是确定的。
         return new ExecutionStartupReaper(executions, resumeTasks,
-                mock(ExecutionResumeCoordinator.class), checkpointRepository, projection,
+                mock(ResumeDispatchPort.class), checkpointRepository, projection,
                 new com.summit.dp.shared.concurrent.ManagedAsyncExecutor() {
                     @Override
                     public boolean tryExecute(String taskName, Runnable task) {

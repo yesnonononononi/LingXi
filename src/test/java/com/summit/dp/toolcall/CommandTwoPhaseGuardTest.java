@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -235,13 +237,13 @@ class CommandTwoPhaseGuardTest {
                 provider(executions),
                 new CommandOutcomeResolver(converter, mock(RuntimeEventPublisher.class)),
                 new ApprovalFinalizer(tools, converter, contexts, mock(RuntimeEventPublisher.class),
-                        transactions, provider(executionControl), resumer, coordinator),
+                        transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(coordinator)),
                 new UnresolvedToolSuspensionGate(tools),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(registry)),
-                contexts, coordinator, new ManagedAsyncExecutor());
+                contexts, new CoordinatorResumeAcceptance(coordinator), new ManagedAsyncExecutor());
         commandStrategy = new TwoPhaseCommandResolutionStrategy(executor, tools, converter);
         engine = new InteractionDecisionEngine(tools, converter, provider(executions), contexts, transactions,
-                coordinator, new UnresolvedToolSuspensionGate(tools),
+                new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools),
                 new ImmediateSlotResolutionStrategy(converter, mock(ChoiceAnswersValidator.class), tools),
                 commandStrategy);
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(
@@ -345,10 +347,10 @@ class CommandTwoPhaseGuardTest {
                 provider(executionControl), provider(executions),
                 new CommandOutcomeResolver(converter, mock(RuntimeEventPublisher.class)),
                 new ApprovalFinalizer(tools, converter, contexts, mock(RuntimeEventPublisher.class),
-                        transactions, provider(executionControl), resumer, coordinator),
+                        transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(coordinator)),
                 new UnresolvedToolSuspensionGate(tools),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(registry)),
-                contexts, coordinator, new ManagedAsyncExecutor()) {
+                contexts, new CoordinatorResumeAcceptance(coordinator), new ManagedAsyncExecutor()) {
             @Override
             protected void dispatchAsync(Runnable task) {
                 throw new java.util.concurrent.RejectedExecutionException("执行器已关闭");
@@ -427,10 +429,10 @@ class CommandTwoPhaseGuardTest {
                 provider(executionControl), provider(executions),
                 new CommandOutcomeResolver(converter, mock(RuntimeEventPublisher.class)),
                 new ApprovalFinalizer(tools, converter, contexts, mock(RuntimeEventPublisher.class),
-                        transactions, provider(executionControl), resumer, coordinator),
+                        transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(coordinator)),
                 new UnresolvedToolSuspensionGate(tools),
                 new ApprovedCommandRestorer(mapper, workspaces, provider(registry)),
-                contexts, coordinator, new ManagedAsyncExecutor()) {
+                contexts, new CoordinatorResumeAcceptance(coordinator), new ManagedAsyncExecutor()) {
             @Override
             protected void dispatchAsync(Runnable task) {
                 // 进程在这里消失：任务从未运行。
@@ -547,7 +549,7 @@ class CommandTwoPhaseGuardTest {
         this.executor = replacement;
         commandStrategy = new TwoPhaseCommandResolutionStrategy(replacement, tools, converter);
         engine = new InteractionDecisionEngine(tools, converter, provider(executions), contexts, transactions,
-                coordinator, new UnresolvedToolSuspensionGate(tools),
+                new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools),
                 new ImmediateSlotResolutionStrategy(converter, mock(ChoiceAnswersValidator.class), tools),
                 commandStrategy);
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(

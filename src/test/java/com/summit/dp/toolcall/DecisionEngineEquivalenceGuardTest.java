@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -160,7 +162,7 @@ class DecisionEngineEquivalenceGuardTest {
         TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
                 mock(CommandApprovalExecutor.class), tools, converter);
         engine = new InteractionDecisionEngine(tools, converter, provider(executions), contexts, transactions,
-                coordinator, new UnresolvedToolSuspensionGate(tools), immediate, commandStrategy);
+                new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools), immediate, commandStrategy);
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate(
                         provider(executions), provider(activity))));

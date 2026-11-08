@@ -375,7 +375,7 @@ class ConcurrentCheckpointSaveTransactionTest {
         LocalExecutionRepository runtime(ExecutionCheckpointService checkpointService, ObjectMapper objectMapper,
                                          LocalFileCheckpointStore checkpointStore) {
 
-            return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore,
+            return ExecutionRepositoryTestFactory.create(checkpointService, objectMapper, checkpointStore,
                     ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
         }
 

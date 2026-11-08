@@ -1,5 +1,9 @@
 package com.summit.dp.workflow.application.input;
 
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
+
+import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
+
 import com.summit.dp.email.MailClaimLivenessFake;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -209,7 +213,7 @@ class QaPendingMailRedelegationTest {
         InputWakeupService wakeups = new InputWakeupService(provider(ExecutionRepository.class, snapshots),
                 provider(ExecutionActivity.class, mock(ExecutionActivity.class)), fixture.inputs,
                 new InputAutomationPolicy(new SessionExecutionRegistry()), notices,
-                provider(ExecutionResumeCoordinator.class, resumes), provider(InputTurnContinuation.class, continuations),
+                provider(ResumeAcceptancePort.class, new CoordinatorResumeAcceptance(resumes)), provider(InputTurnContinuation.class, continuations),
                 new SuspensionGateChain(List.of(new UserPauseSuspensionGate())));
         try {
             wakeups.resumeIfInputPending(Long.parseLong(completed.getId())).get(5, TimeUnit.SECONDS);

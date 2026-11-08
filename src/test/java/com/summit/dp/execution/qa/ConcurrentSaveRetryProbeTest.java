@@ -84,7 +84,7 @@ class ConcurrentSaveRetryProbeTest {
             ExecutionCheckpointService checkpointService = new ExecutionCheckpointService(spiedRepository,
                     mock(ApplicationEventPublisher.class));
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);
-            LocalExecutionRepository repository = new LocalExecutionRepository(checkpointService, mapper, store,
+            LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(checkpointService, mapper, store,
                     ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
             // 与 Spring 注入的是同一个字段：只有它是真实事务管理器时，保存才会「自己拥有事务」并逐次重试。
             injectTransactionManager(repository, new DataSourceTransactionManager(database));
@@ -143,7 +143,7 @@ class ConcurrentSaveRetryProbeTest {
                     .getMapper(ExecutionMapper.class);
             ExecutionRepositoryImpl spiedRepository = spy(new ExecutionRepositoryImpl(executions));
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);
-            LocalExecutionRepository repository = new LocalExecutionRepository(
+            LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
                     new ExecutionCheckpointService(spiedRepository, mock(ApplicationEventPublisher.class)),
                     mapper, store,
                     ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
@@ -180,7 +180,7 @@ class ConcurrentSaveRetryProbeTest {
             seed(executions, id);
             ExecutionRepositoryImpl spiedRepository = spy(new ExecutionRepositoryImpl(executions));
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);
-            LocalExecutionRepository repository = new LocalExecutionRepository(
+            LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
                     new ExecutionCheckpointService(spiedRepository, mock(ApplicationEventPublisher.class)),
                     mapper, store,
                     ExecutionRepositoryTestFactory.projectionProvider(), ExecutionRepositoryTestFactory.mailReceipts());
