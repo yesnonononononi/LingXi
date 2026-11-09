@@ -45,6 +45,12 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
       if (mutation === 'cleanup' && id.replaceAll('\\', '/').endsWith('/src/components/chat/MarkdownContent.ts')) {
         return source.replace('reveal.expire(performance.now());', 'void 0;');
       }
+      if (id.replaceAll('\\', '/').endsWith('/src/utils/markdown.ts')) {
+        return source.replace(
+          'highlighted = hljs.highlight(str, { language: validLang, ignoreIllegals: true }).value;',
+          'window.hljsCalls = (window.hljsCalls || 0) + 1; highlighted = hljs.highlight(str, { language: validLang, ignoreIllegals: true }).value;'
+        );
+      }
     },
   }, vue()], optimizeDeps: { entries: [path.join(output, 'index.html')] },
     css: { postcss: { plugins: [] } }, server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
@@ -157,6 +163,33 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
   assert.equal(await evaluate('document.querySelectorAll(".block-toolbar .codex-text-arrival").length'), 0);
   await evaluate('document.querySelector(".copy-code-btn").click()');
   await waitFor(`window.copied === ${JSON.stringify(code)}`, '复制内容必须保持原始代码');
+  await waitFor('document.querySelectorAll(".codex-text-arrival").length === 0', '代码块淡入结束后应回收包装', 2000);
+  const blockReuse = await evaluate(`(async () => {
+    const base = '**淡入** 与 \`inline\`\\n\\n- 列表\\n\\n| 列 |\\n| --- |\\n| 内容 |\\n\\n\`\`\`js\\n' + ${JSON.stringify(code)} + '\`\`\`\\n\\n后续段落';
+    await window.setContent(base);
+    await new Promise(resolve => setTimeout(resolve, 550));
+    const prevStrong = document.querySelector('strong');
+    const prevTable = document.querySelector('table');
+    const prevCode = document.querySelector('code.hljs');
+    const hljsBefore = window.hljsCalls || 0;
+    let current = base;
+    for (const chunk of ['，继续', '流式', '追加', '文字']) {
+      current += chunk;
+      await window.setContent(current);
+    }
+    return {
+      sameStrong: document.querySelector('strong') === prevStrong,
+      sameTable: document.querySelector('table') === prevTable,
+      sameCode: document.querySelector('code.hljs') === prevCode,
+      extraHljsCalls: (window.hljsCalls || 0) - hljsBefore,
+    };
+  })()`);
+  assert.deepEqual(blockReuse, {
+    sameStrong: true,
+    sameTable: true,
+    sameCode: true,
+    extraHljsCalls: 0,
+  }, '已定型顶层块与代码块在后续段落流式追加时必须复用节点与高亮结果');
   await fs.writeFile(path.join(output, 'markdown.png'), (await window.webContents.capturePage()).toPNG());
 
   const burst = await evaluate(`(async () => {

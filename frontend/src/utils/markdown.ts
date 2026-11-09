@@ -3,12 +3,26 @@ import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import {t} from '../i18n';
 
+const MAX_HIGHLIGHT_CACHE = 128;
+const highlightCache = new Map<string, string>();
+
 const md = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: true,
   typographer: true,
   highlight: (str: string, lang: string): string => {
+    const copyTitle = t('markdown.copyCode');
+    const copyLabel = t('markdown.copy');
+    const cacheKey = `${lang}\0${copyTitle}\0${copyLabel}\0${str}`;
+    const cached = highlightCache.get(cacheKey);
+    // 流式追加后续段落时复用已完成代码块的高亮结果，避免每个 Token 重复调用 hljs。
+    if (cached !== undefined) {
+      highlightCache.delete(cacheKey);
+      highlightCache.set(cacheKey, cached);
+      return cached;
+    }
+
     let highlighted = '';
     const validLang = lang && hljs.getLanguage(lang) ? lang : '';
     try {
@@ -24,18 +38,24 @@ const md = new MarkdownIt({
     const displayLang = validLang || lang || 'code';
     const encoded = encodeURIComponent(str);
 
-    return `<div class="content-block code-block">` +
+    const html = `<div class="content-block code-block">` +
       `<div class="block-toolbar block-toolbar--code">` +
         `<span class="lang-badge">${md.utils.escapeHtml(displayLang)}</span>` +
-        `<button type="button" class="copy-code-btn" data-code="${encoded}" title="${md.utils.escapeHtml(t('markdown.copyCode'))}">` +
+        `<button type="button" class="copy-code-btn" data-code="${encoded}" title="${md.utils.escapeHtml(copyTitle)}">` +
           `<svg class="copy-icon w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
             `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />` +
           `</svg>` +
-          `<span class="copy-text">${md.utils.escapeHtml(t('markdown.copy'))}</span>` +
+          `<span class="copy-text">${md.utils.escapeHtml(copyLabel)}</span>` +
         `</button>` +
       `</div>` +
       `<pre><code class="hljs ${md.utils.escapeHtml(validLang)}">${highlighted}</code></pre>` +
     `</div>`;
+    if (highlightCache.size >= MAX_HIGHLIGHT_CACHE) {
+      const oldestKey = highlightCache.keys().next().value;
+      if (oldestKey !== undefined) highlightCache.delete(oldestKey);
+    }
+    highlightCache.set(cacheKey, html);
+    return html;
   }
 });
 

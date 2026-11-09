@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {MAX_ARRIVAL_GRAPHEMES, MAX_ARRIVAL_RANGES, TEXT_ARRIVAL_DURATION, ProgressiveFadeState} from '../src/utils/progressiveFade';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const markdownContentPath = path.resolve(__dirname, '../src/components/chat/MarkdownContent.ts');
+const markdownUtilPath = path.resolve(__dirname, '../src/utils/markdown.ts');
 
 test('中文和英文增量立即拥有独立动画，旧片段身份和时刻保持不变', () => {
   for (const chunks of [['你好', '，世界', '。'], ['Hel', 'lo,', '!']]) {
@@ -96,4 +103,46 @@ test('多处 Markdown 标记一起闭合或权威文本改写时，不重新显�
   assert.deepEqual(state.ranges, []);
   state.update('旧字 内容 新增 后续', true, 30);
   assert.deepEqual(state.ranges.map(range => [range.start, range.end]), [[8, 11]]);
+});
+
+test('流式渲染减负守卫：移除 sync 同步重算风暴、尾迹合并单次回收与静态块缓存', () => {
+  const contentSource = fs.readFileSync(markdownContentPath, 'utf8');
+  const markdownSource = fs.readFileSync(markdownUtilPath, 'utf8');
+  assert.ok(contentSource.length > 0 && markdownSource.length > 0, '金丝雀：源码文件必须成功读取');
+
+  const detectsSyncFlush = (source: string): boolean => /flush\s*:\s*['"]sync['"]/.test(source);
+  assert.equal(detectsSyncFlush("{ immediate: true, flush: 'sync' }"), true, '金丝雀：必须能检出 sync 刷新配置');
+  assert.equal(
+    detectsSyncFlush(contentSource),
+    false,
+    'MarkdownContent 不得使用 flush: sync，避免单次网络包内多条 SSE 分片同步重复触发 DOM 解析与分词'
+  );
+
+  const detectsPerSpanMinCleanup = (source: string): boolean =>
+    /Math\.min\(\s*\.\.\.reveal\.ranges\.map\(/.test(source);
+  assert.equal(
+    detectsPerSpanMinCleanup('const deadline = Math.min(...reveal.ranges.map(r => r.started));'),
+    true,
+    '金丝雀：必须能检出按最早区间逐片回收的 Math.min 调度'
+  );
+  assert.equal(
+    detectsPerSpanMinCleanup(contentSource),
+    false,
+    'scheduleCleanup 不得按 Math.min 每 16ms 逐片触发整棵树重渲染'
+  );
+  assert.match(
+    contentSource,
+    /Math\.max\(\s*\.\.\.reveal\.ranges\.map\(/,
+    'scheduleCleanup 必须按批次尾迹最晚结束时刻合并回收'
+  );
+  assert.match(
+    contentSource,
+    /staticBlockCache/,
+    'MarkdownContent 必须缓存已定型顶层块 VNode，避免每个 Token 递归重建已完成段落与代码块'
+  );
+  assert.match(
+    markdownSource,
+    /highlightCache/,
+    'markdown.ts 必须缓存已完成代码块的高亮 HTML，避免后续 Token 重复执行 hljs'
+  );
 });

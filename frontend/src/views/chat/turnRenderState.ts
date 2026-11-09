@@ -110,7 +110,11 @@ function reconcileRenderItems<T extends ResponsePosition & { id?: string }>(prev
   for (const item of current) {
     const update = remaining.get(item.id);
     if (!update) continue;
-    if (item !== update) Object.assign(item, update);
+    if (item !== update) {
+      for (const key of Object.keys(update) as (keyof T)[]) {
+        if (item[key] !== update[key]) item[key] = update[key];
+      }
+    }
     next.push(item);
     remaining.delete(item.id);
   }
@@ -145,7 +149,12 @@ export function renderTurnState(bubble: ChatMessage): void {
   bubble.toolCalls = reconcileRenderItems(bubble.toolCalls, Object.values(state.tools));
   // 正文只由后端 isBody === true 决定，前端不猜工具调用是否出现。
   bubble.content = body?.text ?? '';
-  bubble.responseImageUrls = body?.imageUrls ?? [];
+  const nextImageUrls = body?.imageUrls;
+  if (nextImageUrls) {
+    if (bubble.responseImageUrls !== nextImageUrls) bubble.responseImageUrls = nextImageUrls;
+  } else if (!bubble.responseImageUrls || bubble.responseImageUrls.length > 0) {
+    bubble.responseImageUrls = [];
+  }
   if (bubble.sendError && !bubble.content.endsWith(bubble.sendError)) {
     bubble.content = bubble.content ? `${bubble.content}\n\n${bubble.sendError}` : bubble.sendError;
   }

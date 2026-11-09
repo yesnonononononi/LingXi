@@ -497,5 +497,24 @@ test('ACCEPTED 快照进入流式思考态，且旧 ACCEPTED 快照不能重开�
     sessionId: '7', turnId: '901', status: 'ACCEPTED', viewVersion: '5', blocks: [],
   });
   assert.equal(bubble.isComplete, true, '终态后不得被迟到的 ACCEPTED 快照重开');
+
+  // 流式减负：正文与过程增量不覆盖未变更字段，也不在每次分片时重分配空图片数组
+  const streamCheck = setup();
+  streamCheck.reducer.consume({ ...partial('初步思考', 0, '101', true), order: 0 });
+  streamCheck.reducer.consume({ ...partial('第一段', 0, '101', false), order: 1 });
+  let thoughtSetCount = 0;
+  const rawStep = streamCheck.bubble.thoughtSteps![0]!;
+  streamCheck.bubble.thoughtSteps![0] = new Proxy(rawStep, {
+    set(target, prop, value, receiver) {
+      thoughtSetCount++;
+      return Reflect.set(target, prop, value, receiver);
+    },
+  });
+  const initialImagesRef = streamCheck.bubble.responseImageUrls;
+  assert.ok(Array.isArray(initialImagesRef) && initialImagesRef.length === 0);
+  streamCheck.reducer.consume({ ...partial('继续输出', 3, '101', false), order: 1 });
+  streamCheck.reducer.consume({ ...partial('再输出', 7, '101', false), order: 1 });
+  assert.equal(thoughtSetCount, 0, '未变更的思考条目在后续正文分片到达时不得被重复写入属性');
+  assert.equal(streamCheck.bubble.responseImageUrls, initialImagesRef, '空图片列表在每个 Token 到达时必须保持同一数组引用');
   assert.equal(bubble.isThinking, false);
 });
