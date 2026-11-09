@@ -12,8 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.summit.dp.device.interfaces.ws.DeviceWsProperties;
 
 /**
  * device_* 四个工具的装配。
@@ -23,6 +25,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Slf4j
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(DeviceWsProperties.class)
 public class DeviceToolConfiguration {
 
     /** 观察结果可能上百个节点，给足空间；但仍要有上限，否则一次观察就能撑爆上下文。 */

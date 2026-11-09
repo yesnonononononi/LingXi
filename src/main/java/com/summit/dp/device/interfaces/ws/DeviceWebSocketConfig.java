@@ -6,6 +6,7 @@ import com.summit.dp.device.application.DeviceToolService;
 import com.summit.dp.device.infrastructure.ws.DevicePayloadMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -74,6 +75,7 @@ public class DeviceWebSocketConfig implements WebSocketConfigurer {
 
     /** 放大帧缓冲，并让空闲连接不被容器提前掐断（心跳由协议层负责）。 */
     @Bean
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     public ServletServerContainerFactoryBean deviceWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
         container.setMaxTextMessageBufferSize(MAX_TEXT_BUFFER);
