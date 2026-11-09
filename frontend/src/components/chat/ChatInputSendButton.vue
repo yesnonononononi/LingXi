@@ -25,6 +25,7 @@ const props = defineProps<ChatInputSendButtonSlotProps>();
     data-slot="send-button"
     :class-name="props.isSending ? 'is-stopping' : props.armed ? 'is-ready' : 'is-idle'"
     :pad-color="props.colors.padColor"
+    :pad-border-color="props.colors.borderColor"
     :icon-color="props.colors.iconColor"
     :accent-color="props.colors.accentColor"
     :well-color="props.colors.wellColor"

@@ -54,6 +54,11 @@ export interface ChatInputModelSelectorSlotProps {
 /** 发送/停止按钮的 5 色（对应 928–965 的 slingColors 计算结果）。 */
 export interface ChatInputSendButtonColors {
   readonly padColor: string;
+  /**
+   * 可不传。有值 = 按钮改为**描边态**（背景不填充，只描该色圆环），`padColor` 应同时传 `transparent`。
+   * 停止态用它做「透明底 + 红色描边」，发送态不传。
+   */
+  readonly borderColor?: string;
   readonly iconColor: string;
   readonly accentColor: string;
   readonly wellColor: string;

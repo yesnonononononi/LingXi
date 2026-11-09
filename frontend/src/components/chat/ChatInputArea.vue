@@ -941,9 +941,11 @@ const armed = computed(() => showStop.value || isReadyToSend.value);
 const slingColors = computed(() => {
   const isDark = props.isDark !== false;
   if (showStop.value) {
+    // 停止态：透明底 + 红色描边（描边色同时是图标色与呼吸光环色），与「发送」的实心黑/白键形成对比。
     return {
-      padColor: '#e11d48',
-      iconColor: '#ffffff',
+      padColor: 'transparent',
+      borderColor: '#e11d48',
+      iconColor: '#e11d48',
       accentColor: '#fb7185',
       wellColor: isDark ? '#4c0519' : '#ffe4e6',
       bandColor: '#f43f5e',

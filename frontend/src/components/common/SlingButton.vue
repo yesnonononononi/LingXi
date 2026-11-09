@@ -12,6 +12,15 @@ export type SlingAxis = 'any' | 'horizontal' | 'vertical';
 
 export interface SlingButtonProps {
   padColor?: string;
+  /**
+   * 有值 = 描边态：按键表面不填充（透明底），改用该颜色描边。
+   *
+   * <p>为什么是独立 prop 而不是让调用方传 `padColor: 'transparent'` 自己想办法画边框：
+   * 表面填充、呼吸光环、ready 投影三处都由 `--sl-pad` 推导，填充一旦透明，`color-mix(... var(--sl-pad) ...)`
+   * 的光环会跟着一起消失。这里把「呈现来源」显式拆成 `--sl-pad`（填充/光环基色）与 `--sl-ring`
+   * （光环/描边色），描边态只需把光环切到描边色，视觉不会塌。</p>
+   */
+  padBorderColor?: string;
   iconColor?: string;
   accentColor?: string;
   wellColor?: string;
@@ -64,6 +73,7 @@ const rubberband = (o: number, dim: number, c = 0.55) => (o * dim * c) / (dim + 
 
 const props = withDefaults(defineProps<SlingButtonProps>(), {
   padColor: '#f5f5f5',
+  padBorderColor: '',
   iconColor: '#18181b',
   accentColor: '#f5f5f5',
   wellColor: '#27272a',
@@ -421,6 +431,9 @@ const rootStyle = computed(
       '--sl-size': `${props.size}px`,
       '--sl-svg': `${2 * H.value}px`,
       '--sl-pad': props.padColor,
+      '--sl-pad-border': props.padBorderColor,
+      // 光环基色：描边态跟随描边色，填充态跟随填充色。
+      '--sl-ring': props.padBorderColor || props.padColor,
       '--sl-icon': props.iconColor,
       '--sl-accent': props.accentColor,
       '--sl-well': props.wellColor,
@@ -441,7 +454,7 @@ defineExpose({
   <span
     ref="rootRef"
     class="group/root inline-block relative [width:var(--sl-size)] [height:var(--sl-size)]"
-    :class="className"
+    :class="[className, padBorderColor ? 'is-outline' : '']"
     :data-armed="armed ? '' : undefined"
     :data-sent="sent ? '' : undefined"
     :data-disabled="disabled ? '' : undefined"
@@ -522,17 +535,34 @@ defineExpose({
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.22);
 }
 
+/**
+ * 描边态：表面不填充，只描一圈 `--sl-pad-border`。
+ *
+ * <p>这里不写 `background-color: transparent` —— 填充色由 `--sl-pad` 决定，调用方传 `transparent` 即可，
+ * 少一处「两个地方都能改背景」的歧义。悬停/按下时补一层极淡的同色填充，否则透明圆在浅背景上
+ * 几乎看不出可点。</p>
+ */
+.is-outline .sling-pad-surface {
+  border: 2px solid var(--sl-pad-border);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .is-outline .sling-pad-surface:hover {
+    background-color: color-mix(in srgb, var(--sl-pad-border) 14%, transparent);
+  }
+}
+
 .is-stopping .sling-pad-surface {
-  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--sl-pad) 22%, transparent);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--sl-ring) 22%, transparent);
   animation: sling-stop-breathe 2s ease-in-out infinite;
 }
 
 @keyframes sling-stop-breathe {
   0%, 100% {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--sl-pad) 18%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--sl-ring) 18%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--sl-pad) 30%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--sl-ring) 30%, transparent);
   }
 }
 
