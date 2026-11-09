@@ -8,6 +8,8 @@ const props = defineProps<{
   modelValue: string;
   options: { value: string; label: string; desc?: string }[];
   disabled?: boolean;
+  /** 无匹配选项（如必填项尚未选择）时的占位文案，缺省为空 = 保持旧行为。 */
+  placeholder?: string;
 }>();
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>();
 const open = ref(false);
@@ -99,7 +101,7 @@ onBeforeUnmount(() => {
     :aria-activedescendant="open ? optionId(active) : undefined" aria-haspopup="listbox"
     class="settings-select-trigger" :class="{ 'is-open': open }"
     @click="open ? close() : show()" @keydown="handleKey">
-    <span class="truncate">{{ selectedLabel }}</span>
+    <span class="truncate" :class="{ 'text-lx-faint': !selectedLabel }">{{ selectedLabel || placeholder }}</span>
     <svg class="settings-select-chevron" :class="{ 'is-open': open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
       <path d="m6 9 6 6 6-6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
@@ -139,7 +141,7 @@ onBeforeUnmount(() => {
 .settings-select-option { @apply flex min-h-9 items-center justify-between gap-3 rounded-lg px-3 py-2 cursor-pointer select-none; transition: background-color 120ms, color 120ms; }
 .settings-select-option.is-active { @apply bg-zinc-100 text-zinc-900 dark:bg-white/10 dark:text-white; }
 .settings-select-option.is-selected { @apply font-medium text-zinc-900 dark:text-white; }
-.settings-select-option-desc { @apply mt-0.5 text-lx-fs-sm font-normal leading-snug text-lx-faint; }
+.settings-select-option-desc { @apply mt-0.5 line-clamp-2 text-lx-fs-sm font-normal leading-snug text-lx-faint; }
 .settings-select-enter-active { transition: opacity 160ms ease-out, transform 160ms ease-out; }
 .settings-select-leave-active { transition: opacity 120ms ease-in, transform 120ms ease-in; pointer-events: none; }
 .settings-select-enter-from, .settings-select-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }

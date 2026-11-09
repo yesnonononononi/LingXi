@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import {computed} from 'vue';
+import LxListCard from '../../../components/common/LxListCard.vue';
+import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import {TEAM_SIZE_MAX, TEAM_SIZE_MIN, useTeamsTab} from './useTeamsTab';
 import {useTheme} from '../../../composables/useTheme';
 import {useI18n} from '../../../i18n';
@@ -42,6 +44,22 @@ const {
   handleSaveTeam,
   handleDeleteTeam,
 } = useTeamsTab(() => emit('modelUpdated'));
+
+/**
+ * 管理者下拉的选项模型：`SettingsSelect` 只认字符串 value，
+ * 这里统一转成 String(id) 展示，回写时再映射回后端原始 id（number|string），
+ * 否则 `agentIds.includes(commanderAgentId)` 会因类型不一致判成「管理者不是成员」。
+ */
+const commanderOptions = computed(() => selectedTeamAgents.value.map(agent => ({
+  value: String(agent.id),
+  label: `${avatarOptionPrefix(agent.avatar)}${agent.name}`,
+  desc: agent.description || undefined,
+})));
+
+const selectCommander = (value: string) => {
+  const agent = selectedTeamAgents.value.find(item => String(item.id) === value);
+  teamForm.value.commanderAgentId = agent ? agent.id : '';
+};
 </script>
 
 <template>
@@ -139,15 +157,10 @@ const {
 
       <!-- 团队卡片列表 -->
       <div v-else class="space-y-3">
-        <div
+        <LxListCard
           v-for="team in teamsList"
           :key="team.id"
-          class="px-4 py-3.5 rounded-2xl border transition-all"
-          :class="[
-            isDark
-              ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300'
-          ]"
+          :is-dark="isDark"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="space-y-1.5 min-w-0 flex-1">
@@ -260,7 +273,7 @@ const {
               </button>
             </div>
           </div>
-        </div>
+        </LxListCard>
       </div>
     </div>
 
@@ -436,18 +449,16 @@ const {
                         {{ t('settings.teams.selectMembersFirst') }}
           </div>
 
-          <select
+          <SettingsSelect
             v-else
-            v-model="teamForm.commanderAgentId"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border outline-none text-xs cursor-pointer [color-scheme:dark]',
-              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
-            ]"
-          >
-            <option v-for="agent in selectedTeamAgents" :key="agent.id" :value="agent.id" class="bg-black text-white">
-              {{ avatarOptionPrefix(agent.avatar) }}{{ agent.name }} {{ agent.description ? `(${agent.description})` : '' }}
-            </option>
-          </select>
+            id="team-commander-select"
+            data-testid="team-commander-select"
+            :label="t('settings.teams.commanderLabel')"
+            :placeholder="t('chat.team.managerPlaceholder')"
+            :model-value="String(teamForm.commanderAgentId ?? '')"
+            :options="commanderOptions"
+            @update:model-value="selectCommander"
+          />
         </div>
 
         <!-- 底部操作按钮 -->
