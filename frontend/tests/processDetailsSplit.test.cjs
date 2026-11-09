@@ -91,15 +91,21 @@ test('钩子契约：thinking-content / markdown / 工具行细节类名与文�
   assert.match(text(root), /a\.md/, '工具行目标仍渲染');
 });
 
-test('testid 集合契约：过程区对外钩子一个不少，且不多出未被断言的节点', async t => {
-  const root = await mountExpanded(t, messageWithRows());
-  const ids = findAll(root, node => node.props?.['data-testid'] !== undefined)
+test('testid 集合契约：过程区对外钩子一个不少，正文未到前不挂整轮收束栏', async t => {
+  const message = messageWithRows();
+  const root = await mountExpanded(t, message);
+  const collectIds = () => findAll(root, node => node.props?.['data-testid'] !== undefined)
     .map(node => String(node.props['data-testid']));
-  for (const required of ['whole-process-toggle', 'whole-process-content',
+  const beforeBodyIds = collectIds();
+  assert.equal(beforeBodyIds.includes('whole-process-toggle'), false, '正文未到前不显示 whole-process-toggle');
+  for (const required of ['whole-process-content',
     'process-segment', 'process-segment-toggle', 'process-segment-title',
     'process-segment-preview', 'process-segment-details', 'process-text']) {
-    assert.ok(ids.includes(required), `缺少对外钩子：${required}`);
+    assert.ok(beforeBodyIds.includes(required), `缺少对外钩子：${required}`);
   }
+  message.content = '最终正文';
+  await nextTick();
+  assert.ok(collectIds().includes('whole-process-toggle'), '正文到达后挂出 whole-process-toggle');
   const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
   assert.ok(['live', 'summary'].includes(String(segment.props['data-process-mode'])),
     'data-process-mode 值域不变');

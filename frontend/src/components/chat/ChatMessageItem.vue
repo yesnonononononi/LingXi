@@ -81,7 +81,7 @@
     <div v-else class="flex flex-col items-start w-full max-w-lx-chat space-y-2.5">
       
       <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process">
-        <button type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
+        <button v-if="hasBody" type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
           class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer"
           :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
           @click="processExpansion = !wholeProcessExpanded">
@@ -299,7 +299,8 @@ const processViews = computed(() => deriveProcessViews(
 
 // 挂起和等待审批仍未结束，不能用实时输出状态决定收起；用户操作后保留其选择。
 const processExpansion = ref<boolean | null>(null);
-const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsOngoing.value);
+const hasBody = computed(() => Boolean(props.message.content || props.message.responseImageUrls?.length));
+const wholeProcessExpanded = computed(() => !hasBody.value || (processExpansion.value ?? processIsOngoing.value));
 // 整组总览直接合并各段摘要，不再对全部 items 跑第二趟 summarizeProcess（每 token 省一趟）。
 const wholeProcessSummary = computed(() => processViews.value.totals);
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));

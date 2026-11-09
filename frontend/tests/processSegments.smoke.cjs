@@ -76,6 +76,10 @@ window.growStreamingThought = async () => {
   message.value.thoughtSteps[0].content += '\\n\\n' + '流式核对最新过程。\\n\\n'.repeat(5);
   await window.flush();
 };
+window.setManyProcessesBody = async () => {
+  message.value.content = '核对完成。';
+  await window.flush();
+};
 window.showCompactProcess = async kind => {
   turn.value = {status:'COMPLETED'};
   message.value = {id:'compact-' + kind,role:'assistant',turnId:'902',timestamp:0,
@@ -176,19 +180,20 @@ watch(detailsBox, box => { if (box) box.scrollTop = box.scrollHeight; }, {flush:
   assert.equal(failureGeometry.status, '1 项状态未知');
   await evaluate('document.querySelector("[data-testid=process-segment-toggle]").click(); window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'true');
-  await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'false');
-  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-content]").getBoundingClientRect().height'), 0);
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 0);
-  assert.doesNotMatch(await evaluate('document.body.innerText'), /现在开始修改配置|修改完成，继续核对依赖/);
+  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]")'), null, '正文尚未到达前不显示执行过程总收束栏');
   await evaluate('window.appendThought()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'false');
-  await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]")'), null);
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'true');
   // 用户只展开过 summary 段；live 段仍保持默认折叠（新契约：细节从不自动铺开）。
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 1);
   assert.equal(await evaluate('document.querySelector("[data-process-mode=live] [data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'false');
   await evaluate('window.finish()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-content]").getBoundingClientRect().height'), 0);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 0);
+  assert.match(await evaluate('document.body.innerText'), /配置修改与检查已完成/);
+  assert.doesNotMatch(await evaluate('document.body.innerText'), /现在开始修改配置|修改完成，继续核对依赖/);
+  await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'true');
   assert.deepEqual(await evaluate('[...document.querySelectorAll("[data-testid=process-segment-toggle]")].map(button=>button.getAttribute("aria-expanded"))'), ['true','false']);
   assert.equal(await evaluate('document.querySelectorAll("[data-process-mode=live]").length'), 0);
@@ -311,6 +316,8 @@ watch(detailsBox, box => { if (box) box.scrollTop = box.scrollHeight; }, {flush:
     for (const box of await readScrollGeometry()) {
       assert.ok(Math.abs(box.content - box.height - box.top) <= 1, '重新展开时从最新过程开始');
     }
+    assert.equal(await evaluate(`document.querySelector('[data-testid=whole-process-toggle]')`), null, '多段过程在正文到达前不显示总收束栏');
+    await evaluate('window.setManyProcessesBody()');
     await evaluate(`document.querySelectorAll('[data-testid=process-segment-details]').forEach(box => { box.scrollTop = 0; });
       document.querySelector('[data-testid=whole-process-toggle]').click(); window.flush()`);
     await evaluate(`document.querySelector('[data-testid=whole-process-toggle]').click(); window.flush()`);

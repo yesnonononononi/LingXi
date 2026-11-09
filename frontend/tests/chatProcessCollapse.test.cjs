@@ -428,12 +428,18 @@ test('整轮过程可折叠：历史默认收起，文本与分段一起隐藏�
   assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
 });
 
-test('整轮默认跟随执行阶段，用户手动选择不被流式增长和终态覆盖', async t => {
+test('整轮默认跟随执行阶段，正文到达前不显示总收束栏，用户手动选择不被流式增长和终态覆盖', async t => {
   const answer = message({ content: '', isComplete: false, isThinking: true, aiMessages: [],
     thoughtSteps: [{ id: 's1', title: '思考', content: '推理', order: 0, status: 'running' }] });
   const root = mount(t, answer);
-  const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
-  assert.ok(whole);
+  const resolveWhole = () => find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  const resolveContent = () => find(root, node => node.props?.['data-testid'] === 'whole-process-content');
+  assert.equal(resolveWhole(), undefined, '正文尚未到达前不显示执行过程总收束栏');
+  assert.notEqual(resolveContent().style.display, 'none', '无总收束栏时过程内容直接展开');
+  answer.content = '最终正文';
+  await nextTick();
+  const whole = resolveWhole();
+  assert.ok(whole, '正文到达后显示执行过程总收束栏');
   assert.equal(whole.props['aria-expanded'], true);
   whole.props.onClick();
   await nextTick();
@@ -447,16 +453,28 @@ test('整轮默认跟随执行阶段，用户手动选择不被流式增长和�
   whole.props.onClick();
   await nextTick();
   assert.equal(whole.props['aria-expanded'], true);
-
   const untouched = message({ content: '', isComplete: false, isThinking: true,
     thoughtSteps: [{ id: 's2', title: '思考', content: '推理', order: 0, status: 'running' }] });
   const second = mount(t, untouched);
-  const automatic = find(second, node => node.props?.['data-testid'] === 'whole-process-toggle');
-  assert.equal(automatic.props['aria-expanded'], true);
+  const resolveAuto = () => find(second, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  const secondContent = () => find(second, node => node.props?.['data-testid'] === 'whole-process-content');
+  assert.equal(resolveAuto(), undefined, '正文到达前不显示总收束栏');
+  assert.notEqual(secondContent().style.display, 'none');
   untouched.isThinking = false;
   untouched.isComplete = true;
   await nextTick();
-  assert.equal(automatic.props['aria-expanded'], false, '用户没操作过时，终态自动收起整轮过程');
+  assert.equal(resolveAuto(), undefined, '终态但仍无正文时也不显示总收束栏');
+  assert.notEqual(secondContent().style.display, 'none', '无正文时过程内容不能被收起隐藏');
+  untouched.content = '最终正文';
+  await nextTick();
+  assert.ok(resolveAuto(), '正文到达后出现总收束栏');
+  assert.equal(resolveAuto().props['aria-expanded'], false, '用户没操作过时，终态正文到达后自动收起整轮过程');
+  const imageOnly = message({ content: '', responseImageUrls: ['https://example.com/1.png'], isComplete: true, isThinking: false,
+    thoughtSteps: [{ id: 's3', title: '思考', content: '生成图片', order: 0, status: 'success' }] });
+  const imageRoot = mount(t, imageOnly);
+  const imageWhole = find(imageRoot, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  assert.ok(imageWhole, '纯图片正文同样显示执行过程总收束栏');
+  assert.equal(imageWhole.props['aria-expanded'], false);
 });
 
 test('切入未结束会话时展开整轮过程，挂起与等待审批也直接显示过程文本', t => {
@@ -464,20 +482,26 @@ test('切入未结束会话时展开整轮过程，挂起与等待审批也直�
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   for (const status of ['ACCEPTED', 'RUNNING', 'WAITING', 'COMPLETED', 'FAILED', 'CANCELLED']) {
     for (const withTurn of [false, true]) {
+      const active = ['ACCEPTED', 'RUNNING', 'WAITING'].includes(status);
       const [answer] = aggregateRecordsByIdentity('7', { '900': {
         sessionId: '7', turnId: '900', status, viewVersion: '1', blocks: [
           { blockId: 'text:101', responseId: '101', order: 1, type: 'TEXT', status: 'COMPLETE',
             isBody: false, text: '已检查配置，正在准备下一步' },
           { blockId: 'tool:approval', responseId: '102', order: 2, type: 'TOOL', status: 'PROMISED',
             toolCallId: 'approval', toolName: AgentToolName.ExecuteCommand, arguments: '{"command":"npm test"}' },
+          ...(!active ? [{ blockId: 'text:103', responseId: '103', order: 3, type: 'TEXT', status: 'COMPLETE',
+            isBody: true, text: '最终正文' }] : []),
         ],
       } });
       const root = mount(t, reactive(answer), withTurn ? { turn: { status } } : {});
       const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
       const content = find(root, node => node.props?.['data-testid'] === 'whole-process-content');
-      const active = ['ACCEPTED', 'RUNNING', 'WAITING'].includes(status);
       const context = `${status}, withTurn=${withTurn}`;
-      assert.equal(whole.props['aria-expanded'], active, context);
+      if (active) {
+        assert.equal(whole, undefined, `${context}: 正文未到前不显示总收束栏`);
+      } else {
+        assert.equal(whole.props['aria-expanded'], false, context);
+      }
       assert.equal(content.style.display === 'none', !active, context);
       assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length,
         active ? 1 : 0, context);
@@ -495,14 +519,23 @@ test('整轮过程在挂起和恢复间保持展开，手动折叠后仍尊重�
     const answer = message({ content: '', isComplete: false, isThinking: true });
     const turn = reactive({ status: 'RUNNING' });
     const root = mount(t, answer, withTurn ? { turn } : {});
-    const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
-    assert.equal(whole.props['aria-expanded'], true);
+    const resolveWhole = () => find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+    const content = () => find(root, node => node.props?.['data-testid'] === 'whole-process-content');
+    assert.equal(resolveWhole(), undefined, '正文未到时不显示总收束栏');
+    assert.notEqual(content().style.display, 'none');
 
     answer.isThinking = false;
     answer.isSuspended = true;
     turn.status = 'WAITING';
     await nextTick();
-    assert.equal(whole.props['aria-expanded'], true, '挂起不能把正在阅读的过程收起来');
+    assert.equal(resolveWhole(), undefined);
+    assert.notEqual(content().style.display, 'none', '挂起不能把正在阅读的过程收起来');
+
+    answer.content = '最终正文';
+    await nextTick();
+    const whole = resolveWhole();
+    assert.ok(whole, '正文到达后出现总收束栏');
+    assert.equal(whole.props['aria-expanded'], true, '挂起期间正文已在时默认仍保持展开');
     whole.props.onClick();
     await nextTick();
     answer.aiMessages[0].text += '补充说明';
