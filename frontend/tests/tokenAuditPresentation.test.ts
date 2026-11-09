@@ -21,7 +21,7 @@ import {
   formatTokenLimit,
   hasContextSection,
   hasOverheadSection,
-  resolveCapturingDrift,
+  resolveSnapshotDrift,
   resolveContextSummary,
   resolveMessageRows,
   resolveToolDefinitionRows,
@@ -259,12 +259,14 @@ test('框架比例原样展示：父级无总量时普通工具明细仍可展�
 
 // ─────────────────────────── 兜底状态 ───────────────────────────
 
-test('resolveCapturingDrift：仅 CAPTURING 且有差额时给出提示值', () => {
+test('resolveSnapshotDrift：保留正负差额，相等或未知时不提示', () => {
   const capturing: SessionTokenAuditSnapshot = {...collectedAudit(), displayState: 'CAPTURING', driftTokens: 1234};
-  assert.equal(resolveCapturingDrift(capturing), 1234);
-  assert.equal(resolveCapturingDrift({...capturing, driftTokens: null}), null);
-  assert.equal(resolveCapturingDrift(collectedAudit()), null);
-  assert.equal(resolveCapturingDrift(null), null);
+  assert.equal(resolveSnapshotDrift(capturing), 1234);
+  assert.equal(resolveSnapshotDrift({...capturing, driftTokens: -3351}), -3351);
+  assert.equal(resolveSnapshotDrift({...capturing, driftTokens: 0}), null);
+  assert.equal(resolveSnapshotDrift({...capturing, driftTokens: null}), null);
+  assert.equal(resolveSnapshotDrift(collectedAudit()), null);
+  assert.equal(resolveSnapshotDrift(null), null);
 });
 
 // ─────────────────── 流推送存储（与 GET 同构、同一解析路径） ───────────────────

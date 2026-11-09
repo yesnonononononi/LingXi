@@ -33,7 +33,7 @@
  */
 export type TokenAuditNumeric = number | string | null | undefined;
 
-/** 快照采集状态。决定面板渲染哪一档内容。 */
+/** `CAPTURING` 表示已采集快照与当前上下文总量有差额。 */
 export type TokenAuditDisplayState = 'NOT_COLLECTED' | 'CAPTURING' | 'COLLECTED' | 'FAILED';
 
 /** 消息分项类型：系统 / 用户 / 模型 / 工具返回。 */

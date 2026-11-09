@@ -41,7 +41,7 @@ import {
   formatTokenLimit,
   hasContextSection,
   hasOverheadSection,
-  resolveCapturingDrift,
+  resolveSnapshotDrift,
   resolveContextSummary,
   resolveMessageRows,
   resolveToolDefinitionRows,
@@ -120,7 +120,7 @@ const overheadExpanded = ref(false);
 const displayState = computed<string>(() => displayed.value?.displayState ?? 'NOT_COLLECTED');
 const isFailed = computed<boolean>(() => displayState.value === 'FAILED');
 const isNotCollected = computed<boolean>(() => displayState.value === 'NOT_COLLECTED');
-/** 只有「已采集 / 追平中」才展示快照分项：未采集与采集失败都不得画分项（哪怕后端带了零值）。 */
+/** 两种已采集状态都展示快照分项，差额只说明取样不同。 */
 const showBreakdown = computed<boolean>(
   () => displayState.value === 'COLLECTED' || displayState.value === 'CAPTURING'
 );
@@ -133,7 +133,12 @@ const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools
 const ordinaryToolRows = computed(() => resolveOrdinaryToolRows(displayed.value?.tools));
 const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
 const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
-const capturingDrift = computed<number | null>(() => resolveCapturingDrift(displayed.value));
+const snapshotDriftText = computed(() => {
+  const drift = resolveSnapshotDrift(displayed.value);
+  if (drift === null) return null;
+  const label = drift > 0 ? 'chat.tokenAudit.contextAboveSnapshot' : 'chat.tokenAudit.contextBelowSnapshot';
+  return t(label, {tokens: formatTokenAmount(Math.abs(drift))});
+});
 
 const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
 const definitionRows = computed(() => resolveToolDefinitionRows(displayed.value?.requestOverhead));
@@ -379,10 +384,10 @@ watch(
                 <div class="flex min-w-0 items-center gap-1.5">
                   <span class="shrink-0 text-lx-fs-md font-semibold text-lx-primary">{{ t('chat.tokenAudit.messageComposition') }}</span>
                   <span
-                    v-if="capturingDrift !== null"
+                    v-if="snapshotDriftText !== null"
                     data-testid="token-audit-capturing"
-                    class="truncate text-lx-fs-2xs text-lx-warning"
-                  >{{ t('chat.tokenAudit.capturing', {tokens: formatTokenAmount(capturingDrift)}) }}</span>
+                    class="truncate text-lx-fs-2xs text-lx-muted"
+                  >{{ snapshotDriftText }}</span>
                 </div>
               </div>
               <p v-if="executing" data-testid="token-audit-executing" class="text-lx-fs-2xs text-lx-muted">

@@ -315,15 +315,11 @@ export function hasOverheadSection(overhead?: TokenAuditRequestOverhead | null):
   return resolveToolDefinitionRows(overhead).length > 0;
 }
 
-/**
- * `CAPTURING` 态需要提示的追平差额。
- *
- * @param audit 已归一快照
- * @returns 差额 token 数；非 CAPTURING 态或差额未知返回 null
- */
-export function resolveCapturingDrift(audit?: SessionTokenAuditSnapshot | null): number | null {
+/** 当前上下文与审计快照的有符号差额。 */
+export function resolveSnapshotDrift(audit?: SessionTokenAuditSnapshot | null): number | null {
   if (audit?.displayState !== 'CAPTURING') return null;
-  return isKnownNumber(audit.driftTokens) ? audit.driftTokens : null;
+  const drift = audit.driftTokens;
+  return isKnownNumber(drift) && drift !== 0 ? drift : null;
 }
 
 /**

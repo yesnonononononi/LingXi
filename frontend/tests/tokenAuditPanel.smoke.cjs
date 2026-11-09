@@ -177,15 +177,21 @@ window.ready = true;`);
 
   const next = structuredClone(SNAPSHOT);
   next.displayState = 'CAPTURING';
+  next.liveTotalTokens = next.totalTokens + 80;
   next.driftTokens = 80;
   next.tools.ordinary.items[0].argumentTokens = 800;
   next.tools.ordinary.items[0].outputTokens = 200;
   await run(`window.__inject(${JSON.stringify(next)})`);
+  const driftText = () => evaluate(`document.querySelector('[data-testid="token-audit-capturing"]')?.innerText`);
+  assert(await driftText() === '当前比快照多 80 token', '正差额应显示当前比快照多多少');
   const updated = await readToolItem(0);
   assert(/入参\s+800/.test(updated.text) && /输出\s+200/.test(updated.text), '推送应更新已展开行');
   assert(Math.abs(updated.widths[0] / updated.widths[1] - 4) < 0.05, '色条应随推送更新为 4:1');
   await run('window.__setExecuting(false)');
   assert(await evaluate(`!document.querySelector('${executingHint}')`), '执行结束后应收起提示');
+  const smallerContext = {...next, liveTotalTokens: 167570, totalTokens: 170921, driftTokens: -3351};
+  await run(`window.__inject(${JSON.stringify(smallerContext)})`);
+  assert(await driftText() === '当前比快照少 3,351 token', '负差额应显示当前比快照少多少');
 
   const data = await evaluate(`(() => {
     const panel = document.querySelector('[data-testid="token-audit-panel"]');
