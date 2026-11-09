@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const http = require('node:http');
-const { transformSync } = require('esbuild');
+const { buildSync, transformSync } = require('esbuild');
 // 路径比较只有一个口径：先把路径规范成长名（见 tests/support/tmp-paths.cjs 文件头）。
 // 绝不直接用 os.tmpdir() 的拼写：Windows 上它可能是 8.3 短名（CI 的 RUNNER~1），
 // 而 PowerShell / javac 回报的是长名，字符串比较必然假失败。
@@ -36,6 +36,45 @@ test('开发页面忽略旧桌面地址，安装版保留默认地址和用户�
     assert.equal(module.exports.getApiBaseUrl(), development ? '' : configured);
     configured = '';
     assert.equal(module.exports.getApiBaseUrl(), development ? '' : 'http://localhost:8088');
+  }
+});
+
+test('绝对路径预览在开发版走页面代理，安装版使用后端地址', () => {
+  const vue = { ...require('vue'), onBeforeUnmount: () => {} };
+  const origin = 'http://127.0.0.1:59174';
+  const configured = 'http://127.0.0.1:9000';
+  for (const development of [true, false]) {
+    const { outputFiles } = buildSync({
+      entryPoints: [path.join(__dirname, '../src/composables/useFilePreview.ts')],
+      bundle: true, write: false, format: 'cjs', external: ['vue'],
+      logOverride: { 'empty-import-meta': 'silent' },
+      define: {
+        'import.meta.env.DEV': String(development),
+        'import.meta.env.PROD': String(!development),
+        'import.meta.env.VITE_API_BASE_URL': 'undefined',
+      },
+    });
+    const baseUrls = [];
+    const module = { exports: {} };
+    let storedUrl = configured;
+    vm.runInNewContext(outputFiles[0].text, {
+      module, exports: module.exports, require: () => vue,
+      localStorage: { getItem: key => key === 'lingxi_api_base_url' ? storedUrl : null },
+      window: {
+        location: { origin: development ? origin : 'file://' },
+        electronAPI: {
+          previewFile: async request => {
+            baseUrls.push(request.baseUrl);
+            return { ok: true, data: {} };
+          },
+        },
+      },
+    });
+    const { openFilePreview } = module.exports.useFilePreview();
+    openFilePreview('101', path.join(__dirname, 'first.java'));
+    storedUrl = '';
+    openFilePreview('101', path.join(__dirname, 'second.java'));
+    assert.deepEqual(baseUrls, development ? [origin, origin] : [configured, 'http://localhost:8088']);
   }
 });
 

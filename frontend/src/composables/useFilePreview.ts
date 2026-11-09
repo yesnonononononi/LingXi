@@ -40,7 +40,8 @@ export function useFilePreview() {
   };
 
   const openFilePreview = (sessionId: string | number | undefined, path: string) => {
-    const baseUrl = getApiBaseUrl() || 'http://localhost:8088';
+    // 主进程需要完整地址，才能和开发页面走同一个 Vite 代理。
+    const baseUrl = getApiBaseUrl() || window.location.origin;
     const normalizedPath = path.replace(/\\/g, '/');
     const id = `${baseUrl}:${sessionId}:${normalizedPath.toLowerCase()}`;
     let tab = fileTabs.value.find(item => item.id === id);
