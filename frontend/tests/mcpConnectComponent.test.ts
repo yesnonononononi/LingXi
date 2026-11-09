@@ -78,7 +78,13 @@ test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功
   });
 
   const renderer = createRenderer<Element, Element>({
-    createElement: tag => element(tag),
+    // select 的 v-model 走 runtime-dom 的 vModelSelect 指令，它会读 el.options / el.multiple，
+    // 假元素不补这几个字段就会在挂载阶段的 directive hook 里抛 TypeError（既有隐患，顺手补齐）。
+    createElement: tag => {
+      const node = element(tag);
+      if (tag === 'select') Object.assign(node, { options: [], multiple: false, selectedIndex: -1, value: '' });
+      return node;
+    },
     createText: value => element('#text', value),
     createComment: value => element('#comment', value),
     setText: (node, value) => { node.text = value; },

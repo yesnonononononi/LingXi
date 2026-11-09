@@ -2,6 +2,7 @@
 import {computed} from 'vue';
 import {useMcpTab} from './useMcpTab';
 import {MCP_TRANSPORTS} from '../../../types/chat';
+import type {McpVO} from '../../../types/chat';
 import {useTheme} from '../../../composables/useTheme';
 import {useI18n} from '../../../i18n';
 
@@ -46,6 +47,54 @@ const {
   countEnvVars,
   resolveConnectionLabel,
 } = useMcpTab();
+
+/**
+ * 卡片样式令牌：徽标 / 操作按钮的语义色只在这里定义一次。
+ * 模板只声明语义（提示：chipClass('ok')、actionClass('danger')），
+ * 禁止再往模板里塞 `isDark ? '...' : '...'` 的条件 class —— 那正是「一行挤 4 个徽标 + 5 个彩色按钮，
+ * 宽度不够就乱换行」的来源：颜色散落各处，改一次配色要翻 20 个三元表达式。
+ */
+type ChipTone = 'muted' | 'ok' | 'warn' | 'danger';
+type ActionTone = ChipTone | 'accent' | 'primary';
+
+const CHIP_BASE =
+  'inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-lx-fs-xs font-medium leading-none whitespace-nowrap';
+const CHIP_TONES: Record<ChipTone, string> = {
+  muted: 'border-zinc-200 bg-black/5 text-zinc-500 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300',
+  ok: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  warn: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  danger: 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400',
+};
+const chipClass = (tone: ChipTone) => `${CHIP_BASE} ${CHIP_TONES[tone]}`;
+
+const ACTION_BASE =
+  'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-lx-fs-sm font-medium whitespace-nowrap transition-colors disabled:cursor-wait disabled:opacity-60';
+const ACTION_TONES: Record<ActionTone, string> = {
+  muted: 'text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/5',
+  ok: 'text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/10',
+  accent: 'text-blue-600 hover:bg-blue-500/10 dark:text-cyan-400 dark:hover:bg-white/5',
+  warn: 'text-amber-600 hover:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/10',
+  danger: 'text-red-500 hover:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/10',
+  primary: 'text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/10',
+};
+const actionClass = (tone: ActionTone) => `${ACTION_BASE} ${ACTION_TONES[tone]}`;
+
+/**
+ * 卡片底部的只读元信息，顺序固定：请求头 → 环境变量 → 执行超时 → 输出上限。
+ * 只返回非空项，模板据此用「·」分隔，避免空 span 撑出多余间距。
+ */
+const metaOf = (item: McpVO) => {
+  const meta: string[] = [];
+  const headers = countHeaders(item);
+  const env = countEnvVars(item);
+  if (headers > 0) meta.push(t('settings.mcp.headersCount', { count: headers }));
+  if (env > 0) meta.push(t('settings.mcp.envCount', { count: env }));
+  if (item.executionTimeout) {
+    meta.push(t('settings.mcp.timeoutSeconds', { seconds: Math.round(item.executionTimeout / 1000) }));
+  }
+  if (item.maxOutput) meta.push(t('settings.mcp.maxOutputValue', { value: item.maxOutput }));
+  return meta;
+};
 </script>
 
 <template>
@@ -107,167 +156,134 @@ const {
         {{ t('settings.mcp.empty') }}
       </div>
 
-      <!-- 服务卡片列表 -->
+      <!-- 服务卡片列表。分区固定：标题行 → 描述 → 端点 → 元信息行 → 操作条。
+           操作按钮独占一行（右对齐），不再与标题抢宽度；容器变窄时换行只发生在同类元素之间。 -->
       <div v-else class="space-y-3">
         <div
           v-for="item in mcpList"
           :key="item.id"
-          class="px-4 py-3.5 rounded-2xl border transition-all"
+          class="rounded-2xl border px-4 py-3 transition-colors"
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
               : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300'
           ]"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-sm font-semibold text-zinc-900 dark:text-white dark:text-glow-subtle truncate">
-                  {{ item.name }}
-                </span>
-                <!-- 启停状态徽标 -->
-                <span
-                  class="px-1.5 py-0.5 rounded-md text-lx-fs-xs font-medium shrink-0 border"
-                  :class="item.status === 0
-                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-zinc-200 border-zinc-300 text-zinc-500')
-                    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
-                >
-                  {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
-                </span>
-                <!-- 运行连接状态：来自共享连接表，与「测试连接」结果无关 -->
-                <span
-                  v-if="mcpStates[item.id] && mcpStates[item.id]!.state !== 'DISABLED'"
-                  data-testid="mcp-connection-state"
-                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-lx-fs-xs font-medium shrink-0 border"
-                  :class="{
-                    'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400': mcpStates[item.id]!.state === 'CONNECTED',
-                    'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400': mcpStates[item.id]!.state === 'FAILED',
-                    'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400': mcpStates[item.id]!.state === 'DISCONNECTED',
-                  }"
-                >
-                  <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>
-                  {{ mcpStates[item.id]!.state === 'CONNECTED'
-                    ? t('settings.mcp.stateConnected', { count: mcpStates[item.id]!.toolCount ?? 0 })
-                    : mcpStates[item.id]!.state === 'FAILED' ? t('settings.mcp.stateFailed') : t('settings.mcp.stateDisconnected') }}
-                </span>
-                <!-- 传输方式 -->
-                <span
-                  class="px-1.5 py-0.5 rounded-md text-lx-fs-xs shrink-0 border"
-                  :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-zinc-200 text-zinc-500'"
-                >
-                  {{ item.transport || 'streamable-http' }}
-                </span>
-                <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
-                                <span
-                  v-if="item.transport === 'stdio'"
-                  class="inline-flex shrink-0 cursor-help"
-                  :title="t('settings.mcp.stdioHintTitle')"
-                >
-                  <svg
-                    class="w-3.5 h-3.5"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="#f59e0b"
-                    stroke-width="1.4"
-                    aria-hidden="true"
-                  >
-                    <circle cx="8" cy="8" r="7" fill="#ffffff" />
-                    <path stroke-linecap="round" d="M8 4.6v4.2" />
-                    <circle cx="8" cy="11.4" r="0.85" fill="#f59e0b" stroke="none" />
-                  </svg>
-                </span>
-              </div>
-
-              <!-- 服务描述：随提示词下发给模型，让模型判断该服务是否相关 -->
-              <p v-if="item.description" class="text-xs text-lx-tertiary mt-1 break-words">
-                {{ item.description }}
-              </p>
-
-              <!-- 连接信息：http 系显示端点，stdio 显示启动命令 -->
-              <p class="text-xs text-lx-muted mt-1 break-all font-mono">
-                {{ resolveConnectionLabel(item) }}
-              </p>
-
-              <div class="flex items-center gap-3 mt-1.5 text-lx-fs-sm text-lx-faint">
-                                <span v-if="countHeaders(item) > 0">
-                  {{ t('settings.mcp.headersCount', { count: countHeaders(item) }) }}
-                </span>
-                <span v-if="countEnvVars(item) > 0">
-                  {{ t('settings.mcp.envCount', { count: countEnvVars(item) }) }}
-                </span>
-                <span v-if="item.executionTimeout">
-                  {{ t('settings.mcp.timeoutSeconds', { seconds: Math.round(item.executionTimeout / 1000) }) }}
-                </span>
-                <span v-if="item.maxOutput">
-                  {{ t('settings.mcp.maxOutputValue', { value: item.maxOutput }) }}
-                </span>
-              </div>
-            </div>
-
-            <!-- 操作区 -->
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                v-if="item.status !== 0"
-                type="button"
-                data-testid="mcp-reconnect"
-                :disabled="mcpReconnecting[item.id]"
-                :aria-busy="mcpReconnecting[item.id] || false"
-                @click="handleReconnectMcp(item)"
-                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-lx-fs-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition cursor-pointer disabled:cursor-wait"
-              >
-                <span v-if="mcpReconnecting[item.id]" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-                {{ mcpReconnecting[item.id] ? t('settings.mcp.reconnecting') : t('settings.mcp.reconnect') }}
-              </button>
-              <button
-                type="button"
-                @click="handleToggleMcp(item)"
-                :class="[
-                  'px-2 py-1 rounded-lg text-lx-fs-sm font-medium transition cursor-pointer',
-                  isDark
-                    ? 'text-zinc-300 hover:bg-white/5'
-                    : 'text-zinc-600 hover:bg-black/5'
-                ]"
-              >
-                {{ item.status === 0 ? t('settings.mcp.enable') : t('settings.mcp.disable') }}
-              </button>
-              <button
-                type="button"
-                @click="startEditMcp(item)"
-                :class="[
-                  'px-2 py-1 rounded-lg text-lx-fs-sm font-medium transition cursor-pointer',
-                  isDark
-                    ? 'text-cyan-400 hover:bg-white/5'
-                    : 'text-blue-600 hover:bg-black/5'
-                ]"
-                            >
-                {{ t('common.edit') }}
-              </button>
-              <button
-                type="button"
-                @click="handleDeleteMcp(item)"
-                :class="[
-                  'px-2 py-1 rounded-lg text-lx-fs-sm font-medium transition cursor-pointer',
-                  isDark
-                    ? 'text-red-400 hover:bg-white/5'
-                    : 'text-red-500 hover:bg-black/5'
-                ]"
-                            >
-                {{ t('common.remove') }}
-              </button>
-              <button
-                type="button"
-                :disabled="mcpRowConnections[item.id]?.loading"
-                :aria-busy="mcpRowConnections[item.id]?.loading || false"
-                @click="handleConnectSavedMcp(item)"
-                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-lx-fs-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer disabled:cursor-wait"
-              >
-                <span v-if="mcpRowConnections[item.id]?.loading" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-                {{ mcpRowConnections[item.id]?.loading ? t('settings.mcp.connecting') : mcpRowConnections[item.id]?.success ? t('settings.mcp.connected') : t('settings.mcp.testConnection') }}
-              </button>
-            </div>
+          <!-- 标题行：名称（可截断）+ 运行态（实时，来自共享连接表）+ 配置态（存库开关） -->
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <span
+              class="min-w-0 max-w-full truncate text-sm font-semibold text-zinc-900 dark:text-white dark:text-glow-subtle"
+              :title="item.name"
+            >
+              {{ item.name }}
+            </span>
+            <span
+              v-if="mcpStates[item.id] && mcpStates[item.id]!.state !== 'DISABLED'"
+              data-testid="mcp-connection-state"
+              :class="chipClass(mcpStates[item.id]!.state === 'CONNECTED' ? 'ok' : mcpStates[item.id]!.state === 'FAILED' ? 'danger' : 'warn')"
+            >
+              <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>
+              {{ mcpStates[item.id]!.state === 'CONNECTED'
+                ? t('settings.mcp.stateConnected', { count: mcpStates[item.id]!.toolCount ?? 0 })
+                : mcpStates[item.id]!.state === 'FAILED' ? t('settings.mcp.stateFailed') : t('settings.mcp.stateDisconnected') }}
+            </span>
+            <!-- 配置态徽标只用中性色：配色语义留给运行态，避免两个绿色标签在标题行打架 -->
+            <span :class="chipClass('muted')">
+              {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
+            </span>
           </div>
-          <p v-if="mcpStates[item.id]?.state === 'FAILED' && mcpStates[item.id]?.error" class="mt-2 text-xs text-red-500 dark:text-red-400 break-all">{{ t('settings.mcp.stateFailedReason', { reason: mcpStates[item.id]?.error ?? '' }) }}</p>
-          <p v-if="mcpRowConnections[item.id]?.error" role="alert" class="mt-2 text-xs text-red-500 dark:text-red-400">{{ mcpRowConnections[item.id]?.error }}</p>
+
+          <!-- 服务描述：随提示词下发给模型，让模型判断该服务是否相关 -->
+          <p v-if="item.description" class="mt-1.5 text-xs leading-relaxed text-lx-tertiary line-clamp-2 break-words">
+            {{ item.description }}
+          </p>
+
+          <!-- 连接信息：http 系显示端点，stdio 显示启动命令；单行省略 + 原生 tooltip，长地址不再把卡片撑高 -->
+          <p class="mt-1 truncate font-mono text-xs text-lx-muted" :title="resolveConnectionLabel(item)">
+            {{ resolveConnectionLabel(item) }}
+          </p>
+
+          <!-- 元信息行：传输方式固定在最前（作为事实标签），其余只读参数统一灰阶、「·」分隔 -->
+          <div class="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-lx-fs-sm text-lx-faint">
+            <span :class="chipClass('muted')">{{ item.transport || 'streamable-http' }}</span>
+            <!-- stdio 环境依赖提示：悬停说明 npx/PATH 限制（描边图标，深浅主题都不刺眼） -->
+            <span
+              v-if="item.transport === 'stdio'"
+              class="inline-flex shrink-0 cursor-help text-amber-500"
+              :title="t('settings.mcp.stdioHintTitle')"
+            >
+              <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <circle cx="8" cy="8" r="7" />
+                <path stroke-linecap="round" d="M8 4.6v4.2" />
+                <circle cx="8" cy="11.4" r="0.85" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <template v-for="(meta, index) in metaOf(item)" :key="meta">
+              <span v-if="index > 0" aria-hidden="true" class="opacity-40">·</span>
+              <span class="whitespace-nowrap">{{ meta }}</span>
+            </template>
+          </div>
+
+          <!-- 错误区：与内容同宽，浅底红灯，长文本允许任意断行，不挤成一条超长横线 -->
+          <p
+            v-if="mcpStates[item.id]?.state === 'FAILED' && mcpStates[item.id]?.error"
+            class="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-xs leading-relaxed text-red-500 break-all dark:text-red-400"
+          >{{ t('settings.mcp.stateFailedReason', { reason: mcpStates[item.id]?.error ?? '' }) }}</p>
+          <p
+            v-if="mcpRowConnections[item.id]?.error"
+            role="alert"
+            class="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-xs leading-relaxed text-red-500 break-all dark:text-red-400"
+          >{{ mcpRowConnections[item.id]?.error }}</p>
+
+          <!-- 操作条：与内容分区，统一右对齐；删除固定在测试连接前，避免误点 -->
+          <div
+            class="mt-3 flex flex-wrap items-center justify-end gap-1 border-t pt-2.5"
+            :class="isDark ? 'border-white/10' : 'border-zinc-200'"
+          >
+            <button
+              v-if="item.status !== 0"
+              type="button"
+              data-testid="mcp-reconnect"
+              :disabled="mcpReconnecting[item.id]"
+              :aria-busy="mcpReconnecting[item.id] || false"
+              @click="handleReconnectMcp(item)"
+              :class="actionClass('warn')"
+            >
+              <span v-if="mcpReconnecting[item.id]" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+              {{ mcpReconnecting[item.id] ? t('settings.mcp.reconnecting') : t('settings.mcp.reconnect') }}
+            </button>
+            <button
+              type="button"
+              @click="handleToggleMcp(item)"
+              :class="actionClass('muted')"
+            >
+              {{ item.status === 0 ? t('settings.mcp.enable') : t('settings.mcp.disable') }}
+            </button>
+            <button
+              type="button"
+              @click="startEditMcp(item)"
+              :class="actionClass('accent')"
+            >
+              {{ t('common.edit') }}
+            </button>
+            <button
+              type="button"
+              @click="handleDeleteMcp(item)"
+              :class="actionClass('danger')"
+            >
+              {{ t('common.remove') }}
+            </button>
+            <button
+              type="button"
+              :disabled="mcpRowConnections[item.id]?.loading"
+              :aria-busy="mcpRowConnections[item.id]?.loading || false"
+              @click="handleConnectSavedMcp(item)"
+              :class="actionClass('primary')"
+            >
+              <span v-if="mcpRowConnections[item.id]?.loading" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+              {{ mcpRowConnections[item.id]?.loading ? t('settings.mcp.connecting') : mcpRowConnections[item.id]?.success ? t('settings.mcp.connected') : t('settings.mcp.testConnection') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -301,18 +317,18 @@ const {
           <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
           <span
             v-if="mcpForm.transport === 'stdio'"
-            class="inline-flex cursor-help"
+            class="inline-flex cursor-help text-amber-500"
             :title="t('settings.mcp.stdioHintTitle')"
           >
             <svg
               class="w-3.5 h-3.5"
               viewBox="0 0 16 16"
               fill="none"
-              stroke="#f59e0b"
+              stroke="currentColor"
               stroke-width="1.4"
               aria-hidden="true"
             >
-              <circle cx="8" cy="8" r="7" fill="#ffffff" />
+              <circle cx="8" cy="8" r="7" />
               <path stroke-linecap="round" d="M8 4.6v4.2" />
               <circle cx="8" cy="11.4" r="0.85" fill="#f59e0b" stroke="none" />
             </svg>
