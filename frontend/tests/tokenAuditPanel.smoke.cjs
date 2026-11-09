@@ -57,7 +57,15 @@ const SNAPSHOT = {
       })),
     },
   },
-  requestOverhead: {itemCount: 2, toolDefinition: {tokens: 3200, ratio: 0.021}, mcpToolDefinition: {tokens: 2100, ratio: 0.014}},
+  requestOverhead: {
+    itemCount: 2,
+    // 父项 = 内核 + MCP + 残差：残差故意给负数，守住「其它」行不能让子项大过父项
+    tokens: 5250,
+    ratio: 0.02625,
+    toolDefinition: {tokens: 3200, ratio: 0.021},
+    mcpToolDefinition: {tokens: 2100, ratio: 0.014},
+    framingResidualTokens: -50,
+  },
 };
 
 app.whenReady().then(async () => {
@@ -240,6 +248,26 @@ window.ready = true;`);
   // ④ 面板整体仍受控：12 个工具 + 3 个分组也没把浮层顶穿
   assert(data.panelHeight !== null && data.panelHeight <= 720,
     '面板高度超出可视区（' + data.panelHeight + 'px），说明限高没生效');
+
+  // ④' 其他消息：父项必须有金额，展开后子项 + 「其它」残差必须等于父项
+  const overheadTotal = await evaluate(`document.querySelector('[data-testid="token-audit-overhead-total"]')?.innerText || ''`);
+  assert(/5,250/.test(overheadTotal), '其他消息父项必须显示金额，实际: ' + JSON.stringify(overheadTotal));
+  assert(/2\.6%/.test(overheadTotal), '其他消息父项应显示占比，实际: ' + JSON.stringify(overheadTotal));
+  await run(`window.clickSelector('[data-testid="token-audit-overhead"] button')`);
+  const framing = await evaluate(`(() => {
+    const root = document.querySelector('[data-testid="token-audit-definitions"]');
+    const hint = document.querySelector('[data-testid="token-audit-framing-hint"]');
+    return {
+      text: root ? root.innerText : '',
+      rows: root ? root.children.length : 0,
+      title: hint ? hint.getAttribute('title') : null,
+    };
+  })()`);
+  assert(framing.rows === 4, '定义小节省略表头后应有内核 / MCP / 其它三行，实际行数: ' + framing.rows);
+  assert(/其它/.test(framing.text) && /-50/.test(framing.text),
+    '残差应显示为「其它」并保留负号，实际: ' + JSON.stringify(framing.text));
+  assert(!!framing.title && /分词/.test(framing.title),
+    '「其它」旁应有感叹号提示，hover 说明是分词偏差，实际: ' + JSON.stringify(framing.title));
 
   // ⑤ 刷新重算已移除：按钮不存在，且任何交互都不得再打 POST
   assert(await evaluate(`document.querySelector('[data-testid="token-audit-refresh"]') === null`),

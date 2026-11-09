@@ -32,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -85,23 +87,60 @@ class SessionTokenAuditApiTest {
     }
 
     @Test
-    @DisplayName("工具定义比例原样透传，不补父级比例与残差")
+    @DisplayName("工具定义子项比例原样透传，父项金额与框架残差由业务侧补齐")
     void requestOverheadPreservesFrameworkRatios() throws Exception {
-        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(collected()));
+        SessionTokenAudit audit = collected();
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(audit));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
                 Session.builder().id(SESSION_ID).contextTokenCount(148200L).contextMaxTokens(200000)
                         .contextRatio(0.7412345).build()));
+        Integer overhead = audit.getRequestOverheadTokens();
+        Integer residual = audit.framingResidualTokens();
         createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
-                .andExpect(jsonPath("$.data.requestOverhead.tokens").doesNotExist())
-                .andExpect(jsonPath("$.data.requestOverhead.ratio").doesNotExist())
+                .andExpect(jsonPath("$.data.requestOverhead.tokens").value(overhead))
+                .andExpect(jsonPath("$.data.requestOverhead.ratio").value((double) overhead / 200000))
                 .andExpect(jsonPath("$.data.requestOverhead.itemCount").value(2))
                 .andExpect(jsonPath("$.data.requestOverhead.toolDefinition.tokens").value(8200))
                 .andExpect(jsonPath("$.data.requestOverhead.toolDefinition.ratio").value(0.0412345))
                 .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition.ratio").value(0.0156789))
-                .andExpect(jsonPath("$.data.requestOverhead.framingResidualTokens").doesNotExist())
+                .andExpect(jsonPath("$.data.requestOverhead.framingResidualTokens").value(residual))
                 .andExpect(jsonPath("$.data.liveRatio").value(0.7412345))
                 .andExpect(jsonPath("$.data.remainingTokens").value(51800))
                 .andExpect(jsonPath("$.data.remainingRatio").value(1 - 0.7412345));
+    }
+
+    @Test
+    @DisplayName("恒等式：其他消息父项 = 内核工具定义 + MCP 工具定义 + 框架残差")
+    void requestOverheadParentEqualsItsThreeParts() {
+        SessionTokenAudit audit = collected();
+        Integer overhead = audit.getRequestOverheadTokens();
+        Integer kernel = audit.getToolDefinitionTokens();
+        Integer mcp = audit.getMcpToolDefinitionTokens();
+        Integer residual = audit.framingResidualTokens();
+        assertNotNull(overhead, "父项金额必须已知，否则前端只能显示一个 N 项徽标");
+        assertNotNull(kernel, "内核工具定义必须已知");
+        assertNotNull(mcp, "MCP 工具定义必须已知");
+        assertNotNull(residual, "残差必须已知");
+        assertEquals(overhead.intValue(), kernel + mcp + residual,
+                "父项必须等于三项之和：缺任何一项都会出现「子项大过父项」");
+    }
+
+    @Test
+    @DisplayName("工具定义全失败时仍下发其他消息父项，整块不得消失")
+    void overheadParentSurvivesFailedDefinitions() throws Exception {
+        TokenAuditDocument document = frameworkDocument();
+        document.otherTokens().toolDefinitionTokens().setStatus(AuditStatus.FAILED);
+        document.otherTokens().mcpToolDefinitionTokens().setStatus(AuditStatus.FAILED);
+        SessionTokenAudit audit = collected();
+        audit.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(document));
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(audit));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).contextTokenCount(148200L).contextMaxTokens(200000).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.requestOverhead.tokens").value(audit.getRequestOverheadTokens()))
+                .andExpect(jsonPath("$.data.requestOverhead.toolDefinition").doesNotExist())
+                .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition").doesNotExist())
+                .andExpect(jsonPath("$.data.messages.length()").value(5));
     }
 
     @Test
@@ -200,6 +239,28 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.driftTokens").doesNotExist())
                 .andExpect(jsonPath("$.data.displayState").value("COLLECTED"))
                 .andExpect(jsonPath("$.data.totalTokens").value(148200));
+    }
+
+    @Test
+    @DisplayName("实时总量：负数按未知、0 是真实 0、超 Integer 饱和，绝不溢出成负数")
+    void liveTokensBoundaries() throws Exception {
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(collected()));
+
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).contextTokenCount(-1L).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.liveTotalTokens").doesNotExist())
+                .andExpect(jsonPath("$.data.capturedAt").exists());
+
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).contextTokenCount(0L).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.liveTotalTokens").value(0));
+
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).contextTokenCount(Long.MAX_VALUE).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.liveTotalTokens").value(Integer.MAX_VALUE));
     }
 
     private MockMvc createMvc() {

@@ -49,6 +49,7 @@ import {
   resolveSnapshotDrift,
   resolveContextSummary,
   resolveMessageRows,
+  resolveOverheadSummary,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   countToolGroupKinds,
@@ -146,6 +147,7 @@ const snapshotDriftText = computed(() => {
 
 const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
 const definitionRows = computed(() => resolveToolDefinitionRows(displayed.value?.requestOverhead));
+const overheadSummary = computed(() => resolveOverheadSummary(displayed.value?.requestOverhead));
 const overheadItemCount = computed<number | null>(() => {
   const count = displayed.value?.requestOverhead?.itemCount;
   return typeof count === 'number' && Number.isFinite(count) ? count : null;
@@ -524,6 +526,19 @@ watch(
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                   </svg>
                 </span>
+                <!-- 父项金额：不显示它，消息构成永远合不上（用户只能看到两个子项裸奔） -->
+                <span
+                  v-if="overheadSummary.tokens !== null"
+                  data-testid="token-audit-overhead-total"
+                  class="flex shrink-0 items-center gap-2 font-mono"
+                >
+                  <span class="text-lx-fs-sm font-medium text-lx-primary">
+                    {{ formatTokenAmount(overheadSummary.tokens) }}<span class="text-lx-fs-2xs text-lx-faint"> {{ t('chat.tokenAudit.tokenUnit') }}</span>
+                  </span>
+                  <span v-if="overheadSummary.ratioPercent" class="w-9 text-right text-lx-fs-xs text-lx-faint">
+                    {{ overheadSummary.ratioPercent }}
+                  </span>
+                </span>
               </button>
 
               <div
@@ -536,7 +551,23 @@ watch(
                   <span>{{ t('chat.tokenAudit.ratio') }}</span>
                 </div>
                 <div v-for="row in definitionRows" :key="row.key" class="flex items-center justify-between gap-2">
-                  <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(row.labelKey) }}</span>
+                  <span class="flex min-w-0 items-center gap-1">
+                    <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(row.labelKey) }}</span>
+                    <!-- 「其它」是框架分词口径差：内部术语说不清，挂个感叹号，hover 时讲人话 -->
+                    <span
+                      v-if="row.key === 'framing'"
+                      data-testid="token-audit-framing-hint"
+                      class="inline-flex shrink-0 cursor-help text-lx-faint"
+                      :title="t('chat.tokenAudit.definition.framingHint')"
+                      :aria-label="t('chat.tokenAudit.definition.framingHint')"
+                    >
+                      <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" stroke-width="2" />
+                        <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
+                        <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
+                      </svg>
+                    </span>
+                  </span>
                   <span class="flex shrink-0 items-center gap-1.5 font-mono text-lx-fs-xs">
                     <span class="text-lx-secondary">{{ formatTokenAmount(row.tokens) }}</span>
                     <span v-if="ratioText(row.ratio)" class="w-9 text-right text-lx-faint">{{ ratioText(row.ratio) }}</span>

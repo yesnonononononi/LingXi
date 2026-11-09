@@ -24,6 +24,7 @@ import {
   resolveSnapshotDrift,
   resolveContextSummary,
   resolveMessageRows,
+  resolveOverheadSummary,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   resolveOrdinaryToolRows,
@@ -232,7 +233,7 @@ test('resolveToolDefinitionRows：缺失的定义项跳过，不渲染 0', () =>
   assert.deepEqual(resolveToolDefinitionRows(null), []);
 });
 
-test('框架比例原样展示：父级无总量时普通工具明细仍可展开，残差不展示', () => {
+test('框架比例原样展示：负残差作为「其它」行渲染，父项缺失时不凭空生成', () => {
   const snapshot = normalizeTokenAuditSnapshot({
     sessionId: 'framework', displayState: 'COLLECTED',
     tools: {tokens: 100, ratio: 0.012345,
@@ -247,14 +248,48 @@ test('框架比例原样展示：父级无总量时普通工具明细仍可展�
   assert.deepEqual(resolveOrdinaryToolRows(snapshot.tools), [
     {toolName: 'example', tokens: 13, argumentTokens: null, outputTokens: null},
   ]);
-  assert.equal('framingResidualTokens' in snapshot.requestOverhead!, false);
-  assert.equal('ratio' in snapshot.requestOverhead!, false);
-  assert.equal('tokens' in snapshot.requestOverhead!, false);
+  assert.equal('ratio' in snapshot.requestOverhead!, true);
+  assert.equal(snapshot.requestOverhead!.ratio, null, '后端没给父项比例时必须为 null，不猜 0');
+  assert.equal(snapshot.requestOverhead!.framingResidualTokens, -50);
   const definitions = resolveToolDefinitionRows(snapshot.requestOverhead);
-  assert.deepEqual(definitions.map(row => row.key), ['kernel', 'mcp']);
+  assert.deepEqual(definitions.map(row => row.key), ['kernel', 'mcp', 'framing']);
   assert.equal(definitions[0]!.ratio, 0.0012345);
   assert.equal(definitions[1]!.ratio, 0.0023456);
+  assert.equal(definitions[2]!.tokens, -50, '负残差必须照常展示，否则子项会大过父项');
+  assert.equal(definitions[2]!.ratio, null, '残差没有后端比例，前端不许除法补假百分比');
+  assert.equal(definitions[2]!.labelKey, 'chat.tokenAudit.definition.framing');
   assert.equal(hasOverheadSection(snapshot.requestOverhead), true);
+});
+
+test('残差为 0 或未知时不渲染「其它」行：两项已精确解释，多一行 0 是噪声', () => {
+  const zero = resolveToolDefinitionRows({
+    tokens: 15200, ratio: 0.106, itemCount: 2, framingResidualTokens: 0,
+    toolDefinition: {tokens: 10400, ratio: 0.684}, mcpToolDefinition: {tokens: 4800, ratio: 0.316},
+  });
+  assert.deepEqual(zero.map(row => row.key), ['kernel', 'mcp']);
+
+  const unknown = resolveToolDefinitionRows({
+    tokens: 15200, ratio: 0.106, itemCount: 2, framingResidualTokens: null,
+    toolDefinition: {tokens: 10400, ratio: 0.684}, mcpToolDefinition: {tokens: 4800, ratio: 0.316},
+  });
+  assert.deepEqual(unknown.map(row => row.key), ['kernel', 'mcp'], '未知不猜 0，也不渲染');
+});
+
+test('resolveOverheadSummary：父项金额与占比消费后端字段，未知保持 null', () => {
+  const both = resolveOverheadSummary({tokens: 5154, ratio: 0.019978, itemCount: 1});
+  assert.equal(both.tokens, 5154);
+  assert.equal(both.ratioPercent, '2.0%');
+
+  assert.deepEqual(resolveOverheadSummary({tokens: 5154, ratio: null, itemCount: null}),
+    {tokens: 5154, ratioPercent: null});
+  assert.deepEqual(resolveOverheadSummary({tokens: null, itemCount: 2}), {tokens: null, ratioPercent: null});
+  assert.deepEqual(resolveOverheadSummary(null), {tokens: null, ratioPercent: null});
+});
+
+test('hasOverheadSection：子项全失败但父项金额已知时仍渲染整块', () => {
+  assert.equal(hasOverheadSection({tokens: 5154, ratio: 0.02, itemCount: 0}), true,
+    '父项是已知事实，整块消失会让用户以为没有其他消息');
+  assert.equal(hasOverheadSection({itemCount: 0}), false, '父项与子项全未知才不渲染');
 });
 
 // ─────────────────────────── 兜底状态 ───────────────────────────
@@ -338,7 +373,7 @@ test('推送按事件自带 sessionId 归属，与兜底根会话无关（后端
   resetTokenAuditStream();
 });
 
-test('无推送时回退 GET；有推送时推送优先；手动刷新清掉推送后 GET 立刻生效', () => {
+test('无推送时回退 GET；有推送时推送优先；清除推送后 GET 立刻生效', () => {
   resetTokenAuditStream();
   const fetched = collectedAudit();
   const pushed: SessionTokenAuditSnapshot = {...collectedAudit(), liveTotalTokens: 42};

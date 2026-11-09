@@ -77,7 +77,7 @@ export type TokenAuditToolItemRow = TokenAuditToolItem & {tokens: number};
 
 /** 框架提供的工具定义分项。 */
 export interface TokenAuditDefinitionRow {
-  key: 'kernel' | 'mcp';
+  key: 'kernel' | 'mcp' | 'framing';
   labelKey: string;
   tokens: number;
   ratio?: number | null;
@@ -279,7 +279,22 @@ export function resolveOrdinaryToolRows(tools?: TokenAuditToolBreakdown | null):
   return (tools?.ordinary?.items ?? []).filter(isRenderableAmount);
 }
 
-/** 只展示框架提供的定义分项，不为闭合总和补残差。 */
+/**
+ * 工具定义子项派生：内核、MCP，以及「其它」（框架分词残差）。
+ *
+ * <p>残差行规则（三条都不能省）：</p>
+ * <ol>
+ *   <li><b>已知且非 0</b> 才渲染：为 0 说明内核 + MCP 已精确解释父项，多一行 0 是噪声；</li>
+ *   <li><b>未知（null）不渲染、不猜 0</b>；</li>
+ *   <li><b>负值照常渲染</b>：残差本来就可正可负，它是框架「合并计数 vs 分开计数」的分词差异；
+ *       隐藏负数会让子项合计大于父项，正是用户看到「儿子比爹大」的根因。</li>
+ * </ol>
+ *
+ * <p>残差行 `ratio` 恒为 `null`：后端不给它的比例，前端<b>不许</b>做除法补一个假百分比。</p>
+ *
+ * @param overhead 请求开销小节
+ * @returns 可渲染的子项行；无子项时返回空数组
+ */
 export function resolveToolDefinitionRows(
   overhead?: TokenAuditRequestOverhead | null
 ): TokenAuditDefinitionRow[] {
@@ -301,18 +316,47 @@ export function resolveToolDefinitionRows(
       ratio: overhead.mcpToolDefinition.ratio ?? null,
     });
   }
+  const residual = overhead.framingResidualTokens;
+  if (isKnownNumber(residual) && residual !== 0) {
+    rows.push({
+      key: 'framing',
+      labelKey: 'chat.tokenAudit.definition.framing',
+      tokens: residual,
+      ratio: null,
+    });
+  }
   return rows;
 }
 
 /**
- * 工具定义小节只在存在框架明细时渲染。
+ * 「其他消息」父项的金额与占比。
+ *
+ * <p>父项 = 快照总量 − 消息构成合计，是后端落库的事实。父项不显示的话，
+ * 消息构成永远合不上（曾出现「父项无金额、子项比父项大」的读图事故）。</p>
+ *
+ * @param overhead 请求开销小节
+ * @returns 金额与百分比文本；未知项为 null（模板据此整块不渲染）
+ */
+export function resolveOverheadSummary(
+  overhead?: TokenAuditRequestOverhead | null
+): {tokens: number | null; ratioPercent: string | null} {
+  const tokens = isKnownNumber(overhead?.tokens) ? overhead.tokens : null;
+  const ratio = isKnownNumber(overhead?.ratio) ? overhead.ratio : null;
+  return {tokens, ratioPercent: formatRatioPercent(ratio) || null};
+}
+
+/**
+ * 工具定义小节（含父项金额）是否渲染。
+ *
+ * <p>父项金额已知就渲染：两个子项都审计失败时，框架不给子项，但父项仍是可闭合的事实，
+ * 整块消失只会让用户以为「没有其他消息」。</p>
  *
  * @param overhead 请求开销小节
  * @returns 可渲染返回 true
  */
 export function hasOverheadSection(overhead?: TokenAuditRequestOverhead | null): boolean {
   if (!overhead) return false;
-  return resolveToolDefinitionRows(overhead).length > 0;
+  return isKnownNumber(overhead.tokens) || resolveToolDefinitionRows(overhead).length > 0;
 }
 
 /** 当前上下文与审计快照的有符号差额。 */

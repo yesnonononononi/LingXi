@@ -87,12 +87,18 @@ export interface TokenAuditCategoryVO extends TokenAuditAmountVO {
 
 /** 「其他消息」（请求开销）小节。 */
 export interface TokenAuditRequestOverheadVO {
+  /** 父项总量（= 快照总量 − 消息构成合计）。 */
+  tokens?: TokenAuditNumeric;
+  /** 父项占上下文上限的比例。 */
+  ratio?: TokenAuditNumeric;
   /** 项数，即「其他消息 N 项」里的 N。**必须取此字段，不得用数组长度替代**。 */
   itemCount?: TokenAuditNumeric;
   /** 内核工具定义占用。 */
   toolDefinition?: TokenAuditAmountVO | null;
   /** MCP 工具定义占用。 */
   mcpToolDefinition?: TokenAuditAmountVO | null;
+  /** 框架残差（可为负），前端展示为「其它」。 */
+  framingResidualTokens?: TokenAuditNumeric;
 }
 
 /** 会话用量审计聚合视图对象。**原始载荷**：数值字段可能是字符串。 */
@@ -182,12 +188,22 @@ export interface TokenAuditCategory extends TokenAuditAmount {
 
 /** 「其他消息」（请求开销）小节（已归一）。 */
 export interface TokenAuditRequestOverhead {
+  /** 父项总量（= 快照总量 − 消息构成合计）；null 表示未知。 */
+  tokens: number | null;
+  /** 父项占上下文上限的比例（后端算好，前端不做除法）；null 表示未知。 */
+  ratio: number | null;
   /** 「其他消息 N 项」里的 N（取后端字段，不用数组长度替代）。 */
   itemCount: number | null;
   /** 内核工具定义占用。 */
   toolDefinition: TokenAuditAmount | null;
   /** MCP 工具定义占用。 */
   mcpToolDefinition: TokenAuditAmount | null;
+  /**
+   * 框架残差（合并计数与分开计数的分词差异，**可为负**）。
+   *
+   * <p>展示为「其它」+ 说明气泡，不直接暴露内部术语。null 表示未知。</p>
+   */
+  framingResidualTokens: number | null;
 }
 
 /**

@@ -168,9 +168,12 @@ const normalizeCategory = (raw: unknown): TokenAuditCategory | null => {
 const normalizeRequestOverhead = (raw: unknown): TokenAuditRequestOverhead | null => {
   if (!isRecord(raw)) return null;
   return {
+    tokens: toTokenAuditNumber(readField(raw, 'tokens')),
+    ratio: toTokenAuditNumber(readField(raw, 'ratio')),
     itemCount: toTokenAuditNumber(readField(raw, 'itemCount')),
     toolDefinition: normalizeAmount(readField(raw, 'toolDefinition')),
     mcpToolDefinition: normalizeAmount(readField(raw, 'mcpToolDefinition')),
+    framingResidualTokens: toTokenAuditNumber(readField(raw, 'framingResidualTokens')),
   };
 };
 

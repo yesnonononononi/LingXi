@@ -657,7 +657,8 @@ export const messages: MessageSchema = {
         definition: {
           kernel: '内核工具定义',
           mcp: 'MCP 工具定义',
-          framing: '请求框架残差',
+          framing: '其它',
+          framingHint: '框架分词口径的微小偏差（合并计数与分开计数不同），可能为负数',
         },
       },
       subSessions: {
@@ -1997,7 +1998,8 @@ export const messages: MessageSchema = {
         definition: {
           kernel: 'Kernel tool definitions',
           mcp: 'MCP tool definitions',
-          framing: 'Request framing',
+          framing: 'Other',
+          framingHint: 'Tiny difference from how the framework tokenizes merged vs. separate inputs. It can be negative.',
         },
       },
       subSessions: {
