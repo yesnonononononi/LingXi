@@ -10,6 +10,7 @@ import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
@@ -428,5 +429,45 @@ class McpManagerTest {
             assertNotNull(scope.getTool("mcp_slow_slow_tool"));
         }
         manager.close();
+    }
+
+    /** 配置未变时 register 会直接返回，重连必须真正关闭旧会话并重新握手。 */
+    @Test
+    void reconnectRebuildsSessionEvenWhenConfigurationIsUnchanged() {
+        Mcp model = model(1L, "first");
+        McpSession session = session(model, "inspect");
+        manager.register(1L);
+
+        manager.reconnect(1L);
+
+        verify(session, times(1)).close();
+        verify(factory, times(2)).openSession(eq(assembler.toServer(model)), isNull(),
+                eq(McpSessionType.REUSE), anyString());
+        McpConnectionStateVO state = manager.resolveState(1L);
+        assertEquals(McpConnectionStateVO.CONNECTED, state.state());
+        assertEquals(1, state.toolCount());
+        manager.close();
+    }
+
+    /** 失败要留在状态里供设置页展示，但只报根因类型，不能带出根因消息里的凭据。 */
+    @Test
+    void failedRegistrationIsReportedUntilReconnectSucceeds() {
+        Mcp model = model(1L, "first");
+        McpSession broken = session(model, "inspect");
+        when(broken.tools()).thenThrow(new IllegalStateException("secret=do-not-expose"))
+                .thenReturn(McpSessionFactoryFixture.prefixedTools("first", "inspect"));
+        assertEquals(McpConnectionStateVO.DISCONNECTED, manager.resolveState(1L).state());
+
+        assertThrows(ClientException.class, () -> manager.register(1L));
+        McpConnectionStateVO failed = manager.resolveState(1L);
+        assertEquals(McpConnectionStateVO.FAILED, failed.state());
+        assertEquals("IllegalStateException", failed.error());
+
+        manager.reconnect(1L);
+        assertEquals(McpConnectionStateVO.CONNECTED, manager.resolveState(1L).state());
+        assertNull(manager.resolveState(1L).error());
+
+        manager.remove(1L);
+        assertEquals(McpConnectionStateVO.DISCONNECTED, manager.resolveState(1L).state());
     }
 }

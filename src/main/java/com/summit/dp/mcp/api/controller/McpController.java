@@ -5,11 +5,14 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.api.request.McpRequest;
 import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * Mcp 接口层。
@@ -51,6 +54,16 @@ public class McpController {
     @GetMapping("/del/{id}")
     public Result<Void> delById(@PathVariable Long id) {
         return service.delById(id);
+    }
+
+    @PostMapping("/reconnect/{id}")
+    public Result<McpConnectionStateVO> reconnect(@PathVariable Long id) {
+        return service.reconnect(id);
+    }
+
+    @GetMapping("/status")
+    public Result<List<McpConnectionStateVO>> listStates(@RequestParam(required = false) List<Long> ids) {
+        return service.listStates(ids);
     }
 
     private McpCommand toCommand(McpRequest request) {

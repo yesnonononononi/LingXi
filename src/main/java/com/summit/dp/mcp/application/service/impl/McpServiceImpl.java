@@ -9,6 +9,7 @@ import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 import com.summit.dp.mcp.domain.model.Mcp;
@@ -122,6 +123,27 @@ public class McpServiceImpl implements McpService {
         repository.findById(id).ifPresent(repository::delete);
         connections.remove(id);
         return Result.success();
+    }
+
+    @Override
+    public Result<McpConnectionStateVO> reconnect(Long id) {
+        throwIf(id == null, "MCP 配置标识不能为空");
+        Mcp model = repository.findById(id).orElseThrow(ClientException::new);
+        throwIf(!model.enabled(), "MCP 服务已停用，请先启用再重新连接");
+        connections.reconnect(id);
+        return Result.success(connections.resolveState(id));
+    }
+
+    @Override
+    public Result<List<McpConnectionStateVO>> listStates(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty())
+            return Result.success(List.of());
+        // 停用的服务不会有连接，必须按库中启停先判，否则会被误报成「未连接」。
+        return Result.success(repository.findList(ids).stream()
+                .map(model -> model.enabled()
+                        ? connections.resolveState(model.getId())
+                        : new McpConnectionStateVO(model.getId(), McpConnectionStateVO.DISABLED, null, null))
+                .toList());
     }
 
     @Override

@@ -10,6 +10,7 @@ import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.impl.McpServiceImpl;
 import com.summit.dp.mcp.application.service.impl.McpValidator;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
@@ -686,5 +687,37 @@ class McpServiceTest {
         assertEquals(Boolean.TRUE, updated.getAutoHealthCheck());
         assertEquals(Duration.ofMillis(1500), updated.getHealthCheckInterval());
         assertEquals(Duration.ofMillis(2500), updated.getReconnectInterval());
+    }
+
+    @Test
+    @DisplayName("Controller 状态查询按启停分派，重新连接拒绝已停用服务")
+    void controllerExposesConnectionStatesAndReconnect() {
+        McpRepository repository = repository();
+        McpConnectionRegistry connections = mock(McpConnectionRegistry.class);
+        McpServiceImpl impl = new McpServiceImpl(repository, new McpValidator(repository),
+                new McpConfigAssembler(), connections);
+        McpController controller = new McpController(impl);
+
+        Mcp enabled = sampleModel();
+        Mcp disabled = sampleModel();
+        disabled.changeEnabled(false);
+        when(repository.findList(List.of(1L, 2L))).thenReturn(List.of(enabled, disabled));
+        when(connections.resolveState(1L))
+                .thenReturn(new McpConnectionStateVO(1L, McpConnectionStateVO.CONNECTED, 3, null));
+
+        List<McpConnectionStateVO> states = controller.listStates(List.of(1L, 2L)).getData();
+        assertEquals(2, states.size());
+        assertEquals(McpConnectionStateVO.CONNECTED, states.get(0).state());
+        assertEquals(McpConnectionStateVO.DISABLED, states.get(1).state());
+        verify(connections, never()).resolveState(2L);
+
+        when(repository.findById(2L)).thenReturn(Optional.of(disabled));
+        assertThrows(ClientException.class, () -> controller.reconnect(2L));
+        verify(connections, never()).reconnect(any());
+
+        when(repository.findById(1L)).thenReturn(Optional.of(enabled));
+        McpConnectionStateVO reconnected = controller.reconnect(1L).getData();
+        verify(connections).reconnect(1L);
+        assertEquals(McpConnectionStateVO.CONNECTED, reconnected.state());
     }
 }

@@ -179,3 +179,34 @@ test('表单非法时不发送连接请求，取消后忽略迟到响应', async
     assert.equal(value.mcpConnectionResult.value, null);
   } finally { scope.stop(); }
 });
+
+test('批量查询共享连接状态并支持重新连接已启用服务', async (t) => {
+  const item = { id: '7', name: 'git', url: 'https://mcp.example.test/git', status: 1, initializationTimeout: 10_000, executionTimeout: 20_000 };
+  t.mock.method(McpAPI, 'list', async () => ({ code: 1, data: { records: [item], total: 1, current: 1, size: 100 } }));
+  const listStates = t.mock.method(McpAPI, 'listStates', async (ids: Array<number | string>) => ({
+    code: 1,
+    data: ids.map(id => ({ id, state: 'FAILED' as const, toolCount: null, error: 'ConnectException' })),
+  }));
+  const reconnect = t.mock.method(McpAPI, 'reconnect', async () => ({
+    code: 1,
+    data: { id: '7', state: 'CONNECTED' as const, toolCount: 4, error: null },
+  }));
+  const { value, scope } = state();
+  try {
+    await value.loadMcp();
+    await Promise.resolve();
+    assert.deepEqual(listStates.mock.calls[0]?.arguments[0], ['7']);
+    assert.equal(value.mcpStates.value['7']?.state, 'FAILED');
+    assert.equal(value.mcpStates.value['7']?.error, 'ConnectException');
+
+    listStates.mock.mockImplementation(async (ids: Array<number | string>) => ({
+      code: 1,
+      data: ids.map(id => ({ id, state: 'CONNECTED' as const, toolCount: 4, error: null })),
+    }));
+    await value.handleReconnectMcp(item);
+    assert.equal(reconnect.mock.callCount(), 1);
+    assert.equal(value.mcpStates.value['7']?.state, 'CONNECTED');
+    assert.equal(value.mcpStates.value['7']?.toolCount, 4);
+    assert.equal(value.mcpToast.value, '已重新连接');
+  } finally { scope.stop(); }
+});

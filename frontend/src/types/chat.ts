@@ -987,6 +987,16 @@ export interface McpVO extends McpTuningFields {
   updateAt?: string;
 }
 
+/** 共享连接运行状态，对齐后端 McpConnectionStateVO。 */
+export type McpConnectionState = 'CONNECTED' | 'FAILED' | 'DISCONNECTED' | 'DISABLED';
+
+export interface McpConnectionStateVO {
+  id: number | string;
+  state: McpConnectionState;
+  toolCount: number | null;
+  error: string | null;
+}
+
 /** MCP 连接测试结果，对齐后端 McpConnectionVO。 */
 export interface McpConnectionVO {
   toolCount: number;

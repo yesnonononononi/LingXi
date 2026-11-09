@@ -10,6 +10,7 @@ import com.summit.ddd.utils.RetryUtil;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.McpSessionRegistry;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
@@ -48,6 +49,8 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     private final Map<Long, PooledSession> sessions = new ConcurrentSkipListMap<>();
     // 每个 id 一把锁：注册是 I/O 密集的，共用一把锁会让卡住的 server 把整批排队拖死。
     private final Map<Long, Object> registrationLocks = new ConcurrentHashMap<>();
+    // 最近一次注册失败的原因；只在同 id 锁内写，成功或移除时清掉。
+    private final Map<Long, String> failures = new ConcurrentHashMap<>();
     // 读锁=注册/移除并行，写锁=关闭整体排除，避免连接在关闭过程中被发布出去。
     private final ReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
@@ -123,6 +126,7 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             // 装配阶段就能判定的配置错误（例如 SSE 已没有可用的客户端传输）：原样告诉用户该怎么改，
             // 不要套上「连接失败」的文案，那会把人引到网络排查上。
             remove(id);
+            failures.put(id, invalid.getMessage());
             throw new ClientException(invalid.getMessage(), invalid);
         }
         PooledSession current = sessions.get(id);
@@ -135,11 +139,13 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
                     McpToolNaming.buildPrefix(server.name()));
             PooledSession ready = new PooledSession(server, candidate, List.copyOf(candidate.tools()));
             PooledSession previous = sessions.put(id, ready);
+            failures.remove(id);
             closeQuietly(previous);
             log.info("注册 MCP 连接: id={}, name={}", id, server.name());
         } catch (RuntimeException failure) {
             closeQuietly(candidate);
             remove(id);
+            failures.put(id, resolveFailureReason(failure));
             log.warn("注册 MCP 连接失败: id={}, name={}", id, server.name(), failure);
             throw new ClientException("MCP 配置已保存，但连接或工具发现失败，请检查地址、启动命令、凭据和超时设置", failure);
         }
@@ -153,10 +159,44 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             // 与 register 同锁：否则在途注册会把刚摘掉的连接又发布回来，留下没人管的子进程。
             synchronized (resolveRegistrationLock(id)) {
                 closeQuietly(sessions.remove(id));
+                failures.remove(id);
             }
         } finally {
             lifecycle.readLock().unlock();
         }
+    }
+
+    @Override
+    public void reconnect(Long id) {
+        throwIf(id == null, "MCP 配置标识不能为空");
+        lifecycle.readLock().lock();
+        try {
+            // 先摘再注册且同在一把锁内：registerLocked 遇到配置未变会直接返回，不摘就不会真正重建。
+            synchronized (resolveRegistrationLock(id)) {
+                closeQuietly(sessions.remove(id));
+                registerLocked(id);
+            }
+        } finally {
+            lifecycle.readLock().unlock();
+        }
+    }
+
+    @Override
+    public McpConnectionStateVO resolveState(Long id) {
+        PooledSession session = sessions.get(id);
+        if (session != null) {
+            return new McpConnectionStateVO(id, McpConnectionStateVO.CONNECTED, session.tools().size(), null);
+        }
+        String failure = failures.get(id);
+        if (failure != null) return new McpConnectionStateVO(id, McpConnectionStateVO.FAILED, null, failure);
+        return new McpConnectionStateVO(id, McpConnectionStateVO.DISCONNECTED, null, null);
+    }
+
+    /** 只报根因类型：SDK 外层多是通用句，而根因消息可能带地址或凭据，会直接展示给前端。 */
+    private String resolveFailureReason(Throwable failure) {
+        Throwable root = failure;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        return root.getClass().getSimpleName();
     }
 
     /** 同一 id 的注册与移除共用一把锁，不同 id 之间互不阻塞。 */

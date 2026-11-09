@@ -4,6 +4,7 @@ import com.summit.core.conf.McpConfig;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.application.command.McpCommand;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 
@@ -31,6 +32,12 @@ public interface McpService {
     Result<Void> delById(Long id);
 
     Result<List<McpVO>> queryIn(Collection<Long> ids);
+
+    /** 强制重建已保存服务的共享连接，返回重建后的状态。 */
+    Result<McpConnectionStateVO> reconnect(Long id);
+
+    /** 批量查询共享连接状态，按库中存在的 id 返回；ids 为空返回空列表。 */
+    Result<List<McpConnectionStateVO>> listStates(Collection<Long> ids);
 
     /**
      * 组装当前生效的 MCP 配置快照。

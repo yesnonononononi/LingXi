@@ -25,6 +25,9 @@ const {
   mcpConnectionResult,
   mcpConnectionError,
   mcpRowConnections,
+  mcpStates,
+  mcpReconnecting,
+  handleReconnectMcp,
   mcpToast,
   mcpForm,
   mcpAutoHealthCheckMode,
@@ -131,6 +134,22 @@ const {
                 >
                   {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
                 </span>
+                <!-- 运行连接状态：来自共享连接表，与「测试连接」结果无关 -->
+                <span
+                  v-if="mcpStates[item.id] && mcpStates[item.id]!.state !== 'DISABLED'"
+                  data-testid="mcp-connection-state"
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-lx-fs-xs font-medium shrink-0 border"
+                  :class="{
+                    'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400': mcpStates[item.id]!.state === 'CONNECTED',
+                    'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400': mcpStates[item.id]!.state === 'FAILED',
+                    'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400': mcpStates[item.id]!.state === 'DISCONNECTED',
+                  }"
+                >
+                  <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>
+                  {{ mcpStates[item.id]!.state === 'CONNECTED'
+                    ? t('settings.mcp.stateConnected', { count: mcpStates[item.id]!.toolCount ?? 0 })
+                    : mcpStates[item.id]!.state === 'FAILED' ? t('settings.mcp.stateFailed') : t('settings.mcp.stateDisconnected') }}
+                </span>
                 <!-- 传输方式 -->
                 <span
                   class="px-1.5 py-0.5 rounded-md text-lx-fs-xs shrink-0 border"
@@ -188,6 +207,18 @@ const {
             <!-- 操作区 -->
             <div class="flex items-center gap-1 shrink-0">
               <button
+                v-if="item.status !== 0"
+                type="button"
+                data-testid="mcp-reconnect"
+                :disabled="mcpReconnecting[item.id]"
+                :aria-busy="mcpReconnecting[item.id] || false"
+                @click="handleReconnectMcp(item)"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-lx-fs-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition cursor-pointer disabled:cursor-wait"
+              >
+                <span v-if="mcpReconnecting[item.id]" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                {{ mcpReconnecting[item.id] ? t('settings.mcp.reconnecting') : t('settings.mcp.reconnect') }}
+              </button>
+              <button
                 type="button"
                 @click="handleToggleMcp(item)"
                 :class="[
@@ -235,6 +266,7 @@ const {
               </button>
             </div>
           </div>
+          <p v-if="mcpStates[item.id]?.state === 'FAILED' && mcpStates[item.id]?.error" class="mt-2 text-xs text-red-500 dark:text-red-400 break-all">{{ t('settings.mcp.stateFailedReason', { reason: mcpStates[item.id]?.error ?? '' }) }}</p>
           <p v-if="mcpRowConnections[item.id]?.error" role="alert" class="mt-2 text-xs text-red-500 dark:text-red-400">{{ mcpRowConnections[item.id]?.error }}</p>
         </div>
       </div>

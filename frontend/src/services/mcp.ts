@@ -1,6 +1,6 @@
 import http from './interceptor';
 import type {Result} from './types';
-import type {McpConnectionVO, McpRequest, McpVO, PageResult} from '../types/chat';
+import type {McpConnectionStateVO, McpConnectionVO, McpRequest, McpVO, PageResult} from '../types/chat';
 
 // 初始化可能先检测协议再回退握手，HTTP 等待时间须覆盖两次初始化和工具发现。
 function resolveConnectionTimeout(data: McpRequest): number {
@@ -78,6 +78,21 @@ export class McpAPI {
   /** 更新 MCP 服务 (POST /mcp/update) */
   static async update(data: McpRequest): Promise<Result<void>> {
     return http.post<any, Result<void>>('/mcp/update', passTuningThrough(data), { timeout: resolveConnectionTimeout(data) });
+  }
+
+  /** 批量查询共享连接状态 (GET /mcp/status?ids=1,2) */
+  static async listStates(ids: Array<number | string>): Promise<Result<McpConnectionStateVO[]>> {
+    return http.get<any, Result<McpConnectionStateVO[]>>(`/mcp/status?ids=${ids.join(',')}`);
+  }
+
+  /** 强制重建已保存服务的共享连接 (POST /mcp/reconnect/{id})；等待时间按该服务的超时配置放宽 */
+  static async reconnect(item: McpVO): Promise<Result<McpConnectionStateVO>> {
+    return http.post<any, Result<McpConnectionStateVO>>(`/mcp/reconnect/${item.id}`, undefined, {
+      timeout: resolveConnectionTimeout({
+        initializationTimeout: item.initializationTimeout,
+        executionTimeout: item.executionTimeout,
+      } as McpRequest),
+    });
   }
 
   /** 删除 MCP 服务 (GET /mcp/del/{id}) */

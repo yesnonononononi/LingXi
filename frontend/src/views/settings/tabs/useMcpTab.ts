@@ -1,7 +1,7 @@
 import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {McpAPI} from '../../../services/api';
 import {ApiError} from '../../../services/interceptor';
-import type {McpConnectionVO, McpRequest, McpVO} from '../../../types/chat';
+import type {McpConnectionStateVO, McpConnectionVO, McpRequest, McpVO} from '../../../types/chat';
 import {MCP_PROTOCOL_VERSION_MAX_LENGTH, MCP_PROTOCOL_VERSION_PATTERN,} from '../../../types/chat';
 import {isOk} from '../../../utils/api';
 import {useConfirm} from '../../../composables/useConfirm';
@@ -51,8 +51,11 @@ export function useMcpTab() {
   const mcpConnectionError = ref('');
   let connectionRequest = 0;
   const mcpRowConnections = ref<Record<string, { loading: boolean; success: boolean; error: string }>>({});
+  /** 共享连接运行状态，按 id 索引；与「测试连接」结果分开，后者不代表运行中的连接。 */
+  const mcpStates = ref<Record<string, McpConnectionStateVO>>({});
+  const mcpReconnecting = ref<Record<string, boolean>>({});
   const mcpToast = ref('');
-  let mcpToastTimer: number | undefined;
+  let mcpToastTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
    * 表单模型。
@@ -111,8 +114,8 @@ export function useMcpTab() {
 
   const showMcpToast = (msg: string) => {
     mcpToast.value = msg;
-    if (mcpToastTimer) window.clearTimeout(mcpToastTimer);
-    mcpToastTimer = window.setTimeout(() => {
+    if (mcpToastTimer) clearTimeout(mcpToastTimer);
+    mcpToastTimer = setTimeout(() => {
       mcpToast.value = '';
     }, 2500);
   };
@@ -125,6 +128,7 @@ export function useMcpTab() {
       if (isOk(res.code)) {
         mcpList.value = res.data?.records ?? [];
         mcpRowConnections.value = {};
+        void loadMcpStates();
             } else {
         mcpErrorMsg.value = res.errMsg || t('settings.mcp.errLoadList');
       }
@@ -132,6 +136,47 @@ export function useMcpTab() {
       mcpErrorMsg.value = t('settings.mcp.errLoadList');
     } finally {
       isMcpLoading.value = false;
+    }
+  };
+
+  /** 状态查询失败不影响列表展示，只是不显示状态徽标。 */
+  const loadMcpStates = async () => {
+    const ids = mcpList.value.map((item) => item.id);
+    if (ids.length === 0) {
+      mcpStates.value = {};
+      return;
+    }
+    try {
+      const res = await McpAPI.listStates(ids);
+      if (!isOk(res.code)) return;
+      const next: Record<string, McpConnectionStateVO> = {};
+      for (const state of res.data ?? []) next[String(state.id)] = state;
+      mcpStates.value = next;
+    } catch {
+      // 保留上一次状态，避免一次抖动把徽标全部清空。
+    }
+  };
+
+  const handleReconnectMcp = async (item: McpVO) => {
+    const key = String(item.id);
+    if (mcpReconnecting.value[key]) return;
+    mcpReconnecting.value[key] = true;
+    try {
+      const res = await McpAPI.reconnect(item);
+      if (isOk(res.code) && res.data) {
+        mcpStates.value[key] = res.data;
+        showMcpToast(t('settings.mcp.toastReconnected'));
+      } else {
+        showMcpToast(res.errMsg || t('settings.mcp.errReconnect'));
+      }
+    } catch (error: unknown) {
+      showMcpToast(error instanceof ApiError && error.kind === 'network'
+        ? t('settings.mcp.errConnectNetwork')
+        : error instanceof Error ? error.message : t('settings.mcp.errReconnect'));
+    } finally {
+      mcpReconnecting.value[key] = false;
+      // 失败原因由后端记入状态，重新拉取才能显示。
+      await loadMcpStates();
     }
   };
 
@@ -530,7 +575,7 @@ export function useMcpTab() {
   onBeforeUnmount(() => {
     connectionRequest++;
     mcpRowConnections.value = {};
-    if (mcpToastTimer) window.clearTimeout(mcpToastTimer);
+    if (mcpToastTimer) clearTimeout(mcpToastTimer);
   });
 
   return {
@@ -545,6 +590,10 @@ export function useMcpTab() {
     mcpConnectionResult,
     mcpConnectionError,
     mcpRowConnections,
+    mcpStates,
+    mcpReconnecting,
+    loadMcpStates,
+    handleReconnectMcp,
     mcpToast,
     mcpForm,
     mcpAutoHealthCheckMode,
