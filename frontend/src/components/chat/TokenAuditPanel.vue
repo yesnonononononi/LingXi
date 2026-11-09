@@ -61,6 +61,7 @@ const props = defineProps<{
   open: boolean;
   /** 目标会话 ID；缺失时面板只给一行提示，不发请求。 */
   sessionId?: number | string | null;
+  executing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -386,6 +387,9 @@ watch(
                   >{{ t('chat.tokenAudit.capturing', {tokens: formatTokenAmount(capturingDrift)}) }}</span>
                 </div>
               </div>
+              <p v-if="executing" data-testid="token-audit-executing" class="text-lx-fs-2xs text-lx-muted">
+                {{ t('chat.tokenAudit.executionInProgress') }}
+              </p>
               <p v-if="capturedAtText" class="text-right font-mono text-lx-fs-2xs text-lx-faint">
                 {{ t('chat.tokenAudit.capturedAt', {time: capturedAtText}) }}
               </p>
@@ -435,26 +439,65 @@ watch(
                     ></div>
                   </div>
 
-                  <!-- 工具来源二级拆解：普通工具 / MCP / Skill -->
+                  <!-- 工具来源二级拆解：普通工具（逐项，限高滚动）/ MCP / Skill（分组合计） -->
                   <div
                     v-if="row.type === 'TOOL' && toolRowExpanded && (toolGroupRows.length || ordinaryToolRows.length)"
                     data-testid="token-audit-tool-sources"
-                    class="mt-1.5 space-y-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
+                    class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
                   >
                     <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
                       <span>{{ t('chat.tokenAudit.byToolSource') }}</span>
-                      <span>{{ t('chat.tokenAudit.ratio') }}</span>
+                      <span>{{ t('chat.tokenAudit.toolTotal') }}</span>
                     </div>
-                    <div v-for="item in ordinaryToolRows" :key="item.toolName" class="flex items-center justify-between gap-2">
-                      <span class="truncate font-mono text-lx-fs-xs text-lx-secondary" :title="item.toolName">{{ item.toolName }}</span>
-                      <span class="font-mono text-lx-fs-xs text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
+                    <!-- 逐项工具明细：工具个数没有上界（实测一个会话几十个），必须限高独立滚动，
+                         否则整块把面板顶穿、把下面的 MCP / Skill 合计挤出视野。 -->
+                    <div
+                      v-if="ordinaryToolRows.length"
+                      data-testid="token-audit-tool-items"
+                      class="mt-1.5 max-h-32 space-y-1 overflow-y-auto pr-1"
+                    >
+                      <div v-for="item in ordinaryToolRows" :key="item.toolName" data-testid="token-audit-tool-item" class="space-y-1">
+                        <div class="flex items-center justify-between gap-2 font-mono text-lx-fs-xs text-lx-secondary">
+                          <span class="truncate" :title="item.toolName">{{ item.toolName }}</span>
+                          <span class="shrink-0">{{ formatTokenAmount(item.tokens) }}</span>
+                        </div>
+                        <!-- 色条只比较参数和输出正文，框架总量还包含消息封装。 -->
+                        <div
+                          v-if="item.argumentTokens !== null && item.outputTokens !== null && (item.argumentTokens > 0 || item.outputTokens > 0)"
+                          data-testid="token-audit-tool-io-bar"
+                          class="flex h-1 overflow-hidden rounded-lx-full"
+                          aria-hidden="true"
+                        >
+                          <div class="basis-0 bg-lx-accent" :style="{flexGrow: item.argumentTokens}"></div>
+                          <div class="basis-0 bg-lx-success" :style="{flexGrow: item.outputTokens}"></div>
+                        </div>
+                        <div v-if="item.argumentTokens !== null || item.outputTokens !== null" class="flex flex-wrap gap-x-3 text-lx-fs-2xs text-lx-muted">
+                          <span v-if="item.argumentTokens !== null" class="inline-flex items-center gap-1">
+                            <span aria-hidden="true" class="size-1.5 rounded-lx-full bg-lx-accent"></span>
+                            {{ t('chat.tokenAudit.toolArguments') }} <span class="font-mono">{{ formatTokenAmount(item.argumentTokens) }}</span>
+                          </span>
+                          <span v-if="item.outputTokens !== null" class="inline-flex items-center gap-1">
+                            <span aria-hidden="true" class="size-1.5 rounded-lx-full bg-lx-success"></span>
+                            {{ t('chat.tokenAudit.toolOutput') }} <span class="font-mono">{{ formatTokenAmount(item.outputTokens) }}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div v-for="group in toolGroupRows" :key="group.kind" class="flex items-center justify-between gap-2">
-                      <span class="text-lx-fs-sm font-medium text-lx-primary">{{ t(group.labelKey) }}</span>
-                      <span class="flex shrink-0 items-center gap-1.5 font-mono">
-                        <span class="text-lx-fs-sm font-medium text-lx-primary">{{ formatTokenAmount(group.tokens) }}</span>
-                        <span v-if="ratioText(group.ratio)" class="w-9 text-right text-lx-fs-2xs text-lx-faint">{{ ratioText(group.ratio) }}</span>
-                      </span>
+                    <!-- 分组合计（MCP / Skill）：与上面逐项明细之间留间距 + 分隔线 ——
+                         它们是「同一个 TOOL 分项下的另外两类来源」，不是逐项明细的续行；
+                         贴在一起会被读成「最后几个工具」。 -->
+                    <div
+                      v-if="toolGroupRows.length"
+                      data-testid="token-audit-tool-groups"
+                      class="mt-2 space-y-1 border-t border-lx-border-subtle pt-2"
+                    >
+                      <div v-for="group in toolGroupRows" :key="group.kind" class="flex items-center justify-between gap-2">
+                        <span class="text-lx-fs-sm font-medium text-lx-primary">{{ t(group.labelKey) }}</span>
+                        <span class="flex shrink-0 items-center gap-1.5 font-mono">
+                          <span class="text-lx-fs-sm font-medium text-lx-primary">{{ formatTokenAmount(group.tokens) }}</span>
+                          <span v-if="ratioText(group.ratio)" class="w-9 text-right text-lx-fs-2xs text-lx-faint">{{ ratioText(group.ratio) }}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>

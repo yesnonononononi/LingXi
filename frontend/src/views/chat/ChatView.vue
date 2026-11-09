@@ -71,6 +71,7 @@
           v-if="currentActiveSession?.id != null"
           v-model:open="isTokenAuditOpen"
           :sessionId="currentActiveSession.id"
+          :executing="currentActiveSession.runStatus === 'RUNNING'"
         />
 
         <!-- 初始化数据加载失败：可见失败态（区别于「确实为空」，避免后端宕机时静默显示为空） -->

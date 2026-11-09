@@ -11,6 +11,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {AgentToolName} from '../src/utils/toolNames';
 import {
   countToolGroupKinds,
   formatBarWidth,
@@ -48,10 +49,10 @@ const fullTools = (): TokenAuditToolBreakdown => ({
   ratio: 0.512,
   ordinary: {
     items: [
-      {toolName: 'search_web', tokens: 9420},
-      {toolName: 'read_file', tokens: 6850},
-      {toolName: 'execute_code', tokens: 4960},
-      {toolName: 'grep_search', tokens: 2950},
+      {toolName: AgentToolName.WebSearch, tokens: 9420, argumentTokens: 120, outputTokens: 980},
+      {toolName: AgentToolName.ReadFile, tokens: 6850, argumentTokens: 0, outputTokens: 6000},
+      {toolName: AgentToolName.ExecuteCommand, tokens: 4960, argumentTokens: 300, outputTokens: null},
+      {toolName: AgentToolName.SearchWiki, tokens: 2950, argumentTokens: null, outputTokens: null},
     ],
   },
   mcp: {groupKind: 'MCP', tokens: 34700, ratio: 0.475, items: []},
@@ -204,7 +205,7 @@ test('普通工具仅展示逐项计数，MCP 与 Skill 保留框架分组比例
   assert.equal(groups[0]!.ratio, 0.475);
   const items = resolveOrdinaryToolRows(fullTools());
   assert.equal(items.length, 4);
-  assert.deepEqual(items[0], {toolName: 'search_web', tokens: 9420});
+  assert.deepEqual(items, fullTools().ordinary!.items);
   assert.deepEqual(resolveOrdinaryToolRows(null), []);
   assert.equal(resolveToolGroupRows({mcp: {groupKind: 'MCP', tokens: 0, items: []}})[0]!.tokens, 0);
 });
@@ -243,7 +244,9 @@ test('框架比例原样展示：父级无总量时普通工具明细仍可展�
   const groups = resolveToolGroupRows(snapshot.tools);
   assert.equal(groups.length, 1);
   assert.equal(groups[0]!.ratio, 0.008765);
-  assert.deepEqual(resolveOrdinaryToolRows(snapshot.tools), [{toolName: 'example', tokens: 13}]);
+  assert.deepEqual(resolveOrdinaryToolRows(snapshot.tools), [
+    {toolName: 'example', tokens: 13, argumentTokens: null, outputTokens: null},
+  ]);
   assert.equal('framingResidualTokens' in snapshot.requestOverhead!, false);
   assert.equal('ratio' in snapshot.requestOverhead!, false);
   assert.equal('tokens' in snapshot.requestOverhead!, false);
@@ -298,6 +301,7 @@ test('推送覆盖旧快照：同一会话后到的一帧替换先到的一帧',
   resetTokenAuditStream();
   const first = {...collectedAudit(), liveTotalTokens: 148200};
   const second = {...collectedAudit(), liveTotalTokens: 99000};
+  second.tools!.ordinary!.items![0]!.outputTokens = 200;
 
   assert.equal(getTokenAuditStreamEntry('1234567890'), null, '未推送前无记录');
   recordTokenAuditSnapshot(first, null, 1000);
@@ -307,6 +311,7 @@ test('推送覆盖旧快照：同一会话后到的一帧替换先到的一帧',
   recordTokenAuditSnapshot(second, null, 2000);
   const entry = getTokenAuditStreamEntry('1234567890');
   assert.equal(entry!.snapshot.liveTotalTokens, 99000, '后到的推送必须覆盖');
+  assert.equal(resolveOrdinaryToolRows(entry!.snapshot.tools)[0]!.outputTokens, 200);
   assert.equal(entry!.receivedAt, 2000);
   resetTokenAuditStream();
 });
@@ -410,7 +415,7 @@ const stringNumericPayload = (): Record<string, unknown> => ({
       groupKind: 'ORDINARY',
       tokens: '24180',
       ratio: '0.331',
-      items: [{toolName: 'search_web', tokens: '9420', ratio: '0.39', argumentTokens: '120', outputTokens: '980'}],
+      items: [{toolName: AgentToolName.WebSearch, tokens: '9420', ratio: '0.39', argumentTokens: '120', outputTokens: '980'}],
     },
     mcp: {groupKind: 'MCP', tokens: '34700', ratio: '0.475', items: []},
     skill: null,
@@ -460,10 +465,9 @@ test('数值字段以字符串到达时仍正常渲染：148200 / 200k 与剩余
   const rows = resolveMessageRows(snapshot!.messages);
   assert.equal(rows.length, 4);
   assert.equal(rows[3]!.tokens, 73080);
-  const groups = resolveToolGroupRows(snapshot!.tools);
-  assert.equal(resolveOrdinaryToolRows(snapshot!.tools)[0]!.tokens, 9420);
-  assert.equal(snapshot!.tools!.ordinary!.items![0]!.argumentTokens, 120);
-  assert.equal(snapshot!.tools!.ordinary!.items![0]!.outputTokens, 980);
+  assert.deepEqual(resolveOrdinaryToolRows(snapshot!.tools)[0], {
+    toolName: AgentToolName.WebSearch, tokens: 9420, argumentTokens: 120, outputTokens: 980,
+  });
   assert.equal(snapshot!.requestOverhead!.itemCount, 2);
   assert.equal(resolveToolDefinitionRows(snapshot!.requestOverhead)[0]!.tokens, 10400);
 });

@@ -7,6 +7,7 @@ import type {
   TokenAuditToolBreakdown,
   TokenAuditToolGroupKind,
   TokenAuditToolGroup,
+  TokenAuditToolItem,
 } from '../../types/tokenAudit';
 
 /**
@@ -71,11 +72,8 @@ export interface TokenAuditToolGroupRow {
 
 }
 
-/** 组内单个工具的一行。 */
-export interface TokenAuditToolItemRow {
-  toolName: string;
-  tokens: number;
-}
+/** 逐项工具行保留框架的输入与输出计数。 */
+export type TokenAuditToolItemRow = TokenAuditToolItem & {tokens: number};
 
 /** 框架提供的工具定义分项。 */
 export interface TokenAuditDefinitionRow {
@@ -278,8 +276,7 @@ export function resolveToolGroupRows(tools?: TokenAuditToolBreakdown | null): To
 
 /** 普通工具只有框架逐项计数，直接平铺，不生成分组汇总或比例。 */
 export function resolveOrdinaryToolRows(tools?: TokenAuditToolBreakdown | null): TokenAuditToolItemRow[] {
-  return (tools?.ordinary?.items ?? []).filter(isRenderableAmount)
-    .map(item => ({toolName: item.toolName, tokens: item.tokens}));
+  return (tools?.ordinary?.items ?? []).filter(isRenderableAmount);
 }
 
 /** 只展示框架提供的定义分项，不为闭合总和补残差。 */
