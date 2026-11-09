@@ -7,13 +7,18 @@
  *
  * <p><b>数据来源两条，解析/渲染只有一条</b>：</p>
  * <ol>
- *   <li>打开面板读取已存快照，点刷新通过 {@link TokenAuditAPI} 重新审计；</li>
+ *   <li>打开面板（或切换会话）通过 {@link TokenAuditAPI} 读取已存快照，只读、不触发重算；</li>
  *   <li>会话级流上的 `token_audit_snapshot` 推送（与 GET 的 `data` 完全同构，见
  *       {@link module:views/chat/tokenAuditStream}）。</li>
  * </ol>
  * <p>两条来源都先过 {@link normalizeTokenAuditSnapshot}，之后共用同一套派生函数与模板 ——
  * <b>不存在第二份渲染逻辑</b>。展示源选择规则见 {@link resolveDisplayedSnapshot}：推送优先，
- * 无推送时展示接口返回；请求成功后只清除发起请求时看到的推送。</p>
+ * 无推送时展示接口返回。</p>
+ *
+ * <p><b>没有「刷新重算」按钮</b>（2026-11-09 移除）：后端重算用的是最近一条执行的检查点，
+ * 而终态采集用的就是同一份检查点 —— 重算必然得到同一结果，唯一变化是采集时刻。留着按钮
+ * 等于承诺「点一下能看到新构成」，实际做不到；执行中还会用半成品覆盖完整快照。
+ * 分项的新鲜度由终态采集 + SSE 推送负责，面板只做展示。</p>
  *
  * <p><b>渲染铁律</b>（做错就是 bug，与后端契约同步变更时必须重新核对）：</p>
  * <ol>
@@ -85,7 +90,6 @@ const loading = ref(false);
 const errorMessage = ref('');
 /** 竞态令牌：只有最后一次请求的响应会被采用。 */
 let requestSeq = 0;
-let retryRefresh = false;
 
 /** 会话 ID 是否可用。 */
 const canLoad = computed<boolean>(() => {
@@ -160,19 +164,24 @@ const resetExpansion = (): void => {
   overheadExpanded.value = false;
 };
 
-const load = async (refresh = false): Promise<void> => {
+/**
+ * 读取会话快照（只读）。失败时保留上一份已展示的数据，只挂错误提示。
+ *
+ * <p>没有「重算」模式：分项是执行终态采集的事实，后端也只剩 GET 一个端点 ——
+ * 前端若还留着重算分支，就是给自己造一条永远会 404 的路。</p>
+ */
+const load = async (): Promise<void> => {
   if (!canLoad.value) return;
   const sessionId = props.sessionId;
   const previousStreamEntry = streamEntry.value;
   const seq = ++requestSeq;
-  retryRefresh = refresh;
   loading.value = true;
   errorMessage.value = '';
   try {
-    const res = await (refresh ? TokenAuditAPI.refresh(sessionId) : TokenAuditAPI.tokenAudit(sessionId));
+    const res = await TokenAuditAPI.tokenAudit(sessionId);
     if (seq !== requestSeq) return;
     if (!isOk(res?.code)) {
-      errorMessage.value = refresh ? t('chat.tokenAudit.refreshFailed') : describeKind('business');
+      errorMessage.value = describeKind('business');
       return;
     }
     const snapshot = normalizeTokenAuditSnapshot(res.data, sessionId);
@@ -186,7 +195,7 @@ const load = async (refresh = false): Promise<void> => {
     if (seq !== requestSeq) return;
     errorMessage.value = error instanceof ApiError
       ? describeKind(error.kind)
-      : t(refresh ? 'chat.tokenAudit.refreshFailed' : 'chat.tokenAudit.loadFailed');
+      : t('chat.tokenAudit.loadFailed');
   } finally {
     if (seq === requestSeq) loading.value = false;
   }
@@ -266,26 +275,6 @@ watch(
         <div class="flex items-center gap-1">
           <button
             type="button"
-            data-testid="token-audit-refresh"
-            :disabled="loading || !canLoad"
-            :title="t('chat.tokenAudit.refresh')"
-            :aria-label="t('chat.tokenAudit.refresh')"
-            class="rounded-lx-sm p-1 text-lx-muted transition hover:bg-lx-surface-hover hover:text-lx-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-lx-border-focus disabled:cursor-not-allowed disabled:opacity-40"
-            @click="load(true)"
-          >
-            <svg
-              class="h-3.5 w-3.5"
-              :class="loading ? 'animate-spin' : ''"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 006 5.3M4 15a8 8 0 0014 3.7" />
-            </svg>
-          </button>
-          <button
-            type="button"
             data-testid="token-audit-collapse"
             :title="t('chat.tokenAudit.collapse')"
             :aria-label="t('chat.tokenAudit.collapse')"
@@ -312,7 +301,7 @@ watch(
             type="button"
             :disabled="loading || !canLoad"
             class="rounded-lx-sm border border-lx-danger-border px-2 py-0.5 text-lx-fs-xs font-medium transition hover:bg-lx-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-            @click="load(retryRefresh)"
+            @click="load()"
           >{{ t('chat.tokenAudit.retry') }}</button>
         </div>
 

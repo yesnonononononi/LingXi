@@ -10,7 +10,8 @@
  *   <li>token 单位文案是 `token` 不是 `tok`（`\btok\b` 不会误伤 `token`，用词边界精确判定）。</li>
  * </ol>
  *
- * <p>通过流推送和 HTTP 适配器验证同一面板的展示与手动刷新。</p>
+ * <p>通过流推送和 HTTP 适配器验证同一面板的展示，并守住「只读、不重算」这条边界：
+ * 面板不得出现刷新重算入口，错误重试也只允许重新 GET。</p>
  *
  * 运行：`cd frontend && npx electron tests/tokenAuditPanel.smoke.cjs`
  */
@@ -76,12 +77,10 @@ import http from '../../../src/services/interceptor';
 import {recordTokenAuditSnapshot} from '../../../src/views/chat/tokenAuditStream';
 
 window.__requests = [];
-window.__refreshResult = {code: 1, data: null};
+window.__getResult = {code: 1, data: null};
 http.defaults.adapter = async config => {
   window.__requests.push([config.method, config.url]);
-  const data = config.method === 'post' ? window.__refreshResult : {code: 1, data: null};
-  if (config.method === 'post') await window.__refreshWait;
-  return {config, data, status: 200, statusText: 'OK', headers: {}};
+  return {config, data: window.__getResult, status: 200, statusText: 'OK', headers: {}};
 };
 
 const open = ref(true);
@@ -242,35 +241,40 @@ window.ready = true;`);
   assert(data.panelHeight !== null && data.panelHeight <= 720,
     '面板高度超出可视区（' + data.panelHeight + 'px），说明限高没生效');
 
-  const refresh = '[data-testid="token-audit-refresh"]';
+  // ⑤ 刷新重算已移除：按钮不存在，且任何交互都不得再打 POST
+  assert(await evaluate(`document.querySelector('[data-testid="token-audit-refresh"]') === null`),
+    '刷新按钮应已移除（后端重算与终态采集同源，结果必然相同）');
+
   const error = '[data-testid="token-audit-error"]';
   const contextText = () => evaluate(`document.querySelector('[data-testid="token-audit-context"]').innerText`);
   const previousContext = await contextText();
-  await run(`window.__refreshResult = {code: 0}; window.clickSelector('${refresh}');`);
-  assert(await evaluate(`!!document.querySelector('${error}')`), '刷新失败时应显示错误');
-  assert(await contextText() === previousContext, '刷新失败时应保留上次审计');
-  const refreshed = {...SNAPSHOT, liveTotalTokens: 92000, remainingTokens: 108000, totalTokens: 92000};
-  await run(`window.__refreshResult = {code: 1, data: ${JSON.stringify(refreshed)}};
+  // 收起重开触发一次 GET 失败（错误卡片），已展示的快照必须留住
+  await run(`window.__getResult = {code: 0}; window.__setOpen(false);`);
+  await run(`window.__setOpen(true);`);
+  assert(await evaluate(`!!document.querySelector('${error}')`), '加载失败时应显示错误');
+  assert(await contextText() === previousContext, '加载失败时应保留上次审计');
+
+  // 重试重新走 GET（不再是重算），返回值成为展示源
+  const reloaded = {...SNAPSHOT, liveTotalTokens: 92000, remainingTokens: 108000, totalTokens: 92000};
+  await run(`window.__getResult = {code: 1, data: ${JSON.stringify(reloaded)}};
     window.clickSelector('${error} button');`);
-  assert((await contextText()).includes('92,000'), '重算结果应替换上一条推送');
+  assert((await contextText()).includes('92,000'), '重试结果应替换上一条推送');
   assert(await evaluate(`document.querySelector('${error}') === null`), '重试成功应清除错误');
 
+  // 之后到来的推送仍然优先，且面板不做任何写操作
   const pushed = {...SNAPSHOT, liveTotalTokens: 96000, remainingTokens: 104000, totalTokens: 96000};
-  await run(`window.__refreshWait = new Promise(resolve => { window.__finishRefresh = resolve; });
-    window.clickSelector('${refresh}');`);
-  await run(`window.__inject(${JSON.stringify(pushed)}); window.__finishRefresh();`);
-  assert((await contextText()).includes('96,000'), '刷新期间收到的新推送应继续展示');
+  await run(`window.__inject(${JSON.stringify(pushed)});`);
+  assert((await contextText()).includes('96,000'), '推送应继续覆盖 GET 结果');
   assert(JSON.stringify(await evaluate('window.__requests')) === JSON.stringify([
     ['get', '/session/s1/token-audit'],
-    ['post', '/session/s1/token-audit/refresh'],
-    ['post', '/session/s1/token-audit/refresh'],
-    ['post', '/session/s1/token-audit/refresh'],
-  ]), '打开面板应查询快照，刷新和重试应重新审计');
+    ['get', '/session/s1/token-audit'],
+    ['get', '/session/s1/token-audit'],
+  ]), '打开与重试都只发 GET，不得出现 POST 重算');
 
   const realErrors = consoleErrors.filter(message => !message.startsWith('[Vue warn]'));
   assert(realErrors.length === 0, '渲染进程存在控制台错误: ' + realErrors.join(' | '));
 
-  console.log('用量审计面板冒烟测试通过（手动刷新、在飞推送、双色条和滚动布局）');
+  console.log('用量审计面板冒烟测试通过（只读快照、双色条和滚动布局）');
   await server.close();
   clearTimeout(deadline);
   app.exit(0);

@@ -10,14 +10,10 @@ function tokenAuditPath(sessionId: number | string | null | undefined): string {
   return `/session/${encoded}/token-audit`;
 }
 
-/** 查询会话快照和按需重新审计使用同一份响应。 */
+/** 会话级审计快照的只读查询。 */
 export class TokenAuditAPI {
   static async tokenAudit(sessionId: number | string | null | undefined): Promise<Result<SessionTokenAuditVO>> {
     return http.get<unknown, Result<SessionTokenAuditVO>>(tokenAuditPath(sessionId));
-  }
-
-  static async refresh(sessionId: number | string | null | undefined): Promise<Result<SessionTokenAuditVO>> {
-    return http.post<unknown, Result<SessionTokenAuditVO>>(`${tokenAuditPath(sessionId)}/refresh`);
   }
 }
 

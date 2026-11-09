@@ -1,21 +1,14 @@
 package com.summit.dp.session;
 
 import com.summit.dp.session.application.service.SessionTokenAuditQueryService;
-import com.summit.dp.session.application.service.SessionTokenAuditRefreshService;
 import com.summit.dp.session.api.controller.SessionTokenAuditController;
-import com.summit.core.agent.Execution;
 import com.summit.core.audit.AuditStatus;
 import com.summit.core.audit.DocumentElement;
-import com.summit.core.audit.TokenAuditor;
 import com.summit.core.audit.token.OtherTokens;
 import com.summit.core.audit.token.TokenAuditDocument;
 import com.summit.core.audit.token.tool.ToolAuditDocument;
 import com.summit.core.audit.token.tool.ToolElement;
-import com.summit.core.compact.ContextUsageMetric;
-import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.session.application.convert.TokenAuditFrameworkViewConverter;
-import com.summit.dp.session.application.convert.TokenAuditConverter;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionTokenAudit;
 import com.summit.dp.session.domain.model.TokenAuditGroupKind;
@@ -28,27 +21,20 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.shared.config.GlobalExceptionHandler;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionTokenAuditSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 
-import static com.summit.dp.execution.domain.model.Execution.restoreCheckpointSummary;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -60,10 +46,6 @@ class SessionTokenAuditApiTest {
 
     private final SessionTokenAuditRepository auditRepository = mock(SessionTokenAuditRepository.class);
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
-    private final com.summit.dp.execution.domain.repository.ExecutionRepository executions =
-            mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
-    private final ExecutionRepository checkpoints = mock(ExecutionRepository.class);
-    private final TokenAuditor auditor = mock(TokenAuditor.class);
 
     @Test
     @DisplayName("分项与比例取框架原值，不要求分组之和等于工具总量")
@@ -220,64 +202,9 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.totalTokens").value(148200));
     }
 
-    @Test
-    void reopeningReadsTheRecomputedSnapshot() throws Exception {
-        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
-                Session.builder().id(SESSION_ID).contextTokenCount(148200L).build()));
-        AtomicReference<SessionTokenAudit> stored = new AtomicReference<>(collected());
-        when(auditRepository.findBySessionId(SESSION_ID)).thenAnswer(ignored -> Optional.of(stored.get()));
-        when(auditRepository.replaceSnapshot(any())).thenAnswer(call -> {
-            stored.set(call.getArgument(0));
-            return true;
-        });
-        when(executions.findRecentBySession(SESSION_ID, 1)).thenReturn(List.of(
-                restoreCheckpointSummary(42L, 1L, null, 0L, SESSION_ID, "snapshot")));
-        Execution checkpoint = mock(Execution.class);
-        when(checkpoint.getMessages()).thenReturn(List.of(mock(UserMessageEntity.class)));
-        when(checkpoint.getContextUsageMetric()).thenReturn(new ContextUsageMetric(92000, 200000, 0.46));
-        when(checkpoints.findById("42")).thenReturn(Optional.of(checkpoint));
-        TokenAuditDocument recomputed = frameworkDocument();
-        recomputed.systemTokens().setTokenMeta(24000);
-        recomputed.otherTokens().mcpToolDefinitionTokens().setStatus(AuditStatus.FAILED);
-        when(auditor.analysis(checkpoint)).thenReturn(recomputed);
-
-        MockMvc mvc = createMvc();
-        mvc.perform(get("/session/{id}/token-audit", SESSION_ID))
-                .andExpect(jsonPath("$.data.messages[0].tokens").value(12300));
-        verifyNoInteractions(auditor);
-
-        ResultActions refresh = mvc.perform(post("/session/{id}/token-audit/refresh", SESSION_ID))
-                .andExpect(status().isOk());
-
-        mvc.perform(get("/session/{id}/token-audit", SESSION_ID))
-                .andExpect(jsonPath("$.data.messages[0].tokens").value(24000))
-                .andExpect(jsonPath("$.data.totalTokens").value(92000))
-                .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition").doesNotExist());
-
-        refresh
-                .andExpect(jsonPath("$.data.sessionId").value(Long.toString(SESSION_ID)))
-                .andExpect(jsonPath("$.data.displayState").value("CAPTURING"))
-                .andExpect(jsonPath("$.data.messages[0].tokens").value(24000))
-                .andExpect(jsonPath("$.data.totalTokens").value(92000))
-                .andExpect(jsonPath("$.data.liveTotalTokens").value(148200))
-                .andExpect(jsonPath("$.data.capturedAt").exists());
-    }
-
-    @Test
-    void refreshWithoutACheckpointReportsThatItCannotRecompute() throws Exception {
-        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(Session.builder().id(SESSION_ID).build()));
-        createMvc().perform(post("/session/{id}/token-audit/refresh", SESSION_ID))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errMsg").value("当前会话还没有可用于重新审计的执行检查点"));
-        verifyNoInteractions(auditor);
-    }
-
     private MockMvc createMvc() {
         SessionTokenAuditQueryService query = new SessionTokenAuditQueryService(auditRepository, sessionRepository);
-        SessionTokenAuditRefreshService refresh = new SessionTokenAuditRefreshService(sessionRepository,
-                new ExecutionTokenAuditSource(executions, checkpoints, auditor), new TokenAuditConverter(),
-                auditRepository, query);
-        return MockMvcBuilders.standaloneSetup(new SessionTokenAuditController(query, refresh))
+        return MockMvcBuilders.standaloneSetup(new SessionTokenAuditController(query))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(
                         new JsonConfig().objectMapper()))
