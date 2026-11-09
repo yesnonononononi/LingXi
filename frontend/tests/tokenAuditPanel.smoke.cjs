@@ -269,6 +269,11 @@ window.ready = true;`);
   assert(!!framing.title && /分词/.test(framing.title),
     '「其它」旁应有感叹号提示，hover 说明是分词偏差，实际: ' + JSON.stringify(framing.title));
 
+  // ④'' 占比分母口径必须写出来：框架 ratio 一律除上下文上限，不标就永远「加不起来」
+  const ratioScope = await evaluate(`document.querySelector('[data-testid="token-audit-ratio-scope"]')?.innerText || ''`);
+  assert(/占上下文上限/.test(ratioScope),
+    '「消息构成」旁应标明占比分母是上下文上限，实际: ' + JSON.stringify(ratioScope));
+
   // ⑤ 刷新重算已移除：按钮不存在，且任何交互都不得再打 POST
   assert(await evaluate(`document.querySelector('[data-testid="token-audit-refresh"]') === null`),
     '刷新按钮应已移除（后端重算与终态采集同源，结果必然相同）');

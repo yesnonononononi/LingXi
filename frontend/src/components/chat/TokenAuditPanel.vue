@@ -374,6 +374,12 @@ watch(
               <div class="flex items-center justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-1.5">
                   <span class="shrink-0 text-lx-fs-md font-semibold text-lx-primary">{{ t('chat.tokenAudit.messageComposition') }}</span>
+                  <!-- 分母口径写在这里：框架 DocumentElement.ratio 一律除上下文上限，
+                       不写的话「分项加起来 ≠ 顶部当前上下文占比」永远是个谜 -->
+                  <span
+                    data-testid="token-audit-ratio-scope"
+                    class="shrink-0 text-lx-fs-2xs text-lx-faint"
+                  >{{ t('chat.tokenAudit.ratioScope') }}</span>
                   <span
                     v-if="snapshotDriftText !== null"
                     data-testid="token-audit-capturing"
