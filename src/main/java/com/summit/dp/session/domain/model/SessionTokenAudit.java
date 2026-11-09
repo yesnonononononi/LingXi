@@ -4,6 +4,7 @@ import com.summit.dp.shared.exception.ClientException;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -110,15 +111,22 @@ public class SessionTokenAudit {
      */
     public static SessionTokenAudit capture(Long sessionId, Long executionId,
                                             TokenAuditReconciler.Result result, Instant capturedAt) {
+        return capture(sessionId, executionId, result, capturedAt, true);
+    }
+
+    /** 检查点没有框架总量时仍保存明细，未知的总量和请求开销留空。 */
+    public static SessionTokenAudit capture(Long sessionId, Long executionId, TokenAuditReconciler.Result result,
+                                            Instant capturedAt, boolean usageKnown) {
         if (result == null) {
             throw new ClientException("token 审计换算结果不能为空");
         }
         return new SessionTokenAudit(sessionId, executionId, TokenAuditPersistedState.COLLECTED,
-                result.totalTokens(), toMaxTokens(result.maxTokens()), result.messagesTokens(),
-                result.requestOverheadTokens(), result.overlapTokens(), result.toolGroupingDrift(),
+                usageKnown ? result.totalTokens() : null, toMaxTokens(result.maxTokens()), result.messagesTokens(),
+                usageKnown ? result.requestOverheadTokens() : null, result.overlapTokens(), result.toolGroupingDrift(),
                 result.toolDefinitionTokens(), result.mcpToolDefinitionTokens(),
                 result.memoryTokens(), result.attachmentTokens(),
-                Objects.requireNonNullElseGet(capturedAt, Instant::now), null, result.items());
+                Objects.requireNonNullElseGet(capturedAt, Instant::now).truncatedTo(ChronoUnit.MILLIS),
+                null, result.items());
     }
 
     /**
@@ -199,8 +207,7 @@ public class SessionTokenAudit {
     /**
      * 判断一个「后续到达的采集」是否允许覆盖本快照。
      *
-     * <p>规则：更晚的采集覆盖；更早的不覆盖；采集时刻相同（毫秒截断后很常见）时按执行 id 大的胜出，
-     * 保证同一时刻的重复投递是幂等而非随机。</p>
+     * <p>先比较执行身份，同一执行再比较采集时间，避免较早执行的迟到结果覆盖当前执行。</p>
      *
      * @param incomingCapturedAt  新采集的时刻，null 视为不可用
      * @param incomingExecutionId 新采集的执行 id，可为 null
@@ -209,6 +216,9 @@ public class SessionTokenAudit {
     public boolean shouldReplace(Instant incomingCapturedAt, Long incomingExecutionId) {
         if (incomingCapturedAt == null) {
             return false;
+        }
+        if (executionId != null && incomingExecutionId != null && !executionId.equals(incomingExecutionId)) {
+            return incomingExecutionId > executionId;
         }
         if (capturedAt == null) {
             return true;
@@ -255,10 +265,10 @@ public class SessionTokenAudit {
         if (state == TokenAuditPersistedState.FAILED) {
             return TokenAuditDisplayState.FAILED;
         }
-        if (totalTokens == null) {
+        if (totalTokens == null && frameworkDocument == null) {
             return TokenAuditDisplayState.NOT_COLLECTED;
         }
-        if (liveTotal == null) {
+        if (liveTotal == null || totalTokens == null) {
             // 实时总量未知时不能凭空说「在采集」，快照本身是唯一可信事实。
             return TokenAuditDisplayState.COLLECTED;
         }

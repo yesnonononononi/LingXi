@@ -3,6 +3,7 @@ package com.summit.dp.session;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.session.domain.model.SessionTokenAudit;
+import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.model.TokenAuditCategory;
 import com.summit.dp.session.application.convert.TokenAuditFrameworkViewConverter;
 import com.summit.dp.session.domain.model.TokenAuditGroupKind;
@@ -14,6 +15,9 @@ import com.summit.dp.session.domain.model.TokenAuditReconciler.Measurement;
 import com.summit.dp.session.domain.model.TokenAuditReconciler.Result;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionTokenAuditItemMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionTokenAuditMapper;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
+import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
+import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionTokenAuditRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -21,14 +25,23 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -44,19 +57,27 @@ class SessionTokenAuditRepositoryTest {
 
     private H2TestDatabase database;
     private SessionTokenAuditRepositoryImpl repository;
+    private SessionRepository sessions;
+    private TransactionTemplate transactions;
+    private long captureSequence;
 
     @BeforeEach
     void setup() throws Exception {
         database = H2TestDatabase.create("SessionTokenAuditRepositoryTest");
         MybatisConfiguration configuration = database.configuration(
-                SessionTokenAuditMapper.class, SessionTokenAuditItemMapper.class);
+                SessionTokenAuditMapper.class, SessionTokenAuditItemMapper.class, SessionMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
+        SessionMapper sessionMapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(SessionMapper.class);
+        sessions = new SessionRepositoryImpl(sessionMapper);
+        sessionMapper.insert(SessionPO.builder().id(SESSION_ID).name("审计会话").build());
+        sessionMapper.insert(SessionPO.builder().id(SESSION_ID + 1).name("另一审计会话").build());
+        transactions = new TransactionTemplate(new DataSourceTransactionManager(database));
         repository = new SessionTokenAuditRepositoryImpl(
                 H2TestDatabase.sqlSession(sessionFactory).getMapper(SessionTokenAuditMapper.class),
-                H2TestDatabase.sqlSession(sessionFactory).getMapper(SessionTokenAuditItemMapper.class));
+                H2TestDatabase.sqlSession(sessionFactory).getMapper(SessionTokenAuditItemMapper.class), sessions);
     }
 
     @AfterEach
@@ -162,7 +183,7 @@ class SessionTokenAuditRepositoryTest {
     @DisplayName("upsert 允许把上一轮的 fail_reason 与数值写回 NULL（整行替换而非打补丁）")
     void upsertClearsStaleColumns() {
         repository.markFailed(SESSION_ID, 9L, "AUDIT_ERROR: 先失败一次");
-        repository.replaceSnapshot(collected(List.of("search_web")));
+        repository.replaceSnapshot(collected(List.of("search_web"), null, null, 10L, CAPTURED_AT));
 
         SessionTokenAudit loaded = repository.findBySessionId(SESSION_ID).orElseThrow();
         assertEquals(TokenAuditPersistedState.COLLECTED, loaded.getState());
@@ -235,7 +256,50 @@ class SessionTokenAuditRepositoryTest {
                         + " AND memory_tokens IS NULL AND attachment_tokens IS NULL"));
     }
 
-    private static SessionTokenAudit collected(List<String> toolNames) {
+    @Test
+    void concurrentOlderCheckpointCannotReplaceTheNewerSnapshot() throws Exception {
+        SessionTokenAudit older = collected(List.of("old_tool"), null, null, 42L, CAPTURED_AT);
+        SessionTokenAudit newer = collected(List.of("new_tool"), null, null, 42L, CAPTURED_AT.plusMillis(10));
+        CountDownLatch attemptingWrite = new CountDownLatch(1);
+        Future<Boolean> olderWrite;
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            olderWrite = transactions.execute(status -> {
+                sessions.lockById(SESSION_ID).orElseThrow();
+                Future<Boolean> write = executor.submit(() -> transactions.execute(ignored -> {
+                    attemptingWrite.countDown();
+                    return repository.replaceSnapshot(older);
+                }));
+                try {
+                    assertTrue(attemptingWrite.await(3, TimeUnit.SECONDS));
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(exception);
+                }
+                assertThrows(TimeoutException.class, () -> write.get(500, TimeUnit.MILLISECONDS));
+                assertTrue(repository.replaceSnapshot(newer));
+                return write;
+            });
+            assertFalse(olderWrite.get(3, TimeUnit.SECONDS));
+        }
+        assertEquals("new_tool", repository.findBySessionId(SESSION_ID).orElseThrow().toolItems().getFirst().getToolName());
+    }
+
+    @Test
+    void rollbackRestoresBothSnapshotAndItems() {
+        SessionTokenAudit previous = collected(List.of("previous_tool"));
+        assertEquals(Boolean.TRUE, transactions.execute(status -> repository.replaceSnapshot(previous)));
+
+        transactions.executeWithoutResult(status -> {
+            assertTrue(repository.replaceSnapshot(collected(List.of("rolled_back_tool"))));
+            status.setRollbackOnly();
+        });
+
+        SessionTokenAudit stored = repository.findBySessionId(SESSION_ID).orElseThrow();
+        assertEquals(previous.getCapturedAt(), stored.getCapturedAt());
+        assertEquals("previous_tool", stored.toolItems().getFirst().getToolName());
+    }
+
+    private SessionTokenAudit collected(List<String> toolNames) {
         return collected(toolNames, null, null);
     }
 
@@ -247,8 +311,12 @@ class SessionTokenAuditRepositoryTest {
      * @param attachmentTokens 附件 token；null 表示未知
      * @return 快照
      */
+    private SessionTokenAudit collected(List<String> toolNames, Integer memoryTokens, Integer attachmentTokens) {
+        return collected(toolNames, memoryTokens, attachmentTokens, 1L, CAPTURED_AT.plusMillis(captureSequence++));
+    }
+
     private static SessionTokenAudit collected(List<String> toolNames, Integer memoryTokens,
-                                               Integer attachmentTokens) {
+                                               Integer attachmentTokens, long executionId, Instant capturedAt) {
         int ordinary = 0;
         List<ItemMeasurement> items = new java.util.ArrayList<>();
         for (String name : toolNames) {
@@ -264,6 +332,6 @@ class SessionTokenAuditRepositoryTest {
                         ordinaryGroup),
                 8200, 3100, memoryTokens, attachmentTokens);
         Result result = TokenAuditReconciler.reconcile(measurement);
-        return SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
+        return SessionTokenAudit.capture(SESSION_ID, executionId, result, capturedAt);
     }
 }

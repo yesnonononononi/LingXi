@@ -6,6 +6,7 @@ import com.summit.core.audit.token.OtherTokens;
 import com.summit.core.audit.token.TokenAuditDocument;
 import com.summit.core.audit.token.tool.ToolAuditDocument;
 import com.summit.core.audit.token.tool.ToolElement;
+import com.summit.core.compact.ContextUsageMetric;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.TokenAuditGroupKind;
 import com.summit.dp.session.domain.model.TokenAuditReconciler.GroupMeasurement;
@@ -66,9 +67,19 @@ public class TokenAuditConverter {
      */
     public Measurement toMeasurement(TokenAuditDocument document, Session session,
                                      Map<String, Integer> toolCallCounts) {
+        return measure(document, liveTotalTokens(session), liveMaxTokens(session), toolCallCounts);
+    }
+
+    public Measurement measureCheckpoint(TokenAuditDocument document, ContextUsageMetric usage) {
+        return measure(document, usage == null ? 0 : nonNegative(usage.tokenCount()),
+                usage == null ? 0 : nonNegative(usage.maxTokens()), Map.of());
+    }
+
+    private Measurement measure(TokenAuditDocument document, int totalTokens, int maxTokens,
+                                Map<String, Integer> toolCallCounts) {
         Map<String, Integer> counts = toolCallCounts == null ? Map.of() : toolCallCounts;
         if (document == null) {
-            return new Measurement(0, 0, 0, 0, 0, liveTotalTokens(session), liveMaxTokens(session),
+            return new Measurement(0, 0, 0, 0, 0, totalTokens, maxTokens,
                     List.of(), null, null);
         }
         ToolParts tool = toolParts(document.toolTokens(), counts);
@@ -78,8 +89,8 @@ public class TokenAuditConverter {
                 intValueOf(document.assistantTokens()),
                 tool.toolTokens(),
                 tool.argumentTokens(),
-                liveTotalTokens(session),
-                liveMaxTokens(session),
+                totalTokens,
+                maxTokens,
                 tool.groups(),
                 toolDefinitionTokensOf(document),
                 mcpToolDefinitionTokensOf(document),

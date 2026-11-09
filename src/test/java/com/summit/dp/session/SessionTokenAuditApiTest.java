@@ -15,6 +15,7 @@ import com.summit.core.compact.ContextUsageMetric;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.session.application.convert.TokenAuditFrameworkViewConverter;
+import com.summit.dp.session.application.convert.TokenAuditConverter;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionTokenAudit;
 import com.summit.dp.session.domain.model.TokenAuditGroupKind;
@@ -32,14 +33,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.summit.dp.execution.domain.model.Execution.restoreCheckpointSummary;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -217,10 +221,15 @@ class SessionTokenAuditApiTest {
     }
 
     @Test
-    void refreshAuditsLatestCheckpointAndReturnsItsUsageInsteadOfTheStoredSnapshot() throws Exception {
+    void reopeningReadsTheRecomputedSnapshot() throws Exception {
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
                 Session.builder().id(SESSION_ID).contextTokenCount(148200L).build()));
-        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(collected()));
+        AtomicReference<SessionTokenAudit> stored = new AtomicReference<>(collected());
+        when(auditRepository.findBySessionId(SESSION_ID)).thenAnswer(ignored -> Optional.of(stored.get()));
+        when(auditRepository.replaceSnapshot(any())).thenAnswer(call -> {
+            stored.set(call.getArgument(0));
+            return true;
+        });
         when(executions.findRecentBySession(SESSION_ID, 1)).thenReturn(List.of(
                 restoreCheckpointSummary(42L, 1L, null, 0L, SESSION_ID, "snapshot")));
         Execution checkpoint = mock(Execution.class);
@@ -229,6 +238,7 @@ class SessionTokenAuditApiTest {
         when(checkpoints.findById("42")).thenReturn(Optional.of(checkpoint));
         TokenAuditDocument recomputed = frameworkDocument();
         recomputed.systemTokens().setTokenMeta(24000);
+        recomputed.otherTokens().mcpToolDefinitionTokens().setStatus(AuditStatus.FAILED);
         when(auditor.analysis(checkpoint)).thenReturn(recomputed);
 
         MockMvc mvc = createMvc();
@@ -236,18 +246,21 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.messages[0].tokens").value(12300));
         verifyNoInteractions(auditor);
 
-        mvc.perform(post("/session/{id}/token-audit/refresh", SESSION_ID))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.sessionId").value(Long.toString(SESSION_ID)))
-                .andExpect(jsonPath("$.data.displayState").value("COLLECTED"))
-                .andExpect(jsonPath("$.data.messages[0].tokens").value(24000))
-                .andExpect(jsonPath("$.data.totalTokens").value(92000))
-                .andExpect(jsonPath("$.data.liveTotalTokens").value(92000))
-                .andExpect(jsonPath("$.data.remainingTokens").value(108000))
-                .andExpect(jsonPath("$.data.capturedAt").exists());
+        ResultActions refresh = mvc.perform(post("/session/{id}/token-audit/refresh", SESSION_ID))
+                .andExpect(status().isOk());
 
         mvc.perform(get("/session/{id}/token-audit", SESSION_ID))
-                .andExpect(jsonPath("$.data.messages[0].tokens").value(12300));
+                .andExpect(jsonPath("$.data.messages[0].tokens").value(24000))
+                .andExpect(jsonPath("$.data.totalTokens").value(92000))
+                .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition").doesNotExist());
+
+        refresh
+                .andExpect(jsonPath("$.data.sessionId").value(Long.toString(SESSION_ID)))
+                .andExpect(jsonPath("$.data.displayState").value("CAPTURING"))
+                .andExpect(jsonPath("$.data.messages[0].tokens").value(24000))
+                .andExpect(jsonPath("$.data.totalTokens").value(92000))
+                .andExpect(jsonPath("$.data.liveTotalTokens").value(148200))
+                .andExpect(jsonPath("$.data.capturedAt").exists());
     }
 
     @Test
@@ -262,7 +275,8 @@ class SessionTokenAuditApiTest {
     private MockMvc createMvc() {
         SessionTokenAuditQueryService query = new SessionTokenAuditQueryService(auditRepository, sessionRepository);
         SessionTokenAuditRefreshService refresh = new SessionTokenAuditRefreshService(sessionRepository,
-                new ExecutionTokenAuditSource(executions, checkpoints, auditor));
+                new ExecutionTokenAuditSource(executions, checkpoints, auditor), new TokenAuditConverter(),
+                auditRepository, query);
         return MockMvcBuilders.standaloneSetup(new SessionTokenAuditController(query, refresh))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(

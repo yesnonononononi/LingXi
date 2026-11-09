@@ -10,6 +10,7 @@ import com.summit.dp.session.domain.model.TokenAuditCategory;
 import com.summit.dp.session.domain.model.TokenAuditGroupKind;
 import com.summit.dp.session.domain.model.TokenAuditItemLevel;
 import com.summit.dp.session.domain.model.TokenAuditPersistedState;
+import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionTokenAuditItemMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionTokenAuditMapper;
@@ -41,6 +42,7 @@ public class SessionTokenAuditRepositoryImpl
 
     private final SessionTokenAuditMapper auditMapper;
     private final SessionTokenAuditItemMapper itemMapper;
+    private final SessionRepository sessions;
 
     @Override
     protected BaseMapper<SessionTokenAuditPO> mapper() {
@@ -104,14 +106,21 @@ public class SessionTokenAuditRepositoryImpl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void replaceSnapshot(SessionTokenAudit audit) {
+    public boolean replaceSnapshot(SessionTokenAudit audit) {
         requireCollected(audit);
-        replaceHead(audit);
+        // 即使首次采集还没有审计行，也要用同一会话行串行化手动刷新和终态采集。
+        if (sessions.lockById(audit.getSessionId()).isEmpty()) return false;
+        SessionTokenAuditPO head = auditMapper.selectById(audit.getSessionId());
+        if (head != null && !restore(head, List.of()).shouldReplace(audit.getCapturedAt(), audit.getExecutionId())) {
+            return false;
+        }
+        replaceHead(audit, head != null);
         itemMapper.delete(new LambdaQueryWrapper<SessionTokenAuditItemPO>()
                 .eq(SessionTokenAuditItemPO::getSessionId, audit.getSessionId()));
         for (SessionTokenAuditItem item : audit.getItems()) {
             itemMapper.insert(toItemPO(audit.getSessionId(), item));
         }
+        return true;
     }
 
     @Override
@@ -120,34 +129,21 @@ public class SessionTokenAuditRepositoryImpl
         if (sessionId == null) {
             throw new ClientException("token 审计快照必须归属一个会话");
         }
-        TokenAuditPersistedState current = currentState(sessionId);
-        if (current == TokenAuditPersistedState.COLLECTED) {
+        if (sessions.lockById(sessionId).isEmpty()) return;
+        SessionTokenAuditPO head = auditMapper.selectById(sessionId);
+        if (head != null && TokenAuditPersistedState.fromName(head.getAuditState()) == TokenAuditPersistedState.COLLECTED) {
             // 已有成功快照：失败不覆盖，保住唯一可解释的事实。
             return;
         }
         SessionTokenAudit failure = SessionTokenAudit.failure(sessionId, executionId, reason, Instant.now());
-        replaceHead(failure);
+        replaceHead(failure, head != null);
         itemMapper.delete(new LambdaQueryWrapper<SessionTokenAuditItemPO>()
                 .eq(SessionTokenAuditItemPO::getSessionId, sessionId));
     }
 
-    /**
-     * 读当前持久状态。
-     *
-     * @return 行不存在时返回 {@code null}（没有状态这一事实本身要能表达）
-     */
-    private TokenAuditPersistedState currentState(Long sessionId) {
-        SessionTokenAuditPO head = auditMapper.selectById(sessionId);
-        if (head == null) {
-            return null;
-        }
-        return TokenAuditPersistedState.fromName(head.getAuditState());
-    }
-
     /** 头表 upsert：整行替换，允许把上一轮的 fail_reason / 数值列写回 null。 */
-    private void replaceHead(SessionTokenAudit audit) {
+    private void replaceHead(SessionTokenAudit audit, boolean exists) {
         Long sessionId = audit.getSessionId();
-        boolean exists = auditMapper.selectById(sessionId) != null;
         if (!exists) {
             auditMapper.insert(toPO(audit));
             return;

@@ -32,8 +32,9 @@ public interface SessionTokenAuditRepository extends RepositoryTemplate<SessionT
      * 上轮有、这轮没有的工具会一直留在明细里，TOOL 求和随之失控。</p>
      *
      * @param audit 新快照（状态必须是 {@code COLLECTED}）
+     * @return 是否接受该快照
      */
-    void replaceSnapshot(SessionTokenAudit audit);
+    boolean replaceSnapshot(SessionTokenAudit audit);
 
     /**
      * 把该会话的采集结果标记为失败。

@@ -18,6 +18,7 @@ import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.shared.vo.SessionTokenAuditVO;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -68,10 +69,15 @@ class SessionTokenAuditCollectorTest {
     private final SessionTokenAuditCollector collector = new SessionTokenAuditCollector(auditRepository,
             sessionRepository, executionLocator, new TokenAuditConverter(), queryService, broadcasters);
 
+    @BeforeEach
+    void acceptSnapshots() {
+        when(auditRepository.replaceSnapshot(any())).thenReturn(true);
+    }
+
     @Test
     void collectionPreservesOriginalFrameworkDocument() {
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
-        collector.collect("1", SessionTokenAuditApiTest.frameworkDocument(), metadata());
+        collector.collect("1", SessionTokenAuditApiTest.frameworkDocument(), metadata(), Instant.now());
         ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
         verify(auditRepository).replaceSnapshot(captor.capture());
         assertEquals(0.0412345, TokenAuditFrameworkViewConverter.read(captor.getValue().getFrameworkDocument())
@@ -86,7 +92,7 @@ class SessionTokenAuditCollectorTest {
         document.toolTokens().setTokenMeta(new ToolAuditDocument(64000, tools.mcpDetail(),
                 tools.skillDetail(), tools.tokenDetails()));
 
-        collector.collect("1", document, metadata());
+        collector.collect("1", document, metadata(), Instant.now());
 
         ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
         verify(auditRepository).replaceSnapshot(captor.capture());
@@ -106,7 +112,7 @@ class SessionTokenAuditCollectorTest {
                 .sessionId(SESSION_ID).displayState(TokenAuditDisplayState.COLLECTED.name()).build();
         when(queryService.snapshot(SESSION_ID)).thenReturn(payload);
 
-        collector.collect("1", null, metadata());
+        collector.collect("1", null, metadata(), Instant.now());
 
         ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
         verify(auditRepository).replaceSnapshot(captor.capture());
@@ -122,14 +128,10 @@ class SessionTokenAuditCollectorTest {
     @DisplayName("更早的采集不得覆盖更新的快照")
     void staleCollectionIsSkipped() {
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
-        SessionTokenAudit newer = SessionTokenAudit.restore(SESSION_ID, 9L,
-                TokenAuditPersistedState.COLLECTED, 100, 200, 90, 10, 0, 0, null, null, null, null,
-                Instant.now().plusSeconds(3600), null, List.of());
-        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(newer));
+        when(auditRepository.replaceSnapshot(any())).thenReturn(false);
 
-        collector.collect("1", null, metadata());
+        collector.collect("1", null, metadata(), Instant.now());
 
-        verify(auditRepository, never()).replaceSnapshot(any());
         verifyNoInteractions(publisher);
     }
 
@@ -171,7 +173,7 @@ class SessionTokenAuditCollectorTest {
         when(queryService.snapshot(SESSION_ID)).thenReturn(
                 SessionTokenAuditVO.builder().sessionId(SESSION_ID).build());
 
-        collector.collect("42", null, null);
+        collector.collect("42", null, null, Instant.now());
 
         ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
         verify(auditRepository).replaceSnapshot(captor.capture());
@@ -182,7 +184,7 @@ class SessionTokenAuditCollectorTest {
         when(failing.sessionId("99")).thenThrow(new IllegalStateException("执行不存在"));
         SessionTokenAuditCollector isolated = new SessionTokenAuditCollector(auditRepository,
                 sessionRepository, failing, new TokenAuditConverter(), queryService, broadcasters);
-        isolated.collect("99", null, null);
+        isolated.collect("99", null, null, Instant.now());
         isolated.markFailed("99", "AUDIT_ERROR", "x", null);
     }
 
@@ -193,7 +195,7 @@ class SessionTokenAuditCollectorTest {
         when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.empty());
         when(queryService.snapshot(SESSION_ID)).thenThrow(new IllegalStateException("会话刚被删除"));
 
-        collector.collect("1", null, metadata());
+        collector.collect("1", null, metadata(), Instant.now());
 
         verify(auditRepository).replaceSnapshot(any());
     }

@@ -82,12 +82,14 @@ class SessionTokenAuditDomainTest {
     }
 
     @Test
-    @DisplayName("shouldReplace：更晚覆盖、更早拒绝、同刻按执行 id 裁决")
+    @DisplayName("优先比较执行标识，同一执行再比较采集时间")
     void shouldReplaceFollowsOrdering() {
         SessionTokenAudit current = snapshot(148200, 200000, 2L, CAPTURED_AT);
 
-        assertTrue(current.shouldReplace(CAPTURED_AT.plusMillis(1), 1L), "更晚的采集必须覆盖");
-        assertFalse(current.shouldReplace(CAPTURED_AT.minusMillis(1), 99L), "更早的采集不得覆盖");
+        assertFalse(current.shouldReplace(CAPTURED_AT.plusMillis(1), 1L), "旧执行迟到不得覆盖");
+        assertTrue(current.shouldReplace(CAPTURED_AT.minusMillis(1), 99L), "较新执行优先");
+        assertTrue(current.shouldReplace(CAPTURED_AT.plusMillis(1), 2L));
+        assertFalse(current.shouldReplace(CAPTURED_AT.minusMillis(1), 2L));
         assertTrue(current.shouldReplace(CAPTURED_AT, 3L), "同刻且执行 id 更大时覆盖");
         assertFalse(current.shouldReplace(CAPTURED_AT, 2L), "同刻同 id 幂等，不覆盖");
         assertFalse(current.shouldReplace(CAPTURED_AT, 1L), "同刻且执行 id 更小时不覆盖");

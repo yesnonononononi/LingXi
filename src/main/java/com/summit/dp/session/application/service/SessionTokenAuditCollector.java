@@ -72,9 +72,10 @@ public class SessionTokenAuditCollector {
      * @param executionId   产出审计结果的执行标识；可为 {@code null}（此时只能靠元数据解析归属）
      * @param document      框架审计文档；{@code null} 视为全 0 的空采集
      * @param eventMetaData 框架事件携带的业务归属元数据，可为 {@code null}
+     * @param capturedAt    框架采集时刻，用于判别同一执行的迟到结果
      */
     public void collect(String executionId, TokenAuditDocument document,
-                        Map<String, Object> eventMetaData) {
+                        Map<String, Object> eventMetaData, Instant capturedAt) {
         Long sessionId = resolveSessionId(executionId, eventMetaData);
         if (sessionId == null) {
             log.warn("丢弃无法定位会话的 token 审计结果: executionId={}", executionId);
@@ -84,17 +85,14 @@ public class SessionTokenAuditCollector {
         TokenAuditReconciler.Result result =
                 TokenAuditReconciler.reconcile(converter.toMeasurement(document, session));
         SessionTokenAudit incoming = SessionTokenAudit.capture(sessionId, numericExecutionId(executionId),
-                result, Instant.now());
+                result, capturedAt);
         incoming.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(document));
 
         // 乱序投递（同一执行重复到达 / 更早的执行迟到）不得覆盖更新的快照。
-        Optional<SessionTokenAudit> existing = auditRepository.findBySessionId(sessionId);
-        if (existing.isPresent()
-                && !existing.get().shouldReplace(incoming.getCapturedAt(), incoming.getExecutionId())) {
+        if (!auditRepository.replaceSnapshot(incoming)) {
             log.debug("跳过过期采集: sessionId={}, executionId={}", sessionId, executionId);
             return;
         }
-        auditRepository.replaceSnapshot(incoming);
         broadcast(resolveRootSessionId(sessionId, eventMetaData), sessionId);
     }
 

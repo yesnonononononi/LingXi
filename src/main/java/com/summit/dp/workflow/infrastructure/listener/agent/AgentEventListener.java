@@ -261,7 +261,7 @@ public class AgentEventListener implements RuntimeListener {
         }
         try {
             sessionTokenAuditCollector.collect(event.executionId(), tokenAudit.contextAudit(),
-                    event.eventMetaData());
+                    event.eventMetaData(), tokenAudit.timestamp());
         } catch (RuntimeException failure) {
             // 审计失败绝不影响执行终态：落库没做完就等下一次采集，前端仍可 GET 到旧快照。
             log.warn("token 审计采集失败，已忽略: executionId={}, error={}, message={}",
