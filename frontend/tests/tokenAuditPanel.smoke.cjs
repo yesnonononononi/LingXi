@@ -1,7 +1,7 @@
 /**
  * 用量审计面板「工具来源」小节的**真实布局**冒烟测试（offscreen Electron + 真实 DOM）。
  *
- * <p>为什么不用静态断言：这次要钉的三件事全是**几何量与可见文本**——</p>
+ * <p>几何量、可见文本和推送更新需要在真实 DOM 中验证。</p>
  * <ol>
  *   <li>逐项工具列表真的被限高成可滚动容器（`scrollHeight > clientHeight` 且能滚到底）；
  *       只断言 class 里有 `overflow-y-auto` 证明不了「工具多了不会把面板顶穿」。</li>
@@ -23,6 +23,7 @@ const fixture = path.resolve(__dirname, '../node_modules/.tmp/token-audit-panel'
 app.setPath('userData', path.join(fixture, 'profile'));
 app.on('window-all-closed', () => {});
 let window;
+let server;
 const deadline = setTimeout(() => { console.error('用量审计面板冒烟超时'); app.exit(1); }, 120000);
 
 const fail = message => { throw new Error(message); };
@@ -51,6 +52,8 @@ const SNAPSHOT = {
       items: Array.from({length: 12}, (_, index) => ({
         toolName: 'tool_' + String(index + 1).padStart(2, '0'),
         tokens: 1000 * (index + 1),
+        ...(index === 0 ? {argumentTokens: '120', outputTokens: '360'} : {}),
+        ...(index === 2 ? {argumentTokens: '0', outputTokens: '40'} : {}),
       })),
     },
   },
@@ -77,12 +80,14 @@ import {recordTokenAuditSnapshot} from '../../../src/views/chat/tokenAuditStream
 TokenAuditAPI.tokenAudit = async () => ({code: 1, data: null});
 
 const open = ref(true);
+const executing = ref(false);
 window.__inject = payload => recordTokenAuditSnapshot(payload, 's1');
 window.__setOpen = value => { open.value = value; };
+window.__setExecuting = value => { executing.value = value; };
 </script>
 <template>
   <div style="position:relative;width:520px;height:720px">
-    <TokenAuditPanel v-model:open="open" session-id="s1" />
+    <TokenAuditPanel v-model:open="open" session-id="s1" :executing="executing" />
   </div>
 </template>`);
 
@@ -100,7 +105,7 @@ window.ready = true;`);
   await fs.writeFile(path.join(fixture, 'index.html'),
     '<html><head><meta charset="utf-8"></head><body style="margin:0"><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
 
-  const { build } = await import('vite');
+  const { build, preview } = await import('vite');
   const { default: vue } = await import('@vitejs/plugin-vue');
   const tailwind = (await import('@tailwindcss/postcss')).default;
   const autoprefixer = (await import('autoprefixer')).default;
@@ -120,7 +125,9 @@ window.ready = true;`);
   window.webContents.on('console-message', event => {
     if (event.level === 'error') consoleErrors.push(event.message);
   });
-  await window.loadFile(path.join(fixture, 'dist/index.html'));
+  // 用回环 HTTP 加载构建产物，避免 Chromium 拦截 file 协议下的模块脚本。
+  server = await preview({configFile: false, root: fixture, preview: {host: '127.0.0.1', port: 0}});
+  await window.loadURL(`http://127.0.0.1:${server.httpServer.address().port}/`);
 
   const evaluate = async source => {
     try { return await window.webContents.executeJavaScript(source); }
@@ -135,11 +142,45 @@ window.ready = true;`);
   const assert = (condition, message) => { if (!condition) fail(message); };
 
   // 挂载 → 注入快照 → 展开「工具返回消息」二级拆解
-  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-panel"]')`), '面板未渲染');
+  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-panel"]')`), '面板未渲染: ' + consoleErrors.join(' | '));
   await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
   assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-tool-row"]')`), '工具返回消息行未渲染（快照未生效？）');
   await run(`window.clickSelector('[data-testid="token-audit-tool-row"]')`);
   assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-tool-sources"]')`), '工具来源小节未展开');
+
+  const readToolItem = index => evaluate(`(() => {
+    const item = document.querySelectorAll('[data-testid="token-audit-tool-item"]')[${index}];
+    const bar = item.querySelector('[data-testid="token-audit-tool-io-bar"]');
+    const parts = bar ? Array.from(bar.children) : [];
+    return {
+      text: item.innerText,
+      colors: parts.map(part => getComputedStyle(part).backgroundColor),
+      widths: parts.map(part => part.getBoundingClientRect().width),
+    };
+  })()`);
+  await run('window.__setExecuting(true)');
+  const executingHint = '[data-testid="token-audit-executing"]';
+  assert(await evaluate(`!!document.querySelector('${executingHint}')`), '执行中缺少快照提示');
+  const first = await readToolItem(0);
+  assert(/入参\s+120/.test(first.text) && /输出\s+360/.test(first.text) && first.text.includes('1,000'),
+    '入参、输出与框架总量应分别展示');
+  assert(first.colors.length === 2 && first.colors[0] !== first.colors[1], '色条应有两种颜色');
+  assert(Math.abs(first.widths[0] / first.widths[1] - 1 / 3) < 0.02, '参数与输出宽度应为 1:3');
+  assert((await readToolItem(1)).widths.length === 0, '旧快照缺少拆分时不画色条');
+  const zero = await readToolItem(2);
+  assert(zero.widths[0] === 0 && zero.widths[1] > 0 && /入参\s+0/.test(zero.text), '显式零值应保留');
+
+  const next = structuredClone(SNAPSHOT);
+  next.displayState = 'CAPTURING';
+  next.driftTokens = 80;
+  next.tools.ordinary.items[0].argumentTokens = 800;
+  next.tools.ordinary.items[0].outputTokens = 200;
+  await run(`window.__inject(${JSON.stringify(next)})`);
+  const updated = await readToolItem(0);
+  assert(/入参\s+800/.test(updated.text) && /输出\s+200/.test(updated.text), '推送应更新已展开行');
+  assert(Math.abs(updated.widths[0] / updated.widths[1] - 4) < 0.05, '色条应随推送更新为 4:1');
+  await run('window.__setExecuting(false)');
+  assert(await evaluate(`!document.querySelector('${executingHint}')`), '执行结束后应收起提示');
 
   const data = await evaluate(`(() => {
     const panel = document.querySelector('[data-testid="token-audit-panel"]');
@@ -193,11 +234,13 @@ window.ready = true;`);
   const realErrors = consoleErrors.filter(message => !message.startsWith('[Vue warn]'));
   assert(realErrors.length === 0, '渲染进程存在控制台错误: ' + realErrors.join(' | '));
 
-  console.log('用量审计面板工具来源小节冒烟测试全部通过（单位文案 / 滚动限高 / 间距 / 面板高度）');
+  console.log('用量审计面板冒烟测试通过（双色条、在飞推送、滚动布局）');
+  await server.close();
   clearTimeout(deadline);
   app.exit(0);
-}).catch(error => {
+}).catch(async error => {
   console.error(error && error.message ? error.message : error);
+  await server?.close();
   clearTimeout(deadline);
   app.exit(1);
 });
