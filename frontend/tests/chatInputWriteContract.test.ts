@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {nextTick, ref} from 'vue';
+import {h, nextTick, ref} from 'vue';
 import {
   cleanupMutantTemp,
   readMutantSource,
@@ -74,12 +74,21 @@ const MUTATIONS: MutationTable = {
       'replaceInput(input.value.slice(OPTIMIZE_PROMPT_COMMAND.length).replace(/^\\s+/, \'\'));',
       'input.value = input.value.slice(OPTIMIZE_PROMPT_COMMAND.length).replace(/^\\s+/, \'\');');
   },
+  // 入队流程注回：输入框有内容时主按钮仍保持暂停/停止态
+  'keep-stop-when-input-present': source => {
+    assert.ok(source.includes('const showStop = computed(() => !!props.isSending && !hasQueueableInput.value);'),
+      '补丁锚点失效：找不到 showStop 计算属性');
+    return source.replace(
+      'const showStop = computed(() => !!props.isSending && !hasQueueableInput.value);',
+      'const showStop = computed(() => !!props.isSending);');
+  },
 };
 
 /** 各文件适用的变异集合（其余变异名按正常源码返回）。 */
 const INPUT_AREA_MUTATIONS: MutationTable = {
   'marker-on-same-value': MUTATIONS['marker-on-same-value']!,
   'no-programmatic-marker': MUTATIONS['no-programmatic-marker']!,
+  'keep-stop-when-input-present': MUTATIONS['keep-stop-when-input-present']!,
 };
 const OPTIMIZATION_MUTATIONS: MutationTable = {
   'bypass-replace-input': MUTATIONS['bypass-replace-input']!,
@@ -149,9 +158,25 @@ function mountInputArea(t: unknown, componentSource: string, mutationOptions: Ha
   const component = harness.componentFromSrc('components/chat/ChatInputArea.vue', {
     compileId: 'chat-input-write-contract',
     // 子组件走桩：本用例只关心输入框自己的行为，避免拉起下拉/菜单等无关依赖。
-    extraStubs: [/ChatInputModelSelector\.vue$/, /ChatInputSendButton\.vue$/, /ChatInputContextUsage\.vue$/],
+    extraStubs: [/ChatInputModelSelector\.vue$/, /ChatInputContextUsage\.vue$/],
     // 服务层走桩：挂载时会拉团队/Agent 列表，用例不触网。
     moduleStubs: [
+      {
+        test: /ChatInputSendButton\.vue$/,
+        exports: {
+          __esModule: true,
+          default: {
+            props: ['isSending', 'armed', 'isDark', 'colors', 'onSend'],
+            setup: (slotProps: {isSending?: boolean; armed?: boolean; onSend?: () => void}) => () => h('button', {
+              type: 'button',
+              'data-testid': 'chat-send-button',
+              'data-sending': String(!!slotProps.isSending),
+              disabled: !slotProps.armed,
+              onClick: () => slotProps.onSend?.(),
+            }),
+          },
+        },
+      },
       {
         test: /services[/\\](interceptor|team|agent|skill)$/,
         exports: {
@@ -242,6 +267,60 @@ test('运行时按 Enter 进入待发送队列，后端确认前保留草稿', a
   await pressEnter();
   assert.deepEqual(queued, ['下一条需求', '下一条需求']);
   assert.equal(textarea.value, '');
+});
+
+test('运行时无独立待发送按钮：输入框有内容时主按钮切换为可发送态并点击入队', async t => {
+  let accepted = true;
+  let stopped = 0;
+  const queued: string[] = [];
+  const root = mountInputArea(t, readMutantSource(INPUT_AREA, mutation, INPUT_AREA_MUTATIONS), {}, {
+    isSending: true,
+    queueMessage: async (text: string) => { queued.push(text); return accepted; },
+    onStopGeneration: () => { stopped += 1; },
+  });
+  const textarea = findTextarea(root);
+  const findSendButton = () => {
+    const btn = harness.find(root, node => node.props['data-testid'] === 'chat-send-button');
+    assert.ok(btn, '未找到主发送/停止按钮');
+    return btn;
+  };
+  const clickSendButton = async () => {
+    const btn = findSendButton();
+    (btn.props.onClick as () => void)();
+    await Promise.resolve();
+    await nextTick();
+    await nextTick();
+  };
+
+  // 1. 输入框为空时：主按钮处于暂停/停止态，点击触发 stopGeneration
+  assert.equal(findSendButton().props['data-sending'], 'true', '输入框为空时主按钮应处于暂停/停止态');
+  assert.equal(findSendButton().props.disabled, false);
+  await clickSendButton();
+  assert.equal(stopped, 1, '空输入点击应触发停止生成');
+  assert.deepEqual(queued, []);
+
+  // 2. 输入框存在内容时：独立「加入待发送」按钮不存在，主按钮切换为可发送状态
+  await typeInto(textarea, '入队需求 A');
+  const legacyAddBtn = harness.find(root, node => node.tag === 'button' && node.text.includes('加入待发送'));
+  assert.equal(legacyAddBtn, undefined, '独立的「加入待发送」按钮应已移除');
+  assert.equal(findSendButton().props['data-sending'], 'false', '输入框有内容时主按钮应变为可发送态');
+  assert.equal(findSendButton().props.disabled, false);
+
+  // 3. 点击主按钮存入待发送队列，成功后清空输入框并回到暂停/停止态
+  await clickSendButton();
+  assert.deepEqual(queued, ['入队需求 A']);
+  assert.equal(stopped, 1, '入队点击不得误触发停止生成');
+  assert.equal(textarea.value, '');
+  assert.equal(findSendButton().props['data-sending'], 'true', '入队清空后主按钮应回到暂停/停止态');
+
+  // 4. 若后端拒绝入队，保留草稿且主按钮维持可发送态
+  accepted = false;
+  await typeInto(textarea, '入队需求 B');
+  assert.equal(findSendButton().props['data-sending'], 'false');
+  await clickSendButton();
+  assert.deepEqual(queued, ['入队需求 A', '入队需求 B']);
+  assert.equal(textarea.value, '入队需求 B');
+  assert.equal(findSendButton().props['data-sending'], 'false', '入队失败保留草稿时主按钮仍应维持可发送态');
 });
 
 // ---------- L-1 ----------

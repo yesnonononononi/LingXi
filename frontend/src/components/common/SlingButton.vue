@@ -353,7 +353,19 @@ const release = (pointerId: number, cancelled: boolean) => {
   }
   if (!g.moved) {
     relaxIcon();
-    if (props.tapSends && !cancelled) emit('send');
+    if (props.tapSends && !cancelled) {
+      emit('send');
+      if (!reduce.value) {
+        iconRef.value?.animate?.(
+          [
+            { transform: 'translateY(0) scale(1)' },
+            { transform: 'translateY(-2.5px) scale(0.92)' },
+            { transform: 'translateY(0) scale(1)' }
+          ],
+          { duration: 220, easing: EASE_OUT }
+        );
+      }
+    }
   } else {
     const fire = armedNow && !cancelled;
     const launch = fire ? props.launchSpeed * Math.min(p, POWER_CAP) : CANCEL * props.launchSpeed * Math.min(p, 1);
@@ -452,7 +464,7 @@ defineExpose({
         />
       </g>
       <circle
-        class="group-data-[sent]/root:[fill:var(--sl-accent)] [fill:var(--sl-well)] [transition:fill_200ms_ease] group-data-[disabled]/root:opacity-40"
+        class="origin-center scale-75 opacity-0 group-data-[held]/root:scale-100 group-data-[held]/root:opacity-100 group-data-[sent]/root:scale-100 group-data-[sent]/root:opacity-100 group-data-[sent]/root:[fill:var(--sl-accent)] [fill:var(--sl-well)] [transition:fill_200ms_ease,opacity_180ms_ease,transform_220ms_cubic-bezier(0.22,1,0.36,1)] group-data-[disabled]/root:opacity-0"
         :r="wellR"
       />
       <circle
@@ -475,7 +487,7 @@ defineExpose({
       <button
         ref="padRef"
         type="button"
-        class="group/pad block after:absolute relative after:-inset-1.5 bg-transparent aria-disabled:opacity-50 m-0 p-0 border-0 rounded-full after:rounded-full outline-none w-full h-full after:content-[''] [-webkit-touch-callout:none] touch-none cursor-grab data-[held]:cursor-grabbing aria-disabled:cursor-not-allowed select-none [-webkit-tap-highlight-color:transparent]"
+        class="group/pad block after:absolute relative after:-inset-1.5 bg-transparent m-0 p-0 border-0 rounded-full after:rounded-full outline-none w-full h-full after:content-[''] [-webkit-touch-callout:none] touch-none cursor-pointer data-[held]:cursor-grabbing aria-disabled:cursor-not-allowed select-none [-webkit-tap-highlight-color:transparent]"
         :aria-label="ariaLabel"
         :aria-describedby="hintId"
         :aria-disabled="disabled || undefined"
@@ -491,9 +503,9 @@ defineExpose({
         @click="onClick"
       >
         <span
-          class="flex justify-center items-center rounded-full w-full h-full motion-reduce:transform-none! motion-reduce:transition-none group-data-[held]/pad:[transform:scale(0.97)] group-data-[armed]/pad:[transform:scale(1.04)] [background:var(--sl-pad)] [color:var(--sl-icon)] [transition:transform_160ms_cubic-bezier(0.23,1,0.32,1)] [@media(hover:hover)_and_(pointer:fine)]:group-hover/pad:group-not-data-[held]/pad:group-not-aria-disabled/pad:[transform:scale(1.02)]"
+          class="sling-pad-surface flex justify-center items-center rounded-full w-full h-full motion-reduce:transform-none! motion-reduce:transition-none group-data-[disabled]/root:[transform:scale(0.94)] group-data-[held]/pad:[transform:scale(0.92)] group-data-[armed]/pad:[transform:scale(1.06)] [background-color:var(--sl-pad)] [color:var(--sl-icon)] [transition:transform_220ms_cubic-bezier(0.34,1.56,0.64,1),background-color_220ms_cubic-bezier(0.22,1,0.36,1),color_180ms_ease,box-shadow_220ms_ease] [@media(hover:hover)_and_(pointer:fine)]:group-hover/pad:group-not-data-[held]/pad:group-not-aria-disabled/pad:[transform:scale(1.05)]"
         >
-          <span ref="iconRef" class="inline-flex will-change-transform">
+          <span ref="iconRef" class="inline-flex items-center justify-center will-change-transform">
             <slot>
               <HugeiconsIcon :icon="ArrowUp02Icon as IconArray" :size="Math.round(size * 0.4)" :stroke-width="2.2" />
             </slot>
@@ -504,3 +516,29 @@ defineExpose({
     <span :id="hintId" class="sr-only">Press Enter to send, or drag away and release.</span>
   </span>
 </template>
+
+<style scoped>
+.is-ready .sling-pad-surface {
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.22);
+}
+
+.is-stopping .sling-pad-surface {
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--sl-pad) 22%, transparent);
+  animation: sling-stop-breathe 2s ease-in-out infinite;
+}
+
+@keyframes sling-stop-breathe {
+  0%, 100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--sl-pad) 18%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--sl-pad) 30%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-stopping .sling-pad-surface {
+    animation: none;
+  }
+}
+</style>

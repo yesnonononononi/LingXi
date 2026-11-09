@@ -929,14 +929,18 @@ const canSend = computed(() => {
   const text = inputText.value.trim();
   return text.length > 0;
 });
-const armed = computed(() => !!props.isSending || canSend.value);
 const queueSubmitting = ref(false);
-const canQueue = computed(() => !!props.queueMessage && !queueSubmitting.value && !props.reasoningEffortPending
+const hasQueueableInput = computed(() => !!props.queueMessage && !props.reasoningEffortPending
   && attachments.value.length === 0 && inputText.value.trim().length > 0);
+const canQueue = computed(() => hasQueueableInput.value && !queueSubmitting.value);
+// 运行中但输入框已有可入队文本时，按钮切换为「可发送」态，点击即存入待发送队列。
+const showStop = computed(() => !!props.isSending && !hasQueueableInput.value);
+const isReadyToSend = computed(() => (props.isSending || props.queueMessage ? canQueue.value : canSend.value));
+const armed = computed(() => showStop.value || isReadyToSend.value);
 
 const slingColors = computed(() => {
   const isDark = props.isDark !== false;
-  if (props.isSending) {
+  if (showStop.value) {
     return {
       padColor: '#e11d48',
       iconColor: '#ffffff',
@@ -945,7 +949,7 @@ const slingColors = computed(() => {
       bandColor: '#f43f5e',
     };
   }
-  if (!canSend.value) {
+  if (!isReadyToSend.value) {
     return {
       padColor: isDark ? '#27272a' : '#e4e4e7',
       iconColor: isDark ? '#71717a' : '#a1a1aa',
@@ -973,7 +977,7 @@ const slingColors = computed(() => {
 });
 
 const onSendClick = () => {
-  if (props.isSending) emit('stopGeneration');
+  if (showStop.value) emit('stopGeneration');
   else handleSend();
 };
 
@@ -1002,7 +1006,7 @@ const modelSelectorSlotProps = computed<ChatInputModelSelectorSlotProps>(() => (
 }));
 
 const sendButtonSlotProps = computed<ChatInputSendButtonSlotProps>(() => ({
-  isSending: !!props.isSending,
+  isSending: showStop.value,
   armed: armed.value,
   isDark: props.isDark !== false,
   colors: slingColors.value,
@@ -1585,15 +1589,6 @@ defineExpose({
             @keydown="handleKeyDown"
           />
         </div>
-        <button
-          v-if="isSending && queueMessage"
-          type="button"
-          class="shrink-0 self-end rounded-lg border border-current/20 px-2 py-1 text-xs disabled:opacity-40"
-          :disabled="!canQueue"
-          :title="attachments.length ? t('chat.pending.textOnly') : t('chat.pending.add')"
-          @mousedown.prevent
-          @click="handleSend"
-        >{{ t('chat.pending.add') }}</button>
       </div>
 
       <!-- 底部工具栏行 -->

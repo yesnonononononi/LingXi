@@ -6,6 +6,7 @@ import com.summit.dp.shared.vo.SessionTokenAuditVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,5 +35,10 @@ public class SessionTokenAuditController {
     @GetMapping("/{id}/token-audit")
     public Result<SessionTokenAuditVO> tokenAudit(@PathVariable Long id) {
         return queryService.find(id);
+    }
+
+    @PostMapping("/{id}/token-audit/refresh")
+    public Result<SessionTokenAuditVO> refreshTokenAudit(@PathVariable Long id) {
+        return queryService.refresh(id);
     }
 }

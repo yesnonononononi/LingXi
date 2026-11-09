@@ -7,13 +7,13 @@
  *
  * <p><b>数据来源两条，解析/渲染只有一条</b>：</p>
  * <ol>
- *   <li>打开面板 / 点「立即重取」→ `GET /session/{id}/token-audit`（见 {@link TokenAuditAPI}）；</li>
+ *   <li>打开面板读取已存快照，点刷新通过 {@link TokenAuditAPI} 重新审计；</li>
  *   <li>会话级流上的 `token_audit_snapshot` 推送（与 GET 的 `data` 完全同构，见
  *       {@link module:views/chat/tokenAuditStream}）。</li>
  * </ol>
  * <p>两条来源都先过 {@link normalizeTokenAuditSnapshot}，之后共用同一套派生函数与模板 ——
  * <b>不存在第二份渲染逻辑</b>。展示源选择规则见 {@link resolveDisplayedSnapshot}：推送优先，
- * 无推送回退 GET；手动刷新会先丢弃推送记录，让「立即重取」的结果立刻可见。</p>
+ * 无推送时展示接口返回；请求成功后只清除发起请求时看到的推送。</p>
  *
  * <p><b>渲染铁律</b>（做错就是 bug，与后端契约同步变更时必须重新核对）：</p>
  * <ol>
@@ -77,7 +77,7 @@ const CATEGORY_DOT_CLASS: Readonly<Record<TokenAuditCategoryType, string>> = {
   TOOL: 'bg-lx-primary',
 };
 
-/** 最近一次 GET 的结果。`null` = 尚无数据（加载中 / 失败 / 未采集）。 */
+/** 最近一次接口返回的快照。 */
 const fetched = ref<SessionTokenAuditSnapshot | null>(null);
 /** 是否正在请求。 */
 const loading = ref(false);
@@ -85,6 +85,7 @@ const loading = ref(false);
 const errorMessage = ref('');
 /** 竞态令牌：只有最后一次请求的响应会被采用。 */
 let requestSeq = 0;
+let retryRefresh = false;
 
 /** 会话 ID 是否可用。 */
 const canLoad = computed<boolean>(() => {
@@ -154,37 +155,33 @@ const resetExpansion = (): void => {
   overheadExpanded.value = false;
 };
 
-/**
- * 立即重取一次（打开面板、点刷新、切换会话都走这里）。
- *
- * <p><b>为什么先丢弃推送记录</b>：展示源规则是「推送优先」。若不清，用户点「立即重取」后
- * 看到的仍是上一条推送 —— 一个点了没反应的刷新按钮。丢弃后 GET 结果立刻可见，
- * 下一次推送到达时再自然接管。</p>
- *
- * <p>并发安全：连续刷新/切换会话时只采纳最后一次请求的响应，避免旧响应覆盖新会话数据。</p>
- */
-const load = async (): Promise<void> => {
+const load = async (refresh = false): Promise<void> => {
   if (!canLoad.value) return;
-  clearTokenAuditStreamEntry(props.sessionId);
+  const sessionId = props.sessionId;
+  const previousStreamEntry = streamEntry.value;
   const seq = ++requestSeq;
+  retryRefresh = refresh;
   loading.value = true;
   errorMessage.value = '';
   try {
-    const res = await TokenAuditAPI.tokenAudit(props.sessionId);
+    const res = await (refresh ? TokenAuditAPI.refresh(sessionId) : TokenAuditAPI.tokenAudit(sessionId));
     if (seq !== requestSeq) return;
     if (!isOk(res?.code)) {
-      fetched.value = null;
-      errorMessage.value = describeKind('business');
+      errorMessage.value = refresh ? t('chat.tokenAudit.refreshFailed') : describeKind('business');
       return;
     }
-    // 与流推送同一个解析入口：两条来源形状一致，模板不需要分支。
-    fetched.value = normalizeTokenAuditSnapshot(res.data, props.sessionId);
+    const snapshot = normalizeTokenAuditSnapshot(res.data, sessionId);
+    if (!snapshot) return;
+    fetched.value = snapshot;
+    // 请求期间收到的推送可能已经包含更新的执行结果。
+    if (streamEntry.value === previousStreamEntry) clearTokenAuditStreamEntry(sessionId);
     // 数据换了，旧的展开态不再适用。
     resetExpansion();
   } catch (error) {
     if (seq !== requestSeq) return;
-    fetched.value = null;
-    errorMessage.value = error instanceof ApiError ? describeKind(error.kind) : t('chat.tokenAudit.loadFailed');
+    errorMessage.value = error instanceof ApiError
+      ? describeKind(error.kind)
+      : t(refresh ? 'chat.tokenAudit.refreshFailed' : 'chat.tokenAudit.loadFailed');
   } finally {
     if (seq === requestSeq) loading.value = false;
   }
@@ -225,6 +222,8 @@ watch(
 watch(
   () => props.sessionId,
   () => {
+    requestSeq++;
+    loading.value = false;
     fetched.value = null;
     errorMessage.value = '';
     resetExpansion();
@@ -267,7 +266,7 @@ watch(
             :title="t('chat.tokenAudit.refresh')"
             :aria-label="t('chat.tokenAudit.refresh')"
             class="rounded-lx-sm p-1 text-lx-muted transition hover:bg-lx-surface-hover hover:text-lx-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-lx-border-focus disabled:cursor-not-allowed disabled:opacity-40"
-            @click="load"
+            @click="load(true)"
           >
             <svg
               class="h-3.5 w-3.5"
@@ -297,23 +296,22 @@ watch(
 
       <!-- 内容区：浮层内部独立滚动 -->
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2.5">
-        <!-- 请求失败 / 网络错误：整体降级为一行提示 + 重试，绝不留白。
-             有流推送的快照时不当场清空内容（`!displayed` 才降级）：刷新失败不该把已在眼前的实时数据抹掉。 -->
+        <!-- 刷新失败时保留上一份已展示的快照。 -->
         <div
-          v-if="errorMessage && !displayed"
+          v-if="errorMessage"
           data-testid="token-audit-error"
           class="space-y-2 rounded-lx-md border border-lx-danger-border bg-lx-danger-soft px-2.5 py-2 text-lx-fs-sm text-lx-danger"
         >
           <p class="leading-relaxed">{{ errorMessage }}</p>
           <button
             type="button"
-            :disabled="!canLoad"
+            :disabled="loading || !canLoad"
             class="rounded-lx-sm border border-lx-danger-border px-2 py-0.5 text-lx-fs-xs font-medium transition hover:bg-lx-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-            @click="load"
+            @click="load(retryRefresh)"
           >{{ t('chat.tokenAudit.retry') }}</button>
         </div>
 
-        <template v-else>
+        <template v-if="!errorMessage || displayed">
           <!-- 无会话：一行提示，不发请求 -->
           <p v-if="!canLoad" class="text-lx-fs-sm text-lx-muted">{{ t('chat.tokenAudit.noSession') }}</p>
 

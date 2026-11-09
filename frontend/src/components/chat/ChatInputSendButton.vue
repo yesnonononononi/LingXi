@@ -23,6 +23,7 @@ const props = defineProps<ChatInputSendButtonSlotProps>();
   <!-- Vue Bits 弹弓发送 / 停止按钮：支持拖拽弹射与点击发送，带发射粒子与弹力回弹 -->
   <SlingButton
     data-slot="send-button"
+    :class-name="props.isSending ? 'is-stopping' : props.armed ? 'is-ready' : 'is-idle'"
     :pad-color="props.colors.padColor"
     :icon-color="props.colors.iconColor"
     :accent-color="props.colors.accentColor"

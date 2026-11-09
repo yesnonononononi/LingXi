@@ -9,11 +9,11 @@ import {onBeforeUnmount, ref, watch} from 'vue';
 import {animate, type AnimationPlaybackControls, motionValue, useReducedMotion} from 'motion-v';
 
 /** 上箭头轮廓坐标（viewBox 24x24，成对 x,y）。 */
-const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
+const ARROW_UP = [12, 4.2, 18.4, 10.6, 13.5, 10.6, 13.5, 19.8, 10.5, 19.8, 10.5, 10.6, 5.6, 10.6];
 /** 停止方块轮廓坐标。 */
-const SQUARE = [12, 6, 18, 6, 18, 12, 18, 18, 6, 18, 6, 12, 6, 6];
+const SQUARE = [12, 6.5, 17.5, 6.5, 17.5, 12, 17.5, 17.5, 6.5, 17.5, 6.5, 12, 6.5, 6.5];
 /** 与原实现一致的缓动：先快后慢的强对比曲线。 */
-const EASE_IN_OUT: [number, number, number, number] = [0.77, 0, 0.175, 1];
+const EASE_IN_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
 const props = withDefaults(defineProps<{
   /** true 显示停止方块，false 显示上箭头。 */
@@ -58,7 +58,7 @@ function sync(): void {
   controls = animate(
     progress,
     target,
-    reduce.value ? { duration: 0 } : { duration: 0.24, ease: EASE_IN_OUT },
+    reduce.value ? { duration: 0 } : { duration: 0.26, ease: EASE_IN_OUT },
   );
 }
 
@@ -72,10 +72,11 @@ watch(() => props.isSending, sync, { immediate: true });
 offChange = progress.on('change', (value) => {
   pathRef.value?.setAttribute('d', pathAt(ARROW_UP, SQUARE, value));
   const goo = reduce.value ? 0 : Math.sin(value * Math.PI);
-  const scaleX = 1 - 0.12 * goo;
+  const scaleX = 1 - 0.14 * goo;
+  const scaleY = 1 - 0.08 * goo;
   if (svgRef.value) {
     svgRef.value.style.transform = goo
-      ? `rotate(${direction * 8 * goo}deg) scale(${scaleX}, ${1 / scaleX})`
+      ? `rotate(${direction * 10 * goo}deg) scale(${scaleX}, ${scaleY})`
       : '';
   }
 });
@@ -90,12 +91,15 @@ onBeforeUnmount(() => {
   <svg
     ref="svgRef"
     viewBox="0 0 24 24"
+    width="14"
+    height="14"
     aria-hidden="true"
     fill="currentColor"
     stroke="currentColor"
     :stroke-width="2"
+    stroke-linecap="round"
     stroke-linejoin="round"
-    class="block h-full w-full origin-center"
+    class="block w-3.5 h-3.5 origin-center"
     :style="{ color }"
     @click="emit('click')"
   >

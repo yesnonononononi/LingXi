@@ -284,7 +284,7 @@ export function getTokenAuditStreamEntry(
 }
 
 /**
- * 丢弃某会话的推送记录（手动刷新时用：让「立即重取」的 GET 结果成为展示源）。
+ * 丢弃某会话的推送记录，让成功返回的接口快照成为展示源。
  *
  * @param sessionId 会话 ID
  * @returns 原本是否存在记录
@@ -306,11 +306,10 @@ export function resetTokenAuditStream(): void {
 /**
  * 展示源选择规则：**推送优先，无推送回退 GET**。
  *
- * <p>手动刷新会先丢弃推送记录再 GET，因此「刚重取的数据」不会被旧推送立刻盖掉；
- * 下一次推送到达后再接管（这正是实时面板想要的语义）。</p>
+ * <p>面板收到接口结果后清除旧推送，请求期间收到的新推送仍然优先。</p>
  *
  * @param stream 该会话的推送记录
- * @param fetched 最近一次 GET 的结果（已归一）
+ * @param fetched 最近一次接口结果（已归一）
  * @returns 应当渲染的快照；两者都没有返回 null
  */
 export function resolveDisplayedSnapshot(

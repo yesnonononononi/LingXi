@@ -882,7 +882,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     /** 生成中（受理在途 或 会话运行中），界面唯一判据。 */
     isSending: computed(() => sending.isSending.value || executionControls.resending.value),
     canQueueMessage: computed(() => !!pendingQueueSessionId.value
-      && (isSessionRunning(currentActiveSession.value?.runStatus) || !!pendingQueue.snapshot.value?.entries.length)
+      && (sending.isSending.value || isSessionRunning(currentActiveSession.value?.runStatus) || !!pendingQueue.snapshot.value?.entries.length)
       && !executionControls.resending.value && !executionControls.editTarget.value),
     pendingQueue,
     handleQueueMessage,

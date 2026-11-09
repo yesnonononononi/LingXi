@@ -72,6 +72,11 @@ const CONSUMERS = [
     label: '任务胶囊容器',
     anchor: /task-progress-dock\s+task-progress-surface\s+w-full\s+max-w-lx-chat\s+mx-auto\s+px-4/,
   },
+  {
+    rel: '../src/views/chat/ChatView.vue',
+    label: '待发送队列容器',
+    anchor: /pending-queue-dock\s+w-full\s+max-w-lx-chat\s+mx-auto\s+px-4/,
+  },
 ].map((item) => ({
   ...item,
   source: fs.readFileSync(path.resolve(__dirname, item.rel), 'utf8'),

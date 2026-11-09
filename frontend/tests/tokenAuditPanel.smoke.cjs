@@ -10,8 +10,7 @@
  *   <li>token 单位文案是 `token` 不是 `tok`（`\btok\b` 不会误伤 `token`，用词边界精确判定）。</li>
  * </ol>
  *
- * <p>数据走「流推送」通道注入（`recordTokenAuditSnapshot`）：面板的 GET 被桩成成功但无数据，
- * 所以这里不需要后端，也不需要等网络超时。</p>
+ * <p>通过流推送和 HTTP 适配器验证同一面板的展示与手动刷新。</p>
  *
  * 运行：`cd frontend && npx electron tests/tokenAuditPanel.smoke.cjs`
  */
@@ -73,11 +72,17 @@ app.whenReady().then(async () => {
 import {ref} from 'vue';
 import './app.css';
 import TokenAuditPanel from '../../../src/components/chat/TokenAuditPanel.vue';
-import {TokenAuditAPI} from '../../../src/services/tokenAudit';
+import http from '../../../src/services/interceptor';
 import {recordTokenAuditSnapshot} from '../../../src/views/chat/tokenAuditStream';
 
-// 面板打开时会 GET 一次：桩成「成功但无数据」，让用例不依赖后端、也不产生网络错误噪音。
-TokenAuditAPI.tokenAudit = async () => ({code: 1, data: null});
+window.__requests = [];
+window.__refreshResult = {code: 1, data: null};
+http.defaults.adapter = async config => {
+  window.__requests.push([config.method, config.url]);
+  const data = config.method === 'post' ? window.__refreshResult : {code: 1, data: null};
+  if (config.method === 'post') await window.__refreshWait;
+  return {config, data, status: 200, statusText: 'OK', headers: {}};
+};
 
 const open = ref(true);
 const executing = ref(false);
@@ -231,10 +236,35 @@ window.ready = true;`);
   assert(data.panelHeight !== null && data.panelHeight <= 720,
     '面板高度超出可视区（' + data.panelHeight + 'px），说明限高没生效');
 
+  const refresh = '[data-testid="token-audit-refresh"]';
+  const error = '[data-testid="token-audit-error"]';
+  const contextText = () => evaluate(`document.querySelector('[data-testid="token-audit-context"]').innerText`);
+  const previousContext = await contextText();
+  await run(`window.__refreshResult = {code: 0}; window.clickSelector('${refresh}');`);
+  assert(await evaluate(`!!document.querySelector('${error}')`), '刷新失败时应显示错误');
+  assert(await contextText() === previousContext, '刷新失败时应保留上次审计');
+  const refreshed = {...SNAPSHOT, liveTotalTokens: 92000, remainingTokens: 108000, totalTokens: 92000};
+  await run(`window.__refreshResult = {code: 1, data: ${JSON.stringify(refreshed)}};
+    window.clickSelector('${error} button');`);
+  assert((await contextText()).includes('92,000'), '重算结果应替换上一条推送');
+  assert(await evaluate(`document.querySelector('${error}') === null`), '重试成功应清除错误');
+
+  const pushed = {...SNAPSHOT, liveTotalTokens: 96000, remainingTokens: 104000, totalTokens: 96000};
+  await run(`window.__refreshWait = new Promise(resolve => { window.__finishRefresh = resolve; });
+    window.clickSelector('${refresh}');`);
+  await run(`window.__inject(${JSON.stringify(pushed)}); window.__finishRefresh();`);
+  assert((await contextText()).includes('96,000'), '刷新期间收到的新推送应继续展示');
+  assert(JSON.stringify(await evaluate('window.__requests')) === JSON.stringify([
+    ['get', '/session/s1/token-audit'],
+    ['post', '/session/s1/token-audit/refresh'],
+    ['post', '/session/s1/token-audit/refresh'],
+    ['post', '/session/s1/token-audit/refresh'],
+  ]), '打开面板应查询快照，刷新和重试应重新审计');
+
   const realErrors = consoleErrors.filter(message => !message.startsWith('[Vue warn]'));
   assert(realErrors.length === 0, '渲染进程存在控制台错误: ' + realErrors.join(' | '));
 
-  console.log('用量审计面板冒烟测试通过（双色条、在飞推送、滚动布局）');
+  console.log('用量审计面板冒烟测试通过（手动刷新、在飞推送、双色条和滚动布局）');
   await server.close();
   clearTimeout(deadline);
   app.exit(0);
