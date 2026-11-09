@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {firstUnansweredIndex, nextUnansweredIndex} from '../src/utils/choiceNavigation';
+import {firstUnansweredIndex, nextUnansweredIndex, resolveActiveChoiceId} from '../src/utils/choiceNavigation';
 
 /**
  * 多题选择卡的顺序状态机。
@@ -43,4 +43,44 @@ test('进位：当前下标非法时从头找第一道未答的题', () => {
   assert.equal(nextUnansweredIndex([true, false, false], -1), 1);
   assert.equal(nextUnansweredIndex([false, false], Number.NaN), 0);
   assert.equal(nextUnansweredIndex([true, false, false], 1.5), 1);
+});
+
+test('并发乱序到达：后题先到占住焦点后，首道未决题补齐时必须归位到第一道未决题', () => {
+  const onlySecond = [{ id: 'q2', answered: false }];
+  const activeAfterSecond = resolveActiveChoiceId(onlySecond, '', false);
+  assert.equal(activeAfterSecond, 'q2');
+
+  const fullBatch = [
+    { id: 'q1', answered: false },
+    { id: 'q2', answered: false },
+    { id: 'q3', answered: false },
+  ];
+  assert.equal(resolveActiveChoiceId(fullBatch, activeAfterSecond, false), 'q1');
+});
+
+test('状态推进与手动翻页：当前题变为已决时自动推进到首道未决题，手动翻页和自定义输入中保持原位', () => {
+  assert.equal(
+    resolveActiveChoiceId([
+      { id: 'q1', answered: true, completed: true },
+      { id: 'q2', answered: false, completed: false },
+    ], 'q1', true),
+    'q2',
+    '当前停留题变为已决且仍有未决题时，必须推进到第一道未决题'
+  );
+  assert.equal(
+    resolveActiveChoiceId([
+      { id: 'q1', answered: false, completed: false },
+      { id: 'q2', answered: false, completed: false },
+    ], 'q2', true),
+    'q2',
+    '用户主动翻到后面的未决题时，保持用户停留位'
+  );
+  assert.equal(
+    resolveActiveChoiceId([
+      { id: 'q1', answered: true, completed: false, editingCustom: true },
+      { id: 'q2', answered: false, completed: false },
+    ], 'q1', false),
+    'q1',
+    '自定义输入过程中即使已产生非空草稿也不得跳题'
+  );
 });

@@ -4,7 +4,7 @@ import type {PromptCardEntry} from '../../utils/promptCardGroups';
 import {ANSWER_CHOICES_KEY, type ChoiceAnswersPayload} from '../../types/toolDecision';
 import {buildCardSummary, canDecideCard, resolveCardStatusLabel} from '../../utils/toolCallCard';
 import {createLocalId} from '../../utils/ids';
-import {firstUnansweredIndex, nextUnansweredIndex} from '../../utils/choiceNavigation';
+import {nextUnansweredIndex, resolveActiveChoiceId} from '../../utils/choiceNavigation';
 import {
   CARD_ERROR_TEXT_CLASS,
   CARD_SHELL_CLASS,
@@ -21,6 +21,8 @@ const answerChoices = inject(ANSWER_CHOICES_KEY, null);
 interface Draft { version?: string; selected: number | null; custom: string; useCustom: boolean }
 const drafts = reactive<Record<string, Draft>>({});
 const activeId = ref('');
+const userNavigated = ref(false);
+let lastSignature = '';
 const submitting = ref(false);
 const error = ref('');
 const retry = ref<{ signature: string; payload: ChoiceAnswersPayload } | null>(null);
@@ -33,11 +35,22 @@ watch(() => props.entries, entries => {
       drafts[card.toolCallId] = { version: card.version, selected: null, custom: '', useCustom: false };
     }
   }
-  if (!entries.some(entry => entry.card.toolCallId === activeId.value)) {
-    // 落点交给纯函数状态机：第一道还没答的题，而不是"数组第 0 个"这种撞运气的假设。
-    const index = firstUnansweredIndex(entries.map(isAnswered));
-    activeId.value = entries[index]?.card.toolCallId ?? '';
+  const signature = entries.map(entry => `${entry.card.toolCallId}:${entry.card.status === 'completed'}`).join(',');
+  if (signature !== lastSignature) {
+    lastSignature = signature;
+    userNavigated.value = false;
   }
+  // 并发拉卡乱序到达、块顺序补齐或卡片结项时，重新对齐到第一道未决题。
+  activeId.value = resolveActiveChoiceId(
+    entries.map(entry => ({
+      id: entry.card.toolCallId,
+      answered: isAnswered(entry),
+      completed: entry.card.status === 'completed',
+      editingCustom: Boolean(drafts[entry.card.toolCallId]?.useCustom)
+    })),
+    activeId.value,
+    userNavigated.value
+  );
 }, { immediate: true, deep: true });
 
 const active = computed(() => props.entries.find(entry => entry.card.toolCallId === activeId.value)?.card);
@@ -86,7 +99,10 @@ watch(closable, () => { expanded.value = false; });
 
 function navigate(offset: number) {
   const next = props.entries[activeIndex.value + offset];
-  if (next) activeId.value = next.card.toolCallId;
+  if (next) {
+    userNavigated.value = true;
+    activeId.value = next.card.toolCallId;
+  }
 }
 
 function selectOption(index: number) {

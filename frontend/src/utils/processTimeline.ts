@@ -127,7 +127,7 @@ export function buildProcessTimeline(message: ChatMessage): ProcessTimelineItem[
 
   return items.sort((a, b) => {
     if (a.type === 'prompt_card' || b.type === 'prompt_card') {
-      return a.type === b.type ? a.order - b.order : a.type === 'prompt_card' ? 1 : -1;
+      return a.type === b.type ? compareResponsePosition(a, b) : a.type === 'prompt_card' ? 1 : -1;
     }
     return compareResponsePosition(a, b);
   });

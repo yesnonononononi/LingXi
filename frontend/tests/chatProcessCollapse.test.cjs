@@ -308,6 +308,44 @@ test('同批提问保留原题序，待答题置于正确题号，后续响应�
   assert.match(text(find(batches[1], node => node.props?.['data-testid'] === 'choice-question')), /问题 2/);
 });
 
+test('一次发多张互动卡片且后面的卡片先返回时，全部落位后自动定位到第一张未决策卡片', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({
+    aiMessages: [],
+    toolCalls: [0, 1, 2].map(index => ({
+      id: `q${index}`, toolName: AgentToolName.RequireChoice, status: 'pending', order: 2 + index, responseId: '101',
+    })),
+    promptCards: [{
+      id: 'q1', conversationId: '7', type: 'PROMISE', status: 'pending', version: '2', allowedActions: ['ANSWER'],
+      content: { kind: 'CHOICE', question: '问题 1', options: ['A', 'B'] },
+    }],
+  });
+  const root = mount(t, answer);
+  const group = () => find(root, node => node.props?.['data-testid'] === 'choice-question-group');
+  assert.match(text(find(group(), node => node.props?.['data-testid'] === 'choice-question')), /问题 1/);
+
+  answer.promptCards.push(
+    {
+      id: 'q0', conversationId: '7', type: 'PROMISE', status: 'pending', version: '2', allowedActions: ['ANSWER'],
+      content: { kind: 'CHOICE', question: '问题 0', options: ['A', 'B'] },
+    },
+    {
+      id: 'q2', conversationId: '7', type: 'PROMISE', status: 'pending', version: '2', allowedActions: ['ANSWER'],
+      content: { kind: 'CHOICE', question: '问题 2', options: ['A', 'B'] },
+    }
+  );
+  await nextTick();
+  assert.match(text(find(group(), node => node.props?.role === 'status')), /1 \/ 3/);
+  assert.match(text(find(group(), node => node.props?.['data-testid'] === 'choice-question')), /问题 0/);
+
+  Object.assign(answer.promptCards.find(c => c.id === 'q0'), {
+    status: 'completed', version: '3', allowedActions: [], rawOutput: { outcome: 'ANSWERED', answer: 'A' },
+  });
+  await nextTick();
+  assert.match(text(find(group(), node => node.props?.role === 'status')), /2 \/ 3/);
+  assert.match(text(find(group(), node => node.props?.['data-testid'] === 'choice-question')), /问题 1/);
+});
+
 test('已决提问收成摘要，展开可回看答案，关闭和重进均保留摘要入口', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ aiMessages: [], toolCalls: [0, 1].map(index => ({

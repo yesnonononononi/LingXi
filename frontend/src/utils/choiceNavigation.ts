@@ -8,6 +8,13 @@
  * 收敛成两个可枚举的函数，组件只负责把状态喂进来。</p>
  */
 
+export interface ChoiceNavigationItem {
+  id: string;
+  answered: boolean;
+  completed?: boolean;
+  editingCustom?: boolean;
+}
+
 /**
  * 选出组内默认落点：**第一道还没答的题**。
  *
@@ -21,6 +28,31 @@ export function firstUnansweredIndex(answered: readonly boolean[]): number {
   if (answered.length === 0) return -1;
   const index = answered.findIndex(done => !done);
   return index === -1 ? 0 : index;
+}
+
+/**
+ * 解析条目变化后的当前激活题 ID。
+ *
+ * <p>多张选择卡并发建卡时，排在后面的卡片可能先于第一张返回或先于块顺序落位；
+ * 若只判断「当前 ID 是否仍在数组里」，后到的第一张未决卡插入队首后焦点仍会锁在后面的题上。
+ * 因此在用户未手动翻页、且未处于自定义输入时，始终对齐到第一道未答题。</p>
+ */
+export function resolveActiveChoiceId(
+  items: readonly ChoiceNavigationItem[],
+  currentId: string,
+  userNavigated = false
+): string {
+  if (items.length === 0) return '';
+  const fallbackIndex = firstUnansweredIndex(items.map(item => item.answered));
+  const fallbackId = items[fallbackIndex]?.id ?? '';
+  const currentIndex = items.findIndex(item => item.id === currentId);
+  if (currentIndex === -1) return fallbackId;
+  const current = items[currentIndex]!;
+  if (current.editingCustom && !current.completed) return current.id;
+  if (userNavigated && (!current.completed || items.every(item => item.answered))) {
+    return current.id;
+  }
+  return fallbackId;
 }
 
 /**

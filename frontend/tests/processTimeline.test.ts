@@ -33,4 +33,22 @@ test('用途升级后，同一 UI 投影从过程移出正文，不依赖死字�
   message.content = '答案';
   message.aiMessages = [];
   assert.deepEqual(buildProcessTimeline(message), []);
+
+  const multiResp: ChatMessage = {
+    id: 'answer-multi', role: 'assistant', timestamp: 0, content: '',
+    toolCalls: [
+      { id: 'c1', toolName: AgentToolName.ExecuteCommand, responseId: '101', order: 2, status: 'success' },
+      { id: 'c2', toolName: AgentToolName.ExecuteCommand, responseId: '101', order: 3, status: 'pending' },
+      { id: 'c3', toolName: AgentToolName.ExecuteCommand, responseId: '102', order: 2, status: 'pending' },
+    ],
+    promptCards: [
+      { id: 'c1', type: 'PROMISE', status: 'completed', content: { kind: 'COMMAND' } } as never,
+      { id: 'c3', type: 'PROMISE', status: 'pending', content: { kind: 'COMMAND' } } as never,
+      { id: 'c2', type: 'PROMISE', status: 'pending', content: { kind: 'COMMAND' } } as never,
+    ],
+  };
+  assert.deepEqual(
+    buildProcessTimeline(multiResp).filter(item => item.type === 'prompt_card').map(item => item.id),
+    ['card-c1', 'card-c2', 'card-c3']
+  );
 });
