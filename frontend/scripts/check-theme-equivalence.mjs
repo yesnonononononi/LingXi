@@ -9,11 +9,12 @@
  *   源码里出现的每个令牌类（`bg-lx-*` / `text-lx-*` / `border-lx-*` …）必须在
  *   构建产物里能解析到真实取值。解析不到 = Tailwind 不产出规则 = **组件像没写**
  *   （静默失效）。写错一个字母就属于这一层，判死。
- *   **例外（2026-10-30，字号令牌化 S2；2026-10-30 评审后收窄）**：字号令牌类
- *   （`text-lx-fs-*`）的取值天然不是颜色，解析不出颜色属设计使然，故只在「类名以
- *   `text-lx-fs-` 开头 + `@theme inline` 桥能反查到真实令牌 + 该令牌在 tokens.css 有定义」
- *   三条同时成立时放行（判据见 isNonColorTokenClass）。写错档位（`text-lx-fs-smm`）仍旧判死；
- *   形态类（`shadow-lx-*` / `blur-lx-panel`）不再被这条豁免覆盖；未放宽任何 compare 容差。
+ *   **例外（2026-10-30，字号令牌化 S2；2026-10-30 评审后收窄；2026-11-09 补形态类）**：
+ *   字号令牌类（`text-lx-fs-*`）与形态令牌类（`shadow-lx-*` / `blur-lx-panel`）的取值天然不是颜色，
+ *   解析不出颜色属设计使然，故只在「类名以显式前缀开头 + `@theme inline` 桥能反查到真实令牌 +
+ *   该令牌在 tokens.css 有定义」三条同时成立时放行（判据见 isNonColorTokenClass / isShapeTokenClass）。
+ *   写错档位（`text-lx-fs-smm`、`shadow-lx-9`）仍旧判死；两条豁免的覆盖面前缀都是写死的，
+ *   不靠「类名恰等于桥键名」的巧合；未放宽任何 compare 容差。
  *
  * 第 2 层 · 颜色等价（三元分支 vs 三元分支，按数值 RGBA 带容差比）
  *   `isDark ? 'text-zinc-400' : 'text-gray-500'` 换成令牌后，暗/亮两侧的真实取值
@@ -960,6 +961,43 @@ const listVueFiles = (dir) => {
 const FONT_SIZE_CLASS_PREFIX = 'text-lx-fs-';
 
 /**
+ * 形态令牌类的类名前缀：取值是阴影 / 模糊，天然没有颜色值。
+ *
+ * <p>只收 `@theme` 桥里真实存在的两个命名空间：`--shadow-lx-*` 与 `--blur-lx-panel`。
+ * 不加 `backdrop-blur-` 是因为 {@link TOKEN_CLASS_RE} 不匹配它，压根进不了候选集；
+ * 写进来只会造成「以为覆盖了、其实另一条路径在管」的错觉。</p>
+ */
+const SHAPE_CLASS_PREFIXES = ['shadow-lx-', 'blur-lx-'];
+
+/**
+ * 形态令牌类（`shadow-lx-3`）的合法性判定。
+ *
+ * <p>为什么需要：{@link staticProblems} 的判据是「命中令牌前缀却解析不到<b>颜色</b>取值 ⇒ 判为写错」。
+ * 阴影与模糊本来就不是颜色，`normalizeColor` 必然失败，于是被误报成「令牌名写错」。
+ * 实测证据（2026-11-09）：`TokenAuditPanel.vue` 用 `shadow-lx-3`，三要素齐全
+ * （桥有映射、`tokens.css` 明暗两套有定义、产物 `main-*.css` 里确有 `.shadow-lx-3` 规则），
+ * 门禁仍报红——这是一处**假红**，而假红与假绿同样有害：连续几次「这个红是假的」之后，
+ * 团队就会习惯性 `--allow-stale`，真正的问题随之被一起放过。</p>
+ *
+ * <p>判据与字号豁免**逐条对齐，不放宽任何一条**：
+ * ① 类名以 {@link SHAPE_CLASS_PREFIXES} 之一开头；
+ * ② `@theme` 桥能反查到目标令牌，<b>且</b>该令牌在 `tokens.css` 明/暗两套里真有定义。
+ * 因此 `shadow-lx-9`（写错档位）反查不到 → 仍旧报红；
+ * 桥里有键而 tokens.css 无定义 → 仍旧报红。</p>
+ *
+ * @param {any} ctx 解析上下文（只用到 themeMap 与 tokens 两个字段）
+ * @param {string} cls 原始类名（可带 `dark:` / `hover:` 等变体前缀）
+ * @returns {boolean} true = 这是一个有真实令牌定义的形态令牌类
+ */
+const isShapeTokenClass = (ctx, cls) => {
+  const base = splitVariant(cls).base;
+  if (!SHAPE_CLASS_PREFIXES.some(prefix => base.startsWith(prefix))) return false;
+  const target = ctx.themeMap.get(base);
+  if (!target) return false;
+  return ctx.tokens.dark['--' + target] !== undefined || ctx.tokens.light['--' + target] !== undefined;
+};
+
+/**
  * 字号等「非颜色令牌类」的合法性判定（2026-10-30 新增，随字号令牌化 S2 引入）。
  *
  * <p>为什么需要：{@link staticCheck} 会把「命中令牌前缀却解析不到取值」的类判成写错令牌名。
@@ -1000,11 +1038,15 @@ const isNonColorTokenClass = (ctx, cls) => {
  * <p>抽出来的目的不只是整洁：豁免逻辑一旦被摘掉（`staticCheck` 里漏掉这一步，或本函数退化成
  * `return unknown`），自检里的集成断言会立刻变红——否则「守卫自己被摘掉」是无声的。</p>
  *
+ * <p>两条豁免各管一类「没有颜色取值」的令牌类：字号（{@link isNonColorTokenClass}）与
+ * 形态/阴影（{@link isShapeTokenClass}）。两者判据同构，且都要求令牌在 tokens.css 真有定义。</p>
+ *
  * @param {any} ctx 解析上下文
  * @param {string[]} unknown `groupsOf` 收出的候选类名
  * @returns {string[]} 仍需报为「写错令牌名」的类名
  */
-const filterUnknown = (ctx, unknown) => unknown.filter(cls => !isNonColorTokenClass(ctx, cls));
+const filterUnknown = (ctx, unknown) =>
+  unknown.filter(cls => !isNonColorTokenClass(ctx, cls) && !isShapeTokenClass(ctx, cls));
 
 /**
  * 第 1 层的纯计算部分：给定源码文本，产出该文件的静态问题列表。
@@ -1877,8 +1919,33 @@ const selftest = (ctx) => {
   const ghostFsCtx = { themeMap: new Map([['text-lx-fs-ghost', 'lx-ghost']]), tokens: { dark: {}, light: {} } };
   check('字号前缀合格但 tokens.css 无定义 → 不放行', isNonColorTokenClass(ghostFsCtx, 'text-lx-fs-ghost') === false);
 
-  // ---- C2(a) 豁免面收窄：形态类不再被这条豁免覆盖（此前靠「类名恰等于桥键名」的巧合命中）----
-  check('形态类 shadow-lx-1 不被这条豁免吞掉', isNonColorTokenClass(ctx, 'shadow-lx-1') === false);
+  // ---- C2(a) 豁免面收窄：形态类不再被**字号**豁免吞掉（此前靠「类名恰等于桥键名」的巧合命中）----
+  check('形态类 shadow-lx-1 不被字号豁免吞掉', isNonColorTokenClass(ctx, 'shadow-lx-1') === false);
+
+  // ---- 形态令牌类（阴影 / 模糊）不得被误判成写错令牌名（2026-11-09 新增）----
+  // 实测来由：TokenAuditPanel.vue 的 shadow-lx-3 三要素齐全却被报红（假红）。
+  // 判据与字号同构：前缀合格 + 桥能反查 + tokens.css 真有定义，三条缺一不可。
+  check('形态令牌类 → 不算写错令牌名', isShapeTokenClass(ctx, 'shadow-lx-3') === true);
+  check('形态令牌类带变体前缀也能识别', isShapeTokenClass(ctx, 'dark:shadow-lx-3') === true);
+  check('模糊形态令牌类同样放行', isShapeTokenClass(ctx, 'blur-lx-panel') === true);
+  check('形态档位写错 → 仍报不可解析', isShapeTokenClass(ctx, 'shadow-lx-9') === false);
+  check('颜色令牌类不被形态豁免吞掉', isShapeTokenClass(ctx, 'text-lx-primary') === false);
+  // 判据后半段：桥里有键、tokens.css 无定义 ⇒ 必须不放行（少了这条，削掉后半段也能全绿）
+  const ghostShapeCtx = { themeMap: new Map([['shadow-lx-ghost', 'lx-ghost']]), tokens: { dark: {}, light: {} } };
+  check('形态前缀合格但 tokens.css 无定义 → 不放行', isShapeTokenClass(ghostShapeCtx, 'shadow-lx-ghost') === false);
+  // 集成断言：豁免必须真的接在过滤这一步上（守卫被摘 ⇒ 这里立刻变红）
+  const filteredShape = filterUnknown(ctx, ['shadow-lx-3', 'shadow-lx-9']);
+  check(
+    'filterUnknown 只放行真形态令牌、留下写错档位',
+    filteredShape.length === 1 && filteredShape[0] === 'shadow-lx-9',
+    JSON.stringify(filteredShape)
+  );
+  const shapeProblems = staticProblems(ctx, "const c = 'shadow-lx-3 shadow-lx-9'");
+  check(
+    '静态层只对写错的形态档位报 problem（豁免已接入 staticCheck 本体）',
+    shapeProblems.length === 1 && shapeProblems[0].includes('shadow-lx-9'),
+    JSON.stringify(shapeProblems)
+  );
 
   // 红：非颜色类改动也要报
   const g3 = groupsOf(ctx, "const c = 'flex mb-2.5'");
