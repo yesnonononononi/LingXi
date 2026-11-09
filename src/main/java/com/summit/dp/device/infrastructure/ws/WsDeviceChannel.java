@@ -1,6 +1,7 @@
 package com.summit.dp.device.infrastructure.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
@@ -129,7 +130,10 @@ public class WsDeviceChannel implements DeviceChannel {
         String stopId = "stop-" + correlationCounter.incrementAndGet();
         var future = pending.register(stopId);
         try {
-            send("stop", stopId, mapper.createObjectNode());
+            ObjectNode payload = mapper.createObjectNode();
+            // stopId 放 payload 而不是只靠信封 id：信封 id 是消息标识，不该兼职业务关联键
+            payload.put("stopId", stopId);
+            send("stop", stopId, payload);
             WireMessage response = pending.await(stopId, future, properties.getStopAckTimeout());
             int cleared = response.payload().path("pendingCleared").asInt(0);
             log.info("急停已确认: deviceId={}, stopId={}, cleared={}", device.get().deviceId(), stopId, cleared);
