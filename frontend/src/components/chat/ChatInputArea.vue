@@ -53,6 +53,7 @@ import {
 
 const props = defineProps<{
   isSending?: boolean;
+  queueMessage?: (text: string, requirePlan: boolean, agentId?: string | number | null) => Promise<boolean>;
   isDark?: boolean;
   models?: ModelConfig[];
   selectedModelId?: string | number;
@@ -929,6 +930,9 @@ const canSend = computed(() => {
   return text.length > 0;
 });
 const armed = computed(() => !!props.isSending || canSend.value);
+const queueSubmitting = ref(false);
+const canQueue = computed(() => !!props.queueMessage && !queueSubmitting.value && !props.reasoningEffortPending
+  && attachments.value.length === 0 && inputText.value.trim().length > 0);
 
 const slingColors = computed(() => {
   const isDark = props.isDark !== false;
@@ -1146,7 +1150,17 @@ const handleSend = () => {
 
   const text = draft.text.trim();
   const images = attachments.value.map(attachment => attachment.file);
-  if ((!text && images.length === 0) || props.isSending || props.reasoningEffortPending) return;
+  if ((!text && images.length === 0) || props.reasoningEffortPending || queueSubmitting.value) return;
+
+  if (props.isSending || props.queueMessage) {
+    if (!canQueue.value || !props.queueMessage) return;
+    const original = inputText.value;
+    queueSubmitting.value = true;
+    void props.queueMessage(text, draft.requirePlan, localSelectedAgentId.value).then(accepted => {
+      if (accepted && inputText.value === original) writeInputText('');
+    }).finally(() => { queueSubmitting.value = false; });
+    return;
+  }
 
   const effectiveText = text || t('chat.input.analyzeImagesPrompt');
 
@@ -1571,6 +1585,15 @@ defineExpose({
             @keydown="handleKeyDown"
           />
         </div>
+        <button
+          v-if="isSending && queueMessage"
+          type="button"
+          class="shrink-0 self-end rounded-lg border border-current/20 px-2 py-1 text-xs disabled:opacity-40"
+          :disabled="!canQueue"
+          :title="attachments.length ? t('chat.pending.textOnly') : t('chat.pending.add')"
+          @mousedown.prevent
+          @click="handleSend"
+        >{{ t('chat.pending.add') }}</button>
       </div>
 
       <!-- 底部工具栏行 -->

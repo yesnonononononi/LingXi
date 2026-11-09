@@ -1,6 +1,6 @@
 import {computed, type ComputedRef, ref} from 'vue';
 import {AgentAPI, isAbortError} from '../../services/agent';
-import type {ChatAcceptance, ChatSession} from '../../types/chat';
+import type {ChatCommandReceipt, ChatSession} from '../../types/chat';
 import {isPersistedSessionId, isTempSessionId} from '../../utils/ids';
 import {isSessionRunning} from '../../utils/session';
 import {isOk} from '../../utils/api';
@@ -32,25 +32,7 @@ export interface ChatSendingOptions {
   onSendFailure?: (sessionId: string, message: string) => void;
 }
 
-/**
- * 发送链路。
- *
- * <p>「单一会话级流」形态：发送只做一次<b>同步受理</b>（POST {@code /a/completion/commands}），
- * 不带流、不读 SSE；实时正文全部来自会话级订阅。旧请求级流（{@code POST /a/completion/stream}）
- * 已随第三期删除。</p>
- *
- * <pre>
- * handleSendMessage
- *   → ensureSubscribed(sessionId)          （等 READY：已订阅且就绪）
- *   → AgentAPI.acceptCommand(command)      （POST multipart，同步受理，返回权威 sessionId/turnId）
- *   → runStatus = 'RUNNING'                （事件驱动为唯一真源，POST 返回即视为已受理）
- * </pre>
- *
- * <p><b>为什么 isSending 不能只看 POST 在途</b>：受理是同步的，POST 立刻返回，
- * 而模型调用仍在跑。若把「生成中」绑定在 POST 上，返回瞬间界面就会显示可再次发送 ——
- * 后端会以「该会话正在执行中」拒绝，用户连点两次只看到报错。
- * 故 {@code isSending = isSubmitting || 会话处于运行中}。</p>
- */
+/** 会话级流负责正文，发送回执只区分已落库的轮次与待发送消息。 */
 export function useChatSending(options: ChatSendingOptions) {
   const {
     currentActiveSession,
@@ -81,12 +63,8 @@ export function useChatSending(options: ChatSendingOptions) {
   /** 界面消费的唯一「生成中」判据：受理在途 或 会话运行中。 */
   const isSending = computed(() => isSubmitting.value || isSessionRunningNow.value);
 
-  /**
-   * 受理一次聊天请求（同步落库，异步执行）。
-   *
-   * <p>返回权威 {@code sessionId} / {@code turnId}；受理被拒时返回 null 并给出可见失败提示。</p>
-   */
-  const submitCommand = async (command: ChatCommand): Promise<ChatAcceptance | null> => {
+  /** 待发送回执不能改变当前轮次的运行状态。 */
+  const submitCommand = async (command: ChatCommand): Promise<ChatCommandReceipt | null> => {
     if (!command.input.trim()) return null;
 
     const sessionId = command.sessionId != null ? String(command.sessionId) : '';
@@ -116,13 +94,18 @@ export function useChatSending(options: ChatSendingOptions) {
       }
 
       const result = await AgentAPI.acceptCommand(command, controller.signal);
-      if (!isOk(result.code) || !result.data?.sessionId || !result.data?.turnId) {
+      const data = result.data;
+      if (!isOk(result.code) || !data?.sessionId) {
         throw new Error(result.errMsg || t('chat.view.sendFailed'));
       }
+      if ('pendingId' in data && data.pendingId) {
+        return {sessionId: String(data.sessionId), pendingId: data.pendingId};
+      }
+      if (!('turnId' in data) || !data.turnId) throw new Error(t('chat.view.sendFailed'));
 
-      const acceptance: ChatAcceptance = {
-        sessionId: String(result.data.sessionId),
-        turnId: String(result.data.turnId),
+      const acceptance = {
+        sessionId: String(data.sessionId),
+        turnId: String(data.turnId),
       };
       // 受理已落库：会话进入运行中。后续事件与终态都会继续纠正它。
       const session = currentActiveSession.value;
@@ -153,10 +136,9 @@ export function useChatSending(options: ChatSendingOptions) {
     }
   };
 
-  /** 发送新消息（同步受理）。 */
-  const handleSendMessage = async (command: ChatCommand): Promise<ChatAcceptance | null> => {
-    // 受理窗口内禁止重复提交；运行中同样禁止（后端会以「会话正在执行中」拒绝）。
-    if (isSending.value) return null;
+  /** 每次只提交一个请求，由后端决定立即受理还是入队。 */
+  const handleSendMessage = async (command: ChatCommand): Promise<ChatCommandReceipt | null> => {
+    if (isSubmitting.value) return null;
     if (!command.input.trim()) return null;
     return submitCommand(command);
   };

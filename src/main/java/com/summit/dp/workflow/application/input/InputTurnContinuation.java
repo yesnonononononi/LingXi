@@ -8,6 +8,7 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.chat.PendingChatQueue;
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
@@ -40,17 +41,20 @@ public class InputTurnContinuation {
     private final RequestPreparer preparer;
     private final PreparedChatExecutor executor;
     private final ObjectProvider<InputWakeupService> wakeups;
+    private final PendingChatQueue pendingChats;
 
     public void continueTurn(Execution previous) {
         if (ExecutionAttributes.readLong(InputAutomationPolicy.attributes(previous), ExecutionAttributes.ROOT_EXECUTION_ID) != null) return;
         long sessionId = ExecutionIdentity.sessionId(previous);
+        long previousExecutionId = Long.parseLong(previous.getId());
         RuntimeContext admitted;
         synchronized (ExecutionCoordination.monitor("session:" + sessionId)) {
-            if (registry.isRootRunning(sessionId) || registry.isCancelled(sessionId)
+            if (pendingChats.deferAutomatic(sessionId, previousExecutionId)
+                    || registry.isRootRunning(sessionId) || registry.isCancelled(sessionId)
                     || !executions.findUnfinishedBySessions(List.of(sessionId)).isEmpty()) return;
             Long latest = executions.findLatestBySessionAndStatus(List.of(sessionId)).stream()
                     .map(summary -> summary.getId()).max(Long::compareTo).orElse(null);
-            if (latest != null && latest > Long.parseLong(previous.getId())) {
+            if (latest != null && latest > previousExecutionId) {
                 wakeups.getObject().resumeIfInputPending(latest);
                 return;
             }
@@ -71,7 +75,10 @@ public class InputTurnContinuation {
                     false, List.of(), List.of());
             RuntimeContext context = preparer.prepare(command);
             context.pendingUserMessage().markPendingCompaction();
-            if (!registry.tryBeginAutomaticRoot(sessionId, context.executionContext().executionId())) return;
+            synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
+                if (pendingChats.deferAutomatic(sessionId, previousExecutionId)
+                        || !registry.tryBeginAutomaticRoot(sessionId, context.executionContext().executionId())) return;
+            }
             try {
                 preparer.freezeRuntimeConfigurations(context);
                 if (registry.isCancelled(sessionId)) {

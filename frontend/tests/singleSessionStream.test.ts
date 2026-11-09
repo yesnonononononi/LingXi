@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createPinia, setActivePinia} from 'pinia';
 import {computed, effectScope, ref} from 'vue';
 import axios from 'axios';
+import {AgentAPI} from '../src/services/agent';
 import {SessionEventStream} from '../src/views/chat/sessionEventStream';
 import {useChatSending} from '../src/views/chat/useChatSending';
 import {useChatHistory} from '../src/views/chat/useChatHistory';
@@ -648,6 +649,33 @@ test('4b. 订阅不就绪时先重挂再重试；仍不就绪则显式失败（�
   assert.equal(postCalls, 0, '未就绪时绝不能提交（受理落库的事件会推给空桶被丢弃）');
   assert.ok(sending.sendFailureNotice.value, '不就绪必须给出可见失败提示，不得静默');
   assert.equal(sending.isSubmitting.value, false, '失败后必须解除提交中');
+});
+
+test('活跃会话接受待发送回执且保持原运行状态', async t => {
+  setActivePinia(createPinia());
+  const session = ref<ChatSession>({
+    id: ROOT, title: '当前会话', messages: [], createdAt: 0, updatedAt: 0,
+    modelId: '', activeTools: [], runStatus: 'SUSPENDED',
+  });
+  const accept = t.mock.method(AgentAPI, 'acceptCommand', async () => ({
+    code: 1, data: {sessionId: ROOT, pendingId: 'server-queue-id'},
+  }));
+  const sending = useChatSending({
+    currentActiveSession: computed(() => session.value),
+    ensureSubscribed: async () => true,
+    reconnectStream: () => {},
+    reconcileSessionAfterStream: async () => {},
+    scrollToBottom: () => {},
+  });
+
+  const receipt = await sending.handleSendMessage({
+    input: '下一轮需求', sessionId: ROOT, workDir: '', modelId: 1, workspaceId: 1, agentId: 1, requirePlan: false,
+  });
+
+  assert.deepEqual(receipt, {sessionId: ROOT, pendingId: 'server-queue-id'});
+  assert.equal(accept.mock.callCount(), 1);
+  assert.equal(session.value.runStatus, 'SUSPENDED');
+  assert.equal(sending.isSubmitting.value, false);
 });
 
 /* ------------------------------------------------------------------ */

@@ -52,10 +52,10 @@ public class SuspendedExecutionResumer {
      */
     public void resume(Execution execution, Long conversationId) {
         // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
-        synchronized (ExecutionCoordination.monitor("session:" + conversationId)) {
+        ExecutionCoordination.resumeSession(conversationId, () -> {
             sessionAttributeRestorer.restore(execution, conversationId);
             Execution resumed = executionControl.getObject().resume(execution);
             modelContextService.replace(conversationId, resumed.getMessages());
-        }
+        });
     }
 }

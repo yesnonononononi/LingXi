@@ -9,6 +9,7 @@ import {buildMessageTurnMap, isSessionRunning, resolveRootSessionId} from '../..
 import {useChatScroll} from './useChatScroll';
 import {useChatHistory} from './useChatHistory';
 import {useChatSending} from './useChatSending';
+import {usePendingChatQueue} from './usePendingChatQueue';
 import {useChatExecutionControls} from './useChatExecutionControls';
 import {useChatOutcomeNotifications} from './useChatOutcomeNotifications';
 import {useBackgroundTasks} from './useBackgroundTasks';
@@ -120,6 +121,13 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     return id && isPersistedSessionId(id) ? String(id) : null;
   }));
   const checklist = useChecklist(backgroundTasks.sessionId);
+  const pendingQueueSessionId = computed(() => {
+    const session = currentActiveSession.value;
+    if (!session || !isPersistedSessionId(session.id) || resolveRootSessionId(session) !== String(session.id)) return null;
+    return String(session.id);
+  });
+  const pendingQueue = usePendingChatQueue(pendingQueueSessionId,
+    () => isSessionRunning(currentActiveSession.value?.runStatus));
 
   // ---------- 滚动 ----------
   const messagesContainerRef = templateRefs?.messagesContainerRef ?? ref<any>(null);
@@ -389,6 +397,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   };
 
   // ---------- 发送（同步受理，不读 SSE） ----------
+  let hasOptimisticSend = false;
+  const preparingSend = ref(false);
   const sending = useChatSending({
     currentActiveSession,
     ensureSubscribed,
@@ -401,7 +411,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     onSendFailure: (sessionId) => {
       // 受理被拒 ⇒ 本地那条乐观气泡后端并不存在（没进 transcript、也没进模型上下文），
       // 必须打上「未发送」，否则界面会把一条幽灵呈现成已发送。
-      streamRouter.markUserMessageUnsent();
+      if (hasOptimisticSend && String(currentActiveSession.value?.id) === sessionId) {
+        streamRouter.markUserMessageUnsent();
+      }
       if (isPersistedSessionId(sessionId)) {
         void reconcileSessionAfterStream(sessionId);
       }
@@ -564,31 +576,56 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     _teamId?: string | number | null,
     agentId?: string | number | null,
     imageFiles: File[] | null = [],
-  ): Promise<void> => {
-    if (executionControls.resending.value || executionControls.editTarget.value) return;
-    if (agentId != null) handleUpdateAgent(agentId);
+    fromActiveQueue = false,
+  ): Promise<boolean> => {
+    if (preparingSend.value || executionControls.resending.value || executionControls.editTarget.value) return false;
+    preparingSend.value = true;
+    const requestedSessionId = localActiveId.value;
     try {
+      if (agentId != null) handleUpdateAgent(agentId);
       const files = imageFiles ?? [];
       const imageUrls = await readImagePreviews(files);
+      if (localActiveId.value !== requestedSessionId) return false;
       // 1. 若当前会话未绑定，调用后端新建会话接口先建立会话（拿权威雪花 id）
       const session = await ensureBoundSession(text);
       streamRouter.bindRootSession(session);
-      streamRouter.pushUserMessage(text, imageUrls);
+      const showOptimistic = !fromActiveQueue && !isSessionRunning(session.runStatus)
+        && !pendingQueue.snapshot.value?.entries.length;
+      const optimistic = showOptimistic ? streamRouter.pushUserMessage(text, imageUrls) : undefined;
+      hasOptimisticSend = !!optimistic;
 
       // 2. 同步受理：先等该根会话订阅就绪（READY），再 POST /a/completion/commands。
       //    受理返回的 sessionId / turnId 是权威值，后续事件与历史都按 turnId 对齐。
       const command = buildCommand(text, requirePlan, files);
       command.sessionId = session.id;
       const acceptance = await sending.handleSendMessage(command);
-      if (!acceptance) return;
-      // 乐观用户气泡补上权威 turnId：否则它与历史里的同一条消息分组键不同，
-      // 合并时会变成两个气泡。
-      streamRouter.bindUserMessageTurn(acceptance.turnId);
+      if (!acceptance) return false;
+      if ('pendingId' in acceptance) {
+        // 空闲状态可能在请求途中变化，待发送项只由后端队列展示。
+        if (optimistic) {
+          const index = session.messages.findIndex(message => message.id === optimistic.id);
+          if (index >= 0) session.messages.splice(index, 1);
+        }
+        void pendingQueue.refresh(acceptance.sessionId);
+      } else if (optimistic) {
+        const displayed = session.messages.find(message => message.id === optimistic.id);
+        if (displayed) displayed.turnId = acceptance.turnId;
+      } else if (String(currentActiveSession.value?.id) === acceptance.sessionId) {
+        void reconcileSessionAfterStream(acceptance.sessionId);
+      }
+      return true;
     } catch (err) {
       console.error('发送消息失败:', err);
       window.alert(err instanceof Error ? err.message : t('chat.view.createSessionFailedRetry'));
+      return false;
+    } finally {
+      hasOptimisticSend = false;
+      preparingSend.value = false;
     }
   };
+
+  const handleQueueMessage = (text: string, requirePlan: boolean, agentId?: string | number | null) =>
+    handleSendMessage(text, requirePlan, null, agentId, [], true);
 
   /**
    * 重发一条「未发送」的提问。
@@ -844,6 +881,11 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     isSubmitting: sending.isSubmitting,
     /** 生成中（受理在途 或 会话运行中），界面唯一判据。 */
     isSending: computed(() => sending.isSending.value || executionControls.resending.value),
+    canQueueMessage: computed(() => !!pendingQueueSessionId.value
+      && (isSessionRunning(currentActiveSession.value?.runStatus) || !!pendingQueue.snapshot.value?.entries.length)
+      && !executionControls.resending.value && !executionControls.editTarget.value),
+    pendingQueue,
+    handleQueueMessage,
     executionControls,
     backgroundTasks,
     checklist,

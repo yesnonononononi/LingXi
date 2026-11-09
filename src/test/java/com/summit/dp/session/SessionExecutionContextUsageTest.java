@@ -16,6 +16,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.context.ApplicationEventPublisher;
 import java.util.Map;
 import java.util.Optional;
 
@@ -27,7 +28,7 @@ class SessionExecutionContextUsageTest {
     private final SessionRepository repository = mock(SessionRepository.class);
     private final SessionAggregateService service = new SessionAggregateService(repository,
             mock(MessageRepository.class), mock(ChatTurnRepository.class), mock(ToolCallRepository.class),
-            mock(ModelContextService.class), mock(SessionContextRepository.class));
+            mock(ModelContextService.class), mock(SessionContextRepository.class), mock(ApplicationEventPublisher.class));
 
     private final SessionContextUsageProjector projector = new SessionContextUsageProjector(service);
 

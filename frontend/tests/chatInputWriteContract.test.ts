@@ -145,7 +145,7 @@ test.after(() => {
 });
 
 /** 挂载真实的 ChatInputArea（可选注入变异源码）。 */
-function mountInputArea(t: unknown, componentSource: string, mutationOptions: HarnessOptions = {}) {
+function mountInputArea(t: unknown, componentSource: string, mutationOptions: HarnessOptions = {}, props = {}) {
   const component = harness.componentFromSrc('components/chat/ChatInputArea.vue', {
     compileId: 'chat-input-write-contract',
     // 子组件走桩：本用例只关心输入框自己的行为，避免拉起下拉/菜单等无关依赖。
@@ -176,7 +176,7 @@ function mountInputArea(t: unknown, componentSource: string, mutationOptions: Ha
     ...mutationOptions,
     sourceOverrides: [{test: /ChatInputArea\.vue$/, source: componentSource}, ...(mutationOptions.sourceOverrides ?? [])],
   });
-  return harness.mountComponent(t, component, {isDark: false, hasActiveSession: true});
+  return harness.mountComponent(t, component, {isDark: false, hasActiveSession: true, ...props});
 }
 
 /** 找到文本输入框。 */
@@ -216,6 +216,33 @@ function commandMenuOpen(root: MemoryNode): boolean {
   }
   return trigger.props['aria-expanded'] === true;
 }
+
+test('运行时按 Enter 进入待发送队列，后端确认前保留草稿', async t => {
+  let accepted = false;
+  const queued: string[] = [];
+  const root = mountInputArea(t, readMutantSource(INPUT_AREA, mutation, INPUT_AREA_MUTATIONS), {}, {
+    isSending: true,
+    queueMessage: async (text: string) => { queued.push(text); return accepted; },
+  });
+  const textarea = findTextarea(root);
+  const enter = textarea.props.onKeydown as (event: object) => void;
+  const pressEnter = async () => {
+    enter({key: 'Enter', preventDefault() {}});
+    await Promise.resolve();
+    await nextTick();
+    await nextTick();
+  };
+
+  await typeInto(textarea, '下一条需求');
+  await pressEnter();
+  assert.deepEqual(queued, ['下一条需求']);
+  assert.equal(textarea.value, '下一条需求');
+
+  accepted = true;
+  await pressEnter();
+  assert.deepEqual(queued, ['下一条需求', '下一条需求']);
+  assert.equal(textarea.value, '');
+});
 
 // ---------- L-1 ----------
 

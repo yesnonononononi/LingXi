@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.infrastructure.lifecycle;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.IntStream;
 
 /** 固定数量的门闩避免按执行创建的锁永久积累；锁内禁止运行模型或命令。 */
@@ -15,10 +17,27 @@ public final class ExecutionCoordination {
     private static final int LOCK_STRIPES = 256;
 
     private static final Object[] LOCKS = IntStream.range(0, LOCK_STRIPES).mapToObj(index -> new Object()).toArray();
+    private static final Set<Long> RESUMING_SESSIONS = ConcurrentHashMap.newKeySet();
 
     private ExecutionCoordination() { }
 
     public static Object monitor(String executionId) {
         return LOCKS[Math.floorMod(executionId.hashCode(), LOCKS.length)];
+    }
+
+    /** 恢复没有普通受理槽位，终态先于上下文回写时仍需让新需求入队。 */
+    public static void resumeSession(long sessionId, Runnable resumeAndWriteContext) {
+        synchronized (monitor("session:" + sessionId)) {
+            boolean first = RESUMING_SESSIONS.add(sessionId);
+            try {
+                resumeAndWriteContext.run();
+            } finally {
+                if (first) RESUMING_SESSIONS.remove(sessionId);
+            }
+        }
+    }
+
+    public static boolean isResumingSession(long sessionId) {
+        return RESUMING_SESSIONS.contains(sessionId);
     }
 }

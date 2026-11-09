@@ -21,10 +21,12 @@ public class SessionExecutionStopper {
     private final ExecutionRepository executions;
     private final SessionExecutionRegistry registry;
     private final ExecutionControl control;
+    private final PendingChatQueue pendingChats;
 
     public void stop(long rootSessionId) {
         Set<String> executionIds;
         synchronized (ExecutionCoordination.monitor("control:" + rootSessionId)) {
+            pendingChats.pause(rootSessionId);
             executionIds = new LinkedHashSet<>(registry.cancelRoot(rootSessionId));
             Set<Long> sessionIds = new LinkedHashSet<>();
             sessionIds.add(rootSessionId);

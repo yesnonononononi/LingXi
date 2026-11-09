@@ -20,6 +20,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.application.chat.PendingChatQueue;
 import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
@@ -54,9 +55,10 @@ class InputTurnContinuationTest {
     private final PreparedChatExecutor executor = mock(PreparedChatExecutor.class);
     private final InputTurnAdmission admission = mock(InputTurnAdmission.class);
     private final InputWakeupService wakeups = mock(InputWakeupService.class);
+    private final PendingChatQueue pendingChats = new PendingChatQueue();
     private final InputTurnContinuation service = new InputTurnContinuation(executions, turns, registry, mail, tasks,
             admission, preparer, executor,
-            new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class));
+            new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class), pendingChats);
 
     private RuntimeContext preparedContext() {
         RuntimeContext context = mock(RuntimeContext.class);
@@ -94,6 +96,16 @@ class InputTurnContinuationTest {
                 && command.input().contains("迟到的真实输入") && command.agentId().equals(7L)));
         assertEquals(Map.of(UserMessageEntity.COMPACT, false), context.pendingUserMessage().getAttrs());
         assertEquals(ExecutionState.COMPLETED, previous.getExecutionState());
+    }
+
+    @Test void automaticInputYieldsToQueuedUserInputAndCanBeRecheckedAfterCancellation() {
+        String pendingId = pendingChats.enqueue(10L,
+                new ChatCommand("用户后续需求", 10L, null, null, null, null, false, List.of(), List.of()));
+
+        service.continueTurn(previous());
+
+        verifyNoInteractions(preparer, admission, executor);
+        assertEquals(100L, pendingChats.cancel(10L, pendingId));
     }
 
     @Test void contextWriteCompletesBeforeLateInputCanPrepareANewTurn() throws Exception {

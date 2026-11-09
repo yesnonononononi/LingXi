@@ -1,6 +1,6 @@
 import http from './interceptor';
 import type {Result} from './types';
-import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, CreateAgentRequest, PageResult,} from '../types/chat';
+import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, ChatCommandReceipt, CreateAgentRequest, PageResult, PendingChatQueue} from '../types/chat';
 import {isOk, toPositiveInt} from '../utils/api';
 import {toServerSessionId} from '../utils/ids';
 import {getApiBaseUrl} from '../utils/apiConfig';
@@ -76,17 +76,8 @@ export class AgentAPI {
     return response.json() as Promise<Result<ChatAcceptance>>;
   }
 
-  /**
-   * 受理聊天请求：{@code POST /a/completion/commands}。
-   *
-   * <p><b>同步受理</b>：请求线程内同事务落库（轮次 + 用户消息 + 执行行）后立即返回权威
-   * {@code sessionId} / {@code turnId}，模型调用异步进行。该端点<b>不返回流、不建 emitter</b>，
-   * 实时事件一律由会话级订阅（{@link #subscribeSessionEvents}）承载。</p>
-   *
-   * <p>走原生 fetch 而非 axios：请求体是 FormData（multipart），交给浏览器生成 boundary；
-   * 响应体是普通 JSON，用原生 fetch 反而少一层包装。</p>
-   */
-  static async acceptCommand(form: ChatCommand, signal?: AbortSignal): Promise<Result<ChatAcceptance>> {
+  /** 空闲时返回轮次 ID，繁忙时返回待发送 ID。 */
+  static async acceptCommand(form: ChatCommand, signal?: AbortSignal): Promise<Result<ChatCommandReceipt>> {
     const response = await fetch(`${getApiBaseUrl()}/a/completion/commands`, {
       method: 'POST',
       headers: { Accept: 'application/json' },
@@ -96,7 +87,19 @@ export class AgentAPI {
     if (!response.ok) {
       throw new Error(t('accept.failed', { status: response.status }));
     }
-    return response.json() as Promise<Result<ChatAcceptance>>;
+    return response.json() as Promise<Result<ChatCommandReceipt>>;
+  }
+
+  static pendingCommands(sessionId: string): Promise<Result<PendingChatQueue>> {
+    return http.get<unknown, Result<PendingChatQueue>>(`/a/completion/${sessionId}/pending`);
+  }
+
+  static cancelPendingCommand(sessionId: string, pendingId: string): Promise<Result<void>> {
+    return http.delete<unknown, Result<void>>(`/a/completion/${sessionId}/pending/${encodeURIComponent(pendingId)}`);
+  }
+
+  static resumePendingCommands(sessionId: string): Promise<Result<void>> {
+    return http.post<unknown, Result<void>>(`/a/completion/${sessionId}/pending/resume`);
   }
 
   /**

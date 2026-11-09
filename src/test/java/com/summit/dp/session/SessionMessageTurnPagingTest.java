@@ -15,6 +15,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.context.ApplicationEventPublisher;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,7 +43,7 @@ class SessionMessageTurnPagingTest {
     private final SessionAggregateService service = new SessionAggregateService(
             sessionRepository, messageRepository, chatTurnRepository,
             mock(ToolCallRepository.class), mock(ModelContextService.class),
-            mock(SessionContextRepository.class));
+            mock(SessionContextRepository.class), mock(ApplicationEventPublisher.class));
 
     private static ChatTurn turn(long id) {
         ChatTurn turn = ChatTurn.accept(id, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));

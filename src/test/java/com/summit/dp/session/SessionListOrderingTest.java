@@ -29,6 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -64,7 +65,7 @@ class SessionListOrderingTest {
         sessions = sql.getMapper(SessionMapper.class);
         executions = sql.getMapper(ExecutionMapper.class);
         SessionRepositoryImpl repository = new SessionRepositoryImpl(sessions);
-        SessionAggregateService aggregate = new SessionAggregateService(repository, null, null, null, null, null);
+        SessionAggregateService aggregate = new SessionAggregateService(repository, null, null, null, null, null, mock(ApplicationEventPublisher.class));
         service = new SessionServiceImpl(aggregate, mock(WorkspaceService.class), repository,
                 mock(SessionMessageQueryService.class), new ExecutionQueryServiceImpl(new ExecutionRepositoryImpl(executions)),
                 mock(TeamService.class), mock(AgentRepository.class), mock(ChatTurnService.class),

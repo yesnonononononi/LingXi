@@ -16,6 +16,7 @@ import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
@@ -75,10 +76,10 @@ class ChatAdmissionOrderTest {
             mock(ExecutionLocator.class),
             new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry, executionControl,
                     new StartupFailureCloser(executionControl)),
-            chatTurnService,
+            mock(InputWakeupService.class),
             mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
             // 本测试只盯「单飞校验先于用户消息落库」这一段顺序，重发链路用不到。
-            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class)
+            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), new PendingChatQueue()
     );
 
     @BeforeEach

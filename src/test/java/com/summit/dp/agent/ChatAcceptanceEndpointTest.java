@@ -5,18 +5,22 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +31,9 @@ import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -53,23 +60,31 @@ class ChatAcceptanceEndpointTest {
     private final PreparedChatExecutor chatExecutor = mock(PreparedChatExecutor.class);
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
     private final ExecutionQueryService executionQueryService = mock(ExecutionQueryService.class);
+    private final PendingChatQueue pendingChats = new PendingChatQueue();
+    private final SessionRepository sessions = mock(SessionRepository.class);
 
     private final ChatServiceImpl chatService = new ChatServiceImpl(
             sseEventPublisher, requestPreparer,
             mock(ExecutionLifecycleOrchestrator.class),
-            mock(SessionRepository.class), registry,
+            sessions, registry,
             mock(ExecutionLocator.class), chatExecutor,
-            mock(ChatTurnService.class), executionQueryService,
-            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
+            mock(InputWakeupService.class), executionQueryService,
+            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), pendingChats);
 
     @BeforeEach
     void sessionIsIdle() {
         // ensureSessionTreeIsIdle 读的是「会话下有无未终结执行」；返回空表即视为空闲。
         when(executionQueryService.latestStatesBySession(any())).thenReturn(Map.of());
+        when(sessions.findById(ROOT_SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(ROOT_SESSION_ID).rootSessionId(0L).build()));
     }
 
     private static ChatCommand command() {
-        return new ChatCommand("你好", ROOT_SESSION_ID, 7L, null, null, null, false, null, null);
+        return command("你好");
+    }
+
+    private static ChatCommand command(String input) {
+        return new ChatCommand(input, ROOT_SESSION_ID, 7L, null, null, null, false, List.of(), List.of());
     }
 
     private static RuntimeContext context(String executionId) {
@@ -110,6 +125,18 @@ class ChatAcceptanceEndpointTest {
     }
 
     @Test
+    void newSessionUsesThePreparedIdentityWhenTheRequestUsesTheZeroSentinel() {
+        ChatCommand command = new ChatCommand("新会话", 0L, 7L, null, null, null, false, List.of(), List.of());
+        RuntimeContext context = context("101");
+        when(requestPreparer.prepare(command)).thenReturn(context);
+        when(chatExecutor.admit(context)).thenReturn(context.withTurnId(901L));
+
+        assertEquals(ROOT_SESSION_ID, chatService.acceptCommand(command).getData().getSessionId());
+        assertTrue(registry.isRootRunning(ROOT_SESSION_ID));
+        assertFalse(registry.isRootRunning(0L));
+    }
+
+    @Test
     @DisplayName("受理失败：返回错误且运行资格已释放 —— 紧接着的第二次受理能成功")
     void commitFailureReleasesRunTokenSoNextAcceptanceSucceeds() {
         // 两次上下文用不同的 executionId：RuntimeContext 是值对象，相同会撞上同一套桩。
@@ -127,5 +154,98 @@ class ChatAcceptanceEndpointTest {
 
         Result<ChatAcceptanceVO> result = assertDoesNotThrow(() -> chatService.acceptCommand(command()));
         assertEquals(9002L, result.getData().getTurnId(), "释放资格后才能受理的第二次必须拿到新轮次 ID");
+    }
+
+    @Test
+    void queuesInServerOrderAndClaimsOnlyOneAfterTheRootSettles() {
+        ChatCommand first = command("第一条");
+        ChatCommand second = command("第二条");
+        ChatCommand third = command("第三条");
+        registry.beginRoot(ROOT_SESSION_ID, "old");
+        ChatAcceptanceVO firstReceipt = chatService.acceptCommand(first).getData();
+        ChatAcceptanceVO secondReceipt = chatService.acceptCommand(second).getData();
+        assertNull(firstReceipt.getTurnId());
+        assertNotEquals(firstReceipt.getPendingId(), secondReceipt.getPendingId());
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        verifyNoInteractions(requestPreparer, chatExecutor);
+
+        registry.finishRoot(ROOT_SESSION_ID, "old");
+        when(executionQueryService.latestStatesBySession(any()))
+                .thenReturn(Map.of(ROOT_SESSION_ID, List.of(ExecutionStatus.SUSPENDED)));
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        verifyNoInteractions(requestPreparer, chatExecutor);
+
+        when(executionQueryService.latestStatesBySession(any()))
+                .thenReturn(Map.of(ROOT_SESSION_ID, List.of(ExecutionStatus.COMPLETED)));
+        ChatAcceptanceVO thirdReceipt = chatService.acceptCommand(third).getData();
+        assertNull(thirdReceipt.getTurnId());
+        RuntimeContext firstContext = context("101");
+        RuntimeContext secondContext = context("102");
+        when(requestPreparer.prepare(first)).thenReturn(firstContext);
+        when(requestPreparer.prepare(second)).thenReturn(secondContext);
+        when(chatExecutor.admit(firstContext)).thenReturn(firstContext.withTurnId(901L));
+        when(chatExecutor.admit(secondContext)).thenReturn(secondContext.withTurnId(902L));
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        verify(requestPreparer, never()).prepare(second);
+        registry.finishRoot(ROOT_SESSION_ID, "101");
+        chatService.dispatchPending(ROOT_SESSION_ID);
+
+        InOrder order = inOrder(chatExecutor);
+        order.verify(chatExecutor).submitAsync(firstContext.withTurnId(901L));
+        order.verify(chatExecutor).submitAsync(secondContext.withTurnId(902L));
+        assertEquals(List.of(thirdReceipt.getPendingId()), pendingChats.snapshot(ROOT_SESSION_ID).entries()
+                .stream().map(PendingChatQueue.Entry::id).toList());
+    }
+
+    @Test
+    void terminalDuringResumeStillQueuesUntilContextWriteEnds() throws InterruptedException {
+        CountDownLatch writingContext = new CountDownLatch(1);
+        CountDownLatch allowWriteToFinish = new CountDownLatch(1);
+        Thread resume = Thread.startVirtualThread(() -> ExecutionCoordination.resumeSession(ROOT_SESSION_ID, () -> {
+            writingContext.countDown();
+            try {
+                allowWriteToFinish.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+        try {
+            assertTrue(writingContext.await(5, TimeUnit.SECONDS));
+            when(executionQueryService.latestStatesBySession(any()))
+                    .thenReturn(Map.of(ROOT_SESSION_ID, List.of(ExecutionStatus.COMPLETED)));
+            assertNotNull(chatService.acceptCommand(command()).getData().getPendingId());
+            verifyNoInteractions(requestPreparer, chatExecutor);
+        } finally {
+            allowWriteToFinish.countDown();
+            resume.join();
+        }
+        RuntimeContext context = context("101");
+        when(requestPreparer.prepare(command())).thenReturn(context);
+        when(chatExecutor.admit(context)).thenReturn(context.withTurnId(901L));
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        verify(chatExecutor).submitAsync(context.withTurnId(901L));
+    }
+
+    @Test
+    void failedAdmissionPreservesTheHeadAndExplicitResumeAllowsRetry() {
+        registry.beginRoot(ROOT_SESSION_ID, "old");
+        String pendingId = chatService.acceptCommand(command()).getData().getPendingId();
+        registry.finishRoot(ROOT_SESSION_ID, "old");
+        RuntimeContext context = context("101");
+        when(requestPreparer.prepare(command())).thenReturn(context);
+        when(chatExecutor.admit(context)).thenThrow(new IllegalStateException("db down"))
+                .thenReturn(context.withTurnId(901L));
+
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        assertTrue(chatService.pendingCommands(ROOT_SESSION_ID).paused());
+        assertEquals(pendingId, chatService.pendingCommands(ROOT_SESSION_ID).entries().getFirst().id());
+        verify(chatExecutor, never()).submitAsync(any());
+
+        chatService.resumePendingCommands(ROOT_SESSION_ID);
+        chatService.dispatchPending(ROOT_SESSION_ID);
+        verify(chatExecutor).submitAsync(context.withTurnId(901L));
+        assertTrue(chatService.pendingCommands(ROOT_SESSION_ID).entries().isEmpty());
     }
 }

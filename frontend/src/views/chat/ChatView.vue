@@ -233,6 +233,39 @@
           />
           <TaskProgressDock :background="backgroundTasks" :checklist="checklist" :isDark="displayIsDark"
             :executing="currentActiveSession?.runStatus === 'RUNNING'" />
+          <section
+            v-if="pendingQueue.snapshot.value?.entries.length"
+            class="w-full rounded-xl border border-current/15 px-3 py-2 text-sm"
+            :aria-label="t('chat.pending.title')"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-xs font-medium">{{ t('chat.pending.count', {count: pendingQueue.snapshot.value.entries.length}) }}</h3>
+              <button
+                v-if="pendingQueue.snapshot.value.paused"
+                type="button"
+                class="shrink-0 rounded px-2 py-1 text-xs underline disabled:opacity-50"
+                :disabled="pendingQueue.changing.value"
+                @click="pendingQueue.resume()"
+              >{{ t('chat.pending.resume') }}</button>
+            </div>
+            <p v-if="pendingQueue.snapshot.value.failure || pendingQueue.error.value" class="py-1 text-xs text-red-500" role="alert">
+              {{ pendingQueue.error.value || pendingQueue.snapshot.value.failure }}
+            </p>
+            <ol class="max-h-28 overflow-y-auto">
+              <li v-for="entry in pendingQueue.snapshot.value.entries" :key="entry.id" class="flex items-center gap-2">
+                <span class="min-w-0 flex-1 truncate" :title="entry.input">{{ entry.input }}</span>
+                <span v-if="entry.dispatching" class="shrink-0 text-xs opacity-70">{{ t('chat.pending.sending') }}</span>
+                <button
+                  v-else
+                  type="button"
+                  class="shrink-0 rounded px-2 py-1 text-xs opacity-70 hover:opacity-100 disabled:opacity-40"
+                  :aria-label="t('chat.pending.cancelNamed', {input: entry.input})"
+                  :disabled="pendingQueue.changing.value"
+                  @click="pendingQueue.cancel(entry.id)"
+                >{{ t('chat.pending.cancel') }}</button>
+              </li>
+            </ol>
+          </section>
           <!-- 待审批/待回答卡片存在时整块让位：此时输入框必然是禁用态，留着它只是把卡片往下挤，
                用户真正的下一步动作在卡片里。v-show 而非 v-if —— 组件不卸载，已经敲了一半的草稿不会丢。 -->
           <div
@@ -245,6 +278,7 @@
             <ChatInputArea
               ref="inputAreaRef"
               :isSending="isSending"
+              :queueMessage="canQueueMessage ? handleQueueMessage : undefined"
               :isDark="displayIsDark"
               :contextUsage="contextUsageIndicator"
               :models="localModels"
@@ -559,6 +593,9 @@ const {
   isSettingsOpen,
   settingsInitialTab,
   isSending,
+  canQueueMessage,
+  pendingQueue,
+  handleQueueMessage,
   localSelectedTeamId,
   isWorkspaceModalOpen,
   isTeamModalOpen,

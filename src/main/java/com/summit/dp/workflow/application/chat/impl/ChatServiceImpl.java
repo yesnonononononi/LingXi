@@ -8,14 +8,15 @@ import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.ConversationRollbackService.ResendAdmission;
 import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
@@ -46,21 +47,21 @@ public class ChatServiceImpl implements ChatService {
     private final ExecutionLocator executionLocator;
     /** 已受理上下文的执行协作：模型调用与运行资格收尾都在它那里。 */
     private final PreparedChatExecutor chatExecutor;
-    private final ChatTurnService chatTurnService;
+    private final InputWakeupService inputWakeups;
     private final ExecutionQueryService executionQueryService;
     /** 重发目标的定位与校验；重发脚本本身只负责顺序。 */
     private final ResendTargetResolver resendTargetResolver;
     /** 重发回滚：把被改写的那条提问及其之后的整段历史从库里作废。 */
     private final ConversationRollbackService conversationRollbackService;
     private final SessionExecutionStopper executionStopper;
+    private final PendingChatQueue pendingChats;
 
     @Override
     public Result<String> chat(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
-        ensureRootExecutionIdle(context.executionContext().rootSessionId());
         // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
         // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
-        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
+        beginImmediateRoot(context);
         return Result.success(executePrepared(context).getMessages().toString());
     }
 
@@ -83,20 +84,85 @@ public class ChatServiceImpl implements ChatService {
         return sseEventPublisher.connect(rootSessionId);
     }
 
-    /**
-     * 受理一次聊天请求：请求线程同步落库，模型调用异步，不建立 emitter。
-     *
-     * <p>顺序与 {@link #chat} 一致，只把「提交用户消息」放在返回之前：
-     * prepare 解析会话 → 单飞校验 → 取运行资格 → <b>在请求线程同事务落库并拿到 turnId</b>
-     * → 异步只跑模型。这样「受理返回成功」就有明确的落库依据，turnId 也已产生并随响应返回；
-     * 事件一律由会话级订阅承载，这条入口不建流、不订阅。</p>
-     */
     @Override
     public Result<ChatAcceptanceVO> acceptCommand(ChatCommand command) {
-        RuntimeContext context = requestPreparer.prepare(command);
-        ensureRootExecutionIdle(context.executionContext().rootSessionId());
-        sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
+        throwIf(command == null, "聊天请求不能为空");
+        RuntimeContext context;
+        if (command.sessionId() == null || command.sessionId() <= 0) {
+            context = requestPreparer.prepare(command);
+            beginImmediateRoot(context);
+        } else {
+            long sessionId = command.sessionId();
+            synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
+                if (pendingChats.hasPending(sessionId) || sessionExecutionRegistry.isRootRunning(sessionId)
+                        || hasUnfinishedRoot(sessionId) || ExecutionCoordination.isResumingSession(sessionId)) {
+                    requireQueueSession(sessionId);
+                    String pendingId = pendingChats.enqueue(sessionId, command);
+                    return Result.success(ChatAcceptanceVO.builder().sessionId(sessionId).pendingId(pendingId).build());
+                }
+                context = requestPreparer.prepare(command);
+                sessionExecutionRegistry.beginRoot(sessionId, context.executionContext().executionId());
+            }
+        }
         return Result.success(commitAndSubmit(context));
+    }
+
+    /** 会话门闩覆盖执行和恢复的上下文回写，终态提交只保证执行行可见。 */
+    public void dispatchPending(long sessionId) {
+        if (sessionExecutionRegistry.isRootRunning(sessionId) || ExecutionCoordination.isResumingSession(sessionId)) return;
+        synchronized (ExecutionCoordination.monitor("session:" + sessionId)) {
+            if (hasUnfinishedRoot(sessionId)) return;
+        }
+
+        PendingChatQueue.Ticket ticket;
+        RuntimeContext context;
+        synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
+            if (sessionExecutionRegistry.isRootRunning(sessionId) || hasUnfinishedRoot(sessionId)
+                    || ExecutionCoordination.isResumingSession(sessionId)) return;
+            ticket = pendingChats.claim(sessionId);
+            if (ticket == null) return;
+            try {
+                requireQueueSession(sessionId);
+                context = requestPreparer.prepare(ticket.command());
+                sessionExecutionRegistry.beginRoot(sessionId, context.executionContext().executionId());
+            } catch (RuntimeException | LinkageError failure) {
+                failPending(sessionId, ticket, failure);
+                return;
+            }
+        }
+
+        RuntimeContext committed;
+        try {
+            committed = commitUserMessage(context);
+        } catch (RuntimeException | LinkageError failure) {
+            failPending(sessionId, ticket, failure);
+            return;
+        }
+
+        // 轮次已落库，启动失败也归该轮次收口，不能把同一需求再派一次。
+        pendingChats.admitted(sessionId, ticket);
+        chatExecutor.submitAsync(committed);
+    }
+
+    @Override
+    public PendingChatQueue.Snapshot pendingCommands(long sessionId) {
+        requireQueueSession(sessionId);
+        return pendingChats.snapshot(sessionId);
+    }
+
+    @Override
+    public void cancelPendingCommand(long sessionId, String pendingId) {
+        requireQueueSession(sessionId);
+        Long deferredExecutionId = pendingChats.cancel(sessionId, pendingId);
+        if (deferredExecutionId != null) inputWakeups.resumeIfInputPending(deferredExecutionId);
+    }
+
+    @Override
+    public void resumePendingCommands(long sessionId) {
+        requireQueueSession(sessionId);
+        synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
+            pendingChats.resume(sessionId);
+        }
     }
 
     /**
@@ -116,9 +182,7 @@ public class ChatServiceImpl implements ChatService {
 
         long rootSessionId = context.executionContext().rootSessionId();
 
-        ensureRootExecutionIdle(rootSessionId);
-
-        sessionExecutionRegistry.beginRoot(rootSessionId, context.executionContext().executionId());
+        beginImmediateRoot(context);
 
         ResendAdmission admitted;
         try {
@@ -169,7 +233,7 @@ public class ChatServiceImpl implements ChatService {
             // 运行配置先独立冻结，受理事务再引用该版本，避免恢复引用未提交的配置。
             requestPreparer.freezeRuntimeConfigurations(context);
             return chatExecutor.admit(context);
-        } catch (RuntimeException commitFailure) {
+        } catch (RuntimeException | LinkageError commitFailure) {
             sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId(), context.executionContext().executionId());
             throw commitFailure;
         }
@@ -246,15 +310,39 @@ public class ChatServiceImpl implements ChatService {
      * 根执行：线上事故里两条「继续推进」各跑出一份交付总结，前端两个气泡同时收事件。</p>
      */
     private void ensureRootExecutionIdle(long rootSessionId) {
-        List<ExecutionStatus> states = executionQueryService.latestStatesBySession(List.of(rootSessionId))
-                .get(rootSessionId);
-        if (states == null || states.isEmpty()) {
-            return;
-        }
-
+        List<ExecutionStatus> states = rootStates(rootSessionId);
         throwIf(states.contains(ExecutionStatus.SUSPENDED), "会话有等待恢复的执行，请先处理待审批事项或恢复执行");
         throwIf(states.stream().anyMatch(state -> !state.isTerminal()),
                 "该会话正在执行中，请等待本轮结束或先停止");
+    }
+
+    private List<ExecutionStatus> rootStates(long sessionId) {
+        return executionQueryService.latestStatesBySession(List.of(sessionId)).getOrDefault(sessionId, List.of());
+    }
+
+    private boolean hasUnfinishedRoot(long sessionId) {
+        return rootStates(sessionId).stream().anyMatch(state -> !state.isTerminal());
+    }
+
+    private void beginImmediateRoot(RuntimeContext context) {
+        long rootSessionId = context.executionContext().rootSessionId();
+        synchronized (ExecutionCoordination.monitor("control:" + rootSessionId)) {
+            ensureRootExecutionIdle(rootSessionId);
+            throwIf(pendingChats.hasPending(rootSessionId), "会话有待发送消息，请先处理队列");
+            sessionExecutionRegistry.beginRoot(rootSessionId, context.executionContext().executionId());
+        }
+    }
+
+    private void requireQueueSession(long sessionId) {
+        Session session = sessionRepository.findById(sessionId).orElseThrow(ClientException::new);
+        throwIf(session.isSubSession(), "请在根会话中管理待发送消息");
+    }
+
+    private void failPending(long sessionId, PendingChatQueue.Ticket ticket, Throwable failure) {
+        String message = failure instanceof ClientException && failure.getMessage() != null
+                ? failure.getMessage() : "待发送消息受理失败，请重试";
+        pendingChats.failed(sessionId, ticket, message);
+        log.warn("待发送消息受理失败: sessionId={}, pendingId={}", sessionId, ticket.id(), failure);
     }
 
     private void throwIf(boolean condition, String err) {

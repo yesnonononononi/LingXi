@@ -99,9 +99,8 @@ export class StreamSessionRouter {
   }
 
   /** 注入用户乐观提问消息至根会话 */
-  public pushUserMessage(text: string, imageUrls?: string[]): void {
-    if (!this.rootReducer) return;
-    this.rootReducer.pushUserMessage(text, imageUrls);
+  public pushUserMessage(text: string, imageUrls?: string[]): ChatMessage | undefined {
+    return this.rootReducer?.pushUserMessage(text, imageUrls);
   }
 
   /** 受理被拒：把最新乐观气泡标成「未发送」（该消息后端不存在，不得呈现成已发送）。 */

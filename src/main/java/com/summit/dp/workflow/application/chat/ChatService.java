@@ -6,16 +6,14 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public interface ChatService {
     Result<String> chat(ChatCommand command);
 
-    /**
-     * 受理一次聊天请求：请求线程同步落库（用户消息 + 业务轮次 + 执行行），模型调用随后异步进行。
-     *
-     * <p>本入口不建立任何 emitter，实时事件一律由会话级订阅（{@link #subscribeSession}）承载 ——
-     * 流跟页面走，不跟「这一次发送」走。受理返回成功即代表这一轮已有了明确的落库依据，
-     * 前端凭返回的 {@code sessionId} / {@code turnId} 对齐事件与历史。</p>
-     *
-     * @return 含 {@code sessionId} 与 {@code turnId} 的受理回执
-     */
+    /** 空闲时同步受理并返回轮次 ID，繁忙时返回待发送 ID。 */
     Result<ChatAcceptanceVO> acceptCommand(ChatCommand command);
+
+    PendingChatQueue.Snapshot pendingCommands(long sessionId);
+
+    void cancelPendingCommand(long sessionId, String pendingId);
+
+    void resumePendingCommands(long sessionId);
 
     /**
      * 重发：按 checkpoint（{@code messageId} 指明的历史提问）编辑当时输入后重跑，该轮及其之后的历史作废。

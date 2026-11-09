@@ -29,6 +29,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -291,7 +292,7 @@ class ApplicationSessionStateTest {
 
         @Bean
         SessionService service(SessionRepository sessions, ExecutionRepositoryImpl executions) {
-            return new SessionServiceImpl(new SessionAggregateService(sessions, null, null, null, null, null),
+            return new SessionServiceImpl(new SessionAggregateService(sessions, null, null, null, null, null, mock(ApplicationEventPublisher.class)),
                     mock(WorkspaceService.class), sessions, mock(SessionMessageQueryService.class),
                     new ExecutionQueryServiceImpl(executions), mock(TeamService.class), mock(AgentRepository.class),
                     mock(ChatTurnService.class), new ChatTurnConverter(), mock(TurnViewService.class));

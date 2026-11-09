@@ -7,6 +7,8 @@ import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.chat.PendingChatQueue;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -24,10 +26,12 @@ class SessionExecutionStopperTest {
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
     private final ExecutionControl control = mock(ExecutionControl.class);
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
-    private final SessionExecutionStopper stopper = new SessionExecutionStopper(sessions, executions, registry, control);
+    private final PendingChatQueue pending = new PendingChatQueue();
+    private final SessionExecutionStopper stopper = new SessionExecutionStopper(sessions, executions, registry, control, pending);
 
     @Test
     void oneBatchReadCompletesTheRegisteredTreeBeforeCancellingOutsideTheRootLock() {
+        String pendingId = pending.enqueue(800L, new ChatCommand("待发送", 800L, null, null, null, null, false, List.of(), List.of()));
         registry.beginRoot(800L, "100");
         registry.registerPendingChild(800L, 555L, "101", "100");
         when(sessions.findSessionTree(800L)).thenReturn(List.of(
@@ -48,6 +52,9 @@ class SessionExecutionStopperTest {
         verify(control).cancel("102");
         assertFalse(registry.tryStartChild("101"));
         assertTrue(registry.acquire("102").isCancelRequired());
+        assertTrue(pending.snapshot(800L).paused());
+        assertEquals(pendingId, pending.snapshot(800L).entries().getFirst().id());
+        assertNull(pending.claim(800L));
     }
 
     @Test

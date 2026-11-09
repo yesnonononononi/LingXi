@@ -7,6 +7,7 @@ import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
 import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.workflow.application.chat.ChatLimitsVO;
 import com.summit.dp.workflow.application.chat.ChatService;
+import com.summit.dp.workflow.application.chat.PendingChatQueue;
 import com.summit.dp.workflow.application.input.ResumeSupplementCommand;
 import com.summit.dp.workflow.application.input.ResumeSupplementService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,16 +43,27 @@ public class ChatController {
         return chatService.chat(command(chatRequest));
     }
 
-    /**
-     * 受理聊天请求：请求线程同步落库后立即返回，模型调用异步进行，不建立任何 emitter。
-     *
-     * <p>实时事件一律由会话级订阅（{@code GET /a/completion/{sessionId}/events}）承载 ——
-     * 旧的请求级流入口（{@code POST /completion/stream}）已随「单一会话级流」删除。</p>
-     */
-    @Operation(summary = "受理聊天请求（同步落库，异步执行，不建流）")
+    @Operation(summary = "受理聊天请求或加入待发送队列")
     @PostMapping(value = "/completion/commands", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<ChatAcceptanceVO> acceptCommand(@ModelAttribute ChatRequest chatRequest) {
         return chatService.acceptCommand(command(chatRequest));
+    }
+
+    @GetMapping("/completion/{sessionId}/pending")
+    public Result<PendingChatQueue.Snapshot> pendingCommands(@PathVariable long sessionId) {
+        return Result.success(chatService.pendingCommands(sessionId));
+    }
+
+    @DeleteMapping("/completion/{sessionId}/pending/{pendingId}")
+    public Result<Void> cancelPendingCommand(@PathVariable long sessionId, @PathVariable String pendingId) {
+        chatService.cancelPendingCommand(sessionId, pendingId);
+        return Result.success();
+    }
+
+    @PostMapping("/completion/{sessionId}/pending/resume")
+    public Result<Void> resumePendingCommands(@PathVariable long sessionId) {
+        chatService.resumePendingCommands(sessionId);
+        return Result.success();
     }
 
     /**

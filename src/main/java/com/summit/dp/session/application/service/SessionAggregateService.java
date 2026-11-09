@@ -15,6 +15,7 @@ import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,7 @@ public class SessionAggregateService {
     private final ToolCallRepository toolCallRepository;
     private final ModelContextService modelContextService;
     private final SessionContextRepository sessionContextRepository;
+    private final ApplicationEventPublisher events;
 
 
     @Transactional
@@ -93,6 +95,7 @@ public class SessionAggregateService {
         toolCallRepository.deleteByConversationIds(ids);
         modelContextService.deleteBySessionIds(ids);
         sessionContextRepository.batchDeleteBySessionIds(ids);
+        events.publishEvent(new SessionTreeDeleted(ids));
         return true;
     }
 

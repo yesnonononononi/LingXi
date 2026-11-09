@@ -13,7 +13,9 @@ import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.TokenUsageEntity;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.model.streaming.StreamingChatModel;
@@ -73,7 +75,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 模型由闸门控制，其余入口、循环、检查点、消息与轮次均走实际实现和真实的 SQLite 文件库。 */
+/** 模型由闸门控制，入口、检查点、消息与轮次走实际实现和 H2。 */
 @SpringBootTest(properties = {
         "lingxi.data.dir=D:/Code/LingXi/.run/chat-controls/data", "lingxi.skill.dir=",
         "lingxi.config.sandbox-security.directory=.run/chat-controls/security",
@@ -110,6 +112,7 @@ class ChatControllerLifecycleTest {
     @MockitoSpyBean private SseEventPublisher eventPublisher;
 
     private final BlockingQueue<Gate> gates = new LinkedBlockingQueue<>();
+    private final List<List<Message>> requestsSeen = new CopyOnWriteArrayList<>();
     private final AtomicInteger modelCalls = new AtomicInteger();
     private final Set<String> finishedRuns = ConcurrentHashMap.newKeySet();
 
@@ -204,6 +207,7 @@ class ChatControllerLifecycleTest {
     }
 
     private ChatResponseEntity invoke(ChatRequestEntity request) {
+        requestsSeen.add(List.copyOf(request.getMessages()));
         modelCalls.incrementAndGet();
         Gate gate = gates.poll();
         if (gate == null) return reply("实际循环完成");
@@ -215,6 +219,58 @@ class ChatControllerLifecycleTest {
             throw new ExecutionInterruptedException(ExecutionInterruptedException.Kind.CANCEL, "测试模型等待已中断");
         }
         return gate.response;
+    }
+
+    @Test
+    void pendingCommandsBecomeOrderedTurnsWithThePreviousAnswerInContext() throws Exception {
+        Long sessionId = sessions.initialize("待发送队列验证", null, null).getData();
+        Gate first = new Gate(reply("第一轮的模型回答"));
+        Gate second = new Gate(reply("第二轮的模型回答"));
+        Gate third = new Gate(reply("第三轮的模型回答"));
+        gates.addAll(List.of(first, second, third));
+        try {
+            long firstTurn = Long.parseLong(accept(sessionId, "第一轮输入").path("turnId").asText());
+            assertTrue(first.entered.await(5, TimeUnit.SECONDS));
+            JsonNode secondReceipt = accept(sessionId, "第二轮输入");
+            JsonNode thirdReceipt = accept(sessionId, "第三轮输入");
+            JsonNode cancelledReceipt = accept(sessionId, "撤销这条输入");
+            assertTrue(secondReceipt.path("pendingId").isTextual());
+            assertTrue(secondReceipt.path("turnId").isNull() || secondReceipt.path("turnId").isMissingNode());
+            assertEquals(1, turns.findLatest(sessionId, null, 10).size());
+            mvc.perform(delete("/a/completion/{id}/pending/{pendingId}", sessionId, cancelledReceipt.path("pendingId").asText()))
+                    .andExpect(jsonPath("$.code").value(1));
+            mvc.perform(get("/a/completion/{id}/pending", sessionId))
+                    .andExpect(jsonPath("$.data.entries[0].id").value(secondReceipt.path("pendingId").asText()))
+                    .andExpect(jsonPath("$.data.entries[1].id").value(thirdReceipt.path("pendingId").asText()))
+                    .andExpect(jsonPath("$.data.entries.length()").value(2));
+
+            first.release.countDown();
+            assertTrue(second.entered.await(7, TimeUnit.SECONDS));
+            assertEquals("COMPLETED", turns.findById(firstTurn).orElseThrow().getStatus().name());
+            assertEquals(2, turns.findLatest(sessionId, null, 10).size());
+            List<Message> secondRequest = requestsSeen.get(1);
+            assertEquals("第二轮输入", latestUserInput(secondRequest));
+            assertTrue(secondRequest.stream().anyMatch(message -> message instanceof AiMessageEntity answer
+                    && "第一轮的模型回答".equals(answer.getText())));
+
+            second.release.countDown();
+            assertTrue(third.entered.await(7, TimeUnit.SECONDS));
+            assertEquals("第三轮输入", latestUserInput(requestsSeen.get(2)));
+            third.release.countDown();
+            waitForState(sessionId, 3);
+            assertEquals(3, turns.findLatest(sessionId, null, 10).size());
+            mvc.perform(get("/a/completion/{id}/pending", sessionId))
+                    .andExpect(jsonPath("$.data.entries.length()").value(0));
+        } finally {
+            first.release.countDown();
+            second.release.countDown();
+            third.release.countDown();
+        }
+    }
+
+    private static String latestUserInput(List<Message> request) {
+        return request.reversed().stream().filter(UserMessageEntity.class::isInstance)
+                .findFirst().map(Message::text).orElseThrow();
     }
 
     @Test

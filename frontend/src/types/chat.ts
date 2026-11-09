@@ -916,6 +916,14 @@ export interface ChatAcceptance {
   invalidatedExecutionIds?: string[] | null;
 }
 
+export type ChatCommandReceipt = ChatAcceptance | {sessionId: string; pendingId: string};
+
+export interface PendingChatQueue {
+  paused: boolean;
+  failure: string | null;
+  entries: {id: string; input: string; dispatching: boolean}[];
+}
+
 /* ------------------------------------------------------------------ */
 /* MCP 服务                                                             */
 /* ------------------------------------------------------------------ */

@@ -8,7 +8,7 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
@@ -56,9 +56,9 @@ class ChatSubscribeSessionIdTest {
                 new PreparedChatExecutor(mock(AgentWorkflowOrchestrator.class), requestPreparer,
                         modelContextService, sessionExecutionRegistry, executionControl,
                         new StartupFailureCloser(executionControl)),
-                mock(ChatTurnService.class),
+                mock(InputWakeupService.class),
                 mock(ExecutionQueryService.class),
-                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class));
+                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), new PendingChatQueue());
     }
 
     @Test

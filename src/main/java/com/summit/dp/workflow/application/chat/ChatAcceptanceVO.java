@@ -6,14 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import java.util.Set;
 
-/**
- * 一次聊天请求的受理回执。
- *
- * <p>受理是「请求线程同步完成后立刻返回」的那一刻：会话已确定、用户消息与业务轮次已同事务
- * 落库；模型调用随后异步进行，前端凭这份回执把实时事件与历史对齐。</p>
- *
- * <p>两个 ID 都是雪花值，超出 JS 安全整数范围，一律下成字符串，前端不得拿到被截断的 Long。</p>
- */
+/** 已落库请求返回轮次 ID，待发送请求返回队列 ID。 */
 @Data
 @Builder
 public class ChatAcceptanceVO {
@@ -25,6 +18,8 @@ public class ChatAcceptanceVO {
     /** 本次受理创建的业务轮次 ID；与落库轮次一致，是前端对齐事件与历史的键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long turnId;
+
+    private String pendingId;
 
     @JsonSerialize(using = ToStringSerializer.class)
     private Long historyRevision;
