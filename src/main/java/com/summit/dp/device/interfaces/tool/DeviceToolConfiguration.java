@@ -9,7 +9,9 @@ import com.summit.dp.device.domain.ActionLedger;
 import com.summit.dp.device.domain.DangerPolicy;
 import com.summit.dp.device.infrastructure.fake.FakeDeviceChannel;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,15 +33,28 @@ public class DeviceToolConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(name = "lingxi.device.transport", havingValue = "fake", matchIfMissing = true)
     public FakeDeviceChannel fakeDeviceChannel() {
         return new FakeDeviceChannel("fake-px7a");
     }
 
+    /**
+     * 设备注册表。
+     *
+     * <p>假设备存在时注册它；不存在（transport=ws）时留空，等 WSS 握手成功后动态注册。
+     * 刻意不做"两个都注册"：多设备在线时 {@link DeviceRegistry#anyOnline()} 返回空，
+     * 工具调用会以"请指定 deviceId"失败——那是设计意图，不是缺陷。</p>
+     */
     @Bean
-    public DeviceRegistry deviceRegistry(FakeDeviceChannel fakeDeviceChannel) {
+    public DeviceRegistry deviceRegistry(ObjectProvider<FakeDeviceChannel> fakeDeviceChannel) {
         DeviceRegistry registry = new DeviceRegistry();
-        registry.register(fakeDeviceChannel);
-        log.info("设备注册: deviceId={}, 模式=fake", fakeDeviceChannel.device().deviceId());
+        FakeDeviceChannel fake = fakeDeviceChannel.getIfAvailable();
+        if (fake != null) {
+            registry.register(fake);
+            log.info("设备注册: deviceId={}, 模式=fake", fake.device().deviceId());
+        } else {
+            log.info("设备注册表为空，等待 WSS 设备接入（transport=ws）");
+        }
         return registry;
     }
 
