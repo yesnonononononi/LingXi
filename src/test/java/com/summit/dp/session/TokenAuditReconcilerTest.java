@@ -23,22 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 口径唯一真源的纯单测（Pitest 扫描区 {@code com.summit.dp.session.domain.model}）。
- *
- * <p><b>数值全部按框架 {@code d32ff83} 之后的新口径自洽构造</b>：{@code ToolElement.totalTokens}
- * 与 {@code ToolAuditDocument.toolTokens} 是「结果消息 + 结果消息框架」，<b>不含</b>工具调用参数；
- * 参数只作归因说明。因此本类<b>不出现任何「总量 − 参数」的期望值</b> ——
- * 一旦有人在生产代码里把减法加回来，第 4、5 条用例必然变红。</p>
- *
- * <p>四条恒等式是唯一硬约束：</p>
- * <ol>
- *   <li>{@code messagesTokens = SYSTEM + USER + AI + TOOL}</li>
- *   <li>{@code totalTokens = messagesTokens + requestOverheadTokens}（减法得出）</li>
- *   <li>{@code TOOL = Σ(工具分组)}</li>
- *   <li>{@code 普通工具分组 = Σ(工具名)}</li>
- * </ol>
- */
+/** 验证消息、附件、工具和请求开销的结算口径。 */
 class TokenAuditReconcilerTest {
 
     private static final int SYSTEM = 12300;
@@ -53,7 +38,7 @@ class TokenAuditReconcilerTest {
     private static final int TOOL_DOCUMENT = MCP_TOKENS + SKILL_TOKENS + SEARCH_WEB + READ_FILE - 6;
     private static final int ORDINARY_TOKENS = SEARCH_WEB + READ_FILE;
     private static final int TOOL = MCP_TOKENS + SKILL_TOKENS + ORDINARY_TOKENS;
-    private static final int MESSAGES = SYSTEM + USER + AI + TOOL;
+    private static final int MESSAGES = SYSTEM + USER + AI + TOOL_DOCUMENT;
     private static final int LIVE_TOTAL = 142850;
     private static final int MAX_TOKENS = 200000;
     /** 随请求下发的工具定义 token（框架 {@code OtherTokens}）。 */
@@ -97,16 +82,18 @@ class TokenAuditReconcilerTest {
     }
 
     @Test
-    @DisplayName("恒等式 3：TOOL 行展示值等于各分组展示值之和，漂移只反映分组 primer")
-    void toolEqualsSumOfGroups() {
+    @DisplayName("工具父项使用框架总量，分组差额单独记录")
+    void toolUsesFrameworkTotalAndTracksGroupDrift() {
         Result result = TokenAuditReconciler.reconcile(measurementWithGroups());
 
         int groupSum = result.items().stream()
                 .filter(item -> item.getLevel() == TokenAuditItemLevel.TOOL_GROUP)
                 .mapToInt(SessionTokenAuditItem::resultTokens)
                 .sum();
-        assertEquals(TOOL, groupSum, "三个分组展示值之和必须是 TOOL 总量");
-        assertEquals(TOOL, toolRow(result).resultTokens(), "TOOL 行展示值必须等于分组之和");
+        assertEquals(TOOL, groupSum, "保留分组原值");
+        assertEquals(TOOL_DOCUMENT, toolRow(result).resultTokens(), "TOOL 行使用框架父项");
+        assertEquals(ARGUMENTS, toolRow(result).getArgumentTokens());
+        assertEquals(0, categoryRow(result, TokenAuditCategory.AI).getArgumentTokens());
         assertEquals(TOOL_DOCUMENT - TOOL, result.toolGroupingDrift(),
                 "漂移 = 框架工具总量 − 分组之和（本例为 −6）");
         assertEquals(-6, result.toolGroupingDrift());
@@ -150,12 +137,12 @@ class TokenAuditReconcilerTest {
     }
 
     @Test
-    @DisplayName("新口径回归：参数大于结果不得抛错（两者已无包含关系）")
-    void argumentsMayExceedTotal() {
+    @DisplayName("工具参数作为明细保留，已经计入工具总量")
+    void toolArgumentsAreAlreadyInTheToolTotal() {
         GroupMeasurement group = new GroupMeasurement(TokenAuditGroupKind.ORDINARY,
-                1000, 5000, 900, 1,
-                List.of(new ItemMeasurement("read_file", 1000, 5000, 900, 1)));
-        Measurement measurement = new Measurement(0, 0, 7000, 1000, 5000, 8000, 0, List.of(group));
+                6000, 5000, 900, 1,
+                List.of(new ItemMeasurement("read_file", 6000, 5000, 900, 1)));
+        Measurement measurement = new Measurement(0, 0, 2000, 6000, 5000, 8000, 0, List.of(group));
 
         Result result = TokenAuditReconciler.reconcile(measurement);
 
@@ -163,9 +150,10 @@ class TokenAuditReconcilerTest {
                 .filter(row -> row.getLevel() == TokenAuditItemLevel.TOOL_ITEM)
                 .findFirst()
                 .orElseThrow();
-        assertEquals(1000, item.resultTokens(), "展示值就是框架总量，参数不参与减法");
-        assertEquals(5000, item.getArgumentTokens(), "参数照原值保留（只读归因）");
-        assertEquals(1000, toolRow(result).resultTokens());
+        assertEquals(6000, item.resultTokens());
+        assertEquals(5000, item.getArgumentTokens());
+        assertEquals(6000, toolRow(result).resultTokens());
+        assertEquals(8000, result.messagesTokens());
     }
 
     @Test
@@ -344,40 +332,25 @@ class TokenAuditReconcilerTest {
     }
 
     @Test
-    @DisplayName("归因明细回归守卫：记忆 / 附件两项绝不参与任何合计与恒等式")
-    void attributionDetailsNeverJoinAnyTotal() {
+    @DisplayName("附件单列计入消息合计，记忆正文随系统消息计入一次")
+    void attachmentsJoinTheTotalAndMemoryRemainsAttribution() {
         Result without = TokenAuditReconciler.reconcile(measurementWithDefinitions());
         Result with = TokenAuditReconciler.reconcile(measurementWithAttribution());
 
-        // 两项必须原样透传（落库与下发的都是框架给出的真实测量值）。
         assertEquals(MEMORY, with.memoryTokens());
         assertEquals(ATTACHMENT, with.attachmentTokens());
-        assertNull(without.memoryTokens(), "没给就是未知，不是 0");
-        assertNull(without.attachmentTokens(), "没给就是未知，不是 0");
-
-        // 以下每一项都必须与「没有归因明细」时逐字节相同：
-        // 记住 MEMORY=777 / ATTACHMENT=889 是刻意选的互质数，
-        // 一旦有人把任一值加进分类合计、请求开销或总量，这里的等式必然报出差值。
-        assertEquals(without.messagesTokens(), with.messagesTokens(),
-                "四类合计绝不能包含记忆 / 附件（它们已含在 SYSTEM / USER 里）");
-        assertEquals(without.totalTokens(), with.totalTokens(),
-                "快照总量绝不能包含归因明细");
-        assertEquals(without.requestOverheadTokens(), with.requestOverheadTokens(),
-                "请求开销绝不能包含归因明细");
-        assertEquals(without.toolGroupingDrift(), with.toolGroupingDrift());
-        assertEquals(without.framingResidualTokens(), with.framingResidualTokens());
-        assertEquals(without.overlapTokens(), with.overlapTokens());
-        assertEquals(MESSAGES, with.messagesTokens());
+        assertNull(without.memoryTokens());
+        assertNull(without.attachmentTokens());
+        assertTrue(messageRows(without).stream().noneMatch(row -> row.getCategory() == TokenAuditCategory.ATTACHMENT));
+        assertEquals(MESSAGES + ATTACHMENT, with.messagesTokens());
         assertEquals(LIVE_TOTAL, with.totalTokens());
-
-        // 四条恒等式在带归因明细时依然逐条成立。
-        assertEquals(with.totalTokens(), with.messagesTokens() + with.requestOverheadTokens());
-        // 构造数据的「必然不等」：两个归因值既不等于 SYSTEM 也不等于 USER，
-        // 因此若有人把它们当子项再加一遍，同一行就会变成 12300+777 / 18450+889 而立刻报错。
-        assertEquals(SYSTEM, categoryRow(with, TokenAuditCategory.SYSTEM).resultTokens(),
-                "SYSTEM 行不得被记忆正文 token 撑大（框架已把它含在这一类里）");
-        assertEquals(USER, categoryRow(with, TokenAuditCategory.USER).resultTokens(),
-                "USER 行不得被附件 token 撑大");
+        assertEquals(without.requestOverheadTokens() - ATTACHMENT, with.requestOverheadTokens());
+        assertEquals(without.framingResidualTokens() - ATTACHMENT, with.framingResidualTokens());
+        assertEquals(SYSTEM, categoryRow(with, TokenAuditCategory.SYSTEM).resultTokens());
+        assertEquals(USER, categoryRow(with, TokenAuditCategory.USER).resultTokens());
+        assertEquals(ATTACHMENT, categoryRow(with, TokenAuditCategory.ATTACHMENT).resultTokens());
+        assertEquals(with.messagesTokens(),
+                messageRows(with).stream().mapToInt(SessionTokenAuditItem::resultTokens).sum());
     }
 
     @Test

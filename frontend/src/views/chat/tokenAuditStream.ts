@@ -44,7 +44,7 @@ const KNOWN_DISPLAY_STATES: readonly TokenAuditDisplayState[] = [
 ];
 
 /** 已知消息分项类型（非法取值整条丢弃，不渲染成「未知类别」）。 */
-const KNOWN_CATEGORY_TYPES: readonly TokenAuditCategoryType[] = ['SYSTEM', 'USER', 'AI', 'TOOL'];
+const KNOWN_CATEGORY_TYPES: readonly TokenAuditCategoryType[] = ['SYSTEM', 'USER', 'ATTACHMENT', 'AI', 'TOOL'];
 
 /** 已知工具来源分组（非法取值整组丢弃）。 */
 const KNOWN_TOOL_GROUP_KINDS: readonly TokenAuditToolGroupKind[] = ['ORDINARY', 'MCP', 'SKILL'];

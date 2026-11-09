@@ -636,9 +636,10 @@ export const messages: MessageSchema = {
         noSession: '当前没有可审计的会话',
         category: {
           system: '系统消息',
-          user: '用户消息与附件',
+          user: '用户消息',
+          attachment: '用户附件',
           ai: '模型消息',
-          tool: '工具返回消息',
+          tool: '工具消息',
         },
         toolGroup: {
           ordinary: '普通工具',
@@ -1959,9 +1960,10 @@ export const messages: MessageSchema = {
         noSession: 'No auditable session right now',
         category: {
           system: 'System messages',
-          user: 'User messages and attachments',
+          user: 'User messages',
+          attachment: 'User attachments',
           ai: 'Model messages',
-          tool: 'Tool result messages',
+          tool: 'Tool messages',
         },
         toolGroup: {
           ordinary: 'Ordinary tools',

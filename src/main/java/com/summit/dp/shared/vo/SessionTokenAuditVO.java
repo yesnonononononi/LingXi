@@ -73,13 +73,13 @@ public class SessionTokenAuditVO {
     /** 仅 {@code FAILED} 有值（中文业务文案）。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String failReason;
-    /** 记忆与附件已包含在消息分项里，不作为独立开销累加。 */
+    /** 已包含在系统消息中的记忆正文归因。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditContextAttributionVO contextAttribution;
     /** 框架给出的工具定义分项。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private TokenAuditRequestOverheadVO requestOverhead;
-    /** 成功采集的消息分项，固定顺序 SYSTEM / USER / AI / TOOL。 */
+    /** 框架成功采集的消息和附件分项。 */
     private List<TokenAuditCategoryVO> messages;
     /** TOOL 下钻；无工具分组时为 null。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)

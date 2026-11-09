@@ -37,7 +37,7 @@ export type TokenAuditNumeric = number | string | null | undefined;
 export type TokenAuditDisplayState = 'NOT_COLLECTED' | 'CAPTURING' | 'COLLECTED' | 'FAILED';
 
 /** 消息分项类型：系统 / 用户 / 模型 / 工具返回。 */
-export type TokenAuditCategoryType = 'SYSTEM' | 'USER' | 'AI' | 'TOOL';
+export type TokenAuditCategoryType = 'SYSTEM' | 'USER' | 'ATTACHMENT' | 'AI' | 'TOOL';
 
 /** 工具来源分组：普通工具 / MCP / Skill。 */
 export type TokenAuditToolGroupKind = 'MCP' | 'SKILL' | 'ORDINARY';
@@ -77,7 +77,7 @@ export interface TokenAuditToolBreakdownVO extends TokenAuditAmountVO {
   ordinary?: {items?: TokenAuditToolItemVO[] | null} | null;
 }
 
-/** 消息构成里的单个分项（仅包含框架成功给出的 SYSTEM / USER / AI / TOOL）。 */
+/** 消息构成里的单个分项（仅包含框架成功给出的 SYSTEM / USER / ATTACHMENT / AI / TOOL）。 */
 export interface TokenAuditCategoryVO extends TokenAuditAmountVO {
   /** 分项类型。 */
   type: TokenAuditCategoryType;

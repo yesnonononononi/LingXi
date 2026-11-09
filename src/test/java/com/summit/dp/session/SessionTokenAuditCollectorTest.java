@@ -1,5 +1,7 @@
 package com.summit.dp.session;
 
+import com.summit.core.audit.token.TokenAuditDocument;
+import com.summit.core.audit.token.tool.ToolAuditDocument;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.TokenAuditConverter;
@@ -74,6 +76,25 @@ class SessionTokenAuditCollectorTest {
         verify(auditRepository).replaceSnapshot(captor.capture());
         assertEquals(0.0412345, TokenAuditFrameworkViewConverter.read(captor.getValue().getFrameworkDocument())
                 .getRequestOverhead().getToolDefinition().getRatio());
+    }
+
+    @Test
+    void settlesAttachmentsAndTheFrameworkToolTotalExactlyOnce() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
+        TokenAuditDocument document = SessionTokenAuditApiTest.frameworkDocument();
+        ToolAuditDocument tools = document.toolTokens().getTokenMeta();
+        document.toolTokens().setTokenMeta(new ToolAuditDocument(64000, tools.mcpDetail(),
+                tools.skillDetail(), tools.tokenDetails()));
+
+        collector.collect("1", document, metadata());
+
+        ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
+        verify(auditRepository).replaceSnapshot(captor.capture());
+        SessionTokenAudit stored = captor.getValue();
+        assertEquals(134639, stored.getMessagesTokens());
+        assertEquals(13561, stored.getRequestOverheadTokens());
+        assertEquals(148200, stored.getTotalTokens());
+        assertEquals(64000, stored.toolTokens());
     }
 
     @Test

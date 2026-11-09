@@ -26,13 +26,10 @@ import java.util.Map;
  * {@code ToolElement} 全部在此收口，领域模型只认 {@code int} 与 {@link GroupMeasurement}，
  * 这样框架口径再变也只改这一个文件。</p>
  *
- * <p><b>本类只做「读取 + 兜底」，不做任何口径换算</b>：四类求和、请求开销减法、
- * 去重叠、分组与工具名的父子一致全部在 {@code TokenAuditReconciler}（Pitest 扫描区）里。
+ * <p><b>本类只做「读取 + 兜底」，不做任何口径换算</b>：消息合计与请求开销减法由 {@code TokenAuditReconciler}（Pitest 扫描区）里。
  * 这里出现算术就意味着质量门禁扫不到，属于设计禁止的做法。</p>
  *
- * <p><b>口径（框架 {@code d32ff83} 起）</b>：{@code ToolElement.totalTokens} /
- * {@code ToolAuditDocument.toolTokens} 是「结果消息 + 结果消息框架」，<b>不含工具调用参数</b>；
- * 参数（{@code argumentTokens}）仅作归因说明。因此本类原样透传框架数值，<b>不做减法</b>。</p>
+ * <p>工具总量已含调用参数。用户附件单列，记忆正文仍随系统消息结算。</p>
  *
  * <p><b>模型输入总量（U1 决策）</b>：取 {@code Session.contextTokenCount} —— 它与框架终态时的
  * {@code Execution.getContextUsageMetric()} 同源（由 {@code SessionContextUsageProjector} 写入），
@@ -132,8 +129,7 @@ public class TokenAuditConverter {
     }
 
     /**
-     * 用户附件 token（框架 {@code OtherTokens.attachmentTokens}）：<b>归因明细</b>，
-     * 框架已把它并入 userTokens，这里只读取、不参与任何换算。
+     * 独立计数的用户附件 token。
      *
      * @param document 框架审计文档
      * @return 非负值；未知时为 null

@@ -52,12 +52,17 @@ public final class TokenAuditFrameworkViewConverter {
 
     public static SessionTokenAuditVO toView(TokenAuditDocument document) {
         List<TokenAuditCategoryVO> messages = new ArrayList<>();
+        OtherTokens other = document.otherTokens();
+        DocumentElement<Integer> attachment = other == null ? null : other.attachmentTokens();
+        Integer attachmentTokens = value(attachment);
         addMessage(messages, "SYSTEM", document.systemTokens(), value(document.systemTokens()));
         addMessage(messages, "USER", document.userTokens(), value(document.userTokens()));
+        if (attachmentTokens != null && attachmentTokens >= 0) {
+            addMessage(messages, "ATTACHMENT", attachment, attachmentTokens);
+        }
         addMessage(messages, "AI", document.assistantTokens(), value(document.assistantTokens()));
         ToolAuditDocument tools = value(document.toolTokens());
         addMessage(messages, "TOOL", document.toolTokens(), tools == null ? null : tools.toolTokens());
-        OtherTokens other = document.otherTokens();
         TokenAuditOverheadItemVO definition = other == null ? null : amount(other.toolDefinitionTokens());
         TokenAuditOverheadItemVO mcpDefinition = other == null ? null : amount(other.mcpToolDefinitionTokens());
         return SessionTokenAuditVO.builder()
@@ -68,8 +73,7 @@ public final class TokenAuditFrameworkViewConverter {
                         .itemCount((definition == null ? 0 : 1) + (mcpDefinition == null ? 0 : 1))
                         .toolDefinition(definition).mcpToolDefinition(mcpDefinition).build())
                 .contextAttribution(other == null ? null : TokenAuditContextAttributionVO.builder()
-                        .memoryTokens(value(other.memoryTokens()))
-                        .attachmentTokens(value(other.attachmentTokens())).build())
+                        .memoryTokens(value(other.memoryTokens())).build())
                 .build();
     }
 

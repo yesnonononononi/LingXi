@@ -35,19 +35,13 @@ public class SessionTokenAudit {
     private Integer totalTokens;
     /** 审计当时的上下文上限；null 表示未知。 */
     private final Integer maxTokens;
-    /** 四类分项之和（去重叠口径）。 */
+    /** 消息与已知附件的分项合计。 */
     private Integer messagesTokens;
     /** 非消息请求开销，由减法得出，可能为负。 */
     private Integer requestOverheadTokens;
-    /** 工具调用参数 token：已计入 AI 项，仅说明。 */
+    /** 可归因到分组的工具参数 token，仅作说明。 */
     private Integer overlapTokens;
-    /**
-     * 归因漂移（有符号）：采集时的「框架自报工具总量 − 各分组展示值之和」。
-     *
-     * <p><b>为什么必须落库</b>：恒等式 3 要求 TOOL 行 = Σ分组，因此该差在库内<b>恒等于 0</b>，
-     * 读库无法复算。它是分组归因写错时的绊线（会先变大而 {@code requestOverhead} 不响），
-     * 只能在采集瞬间算出来并存下来。</p>
-     */
+    /** 采集时的工具总量与分组之和的差额。 */
     private Integer toolGroupingDrift;
     /**
      * 随请求下发的工具定义 token（框架 {@code e9c6ec6} 的 {@code OtherTokens}）。
@@ -69,11 +63,7 @@ public class SessionTokenAudit {
      * <p>null 表示「未知」（框架未给出 / 该元素审计失败），不用 0 顶替。</p>
      */
     private Integer memoryTokens;
-    /**
-     * 用户附件 token（框架 {@code e9c6ec6} 的 {@code OtherTokens.attachmentTokens}）。
-     *
-     * <p>同 {@link #memoryTokens}：<b>已并入 {@code USER} 分项，纯归因明细，禁止累加</b>。</p>
-     */
+    /** 单列计入消息合计的用户附件 token。 */
     private Integer attachmentTokens;
     /** 保留框架原始比例，避免查询时按业务父级重算。 */
     private String frameworkDocument;
@@ -312,27 +302,11 @@ public class SessionTokenAudit {
         return itemsOfLevel(TokenAuditItemLevel.TOOL_ITEM);
     }
 
-    /**
-     * TOOL 项的展示值 = 各工具分组展示值之和（子项优先，与 TOOL 消息行同口径）。
-     *
-     * @return 展示值；无工具时 0
-     */
+    /** 工具总量取采集时的父项，避免漏掉未分组的调用参数。 */
     public Integer toolTokens() {
-        int sum = 0;
-        for (SessionTokenAuditItem group : toolGroups()) {
-            sum += group.resultTokens();
-        }
-        return sum;
+        SessionTokenAuditItem tool = messagesOf(TokenAuditCategory.TOOL);
+        return tool == null ? 0 : tool.resultTokens();
     }
-
-    /**
-     * 归因漂移（字段 {@link #toolGroupingDrift}，由 {@code @Getter} 暴露为
-     * {@code getToolGroupingDrift()}）。
-     *
-     * <p>值来自采集瞬间（{@code TokenAuditReconciler.Result#toolGroupingDrift()}）并已落库，
-     * 读库拿到的就是真值。<b>不要再按「TOOL 行 − Σ分组」由库内数据派生</b>：恒等式 3 要求
-     * TOOL 行 = Σ分组，派生结果恒为 0，会把这条归因绊线变成死数据。</p>
-     */
 
     /** 明细行只读视图：调用方不能借返回的集合改聚合内部状态。 */
     public List<SessionTokenAuditItem> getItems() {

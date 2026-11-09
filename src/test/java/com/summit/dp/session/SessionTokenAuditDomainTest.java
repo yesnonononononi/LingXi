@@ -180,7 +180,7 @@ class SessionTokenAuditDomainTest {
     }
 
     @Test
-    @DisplayName("U5：漂移随采集落库，读回是真值；「TOOL 行 − Σ分组」在库内恒为 0，故不能靠派生")
+    @DisplayName("工具父项和分组差额随快照保留")
     void toolGroupingDriftIsPersistedNotDerived() {
         Result result = TokenAuditReconciler.reconcile(measurement());
         SessionTokenAudit captured = SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
@@ -199,9 +199,8 @@ class SessionTokenAuditDomainTest {
         int toolRow = captured.messagesOf(TokenAuditCategory.TOOL).resultTokens();
         int groupSum = reloaded.toolGroups().stream()
                 .mapToInt(SessionTokenAuditItem::resultTokens).sum();
-        assertEquals(groupSum, toolRow, "恒等式 3：TOOL 行必须等于分组之和");
-        assertEquals(0, toolRow - groupSum,
-                "「TOOL 行 − Σ分组」在库内恒为 0 —— 这就是为什么该值必须单独落库而不能派生");
+        assertEquals(TOOL_DOCUMENT, toolRow);
+        assertEquals(-6, toolRow - groupSum);
     }
 
     @Test
@@ -212,7 +211,7 @@ class SessionTokenAuditDomainTest {
         SessionTokenAudit audit = SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
 
         assertEquals(0, audit.getToolGroupingDrift());
-        assertEquals(0, audit.toolTokens(), "没有分组行时 TOOL 下钻合计为 0");
+        assertEquals(73100, audit.toolTokens(), "没有分组时同样保留工具父项");
         assertEquals(73100, audit.messagesOf(TokenAuditCategory.TOOL).resultTokens(),
                 "TOOL 行仍保留框架原值");
     }
@@ -226,7 +225,7 @@ class SessionTokenAuditDomainTest {
                         TokenAuditGroupKind.ORDINARY),
                 audit.toolGroups().stream().map(SessionTokenAuditItem::getGroupKind).toList());
         assertEquals(2, audit.toolItems().size());
-        assertEquals(63620, audit.toolTokens(), "分组展示值之和");
+        assertEquals(TOOL_DOCUMENT, audit.toolTokens());
         assertThrows(UnsupportedOperationException.class,
                 () -> audit.getItems().add(null), "getItems 必须返回不可变副本");
     }

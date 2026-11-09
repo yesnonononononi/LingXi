@@ -54,7 +54,7 @@ public class SessionTokenAuditPO {
      * 禁止累加进任何分类合计或恒等式。</b>null 表示未知，不是 0。
      */
     private Integer memoryTokens;
-    /** 用户附件 token。<b>归因明细：已并入 USER 分项，禁止累加。</b>null 表示未知。 */
+    /** 用户附件 token，未知时为空。 */
     private Integer attachmentTokens;
     private String frameworkDocument;
     private Instant capturedAt;

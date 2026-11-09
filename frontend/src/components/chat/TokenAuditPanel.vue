@@ -67,10 +67,11 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
 }>();
 
-/** 各消息分项的色点样式：与设计稿的「系统灰 / 用户蓝 / 模型绿 / 工具深」语义一一对应。 */
+/** 用户消息和附件沿用同一色系。 */
 const CATEGORY_DOT_CLASS: Readonly<Record<TokenAuditCategoryType, string>> = {
   SYSTEM: 'bg-lx-muted',
   USER: 'bg-lx-accent',
+  ATTACHMENT: 'bg-lx-accent',
   AI: 'bg-lx-success',
   TOOL: 'bg-lx-primary',
 };

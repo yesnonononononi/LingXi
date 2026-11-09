@@ -20,7 +20,7 @@ import type {
  */
 
 /** 消息分项的固定展示顺序（后端顺序不作保证，前端按业务语义定序）。 */
-export const CATEGORY_ORDER: readonly TokenAuditCategoryType[] = ['SYSTEM', 'USER', 'AI', 'TOOL'];
+export const CATEGORY_ORDER: readonly TokenAuditCategoryType[] = ['SYSTEM', 'USER', 'ATTACHMENT', 'AI', 'TOOL'];
 
 /** 工具来源分组的固定展示顺序：普通工具 → MCP → Skill。 */
 export const TOOL_GROUP_ORDER: readonly TokenAuditToolGroupKind[] = ['ORDINARY', 'MCP', 'SKILL'];
@@ -29,6 +29,7 @@ export const TOOL_GROUP_ORDER: readonly TokenAuditToolGroupKind[] = ['ORDINARY',
 export const CATEGORY_LABEL_KEY: Readonly<Record<TokenAuditCategoryType, string>> = {
   SYSTEM: 'chat.tokenAudit.category.system',
   USER: 'chat.tokenAudit.category.user',
+  ATTACHMENT: 'chat.tokenAudit.category.attachment',
   AI: 'chat.tokenAudit.category.ai',
   TOOL: 'chat.tokenAudit.category.tool',
 };

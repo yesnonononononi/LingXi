@@ -3,19 +3,7 @@ package com.summit.dp.session.domain.model;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.Getter;
 
-/**
- * 审计快照的一条明细行。
- *
- * <p><b>数值契约（本次最容易被改坏的地方）</b>：{@link #totalTokens} 永远是框架原值。
- * 框架自身已完成去重叠（{@code d32ff83}：{@code ToolElement.totalTokens} 不含工具调用参数），
- * 因此 {@link #resultTokens()} <b>不得再做任何减法</b> —— 框架已减过一次，业务再减一次
- * 就是双重扣减，TOOL 分项会凭空少掉「参数总量」，四类求和与请求开销跟着一起崩。</p>
- *
- * <p>为什么参数不参与任何求和：框架的 {@code assistantTokens} 已经把工具调用参数算进去了，
- * TOOL 视图再算一遍就是重复。参数只作只读说明字段（{@link #argumentTokens}）下发，
- * 且新口径下它与 {@link #totalTokens} <b>没有包含关系</b>（参数 5000、结果 1000 是正常情况），
- * 因此两者之间不允许出现大小比较或加减运算。</p>
- */
+/** 审计快照的一条明细行，保留采集时的分项总量。 */
 @Getter
 public final class SessionTokenAuditItem {
 
@@ -29,9 +17,9 @@ public final class SessionTokenAuditItem {
     private final String toolName;
     /** 该聚合项覆盖的调用条数（前端「N 项」徽标）。 */
     private final int callCount;
-    /** 框架原值；框架已去重叠，不含工具调用参数。 */
+    /** 采集时的分项总量。 */
     private final int totalTokens;
-    /** 工具调用参数 token：已计入 AI 项，仅作只读说明，与 {@link #totalTokens} 无包含关系。 */
+    /** 可归因的调用参数 token，仅作说明。 */
     private final int argumentTokens;
     private final int outputTokens;
     private final int sortOrder;
@@ -53,11 +41,11 @@ public final class SessionTokenAuditItem {
     }
 
     /**
-     * 消息构成行（SYSTEM / USER / AI / TOOL）。
+     * 消息或附件分项行。
      *
      * @param category       分类，不能为空
-     * @param totalTokens    框架原值（框架已去重叠，不含参数）
-     * @param argumentTokens 工具调用参数 token（只读归因；现口径下挂在 AI 行）
+     * @param totalTokens    分项总量
+     * @param argumentTokens 可归因的工具调用参数 token
      * @param sortOrder      固定展示顺序，从 1 开始
      */
     public static SessionTokenAuditItem message(TokenAuditCategory category, int totalTokens,
@@ -71,7 +59,7 @@ public final class SessionTokenAuditItem {
      *
      * @param groupKind      分组，不能为空
      * @param callCount      组内调用条数
-     * @param totalTokens    框架原值（框架已去重叠，不含参数）
+     * @param totalTokens    分组总量
      * @param argumentTokens 组内参数 token 合计
      * @param outputTokens   组内工具输出 token 合计
      * @param sortOrder      组内展示顺序，从 1 开始
@@ -89,7 +77,7 @@ public final class SessionTokenAuditItem {
      *
      * @param toolName       工具名；空值按框架兜底名 {@code unknown_tool} 处理
      * @param callCount      该工具调用条数
-     * @param totalTokens    框架原值（框架已去重叠，不含参数）
+     * @param totalTokens    工具明细总量
      * @param argumentTokens 该工具参数 token 合计
      * @param outputTokens   该工具输出 token 合计
      * @param sortOrder      组内展示顺序，从 1 开始
@@ -115,10 +103,7 @@ public final class SessionTokenAuditItem {
                 argumentTokens, outputTokens, sortOrder);
     }
 
-    /**
-     * 展示值：框架已在 {@code d32ff83} 去重叠，{@link #totalTokens} 本身就是展示值，
-     * 这里<b>不做任何减法</b>（再减一次就是双重扣减）。
-     */
+    /** 直接使用采集值，避免对同一份参数重复换算。 */
     public int resultTokens() {
         return totalTokens;
     }

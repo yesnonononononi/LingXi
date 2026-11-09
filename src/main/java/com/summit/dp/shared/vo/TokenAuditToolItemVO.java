@@ -11,9 +11,9 @@ public class TokenAuditToolItemVO {
 
     /** 工具名；框架无法归名时为 {@code unknown_tool}。 */
     private String toolName;
-    /** 展示值（框架已去重叠，不含工具调用参数）。 */
+    /** 框架明细总量，含调用参数。 */
     private Integer tokens;
-    /** 工具调用参数 token：已计入 AI 项，只读说明，不参与任何求和。 */
+    /** 工具调用参数 token，已计入本项总量。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer argumentTokens;
     /** 工具输出文本 token。 */

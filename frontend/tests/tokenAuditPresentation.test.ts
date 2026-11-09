@@ -152,6 +152,21 @@ test('resolveMessageRows：按 SYSTEM/USER/AI/TOOL 定序并保留后端占比',
   assert.equal(rows[0]!.labelKey, 'chat.tokenAudit.category.system');
 });
 
+test('附件作为独立消息分项显示，保留框架比例', () => {
+  const snapshot = normalizeTokenAuditSnapshot({
+    ...collectedAudit(),
+    messages: [
+      {type: 'ATTACHMENT', tokens: 889, ratio: 0.004, expandable: false},
+      {type: 'USER', tokens: 18450, ratio: 0.0923456, expandable: false},
+    ],
+  }, null);
+  const rows = resolveMessageRows(snapshot?.messages);
+  assert.deepEqual(rows.map((row) => row.type), ['USER', 'ATTACHMENT']);
+  assert.equal(rows[1]!.tokens, 889);
+  assert.equal(rows[1]!.ratio, 0.004);
+  assert.equal(rows[1]!.labelKey, 'chat.tokenAudit.category.attachment');
+});
+
 test('resolveMessageRows：tokens 缺失的行整行丢弃，不渲染 0', () => {
   const rows = resolveMessageRows([
     {type: 'SYSTEM', tokens: 12400, expandable: false},

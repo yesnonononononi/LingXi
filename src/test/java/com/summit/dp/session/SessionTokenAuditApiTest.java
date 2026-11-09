@@ -58,13 +58,16 @@ class SessionTokenAuditApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.sessionId").isString())
                 .andExpect(jsonPath("$.data.liveTotalTokens").isNumber())
-                .andExpect(jsonPath("$.data.messages.length()").value(4))
+                .andExpect(jsonPath("$.data.messages.length()").value(5))
                 .andExpect(jsonPath("$.data.messages[0].tokens").value(12300))
                 .andExpect(jsonPath("$.data.messages[0].ratio").value(0.0612345))
                 .andExpect(jsonPath("$.data.messages[1].ratio").value(0.0923456))
-                .andExpect(jsonPath("$.data.messages[2].ratio").value(0.1951234))
-                .andExpect(jsonPath("$.data.messages[3].tokens").value(63614))
-                .andExpect(jsonPath("$.data.messages[3].ratio").value(0.3181234))
+                .andExpect(jsonPath("$.data.messages[2].type").value("ATTACHMENT"))
+                .andExpect(jsonPath("$.data.messages[2].tokens").value(889))
+                .andExpect(jsonPath("$.data.messages[2].ratio").value(0.004))
+                .andExpect(jsonPath("$.data.messages[3].ratio").value(0.1951234))
+                .andExpect(jsonPath("$.data.messages[4].tokens").value(63614))
+                .andExpect(jsonPath("$.data.messages[4].ratio").value(0.3181234))
                 .andExpect(jsonPath("$.data.tools.tokens").value(63614))
                 .andExpect(jsonPath("$.data.tools.ratio").value(0.3181234))
                 .andExpect(jsonPath("$.data.tools.mcp.tokens").value(34700))
@@ -77,7 +80,7 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.messagesTotalTokens").doesNotExist())
                 .andExpect(jsonPath("$.data.reconciliation").doesNotExist())
                 .andExpect(jsonPath("$.data.contextAttribution.memoryTokens").value(777))
-                .andExpect(jsonPath("$.data.contextAttribution.attachmentTokens").value(889));
+                .andExpect(jsonPath("$.data.contextAttribution.attachmentTokens").doesNotExist());
     }
 
     @Test
@@ -104,6 +107,7 @@ class SessionTokenAuditApiTest {
     void failedFrameworkElementsAreRemovedWithoutZeroRows() throws Exception {
         TokenAuditDocument document = frameworkDocument();
         document.systemTokens().setStatus(AuditStatus.FAILED);
+        document.otherTokens().attachmentTokens().setStatus(AuditStatus.FAILED);
         document.otherTokens().toolDefinitionTokens().setStatus(AuditStatus.NO_DATA);
         document.userTokens().setTokenMeta(0);
         document.userTokens().setRatio(0);
@@ -206,7 +210,7 @@ class SessionTokenAuditApiTest {
                 .build();
     }
 
-    /** 与 {@code TokenAuditReconcilerTest} 同一套自洽数据（新口径：工具总量不含参数）。 */
+    /** 与 {@code TokenAuditReconcilerTest} 使用同一套结算样例。 */
     private static SessionTokenAudit collected() {
         int ordinary = 9420 + 5300;
         Measurement measurement = new Measurement(12300, 18450, 39000, 63614, 5900, 148200, 200000,
