@@ -162,6 +162,12 @@ public class DevicePayloadMapper {
         return node == null || node.isNull() ? null : node.asText();
     }
 
+    /** 急停回执里的 stopId。别用 reqIdOf 取它——字段名不同，取出来永远是 null。 */
+    public String stopIdOf(JsonNode payload) {
+        JsonNode node = payload == null ? null : payload.get("stopId");
+        return node == null || node.isNull() ? null : node.asText();
+    }
+
     /** 动作结果里的 actionId。 */
     public String actionIdOf(JsonNode payload) {
         JsonNode node = payload == null ? null : payload.get("actionId");

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
+import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.port.DeviceChannel;
 import com.summit.dp.device.application.port.DeviceUnavailableException;
 import com.summit.dp.device.domain.Device;
@@ -82,7 +83,8 @@ public class WsDeviceChannel implements DeviceChannel {
         var future = pending.register(reqId);
         try {
             send("observe", reqId, payloadMapper.observePayload(reqId, maxNodes));
-            WireMessage response = pending.await(reqId, future, properties.getObserveTimeout());
+            // 超时按请求节点数自适应：节点翻倍而超时不变，会让大请求必然超时
+            WireMessage response = pending.await(reqId, future, properties.observeTimeoutFor(maxNodes));
             ObserveSnapshot snapshot = payloadMapper.toSnapshot(response);
             foregroundPackage.set(snapshot.focusedPackage());
             return snapshot;
@@ -115,13 +117,32 @@ public class WsDeviceChannel implements DeviceChannel {
         }
     }
 
+    /**
+     * 急停。发出后等设备确认，超时则如实返回"未确认"。
+     *
+     * <p>为什么不用动作超时（20s）：急停是安全动作，让用户在紧急情况下等 20 秒才拿到
+     * "可能没停住"的回复，是帮倒忙。用独立且更短的超时。</p>
+     */
     @Override
-    public void stop() {
+    public StopResult stop() {
         stopped.set(true);
+        String stopId = "stop-" + correlationCounter.incrementAndGet();
+        var future = pending.register(stopId);
         try {
-            send("stop", "stop-" + correlationCounter.incrementAndGet(), mapper.createObjectNode());
+            send("stop", stopId, mapper.createObjectNode());
+            WireMessage response = pending.await(stopId, future, properties.getStopAckTimeout());
+            int cleared = response.payload().path("pendingCleared").asInt(0);
+            log.info("急停已确认: deviceId={}, stopId={}, cleared={}", device.get().deviceId(), stopId, cleared);
+            return StopResult.acknowledged(cleared);
+        } catch (TimeoutException e) {
+            log.warn("急停未获确认: deviceId={}, stopId={}", device.get().deviceId(), stopId);
+            return StopResult.unacknowledged("等待设备确认超时 " + properties.getStopAckTimeout().toMillis() + "ms");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return StopResult.unacknowledged("等待确认时被中断");
         } catch (RuntimeException e) {
-            log.warn("急停消息发送失败: deviceId={}, reason={}", device.get().deviceId(), e.getMessage());
+            log.warn("急停未获确认: deviceId={}, reason={}", device.get().deviceId(), e.getMessage());
+            return StopResult.unacknowledged(e.getMessage());
         }
     }
 
@@ -145,6 +166,14 @@ public class WsDeviceChannel implements DeviceChannel {
             case "pong" -> {
                 // 心跳回执本身没有业务含义，seq 守卫已经顺带证明链路活着
                 log.debug("设备心跳: deviceId={}", message.deviceId());
+            }
+            case "stop_ack" -> {
+                String stopId = payloadMapper.stopIdOf(message.payload());
+                if (stopId == null) {
+                    log.warn("stop_ack 缺少 stopId，无法关联: deviceId={}", message.deviceId());
+                } else {
+                    pending.complete(stopId, message);
+                }
             }
             case "error" -> {
                 String relatedId = message.payload() == null ? null : message.payload().path("relatedId").asText(null);

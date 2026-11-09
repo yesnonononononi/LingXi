@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
+import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.port.DeviceUnavailableException;
 import com.summit.dp.device.domain.Device;
 import com.summit.dp.device.domain.DeviceCapability;
@@ -265,12 +266,50 @@ class WsDeviceChannelTest {
     void 急停之后拒绝任何动作() {
         WsDeviceChannel channel = newChannel();
         stubSend(invocation -> null);
+        properties.setStopAckTimeout(Duration.ofMillis(50));
 
         channel.stop();
 
         assertThrows(DeviceUnavailableException.class, () -> channel.observe(80));
         assertThrows(DeviceUnavailableException.class, () -> channel.perform(
                 new ActionRequest("a-9", "back", Map.of(), null, null)));
+    }
+
+    @Test
+    void 急停收到确认时如实返回已停止() {
+        WsDeviceChannel channel = newChannel();
+        respondOnSend(sent -> {
+            WireMessage envelope = WireMessage.parse(mapper, sent);
+            // 出站必须带 stop 的 stopId，否则设备无从关联回执
+            String stopId = envelope == null ? null : envelope.id();
+            return """
+                    {"v":1,"type":"stop_ack","id":"m-ack-%s","deviceId":"%s","seq":1,"ts":1,"payload":{
+                      "stopId":"%s","pendingCleared":3
+                    }}
+                    """.formatted(stopId, DEVICE_ID, stopId);
+        });
+
+        StopResult result = channel.stop();
+
+        assertTrue(result.acknowledged());
+        assertEquals(3, result.pendingCleared());
+        assertTrue(result.toPromptText().contains("已确认"));
+    }
+
+    /**
+     * 最危险的情形不是"没停住"，而是"我们以为停住了"。设备不回确认时必须如实告知。
+     */
+    @Test
+    void 急停未收到确认时必须如实报告未确认() {
+        WsDeviceChannel channel = newChannel();
+        stubSend(invocation -> null);
+        properties.setStopAckTimeout(Duration.ofMillis(50));
+
+        StopResult result = channel.stop();
+
+        assertFalse(result.acknowledged(), "没收到 ack 就不能说停住了");
+        assertTrue(result.toPromptText().contains("未确认"));
+        assertTrue(result.toPromptText().contains("人工检查"), "要给出下一步动作，而不是一句干巴巴的失败");
     }
 
     @Test

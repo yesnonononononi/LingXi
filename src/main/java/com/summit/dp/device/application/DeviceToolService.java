@@ -2,6 +2,7 @@ package com.summit.dp.device.application;
 
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.port.DeviceChannel;
 import com.summit.dp.device.application.port.DeviceUnavailableException;
 import com.summit.dp.device.domain.ActionLedger;
@@ -104,27 +105,35 @@ public class DeviceToolService {
         return execute(channel, action.request());
     }
 
-    /** 急停：取消未执行动作并清空待确认队列。 */
+    /** 急停：取消该设备的未执行动作并清空它的待确认队列。 */
     public String stop(String deviceId) {
         DeviceChannel channel = registry.require(deviceId);
-        channel.stop();
-        int cleared = pending.size();
-        pending.clear();
-        ledger.markAllPendingUnknown();
-        log.info("设备急停: deviceId={}, 清理待确认={}", channel.device().deviceId(), cleared);
-        return "已急停。后续动作已取消，待确认队列清理 " + cleared + " 项。";
+        StopResult result = channel.stop();
+        int cleared = countPendingOf(deviceId);
+        pending.values().removeIf(action -> action.deviceId().equals(deviceId));
+        ledger.markPendingUnknownOf(deviceId);
+        log.info("设备急停: deviceId={}, acknowledged={}, 本地清理待确认={}",
+                channel.device().deviceId(), result.acknowledged(), cleared);
+        // 本地已取消，但设备是否真停住以设备确认为准：未确认时必须说清，不能让人以为停住了
+        return result.toPromptText() + " 本地已取消待确认动作 " + cleared + " 项。";
     }
 
-    /** 连接断开：在途动作标未确认，永不回放。 */
+    /** 连接断开：该设备的在途动作标未确认，永不回放；其他设备不受影响。 */
     public void onDisconnected(String deviceId) {
         registry.unregister(deviceId);
         pending.values().removeIf(action -> action.deviceId().equals(deviceId));
-        ledger.markAllPendingUnknown();
+        ledger.markPendingUnknownOf(deviceId);
         log.warn("设备断开: deviceId={}", deviceId);
     }
 
+    private int countPendingOf(String deviceId) {
+        return (int) pending.values().stream()
+                .filter(action -> action.deviceId().equals(deviceId))
+                .count();
+    }
+
     private String execute(DeviceChannel channel, ActionRequest request) {
-        if (!ledger.markSent(request.actionId())) {
+        if (!ledger.markSent(request.actionId(), channel.device().deviceId())) {
             return "该动作已执行过，不会重复执行。actionId=" + request.actionId();
         }
         try {

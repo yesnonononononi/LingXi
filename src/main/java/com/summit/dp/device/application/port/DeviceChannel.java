@@ -3,6 +3,7 @@ package com.summit.dp.device.application.port;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
+import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.domain.Device;
 
 /**
@@ -22,8 +23,12 @@ public interface DeviceChannel {
     /** 执行一次动作。实现方负责真实的幂等保护，调用方不得假设它一定成功。 */
     ActionOutcome perform(ActionRequest request);
 
-    /** 急停：取消所有未执行的动作。 */
-    void stop();
+    /**
+     * 急停：取消所有未执行的动作。
+     *
+     * <p>返回结果而不是 void：实现对"停住了"是否有把握，调用方必须知道。</p>
+     */
+    StopResult stop();
 
     /**
      * 当前前台应用包名；未知时返回 null。

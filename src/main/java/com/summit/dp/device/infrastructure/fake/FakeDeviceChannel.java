@@ -4,6 +4,7 @@ import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.NormalizedBounds;
 import com.summit.dp.device.application.model.ObserveSnapshot;
+import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.model.UiElement;
 import com.summit.dp.device.application.port.DeviceChannel;
 import com.summit.dp.device.domain.Device;
@@ -103,8 +104,10 @@ public class FakeDeviceChannel implements DeviceChannel {
     }
 
     @Override
-    public void stop() {
+    public StopResult stop() {
+        // 假设备是进程内的，没有"送达不了"这回事，直接确认
         stopped.set(true);
+        return StopResult.acknowledged(0);
     }
 
     /** 恢复到可操作状态，便于连续测试。 */

@@ -84,6 +84,38 @@ class DeviceWsContextTest {
                 () -> properties.setObserveTimeout(java.time.Duration.ZERO));
     }
 
+    /**
+     * 观察超时必须随请求节点数增长。
+     *
+     * <p>原设计里超时是固定值：节点数翻倍而超时不变，大请求必然超时，而错误信息只会写
+     * "观察超时"，让人以为是网络问题。</p>
+     */
+    @Test
+    void 观察超时随节点数自适应并有上限() {
+        DeviceWsProperties properties = new DeviceWsProperties();
+        properties.setObserveTimeout(java.time.Duration.ofSeconds(5));
+        properties.setObservePerNode(java.time.Duration.ofMillis(20));
+        properties.setObserveTimeoutCap(java.time.Duration.ofSeconds(60));
+
+        long at20 = properties.observeTimeoutFor(20).toMillis();
+        long at120 = properties.observeTimeoutFor(120).toMillis();
+
+        assertThat(at20).isEqualTo(5_000 + 20 * 20);
+        assertThat(at120).isEqualTo(5_000 + 120 * 20);
+        assertThat(at120).isGreaterThan(at20);
+
+        // 节点数异常时不能等出一个天文数字
+        assertThat(properties.observeTimeoutFor(1_000_000).toMillis()).isEqualTo(60_000);
+        // 负数不该算出负超时
+        assertThat(properties.observeTimeoutFor(-5).toMillis()).isEqualTo(5_000);
+    }
+
+    @Test
+    void 急停确认超时默认为3秒() {
+        // 比动作超时（20s）短得多：急停是安全动作，不能让用户干等
+        assertThat(new DeviceWsProperties().getStopAckTimeout()).isEqualTo(java.time.Duration.ofSeconds(3));
+    }
+
     /** 只做属性绑定，模拟「始终加载」的那一侧，验证非法值不会被静默接受。 */
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(DeviceWsProperties.class)
