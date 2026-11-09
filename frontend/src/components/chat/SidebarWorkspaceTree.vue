@@ -17,8 +17,14 @@
  * 重命名输入框，而该 ref 的所有者是父组件的 `useSidebarActions`。改成受控 prop 必须改写模板
  * （`v-model` → `:value` + `@input`），会破坏"逐字迁移"的可审计性；因此内部接口直接传 Ref，
  * 并在文件头显式声明这一约定（仅限内部，不对替换实现开放）。</p>
+ *
+ * <p><b>会话分支展开态已下沉（2026-11 修正）：</b>原实现用组件内的"折叠集合"（默认不在集合里
+ * ⇒ 默认展开）驱动子会话分支，导致每次打开侧边栏都是满屏展开的子代理树。现在改由
+ * `composables/sidebar/useSessionBranchExpansion` 提供「默认折叠 + 仅自动展开激活分支 + 手动覆盖优先」
+ * 的语义，本组件只负责把 `isBranchExpanded / toggleBranch / setBranchExpanded` 绑到模板上（亮色箭头与
+ * BranchedMenu 的 `toggleChild` 共用同一份状态，避免两条渲染路径各记一份）。</p>
  */
-import {computed, ref, type Ref} from 'vue';
+import {computed, type Ref} from 'vue';
 import type {BranchedMenuChild, BranchedMenuItem} from '../common/BranchedMenu.vue';
 import BranchedMenu from '../common/BranchedMenu.vue';
 import SessionStateIndicator from './SessionStateIndicator.vue';
@@ -26,6 +32,7 @@ import SidebarSubSessions from './SidebarSubSessions.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import {t} from '../../i18n';
 import {SESSION_VISIBLE_LIMIT} from '../../composables/sidebar/useSessionVisibility';
+import {useSessionBranchExpansion} from '../../composables/sidebar/useSessionBranchExpansion';
 import type {ProjectGroup} from '../../composables/sidebar/useSessionGrouping';
 import type {ChatSession, WorkspaceVO} from '../../types/chat';
 import type {SidebarTreeActions} from '../../types/sidebarSlots';
@@ -90,20 +97,27 @@ const editingTitle = props.editingTitle;
 const projectGroups = computed(() => props.projectGroups);
 const unassignedSessions = computed(() => props.unassignedSessions);
 const expandedWorkspaces = computed(() => props.expandedWorkspaces);
-const collapsedSubSessions = ref(new Set<string>());
-const toggleSubSessions = (id: string) => {
-  const next = new Set(collapsedSubSessions.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  collapsedSubSessions.value = next;
-};
+
+// 会话分支（子代理）展开态：默认折叠，只有「当前激活分支」自动展开，手动操作写成覆盖记录。
+// 逻辑下沉到 composables/sidebar/useSessionBranchExpansion.ts（可脱离组件单测）。
+const activeSessionId = computed(() => props.activeSessionId);
+const activeSubSessionIdOf = computed(() => props.activeSubSessionId ?? null);
+/** 全量会话：激活的是子会话时，要靠它反查所属根会话才能自动展开对应分支。 */
+const allSessions = computed(() => [
+  ...projectGroups.value.flatMap(group => group.sessions),
+  ...unassignedSessions.value
+]);
+const {isBranchExpanded, setBranchExpanded, toggleBranch} = useSessionBranchExpansion({
+  sessions: allSessions,
+  activeSessionId,
+  activeSubSessionId: activeSubSessionIdOf
+});
 const branchedMenuItems = computed(() => props.branchedMenuItems.map(group => ({...group,
-  children: group.children?.map(session => ({...session, expanded: !collapsedSubSessions.value.has(session.value)})),
+  children: group.children?.map(session => ({...session, expanded: isBranchExpanded(session.value)})),
 })));
 const branchedOpenIndices = computed(() => props.branchedOpenIndices);
 const editingSessionId = computed(() => props.editingSessionId);
 const activeMenuWorkspaceId = computed(() => props.activeMenuWorkspaceId);
-const activeSessionId = computed(() => props.activeSessionId);
 const isCollapsed = computed(() => props.isCollapsed);
 const isDark = computed(() => props.isDark);
 // 函数类 props 只做透传，身份稳定，不需要包 computed。
@@ -193,7 +207,7 @@ const emit = emitShim as TreeEmitShim;
             className="w-full"
             @select="handleBranchedSelect"
             @toggle="handleBranchedToggle"
-            @toggleChild="toggleSubSessions($event)"
+            @toggleChild="setBranchExpanded"
           >
             <!-- Header Prefix: 文件夹图标 -->
             <template #header-prefix="{ item }">
@@ -432,9 +446,9 @@ const emit = emitShim as TreeEmitShim;
                         : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
                     ]"
                   >
-                    <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="!collapsedSubSessions.has(session.id)"
-                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleSubSessions(session.id)">
-                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="!collapsedSubSessions.has(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+                    <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="isBranchExpanded(session.id)"
+                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleBranch(session.id)">
+                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="isBranchExpanded(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
                     </button>
                     <svg v-else class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -470,7 +484,7 @@ const emit = emitShim as TreeEmitShim;
                   </div>
 
                   <CollapseTransition>
-                    <SidebarSubSessions v-if="!collapsedSubSessions.has(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+                    <SidebarSubSessions v-if="isBranchExpanded(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
                   </CollapseTransition>
                   </template>
 
@@ -504,9 +518,9 @@ const emit = emitShim as TreeEmitShim;
                     : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
                 ]"
               >
-                <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="!collapsedSubSessions.has(session.id)"
-                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleSubSessions(session.id)">
-                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="!collapsedSubSessions.has(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+                <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="isBranchExpanded(session.id)"
+                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleBranch(session.id)">
+                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="isBranchExpanded(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
                     </button>
                 <svg v-else class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -537,7 +551,7 @@ const emit = emitShim as TreeEmitShim;
                 </div>
               </div>
               <CollapseTransition>
-                    <SidebarSubSessions v-if="!collapsedSubSessions.has(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
+                    <SidebarSubSessions v-if="isBranchExpanded(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
                   </CollapseTransition>
               </template>
               <button

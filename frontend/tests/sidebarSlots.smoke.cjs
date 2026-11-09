@@ -636,9 +636,18 @@ app.whenReady().then(async () => {
     });
 
     await runCase('用例9 子代理二级分支：深浅主题、名称状态更新、真实导航与原动画', async () => {
-      await evaluate('window.__render("production", "subSessions")');
       for (const theme of ['light', 'dark']) {
+        // 每轮重新挂载：分支展开态是组件内状态，跨主题复用实例会把上一轮的手动展开带过来，
+        // 让「默认折叠」断言在第二轮变成假绿。
+        await evaluate('window.__render("production", "subSessions")');
         await evaluate('window.__subView.isSubPanelOpen.value = false; window.__setTheme(' + JSON.stringify(theme) + ')');
+        await wait(450);
+        // 默认折叠（bug 回归守卫）：激活的是「第一个会话」，历史分组里的 s9 不是激活分支，
+        // 它的子代理必须**不**渲染。旧实现「默认展开」就是用户看到「一打开满屏展开」的直接原因。
+        assert.equal(await evaluate(`!![...document.querySelectorAll('[data-slot="workspace-tree"] button')].find(button => button.textContent.includes('历史代理'))`), false,
+          '非激活会话的子代理分支必须默认折叠');
+        // 再手动点开，证明历史分组同样能承载二级分支（下面 assert 的原意不变）
+        await evaluate(`document.querySelector('[data-testid="toggle-sub-sessions"][aria-label="历史里的会话"]').click()`);
         await wait(450);
         const data = await evaluate(`(() => {
           const buttons = [...document.querySelectorAll('[data-slot="workspace-tree"] button')];
