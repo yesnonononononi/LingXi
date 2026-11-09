@@ -77,6 +77,15 @@ public final class TokenAuditFrameworkViewConverter {
                 .build();
     }
 
+    public static void applyLiveUsage(SessionTokenAuditVO view, Integer total, Integer max, Double ratio) {
+        view.setLiveTotalTokens(total);
+        view.setLiveMaxTokens(max);
+        view.setLiveRatio(ratio);
+        view.setRemainingTokens(total == null || max == null ? null : max - total);
+        // 剩余比例只由框架已用比例换算，不再从计数反推。
+        view.setRemainingRatio(ratio == null ? null : 1 - ratio);
+    }
+
     private static void addMessage(List<TokenAuditCategoryVO> messages, String type,
                                    DocumentElement<?> element, Integer tokens) {
         if (tokens == null) return;

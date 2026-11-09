@@ -2,6 +2,7 @@ package com.summit.dp.session.api.controller;
 
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.session.application.service.SessionTokenAuditQueryService;
+import com.summit.dp.session.application.service.SessionTokenAuditRefreshService;
 import com.summit.dp.shared.vo.SessionTokenAuditVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SessionTokenAuditController {
 
     private final SessionTokenAuditQueryService queryService;
+    private final SessionTokenAuditRefreshService refreshService;
 
     /**
      * 读当前会话的 token 构成快照 + 实时总量。
@@ -39,6 +41,6 @@ public class SessionTokenAuditController {
 
     @PostMapping("/{id}/token-audit/refresh")
     public Result<SessionTokenAuditVO> refreshTokenAudit(@PathVariable Long id) {
-        return queryService.refresh(id);
+        return refreshService.refresh(id);
     }
 }

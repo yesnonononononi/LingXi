@@ -1,6 +1,7 @@
 package com.summit.dp.session;
 
 import com.summit.dp.session.application.service.SessionTokenAuditQueryService;
+import com.summit.dp.session.application.service.SessionTokenAuditRefreshService;
 import com.summit.dp.session.api.controller.SessionTokenAuditController;
 import com.summit.core.agent.Execution;
 import com.summit.core.audit.AuditStatus;
@@ -259,10 +260,10 @@ class SessionTokenAuditApiTest {
     }
 
     private MockMvc createMvc() {
-        SessionTokenAuditQueryService service =
-                new SessionTokenAuditQueryService(auditRepository, sessionRepository,
-                        new ExecutionTokenAuditSource(executions, checkpoints, auditor));
-        return MockMvcBuilders.standaloneSetup(new SessionTokenAuditController(service))
+        SessionTokenAuditQueryService query = new SessionTokenAuditQueryService(auditRepository, sessionRepository);
+        SessionTokenAuditRefreshService refresh = new SessionTokenAuditRefreshService(sessionRepository,
+                new ExecutionTokenAuditSource(executions, checkpoints, auditor));
+        return MockMvcBuilders.standaloneSetup(new SessionTokenAuditController(query, refresh))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(
                         new JsonConfig().objectMapper()))
