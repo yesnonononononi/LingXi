@@ -21,7 +21,6 @@ import {
   formatTokenLimit,
   hasContextSection,
   hasOverheadSection,
-  resolveSnapshotDrift,
   resolveContextSummary,
   resolveMessageRows,
   resolveOverheadSummary,
@@ -293,16 +292,6 @@ test('hasOverheadSection：子项全失败但父项金额已知时仍渲染整�
 });
 
 // ─────────────────────────── 兜底状态 ───────────────────────────
-
-test('resolveSnapshotDrift：保留正负差额，相等或未知时不提示', () => {
-  const capturing: SessionTokenAuditSnapshot = {...collectedAudit(), displayState: 'CAPTURING', driftTokens: 1234};
-  assert.equal(resolveSnapshotDrift(capturing), 1234);
-  assert.equal(resolveSnapshotDrift({...capturing, driftTokens: -3351}), -3351);
-  assert.equal(resolveSnapshotDrift({...capturing, driftTokens: 0}), null);
-  assert.equal(resolveSnapshotDrift({...capturing, driftTokens: null}), null);
-  assert.equal(resolveSnapshotDrift(collectedAudit()), null);
-  assert.equal(resolveSnapshotDrift(null), null);
-});
 
 // ─────────────────── 流推送存储（与 GET 同构、同一解析路径） ───────────────────
 

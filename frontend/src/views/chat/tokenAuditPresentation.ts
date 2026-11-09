@@ -359,13 +359,6 @@ export function hasOverheadSection(overhead?: TokenAuditRequestOverhead | null):
   return isKnownNumber(overhead.tokens) || resolveToolDefinitionRows(overhead).length > 0;
 }
 
-/** 当前上下文与审计快照的有符号差额。 */
-export function resolveSnapshotDrift(audit?: SessionTokenAuditSnapshot | null): number | null {
-  if (audit?.displayState !== 'CAPTURING') return null;
-  const drift = audit.driftTokens;
-  return isKnownNumber(drift) && drift !== 0 ? drift : null;
-}
-
 /**
  * 是否展示「当前上下文」小节。
  *

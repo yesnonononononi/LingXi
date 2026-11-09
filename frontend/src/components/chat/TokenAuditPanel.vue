@@ -46,7 +46,6 @@ import {
   formatTokenLimit,
   hasContextSection,
   hasOverheadSection,
-  resolveSnapshotDrift,
   resolveContextSummary,
   resolveMessageRows,
   resolveOverheadSummary,
@@ -138,12 +137,6 @@ const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools
 const ordinaryToolRows = computed(() => resolveOrdinaryToolRows(displayed.value?.tools));
 const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
 const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
-const snapshotDriftText = computed(() => {
-  const drift = resolveSnapshotDrift(displayed.value);
-  if (drift === null) return null;
-  const label = drift > 0 ? 'chat.tokenAudit.contextAboveSnapshot' : 'chat.tokenAudit.contextBelowSnapshot';
-  return t(label, {tokens: formatTokenAmount(Math.abs(drift))});
-});
 
 const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
 const definitionRows = computed(() => resolveToolDefinitionRows(displayed.value?.requestOverhead));
@@ -380,19 +373,19 @@ watch(
                     data-testid="token-audit-ratio-scope"
                     class="shrink-0 text-lx-fs-2xs text-lx-faint"
                   >{{ t('chat.tokenAudit.ratioScope') }}</span>
-                  <span
-                    v-if="snapshotDriftText !== null"
-                    data-testid="token-audit-capturing"
-                    class="truncate text-lx-fs-2xs text-lx-muted"
-                  >{{ snapshotDriftText }}</span>
                 </div>
               </div>
-              <p v-if="executing" data-testid="token-audit-executing" class="text-lx-fs-2xs text-lx-muted">
-                {{ t('chat.tokenAudit.executionInProgress') }}
-              </p>
-              <p v-if="capturedAtText" class="text-right font-mono text-lx-fs-2xs text-lx-faint">
-                {{ t('chat.tokenAudit.capturedAt', {time: capturedAtText}) }}
-              </p>
+              <!-- 来源只声明一次：明细永远是最近一次审计快照，执行中也一样，
+                   所以不给「当前比快照多/少 X token」这种用户无法处置的差额。 -->
+              <div class="flex items-baseline justify-between gap-2">
+                <span
+                  data-testid="token-audit-source"
+                  class="min-w-0 truncate text-lx-fs-2xs text-lx-muted"
+                >{{ t(executing ? 'chat.tokenAudit.executionInProgress' : 'chat.tokenAudit.snapshotSource') }}</span>
+                <span v-if="capturedAtText" class="shrink-0 font-mono text-lx-fs-2xs text-lx-faint">
+                  {{ t('chat.tokenAudit.capturedAt', {time: capturedAtText}) }}
+                </span>
+              </div>
 
               <div class="space-y-2.5">
                 <div v-for="row in messageRows" :key="row.type" class="space-y-1">
