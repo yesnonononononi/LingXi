@@ -16,17 +16,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 根本没有这个属性（实测：MOCK 环境和 ApplicationContextRunner 都会在 refresh 阶段失败）。
  * 用 mock 测这条路径，以及测出来的红，都只是环境限制，得不到任何关于真实启动的结论。</p>
  *
- * <p>数据目录落到 target/ 下而不是 .run/：构建产物目录随 clean 消失，
- * 不会在仓库里留下运行时残留。</p>
+ * <p>数据目录落到系统临时目录（{@code java.io.tmpdir}）而不是仓库内：测试产生的运行数据
+ * 不该留在工作区等别人清理，这是硬规矩。用 tmpdir 也保证重复跑不会互相污染。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "lingxi.device.transport=ws",
-        "lingxi.data.dir=D:/Code/LingXi/target/device-ws-test/data", "lingxi.skill.dir=",
-        "lingxi.config.sandbox-security.directory=target/device-ws-test/security",
-        "lingxi.config.user-configs.path=D:/Code/LingXi/target/device-ws-test/user-configs.json",
-        "lingxi.config.mcp.path=D:/Code/LingXi/target/device-ws-test/mcp.json",
-        "lingxi.config.model.path=D:/Code/LingXi/target/device-ws-test/models.json",
-        "lingxi.config.personalization.path=D:/Code/LingXi/target/device-ws-test/personalization.json",
+        "lingxi.data.dir=${java.io.tmpdir}/lingxi-device-ws-test/data", "lingxi.skill.dir=",
+        "lingxi.config.sandbox-security.directory=${java.io.tmpdir}/lingxi-device-ws-test/security",
+        "lingxi.config.user-configs.path=${java.io.tmpdir}/lingxi-device-ws-test/user-configs.json",
+        "lingxi.config.mcp.path=${java.io.tmpdir}/lingxi-device-ws-test/mcp.json",
+        "lingxi.config.model.path=${java.io.tmpdir}/lingxi-device-ws-test/models.json",
+        "lingxi.config.personalization.path=${java.io.tmpdir}/lingxi-device-ws-test/personalization.json",
         "TAVILY_APIKEY=test-placeholder", "DEEPSEEK_APIKEY=test-placeholder"
 })
 class DeviceWsStartupTest {
