@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import {computed, onBeforeUnmount, ref, watch} from 'vue';
+import {computed, onBeforeUnmount, provide, ref, watch} from 'vue';
 import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
 import type {ProcessSegmentView} from '../../utils/processViewModel';
+import {PROCESS_SEGMENT_SCROLL_KEY} from '../../types/processScroll';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
 import {useStreamStickyScroll} from '../../composables/useStreamStickyScroll';
@@ -49,6 +50,14 @@ watch(detailsBox, box => {
   if (box.firstElementChild) contentObserver.observe(box.firstElementChild);
 }, {flush: 'post'});
 onBeforeUnmount(() => contentObserver?.disconnect());
+/**
+ * 段内 renderer（工具详情、思考行）的展开/折叠会改变本框内容高度，但那是用户手势而不是流式增量。
+ * 交给它们一条「暂停自动贴底」的通道：否则展开的那一帧上面的 ResizeObserver 就贴底，把刚展开的
+ * 内容顶出视野（现象：点开详情，框停在最下方，看不到卡片开头）。
+ */
+provide(PROCESS_SEGMENT_SCROLL_KEY, {
+  pauseAutoFollow: () => streamScroll.pauseFollowing('details'),
+});
 const headline = computed(() => props.view.headline);
 // 标题/预览/状态全部来自视图模型，组件只决定排版：长正文右对齐溢出，短值截断。
 const title = computed(() => headline.value.title);
@@ -102,8 +111,12 @@ const isRunningTurn = computed(() => props.turn
     </button>
     <CollapseTransition>
       <div v-if="visible && expanded" class="mt-1">
-        <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。 -->
-        <div class="max-h-[min(480px,70dvh)] overflow-y-auto overscroll-y-contain pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
+        <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。
+             刻意**不写** `overscroll-*-contain`：滚到框底后继续下滑必须把滚动链交给外层对话区，
+             否则鼠标停在过程区里就等于被锁死（得先把指针挪出去才能继续读下文）。
+             程序贴底只写 scrollTop，不产生用户手势，不会顺带把外层拽走，所以这里不需要靠
+             contain 来防串。 -->
+        <div class="max-h-[min(480px,70dvh)] overflow-y-auto pl-3 pr-2 border-l border-zinc-200 dark:border-white/10"
           ref="detailsBox" data-testid="process-segment-details" tabindex="0" :aria-label="t('chat.message.process')"
           @scroll.self="streamScroll.handleScroll('details', $event)">
           <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"

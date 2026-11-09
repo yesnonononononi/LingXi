@@ -7,10 +7,11 @@
  * <p>折叠状态改为本地 `ref`：`ProcessDetails` 用 `:key="item.id"` 保证同 id 实例不被销毁，
  * 因此「按 id 键控」的语义与原来的 `Record<id, boolean>` 等价。</p>
  */
-import {computed, ref} from 'vue';
+import {computed, inject, ref} from 'vue';
 import type {ImageProcessItem} from '../../../utils/readImageTools';
 import type {ThoughtStep} from '../../../types/chat';
 import {formatThoughtTitle} from '../../../utils/toolRowUi';
+import {PROCESS_SEGMENT_SCROLL_KEY} from '../../../types/processScroll';
 import {t} from '../../../i18n';
 import GradientText from '../../common/GradientText.vue';
 import CollapseTransition from '../../common/CollapseTransition.vue';
@@ -44,7 +45,12 @@ const isExpanded = computed(() => userExpanded.value ?? defaultExpanded.value);
 const isAnimating = computed(() => !!step.value && step.value.status === 'running'
   && !props.messageIsSuspended && props.isRunningTurn);
 
+/** 上层过程框的「用户接管」通道；独立挂载（组件单测）时不存在。 */
+const segmentScroll = inject(PROCESS_SEGMENT_SCROLL_KEY, null);
+
 const toggle = (): void => {
+  // 展开/收起改变的是过程框内容高度，属用户手势：先暂停外层自动贴底，别把刚展开的正文顶走。
+  segmentScroll?.pauseAutoFollow();
   userExpanded.value = !isExpanded.value;
 };
 </script>

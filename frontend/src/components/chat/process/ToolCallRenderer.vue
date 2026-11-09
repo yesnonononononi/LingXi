@@ -31,6 +31,7 @@ import {
 } from '../../../utils/toolRowUi';
 import {useCopyFeedback} from '../../../composables/useCopyFeedback';
 import {FILE_PREVIEW_KEY} from '../../../types/filePreview';
+import {PROCESS_SEGMENT_SCROLL_KEY} from '../../../types/processScroll';
 import {t} from '../../../i18n';
 import CollapseTransition from '../../common/CollapseTransition.vue';
 
@@ -51,8 +52,12 @@ const chunks = computed(() => buildEditDiffChunks(tool.value?.query));
 
 /** 工具行的折叠状态（`:key="item.id"` 保证同 id 实例不被销毁，语义与原来的 Record 等价）。 */
 const expanded = ref(false);
+/** 上层过程框的「用户接管」通道；独立挂载（组件单测）时不存在。 */
+const segmentScroll = inject(PROCESS_SEGMENT_SCROLL_KEY, null);
 const toggle = (): void => {
   if (!expandable.value) return;
+  // 展开/收起是用户手势：先暂停过程框自动贴底，否则内容变高的那一帧就把刚展开的卡片顶出视野。
+  segmentScroll?.pauseAutoFollow();
   expanded.value = !expanded.value;
 };
 

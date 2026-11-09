@@ -55,6 +55,7 @@ const scroll: ThinkingScrollApi = {
   handleScroll: streamScroll.handleScroll,
   isFollowing: streamScroll.isFollowing,
   scrollToBottom: streamScroll.scrollToBottom,
+  pauseFollowing: streamScroll.pauseFollowing,
 };
 
 const context = computed<RendererContext>(() => ({

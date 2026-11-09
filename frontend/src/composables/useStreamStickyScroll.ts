@@ -26,6 +26,14 @@ export interface StreamStickyScroll {
   isFollowing: (id: string) => boolean;
   /** 强制恢复跟随并贴底。 */
   scrollToBottom: (id: string) => void;
+  /**
+   * 暂停该框的自动贴底（用户接管）。
+   *
+   * <p>用于「高度变化由用户手势引起、不是流式增量」的场景：展开工具详情、折叠思考行等。
+   * 这类变化会让外层框的内容变高，若仍按跟随贴底，刚展开、正要读的那一块会被顶出视野 ——
+   * 表现就是「点开详情，滚动框停在最下方，看不到内容开头」。用户滚回底部即自动恢复跟随。</p>
+   */
+  pauseFollowing: (id: string) => void;
 }
 
 /**
@@ -133,6 +141,16 @@ export function useStreamStickyScroll(options: StreamStickyScrollOptions): Strea
     scheduleStick();
   };
 
+  /**
+   * 用户接管：只关掉「跟随」，不动当前位置。
+   *
+   * <p>不做贴底也不回滚 —— 用户当前看到的位置就是他要读的位置；跟随关掉后，后续的尺寸变化与流式增量
+   * 都不会再拽动它，直到用户自己滚回底部（`handleScroll` 的 `isNearBottom` 分支恢复跟随）。</p>
+   */
+  const pauseFollowing = (id: string) => {
+    followState.value[id] = false;
+  };
+
   watch(
     () => options.streamSignature(),
     () => {
@@ -149,5 +167,5 @@ export function useStreamStickyScroll(options: StreamStickyScrollOptions): Strea
     }
   });
 
-  return { setBoxRef, handleScroll, isFollowing, scrollToBottom };
+  return { setBoxRef, handleScroll, isFollowing, scrollToBottom, pauseFollowing };
 }

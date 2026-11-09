@@ -270,7 +270,8 @@ watch(detailsBox, box => { if (box) box.scrollTop = box.scrollHeight; }, {flush:
       assert.ok(box.content > box.height * 2, '大量工具项必须在框内溢出');
       assert.ok(Math.abs(box.content - box.height - box.top) <= 1, '展开后默认从最新过程开始');
       assert.equal(box.overflow, 'auto');
-      assert.equal(box.overscroll, 'contain', '滚到边界时不带动外层对话');
+      assert.equal(box.overscroll, 'auto',
+        '滚到框底后必须把滚动链交给外层对话区（overscroll-contain 会把鼠标锁在框里）');
       assert.ok(box.width <= box.viewport + 1, '滚动框不能撑宽窄屏');
     }
     const scrolled = await evaluate(`(() => {

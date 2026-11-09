@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { reactive, nextTick, watch, h, ref } = require('vue');
 // 挂载 harness 已收敛到 tests/support/chatProcessHarness.cjs：唯一 stub 清单 + 目录递归真实加载。
-const { find, findAll, text, mountComponent, loadModule } = require('./support/chatProcessHarness.cjs');
+const { find, findAll, text, mountComponent, loadModule, readSource } = require('./support/chatProcessHarness.cjs');
 
 /**
  * 编译真实 .vue / .ts，只替换子组件与浏览器依赖。
@@ -1322,5 +1322,77 @@ test('★ 已定型的思考展开后停在顶部，不被别处增量顶走', a
   await nextTick();
   assert.equal(live.scrollTop, 1600 - 288, '运行中的思考必须继续贴底');
   assert.equal(finished.scrollTop, 0, '已定型的思考不得被别处的增量顶到底部');
+});
+/**
+ * ★ 展开工具详情是用户手势，不是流式增量：过程框必须暂停贴底。
+ *
+ * <p>缺陷现场：流式正文之间的过程区里点开某个工具详情，内容一变高，`ResizeObserver` 那一帧就贴底，
+ * 刚展开的卡片开头被顶出视野 —— 框停在最下方，用户看不到内容。</p>
+ *
+ * <p>这里走真实链路：`ChatProcessSegment` provide 的 `pauseAutoFollow` → 工具行 renderer 在 toggle
+ * 时调用 → composable 关闭跟随。变异任何一环（不 provide、renderer 不调用、pause 变空实现）都会
+ * 让下面的 `scrollTop` 断言变红。</p>
+ */
+test('★ 展开工具详情暂停过程框贴底，滚回底部后恢复跟随', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const observers = [];
+  const previousObserver = global.ResizeObserver;
+  global.ResizeObserver = class {
+    constructor(callback) { this.callback = callback; this.targets = new Set(); observers.push(this); }
+    observe(target) { this.targets.add(target); }
+    disconnect() { this.targets.clear(); }
+  };
+  t.after(() => {
+    if (previousObserver === undefined) delete global.ResizeObserver;
+    else global.ResizeObserver = previousObserver;
+  });
+
+  const answer = message({ isComplete: true, isThinking: false, aiMessages: [], thoughtSteps: [],
+    toolCalls: [{ id: 'edit-detail', toolName: AgentToolName.EditFile, order: 1, status: 'success',
+      args: { path: '/repo/mcp.json' }, result: '写入完成' }] });
+  const root = await mountExpanded(t, answer);
+  const box = find(root, node => node.props?.['data-testid'] === 'process-segment-details');
+  assert.ok(box, '展开段后才有的滚动框');
+  assert.ok(observers.length >= 1, '过程框必须观察内容尺寸，否则流式排版无法跟随');
+  const observer = observers.at(-1);
+  const notifyContentResize = async (contentHeight, viewportHeight) => {
+    box.scrollHeight = contentHeight;
+    box.clientHeight = viewportHeight;
+    observer.callback([]);
+    await nextTick();
+  };
+
+  await notifyContentResize(900, 300);
+  assert.equal(box.scrollTop, 600, '跟随状态下内容尺寸变化必须贴底');
+
+  const arrow = find(box, node => node.tag === 'button');
+  assert.ok(arrow, '可展开的工具行必须提供详情入口');
+  // Vue 的 `.stop` 修饰符会调用 `event.stopPropagation()`，内存节点测试必须给一个假事件。
+  arrow.props.onClick({stopPropagation() {}, preventDefault() {}});
+  await nextTick();
+  await notifyContentResize(1600, 300);
+  assert.equal(box.scrollTop, 600, '刚展开的详情开头不能被贴底顶出视野');
+
+  // 用户自己滚回底部 → 恢复跟随（滚动链与手动滚动的共同出口）。
+  box.scrollTop = 1300;
+  // `.self` 修饰符比较 `target === currentTarget`，假事件两者都要给。
+  box.props.onScroll({ target: box, currentTarget: box });
+  await notifyContentResize(2000, 300);
+  assert.equal(box.scrollTop, 1700, '滚回底部后必须恢复自动贴底');
+});
+
+/**
+ * 源码契约：过程框不得给自己设 `overscroll-*-contain`。
+ *
+ * <p>滚到框底后继续下滑必须把滚动链交给外层对话区，否则鼠标停在过程区里就等于被锁死 ——
+ * 用户得先把指针挪到框外才能继续读下文。程序贴底只写 `scrollTop`、不产生用户手势，
+ * 因此不存在「不 contain 就会被串着拽」的问题。</p>
+ */
+test('过程框不阻断滚动链式传递（不得设 overscroll-contain）', () => {
+  const source = readSource('../src/components/chat/ChatProcessSegment.vue');
+  // 注释里会提到这个类名（解释为什么不用它），所以只检查模板标签本身。
+  const markup = source.slice(source.indexOf('<template>')).replace(/<!--[\s\S]*?-->/g, '');
+  assert.equal(/overscroll/.test(markup), false,
+    '不得给过程框设 overscroll 行为：滚到框底后要继续滚外层对话区');
 });
 
