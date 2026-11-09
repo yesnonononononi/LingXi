@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {computed, ref, watch} from 'vue';
 import LxModal from '../common/LxModal.vue';
+import SettingsSelect from '../common/SettingsSelect.vue';
+import {isImageAvatar} from '../../utils/avatar';
 import type {AgentVO, ModelConfig, ToolVO} from '../../types/chat';
 import {TeamAPI} from '../../services/team';
 import {AgentAPI} from '../../services/agent';
@@ -11,13 +13,17 @@ import {toUserFacingError} from '../../utils/error';
 import {useTheme} from '../../composables/useTheme';
 import {t} from '../../i18n';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   isOpen: boolean;
   isDark?: boolean;
   models?: ModelConfig[];
   /** 是否挂到 body（默认 true）；受限容器渲染场景（视觉基线）置 false */
   teleport?: boolean;
-}>();
+}>(), {
+  // 布尔 prop 缺省会被 Vue 转成 false，这里显式给回 true，否则弹窗永远不会 Teleport 到 body
+  teleport: true,
+  models: () => [],
+});
 
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? themeIsDark.value);
@@ -53,9 +59,7 @@ const toolsError = ref('');
 const isSubmitting = ref(false);
 const errorMsg = ref('');
 
-// 管理者自定义下拉面板状态
-const isCommanderDropdownOpen = ref(false);
-const commanderSelectRef = ref<HTMLElement | null>(null);
+// 管理者自定义下拉面板状态（已收敛到 SettingsSelect/LxSelect，无需本地开合状态）
 
 // Agent 表单状态（新建或修改）
 const showAgentForm = ref(false);
@@ -103,36 +107,7 @@ const loadTools = async () => {
   }
 };
 
-const handleClickOutside = (e: MouseEvent) => {
-  if (commanderSelectRef.value && !commanderSelectRef.value.contains(e.target as Node)) {
-    isCommanderDropdownOpen.value = false;
-  }
-};
-
-onMounted(() => {
-  document.addEventListener('mousedown', handleClickOutside);
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleClickOutside);
-});
-
-watch(
-  () => props.isOpen,
-  (open) => {
-    if (!open) return;
-    teamName.value = '';
-    teamDescription.value = '';
-    selectedAgentIds.value = [];
-    commanderAgentId.value = '';
-    errorMsg.value = '';
-    isCommanderDropdownOpen.value = false;
-    closeAgentForm();
-    loadAgents();
-    loadTools();
-  },
-  { immediate: true }
-);
+// 点击外部关闭面板由 LxSelect 自己处理，这里不再监听 document。
 
 // 切换选择成员
 const toggleAgentSelection = (agentId: number | string) => {
@@ -236,6 +211,34 @@ const closeAgentForm = () => {
   agentDetailError.value = '';
 };
 
+/**
+ * 打开时重置表单并拉取依赖数据。
+ *
+ * <p>必须是函数而不是在声明处内联注册的 `watch(..., immediate: true)`：
+ * 立即执行的回调会在 `closeAgentForm`、`loadAgents` 等 `const` 声明求值之前就运行，
+ * 触发 TDZ 的 ReferenceError，被 Vue 的错误捕获吞掉后表现为「打开弹窗永远是空列表、也不报错」。
+ * 因此由下方位于脚本末尾的 watch 在全部依赖就绪后注册。</p>
+ */
+const resetForOpen = () => {
+  teamName.value = '';
+  teamDescription.value = '';
+  selectedAgentIds.value = [];
+  commanderAgentId.value = '';
+  errorMsg.value = '';
+  closeAgentForm();
+  loadAgents();
+  loadTools();
+};
+
+watch(
+  () => props.isOpen,
+  (open) => {
+    if (!open) return;
+    resetForOpen();
+  },
+  { immediate: true }
+);
+
 // 工具选择辅助逻辑
 const toggleTool = (toolName: string) => {
   const index = agentFormToolList.value.indexOf(toolName);
@@ -326,11 +329,33 @@ const handleSaveAgent = async () => {
   }
 };
 
-// 选择管理者
-const selectCommander = (agentId: number | string) => {
-  commanderAgentId.value = agentId;
-  isCommanderDropdownOpen.value = false;
+// 选择管理者：value 来自下拉的字符串投影，回写时映射回 Agent 的原始 id（可能是 number）
+const selectCommander = (value: string) => {
+  const agent = selectedAgents.value.find(item => String(item.id) === value);
+  commanderAgentId.value = agent ? agent.id : '';
 };
+
+/** 管理者下拉的选项（value 走字符串，展示用头像前缀 + 名称 + 描述）。 */
+const commanderOptions = computed(() => selectedAgents.value.map(agent => ({
+  value: String(agent.id),
+  label: `${agent.avatar && !isImageAvatar(agent.avatar) ? `${agent.avatar} ` : ''}${agent.name}`,
+  desc: agent.description || t('chat.team.managerDefaultDesc'),
+})));
+
+/** 修改 Agent 表单里的模型下拉选项（value 走字符串，回写保留原始 id）。 */
+const agentModelOptions = computed(() => (props.models || []).map(model => ({
+  value: String(model.id),
+  label: model.name || model.modelName || t('session.modelFallback', { id: model.id }),
+})));
+
+const selectAgentModel = (value: string) => {
+  const model = (props.models || []).find(item => String(item.id) === value);
+  agentFormModelId.value = model ? model.id : '';
+};
+
+/** 管理者选项里的工具数徽标：选项只带字符串 value，回查一次成员列表。 */
+const agentToolCount = (optionValue: string): number =>
+  (selectedAgents.value.find(agent => String(agent.id) === optionValue)?.toolList ?? []).length;
 
 // 提交创建团队
 const handleSaveTeam = async () => {
@@ -375,7 +400,7 @@ const handleSaveTeam = async () => {
 <template>
   <LxModal
     :open="isOpen"
-    :teleport="props.teleport !== false"
+    :teleport="teleport"
     overlay-class="z-50 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
     :panel-class="panelClass"
     :aria-label="t('chat.team.title')"
@@ -413,6 +438,7 @@ const handleSaveTeam = async () => {
         </label>
         <input
           v-model="teamName"
+          data-testid="team-name-input"
           autoFocus
           :placeholder="t('chat.team.namePlaceholder')"
           :class="[
@@ -509,17 +535,14 @@ const handleSaveTeam = async () => {
             </div>
             <div>
               <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
-              <select
-                v-model="agentFormModelId"
-                :class="[
-                  'w-full px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer [color-scheme:dark]',
-                  isDark ? 'bg-black border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
-                ]"
-              >
-                <option v-for="m in (models || [])" :key="m.id" :value="m.id" class="bg-black text-white">
-                  {{ m.name || m.modelName || t('session.modelFallback', { id: m.id }) }}
-                </option>
-              </select>
+              <SettingsSelect
+                id="team-agent-model"
+                data-testid="team-agent-model"
+                :label="t('chat.team.agentModelLabel')"
+                :model-value="String(agentFormModelId ?? '')"
+                :options="agentModelOptions"
+                @update:model-value="selectAgentModel"
+              />
             </div>
           </div>
 
@@ -676,19 +699,20 @@ const handleSaveTeam = async () => {
           <div v-else-if="availableAgents.length === 0" class="p-4 text-center text-xs text-zinc-500">
             {{ t('chat.team.noAgents') }}
           </div>
-          <div
-            v-else
-            v-for="agent in availableAgents"
-            :key="agent.id"
-            @click="toggleAgentSelection(agent.id)"
-            :class="[
-              'group p-2.5 flex items-center justify-between cursor-pointer transition-colors',
-              selectedAgentIds.includes(agent.id)
-                ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
-                : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80'),
-              editingAgentId === agent.id ? 'ring-1 ring-blue-500/50' : ''
-            ]"
-          >
+          <template v-else>
+            <div
+              v-for="agent in availableAgents"
+              :key="agent.id"
+              :data-testid="'team-agent-option-' + agent.id"
+              @click="toggleAgentSelection(agent.id)"
+              :class="[
+                'group p-2.5 flex items-center justify-between cursor-pointer transition-colors',
+                selectedAgentIds.includes(agent.id)
+                  ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
+                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80'),
+                editingAgentId === agent.id ? 'ring-1 ring-blue-500/50' : ''
+              ]"
+            >
             <div class="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
               <input
                 type="checkbox"
@@ -751,12 +775,13 @@ const handleSaveTeam = async () => {
                 {{ t('chat.team.setManager') }}
               </button>
             </div>
-          </div>
+            </div>
+          </template>
         </div>
       </div>
 
-      <!-- 团队管理者选择 (Custom Dropdown) -->
-      <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
+      <!-- 团队管理者选择：统一用 SettingsSelect（LxSelect 壳），外观与设置页一致、自带进出场过渡 -->
+      <div v-if="selectedAgents.length > 0">
         <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
           {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
           <span class="text-lx-fs-sm font-normal text-zinc-500 ml-1">
@@ -764,103 +789,82 @@ const handleSaveTeam = async () => {
           </span>
         </label>
 
-        <!-- 自定义下拉触发卡片 -->
-        <button
-          type="button"
-          @click="isCommanderDropdownOpen = !isCommanderDropdownOpen"
-          :class="[
-            'w-full px-3.5 py-2.5 rounded-xl border text-left flex items-center justify-between transition-all outline-none cursor-pointer',
-            isDark
-              ? 'bg-black/90 border-white/15 hover:border-cyan-400/60 focus:border-cyan-400 text-white'
-              : 'bg-white border-zinc-300 hover:border-blue-400 focus:border-blue-500 text-zinc-900 shadow-sm'
-          ]"
+        <SettingsSelect
+          id="team-modal-commander-select"
+          data-testid="team-commander-select"
+          :label="t('chat.team.managerLabel')"
+          :placeholder="t('chat.team.managerPlaceholder')"
+          :model-value="String(commanderAgentId ?? '')"
+          :options="commanderOptions"
+          @update:model-value="selectCommander"
         >
-          <div v-if="currentCommander" class="flex items-center gap-2.5 min-w-0">
-            <div class="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            </div>
-            <div class="truncate">
-              <div class="flex items-center gap-1.5">
-                <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
-                <span class="px-1.5 py-0.2 text-lx-fs-2xs rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
+          <!-- 触发器内容：盾牌图标 + 名称 + 管理者徽标 + 描述（外壳样式归 SettingsSelect，这里只管内容） -->
+          <template #trigger="{ isOpen: isCommanderOpen }">
+            <div v-if="currentCommander" class="flex items-center gap-2.5 min-w-0">
+              <div class="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
               </div>
-              <div class="text-lx-fs-sm text-lx-muted truncate max-w-[320px]">
-                {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
+              <div class="truncate text-left">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
+                  <span class="px-1.5 py-0.2 text-lx-fs-2xs rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
+                </div>
+                <div class="text-lx-fs-sm text-lx-muted truncate max-w-[320px]">
+                  {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
+                </div>
               </div>
             </div>
-          </div>
-          <div v-else class="text-xs text-zinc-400">
-            {{ t('chat.team.managerPlaceholder') }}
-          </div>
+            <div v-else class="text-xs text-zinc-400">{{ t('chat.team.managerPlaceholder') }}</div>
 
-          <svg
-            class="w-4 h-4 text-zinc-400 shrink-0 transition-transform duration-200 ml-2"
-            :class="{ 'rotate-180': isCommanderDropdownOpen }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+            <svg
+              class="w-4 h-4 text-zinc-400 shrink-0 transition-transform duration-200 ml-2"
+              :class="{ 'rotate-180': isCommanderOpen }"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </template>
 
-        <!-- 自定义下拉选项菜单面板 -->
-        <div
-          v-if="isCommanderDropdownOpen"
-          class="absolute z-20 w-full mt-1.5 py-1.5 rounded-xl border shadow-2xl transition-all max-h-52 overflow-y-auto animate-in fade-in duration-100 backdrop-blur-2xl"
-          :class="[
-            isDark
-              ? 'bg-black/95 border-white/20 shadow-[0_12px_40px_rgba(0,0,0,0.95)] text-zinc-100'
-              : 'bg-white border-zinc-200 shadow-zinc-200/80 text-zinc-800'
-          ]"
-        >
-          <div
-            v-for="agent in selectedAgents"
-            :key="agent.id"
-            @click="selectCommander(agent.id)"
-            :class="[
-              'px-3 py-2 flex items-center justify-between cursor-pointer transition-colors text-xs',
-              commanderAgentId === agent.id
-                ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-blue-50 text-blue-700 font-medium')
-                : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-100/80 text-zinc-700')
-            ]"
-          >
+          <!-- 选项内容：勾选圈 + 名称 + 工具数 + 描述 + 当前管理者徽标 -->
+          <template #option="{ option, selected }">
             <div class="flex items-center gap-2.5 min-w-0">
-              <!-- 勾选指示点 -->
               <div
                 class="w-4 h-4 rounded-full flex items-center justify-center shrink-0 border transition"
-                :class="commanderAgentId === agent.id
+                :class="selected
                   ? 'bg-cyan-500 border-cyan-400 text-black font-bold'
                   : (isDark ? 'border-zinc-700 bg-transparent' : 'border-zinc-300 bg-transparent')"
               >
-                <svg v-if="commanderAgentId === agent.id" class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg v-if="selected" class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
 
               <div class="truncate">
                 <div class="flex items-center gap-1.5">
-                  <span class="truncate font-medium">{{ agent.name }}</span>
-                  <span v-if="agent.toolList?.length" class="text-lx-fs-xs text-zinc-400">
-                    {{ t('chat.team.toolCountShort', { count: agent.toolList.length }) }}
+                  <span class="truncate font-medium">{{ option.label }}</span>
+                  <span v-if="agentToolCount(option.value)" class="text-lx-fs-xs text-zinc-400">
+                    {{ t('chat.team.toolCountShort', { count: agentToolCount(option.value) }) }}
                   </span>
                 </div>
-                <div v-if="agent.description" class="text-lx-fs-xs text-zinc-400 truncate max-w-[280px]">
-                  {{ agent.description }}
+                <div v-if="option.description" class="text-lx-fs-xs text-zinc-400 truncate max-w-[280px]">
+                  {{ option.description }}
                 </div>
               </div>
             </div>
 
             <span
-              v-if="commanderAgentId === agent.id"
+              v-if="selected"
               class="text-lx-fs-xs px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
             >
               {{ t('chat.team.currentManager') }}
             </span>
-          </div>
-        </div>
+          </template>
+        </SettingsSelect>
       </div>
     </div>
 

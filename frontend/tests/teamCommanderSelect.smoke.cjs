@@ -29,16 +29,18 @@ const deadline = setTimeout(() => {
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
   const agents = [
-    { id: 11, name: '寇豆码', avatar: '🐢', description: '软件开发团队工程师。按系统设计与任务列表批量编写优雅、可读、可扩展的代码。', toolList: [{ id: 1 }] },
+    { id: 11, name: '寇豆码', avatar: '🐢', description: '软件开发团队工程师。按系统设计与任务列表批量编写优雅、可读、可扩展的代码。', toolList: ['executeCommand'] },
     { id: 12, name: '苏画意', avatar: '🎨', description: '软件开发团队美术工程师。视觉方案、素材生成与拆件合成、UI 视觉还原与资产规范。', toolList: [] },
     { id: 13, name: '路人甲', avatar: '', description: '', toolList: [] },
   ];
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup lang="ts">
-import { nextTick } from 'vue';
+import { nextTick, ref } from 'vue';
 import TeamsTab from '${source('src/views/settings/tabs/TeamsTab.vue')}';
+import TeamModal from '${source('src/components/chat/TeamModal.vue')}';
 import SettingsSelect from '${source('src/components/common/SettingsSelect.vue')}';
 import { AgentAPI } from '${source('src/services/agent.ts')}';
 import { TeamAPI } from '${source('src/services/team.ts')}';
+import { ToolAPI } from '${source('src/services/tool.ts')}';
 import { UserConfigAPI } from '${source('src/services/userConfig.ts')}';
 import { setPreference } from '${source('src/i18n/index.ts')}';
 import { useTheme } from '${source('src/composables/useTheme.ts')}';
@@ -51,7 +53,13 @@ const isDark = theme.isDark;
 
 const agents = ${JSON.stringify(agents)};
 window.agentFixture = agents;
-AgentAPI.list = async () => ({ code: 1, data: { records: agents.map(item => ({ ...item })), total: agents.length } });
+// 记录调用次数：弹窗打开时应只拉一次 Agent 列表，且必须真的来自这份 mock（而不是真实 http）
+window.agentListCalls = 0;
+AgentAPI.list = async () => {
+  window.agentListCalls += 1;
+  return { code: 1, data: { records: agents.map(item => ({ ...item })), total: agents.length } };
+};
+ToolAPI.list = async () => ({ code: 1, data: [{ id: 1, name: 'executeCommand', displayName: '执行命令' }] });
 TeamAPI.list = async () => ({
   code: 1,
   data: {
@@ -69,11 +77,26 @@ TeamAPI.list = async () => ({
 window.teamWrites = [];
 TeamAPI.update = async payload => { window.teamWrites.push(JSON.parse(JSON.stringify(payload))); return { code: 1 }; };
 TeamAPI.add = async payload => { window.teamWrites.push(JSON.parse(JSON.stringify(payload))); return { code: 1 }; };
+AgentAPI.findById = async id => ({ code: 1, data: agents.find(item => String(item.id) === String(id)) });
+window.teamModels = [
+  { id: 21, name: '主力模型', modelName: 'main-model' },
+  { id: 22, name: '备用模型', modelName: 'backup-model' },
+];
 UserConfigAPI.current = async () => ({ code: 1, data: { teamSize: 10, renderTheme: 'LIGHT' } });
 UserConfigAPI.updateCurrent = async () => ({ code: 1, data: null });
 
 window.flush = async (ms = 60) => { await nextTick(); await new Promise(resolve => setTimeout(resolve, ms)); };
 window.setDark = async value => { theme.setTheme(value ? 'dark' : 'light'); await window.flush(); };
+const teamModels = [
+  { id: 21, name: '主力模型', modelName: 'main-model' },
+  { id: 22, name: '备用模型', modelName: 'backup-model' },
+];
+const teamModalOpen = ref(false);
+window.showTeamModal = async () => { teamModalOpen.value = true; await window.flush(180); };
+window.probeAgentApi = async () => {
+  const res = await AgentAPI.list(1, 100);
+  return { code: res && res.code, count: res && res.data && res.data.records ? res.data.records.length : -1 };
+};
 window.probe = selector => {
   const element = document.querySelector(selector);
   if (!element) return null;
@@ -102,6 +125,7 @@ window.probe = selector => {
       :options="[{ value: 'a', label: 'A' }]"
     />
   </div>
+  <TeamModal v-if="teamModalOpen" :is-open="true" :models="teamModels" />
 </main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp} from 'vue';import {createPinia} from 'pinia';import App from './App.vue';
 window.runtimeErrors=[];
@@ -160,14 +184,19 @@ createApp(App).use(createPinia()).mount('#app');`);
     const panel = document.querySelector('[role=listbox]');
     const style = panel ? getComputedStyle(panel) : null;
     const startOpacity = style ? Number(style.opacity) : null;
-    // 再采样一次：真过渡的中途透明度必须仍在 0..1 之间，否则说明过渡被删成「瞬间完成」
-    await new Promise(resolve => setTimeout(resolve, 50));
-    const midOpacity = panel ? Number(getComputedStyle(panel).opacity) : null;
+    const samples = [];
+    for (let step = 0; step < 6; step += 1) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      const node = document.querySelector('[role=listbox]');
+      samples.push(node ? Number(getComputedStyle(node).opacity) : null);
+    }
+    const midOpacity = samples.length ? Math.min(...samples.map(value => value ?? 0)) : null;
     return {
       exists: !!panel,
       parentIsBody: panel ? panel.parentElement === document.body : false,
       className: panel ? panel.className : '',
       opacity: startOpacity,
+      samples,
       midOpacity,
       transform: style ? style.transform : null,
       transformOrigin: style ? style.transformOrigin : null,
@@ -180,8 +209,8 @@ createApp(App).use(createPinia()).mount('#app');`);
   assert.equal(opened.role, 'listbox');
   assert.match(opened.className, /settings-select-enter-active/, '展开时必须有进场过渡类');
   assert.ok(opened.opacity !== null && opened.opacity < 1, `进场应从透明开始，实际 ${opened.opacity}`);
-  assert.ok(opened.midOpacity !== null && opened.midOpacity > opened.opacity && opened.midOpacity < 0.99,
-    `50ms 时面板应处在过渡中途（0..1 之间），实际 ${opened.midOpacity}：过渡被删成瞬间完成会落到 1`);
+  assert.ok(opened.samples.some(value => value !== null && value > 0.02 && value < 0.98),
+    `过渡中途必须出现过 0..1 之间的透明度（瞬间完成或被卡住都会红），实际采样 ${JSON.stringify(opened.samples)}`);
   assert.match(opened.transitionDuration || '', /0\.1[0-9]*s|0\.2[0-9]*s/,
     `面板自身的过渡时长必须非零，实际 ${opened.transitionDuration}`);
   const rotated = await probe('[data-testid=team-commander-select] svg');
@@ -260,6 +289,77 @@ createApp(App).use(createPinia()).mount('#app');`);
     await evaluate('window.flush()');
   }
 
+  // ---- 8. 团队弹窗：管理者下拉与 Agent 模型下拉都走同一壳，不再有自绘/原生实现 ----
+  // 设置页自己也有一个 data-testid=team-commander-select 的管理者下拉，两个同时挂载时必须
+  // 限定在弹窗作用域内定位，否则断言会张冠李戴（查到的其实是设置页那一份）。
+  await evaluate('window.showTeamModal()');
+  await evaluate('window.flush(240)');
+  assert.equal(await evaluate('document.querySelectorAll("[role=dialog]").length'), 1,
+    '团队弹窗打开后应有且仅有一个对话框');
+  assert.equal(await evaluate('document.querySelectorAll("select").length'), 0,
+    '团队弹窗内不应再出现原生 <select>');
+  for (const agentId of [11, 12, 13]) {
+    assert.equal(await evaluate(`!!document.querySelector('[role=dialog] [data-testid=team-agent-option-${agentId}]')`), true,
+      `团队弹窗成员项 ${agentId} 缺失`);
+    await click(`[role=dialog] [data-testid=team-agent-option-${agentId}]`);
+  }
+  assert.equal(await evaluate('document.querySelectorAll("[role=dialog] [data-testid=team-commander-select]").length'), 1,
+    '选中成员后应有且仅有一个管理者下拉');
+  const modalTrigger = await probe('[role=dialog] [data-testid=team-commander-select]');
+  assert.ok(modalTrigger, '团队弹窗的管理者下拉缺失');
+  assert.equal(modalTrigger.tag, 'BUTTON');
+  assert.match(modalTrigger.text, /寇豆码/, '团队弹窗触发器应显示当前管理者');
+  assert.equal(await evaluate('document.querySelector("[role=dialog] [data-testid=team-commander-select]").getAttribute("role")'), 'combobox');
+
+  await click('[role=dialog] [data-testid=team-commander-select]');
+  await evaluate('window.flush(320)');
+  assert.equal(await evaluate('document.querySelector("#team-modal-commander-select-menu").parentElement === document.body'), true,
+    '团队弹窗的面板也必须 Teleport 到 body（否则会被弹窗裁剪）');
+  const modalOptions = await evaluate(`Array.from(document.querySelectorAll('#team-modal-commander-select-menu [role=option]')).map(node => ({
+    value: node.getAttribute('data-value'),
+    text: (node.textContent || '').trim(),
+  }))`);
+  assert.deepEqual(modalOptions.map(item => item.value), ['11', '12', '13'], '管理者选项应等于已选成员');
+  assert.match(modalOptions[0].text, /当前管理者/, '选中项应保留「当前管理者」徽标');
+  assert.match(modalOptions[0].text, /软件开发团队工程师/, '选项应显示成员描述');
+  await evaluate(`document.querySelector('#team-modal-commander-select-menu [role=option][data-value="12"]').click()`);
+  await evaluate('window.flush(240)');
+  assert.match((await probe('[role=dialog] [data-testid=team-commander-select]')).text, /苏画意/, '点击选项应切换管理者');
+
+  // Agent 编辑表单里的模型下拉同样是壳（按钮 + combobox），不是原生 select
+  await click('[role=dialog] [data-testid=team-agent-option-11] button');
+  await evaluate('window.flush(200)');
+  const modelTrigger = await probe('[role=dialog] [data-testid=team-agent-model]');
+  assert.ok(modelTrigger, 'Agent 表单的模型下拉缺失');
+  assert.equal(modelTrigger.tag, 'BUTTON');
+  assert.equal(await evaluate('document.querySelector("[role=dialog] [data-testid=team-agent-model]").getAttribute("role")'), 'combobox');
+  assert.equal(await evaluate('document.querySelectorAll("select").length'), 0,
+    '打开 Agent 表单后仍不应出现原生 select');
+  await click('[role=dialog] [data-testid=team-agent-model]');
+  await evaluate('window.flush(240)');
+  const modelOptions = await evaluate(`Array.from(document.querySelectorAll('#team-agent-model-menu [role=option]')).map(node => node.getAttribute('data-value'))`);
+  assert.deepEqual(modelOptions, ['21', '22'], '模型下拉应渲染传入的模型列表');
+  await evaluate(`document.querySelector('#team-agent-model-menu [role=option][data-value="22"]').click()`);
+  await evaluate('window.flush(220)');
+  assert.match((await probe('[role=dialog] [data-testid=team-agent-model]')).text, /备用模型/, '模型下拉应能选中');
+
+  // 保存团队：管理者必须回写成后端原始 id（number）
+  await evaluate(`(async () => {
+    const input = document.querySelector('[data-testid=team-name-input]');
+    input.value = '门禁团队';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await evaluate('window.flush(120)');
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === '创建团队').click()`);
+  await evaluate('window.flush(240)');
+  const modalWrites = await evaluate('window.teamWrites');
+  const modalPayload = modalWrites[modalWrites.length - 1];
+  assert.equal(modalPayload.commanderAgentId, 12, '团队弹窗保存的 commanderAgentId 必须是原始 number id');
+  assert.equal(typeof modalPayload.commanderAgentId, 'number');
+
+  // Agent 列表确实被拉过一次并渲染：防止「静默空列表」（早期 TDZ 报错被吞时就是这种表现）
+  assert.equal(await evaluate('window.agentListCalls >= 2'), true,
+    '团队弹窗打开时应真正请求 Agent 列表（设置页一次 + 弹窗一次），不能静默空列表');
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
   clearTimeout(deadline);
   console.log('PASS 团队管理者下拉：自绘触发器、Teleport 面板、进出场过渡、键盘导航、原始 id 回写、浅深主题');

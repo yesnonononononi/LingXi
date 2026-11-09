@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import {useMcpTab} from './useMcpTab';
+import {useMcpTab, type McpTriState} from './useMcpTab';
 import {MCP_TRANSPORTS} from '../../../types/chat';
 import McpServiceCard from './McpServiceCard.vue';
+import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import {useTheme} from '../../../composables/useTheme';
 import {useI18n} from '../../../i18n';
 
@@ -13,6 +14,18 @@ const props = defineProps<{
 const { t } = useI18n();
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? themeIsDark.value);
+
+/** 自动健康检查三态下拉的选项（真源仍是 useMcpTab 里的 computed 双向映射）。 */
+const autoHealthCheckOptions = computed(() => [
+  { value: 'unset', label: t('settings.mcp.autoHealthCheckUnset') },
+  { value: 'on', label: t('settings.mcp.autoHealthCheckOn') },
+  { value: 'off', label: t('settings.mcp.autoHealthCheckOff') },
+]);
+
+/** 下拉回调收窄：LxSelect 的事件值是 string，三态集合由 useMcpTab 的 setter 兜底校验。 */
+const setAutoHealthCheckMode = (value: string): void => {
+  mcpAutoHealthCheckMode.value = value as McpTriState;
+};
 
 const {
   mcpList,
@@ -389,20 +402,15 @@ const {
             <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
               {{ t('settings.mcp.autoHealthCheckLabel') }}
             </label>
-            <select
-              v-model="mcpAutoHealthCheckMode"
+            <SettingsSelect
+              id="mcp-auto-health-check"
+              data-testid="mcp-auto-health-check"
+              :label="t('settings.mcp.autoHealthCheckLabel')"
               :title="t('settings.mcp.autoHealthCheckTooltip')"
-              :class="[
-                'w-full px-2 py-2 rounded-xl border text-xs outline-none transition cursor-pointer',
-                isDark
-                  ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                  : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
-              ]"
-            >
-              <option value="unset">{{ t('settings.mcp.autoHealthCheckUnset') }}</option>
-              <option value="on">{{ t('settings.mcp.autoHealthCheckOn') }}</option>
-              <option value="off">{{ t('settings.mcp.autoHealthCheckOff') }}</option>
-            </select>
+              :model-value="mcpAutoHealthCheckMode"
+              :options="autoHealthCheckOptions"
+              @update:model-value="setAutoHealthCheckMode"
+            />
           </div>
 
           <!-- 健康检查间隔(ms) -->

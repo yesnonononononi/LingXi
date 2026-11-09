@@ -275,14 +275,23 @@ window.__ringDash = () => {
   return circle ? circle.getAttribute('stroke-dasharray') : null;
 };
 
-/** 模型选择器区域的两个真实态：徽标 button / DropUpSelect 的 div 根。 */
+/**
+ * 模型选择器区域的两个真实态：徽标 button / 下拉触发器 button。
+ *
+ * <p>下拉的 data-slot 现在落在**触发器 button** 上（LxSelect 把 $attrs 转发到可交互元素，
+ * 测试点击才能落到真正的按钮上）。所以判定不再靠「根是 div」，改看元素是否
+ * aria-haspopup=listbox（自身或内部）——徽标态永远没有这个属性。</p>
+ */
 window.__modelSelectorState = () => {
   const nodes = [...document.querySelectorAll('[data-slot="model-selector"]')];
+  const isDropdown = node => node.getAttribute('aria-haspopup') === 'listbox'
+    || !!node.querySelector('button[aria-haspopup="listbox"]');
+  const isBadge = node => node.tagName === 'BUTTON' && !isDropdown(node);
   return {
     count: nodes.length,
     tags: nodes.map(node => node.tagName),
-    badge: nodes.filter(node => node.tagName === 'BUTTON').length,
-    dropdown: nodes.filter(node => node.tagName === 'DIV' && !!node.querySelector('button[aria-haspopup="listbox"]')).length,
+    badge: nodes.filter(isBadge).length,
+    dropdown: nodes.filter(isDropdown).length,
     text: nodes.map(node => node.textContent.trim().slice(0, 60))
   };
 };

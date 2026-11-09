@@ -6,6 +6,7 @@ import {useTheme} from '../../composables/useTheme';
 import {useConfirm} from '../../composables/useConfirm';
 import type {ModelConfigPayload, OpenAIModelItem, ProviderConfigVO} from '../../types/chat';
 import ModelAdvancedOptions from '../../components/model/ModelAdvancedOptions.vue';
+import SettingsSelect from '../../components/common/SettingsSelect.vue';
 import {isOk} from '../../utils/api';
 import {t} from '../../i18n';
 
@@ -27,6 +28,22 @@ const providers = ref<ProviderConfigVO[]>([]);
 const handleProviderChange = () => {
   const provider = providers.value.find(item => String(item.id) === String(form.value.providerConfigId));
   if (!form.value.baseUrl.trim()) form.value.baseUrl = provider?.baseUrl ?? '';
+};
+
+/**
+ * 提供方下拉。value 一律按字符串进出，回写时**保留后端原始 id**：
+ * provider id 可能超出 Number 安全整数范围（如 9007199254740993），
+ * 中间若被 Number() 过一遍就会静默改号。
+ */
+const providerSelectOptions = computed(() => [
+  { value: '', label: t('settings.models.ungrouped') },
+  ...providers.value.map(provider => ({ value: String(provider.id), label: provider.name })),
+]);
+
+const selectProvider = (value: string) => {
+  const provider = providers.value.find(item => String(item.id) === value);
+  form.value.providerConfigId = provider ? provider.id : '';
+  handleProviderChange();
 };
 const formError = ref('');
 const loading = ref(false);
@@ -287,10 +304,14 @@ onBeforeUnmount(() => {
         <div v-else class='px-5 py-5 space-y-4'>
           <div class='space-y-1.5'>
             <label :class='labelClass'>{{ t('settings.models.providerSelectLabel') }}</label>
-            <select v-model='form.providerConfigId' data-testid='model-provider' :class='inputClass' @change='handleProviderChange'>
-              <option value=''>{{ t('settings.models.ungrouped') }}</option>
-              <option v-for='provider in providers' :key='provider.id' :value='provider.id'>{{ provider.name }}</option>
-            </select>
+            <SettingsSelect
+              id='model-provider'
+              data-testid='model-provider'
+              :label="t('settings.models.providerSelectLabel')"
+              :model-value="String(form.providerConfigId ?? '')"
+              :options="providerSelectOptions"
+              @update:model-value="selectProvider"
+            />
           </div>
           <div class='model-dropdown-container relative space-y-1.5' @click.stop>
             <label :class='labelClass'>{{ t('model.nameLabel') }} <span class='text-red-400'>*</span></label>

@@ -147,7 +147,11 @@ window.ready=true;`);
   await run(`window.go('/models/add')`);
   assert.equal(await evaluate(`document.querySelector('[data-testid=model-use-provider]').checked`), true);
   assert.equal(await evaluate(`document.querySelector('input[autocomplete=off]').disabled`), true);
-  await run(`const select=document.querySelector('[data-testid=model-provider]');select.value='9007199254740993';select.dispatchEvent(new Event('change',{bubbles:true}));window.fill('input:not([type=checkbox])','single-model')`);
+  // 提供方下拉已从原生 select 换成 LxSelect（SettingsSelect 预设）：交互改成「点触发器 → 点选项」，
+  // 但断言意图不变——超大整数 provider id 必须原样回写，不能被 Number() 过一遍。
+  await run(`document.querySelector('[data-testid=model-provider]').click()`);
+  await run(`document.querySelector('[role=option][data-value="9007199254740993"]').click()`);
+  await run(`window.fill('input:not([type=checkbox])','single-model')`);
   await run(`window.clickText('获取模型列表')`);
   assert.equal(await evaluate(`window.requests.filter(r=>r.url==='/provider/models/discover').at(-1).payload.providerConfigId`), '9007199254740993');
   await run(`window.clickText('确认新增')`);
