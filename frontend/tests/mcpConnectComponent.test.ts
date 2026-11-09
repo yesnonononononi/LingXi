@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync} from 'node:fs';
-import {fileURLToPath, pathToFileURL} from 'node:url';
-import {dirname, resolve} from 'node:path';
-import {compileScript, parse} from '@vue/compiler-sfc';
-import ts from 'typescript';
 import type {DefineComponent} from 'vue';
 import {createRenderer, nextTick} from 'vue';
+import {loadComponent} from './helpers/sfcModule';
 import {McpAPI} from '../src/services/mcp';
 import type {McpConnectionVO} from '../src/types/chat';
 import type {Result} from '../src/services/types';
@@ -41,23 +37,9 @@ function find(node: Element, predicate: (value: Element) => boolean): Element | 
 }
 
 test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功和失败结果可见', async (t) => {
-  const directory = dirname(fileURLToPath(import.meta.url));
-  const componentPath = resolve(directory, '../src/views/settings/tabs/McpTab.vue');
-  const descriptor = parse(readFileSync(componentPath, 'utf8'), { filename: componentPath }).descriptor;
-  const script = compileScript(descriptor, { id: 'mcp-connect-test', inlineTemplate: true });
-  // 相对依赖一律解析到磁盘上的真实 .ts 模块；目录式模块（如 ../i18n → i18n/index.ts）也要支持。
-  const source = script.content.replace(/from ['"](\.[^'"]+)['"]/g, (_match, path: string) => {
-    const base = resolve(dirname(componentPath), path);
-    const target = existsSync(base + '.ts') ? base + '.ts' : resolve(base, 'index.ts');
-    return `from '${pathToFileURL(target).href}'`;
-  });
-  const modulePath = resolve(directory, '../node_modules/.tmp/mcp-connect-component.mjs');
-  mkdirSync(dirname(modulePath), { recursive: true });
-  writeFileSync(modulePath, ts.transpileModule(source, { compilerOptions: {
-    module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022,
-  } }).outputText);
-  const component = (await import(pathToFileURL(modulePath).href)).default as DefineComponent;
-  t.after(() => unlinkSync(modulePath));
+  // SFC 编译与相对导入改写统一走 tests/helpers/sfcModule（支持 .vue 子组件递归编译），
+  // 卡片拆成 McpServiceCard 后，本地那份「只认 .ts」的解析逻辑已经不够用。
+  const component = (await loadComponent('views/settings/tabs/McpTab.vue', t)) as DefineComponent;
 
   t.mock.method(McpAPI, 'list', async () => ({ code: 1, data: { records: [{ id: '42', name: 'saved', url: 'http://saved/mcp', status: 0 }], total: 1, current: 1, size: 100 } }));
   let finish!: (result: Result<McpConnectionVO>) => void;

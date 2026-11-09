@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {computed} from 'vue';
+import LxListCard from '../../../components/common/LxListCard.vue';
 import {useAgentsTab} from './useAgentsTab';
 import DropUpSelect from '../../../components/common/DropUpSelect.vue';
 import {resolveToolFullName} from '../../../utils/toolDisplayNames';
@@ -199,19 +200,11 @@ const {
 
         <!-- 智能体卡片列表 -->
         <div v-else class="space-y-3">
-          <div
+          <LxListCard
             v-for="agent in filteredAgents"
             :key="agent.id"
-            class="px-4 py-3.5 rounded-2xl border transition-all"
-            :class="[
-              isAgentSelected(agent.id)
-                ? (isDark
-                    ? 'bg-sky-500/[0.08] border-sky-500/50 shadow-[0_0_20px_rgba(56,189,248,0.18)]'
-                    : 'bg-blue-50/60 border-blue-400 shadow-sm')
-                : (isDark
-                    ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-                    : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300')
-            ]"
+            :is-dark="isDark"
+            :highlight="isAgentSelected(agent.id)"
           >
             <div class="flex items-start justify-between gap-3">
               <!-- 勾选列与卡片内容并排；批量改模型只认这一列 -->
@@ -302,7 +295,7 @@ const {
                 </button>
               </div>
             </div>
-          </div>
+          </LxListCard>
         </div>
       </template>
     </div>

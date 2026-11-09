@@ -69,7 +69,25 @@ createApp(App).use(createPinia()).mount('#app');`);
 
   assert.deepEqual(await evaluate('window.statusQueries'), [['1', '2', '3', '4']], '列表加载后必须按全部 id 批量查一次状态');
   const badges = () => evaluate('[...document.querySelectorAll("[data-testid=mcp-connection-state]")].map(e => e.textContent.trim().replace(/\\s+/g, " "))');
-  assert.deepEqual(await badges(), ['运行中 · 12 个工具', '连接失败', '未连接'], '停用的服务不显示运行状态');
+  // 状态唯一：一张卡只有一个状态徽标，停用优先于连接表状态（不再有「已启用」+「运行中」两个并列徽标）
+  assert.deepEqual(await badges(), ['运行中 · 12 个工具', '连接失败', '未连接', '已停用'], '每张卡的状态徽标数量与文案必须唯一且可判定');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=mcp-service-card]").length'), 4, '卡片数量与列表一致');
+  assert.equal(
+    await evaluate('[...document.querySelectorAll("[data-testid=mcp-service-card]")].every(card => card.querySelectorAll("[data-testid=mcp-connection-state]").length === 1)'),
+    true,
+    '一张卡只允许一个状态徽标（两个并列徽标会让用户在「已启用 + 未连接」里自行脑补）'
+  );
+  // 布局契约：操作条必须独立成行落在状态徽标与内容下方，不能与标题同排（「条目乱飞」的根因）
+  assert.deepEqual(
+    await evaluate(`[...document.querySelectorAll("[data-testid=mcp-service-card]")].map(card => {
+      const actions = card.querySelector("[data-lx-card-actions]");
+      if (!actions) return 'missing-actions-row';
+      const status = card.querySelector("[data-testid=mcp-connection-state]").getBoundingClientRect();
+      return actions.getBoundingClientRect().top > status.bottom;
+    })`),
+    [true, true, true, true],
+    '每张卡都必须有独立成行的操作条，且位于状态徽标下方'
+  );
   assert.match(await evaluate('document.body.textContent'), /连接失败原因：ConnectException/);
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=mcp-reconnect]").length'), 3, '停用的服务不提供重新连接');
 
@@ -82,7 +100,7 @@ createApp(App).use(createPinia()).mount('#app');`);
   await evaluate('document.querySelectorAll("[data-testid=mcp-reconnect]")[1].click(); window.flush()');
   await evaluate('window.flush()');
   assert.deepEqual(await evaluate('window.reconnects'), ['2']);
-  assert.deepEqual(await badges(), ['运行中 · 12 个工具', '运行中 · 3 个工具', '未连接'], '重连成功后徽标必须刷新');
+  assert.deepEqual(await badges(), ['运行中 · 12 个工具', '运行中 · 3 个工具', '未连接', '已停用'], '重连成功后徽标必须刷新');
   assert.doesNotMatch(await evaluate('document.body.textContent'), /连接失败原因/);
   await fs.writeFile(path.join(output, 'after-reconnect-light.png'), (await window.webContents.capturePage()).toPNG());
 

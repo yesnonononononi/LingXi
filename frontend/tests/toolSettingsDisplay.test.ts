@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync} from 'node:fs';
-import {dirname, resolve} from 'node:path';
-import {fileURLToPath, pathToFileURL} from 'node:url';
-import {compileScript, parse} from '@vue/compiler-sfc';
-import ts from 'typescript';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import type {App} from 'vue';
 import {createRenderer, h, nextTick, reactive} from 'vue';
 import {AgentAPI} from '../src/services/agent';
@@ -12,6 +9,7 @@ import {ToolAPI} from '../src/services/tool';
 import {ModelAPI} from '../src/services/model';
 import {AgentToolName} from '../src/utils/toolNames';
 import {setPreference, t as translate} from '../src/i18n';
+import {frontendRoot, compileVueModule} from './helpers/sfcModule';
 
 interface Node {
   tag: string; text: string; props: Record<string, any>; children: Node[]; parent: Node | null;
@@ -46,98 +44,6 @@ function find(value: Node, predicate: (item: Node) => boolean): Node | undefined
 }
 async function settle() { await new Promise(resolve => setImmediate(resolve)); await nextTick(); }
 let activeApp: App | null = null;
-const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-
-const tmpDir = resolve(frontendRoot, 'node_modules/.tmp');
-
-/**
- * 源文件绝对路径 → 编译产出的临时 .mjs 路径。
- *
- * <p>两个作用：①同一组件被多处引用时只编译一次；②**打断循环引用** ——
- * 必须先登记再递归编译，否则 A → B → A 会无限递归。</p>
- */
-const compiledModules = new Map<string, string>();
-
-/**
- * 把一条相对导入解析成可直接 import 的 file:// URL。
- *
- * <p>三条分支对应源码里真实存在的三类导入：</p>
- * <ul>
- *   <li><b>{@code .vue} 结尾</b> —— 单文件组件。**绝不能拼 {@code /index.ts}**：
- *       它是文件不是目录。必须递归编译成临时 .mjs。
- *       （{@code AgentsTab.vue:4} → {@code DropUpSelect.vue} → {@code ProviderIcon.vue}
- *       就是这种链，只编译单层会继续崩在下一层。）</li>
- *   <li><b>{@code .ts/.js/.mjs/.cjs/.json} 结尾</b> —— 已带真实扩展名，原样指向。</li>
- *   <li><b>无扩展名</b> —— 依次试 {@code base+.ts} / {@code base+.js} /
- *       {@code base/index.ts} / {@code base/index.js}；全都不存在时**抛错**并列出所有
- *       尝试过的路径。绝不能静默拼出一个必然不存在的路径 —— 否则错误信息会指向
- *       {@code Foo.vue/index.ts} 这种假路径，排查成本极高。</li>
- * </ul>
- */
-function resolveImportUrl(componentPath: string, relative: string, context: test.TestContext): string {
-  const base = resolve(dirname(componentPath), relative);
-
-  if (/\.vue$/i.test(base)) {
-    if (!existsSync(base)) {
-      throw new Error(`无法解析导入 '${relative}'（来自 ${componentPath}）：.vue 文件不存在于 ${base}`);
-    }
-    return pathToFileURL(compileVueModule(base, context)).href;
-  }
-
-  if (/\.(ts|js|mjs|cjs|json)$/i.test(base)) {
-    if (!existsSync(base)) {
-      throw new Error(`无法解析导入 '${relative}'（来自 ${componentPath}）：文件不存在于 ${base}`);
-    }
-    return pathToFileURL(base).href;
-  }
-
-  const candidates = [base + '.ts', base + '.js', resolve(base, 'index.ts'), resolve(base, 'index.js')];
-  const hit = candidates.find(candidate => existsSync(candidate));
-  if (!hit) {
-    throw new Error(
-      `无法解析导入 '${relative}'（来自 ${componentPath}）：` +
-        `已尝试 ${candidates.join(' / ')} 均不存在。` +
-        '若目标是 .vue 单文件组件，请在导入语句里显式写出 .vue 扩展名。'
-    );
-  }
-  return pathToFileURL(hit).href;
-}
-
-/** 重写编译产物里的全部相对导入，使其指向真实可加载的模块。 */
-function rewriteRelativeImports(source: string, componentPath: string, context: test.TestContext): string {
-  return source.replace(/from ['"](\.[^'"]+)['"]/g, (_match, relative: string) =>
-    `from '${resolveImportUrl(componentPath, relative, context)}'`
-  );
-}
-
-/** 把 .vue 编译成临时 .mjs 并返回其路径；同一源文件只编译一次。 */
-function compileVueModule(sourcePath: string, context: test.TestContext): string {
-  const cached = compiledModules.get(sourcePath);
-  if (cached) return cached;
-
-  const temporary = resolve(
-    tmpDir,
-    sourcePath.replace(frontendRoot, '').replace(/[\\/]+/g, '-').replace(/^-/, '') + '.mjs'
-  );
-  // 先登记再递归：A → B → A 时 B 能拿到 A 已登记的产物路径，不会无限递归。
-  compiledModules.set(sourcePath, temporary);
-
-  const descriptor = parse(readFileSync(sourcePath, 'utf8'), { filename: sourcePath }).descriptor;
-  const script = compileScript(descriptor, { id: sourcePath, inlineTemplate: true });
-  const source = rewriteRelativeImports(script.content, sourcePath, context);
-  mkdirSync(dirname(temporary), { recursive: true });
-  writeFileSync(
-    temporary,
-    ts.transpileModule(source, {
-      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-    }).outputText
-  );
-  context.after(() => {
-    compiledModules.delete(sourcePath);
-    if (existsSync(temporary)) unlinkSync(temporary);
-  });
-  return temporary;
-}
 
 async function mount(context: test.TestContext, path: string, props: Record<string, unknown>) {
   const componentPath = resolve(frontendRoot, 'src', path);
