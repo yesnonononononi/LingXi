@@ -56,6 +56,13 @@ test('等待够长时把秒数带进文案，且与次数同时出现', () => {
   );
 });
 
+test('重试文案跟随剩余时间，归零后进入重试中', () => {
+  const retry = { retryCount: 2, retryDelay: 2500 };
+  assert.equal(resolveModelRetryText(retry, 1000), '请求暂时失败，第 2 次重试将在 1 秒后开始…');
+  assert.equal(resolveModelRetryText(retry, 0), '请求暂时失败，正在第 2 次重试…');
+  assert.equal(resolveModelRetryText({ retryCount: 2, retryDelay: 750 }, 1000), '请求暂时失败，正在第 2 次重试…');
+});
+
 test('非法计数按第 1 次展示，不把 NaN 写进界面', () => {
   assert.equal(resolveModelRetryText({ retryCount: 0, retryDelay: 0 }), '请求暂时失败，正在第 1 次重试…');
   assert.equal(resolveModelRetryText({ retryCount: Number.NaN, retryDelay: 0 }), '请求暂时失败，正在第 1 次重试…');
@@ -148,14 +155,16 @@ test('历史补齐不能抹掉实时的重试提示（抽屉看得见重试的�
   });
   const sub = root.subSessions![0]!;
   const bubble = sub.messages?.find(message => message.role === 'assistant');
-  assert.deepEqual(bubble?.modelRetry, { responseId: '9007199254740992', retryCount: 2, retryDelay: 1500 });
+  assert.ok(bubble?.modelRetry);
+  const liveRetry = bubble.modelRetry;
+  assert.equal(liveRetry.retryDelay, 1500);
   const liveMessages: ChatMessage[] | undefined = sub.messages;
 
   absorbSubSessionHistory(sub, page([turnView()]));
 
   const after = sub.messages?.find(message => message.role === 'assistant');
   assert.equal(after, bubble, '历史补齐必须就地更新同一条气泡，不能换对象');
-  assert.deepEqual(after?.modelRetry, { responseId: '9007199254740992', retryCount: 2, retryDelay: 1500 });
+  assert.equal(after?.modelRetry, liveRetry, '历史补齐不能重置倒计时');
   assert.equal(sub.messages?.length, liveMessages?.length);
 });
 

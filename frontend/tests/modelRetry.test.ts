@@ -80,11 +80,16 @@ test('等待重试仍在运行，撤下失败尝试的正文与思考，保留�
   reducer.consume(partial('9007199254740991'));
   reducer.consume(partial());
   reducer.consume(partial(failed, true));
+  const beforeRetry = performance.now();
   reducer.consume(retry());
+  const afterRetry = performance.now();
   assert.equal(bubble.isComplete, false);
   assert.equal(bubble.isThinking, true);
   assert.equal(bubble.failed, undefined);
-  assert.deepEqual(bubble.modelRetry, { responseId: failed, retryCount: 1, retryDelay: 750 });
+  assert.ok(bubble.modelRetry);
+  const {retryAt, ...retryDetails} = bubble.modelRetry;
+  assert.deepEqual(retryDetails, { responseId: failed, retryCount: 1, retryDelay: 750 });
+  assert.ok(retryAt >= beforeRetry + 750 && retryAt <= afterRetry + 750, '倒计时必须使用本次事件的等待时长');
   assert.equal(bubble.turnState?.texts[`text:${failed}`], undefined);
   assert.equal(bubble.turnState?.texts[`thinking:${failed}`], undefined);
   assert.equal(bubble.aiMessages?.length, 1);

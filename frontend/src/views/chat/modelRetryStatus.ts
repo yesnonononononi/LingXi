@@ -40,15 +40,16 @@ export function formatRetryDelay(delayMs?: number | null): string {
  * 生成重试提示文案。
  *
  * @param retry 展示态；缺失或空对象返回空串，调用方据此决定整行是否渲染
+ * @param remainingMs 当前剩余时间（毫秒）
  * @returns 本地化文案（含第几次重试；等待时长够长时附带秒数）
  */
-export function resolveModelRetryText(retry?: ModelRetryLike | null): string {
+export function resolveModelRetryText(retry?: ModelRetryLike | null, remainingMs = retry?.retryDelay): string {
   if (!retry) return '';
   const raw = retry.retryCount;
   const count = typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 1;
   const delayMs = retry.retryDelay;
   const delay = typeof delayMs === 'number' && Number.isFinite(delayMs) && delayMs >= DELAY_DISPLAY_THRESHOLD_MS
-    ? formatRetryDelay(delayMs)
+    ? formatRetryDelay(remainingMs)
     : '';
   return delay ? t('chat.message.retryingWithDelay', { count, delay })
     : t('chat.message.retrying', { count });

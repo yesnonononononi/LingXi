@@ -147,6 +147,8 @@ export interface ModelRetryState {
   retryCount: number;
   /** 下一次尝试开始前的等待时长（毫秒） */
   retryDelay: number;
+  /** 接收事件时换算出的单调时钟截止点，供各视图共享。 */
+  retryAt: number;
 }
 
 /** 单条消息接口 (支持多分支对话) */

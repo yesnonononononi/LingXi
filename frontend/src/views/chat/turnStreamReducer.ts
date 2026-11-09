@@ -160,7 +160,12 @@ export class TurnStreamReducer {
         // 较新响应已经到达时，迟到的重试通知只撤下失败片段。
         if (Object.values(state.texts).some(buffer => buffer.responseId
             && BigInt(buffer.responseId) > BigInt(event.responseId))) break;
-        bubble.modelRetry = { responseId: event.responseId, retryCount: event.retryCount, retryDelay: event.retryDelay };
+        bubble.modelRetry = {
+          responseId: event.responseId,
+          retryCount: event.retryCount,
+          retryDelay: event.retryDelay,
+          retryAt: performance.now() + event.retryDelay,
+        };
         bubble.isThinking = true;
         bubble.isExploring = false;
         this.onScrollFollow?.();

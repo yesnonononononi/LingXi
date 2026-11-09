@@ -15,6 +15,7 @@ app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
 import { reactive, ref, computed, nextTick } from 'vue';
+import ChatMessageItem from '../../src/components/chat/ChatMessageItem.vue';
 import SessionConnectionNotice from '../../src/components/chat/SessionConnectionNotice.vue';
 import SubAgentSidePanel from '../../src/components/chat/SubAgentSidePanel.vue';
 import SubSessionDetailDrawer from '../../src/components/chat/SubSessionDetailDrawer.vue';
@@ -26,6 +27,7 @@ import { setPreference } from '../../src/i18n';
 import '../../src/style.css';
 setPreference('zh-CN');
 const root = reactive({ id: '7', title: '会话', messages: [], subSessions: [{ id: '8', name: '成员', rootSessionId: '7', messages: [] }] });
+const rootReply = computed(() => root.messages.find(message => message.role === 'assistant'));
 const sub = root.subSessions[0];
 const state = ref('IDLE');
 const sessions = useChatSubSession({ currentActiveSession: computed(() => root) });
@@ -76,9 +78,12 @@ window.drop = () => controller.error(new Error('Connection reset'));
 window.retry = () => { const timer = [...timers.entries()].find(([, item]) => item.delay === 1000); if (timer) { timers.delete(timer[0]); timer[1].fn(); } };
 window.requests = () => requests;
 window.drawer = (value, id = '8') => { drawerTargetId.value = id; drawerOpen.value = value; };
-window.sendModel = (type, responseId = '100', content = '') => send(type, { type, executionId: 'e', timestamp: '', metaData: { rootSessionId: '7', sessionId: '8', turnId: '900' }, responseId, content, offset: 0, retryCount: 1, retryDelay: 1500, timeUnit: 'MILLISECONDS' });
+window.sendModel = (type, responseId = '100', content = '', retryDelay = 1500, sessionId = '8') => send(type, { type, executionId: 'e', timestamp: '', metaData: { rootSessionId: '7', sessionId, turnId: sessionId === '7' ? '901' : '900' }, responseId, content, offset: 0, retryCount: 1, retryDelay, timeUnit: 'MILLISECONDS' });
 </script><template>
-<div style="height:500px;display:flex"><main style="flex:1"><SessionConnectionNotice :state="state" @reconnect="stream.reconnect()" /></main>
+<div style="height:500px;display:flex"><main style="flex:1;min-width:0;max-width:360px">
+  <SessionConnectionNotice :state="state" @reconnect="stream.reconnect()" />
+  <ChatMessageItem v-if="rootReply" :message="rootReply" session-id="7" />
+</main>
 <SubAgentSidePanel :items="sessions.availableSubSessionItems.value" :active-sub-id="sessions.activeViewingSubSessionId.value"
   :active-sub-session="sessions.activeViewingSubSessionVO.value" :sub-messages="sessions.activeSubSessionMessages.value"
   :is-open="sessions.isSubPanelOpen.value" :is-loading-messages="sessions.isLoadingSubMessages.value"
@@ -115,9 +120,40 @@ createApp(App).mount('#app');window.ready=true;`);
   assert.equal((await notices()).length, 3, '新连接收到 READY 前不能提前移除提示');
   await step('window.readyStream()');
   assert.deepEqual(await notices(), []);
-  await step("window.sendModel('EXECUTION_STARTED'); window.sendModel('PARTIAL_THINKING', '100', '失败思考'); window.sendModel('INVOKE_RETRY')");
-  assert.equal(await evaluate("document.querySelectorAll('.retry-notice').length"), 2, '同一子会话的面板和抽屉都显示模型重试');
-  await step("window.sendModel('PARTIAL_THINKING', '101', '恢复思考')");
+  await step(`for (const sessionId of ['7', '8']) {
+    window.sendModel('EXECUTION_STARTED', '100', '', 0, sessionId);
+    window.sendModel('PARTIAL_THINKING', '100', '失败思考', 0, sessionId);
+    window.sendModel('INVOKE_RETRY', '100', '', 2750, sessionId);
+  }`);
+  const retryLabels = () => evaluate(`[...document.querySelectorAll('.retry-notice')].map(element => element.textContent.trim())`);
+  const retryAnimations = () => evaluate(`[...document.querySelectorAll('.retry-notice-countdown')].map(element => ({
+    duration: element.getAnimations()[0]?.effect.getTiming().duration,
+    scale: new DOMMatrix(getComputedStyle(element).transform).a,
+  }))`);
+  const waitForRetryText = async text => {
+    for (let attempt = 0; attempt < 45; attempt++) {
+      const labels = await retryLabels();
+      if (labels.length === 3 && labels.every(label => label.includes(text))) return;
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+    assert.fail('三处重试提示应显示 ' + text + '，实际为 ' + JSON.stringify(await retryLabels()));
+  };
+  await waitForRetryText('3 秒后开始');
+  const early = await retryAnimations();
+  assert.equal(early.length, 3, '主气泡、子会话面板与抽屉均须显示倒计时动画');
+  assert.ok(early.every(item => item.duration === 2750 && item.scale > 0 && item.scale < 1));
+  assert.equal(await evaluate(`(() => {
+    const notice = document.querySelector('main .retry-notice').getBoundingClientRect();
+    const label = document.querySelector('main .retry-notice-shimmer').getBoundingClientRect();
+    return notice.width <= 360 && label.left >= notice.left && label.right <= notice.right;
+  })()`), true, '窄屏下倒计时文案应留在提示行内');
+  await waitForRetryText('2 秒后开始');
+  const later = await retryAnimations();
+  assert.equal(later.length, 3);
+  assert.ok(later.every((item, index) => item.scale < early[index].scale), '倒计时进度必须随剩余时间缩短');
+  await waitForRetryText('正在第 1 次重试');
+  assert.deepEqual(await retryAnimations(), [], '等待结束后收起倒计时');
+  await step(`window.sendModel('PARTIAL_THINKING', '101', '恢复思考', 0, '7'); window.sendModel('PARTIAL_THINKING', '101', '恢复思考')`);
   assert.equal(await evaluate("document.querySelectorAll('.retry-notice').length"), 0);
   for (let index = 0; index < 6; index++) { await step('window.drop()'); if (index < 5) await step('window.retry()'); }
   assert.ok((await notices()).every(text => text.includes('重新连接')));
@@ -180,14 +216,16 @@ createApp(App).mount('#app');window.ready=true;`);
   await step('window.drawer(false)');
   await step("window.drawer(true, '8'); window.panel(false); window.select(null)");
   await step("window.select('8')");
-  await step("window.sendModel('INVOKE_RETRY', '101')");
+  await step("window.sendModel('INVOKE_RETRY', '101', '', 0)");
   assert.equal(await evaluate("document.querySelectorAll('.retry-notice').length"), 2, '历史尚未返回时仍要渲染实时重试提示');
+  assert.deepEqual(await retryAnimations(), [], '框架报告零等待时直接显示重试中');
   await step("window.resolveHistory('8')");
   assert.equal(await evaluate("document.querySelectorAll('.retry-notice').length"), 2, '历史补齐不能抹掉实时提示');
   await fs.writeFile(path.join(output, 'sub-session-bottom.png'), (await window.webContents.capturePage()).toPNG());
   console.log('PASS: 慢加载、缓存重开、切换、内容增高、主动上翻、历史分页锚点、抽屉请求乱序');
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
   console.log('PASS: 断线即时提示、回查挂起仍重连、主子会话提示、重试耗尽后手动恢复');
+  console.log('PASS: 框架重试倒计时、主子会话进度、窄屏、归零和零延迟');
   await fs.writeFile(path.join(output, 'recovered.png'), (await window.webContents.capturePage()).toPNG());
   clearTimeout(deadline);
   app.exit(0);
