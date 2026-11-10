@@ -15,6 +15,16 @@ export interface FilePreviewRequest {
   edit?: FilePreviewEditRef;
 }
 
+/**
+ * 交给主进程的读文件入参：<b>只含主进程真正用得上的字段</b>。
+ *
+ * <p>{@code edit} 是渲染进程的展示状态，主进程根本不读它。它留在这里有两个害处：
+ * 一来是跨界载荷里的无用数据，二来——这才是真踩过的坑——Vue 的 {@code ref} 会把嵌套对象
+ * 变成响应式 Proxy，而 V8 结构化克隆<b>拒收 Proxy</b>，IPC 直接报
+ * {@code An object could not be cloned.}。所以跨界一律走白名单，不做整对象透传。</p>
+ */
+export type FilePreviewIpcRequest = Omit<FilePreviewRequest, 'edit'>;
+
 export interface FilePreviewData {
   path: string;
   content: string;
@@ -44,3 +54,19 @@ export interface FilePreviewTab {
 export const FILE_PREVIEW_KEY: InjectionKey<
   (sessionId: string | number | undefined, path: string, edit?: FilePreviewEditRef) => void
 > = Symbol('file-preview');
+
+/**
+ * 渲染态请求 → 跨进程载荷：逐字段白名单，不做整对象透传。
+ *
+ * <p>不能写成 {@code {...request}}：那是浅拷贝，嵌套的 {@code edit} 依旧是响应式 Proxy，
+ * 结构化克隆会以 {@code An object could not be cloned.} 拒绝。也不能指望 {@code structuredClone}
+ * 兜底 —— 它对 Proxy 同样报错。显式挑字段是唯一稳的写法。</p>
+ */
+export function toFilePreviewIpcRequest(request: FilePreviewRequest): FilePreviewIpcRequest {
+  return {
+    sessionId: request.sessionId,
+    path: request.path,
+    baseUrl: request.baseUrl,
+    watchKey: request.watchKey
+  };
+}

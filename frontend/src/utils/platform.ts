@@ -5,7 +5,7 @@
  * 在 Web 浏览器环境下自动优雅降级。
  */
 
-import type {FilePreviewData, FilePreviewRequest, NativeFileResult} from '../types/filePreview';
+import type {FilePreviewData, FilePreviewIpcRequest, NativeFileResult} from '../types/filePreview';
 import type {
   ProjectPageState,
   ProjectPageIpcResult,
@@ -87,9 +87,9 @@ export interface ElectronProjectPageAPI {
 
 export interface ElectronAPI {
 
-  previewFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<FilePreviewData>>;
-  openFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<void>>;
-  revealFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<void>>;
+  previewFile?: (request: FilePreviewIpcRequest) => Promise<NativeFileResult<FilePreviewData>>;
+  openFile?: (request: FilePreviewIpcRequest) => Promise<NativeFileResult<void>>;
+  revealFile?: (request: FilePreviewIpcRequest) => Promise<NativeFileResult<void>>;
   unwatchFile?: (watchId: string) => Promise<NativeFileResult<void>>;
   onFileChanged?: (callback: (change: { watchId: string }) => void) => () => void;
   selectDirectory: () => Promise<string | null>;

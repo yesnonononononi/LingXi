@@ -2,6 +2,7 @@ import {computed, onBeforeUnmount, ref} from 'vue';
 import {getApiBaseUrl} from '../utils/apiConfig';
 import {createLocalId} from '../utils/ids';
 import {t} from '../i18n';
+import {toFilePreviewIpcRequest} from '../types/filePreview';
 import type {FilePreviewEditRef, FilePreviewTab} from '../types/filePreview';
 
 export function useFilePreview() {
@@ -22,7 +23,7 @@ export function useFilePreview() {
     try {
       const api = window.electronAPI;
       if (!api?.previewFile) throw new Error(t('filePreview.desktopRequired'));
-      const result = await api.previewFile({ ...tab.request });
+      const result = await api.previewFile(toFilePreviewIpcRequest(tab.request));
       if (!result.ok) throw new Error(result.error);
       // 关闭标签后到达的读取结果必须释放监听，不能重新打开已关闭的文件。
       if (!fileTabs.value.includes(tab)) {
@@ -88,7 +89,7 @@ export function useFilePreview() {
     try {
       const handler = action === 'open' ? window.electronAPI?.openFile : window.electronAPI?.revealFile;
       if (!handler) throw new Error(t('filePreview.operationDesktopRequired'));
-      const result = await handler({ ...tab.request });
+      const result = await handler(toFilePreviewIpcRequest(tab.request));
       if (!result.ok) throw new Error(result.error);
       tab.error = '';
     } catch (error) {

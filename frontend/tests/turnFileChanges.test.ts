@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {buildTurnFileChangeRows, collectTurnFileChangeFlags, turnFileChangeTotals} from '../src/utils/turnFileChanges';
 import {isEditFileTool} from '../src/utils/toolMeta';
+import {toFilePreviewIpcRequest} from '../src/types/filePreview';
 
 test('buildTurnFileChangeRows：同一文件已被后端合并成一条，前端只投影不累加', () => {
   const rows = buildTurnFileChangeRows([
@@ -84,3 +85,36 @@ test('collectTurnFileChangeFlags：无归属的旧数据与空输入都不会被
   assert.equal(flags.size, 0);
   assert.equal(collectTurnFileChangeFlags(null, isEditFileTool).size, 0);
 });
+
+test('toFilePreviewIpcRequest：跨界载荷必须是可结构化克隆的纯对象', () => {
+  // 回归守卫：曾用 {...tab.request} 浅拷贝，嵌套的 edit 仍是响应式 Proxy，
+  // IPC 直接以 "An object could not be cloned." 失败；主进程也从不读 edit。
+  const reactiveLike = {executionId: 'e1', recordId: 'r1'};
+  const request = {
+    sessionId: '7',
+    path: 'D:/ws/index.html',
+    baseUrl: 'http://localhost:8088',
+    watchKey: 'k1',
+    edit: reactiveLike
+  };
+
+  const payload = toFilePreviewIpcRequest(request);
+
+  assert.deepEqual(Object.keys(payload).sort(), ['baseUrl', 'path', 'sessionId', 'watchKey']);
+  assert.equal(payload.edit, undefined, 'edit 是渲染态，不该跨界');
+  assert.doesNotThrow(() => structuredClone(payload), '载荷必须能被结构化克隆');
+});
+
+test('toFilePreviewIpcRequest：渲染态带 Proxy 时载荷仍可克隆', async () => {
+  const {ref} = await import('vue');
+  const tabs = ref([{sessionId: '7', path: 'a.ts', baseUrl: 'http://localhost:8088',
+    watchKey: 'k1', edit: {executionId: 'e1', recordId: 'r1'}}]);
+
+  const payload = toFilePreviewIpcRequest(tabs.value[0]!);
+
+  // 整对象透传会抛 DataCloneError，这正是线上那条报错的来源。
+  assert.throws(() => structuredClone(tabs.value[0]), 'Proxy 透传必然被克隆拒绝');
+  assert.doesNotThrow(() => structuredClone(payload));
+  assert.equal(payload.path, 'a.ts');
+});
+
