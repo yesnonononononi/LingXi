@@ -1,4 +1,4 @@
-import type {ChatMessage, ChatSession, ChatTurn, SubSessionVO} from '../types/chat';
+import type {ChatMessage, ChatSession, ChatTurn, SubSessionVO, ToolCallTrace} from '../types/chat';
 import type {TurnViewVO} from '../types/block';
 import {isTempSessionId} from './ids';
 import {upsertTurnViewIntoMessages} from '../views/chat/blockProjection';
@@ -242,24 +242,148 @@ export function synthesizeFailedTurnBubbles(
   return result;
 }
 
+/** 格式化标准日期时间：YYYY-MM-DD HH:mm:ss。 */
+function formatDateTime(value: number | Date | string | undefined | null): string {
+  if (!value) return '';
+  const date = typeof value === 'object' && value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+/** 解析消息发送方角色文案。 */
+function resolveSenderName(role: string): string {
+  if (role === 'user') return t('chatExport.user');
+  if (role === 'assistant') return t('chatExport.assistant');
+  if (role === 'system') return t('chatExport.system');
+  return role;
+}
+
+/** 构造消息元信息副标题（模型名称与时间戳）。 */
+function buildMessageMetaLine(message: ChatMessage): string | null {
+  const parts: string[] = [];
+  if (message.model && message.role === 'assistant') {
+    parts.push(`${t('chatExport.model')}：${message.model}`);
+  }
+  const timeStr = formatDateTime(message.timestamp);
+  if (timeStr) {
+    parts.push(`${t('chatExport.time')}：${timeStr}`);
+  }
+  if (parts.length === 0) return null;
+  return `> *${parts.join(' · ')}*`;
+}
+
+/** 构造工具调用摘要折叠块。 */
+function buildToolCallSummary(toolCalls?: ToolCallTrace[]): string | null {
+  if (!toolCalls || toolCalls.length === 0) return null;
+  const items = toolCalls.map(tc => {
+    const detail = tc.target ? `: \`${tc.target}\`` : (tc.command ? `: \`${tc.command}\`` : '');
+    return `- \`${tc.toolName}\`${detail}`;
+  });
+  return `<details>\n<summary>${t('chatExport.toolInvocations', { count: toolCalls.length })}</summary>\n\n${items.join('\n')}\n\n</details>`;
+}
+
+/** 会话 Markdown 导出可选参数。 */
+export interface SessionMarkdownExportOptions {
+  exportTime?: number | Date | string;
+}
+
 /**
- * 把会话消息拼成可下载的 Markdown 正文（导出入口的唯一内容构造点）。
+ * 把会话消息拼成可下载的工程级规范 Markdown 正文（导出入口的唯一内容构造点）。
  *
- * <p>抽成纯函数以便回归：导出直接消费 **v3 派生视图**，这里只负责「消息数组 → 文本」，
- * 不碰 Blob / DOM。顺序即派生数组顺序（提问 → 回答），不重排。</p>
+ * <p>特性：
+ * 1. 结构化 YAML Frontmatter 与元数据概览表，便于 Obsidian / Notion 归档；
+ * 2. 剥离 Emoji 图标，规范角色文案与轮次边界；
+ * 3. 过滤未发送气泡与无实质内容的幽灵气泡，工具调用以折叠块摘要输出；
+ * 4. 保持纯函数无副作用，支持测试环境时间注入。</p>
  *
  * @param title    会话标题（空串回落「灵犀会话记录」）
- * @param messages v3 派生消息数组（导出时原样传入，不做过滤）
+ * @param messages 消息数组
+ * @param options  导出参数（如导出时间注入）
  */
-export function buildSessionMarkdown(title: string | undefined, messages: ChatMessage[]): string {
-    const lines = [
-    `# ${title || t('chatExport.defaultTitle')}`,
-    `> ${t('chatExport.exportedAt', { time: new Date().toLocaleString() })}`,
+export function buildSessionMarkdown(
+  title: string | undefined,
+  messages: ChatMessage[],
+  options?: SessionMarkdownExportOptions
+): string {
+  const resolvedTitle = title?.trim() || t('chatExport.defaultTitle');
+  const exportTime = formatDateTime(options?.exportTime ?? new Date());
+
+  // 过滤未发送气泡与完全无内容的幽灵气泡（既无正文也无工具调用），杜绝导出空白标题
+  const validMessages = messages.filter(message => {
+    if (message.unsent) return false;
+    const hasContent = typeof message.content === 'string' && message.content.trim().length > 0;
+    const hasTools = Array.isArray(message.toolCalls) && message.toolCalls.length > 0;
+    return hasContent || hasTools;
+  });
+
+  if (validMessages.length === 0) {
+    return `# ${resolvedTitle}\n\n> *(${t('chat.view.nothingToExport')})*\n`;
+  }
+
+  const groups = groupMessagesByTurn(validMessages);
+  const turnCount = groups.length;
+  const messageCount = validMessages.length;
+
+  // YAML Frontmatter (规范技术文档与知识库元数据)
+  const safeTitle = resolvedTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const frontmatter = [
+    '---',
+    `title: "${safeTitle}"`,
+    `date: "${exportTime}"`,
+    'generator: "LingXi"',
+    `turns: ${turnCount}`,
+    `messages: ${messageCount}`,
+    '---',
+  ].join('\n');
+
+  // 概览信息表
+  const overviewTable = [
+    `# ${resolvedTitle}`,
     '',
-    ...messages.map(message => {
-      const sender = message.role === 'user' ? t('chatExport.user') : t('chatExport.assistant');
-      return `### ${sender}\n\n${message.content}\n`;
-    }),
-  ];
-  return lines.join('\n\n');
+    `| ${t('chatExport.overviewField')} | ${t('chatExport.overviewValue')} |`,
+    '|:---|:---|',
+    `| **${t('chatExport.exportedAt')}** | ${exportTime} |`,
+    `| **${t('chatExport.dialogueTurns')}** | ${t('chatExport.totalTurns', { count: turnCount })} |`,
+    `| **${t('chatExport.totalMessages')}** | ${t('chatExport.messageCountValue', { count: messageCount })} |`,
+    `| **${t('chatExport.exportFormat')}** | ${t('chatExport.exportFormatValue')} |`,
+  ].join('\n');
+
+  // 对话轮次正文
+  const renderedGroups = groups.map((group, groupIndex) => {
+    const padIndex = String(groupIndex + 1).padStart(2, '0');
+    const roundHeading = `## ${t('chatExport.roundHeader', { index: padIndex })}`;
+
+    const groupContent = group.messages.map(message => {
+      const sender = resolveSenderName(message.role);
+      const blocks: string[] = [`### ${sender}`];
+
+      const metaLine = buildMessageMetaLine(message);
+      if (metaLine) {
+        blocks.push(metaLine);
+      }
+
+      const toolBlock = buildToolCallSummary(message.toolCalls);
+      if (toolBlock) {
+        blocks.push(toolBlock);
+      }
+
+      if (typeof message.content === 'string' && message.content.trim().length > 0) {
+        blocks.push(message.content.trim());
+      }
+
+      return blocks.join('\n\n');
+    }).join('\n\n');
+
+    return `${roundHeading}\n\n${groupContent}`;
+  });
+
+  const headerSection = `${frontmatter}\n\n${overviewTable}`;
+  return [headerSection, ...renderedGroups].join('\n\n---\n\n') + '\n';
 }
