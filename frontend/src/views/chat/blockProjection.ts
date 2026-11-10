@@ -56,6 +56,12 @@ function toToolTrace(block: ToolBlock): ToolCallTrace {
     category: resolveToolCategory(block.toolName),
     plusLines: block.plusLines ?? diff?.plusLines ?? undefined,
     minusLines: block.minusLines ?? diff?.minusLines ?? undefined,
+    // 行号只在后端持久化的 fileEdit 里有：缺了就让行号列留空，不拿别的数字凑。
+    oldStartLine: block.oldStartLine ?? undefined,
+    oldEndLine: block.oldEndLine ?? undefined,
+    newStartLine: block.newStartLine ?? undefined,
+    newEndLine: block.newEndLine ?? undefined,
+    recordId: block.fileRecordId ?? undefined,
     order: block.order,
     responseId: block.responseId,
   };

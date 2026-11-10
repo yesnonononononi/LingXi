@@ -104,6 +104,16 @@ export interface ToolBlock extends BlockBase {
   /** 变更行数统计（文件类工具）；未知为 null */
   plusLines?: number | null;
   minusLines?: number | null;
+  /**
+   * 该次编辑在文件中的行号区间（{@code 0} = 该侧不存在），来自后端持久化的
+   * {@code _meta.fileEdit}。**历史消息能不能显示行号全靠它**。
+   */
+  oldStartLine?: number | null;
+  oldEndLine?: number | null;
+  newStartLine?: number | null;
+  newEndLine?: number | null;
+  /** 对应的文件编辑记录标识，需要按需取差异时用 */
+  fileRecordId?: string | null;
 }
 
 /** 判别联合：拿到 {@code type} 即可安全收窄。 */

@@ -8,7 +8,7 @@ import {toFilePreviewIpcRequest} from '../src/types/filePreview';
 test('buildTurnFileChangeRows：同一文件已被后端合并成一条，前端只投影不累加', () => {
   const rows = buildTurnFileChangeRows([
     {filePath: '/ws/src/a.ts', plusLines: 5, minusLines: 2, edits: 3, created: false,
-      executionId: 'e1', recordId: 'r1'},
+      executionId: 'e1', recordId: 'r1', diff: '@@ -1 +1 @@'},
   ]);
 
   assert.equal(rows.length, 1);
@@ -18,6 +18,14 @@ test('buildTurnFileChangeRows：同一文件已被后端合并成一条，前端
   assert.equal(rows[0].plusLines, 5);
   assert.equal(rows[0].minusLines, 2);
   assert.deepEqual(rows[0].edit, {executionId: 'e1', recordId: 'r1'});
+});
+
+test('buildTurnFileChangeRows：最新轮次没有差异正文时该行不可点开', () => {
+  const rows = buildTurnFileChangeRows([
+    {filePath: 'a.ts', plusLines: 1, minusLines: 0, executionId: 'e1', recordId: 'r1'},
+  ]);
+
+  assert.equal(rows[0].edit, null, '历史轮次只给行数，不能点开差异');
 });
 
 test('buildTurnFileChangeRows：缺执行或记录标识时该行不可点开差异', () => {

@@ -16,6 +16,8 @@ export interface TurnFileChangeItem {
   created?: boolean;
   executionId?: string | null;
   recordId?: string | null;
+  /** 统一差异正文；**仅最新轮次有值**，历史轮次为 null（契约：历史只留行数）。 */
+  diff?: string | null;
 }
 
 export interface TurnFileChangeRow {
@@ -44,7 +46,8 @@ export function buildTurnFileChangeRows(items?: TurnFileChangeItem[] | null): Tu
   if (!items?.length) return [];
   return items.map(item => {
     const {name, dir} = splitPath(item.filePath ?? '');
-    const canOpenDiff = !!(item.executionId && item.recordId);
+    // 只有最新轮次带差异正文；没有正文的行即便有标识也不给入口，免得点开一片空白。
+    const canOpenDiff = !!(item.executionId && item.recordId && item.diff);
     return {
       filePath: item.filePath ?? '',
       name,
