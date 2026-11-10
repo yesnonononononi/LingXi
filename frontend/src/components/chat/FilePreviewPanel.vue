@@ -5,6 +5,7 @@ import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {t} from '../../i18n';
 import ProjectPagePreview from './ProjectPagePreview.vue';
+import DesignCanvasPreview from './DesignCanvasPreview.vue';
 
 /**
  * 预览面板外壳：顶栏（标题 / 模式切换 / 最大化 / 关闭）、拖拽调宽、最大化。
@@ -36,9 +37,15 @@ const emit = defineEmits<{
 const internalMode = ref<PreviewPanelMode>('file');
 const currentMode = computed<PreviewPanelMode>(() => props.mode ?? internalMode.value);
 const isPageMode = computed<boolean>(() => currentMode.value === 'page');
+const isDesignMode = computed<boolean>(() => currentMode.value === 'design');
+const isFileMode = computed<boolean>(() => currentMode.value === 'file');
 
 const active = computed(() => props.tabs.find(tab => tab.id === props.activeId));
-const panelTitle = computed(() => (isPageMode.value ? t('projectPagePreview.title') : t('filePreview.title')));
+const panelTitle = computed(() => {
+  if (isDesignMode.value) return t('designPreview.title') || '设计原型预览';
+  if (isPageMode.value) return t('projectPagePreview.title');
+  return t('filePreview.title');
+});
 const CodePreview = defineAsyncComponent(() => import('../common/CodePreview.vue'));
 const maximized = ref(false);
 const panelWidth = ref(540);
@@ -52,7 +59,7 @@ let dragStart: { x: number; width: number } | undefined;
  * @param mode 目标模式。
  */
 const setMode = (mode: PreviewPanelMode): void => {
-  if (mode !== 'file' && mode !== 'page') return;
+  if (mode !== 'file' && mode !== 'page' && mode !== 'design') return;
   if (internalMode.value !== mode) internalMode.value = mode;
   if (props.mode !== mode) emit('update:mode', mode);
 };
@@ -95,14 +102,15 @@ onBeforeUnmount(stopResize);
       <div class="topbar-actions">
         <!-- 模式切换：用 aria-pressed 双按钮而不是 role=tab（文件标签已占用 role=tab，语义不能混） -->
         <div class="mode-switch" role="group" :aria-label="t('filePreview.modeLabel')">
-          <button type="button" :aria-pressed="!isPageMode" :title="t('filePreview.modeFile')" @click="setMode('file')">{{ t('filePreview.modeFile') }}</button>
+          <button type="button" :aria-pressed="isFileMode" :title="t('filePreview.modeFile')" @click="setMode('file')">{{ t('filePreview.modeFile') }}</button>
           <button type="button" :aria-pressed="isPageMode" :title="t('filePreview.modePage')" @click="setMode('page')">{{ t('filePreview.modePage') }}</button>
+          <button type="button" :aria-pressed="isDesignMode" :title="t('filePreview.modeDesign')" @click="setMode('design')">{{ t('filePreview.modeDesign') }}</button>
         </div>
         <button type="button" :title="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" :aria-label="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" @click="maximized = !maximized">{{ maximized ? t('filePreview.restore') : t('common.expand') }}</button>
         <button type="button" :aria-label="t('filePreview.closePreview')" :title="t('filePreview.closePreview')" @click="emit('close')">✕</button>
       </div>
     </header>
-    <template v-if="!isPageMode">
+    <template v-if="isFileMode">
       <div class="file-tabs" role="tablist" :aria-label="t('filePreview.openedFiles')">
         <div v-for="tab in tabs" :key="tab.id" class="file-tab" :class="{ selected: tab.id === activeId }">
           <button type="button" role="tab" :aria-selected="tab.id === activeId" :title="tab.request.path" @click="emit('activate', tab.id)">
@@ -145,6 +153,7 @@ onBeforeUnmount(stopResize);
     </template>
     <!-- 隐藏只暂停显示，页面状态由主进程保留；拖拽时让指针事件留在主页面。 -->
     <ProjectPagePreview v-show="isPageMode" :active="isPageMode && !resizing" class="page-preview-frame" />
+    <DesignCanvasPreview v-if="isDesignMode" :active="isDesignMode" class="design-preview-frame" />
   </aside>
 </template>
 
@@ -159,6 +168,7 @@ onBeforeUnmount(stopResize);
 .mode-switch button[aria-pressed='true'] { background: var(--file-tab); font-weight: 600; }
 /* 页面正文根元素：占满面板剩余高度，内部布局归 ProjectPagePreview 自己（显式选择器，不用通配符） */
 .page-preview-frame { flex: 1 1 0%; min-height: 0; min-width: 0; }
+.design-preview-frame { flex: 1 1 0%; min-height: 0; min-width: 0; }
 .preview-topbar { border-bottom: 1px solid var(--file-line); }
 .panel-title { font-size: var(--lx-font-size-lg); font-weight: 600; }
 .topbar-actions, .toolbar-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }

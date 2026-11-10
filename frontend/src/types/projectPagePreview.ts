@@ -1,6 +1,6 @@
 import type {ComputedRef, InjectionKey, Ref} from 'vue';
 
-export type PreviewPanelMode = 'file' | 'page';
+export type PreviewPanelMode = 'file' | 'page' | 'design';
 export type ProjectPageRejectReason = 'empty' | 'malformed' | 'protocol' | 'credentials';
 export type ProjectPageUrlResult = {ok: true; url: string; origin: string} | {ok: false; reason: ProjectPageRejectReason};
 export type ProjectPageLoadState = 'idle' | 'loading' | 'loaded' | 'timeout' | 'failed' | 'stopped';
