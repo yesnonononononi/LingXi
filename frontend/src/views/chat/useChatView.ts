@@ -570,6 +570,17 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     return currentActiveSession.value ?? newSession;
   };
 
+  /**
+   * 撤掉一条本地乐观提问。
+   *
+   * <p>两个入口都需要它：受理回执是「待发送」（正文由队列接口呈现），
+   * 以及用户取消后命令根本没发出去（正文在服务端不存在）。</p>
+   */
+  const dropOptimisticMessage = (session: ChatSession, message: ChatMessage): void => {
+    const index = session.messages.findIndex(item => item.id === message.id);
+    if (index >= 0) session.messages.splice(index, 1);
+  };
+
   const handleSendMessage = async (
     text: string,
     requirePlan: boolean,
@@ -599,13 +610,15 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       const command = buildCommand(text, requirePlan, files);
       command.sessionId = session.id;
       const acceptance = await sending.handleSendMessage(command);
-      if (!acceptance) return false;
+      if (!acceptance) {
+        // 用户在这些本地等待里点了取消：命令从未发出，服务端没有这条消息。
+        // 乐观气泡必须撤掉，否则会留一条「永远等不到回答」的幽灵提问。
+        if (sending.cancelRequested.value && optimistic) dropOptimisticMessage(session, optimistic);
+        return false;
+      }
       if ('pendingId' in acceptance) {
         // 空闲状态可能在请求途中变化，待发送项只由后端队列展示。
-        if (optimistic) {
-          const index = session.messages.findIndex(message => message.id === optimistic.id);
-          if (index >= 0) session.messages.splice(index, 1);
-        }
+        if (optimistic) dropOptimisticMessage(session, optimistic);
         void pendingQueue.refresh(acceptance.sessionId);
       } else if (optimistic) {
         const displayed = session.messages.find(message => message.id === optimistic.id);
