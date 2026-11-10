@@ -40,7 +40,8 @@ onBeforeUnmount(() => applicationSessions.close())
 .desktop-content {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .desktop-shell .min-h-screen {

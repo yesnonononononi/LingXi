@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
 <template>
   <aside
     :class="[
-      'h-full flex flex-col transition-all duration-300 z-30 select-none border-r',
+      'h-full flex flex-col shrink-0 transition-[width,background-color,border-color] duration-300 z-30 select-none border-r',
       isCollapsed ? 'w-16' : 'w-64',
       isDark
         ? 'bg-black border-white/[0.06] text-zinc-100'

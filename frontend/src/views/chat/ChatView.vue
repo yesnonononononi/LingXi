@@ -28,7 +28,7 @@
     />
 
     <!-- 主对话聊天视窗区域 (包含左侧根会话区域 + 右侧子会话面板) -->
-    <div class="relative z-10 flex-1 flex h-full overflow-hidden">
+    <div class="relative z-10 flex-1 min-w-0 flex h-full overflow-hidden">
 
       <!-- 左侧：根会话工作区 (包含消息列表与底部输入框，被右侧子代理面板向左挤压) -->
       <div class="relative flex-1 min-w-0 h-full flex flex-col overflow-hidden">
@@ -903,10 +903,12 @@ provide(SIDEBAR_SLOTS_KEY, {
   opacity: 0.4;
 }
 
-/* 右上角浮动操作栏淡入淡出过渡 */
-.panel-entries-fade-enter-active,
+/* 右上角浮动操作栏淡入淡出过渡：进场延迟等待右侧预览面板完全收起，避免在收缩容器中央突兀闪现 */
+.panel-entries-fade-enter-active {
+  transition: opacity 0.2s ease 0.28s, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) 0.28s;
+}
 .panel-entries-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .panel-entries-fade-enter-from,
 .panel-entries-fade-leave-to {

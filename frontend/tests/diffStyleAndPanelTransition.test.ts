@@ -57,3 +57,45 @@ test('diff 预览框文字按照代码风格与语法高亮渲染契约', () => 
   assert.match(panelSrc, /\.diff-preview :deep\(\.hljs-comment\)/, '必须为 diff 注释行配置高亮样式');
   assert.match(panelSrc, /\.file-preview-panel\.is-dark \.diff-preview :deep\(\.hljs-keyword\)/, '深色模式下必须提供对应的代码高亮');
 });
+
+test('控制栏关闭防漂移与侧边栏防挤压布局契约', () => {
+  const chatViewSrc = fs.readFileSync(path.resolve(__dirname, '../src/views/chat/ChatView.vue'), 'utf8');
+  const sidebarSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/Sidebar.vue'), 'utf8');
+  const appSrc = fs.readFileSync(path.resolve(__dirname, '../src/App.vue'), 'utf8');
+  const previewSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/ProjectPagePreview.vue'), 'utf8');
+
+  // 1. 控制栏入场过渡必须包含延迟，等待右侧面板收起完成，禁止在收缩态中央瞬间闪现
+  assert.match(
+    chatViewSrc,
+    /\.panel-entries-fade-enter-active\s*\{[\s\S]*?0\.28s/,
+    '右上角控制栏 enter-active 必须延迟 0.28s 等待抽屉收起完毕再淡入'
+  );
+
+  // 2. 聊天主视窗 flex 容器必须具有 min-w-0 约束，防止挤压侧边栏
+  assert.match(
+    chatViewSrc,
+    /<div class="relative z-10 flex-1 min-w-0 flex h-full overflow-hidden">/,
+    'ChatView 主视窗 flex-1 容器必须声明 min-w-0 避免内容撑大挤压侧栏'
+  );
+
+  // 3. Sidebar aside 根节点必须包含 shrink-0 防止被 flex 兄弟元素挤压变形
+  assert.match(
+    sidebarSrc,
+    /<aside[\s\S]*?shrink-0/,
+    'Sidebar 根容器必须具有 shrink-0 防止弹性挤压'
+  );
+
+  // 4. App.vue desktop-content 必须禁用横向滚动，防止页面横向漂移
+  assert.match(
+    appSrc,
+    /\.desktop-content\s*\{[\s\S]*?overflow-x:\s*hidden/,
+    'App.vue desktop-content 必须配置 overflow-x: hidden 杜绝横向漂移'
+  );
+
+  // 5. ProjectPagePreview 禁止对父级容器调用 scrollIntoView 导致整页横向滑动
+  assert.doesNotMatch(
+    previewSrc,
+    /\.parentElement\?\.scrollIntoView/,
+    'ProjectPagePreview 禁止对父容器调用 scrollIntoView，应操作容器 scrollLeft'
+  );
+});

@@ -34,15 +34,34 @@ const syncViewport = (): void => {
   preview.updateLayout(layout);
 };
 
+/** 标签居中只更新容器 scrollLeft，不调用 scrollIntoView 避免祖先窗口横向漂移 */
+const scrollActiveTabIntoView = (): void => {
+  const activeId = preview.activeTabId.value;
+  if (!activeId) return;
+  const tabEl = document.getElementById(`page-tab-${activeId}`);
+  const container = tabEl?.parentElement;
+  if (!tabEl || !container) return;
+  const tabLeft = tabEl.offsetLeft;
+  const tabRight = tabLeft + tabEl.offsetWidth;
+  if (tabLeft < container.scrollLeft) {
+    container.scrollLeft = tabLeft;
+  } else if (tabRight > container.scrollLeft + container.clientWidth) {
+    container.scrollLeft = tabRight - container.clientWidth;
+  }
+};
+
 const scheduleViewport = (): void => {
   if (!animationFrame) animationFrame = requestAnimationFrame(syncViewport);
 };
 
-watch(() => [props.active, preview.open.value, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], scheduleViewport, {flush: 'post'});
+watch(() => [props.active, preview.open.value, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], () => {
+  scheduleViewport();
+  scrollActiveTabIntoView();
+}, {flush: 'post'});
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {
     scheduleViewport();
-    document.getElementById(`page-tab-${preview.activeTabId.value}`)?.parentElement?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    scrollActiveTabIntoView();
   });
   if (frameArea.value) resizeObserver.observe(frameArea.value);
   mutationObserver = new MutationObserver(scheduleViewport);
@@ -99,7 +118,7 @@ watch(activeTabId, async () => {
   const keyboardFocus = document.activeElement?.closest('.page-tabs');
   await nextTick();
   const button = document.getElementById(`page-tab-${activeTabId.value}`);
-  button?.parentElement?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  scrollActiveTabIntoView();
   if (!committedUrl.value) addressField.value?.focus();
   else if (keyboardFocus) button?.focus();
 });
