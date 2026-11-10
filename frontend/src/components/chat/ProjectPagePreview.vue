@@ -38,7 +38,7 @@ const scheduleViewport = (): void => {
   if (!animationFrame) animationFrame = requestAnimationFrame(syncViewport);
 };
 
-watch(() => [props.active, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], scheduleViewport, {flush: 'post'});
+watch(() => [props.active, preview.open.value, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], scheduleViewport, {flush: 'post'});
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {
     scheduleViewport();

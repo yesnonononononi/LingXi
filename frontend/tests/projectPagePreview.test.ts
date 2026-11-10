@@ -338,6 +338,82 @@ test('前端按权威快照渲染标签，草稿独立，旧版本和旧会话�
   assert.notEqual(preview.activeTabId.value, first);
 });
 
+test('收起面板保留主进程会话：不换代、不销毁标签，重开原样恢复', async t => {
+  const h = createHarness(); t.after(() => h.registration.close()); installBridge(t, h.bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  preview.openAddress(ADDRESS); await delay(0);
+  const generation = preview.generation.value;
+  const first = preview.activeTabId.value;
+  preview.createTab(); await delay(0);
+  preview.openAddress(OTHER_ADDRESS); await delay(0);
+  assert.equal(preview.tabs.value.length, 2);
+  preview.hide();
+  // 收起只影响可见性：前端快照与主进程实例都必须活着。
+  assert.equal(preview.open.value, false);
+  assert.equal(preview.tabs.value.length, 2);
+  assert.equal(preview.activeTabId.value, h.getState().activeTabId);
+  assert.equal(h.views.filter(view => view.webContents.destroyed).length, 0);
+  preview.openAddress(); await delay(0);
+  assert.equal(preview.generation.value, generation);
+  assert.equal(preview.tabs.value.length, 2);
+  assert.equal(preview.tabs.value.some(tab => tab.id === first), true);
+  assert.equal(h.views.filter(view => view.webContents.destroyed).length, 0);
+});
+
+test('close 销毁会话后重开换代并重建标签，旧实例不再复用', async t => {
+  const h = createHarness(); t.after(() => h.registration.close()); installBridge(t, h.bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  preview.openAddress(ADDRESS); await delay(0);
+  const generation = preview.generation.value;
+  const first = preview.activeTabId.value;
+  preview.close();
+  assert.deepEqual(preview.tabs.value, []);
+  assert.equal(h.views[0]!.webContents.destroyed, true);
+  preview.openAddress(); await delay(0);
+  assert.ok(preview.generation.value > generation);
+  assert.equal(preview.tabs.value.length, 1);
+  assert.notEqual(preview.activeTabId.value, first);
+  assert.equal(preview.tabs.value[0]!.url, '');
+});
+
+test('隐藏通知不覆盖最后一次真实位置，重开按原位恢复', async t => {
+  const calls: any[] = [];
+  const bridge = {onEvent: () => () => {},
+    command: async () => ({ok: true, data: {generation: 1, revision: 1, activeTabId: '', tabs: []}}),
+    layout: async (request: any) => { calls.push(request); return {ok: true, data: {applied: true}}; }};
+  installBridge(t, bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  preview.openAddress(); await delay(0);
+  const bounds = {x: 700, y: 170, width: 500, height: 560};
+  preview.updateLayout({visible: true, bounds}); await delay(0);
+  // 卸载 / 收起常带全 0 尺寸，不能让它把最后位置抹掉（否则重开只能靠下一帧重新量尺寸）。
+  preview.updateLayout({visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}}); await delay(0);
+  preview.hide(); await delay(0);
+  calls.length = 0;
+  preview.openAddress(); await delay(0);
+  assert.deepEqual(calls.find(call => call.visible)?.bounds, bounds);
+});
+
+test('收起后隐藏布局仍透传，可见布局只在打开时透传', async t => {
+  const calls: any[] = [];
+  const bridge = {onEvent: () => () => {},
+    command: async () => ({ok: true, data: {generation: 1, revision: 1, activeTabId: '', tabs: []}}),
+    layout: async (request: any) => { calls.push(request); return {ok: true, data: {applied: true}}; }};
+  installBridge(t, bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  preview.openAddress(); await delay(0);
+  calls.length = 0;
+  preview.updateLayout({visible: true, bounds: {x: 1, y: 2, width: 3, height: 4}}); await delay(0);
+  assert.equal(calls.length, 1);
+  preview.hide(); await delay(0);
+  assert.equal(calls.at(-1).visible, false);
+  calls.length = 0;
+  preview.updateLayout({visible: false, bounds: {x: 1, y: 2, width: 3, height: 4}}); await delay(0);
+  assert.deepEqual(calls.map(call => call.visible), [false]);
+  preview.updateLayout({visible: true, bounds: {x: 1, y: 2, width: 3, height: 4}}); await delay(0);
+  assert.deepEqual(calls.map(call => call.visible), [false]);
+});
+
 test('前端不构造临时标签，通道失败可见，后台导航不覆盖编辑内容', async t => {
   let listener: (state: ProjectPageState) => void = () => {};
   let resolveRequest: (result: unknown) => void = () => {};

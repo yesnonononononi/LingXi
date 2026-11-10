@@ -630,11 +630,17 @@ const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
   }
 };
 
-/** 「关闭」是明确关闭：文件链路的可见性归零，页面实例销毁并释放订阅。 */
+/**
+ * 收起右侧预览面板。
+ *
+ * <p>收起 ≠ 销毁：文件标签收起后仍在（`useFilePreview.fileTabs` 不随面板关闭清空），
+ * 网页标签也必须一致 —— 这里走 `pagePreview.hide()`（隐藏原生视图、保留主进程标签与登录态）。
+ * 真正的销毁只发生在会话/工作区切换（隔离要求）与宿主卸载。</p>
+ */
 const closePreviewPanel = (): void => {
   filePreviewOpen.value = false;
   designPreviewOpen.value = false;
-  pagePreview.close();
+  pagePreview.hide();
 };
 
 const logOpening = ref(false);

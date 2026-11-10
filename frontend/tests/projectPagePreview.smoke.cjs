@@ -130,7 +130,7 @@ window.__demo = {page, mode, visible, modal};
 </script><template>
 <main style="display:flex;height:100vh;margin:0"><section style="flex:1;min-width:0">LX · 原生网页预览</section>
 <FilePreviewPanel v-if="page.open.value" v-show="visible" :tabs="[]" activeId="" :isDark="false" :mode="mode"
- @update:mode="mode = $event" @close="page.close()" />
+ @update:mode="mode = $event" @close="page.hide()" />
 <LxModal :open="modal" overlay-class="z-50 bg-black/50" panel-class="bg-white p-8" aria-label="验证弹窗" @close="modal=false">确认操作</LxModal>
 </main></template>`;
   await fs.writeFile(path.join(output, 'App.vue'), source);
@@ -327,11 +327,29 @@ window.__demo = {page, mode, visible, modal};
   const last = getView();
   const lastContents = last.webContents;
   await run("document.querySelector('button[aria-label=关闭文件预览]').click()");
-  await waitFor(() => getViews().length === 0, '关闭面板释放所有标签');
+  // 收起 ≠ 销毁：面板卸载、原生视图让位，但标签与网页进程必须活着（重开原样恢复）。
+  await waitFor(() => run('!window.__demo.page.open.value'), '收起面板');
+  await waitFor(() => !last.getVisible(), '收起后原生视图隐藏');
+  assert.equal(lastContents.isDestroyed(), false, '收起不得销毁网页进程');
+  assert.equal(await run('window.__demo.page.tabs.value.length'), 1, '收起不得丢标签');
+  assert.equal(await run('window.__demo.page.committedUrl.value'), remoteOrigin + '/final');
+  assert.equal(await run('window.__demo.page.loadState.value'), 'loaded');
+  // 隐藏窗口不产帧（Chromium 会暂停 rAF），先让窗口可见再验证恢复链路。
+  window.showInactive(); await delay(250);
+  await run("window.__demo.mode.value = 'page'; window.__demo.page.open.value = true");
+  await waitFor(() => run('!!window.__demo.page.open.value'), '重新打开面板');
+  // 重开必须复现「收起前的原位」：不能依赖下一帧重新量尺寸（窗口隐藏 / rAF 被节流时会失效）。
+  await waitFor(() => last.getVisible(), '重开后原生视图回到原位');
+  assert.equal(getView(), last, '重开必须复用原视图');
+  await assertBounds();
+  assert.equal(await runPage('location.href'), remoteOrigin + '/final');
+  assert.equal(await run('window.__demo.page.tabs.value.length'), 1);
+  await run('window.__demo.page.close()');
+  await waitFor(() => getViews().length === 0, '销毁会话释放所有标签');
   await waitFor(() => lastContents.isDestroyed(), '网页进程释放完成');
   assert.equal(await run('window.__demo.page.loadState.value'), 'idle');
   assert.deepEqual(unexpectedRequests, []);
-  console.log('多标签网页预览验证通过: 新建/切换/关闭标签、独立输入与 sessionStorage、后台标题、图标、后退/前进、刷新保留历史、停止加载、最后标签与会话释放、 顶层加载禁止嵌入页面、权限隔离、点击/输入/滚动、页内及跨站导航、新窗口链接、重定向、刷新、登录保留、尺寸与缩放、隐藏保活、拖拽、弹窗遮挡、失败与超时、关闭释放');
+  console.log('多标签网页预览验证通过: 新建/切换/关闭标签、独立输入与 sessionStorage、后台标题、图标、后退/前进、刷新保留历史、停止加载、最后标签与会话释放、 顶层加载禁止嵌入页面、权限隔离、点击/输入/滚动、页内及跨站导航、新窗口链接、重定向、刷新、登录保留、尺寸与缩放、隐藏保活、拖拽、弹窗遮挡、失败与超时、收起保活与销毁释放');
 }).then(() => {
   clearTimeout(deadline);
   registration?.close();

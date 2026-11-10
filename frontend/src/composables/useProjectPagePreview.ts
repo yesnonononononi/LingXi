@@ -56,6 +56,14 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   const loadState = computed(() => activeTab.value?.loadState ?? 'idle');
   let revision = 0;
   let unsubscribe: (() => void) | undefined;
+  /**
+   * 主进程是否仍持有当前代次的会话。
+   *
+   * <p>收起（{@link hide}）不改变它，只有 {@link close} 才置 false。
+   * 这条标志是「收起不换代」的唯一判据：旧实现每次 open 都让 generation 前进，
+   * 主进程见代次前进就销毁全部标签，于是点 ✕ 收起再打开必丢正在浏览的网页。</p>
+   */
+  let sessionAlive = false;
   let layout: ProjectPageLayout = {visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}};
 
   const applyState = (state: ProjectPageState): void => {
@@ -76,9 +84,14 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
     if (open.value && generation.value === attempt) addressError.value = error instanceof Error ? error.message : String(error);
   };
   const updateLayout = (value: ProjectPageLayout): void => {
-    layout = value;
+    // 可见性请求只对打开着的会话有效；**隐藏**指令必须透传，否则收起后原生视图会留在屏幕上盖住界面。
+    const applicable = open.value || !value.visible;
+    // 隐藏通知常带 0 尺寸（卸载 / 收起 / 弹窗遮挡），不能让它覆盖最后一次真实位置：
+    // 重开时若只能靠下一帧 ResizeObserver 重新量尺寸，窗口被隐藏或 rAF 被节流时就恢复不出来。
+    const keepSentBounds = value.visible || (value.bounds.width > 0 && value.bounds.height > 0);
+    if (applicable) layout = keepSentBounds ? value : {...layout, visible: value.visible};
     const bridge = getBridge();
-    if (!bridge || !open.value) return;
+    if (!bridge || !applicable) return;
     const attempt = generation.value;
     void bridge.layout({...layout, generation: attempt}).then(result => {
       if (!result.ok) reportError(attempt, result.error);
@@ -102,8 +115,14 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   };
   watch(open, value => {
     if (!value) return;
-    generation.value += 1;
+    // 只有真正销毁过（close）才开新的一代；收起再打开沿用同一代，主进程据此保留全部标签。
+    if (!sessionAlive) {
+      generation.value += 1;
+      sessionAlive = true;
+    }
     revision = 0;
+    // 重开时先按上次量到的位置亮出来，随后的 ResizeObserver 观测再校正。
+    layout = {...layout, visible: true};
     execute({action: 'sync'});
   }, {flush: 'sync'});
 
@@ -129,8 +148,23 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   const control = (action: 'back' | 'forward' | 'reload' | 'stop'): void => {
     if (activeTabId.value) execute({action, tabId: activeTabId.value});
   };
+  /**
+   * 收起面板：只让原生视图让位，标签、登录态与表单留在主进程，重开按 sync 快照原样恢复。
+   *
+   * <p>与 {@link close} 的区别是「不改代次、不发 close 指令、不清前端快照」。
+   * 用户点面板 ✕、选中子 Agent 会话等「收起」场景必须走这里。</p>
+   */
+  const hide = (): void => {
+    if (!open.value) return;
+    open.value = false;
+    const bridge = getBridge();
+    if (!bridge || !generation.value) return;
+    // 隐藏指令必须发出去：原生视图浮在 DOM 之上，不发就会盖住界面。
+    void bridge.layout({visible: false, bounds: layout.bounds, generation: generation.value}).catch(() => undefined);
+  };
   const close = (): void => {
     unsubscribe?.(); unsubscribe = undefined;
+    sessionAlive = false;
     generation.value += 1;
     const bridge = getBridge();
     if (bridge) void bridge.command({action: 'close', generation: generation.value}).catch(() => undefined);
@@ -153,5 +187,5 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   if (getCurrentInstance()) onBeforeUnmount(close);
   return {open, tabs, activeTabId, activeTab, addressInput, committedUrl, loadState, generation, addressError, statusText, diagnoseText,
     openAddress, updateAddress, createTab, activateTab, closeTab, goBack: () => control('back'), goForward: () => control('forward'),
-    reload: () => control('reload'), stop: () => control('stop'), close, updateLayout, applyState};
+    reload: () => control('reload'), stop: () => control('stop'), hide, close, updateLayout, applyState};
 }

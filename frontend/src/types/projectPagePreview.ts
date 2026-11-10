@@ -65,6 +65,18 @@ export interface ProjectPagePreviewApi {
   goForward: () => void;
   reload: () => void;
   stop: () => void;
+  /**
+   * 收起面板：只让原生视图让位，主进程里的标签、登录态与表单仍在，重开即恢复。
+   *
+   * <p>与文件标签的收起语义对齐（`useFilePreview.fileTabs` 收起后也不清空）。</p>
+   */
+  hide: () => void;
+  /**
+   * 销毁会话：标签实例与主进程状态一起释放，代次前进一代。
+   *
+   * <p>只用于隔离边界（切换会话 / 工作区）与宿主卸载；用户点面板 ✕ 属于收起，必须走 {@link hide}，
+   * 否则「收起再打开」会丢掉正在浏览的网页。</p>
+   */
   close: () => void;
   updateLayout: (layout: ProjectPageLayout) => void;
   applyState: (state: ProjectPageState) => void;
