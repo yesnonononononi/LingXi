@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, onMounted} from 'vue';
 import {useModelsTab} from './useModelsTab';
 import {useTheme} from '../../../composables/useTheme';
 import {useI18n} from '../../../i18n';
@@ -9,6 +9,7 @@ import DropUpSelect from '../../../components/common/DropUpSelect.vue';
 import type {SelectOption} from '../../../types/ui';
 import BatchModelsForm from './BatchModelsForm.vue';
 import {useModelImportCopy} from './useModelImportCopy';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
 
 const props = defineProps<{
   isDark?: boolean;
@@ -18,6 +19,23 @@ const { t } = useI18n();
 const importCopy = useModelImportCopy();
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
+
+// 流式输出是全局设置（不属于单个模型），走全局配置 store 而非模型表单。
+const configStore = useUserConfigStore();
+const streamChatSaving = computed(() => configStore.savingKeys.has('streamChat'));
+const streamChatDisabled = computed(() => !configStore.loaded || streamChatSaving.value);
+const toggleStreamChat = async (next: boolean) => {
+  await configStore.patch('streamChat', next, { streamChat: next });
+};
+const switchClass = computed(() => [
+  'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50',
+  configStore.streamChat ? 'bg-lx-accent' : 'bg-lx-surface-active',
+]);
+
+// 全局配置可能尚未加载（用户直接打开「模型」页签）：主动拉一次，否则开关永远 disabled。
+onMounted(() => {
+  configStore.load();
+});
 
 const emit = defineEmits<{
   (e: 'modelUpdated'): void;
@@ -163,6 +181,34 @@ const addRowClass = computed(() => [
             {{ t('settings.models.addProvider') }}
           </button>
         </div>
+      </div>
+
+      <!-- 流式输出：全局开关，控制主对话/子 Agent 请求是否逐字流式返回 -->
+      <div
+        class="rounded-2xl border px-4 py-3 flex items-start justify-between gap-3"
+        :class="isDark ? 'bg-black/90 border-white/15' : 'bg-zinc-50/70 border-zinc-200'"
+        data-testid="stream-chat-card"
+      >
+        <div class="min-w-0">
+          <h5 class="text-sm font-semibold" :class="isDark ? 'text-white' : 'text-zinc-900'">
+            {{ t('settings.models.streamChatTitle') }}
+          </h5>
+          <p class="text-lx-fs-sm leading-relaxed mt-1" :class="isDark ? 'text-zinc-400' : 'text-zinc-500'">
+            {{ t('settings.models.streamChatDesc') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          data-testid="stream-chat-switch"
+          :aria-checked="configStore.streamChat"
+          :aria-label="t('settings.models.streamChatToggleLabel')"
+          :disabled="streamChatDisabled"
+          :class="switchClass"
+          @click="toggleStreamChat(!configStore.streamChat)"
+        >
+          <span :class="['absolute h-4 w-4 rounded-full bg-lx-on-accent shadow transition', configStore.streamChat ? 'translate-x-4' : 'translate-x-1']" />
+        </button>
       </div>
 
       <div v-if="isModelLoading" class="py-8 text-center text-xs text-lx-faint">

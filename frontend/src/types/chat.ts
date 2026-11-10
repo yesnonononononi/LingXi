@@ -752,6 +752,8 @@ export interface UserConfigVO {
   compactModelId?: number | string | null;
   imageModelId?: number | string | null;
   imageGenerationMaxCalls?: number | null;
+  /** 普通模型请求是否流式输出；未设置已归一为 true（流式）。 */
+  streamChat?: boolean;
   /**
    * 数据目录变更是否待重启生效。
    *

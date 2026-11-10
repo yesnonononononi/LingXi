@@ -154,6 +154,8 @@ public class UserConfigServiceImpl implements UserConfigService {
         if (command.compactModelIdPresent()) model.changeCompactModel(command.compactModelId());
         if (command.imageModelIdPresent()) model.changeImageModel(command.imageModelId());
         if (command.imageGenerationMaxCalls() != null) model.changeImageGenerationMaxCalls(command.imageGenerationMaxCalls());
+        // 流式开关与 agentId 同构：显式带上才改，不传保持原值。
+        if (command.streamChatPresent()) model.changeStreamChat(command.streamChat());
 
         String workspaceType = command.workspaceType();
         if (workspaceType != null)
@@ -249,6 +251,7 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .compactModelId(model.getCompactModelId())
                 .imageModelId(model.getImageModelId())
                 .imageGenerationMaxCalls(model.resolveImageGenerationMaxCalls())
+                .streamChat(model.resolveStreamChat())
                 .dataDirRestartRequired(isDataDirRestartRequired(dataDir))
                 .build();
     }

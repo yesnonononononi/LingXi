@@ -79,10 +79,21 @@ public class UserConfigRequest {
     private boolean imageModelIdPresent;
     private Integer imageGenerationMaxCalls;
 
+    /** 普通模型请求是否流式输出（空表示保持原值；显式布尔才是设置项） */
+    private Boolean streamChat;
+    private boolean streamChatPresent;
+
     /** 显式 null 取消生图模型，未传入则保持原值。 */
     @JsonSetter("imageModelId")
     public void markImageModelIdPresent(Long imageModelId) {
         this.imageModelId = imageModelId;
         this.imageModelIdPresent = true;
+    }
+
+    /** 流式开关同 agentId：显式带上才改，不带保持原值；用 setter 留痕区分「传 null」与「没传」。 */
+    @JsonSetter("streamChat")
+    public void markStreamChatPresent(Boolean streamChat) {
+        this.streamChat = streamChat;
+        this.streamChatPresent = true;
     }
 }

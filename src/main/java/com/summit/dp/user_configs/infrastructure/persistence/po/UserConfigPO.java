@@ -49,6 +49,8 @@ public class UserConfigPO {
     private Integer imageGenerationMaxCalls;
     /** 界面全局字号档位（SMALL/MEDIUM/LARGE/X_LARGE；空表示未设置，读取归一为 MEDIUM） */
     private String fontScale;
+    /** 普通模型请求是否流式输出（空表示未设置，读取归一为 true=流式） */
+    private Boolean streamChat;
 
     private Integer status;
     private Instant createTime;

@@ -36,7 +36,9 @@ public record SettingsView(
         /* 专用压缩模型（关联 model_config.id）；null 表示沿用对话模型做摘要。 */
         Long compactModelId,
         Long imageModelId,
-        Integer imageGenerationMaxCalls
+        Integer imageGenerationMaxCalls,
+        /* 普通模型请求是否流式输出；已在投影时归一，不会为 null。 */
+        boolean streamChat
 ) {
     /**
      * 兼容既有调用：未配置专用压缩模型（沿用对话模型做摘要）。
@@ -58,5 +60,14 @@ public record SettingsView(
                         Integer teamSize, Long compactModelId) {
         this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
                 reasoningEffort, skillDir, teamSize, compactModelId, null, UserConfig.DEFAULT_IMAGE_GENERATION_MAX_CALLS);
+    }
+
+    public SettingsView(WorkspaceType workspaceType, AgentAccessMode accessMode,
+                        CommandApprovalPolicy commandApprovalPolicy, Integer planMaxReminders, Long modelId,
+                        Long agentId, Integer maxTokens, String reasoningEffort, String skillDir,
+                        Integer teamSize, Long compactModelId, Long imageModelId, Integer imageGenerationMaxCalls) {
+        this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
+                reasoningEffort, skillDir, teamSize, compactModelId, imageModelId, imageGenerationMaxCalls,
+                UserConfig.DEFAULT_STREAM_CHAT);
     }
 }

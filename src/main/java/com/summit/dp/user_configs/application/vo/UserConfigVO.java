@@ -43,6 +43,8 @@ public class UserConfigVO {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long imageModelId;
     private Integer imageGenerationMaxCalls;
+    /** 普通模型请求是否流式输出；未设置已归一为 true（流式）。 */
+    private Boolean streamChat;
     /**
      * 数据目录变更是否待重启生效。
      *

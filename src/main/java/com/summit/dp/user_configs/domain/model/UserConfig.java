@@ -78,6 +78,8 @@ public class UserConfig {
     /** 未设置时的字号档位：与历史界面观感（默认字号）一致，避免老库升级后视觉跳变。 */
     public static final FontScale DEFAULT_FONT_SCALE = FontScale.MEDIUM;
     public static final int DEFAULT_MAX_TOKENS = 102400;
+    /** 未设置时的流式开关：默认流式，与历史行为一致，升级不改变现有观感。 */
+    public static final boolean DEFAULT_STREAM_CHAT = true;
     /** 目录类字段的最大长度，与 user_configs.data_dir / skill_dir 的列宽一致。 */
     public static final int MAX_DIRECTORY_LENGTH = 500;
     /** 团队规模上限的合法区间：0 人团队没有意义，无上限则等于没设防。 */
@@ -147,6 +149,15 @@ public class UserConfig {
      */
     private Integer teamSize;
 
+    /**
+     * 普通模型请求是否流式输出（SSE 逐字返回）。
+     *
+     * <p>空值表示未设置，读取时归一到 {@link #DEFAULT_STREAM_CHAT}（流式）。流式是连接级属性：
+     * 它决定主对话/子 Agent 的对话请求走 streaming 还是同步 invoker，与「思考内容是否回传」
+     * （框架的 returnThinking/sendThinking）是两回事，这里只控制前者。</p>
+     */
+    private Boolean streamChat;
+
 
     private Integer status;
 
@@ -168,6 +179,7 @@ public class UserConfig {
                 .accessMode(AccessMode.IN_WORKSPACE)
                 .reasoningEffort(ReasoningEffort.LOW)
                 .maxTokens(DEFAULT_MAX_TOKENS)
+                .streamChat(DEFAULT_STREAM_CHAT)
                 .createAt(Instant.now())
                 .updateAt(Instant.now())
                 .workSpaceConfig(new WorkSpaceConfig(WorkspaceType.SAND_BOX))
@@ -252,6 +264,19 @@ public class UserConfig {
                 "每次执行的生图次数必须在 0~" + MAX_IMAGE_GENERATION_CALLS + " 之间");
         this.imageGenerationMaxCalls = count;
         update();
+    }
+
+    /**
+     * 切换普通模型请求的流式输出；{@code null} 表示回到默认（流式），由读取侧归一。
+     */
+    public void changeStreamChat(Boolean streamChat) {
+        this.streamChat = streamChat;
+        update();
+    }
+
+    /** 读取侧归一：未设置按 {@link #DEFAULT_STREAM_CHAT} 输出，前端与运行时都不必各自猜缺省。 */
+    public boolean resolveStreamChat() {
+        return this.streamChat == null ? DEFAULT_STREAM_CHAT : this.streamChat;
     }
 
     public int resolveImageGenerationMaxCalls() {

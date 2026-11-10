@@ -72,7 +72,8 @@ public class DefaultSettingsProvider implements SettingsProvider {
                 effort == null ? null : effort.getValue(),
                 effectiveSkillDir(config.getSkillDir()),
                 config.getTeamSize() == null ? defaultTeamSize : config.getTeamSize(),
-                config.getCompactModelId(), config.getImageModelId(), config.resolveImageGenerationMaxCalls());
+                config.getCompactModelId(), config.getImageModelId(), config.resolveImageGenerationMaxCalls(),
+                config.resolveStreamChat());
     }
 
     /** 与 {@link UserConfig#defaultConfig()} 同源的缺省值；仅在设置行不存在时使用。 */

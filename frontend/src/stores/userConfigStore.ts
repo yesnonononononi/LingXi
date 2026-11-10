@@ -59,6 +59,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const compactModelId = ref<string | number | null>(null);
   const imageModelId = ref<string | number | null>(null);
   const imageGenerationMaxCalls = ref<number | null>(null);
+  /** 普通模型请求是否流式输出；后端在缺省时归一为 true。 */
+  const streamChat = ref<boolean>(true);
   /** 数据目录已改但本进程还没重启：为 true 时界面必须提示重启并拦住继续对话。 */
   const dataDirRestartRequired = ref(false);
   /**
@@ -132,6 +134,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     compactModelId.value = config?.compactModelId ?? null;
     imageModelId.value = config?.imageModelId ?? null;
     imageGenerationMaxCalls.value = config?.imageGenerationMaxCalls ?? null;
+    streamChat.value = config?.streamChat !== false;
     dataDirRestartRequired.value = config?.dataDirRestartRequired === true;
     // 非法/缺省一律回落 MEDIUM（后端虽已归一，前端仍要能吃住脏数据而不把界面撑坏）
     fontScale.value = normalizeFontScale(config?.fontScale, 'MEDIUM') ?? 'MEDIUM';
@@ -207,6 +210,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     | 'compactModelId'
     | 'imageModelId'
     | 'imageGenerationMaxCalls'
+    | 'streamChat'
     | 'fontScale';
 
   /** 读某字段的当前值（回滚快照用）。 */
@@ -227,6 +231,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'compactModelId': return compactModelId.value;
       case 'imageModelId': return imageModelId.value;
       case 'imageGenerationMaxCalls': return imageGenerationMaxCalls.value;
+      case 'streamChat': return streamChat.value;
       case 'fontScale': return fontScale.value;
     }
   };
@@ -249,6 +254,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'compactModelId': compactModelId.value = value as string | number | null; break;
       case 'imageModelId': imageModelId.value = value as string | number | null; break;
       case 'imageGenerationMaxCalls': imageGenerationMaxCalls.value = value as number | null; break;
+      case 'streamChat': streamChat.value = value as boolean; break;
       case 'fontScale': fontScale.value = value as FontScalePreset; break;
     }
     // 字号是唯一「写状态即改渲染」的字段：乐观更新与失败回滚都必须立刻反映到 --lx-font-scale，
@@ -371,6 +377,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     compactModelId,
     imageModelId,
     imageGenerationMaxCalls,
+    streamChat,
     dataDirRestartRequired,
     fontScale,
     // 派生

@@ -29,8 +29,11 @@ public record RuntimeModel(ModelConfig config, boolean vision) {
                                       boolean vision, SettingsView settings, Duration timeout,
                                       CompactModel compactModel) {
         boolean imageModel = DefaultModelProviderNames.DEFAULT_IMAGE.equals(provider);
+        // 流式开关来自设置（未设置归一为 true）。它是连接级属性：决定对话走 streaming 还是同步 invoker，
+        // 与「思考内容是否回传」（returnThinking/sendThinking）无关，后者保持恒 true。
+        boolean stream = settings == null || settings.streamChat();
         ModelConfig.ModelConfigBuilder builder = ModelConfig.builder().baseUrl(baseUrl).apiKey(apiKey)
-                .modelName(modelName).provider(provider).returnThinking(true).sendThinking(true)
+                .modelName(modelName).provider(provider).stream(stream).returnThinking(true).sendThinking(true)
                 .reuseModelForCompaction(!imageModel)
                 // 请求级配置会独立创建客户端，超时必须显式继承，避免落回 SDK 默认值。
                 .timeout(imageModel ? Duration.ofMinutes(5) : timeout);

@@ -72,6 +72,7 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
                 .compactModelId(po.getCompactModelId())
                 .imageModelId(po.getImageModelId())
                 .imageGenerationMaxCalls(po.getImageGenerationMaxCalls())
+                .streamChat(po.getStreamChat())
                 .createAt(po.getCreateTime())
                 .updateAt(po.getUpdateTime())
                 .build();
@@ -105,6 +106,7 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
                 .compactModelId(model.getCompactModelId())
                 .imageModelId(model.getImageModelId())
                 .imageGenerationMaxCalls(model.getImageGenerationMaxCalls())
+                .streamChat(model.getStreamChat())
                 .createTime(model.getCreateAt())
                 .updateTime(model.getUpdateAt())
                 .build();

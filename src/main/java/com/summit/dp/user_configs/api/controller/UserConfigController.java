@@ -55,7 +55,9 @@ public class UserConfigController {
                 request.isFontScalePresent(),
                 request.getImageModelId(),
                 request.isImageModelIdPresent(),
-                request.getImageGenerationMaxCalls()
+                request.getImageGenerationMaxCalls(),
+                request.getStreamChat(),
+                request.isStreamChatPresent()
         );
     }
 }
