@@ -164,11 +164,19 @@ onBeforeUnmount(stopResize);
 </template>
 
 <style scoped>
-.file-preview-panel { --file-bg: #fff; --file-muted: #71717a; --file-line: #e4e4e7; --file-tab: #f4f4f5; position: relative; flex: none; display: flex; flex-direction: column; height: 100%; min-width: 0; max-width: calc(100vw - 360px); color: #27272a; background: var(--file-bg); border-left: 1px solid var(--file-line); }
-.file-preview-panel.is-dark { --file-bg: #0c0e13; --file-muted: #8b92a1; --file-line: #252933; --file-tab: #1b1f29; color: #e4e4e7; }
+/*
+ * 预览面板配色令牌（唯一来源）：面板与两个子视图（ProjectPagePreview / DesignCanvasPreview）
+ * 一律消费这组变量，禁止在组件里再写字面色值。
+ *  - `--file-*`：面板表面 / 分隔线 / 弱化文字（中性灰阶）
+ *  - `--file-ink*`：强调面（主按钮、选中胶囊），亮色是深墨，暗色反转成浅墨
+ *  - `--file-focus`：键盘焦点环，取中性灰（历史上这里曾是 indigo，与面板中性色语言冲突）
+ * 子视图挂在面板外时（独立挂载 / 冒烟）用 var() 的第二参数兜底亮色值。
+ */
+.file-preview-panel { --file-bg: #fff; --file-muted: #71717a; --file-line: #e4e4e7; --file-tab: #f4f4f5; --file-ink: #18181b; --file-ink-hover: #27272a; --file-ink-contrast: #ffffff; --file-focus: #a1a1aa; position: relative; flex: none; display: flex; flex-direction: column; height: 100%; min-width: 0; max-width: calc(100vw - 360px); color: #27272a; background: var(--file-bg); border-left: 1px solid var(--file-line); }
+.file-preview-panel.is-dark { --file-bg: #0c0e13; --file-muted: #8b92a1; --file-line: #252933; --file-tab: #1b1f29; --file-ink: #f5f5f5; --file-ink-hover: #e4e4e7; --file-ink-contrast: #18181b; --file-focus: #6b7280; color: #e4e4e7; }
 .file-preview-panel.is-maximized { position: absolute; inset: 0; z-index: 40; width: 100%; max-width: none; }
 .resize-handle { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; z-index: 5; touch-action: none; }
-.resize-handle:hover, .resize-handle:focus-visible { background: #6366f140; }
+.resize-handle:hover, .resize-handle:focus-visible { background: var(--file-line); }
 .preview-topbar, .preview-toolbar, .preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
 .mode-switch { display: flex; gap: 2px; padding: 2px; margin-right: 4px; border: 1px solid var(--file-line); border-radius: 8px; }
 .mode-switch button[aria-pressed='true'] { background: var(--file-tab); font-weight: 600; }
@@ -180,7 +188,7 @@ onBeforeUnmount(stopResize);
 .topbar-actions, .toolbar-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 button { cursor: pointer; color: inherit; background: transparent; border: 0; border-radius: 6px; padding: 5px 7px; font-size: var(--lx-font-size-md); }
 button:hover { background: var(--file-tab); }
-button:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
+button:focus-visible { outline: 2px solid var(--file-focus); outline-offset: -2px; }
 button:disabled { opacity: .4; cursor: default; }
 .file-tabs { display: flex; flex-shrink: 0; gap: 4px; padding: 8px 10px; overflow-x: auto; border-bottom: 1px solid var(--file-line); }
 .file-tab { display: flex; align-items: center; border-radius: 8px; color: var(--file-muted); flex-shrink: 0; }

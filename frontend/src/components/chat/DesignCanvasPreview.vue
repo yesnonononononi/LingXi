@@ -445,7 +445,7 @@ onBeforeUnmount(() => {
           <div class="color-presets">
             <button type="button" class="preset-btn bg-white" @click="applyStyle('backgroundColor', '#ffffff')" title="纯白"></button>
             <button type="button" class="preset-btn bg-slate-900" @click="applyStyle('backgroundColor', '#0f172a')" title="暗黑"></button>
-            <button type="button" class="preset-btn bg-indigo-600" @click="applyStyle('backgroundColor', '#4f46e5')" title="靛蓝"></button>
+            <button type="button" class="preset-btn bg-blue-600" @click="applyStyle('backgroundColor', '#2563eb')" title="蓝色"></button>
             <button type="button" class="preset-btn bg-emerald-600" @click="applyStyle('backgroundColor', '#059669')" title="翠绿"></button>
             <button type="button" class="preset-btn bg-rose-500" @click="applyStyle('backgroundColor', '#f43f5e')" title="粉红"></button>
             <button type="button" class="preset-btn bg-amber-500" @click="applyStyle('backgroundColor', '#f59e0b')" title="琥珀"></button>
@@ -469,7 +469,7 @@ onBeforeUnmount(() => {
           <div class="color-presets">
             <button type="button" class="preset-btn bg-slate-900 border border-slate-300" @click="applyStyle('color', '#0f172a')" title="深色字"></button>
             <button type="button" class="preset-btn bg-white border border-slate-300" @click="applyStyle('color', '#ffffff')" title="白色字"></button>
-            <button type="button" class="preset-btn bg-indigo-600" @click="applyStyle('color', '#4f46e5')" title="蓝色字"></button>
+            <button type="button" class="preset-btn bg-blue-600" @click="applyStyle('color', '#2563eb')" title="蓝色字"></button>
           </div>
         </div>
       </div>
@@ -524,13 +524,13 @@ onBeforeUnmount(() => {
       <!-- 空状态：文件选择与拖拽引导卡片 -->
       <div v-show="!isFileLoaded" class="empty-upload-card" @click="triggerFileInput">
         <div class="upload-icon-circle">
-          <svg class="w-8 h-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
         <h3 class="text-base font-bold text-slate-800 dark:text-slate-100 mt-3">选择本地 HTML 文件并渲染</h3>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 text-center max-w-xs leading-relaxed">
-          点击此处选择本地 HTML 文件，或直接将 <span class="font-semibold text-indigo-600 dark:text-indigo-400">.html</span> 拖入画布中
+          点击此处选择本地 HTML 文件，或直接将 <span class="font-semibold text-slate-700 dark:text-slate-200">.html</span> 拖入画布中
         </p>
         <button type="button" class="upload-cta-btn mt-4">
           选择 HTML 文件
@@ -581,22 +581,17 @@ onBeforeUnmount(() => {
   border-color: #252933;
 }
 
-/* 顶部悬浮属性检查面板（Inspector Bar） */
+/* 顶部悬浮属性检查面板（Inspector Bar）：表面/描边/字色全走面板令牌，暗色由 --file-* 自动切换 */
 .design-inspector-bar {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 6px 14px;
   font-size: 12px;
-  border-bottom: 1px solid #6366f130;
-  background: #f5f3ff;
+  border-bottom: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-tab, #f4f4f5);
   overflow-x: auto;
   animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.is-dark .design-inspector-bar {
-  background: #181926;
-  border-color: #6366f140;
 }
 
 @keyframes slideDown {
@@ -614,11 +609,7 @@ onBeforeUnmount(() => {
 .inspector-label {
   font-size: 11px;
   font-weight: 600;
-  color: #6366f1;
-}
-
-.is-dark .inspector-label {
-  color: #818cf8;
+  color: var(--file-muted, #71717a);
 }
 
 .color-picker {
@@ -654,36 +645,29 @@ onBeforeUnmount(() => {
   font-size: 11px;
   padding: 2px 7px;
   border-radius: 6px;
-  background: #e0e7ff;
-  color: #3730a3;
-  border: 0;
+  background: var(--file-bg, #ffffff);
+  color: var(--file-muted, #71717a);
+  border: 1px solid var(--file-line, #e4e4e7);
   cursor: pointer;
-  transition: all 0.1s;
-}
-
-.is-dark .option-pill {
-  background: #25283b;
-  color: #c7d2fe;
+  transition: background-color 0.1s, color 0.1s, border-color 0.1s;
 }
 
 .option-pill:hover {
-  background: #c7d2fe;
+  background: var(--file-line, #e4e4e7);
+  color: var(--file-ink, #18181b);
 }
 
 .option-pill.is-selected {
-  background: #6366f1;
-  color: #ffffff;
+  background: var(--file-ink, #18181b);
+  border-color: var(--file-ink, #18181b);
+  color: var(--file-ink-contrast, #ffffff);
   font-weight: 600;
 }
 
 .inspector-divider {
   width: 1px;
   height: 16px;
-  background: #e0e7ff;
-}
-
-.is-dark .inspector-divider {
-  background: #2c3144;
+  background: var(--file-line, #e4e4e7);
 }
 
 .selection-status {
@@ -695,7 +679,7 @@ onBeforeUnmount(() => {
 }
 
 .selection-status.is-active {
-  color: #6366f1;
+  color: var(--file-ink, #18181b);
   font-weight: 600;
 }
 
@@ -707,8 +691,8 @@ onBeforeUnmount(() => {
 }
 
 .selection-status.is-active .status-dot {
-  background: #6366f1;
-  box-shadow: 0 0 6px #6366f1a0;
+  background: var(--file-ink, #18181b);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--file-ink, #18181b) 45%, transparent);
 }
 
 .design-actions {
@@ -748,14 +732,14 @@ onBeforeUnmount(() => {
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 6px;
-  background: #6366f1;
-  color: #ffffff;
+  background: var(--file-ink, #18181b);
+  color: var(--file-ink-contrast, #ffffff);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background-color 0.15s;
 }
 
 .btn-primary-action:hover {
-  background: #4f46e5;
+  background: var(--file-ink-hover, #27272a);
 }
 
 .btn-secondary-action {
@@ -811,7 +795,7 @@ onBeforeUnmount(() => {
 }
 
 .canvas-viewport.is-dragging-over {
-  background-color: #e0e7ff;
+  background-color: var(--file-line, #e4e4e7);
 }
 
 /* 空状态卡片 */
@@ -837,23 +821,24 @@ onBeforeUnmount(() => {
 }
 
 .empty-upload-card:hover {
-  border-color: #6366f1;
-  box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.15);
+  border-color: var(--file-focus, #a1a1aa);
+  box-shadow: 0 12px 30px -10px rgba(15, 23, 42, 0.18);
   transform: translateY(-2px);
+}
+
+.is-dark .empty-upload-card:hover {
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
 }
 
 .upload-icon-circle {
   width: 56px;
   height: 56px;
   border-radius: 9999px;
-  background: #e0e7ff;
+  background: var(--file-tab, #f4f4f5);
+  color: var(--file-muted, #71717a);
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.is-dark .upload-icon-circle {
-  background: #1e2438;
 }
 
 .upload-cta-btn {
@@ -861,10 +846,15 @@ onBeforeUnmount(() => {
   font-weight: 600;
   padding: 7px 18px;
   border-radius: 8px;
-  background: #6366f1;
-  color: #ffffff;
+  background: var(--file-ink, #18181b);
+  color: var(--file-ink-contrast, #ffffff);
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+  transition: background-color 0.15s;
+}
+
+.upload-cta-btn:hover {
+  background: var(--file-ink-hover, #27272a);
 }
 
 /* Iframe 设备画板外壳 */

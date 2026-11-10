@@ -151,22 +151,26 @@ const submit = (): void => {
       <button v-else type="button" class="navigation-button" :disabled="!nativeAvailable || !committedUrl" :aria-label="t('projectPagePreview.reload')" :title="t('projectPagePreview.reload')" @click="reload">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7v5"/></svg>
       </button>
-      <input
-        ref="addressField"
-        class="address-input"
-        type="text"
-        name="project-page-address"
-        autocomplete="off"
-        spellcheck="false"
-        :value="addressInput"
-        :aria-label="t('projectPagePreview.addressAria')"
-        :placeholder="t('projectPagePreview.addressPlaceholder')"
-        :aria-invalid="addressError ? 'true' : 'false'"
-        @input="onAddressInput"
-      />
-      <button type="submit" class="primary" :disabled="!nativeAvailable || !activeTabId" :aria-label="t('projectPagePreview.openAddress')">
-        {{ t('projectPagePreview.openAddress') }}
-      </button>
+      <!-- 地址输入：右箭头内嵌在输入框末尾（不再是独立「打开」按钮，省一行宽度给窄面板） -->
+      <div class="address-field">
+        <input
+          ref="addressField"
+          class="address-input"
+          type="text"
+          name="project-page-address"
+          autocomplete="off"
+          spellcheck="false"
+          :value="addressInput"
+          :aria-label="t('projectPagePreview.addressAria')"
+          :placeholder="t('projectPagePreview.addressPlaceholder')"
+          :aria-invalid="addressError ? 'true' : 'false'"
+          @input="onAddressInput"
+        />
+        <button type="submit" class="address-go" :disabled="!nativeAvailable || !activeTabId"
+          :aria-label="t('projectPagePreview.openAddress')" :title="t('projectPagePreview.openAddress')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+      </div>
     </form>
 
     <p v-if="addressError" class="address-error" role="alert">{{ addressError }}</p>
@@ -203,18 +207,24 @@ const submit = (): void => {
 .close-page-tab { padding: 1px 6px; margin-right: 3px; }
 .new-page-tab { padding: 3px 7px; }
 .close-page-tab:hover, .new-page-tab:hover { background: var(--file-line, #e4e4e7); }
-.tab-bar button:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
+.tab-bar button:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: -2px; }
 .new-page-tab:disabled { opacity: .45; cursor: default; }
 .address-bar .navigation-button { display: grid; place-items: center; padding: 6px; border-color: transparent; }
 .navigation-button svg { width: 17px; height: 17px; }
 .address-bar { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.address-input { flex: 1; min-width: 0; padding: 6px 10px; font-size: var(--lx-font-size-md); font-family: inherit; color: inherit; background: var(--file-tab, #f4f4f5); border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
-.address-input:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
-.address-bar button { flex-shrink: 0; padding: 6px 10px; font-size: var(--lx-font-size-md); color: inherit; cursor: pointer; background: transparent; border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
-.address-bar button.primary { color: #fff; background: #6366f1; border-color: #6366f1; }
-.address-bar button:hover:not(:disabled) { filter: brightness(.96); }
-.address-bar button:disabled { opacity: .45; cursor: default; }
-.address-bar button:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
+/* 输入框 + 内嵌右箭头：箭头绝对定位在输入框末尾，输入框右侧预留同宽内边距，文字不会压到箭头上 */
+.address-field { position: relative; display: flex; flex: 1; min-width: 0; }
+.address-input { flex: 1; min-width: 0; padding: 6px 32px 6px 10px; font-size: var(--lx-font-size-md); font-family: inherit; color: inherit; background: var(--file-tab, #f4f4f5); border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
+.address-input:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: -2px; }
+.address-go { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--file-muted, #71717a); cursor: pointer; transition: background-color .12s, color .12s; }
+.address-go svg { width: 16px; height: 16px; }
+.address-go:hover:not(:disabled) { background: var(--file-line, #e4e4e7); color: var(--file-ink, #18181b); }
+.address-go:disabled { opacity: .4; cursor: default; }
+.address-go:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: 1px; }
+.address-bar > button { flex-shrink: 0; padding: 6px 10px; font-size: var(--lx-font-size-md); color: inherit; cursor: pointer; background: transparent; border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
+.address-bar > button:hover:not(:disabled) { background: var(--file-tab, #f4f4f5); }
+.address-bar > button:disabled { opacity: .45; cursor: default; }
+.address-bar > button:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: 1px; }
 .address-error { margin: 0; font-size: var(--lx-font-size-md); color: #dc2626; }
 .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
 .status-text.state-timeout { color: #b45309; }

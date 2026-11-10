@@ -79,7 +79,11 @@ async function assertChatViewWiring() {
   assert.match(source, /data-test="chat-project-page-entry"/, 'ChatView 的页面预览入口必须带稳定 data-test');
   assert.match(source, /:aria-label="t\('chat\.view\.projectPagePreview'\)"/, '入口 aria-label 必须走 i18n，不写死中文');
   assert.doesNotMatch(source, /aria-label="项目页面预览"/, '入口不应再出现写死的中文 aria-label');
-  assert.match(source, /v-if="fileTabs\.length \|\| pagePreviewOpen"/, '面板渲染条件必须包含页面预览打开状态');
+  // 只要求「渲染条件里同时含文件标签与页面预览打开态」；后面追加新的模式（如 designPreviewOpen）
+  // 不该让断言变红 —— 曾经的死板写法 `v-if="fileTabs.length || pagePreviewOpen"` 在 82ace60e
+  // 给模板加上 `|| designPreviewOpen` 之后就一直是红的。
+  assert.match(source, /v-if="[^"]*\bfileTabs\.length\b[^"]*\bpagePreviewOpen\b/,
+    '面板渲染条件必须包含页面预览打开状态');
   assert.match(source, /v-show="previewPanelVisible"/, '面板隐藏必须用 v-show，避免丢掉 iframe 实例');
   assert.match(source, /watch\(\[localActiveId, localActiveWorkspaceId\][\s\S]{0,80}pagePreview\.close\(\)/, '切换会话/工作区必须销毁页面实例');
 }
