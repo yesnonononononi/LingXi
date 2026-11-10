@@ -307,6 +307,9 @@ export const messages: MessageSchema = {
       modePage: '项目页面',
       modeDesign: '设计原型',
     },
+    designPreview: {
+      title: '设计原型预览',
+    },
     projectPagePreview: {
       title: '项目页面预览',
       frameTitle: '项目页面预览',
@@ -1652,6 +1655,9 @@ export const messages: MessageSchema = {
       modeFile: 'File',
       modePage: 'Project page',
       modeDesign: 'Design',
+    },
+    designPreview: {
+      title: 'Design Prototype Preview',
     },
     projectPagePreview: {
       title: 'Project page preview',

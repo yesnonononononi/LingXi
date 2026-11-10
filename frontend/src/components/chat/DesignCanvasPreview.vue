@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import Moveable from 'moveable';
-import Selecto from 'selecto';
 
 const props = defineProps<{
   active?: boolean;
@@ -9,14 +8,12 @@ const props = defineProps<{
   initialFileName?: string;
 }>();
 
-const canvasRef = ref<HTMLElement | null>(null);
-const artboardRef = ref<HTMLElement | null>(null);
+const iframeRef = ref<HTMLIFrameElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 let moveableInstance: Moveable | null = null;
-let selectoInstance: Selecto | null = null;
 
-const selectedInfo = ref<string>('未选中元素（点击或拖拽框选画布组件）');
+const selectedInfo = ref<string>('未选中元素（点击 iframe 内任意组件进行设计）');
 const isSelected = ref(false);
 const selectedElement = ref<HTMLElement | null>(null);
 const isEditingText = ref(false);
@@ -24,8 +21,9 @@ const isEditingText = ref(false);
 const loadedFileName = ref<string>('');
 const isFileLoaded = ref(false);
 const isDraggingOver = ref(false);
+const currentViewportWidth = ref<string>('100%');
 
-// 提取当前元素的实际计算样式
+// 提取当前选中元素的实际计算样式
 const currentStyles = ref({
   color: '#000000',
   backgroundColor: '#ffffff',
@@ -49,7 +47,10 @@ const rgbToHex = (color: string): string => {
 
 const syncElementStyles = (el: HTMLElement) => {
   selectedElement.value = el;
-  const computed = window.getComputedStyle(el);
+  const iframeDoc = iframeRef.value?.contentDocument;
+  const win = iframeDoc?.defaultView || window;
+  const computed = win.getComputedStyle(el);
+
   currentStyles.value = {
     color: rgbToHex(computed.color),
     backgroundColor: rgbToHex(computed.backgroundColor),
@@ -68,9 +69,8 @@ const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSiz
     el.style.setProperty('border-radius', `${val}px`, 'important');
     currentStyles.value.borderRadius = Number(val);
   } else if (key === 'fontSize') {
-    // 强制优先级覆盖 Tailwind 及原有 CSS
     el.style.setProperty('font-size', `${val}px`, 'important');
-    // 如果选中的是容器，也将其直接子文本元素同步设置
+    // 如果选中的是包含多层子文本的容器，同步下发到所有文本子级
     el.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6,p,span,a,button,label,li').forEach(child => {
       child.style.setProperty('font-size', `${val}px`, 'important');
     });
@@ -99,6 +99,140 @@ const triggerFileInput = () => {
   fileInputRef.value?.click();
 };
 
+const setupIframeInteraction = (doc: Document) => {
+  if (!doc.body) return;
+
+  // 1. 初始化或更新 Moveable 引擎（直接挂载到 iframe 内部以获得 100% 精确坐标）
+  if (moveableInstance) {
+    moveableInstance.destroy();
+    moveableInstance = null;
+  }
+
+  moveableInstance = new Moveable(doc.body, {
+    target: [],
+    container: doc.body,
+    draggable: true,
+    resizable: true,
+    rotatable: true,
+    scalable: false,
+    warpable: false,
+    pinchable: false,
+    keepRatio: false,
+    origin: true,
+    edge: true,
+    throttleDrag: 0,
+    throttleResize: 0,
+    throttleRotate: 0,
+    // 智能吸附与对齐参考线配置
+    snappable: true,
+    snapThreshold: 5,
+    isDisplaySnapDigit: true,
+    snapGap: true,
+    snapDirections: { top: true, left: true, bottom: true, right: true, center: true, middle: true },
+    elementSnapDirections: { top: true, left: true, bottom: true, right: true, center: true, middle: true },
+    snapContainer: doc.body,
+    elementGuidelines: Array.from(doc.body.querySelectorAll('*')),
+  });
+
+  moveableInstance.on('drag', ({ target, transform }) => {
+    target.style.transform = transform;
+    updateSelectionInfo(target);
+  });
+
+  moveableInstance.on('resize', ({ target, width, height, drag }) => {
+    target.style.width = `${width}px`;
+    target.style.height = `${height}px`;
+    target.style.transform = drag.transform;
+    updateSelectionInfo(target);
+  });
+
+  moveableInstance.on('rotate', ({ target, transform }) => {
+    target.style.transform = transform;
+    updateSelectionInfo(target);
+  });
+
+  // 2. 监听点击以选中任意目标元素
+  doc.addEventListener('click', (e: MouseEvent) => {
+    if (isEditingText.value) return;
+    const target = e.target as HTMLElement;
+    if (!target || target === doc.body || target === doc.documentElement) return;
+    if (target.closest('.moveable-control-box') || moveableInstance?.isMoveableElement(target)) return;
+
+    // 阻止原生链接跳转或表单提交
+    e.preventDefault();
+    e.stopPropagation();
+
+    selectElement(target);
+  }, true);
+
+  // 3. 监听双击就地文字编辑
+  doc.addEventListener('dblclick', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target || target === doc.body || target === doc.documentElement) return;
+    e.preventDefault();
+    e.stopPropagation();
+    startInlineEdit(target);
+  }, true);
+};
+
+const selectElement = (target: HTMLElement) => {
+  if (!moveableInstance) return;
+  moveableInstance.target = [target];
+  moveableInstance.updateRect();
+  updateSelectionInfo(target);
+};
+
+const startInlineEdit = (target: HTMLElement) => {
+  isEditingText.value = true;
+  target.contentEditable = 'true';
+  target.focus();
+
+  const iframeDoc = iframeRef.value?.contentDocument;
+  const win = iframeDoc?.defaultView || window;
+  const range = docRange(iframeDoc || document, target);
+  const sel = win.getSelection();
+  sel?.removeAllRanges();
+  if (range) sel?.addRange(range);
+
+  // 编辑期间暂时收回 Moveable 控制盒，防止遮挡光标
+  if (moveableInstance) {
+    moveableInstance.target = [];
+  }
+
+  const finishEdit = () => {
+    target.contentEditable = 'false';
+    isEditingText.value = false;
+    target.removeEventListener('blur', finishEdit);
+    target.removeEventListener('keydown', onKey);
+
+    if (moveableInstance) {
+      moveableInstance.target = [target];
+      moveableInstance.updateRect();
+      updateSelectionInfo(target);
+    }
+  };
+
+  const onKey = (ev: KeyboardEvent) => {
+    if (ev.key === 'Escape' || (ev.key === 'Enter' && !ev.shiftKey && target.tagName !== 'P')) {
+      ev.preventDefault();
+      target.blur();
+    }
+  };
+
+  target.addEventListener('blur', finishEdit);
+  target.addEventListener('keydown', onKey);
+};
+
+const docRange = (doc: Document, el: HTMLElement) => {
+  try {
+    const range = doc.createRange();
+    range.selectNodeContents(el);
+    return range;
+  } catch {
+    return null;
+  }
+};
+
 const parseAndMountHtml = (content: string, name: string) => {
   loadedFileName.value = name;
   isFileLoaded.value = true;
@@ -106,46 +240,26 @@ const parseAndMountHtml = (content: string, name: string) => {
   isSelected.value = false;
   selectedInfo.value = '已加载 HTML，点击任意组件进行设计';
 
-  if (!artboardRef.value) return;
-
-  // 清空现有 Moveable 选中
-  if (moveableInstance) {
-    moveableInstance.target = [];
-    moveableInstance.updateRect();
-  }
-
-  // 提取 html body 或直接作为内容
-  let htmlToInject = content;
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'text/html');
-  if (doc.body && doc.body.children.length > 0) {
-    htmlToInject = doc.body.innerHTML;
-  }
-
-  // 提取原有的 style 标签以便保留自定义样式
-  const styles = Array.from(doc.querySelectorAll('style')).map(s => s.outerHTML).join('\n');
-
-  artboardRef.value.innerHTML = styles + htmlToInject;
-
-  // 标记所有可见设计元素为可设计目标
-  tagDesignElements(artboardRef.value);
-
-  // 重新配置 Moveable 吸附参考线
   nextTick(() => {
-    if (moveableInstance) {
-      moveableInstance.elementGuidelines = Array.from(artboardRef.value?.querySelectorAll('.design-target') || []);
-      moveableInstance.updateRect();
-    }
-  });
-};
+    const iframe = iframeRef.value;
+    if (!iframe) return;
 
-const tagDesignElements = (root: HTMLElement) => {
-  const elements = root.querySelectorAll<HTMLElement>('*');
-  elements.forEach(el => {
-    const tag = el.tagName.toLowerCase();
-    // 忽略 script、style、svg 内部微元
-    if (['script', 'style', 'path', 'g', 'circle', 'svg'].includes(tag)) return;
-    el.classList.add('design-target');
+    // 清理旧 moveable
+    if (moveableInstance) {
+      moveableInstance.target = [];
+    }
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(content);
+    doc.close();
+
+    // 等待 iframe 渲染完成后绑定交互
+    setTimeout(() => {
+      setupIframeInteraction(doc);
+    }, 150);
   });
 };
 
@@ -183,12 +297,20 @@ const clearLoadedHtml = () => {
   selectedElement.value = null;
   isSelected.value = false;
   selectedInfo.value = '未加载 HTML 文件';
-  if (artboardRef.value) {
-    artboardRef.value.innerHTML = '';
-  }
+
   if (moveableInstance) {
-    moveableInstance.target = [];
-    moveableInstance.updateRect();
+    moveableInstance.destroy();
+    moveableInstance = null;
+  }
+
+  const iframe = iframeRef.value;
+  if (iframe) {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write('<html><body></body></html>');
+      doc.close();
+    }
   }
 };
 
@@ -207,74 +329,17 @@ const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
   selectedInfo.value = `选中: <${label}> · 宽 ${Math.round(rect.width)}px · 高 ${Math.round(rect.height)}px`;
 };
 
-// 双击就地文字编辑（Inline Text Editing）
-const handleDblClick = (e: MouseEvent) => {
-  const target = (e.target as HTMLElement).closest('.design-target') as HTMLElement | null;
-  if (!target) return;
-
-  isEditingText.value = true;
-  target.contentEditable = 'true';
-  target.focus();
-
-  // 选中文本内容
-  const range = document.createRange();
-  range.selectNodeContents(target);
-  const sel = window.getSelection();
-  sel?.removeAllRanges();
-  sel?.addRange(range);
-
-  // 编辑期间临时让 Moveable 移出，避免手柄遮挡输入
-  if (moveableInstance) {
-    moveableInstance.target = [];
-  }
-
-  const finishEdit = () => {
-    target.contentEditable = 'false';
-    isEditingText.value = false;
-    target.removeEventListener('blur', finishEdit);
-    target.removeEventListener('keydown', onKey);
-
-    // 恢复 Moveable 选中与外框同步
-    if (moveableInstance) {
-      moveableInstance.target = [target];
-      moveableInstance.updateRect();
-      updateSelectionInfo(target);
-    }
-  };
-
-  const onKey = (ev: KeyboardEvent) => {
-    if (ev.key === 'Escape' || (ev.key === 'Enter' && !ev.shiftKey && target.tagName !== 'P')) {
-      ev.preventDefault();
-      target.blur();
-    }
-  };
-
-  target.addEventListener('blur', finishEdit);
-  target.addEventListener('keydown', onKey);
-};
-
-// 导出修改后的 HTML
+// 导出调整后的完整 HTML
 const exportHtml = () => {
-  if (!artboardRef.value) return;
-  const cloned = artboardRef.value.cloneNode(true) as HTMLElement;
-  cloned.querySelectorAll('.design-target').forEach(el => {
-    el.classList.remove('design-target');
-    if (!el.getAttribute('class')) el.removeAttribute('class');
-    if (el.getAttribute('contenteditable')) el.removeAttribute('contenteditable');
-  });
+  const iframe = iframeRef.value;
+  const doc = iframe?.contentDocument;
+  if (!doc) return;
 
-  const fullHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"><\/script>
-</head>
-<body class="bg-slate-50 text-slate-900 p-6 flex justify-center">
-  ${cloned.innerHTML}
-</body>
-</html>`;
+  // 临时克隆并清理内部 moveable 控制盒残留
+  const cloned = doc.documentElement.cloneNode(true) as HTMLElement;
+  cloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
 
+  const fullHtml = `<!DOCTYPE html>\n${cloned.outerHTML}`;
   const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -286,113 +351,6 @@ const exportHtml = () => {
 
 onMounted(async () => {
   await nextTick();
-  const canvasEl = canvasRef.value;
-  const artboardEl = artboardRef.value;
-  if (!canvasEl || !artboardEl) return;
-
-  // 1. 初始化 Moveable 变形与吸附引擎
-  moveableInstance = new Moveable(canvasEl, {
-    target: [],
-    container: canvasEl,
-    draggable: true,
-    resizable: true,
-    rotatable: true,
-    scalable: false,
-    warpable: false,
-    pinchable: false,
-    keepRatio: false,
-    origin: true,
-    edge: true,
-    throttleDrag: 0,
-    throttleResize: 0,
-    throttleRotate: 0,
-    // 智能吸附与对齐参考线配置（Figma / Stitch 核心体验）
-    snappable: true,
-    snapThreshold: 5,
-    isDisplaySnapDigit: true,
-    snapGap: true,
-    snapDirections: { top: true, left: true, bottom: true, right: true, center: true, middle: true },
-    elementSnapDirections: { top: true, left: true, bottom: true, right: true, center: true, middle: true },
-    snapContainer: artboardEl,
-    elementGuidelines: ['.design-target'],
-  });
-
-  // 单元素拖拽
-  moveableInstance.on('drag', ({ target, transform }) => {
-    target.style.transform = transform;
-    updateSelectionInfo(target);
-  });
-
-  // 单元素缩放拉伸
-  moveableInstance.on('resize', ({ target, width, height, drag }) => {
-    target.style.width = `${width}px`;
-    target.style.height = `${height}px`;
-    target.style.transform = drag.transform;
-    updateSelectionInfo(target);
-  });
-
-  // 单元素旋转
-  moveableInstance.on('rotate', ({ target, transform }) => {
-    target.style.transform = transform;
-    updateSelectionInfo(target);
-  });
-
-  // 多选批量拖拽支持
-  moveableInstance.on('dragGroup', ({ events }) => {
-    events.forEach(ev => {
-      ev.target.style.transform = ev.transform;
-    });
-  });
-
-  // 2. 初始化 Selecto 框选引擎
-  selectoInstance = new Selecto({
-    container: canvasEl,
-    dragContainer: canvasEl,
-    selectableTargets: ['.design-target'],
-    hitRate: 0,
-    selectByClick: true,
-    selectFromInside: false,
-    toggleContinueSelect: ['shift'],
-    preventClickEventOnDrag: true,
-  });
-
-  selectoInstance.on('dragStart', e => {
-    if (isEditingText.value) {
-      e.stop();
-      return;
-    }
-    const inputEvent = e.inputEvent;
-    const target = inputEvent.target as HTMLElement;
-    // 如果点击的是 moveable 自身的控制手柄或正在输入的元素，不触发框选
-    if (moveableInstance?.isMoveableElement(target) || target.closest('.moveable-control-box') || target.isContentEditable) {
-      e.stop();
-    }
-  });
-
-  selectoInstance.on('select', e => {
-    if (moveableInstance) {
-      moveableInstance.target = e.selected;
-      if (e.selected.length === 1) {
-        updateSelectionInfo(e.selected[0] as HTMLElement);
-      } else if (e.selected.length > 1) {
-        isSelected.value = true;
-        selectedElement.value = null;
-        selectedInfo.value = `已框选 ${e.selected.length} 个设计组件（支持批量拖拽）`;
-      } else {
-        updateSelectionInfo(undefined);
-      }
-    }
-  });
-
-  selectoInstance.on('selectEnd', e => {
-    if (e.isDragStartEnd) {
-      e.inputEvent.stopPropagation();
-    }
-    if (moveableInstance) {
-      moveableInstance.updateRect();
-    }
-  });
-
   if (props.initialContent) {
     parseAndMountHtml(props.initialContent, props.initialFileName || 'preview.html');
   }
@@ -406,9 +364,7 @@ watch(() => props.initialContent, newContent => {
 
 onBeforeUnmount(() => {
   moveableInstance?.destroy();
-  selectoInstance?.destroy();
   moveableInstance = null;
-  selectoInstance = null;
 });
 </script>
 
@@ -431,7 +387,14 @@ onBeforeUnmount(() => {
         <span class="status-text">{{ selectedInfo }}</span>
       </div>
       <div class="design-actions">
-        <!-- 文件选择与管理 -->
+        <!-- 视口尺寸切换器 -->
+        <div v-if="isFileLoaded" class="device-switch" role="group">
+          <button type="button" :class="{ 'is-selected': currentViewportWidth === '100%' }" @click="currentViewportWidth = '100%'" title="自适应 100% 宽度">桌面自适应</button>
+          <button type="button" :class="{ 'is-selected': currentViewportWidth === '768px' }" @click="currentViewportWidth = '768px'" title="平板 768px">平板</button>
+          <button type="button" :class="{ 'is-selected': currentViewportWidth === '390px' }" @click="currentViewportWidth = '390px'" title="手机 390px">手机</button>
+        </div>
+
+        <!-- 文件操作 -->
         <button
           type="button"
           class="btn-primary-action"
@@ -441,7 +404,7 @@ onBeforeUnmount(() => {
           <svg class="w-3.5 h-3.5 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
-          {{ isFileLoaded ? '更换 HTML 文件' : '选择 HTML 文件' }}
+          {{ isFileLoaded ? '更换文件' : '选择 HTML 文件' }}
         </button>
 
         <button
@@ -526,7 +489,7 @@ onBeforeUnmount(() => {
 
       <div class="inspector-divider"></div>
 
-      <!-- 字体与大小调节（支持强制覆盖 + 步进器） -->
+      <!-- 字体与大小调节（强制覆盖 + A-/A+ 步进） -->
       <div class="inspector-group">
         <span class="inspector-label">字号</span>
         <div class="flex items-center gap-1">
@@ -552,10 +515,8 @@ onBeforeUnmount(() => {
 
     <!-- 可视化设计画布主区域（带现代点阵背景） -->
     <div
-      ref="canvasRef"
       class="canvas-viewport"
       :class="{ 'is-dragging-over': isDraggingOver }"
-      @dblclick="handleDblClick"
       @dragover.prevent="isDraggingOver = true"
       @dragleave.prevent="isDraggingOver = false"
       @drop.prevent="handleDrop"
@@ -574,16 +535,21 @@ onBeforeUnmount(() => {
         <button type="button" class="upload-cta-btn mt-4">
           选择 HTML 文件
         </button>
-        <span class="text-[11px] text-slate-400 mt-2">支持包含 Tailwind 类名或自定义样式的网页</span>
+        <span class="text-[11px] text-slate-400 mt-2">支持独立完整样式的网页沙箱渲染与设计</span>
       </div>
 
-      <!-- 渲染 HTML 的画板容器（Artboard / Screen） -->
+      <!-- Iframe 沙箱画板：100% 隔离还原原网页的完整 CSS 与排版 -->
       <div
         v-show="isFileLoaded"
-        ref="artboardRef"
-        class="artboard-card"
+        class="artboard-iframe-wrapper"
+        :style="{ width: currentViewportWidth }"
       >
-        <!-- 用户选择的 HTML 动态挂载到这里 -->
+        <iframe
+          ref="iframeRef"
+          class="artboard-iframe"
+          title="Design Artboard"
+          sandbox="allow-scripts allow-same-origin allow-modals"
+        />
       </div>
     </div>
   </div>
@@ -751,6 +717,32 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.device-switch {
+  display: flex;
+  border: 1px solid var(--file-line, #e4e4e7);
+  border-radius: 6px;
+  padding: 1px;
+  background: var(--file-tab, #f4f4f5);
+  margin-right: 4px;
+}
+
+.device-switch button {
+  padding: 2px 7px;
+  font-size: 11px;
+  border: 0;
+  background: transparent;
+  color: var(--file-muted, #71717a);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.device-switch button.is-selected {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
 .btn-primary-action {
   font-size: 11px;
   font-weight: 600;
@@ -802,10 +794,10 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow: auto;
-  padding: 32px 20px;
+  padding: 20px;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: stretch;
   background-color: #f8fafc;
   background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
   background-size: 18px 18px;
@@ -824,6 +816,7 @@ onBeforeUnmount(() => {
 
 /* 空状态卡片 */
 .empty-upload-card {
+  align-self: center;
   width: 380px;
   min-height: 280px;
   border-radius: 20px;
@@ -874,41 +867,29 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
 }
 
-/* 居中画板卡片（Artboard / Screen） */
-.artboard-card {
+/* Iframe 设备画板外壳 */
+.artboard-iframe-wrapper {
   position: relative;
-  min-width: 360px;
-  max-width: 900px;
-  min-height: 480px;
-  border-radius: 16px;
-  padding: 24px;
+  height: 100%;
+  min-height: 600px;
+  border-radius: 12px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.is-dark .artboard-card {
-  background: #13161f;
+.is-dark .artboard-iframe-wrapper {
   border-color: #262b38;
   box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.6);
 }
 
-/* 赋予可设计目标元素优雅的鼠标手势与悬浮微动 */
-:deep(.design-target) {
-  cursor: pointer;
-  touch-action: none;
-  transition: background-color 0.15s, border-radius 0.15s, color 0.15s, font-size 0.1s;
-}
-
-:deep(.design-target:hover) {
-  outline: 1px dashed #6366f180 !important;
-  outline-offset: 2px;
-}
-
-:deep(.design-target[contenteditable="true"]) {
-  outline: 2px solid #6366f1 !important;
-  outline-offset: 2px;
-  cursor: text;
-  user-select: text;
+.artboard-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #ffffff;
 }
 </style>
