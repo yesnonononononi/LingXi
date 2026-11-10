@@ -100,6 +100,8 @@ class TurnViewAssemblerTest {
         assertEquals(5, tool.newStartLine());
         assertEquals(7, tool.newEndLine());
         assertEquals("r-9", tool.fileRecordId());
+        // 执行标识是取差异接口的路径段：没有它，历史里的编辑行连「差异」入口都不显示。
+        assertEquals("900", tool.executionId());
     }
 
     /** 元数据缺失或坏掉时行号为空，但不得因此装配失败（少一列数字不能拖垮整轮历史）。 */

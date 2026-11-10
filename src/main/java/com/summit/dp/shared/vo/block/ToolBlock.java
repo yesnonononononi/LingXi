@@ -27,7 +27,12 @@ public record ToolBlock(
         @JsonProperty("newStartLine") Integer newStartLine,
         @JsonProperty("newEndLine") Integer newEndLine,
         /** 对应的文件编辑记录标识（按需取差异用）；非编辑工具为空。 */
-        @JsonProperty("fileRecordId") String fileRecordId
+        @JsonProperty("fileRecordId") String fileRecordId,
+        /**
+         * 该次工具调用所属的执行标识：打开差异要按 {@code /a/file-edits/{executionId}/{recordId}} 取，
+         * 缺了它历史消息里的编辑行就点不出差异（面板连「差异/源码」切换都不显示）。
+         */
+        @JsonProperty("executionId") String executionId
 ) implements Block {
 
     /** 身份规则：{@code tool:<toolCallId>}。 */

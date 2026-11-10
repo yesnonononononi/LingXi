@@ -287,7 +287,8 @@ class BlockUpsertEventFactsTest {
 
     private static ToolCallBlockView blockView(ToolCall toolCall) {
         return new ToolCallBlockView(toolCall.getId(), toolCall.getConversationId(), toolCall.getToolName(),
-                toolCall.getType(), toolCall.getStatus(), toolCall.getRawOutput(), toolCall.getVersion());
+                toolCall.getType(), toolCall.getStatus(), toolCall.getRawOutput(), toolCall.getVersion(),
+                toolCall.getExecutionId());
     }
 
     private static Session session() {

@@ -202,7 +202,7 @@ class ToolCallRegistrarImplTest {
                 return Optional.empty();
             }
             return Optional.of(new ToolCallBlockView(row.getId(), row.getConversationId(), row.getToolName(),
-                    row.getType(), row.getStatus(), row.getRawOutput(), row.getVersion()));
+                    row.getType(), row.getStatus(), row.getRawOutput(), row.getVersion(), row.getExecutionId()));
         }
 
         @Override

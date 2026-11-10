@@ -232,7 +232,8 @@ class BlockUpsertSingleBlockTest {
     private static ToolCallBlockView blockView(String id) {
         ToolCall full = fullToolCall(id);
         return new ToolCallBlockView(full.getId(), full.getConversationId(), full.getToolName(),
-                full.getType(), full.getStatus(), full.getRawOutput(), full.getVersion());
+                full.getType(), full.getStatus(), full.getRawOutput(), full.getVersion(),
+                full.getExecutionId());
     }
 
     private static Session session() {

@@ -62,6 +62,8 @@ function toToolTrace(block: ToolBlock): ToolCallTrace {
     newStartLine: block.newStartLine ?? undefined,
     newEndLine: block.newEndLine ?? undefined,
     recordId: block.fileRecordId ?? undefined,
+    // 执行标识是取差异的路径段：缺了它历史里的编辑行点不出差异。
+    executionId: block.executionId ?? undefined,
     order: block.order,
     responseId: block.responseId,
   };

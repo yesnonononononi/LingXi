@@ -114,6 +114,11 @@ export interface ToolBlock extends BlockBase {
   newEndLine?: number | null;
   /** 对应的文件编辑记录标识，需要按需取差异时用 */
   fileRecordId?: string | null;
+  /**
+   * 该工具调用所属的执行标识（字符串）。取差异的接口是
+   * {@code /a/file-edits/{executionId}/{recordId}}，缺了它历史消息里的编辑行连「差异」入口都没有。
+   */
+  executionId?: string | null;
 }
 
 /** 判别联合：拿到 {@code type} 即可安全收窄。 */

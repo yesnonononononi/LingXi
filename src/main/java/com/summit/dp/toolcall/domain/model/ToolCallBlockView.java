@@ -14,6 +14,7 @@ package com.summit.dp.toolcall.domain.model;
  * @param status         生命周期状态
  * @param rawOutput      原始输出（块状态与展示结果都靠它）
  * @param version        乐观锁版本号（随块下发，前端据此丢弃乱序旧帧）
+ * @param executionId    归属执行标识（前端取差异要拿它拼 URL；普通数值列，不是 CLOB）
  */
 public record ToolCallBlockView(
         String id,
@@ -22,5 +23,6 @@ public record ToolCallBlockView(
         ToolCallType type,
         ToolCallStatus status,
         String rawOutput,
-        Long version) {
+        Long version,
+        Long executionId) {
 }

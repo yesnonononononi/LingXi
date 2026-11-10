@@ -200,7 +200,7 @@ public class TurnViewAssembler {
         if (facts == null) {
             return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                     BlockStatus.TOOL_STARTED, toolCallId, request.name(), request.arguments(),
-                    null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
         }
         FileEditRange fileEdit = facts.fileEdit();
         return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
@@ -211,7 +211,8 @@ public class TurnViewAssembler {
                 fileEdit == null ? null : fileEdit.oldEndLine(),
                 fileEdit == null ? null : fileEdit.newStartLine(),
                 fileEdit == null ? null : fileEdit.newEndLine(),
-                fileEdit == null ? null : fileEdit.recordId());
+                fileEdit == null ? null : fileEdit.recordId(),
+                facts.executionId());
     }
 
     /**
@@ -256,7 +257,7 @@ public class TurnViewAssembler {
      * <p>两条路径共用 {@link #buildToolBlock} 的同一份字段映射，避免「历史一套、增量一套」。</p>
      */
     private record ToolFacts(String toolName, ToolCallStatus status, String rawOutput, Long version,
-                             FileEditRange fileEdit) {
+                             FileEditRange fileEdit, String executionId) {
 
         /** 领域实体 → 事实；{@code null} 表示行尚未落库。 */
         static ToolFacts toFacts(ToolCall toolCall, ObjectMapper objectMapper) {
@@ -265,7 +266,9 @@ public class TurnViewAssembler {
             }
             return new ToolFacts(toolCall.getToolName(), toolCall.getStatus(),
                     toolCall.getRawOutput(), toolCall.getVersion(),
-                    FileEditRange.parse(toolCall.getMetaData(), objectMapper));
+                    FileEditRange.parse(toolCall.getMetaData(), objectMapper),
+                    // 执行标识按字符串下发：前端要拿它拼 URL 的路径段。
+                    toolCall.getExecutionId() == null ? null : String.valueOf(toolCall.getExecutionId()));
         }
 
         /**
@@ -279,7 +282,8 @@ public class TurnViewAssembler {
                 return null;
             }
             return new ToolFacts(toolCall.toolName(), toolCall.status(),
-                    toolCall.rawOutput(), toolCall.version(), null);
+                    toolCall.rawOutput(), toolCall.version(), null,
+                    toolCall.executionId() == null ? null : String.valueOf(toolCall.executionId()));
         }
     }
 

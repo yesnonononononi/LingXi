@@ -202,7 +202,7 @@ public class ToolCallRepositoryImpl
         return toolCallMapper.selectList(Wrappers.<ToolCallPO>lambdaQuery()
                         .select(ToolCallPO::getId, ToolCallPO::getConversationId, ToolCallPO::getToolName,
                                 ToolCallPO::getType, ToolCallPO::getStatus, ToolCallPO::getRawOutput,
-                                ToolCallPO::getVersion)
+                                ToolCallPO::getVersion, ToolCallPO::getExecutionId)
                         .eq(ToolCallPO::getId, id))
                 .stream().findFirst().map(this::toBlockView);
     }
@@ -212,7 +212,8 @@ public class ToolCallRepositoryImpl
         if (po == null) return null;
         return new ToolCallBlockView(po.getId(), po.getConversationId(), po.getToolName(),
                 po.getType() == null ? null : ToolCallType.valueOf(po.getType()),
-                ToolCallStatus.parse(po.getStatus()), po.getRawOutput(), po.getVersion());
+                ToolCallStatus.parse(po.getStatus()), po.getRawOutput(), po.getVersion(),
+                po.getExecutionId());
     }
 
     /**
