@@ -1,9 +1,9 @@
 import type {InjectionKey} from 'vue';
 
 export interface FilePreviewRequest {
-  sessionId: string;
+  sessionId?: string;
   path: string;
-  baseUrl: string;
+  baseUrl?: string;
   watchKey: string;
 }
 

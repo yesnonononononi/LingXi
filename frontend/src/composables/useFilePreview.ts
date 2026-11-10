@@ -43,13 +43,16 @@ export function useFilePreview() {
     // 主进程需要完整地址，才能和开发页面走同一个 Vite 代理。
     const baseUrl = getApiBaseUrl() || window.location.origin;
     const normalizedPath = path.replace(/\\/g, '/');
-    const id = `${baseUrl}:${sessionId}:${normalizedPath.toLowerCase()}`;
+    const isAbsolute = /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(path);
+    const id = isAbsolute
+      ? `abs:${normalizedPath.toLowerCase()}`
+      : `${baseUrl}:${sessionId}:${normalizedPath.toLowerCase()}`;
     let tab = fileTabs.value.find(item => item.id === id);
     if (!tab) {
       if (fileTabs.value.length >= 12) closeFileTab(fileTabs.value[0]!.id);
       fileTabs.value.push({
         id, name: normalizedPath.split('/').pop() || path,
-        request: { sessionId: String(sessionId ?? ''), path, baseUrl, watchKey: createLocalId('file-watch') },
+        request: { sessionId: sessionId != null ? String(sessionId) : '', path, baseUrl, watchKey: createLocalId('file-watch') },
         loading: false, error: '',
       });
       tab = fileTabs.value[fileTabs.value.length - 1]!;

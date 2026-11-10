@@ -187,3 +187,54 @@ test('原生接口校验会话环境，文件替换后通知刷新，关闭标�
   await new Promise(resolve => setTimeout(resolve, 300));
   assert.equal(notifications, 0);
 });
+
+test('未指定工作区的会话或无会话时，绝对路径仍可正常预览、打开与定位，不依赖本地后端与工作区', async t => {
+  const { directory } = await fixture(t);
+  const outside = path.join(directory, 'standalone');
+  await fs.mkdir(outside);
+  const targetFile = path.join(outside, 'Standalone.java');
+  await fs.writeFile(targetFile, 'public class Standalone {}');
+
+  const sender = new EventEmitter();
+  sender.isDestroyed = () => false;
+  sender.send = () => {};
+  const handlers = new Map();
+  let fetchCount = 0;
+  t.mock.method(global, 'fetch', async () => {
+    fetchCount++;
+    throw new Error('绝对路径预览不应触发后端接口请求');
+  });
+
+  const opened = [];
+  const revealed = [];
+  const stop = registerFilePreview({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    shell: { openPath: async file => { opened.push(file); return ''; }, showItemInFolder: file => revealed.push(file) },
+    getWindow: () => ({ isDestroyed: () => false, webContents: sender }),
+  });
+  t.after(stop);
+
+  const event = { sender };
+  const read = handlers.get('file-preview:read');
+  const open = handlers.get('file-preview:open');
+  const reveal = handlers.get('file-preview:reveal');
+
+  // 场景 1：完全未指定会话（无 sessionId，或 sessionId 为空）
+  const directResult = await read(event, { path: targetFile, watchKey: 'tab-direct' });
+  assert.equal(directResult.ok, true, '无会话直接预览绝对路径应成功');
+  assert.match(directResult.data.content, /class Standalone/);
+  assert.equal(fetchCount, 0, '直接绝对路径不应发起任何 fetch');
+
+  // 场景 2：会话未指定工作区（即使传入 sessionId，绝对路径也绝不查询后端工作区）
+  const sessionResult = await read(event, { sessionId: '99999999', baseUrl: 'http://localhost:8088', path: targetFile, watchKey: 'tab-session' });
+  assert.equal(sessionResult.ok, true, '未指定工作区的会话预览绝对路径应成功');
+  assert.match(sessionResult.data.content, /class Standalone/);
+  assert.equal(fetchCount, 0, '带 sessionId 的绝对路径同样不应发起后端请求');
+
+  // 场景 3：外部编辑器打开与定位
+  assert.equal((await open(event, { path: targetFile })).ok, true);
+  assert.equal((await reveal(event, { path: targetFile })).ok, true);
+  assert.equal(opened.length, 1);
+  assert.equal(revealed.length, 1);
+});
+

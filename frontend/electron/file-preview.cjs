@@ -32,6 +32,16 @@ function resolveId(value) {
 }
 
 async function resolveWorkspaceFile(request) {
+  const requestedPath = request?.path;
+  if (typeof requestedPath !== 'string' || !requestedPath.trim() || requestedPath.includes('\0')) {
+    throw new Error('文件路径不能为空');
+  }
+  // 绝对路径整机只读放行：直接校验物理文件存在性，不依赖会话、工作区与本地后端服务。
+  // 未指定工作区的会话、临时会话或外部绝对路径均可直接读盘。
+  if (path.isAbsolute(requestedPath)) {
+    const filePath = await resolveAbsoluteFile(requestedPath);
+    return { filePath, sessionId: request?.sessionId ? String(request.sessionId) : '', base: '' };
+  }
   const base = resolveLocalBase(request?.baseUrl);
   const sessionId = resolveId(request?.sessionId);
   // 不按执行环境（local / sandbox）分流：沙箱工作空间的 workDir 就是宿主目录
@@ -42,7 +52,7 @@ async function resolveWorkspaceFile(request) {
   const workspaceId = resolveId(session.workspaceId);
   const workspace = await fetchData(base, '/workspace/find/' + workspaceId);
   if (!workspace.hostDir) throw new Error('会话没有可用的本地工作目录');
-  const filePath = await resolvePreviewFile(workspace.hostDir, request.path);
+  const filePath = await resolvePreviewFile(workspace.hostDir, requestedPath);
   return { filePath, sessionId, base };
 }
 
@@ -155,7 +165,7 @@ function registerFilePreview({ ipcMain, shell, getWindow }) {
   ipcMain.handle('file-preview:read', run(async (event, request) => {
     const resolved = await resolveWorkspaceFile(request);
     const data = await readTextPreview(resolved.filePath);
-    const key = resolved.base + '/' + resolved.sessionId + '/' + resolved.filePath + '/' + request.watchKey;
+    const key = (resolved.base ? resolved.base + '/' + resolved.sessionId : 'direct') + '/' + resolved.filePath + '/' + request.watchKey;
     let watchId = [...watches].find(([, entry]) => entry.key === key && entry.sender === event.sender)?.[0];
     if (!watchId && watches.size < 12) {
       watchId = randomUUID();
