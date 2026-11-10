@@ -72,7 +72,8 @@ class H2SchemaPoConsistencyTest {
             com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO.class,
             com.summit.dp.checklist.infrastructure.persistence.po.ChecklistStepPO.class,
             com.summit.dp.session.infrastructure.persistence.po.SessionTokenAuditPO.class,
-            com.summit.dp.session.infrastructure.persistence.po.SessionTokenAuditItemPO.class);
+            com.summit.dp.session.infrastructure.persistence.po.SessionTokenAuditItemPO.class,
+            com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordPO.class);
 
     /** 附录 A.2 的大文本列清单（逐列核对，缺一即错）。 */
     private static final List<String> LARGE_TEXT_COLUMNS = List.of(
@@ -92,7 +93,8 @@ class H2SchemaPoConsistencyTest {
             "email_message.content",
             "checklist_step.content",
             "execution_resume_task.error_reason",
-            "chat_turn.error_reason");
+            "chat_turn.error_reason",
+            "file_record.diff");
 
     /** 自增主键表（PO 侧 {@code IdType.AUTO}）；其余表主键由应用生成。 */
     private static final Set<String> IDENTITY_TABLES = Set.of(

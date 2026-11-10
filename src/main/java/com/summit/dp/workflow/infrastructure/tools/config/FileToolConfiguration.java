@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.*;
+import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordMapper;
 import com.summit.dp.workflow.infrastructure.tools.image.ImageNormalizer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -25,8 +26,9 @@ public class FileToolConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public FileRecordStore fileRecordStore(){
-        return new DefaultFileRecordStore();
+    public FileRecordStore fileRecordStore(FileRecordMapper mapper, BaselineFileStore baselines) {
+        // 记录必须跨进程存活：历史会话的改动清单不能因为后端重启就消失。
+        return new H2FileRecordStore(mapper, baselines);
     }
 
     @Bean

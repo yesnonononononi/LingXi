@@ -72,7 +72,7 @@ class ConcurrentCheckpointReadAndReclaimTest {
             DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(database);
             ExecutionReclaimService reclaimer = new ExecutionReclaimService(repository, idle,
                     maintenance, transactionManager);
-            ExecutionCleanupService cleanup = new ExecutionCleanupService(repository, reclaimer, maintenance);
+            ExecutionCleanupService cleanup = new ExecutionCleanupService(repository, reclaimer, maintenance, cutoff -> 0);
             LocalExecutionRepository runtime = ExecutionRepositoryTestFactory.create(executions, mapper, store);
 
             List<String> violations = new ArrayList<>();

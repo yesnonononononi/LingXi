@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DefaultFileRecordManagerTest {
 
-    private final FileRecordManager records = new DefaultFileRecordManager(new DefaultFileRecordStore());
+    private final FileRecordManager records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
 
     @Test
     void onlyTheFirstRecordOfTurnFileKeepsBaseline() throws FileModificationException {

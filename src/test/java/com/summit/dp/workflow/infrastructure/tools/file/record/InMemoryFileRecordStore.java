@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.record;
 import lombok.NonNull;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -11,15 +12,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * 内存存储：只追加，按执行分区。
+ * 测试用内存存储（生产实现是 {@link H2FileRecordStore}）。
  *
- * <p><b>顺序是契约</b>：差异重放按写入顺序叠加，所以用 {@link CopyOnWriteArrayList}
- * 保持插入顺序，且不提供任何重排手段。</p>
- *
- * <p><b>已知边界</b>：进程重启即丢，历史会话的改动清单因此重建不出来。落库是下一步的事，
- * 这里不做半个持久化 —— 那只会让「有时有、有时没有」更难排查。</p>
+ * <p>只服务「不该为持久化付出代价」的用例：编辑编码、行尾、契约回归、汇总服务等，
+ * 它们关心的是记录语义而不是存放地点。基线在这里是字符串，不产生任何磁盘副作用。<b>顺序</b>
+ * 语义与生产一致：插入顺序即重放顺序，且存在性判定与过期回收的行为也保持一致，
+ * 避免测试跑在与生产不同的语义上。</p>
  */
-public class DefaultFileRecordStore implements FileRecordStore {
+public class InMemoryFileRecordStore implements FileRecordStore {
 
     private final Map<Serializable, List<FileRecord>> records = new ConcurrentHashMap<>();
 
@@ -49,11 +49,35 @@ public class DefaultFileRecordStore implements FileRecordStore {
     }
 
     @Override
+    public boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath) {
+        return this.records.getOrDefault(executionId, List.of()).stream()
+                .anyMatch(record -> Objects.equals(record.turnId(), turnId)
+                        && Objects.equals(record.filePath(), filePath));
+    }
+
+    @Override
+    public int purgeBefore(@NonNull Instant cutoff) {
+        int deleted = 0;
+        for (Map.Entry<Serializable, List<FileRecord>> entry : this.records.entrySet()) {
+            List<FileRecord> kept = new CopyOnWriteArrayList<>();
+            for (FileRecord record : entry.getValue()) {
+                if (record.createAt() != null && record.createAt().isBefore(cutoff)) {
+                    deleted++;
+                } else {
+                    kept.add(record);
+                }
+            }
+            this.records.put(entry.getKey(), kept);
+        }
+        return deleted;
+    }
+
+    @Override
     public void clear() {
         this.records.clear();
     }
 
-    /** 补齐标识与同文件版本号；顺序语义由此确定，调用方不能自己造。 */
+    /** 补齐标识与同文件版本号；与生产实现同一套规则。 */
     private FileRecord assignIdentity(FileRecord record) {
         if (record.id() != null && record.version() != null) {
             return record;

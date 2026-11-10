@@ -134,7 +134,7 @@ class EditFileToolExecutorMetaDataTest {
     }
 
     private FileRecordManager fileRecordManager() {
-        return new DefaultFileRecordManager(new DefaultFileRecordStore());
+        return new DefaultFileRecordManager(new InMemoryFileRecordStore());
     }
 
     private ToolExecution execution(EditFileToolExecutor executor, Path workspaceRoot, String args) {

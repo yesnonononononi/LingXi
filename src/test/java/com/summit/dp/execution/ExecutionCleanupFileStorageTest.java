@@ -143,7 +143,7 @@ class ExecutionCleanupFileStorageTest {
             LocalCheckpointMaintenance maintenance = new LocalCheckpointMaintenance(store, repository);
             ExecutionReclaimService reclaimer = new ExecutionReclaimService(repository, activity,
                     maintenance, transactionManager);
-            ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, maintenance);
+            ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, maintenance, cutoff -> 0);
 
             assertEquals(TOTAL_ROWS, service.preview().executionCount());
             ExecutionCleanupService.CleanupResult result = new TransactionTemplate(transactionManager)

@@ -5,7 +5,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
+import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
 import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
@@ -79,7 +79,7 @@ class FileEditRecordControllerTest {
     }
 
     private FileRecordManager newRecordManager() {
-        return new DefaultFileRecordManager(new DefaultFileRecordStore());
+        return new DefaultFileRecordManager(new InMemoryFileRecordStore());
     }
 }
 

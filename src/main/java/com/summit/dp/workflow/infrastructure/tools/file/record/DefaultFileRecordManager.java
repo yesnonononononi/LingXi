@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -66,12 +65,10 @@ public class DefaultFileRecordManager implements FileRecordManager {
     /**
      * 本轮是否还没改过这个文件。
      *
-     * <p>线性扫一遍该执行的记录：一次执行内的编辑次数是几十量级，比在存储里再维护一份索引
-     * 更省心；真到了需要索引的量级，该改的是存储而不是这里。</p>
+     * <p>交给存储用一次存在性判定回答，<b>不要</b>在这里 list 全量再过滤：持久化实现下
+     * 那是一次「把所有基线大文本读进内存」的操作，而这里每次编辑都会调一次。</p>
      */
     private boolean isFirstOfTurnFile(Serializable executionId, Serializable turnId, String filePath) {
-        return this.store.listByExecution(executionId).stream()
-                .noneMatch(record -> Objects.equals(record.turnId(), turnId)
-                        && Objects.equals(record.filePath(), filePath));
+        return !this.store.existsForTurn(executionId, turnId, filePath);
     }
 }

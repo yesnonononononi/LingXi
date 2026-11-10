@@ -5,7 +5,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService.TurnFileEdit;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
+import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
 import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileModificationException;
@@ -52,7 +52,7 @@ class TurnFileEditSummaryServiceTest {
 
     @BeforeEach
     void setUp() {
-        records = new DefaultFileRecordManager(new DefaultFileRecordStore());
+        records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
         turns = mock(ChatTurnRepository.class);
         service = new TurnFileEditSummaryService(records, turns, differ);
     }

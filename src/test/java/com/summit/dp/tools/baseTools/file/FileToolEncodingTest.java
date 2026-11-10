@@ -122,7 +122,7 @@ class FileToolEncodingTest {
         String name = existing ? "existing.txt" : "created.txt";
         Path file = workspace.resolve(name);
         if (existing) Files.writeString(file, ORIGINAL);
-        DefaultFileRecordManager manager = new DefaultFileRecordManager(new DefaultFileRecordStore());
+        DefaultFileRecordManager manager = new DefaultFileRecordManager(new InMemoryFileRecordStore());
         EditFileToolExecutor executor = new EditFileToolExecutor(mapper, new EditDiffer(), manager);
         EditFileRequest request = EditFileRequest.builder().path(name).type(existing ? "REPLACE" : "INSERT_AFTER")
                 .oldText(existing ? "中文" : "").newText(existing ? "修改后🚀" : UPDATED).build();

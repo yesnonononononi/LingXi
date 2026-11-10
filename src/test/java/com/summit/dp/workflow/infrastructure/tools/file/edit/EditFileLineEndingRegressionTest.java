@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class EditFileLineEndingRegressionTest {
     @TempDir Path root;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final DefaultFileRecordManager records = new DefaultFileRecordManager(new DefaultFileRecordStore());
+    private final DefaultFileRecordManager records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
     private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(), records);
 
     @ParameterizedTest

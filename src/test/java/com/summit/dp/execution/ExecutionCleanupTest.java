@@ -612,7 +612,7 @@ class ExecutionCleanupTest {
 
         @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionReclaimService reclaimer,
                                                      ExecutionCheckpointMaintenance maintenance) {
-            return new ExecutionCleanupService(repository, reclaimer, maintenance);
+            return new ExecutionCleanupService(repository, reclaimer, maintenance, cutoff -> 0);
         }
     }
 }
