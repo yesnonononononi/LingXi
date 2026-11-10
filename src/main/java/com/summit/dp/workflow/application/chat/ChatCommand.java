@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat;
 
+import lombok.Builder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.List;
  * <p>{@code teamId} 已移除：团队是会话绑定（{@code session.team_id}）的属性，本轮编排按库中
  * 记录取值，请求不再携带、也无法覆盖。换绑走 {@code SessionService#bindTeam}。</p>
  */
+@Builder
 public record ChatCommand(
         String input,
         Long sessionId,

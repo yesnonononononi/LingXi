@@ -13,6 +13,25 @@ import java.util.UUID;
 /** 单进程队列按会话隔离，优先级由服务端受理顺序决定。 */
 @Component
 public class PendingChatQueue {
+    public record Ticket(String id, long sequence, ChatCommand command) {}
+
+    public record Entry(String id, String input, boolean dispatching) {}
+
+    public record Snapshot(boolean paused, String failure, List<Entry> entries) {}
+
+    private static final class SessionQueue {
+        private final PriorityQueue<Ticket> entries = new PriorityQueue<>(ORDER);
+        private Ticket claimed;
+        private Long deferredExecutionId;
+        private boolean paused;
+        private String failure;
+
+        private boolean canDispatch() {
+            return !paused && claimed == null && !entries.isEmpty();
+        }
+    }
+
+
     private static final int SESSION_LIMIT = 10;
     private static final int PROCESS_LIMIT = 100;
     private static final int TEXT_LIMIT = 100_000;
@@ -31,8 +50,19 @@ public class PendingChatQueue {
         throwIf(total >= PROCESS_LIMIT, "待发送队列已满，请稍后再试");
         SessionQueue queue = queues.computeIfAbsent(sessionId, ignored -> new SessionQueue());
         throwIf(queue.entries.size() >= SESSION_LIMIT, "当前会话最多可以排队 " + SESSION_LIMIT + " 条消息");
-        ChatCommand textCommand = new ChatCommand(command.input(), sessionId, command.modelId(), command.workspaceId(),
-                null, command.agentId(), command.requirePlan(), List.of(), List.of());
+
+        ChatCommand textCommand = ChatCommand.builder()
+                .modelId(command.modelId())
+                .sessionId(sessionId)
+                .workspaceId(command.workspaceId())
+                .input(command.input())
+                .messageId(null)
+                .agentId(command.agentId())
+                .requirePlan(command.requirePlan())
+                .imageFile(List.of())
+                .imageUrl(List.of())
+                .build();
+
         Ticket ticket = new Ticket(UUID.randomUUID().toString(), ++sequence, textCommand);
         queue.entries.add(ticket);
         total++;
@@ -125,21 +155,5 @@ public class PendingChatQueue {
         if (condition) throw new ClientException(err);
     }
 
-    public record Ticket(String id, long sequence, ChatCommand command) {}
 
-    public record Entry(String id, String input, boolean dispatching) {}
-
-    public record Snapshot(boolean paused, String failure, List<Entry> entries) {}
-
-    private static final class SessionQueue {
-        private final PriorityQueue<Ticket> entries = new PriorityQueue<>(ORDER);
-        private Ticket claimed;
-        private Long deferredExecutionId;
-        private boolean paused;
-        private String failure;
-
-        private boolean canDispatch() {
-            return !paused && claimed == null && !entries.isEmpty();
-        }
-    }
 }
