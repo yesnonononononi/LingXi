@@ -5,6 +5,7 @@ import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {getApiBaseUrl} from '../../utils/apiConfig';
 import {mergeFullFileDiff, type MergedDiffLine} from '../../utils/fileDiff';
+import hljs from 'highlight.js';
 import {t} from '../../i18n';
 import ProjectPagePreview from './ProjectPagePreview.vue';
 import DesignCanvasPreview from './DesignCanvasPreview.vue';
@@ -107,6 +108,48 @@ const revertMessage = ref('');
 const mergedLines = computed<MergedDiffLine[]>(() =>
   active.value?.data ? mergeFullFileDiff(active.value.data.content, diffText.value) : []);
 
+const codeLanguage = computed(() => {
+  const name = active.value?.name.toLowerCase() ?? '';
+  if (name.endsWith('.vue')) return 'xml';
+  const extMatch = name.match(/\.([a-z0-9_-]+)$/);
+  const ext = extMatch ? extMatch[1] : '';
+  const extMap: Record<string, string> = {
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+    ts: 'typescript', mts: 'typescript', cts: 'typescript',
+    jsx: 'javascript', tsx: 'typescript',
+    java: 'java', kt: 'kotlin', kts: 'kotlin',
+    py: 'python', rb: 'ruby', go: 'go', rs: 'rust',
+    c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp', cs: 'csharp',
+    html: 'xml', xml: 'xml', svg: 'xml',
+    css: 'css', scss: 'scss', less: 'less',
+    json: 'json', yml: 'yaml', yaml: 'yaml',
+    sh: 'bash', bash: 'bash', zsh: 'bash', ps1: 'powershell',
+    sql: 'sql', md: 'markdown'
+  };
+  return extMap[ext] || (hljs.getLanguage(ext) ? ext : '');
+});
+
+function escapeDiffHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function highlightLine(text: string): string {
+  if (!text) return '&nbsp;';
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
+    return `<span class="hljs-comment">${escapeDiffHtml(text)}</span>`;
+  }
+  const lang = codeLanguage.value;
+  try {
+    if (lang) {
+      return hljs.highlight(text, { language: lang, ignoreIllegals: true }).value;
+    }
+    return hljs.highlightAuto(text).value;
+  } catch {
+    return escapeDiffHtml(text);
+  }
+}
+
 const editEndpoint = (suffix = ''): string => {
   const edit = editRef.value!;
   const base = getApiBaseUrl() || window.location.origin;
@@ -166,13 +209,11 @@ const revertEdit = async (): Promise<void> => {
   }
 };
 
-// 切换标签时按新标签的编辑上下文重新取差异；没有上下文的标签不发请求。
+/** 切换标签时按新标签的编辑上下文重新取差异；没有上下文的标签不发请求。 */
 watch(() => props.activeId, () => {
   diffText.value = '';
   diffTruncated.value = false;
   diffError.value = '';
-  reverted.value = false;
-  revertMessage.value = '';
   diffView.value = 'diff';
   void loadDiff();
 }, {immediate: true});
@@ -218,17 +259,28 @@ watch(() => props.activeId, () => {
           <span>{{ active.data?.path ?? active.request.path }}</span>
         </div>
         <div class="toolbar-actions">
-          <!-- 只有带编辑上下文的标签才出现「差异/源码」与撤销，普通预览行为完全不变 -->
+          <!-- 只有带编辑上下文的标签才出现「差异/源码」切换，普通预览行为完全不变 -->
           <div v-if="hasEdit" class="mode-switch" role="group" :aria-label="t('filePreview.viewDiff')">
             <button type="button" :aria-pressed="diffView === 'diff'" @click="diffView = 'diff'">{{ t('filePreview.viewDiff') }}</button>
             <button type="button" :aria-pressed="diffView === 'source'" @click="diffView = 'source'">{{ t('filePreview.viewSource') }}</button>
           </div>
-          <button v-if="hasEdit" type="button" :disabled="reverting || reverted" @click="revertEdit">{{ t('filePreview.revert') }}</button>
+          <button
+            v-if="hasEdit && active.request.edit"
+            type="button"
+            :disabled="reverting || reverted"
+            :title="reverted ? t('filePreview.revertedHint') : t('filePreview.revertTitle')"
+            class="revert-button"
+            @click="revertEdit"
+          >{{ reverting ? t('filePreview.reverting') : reverted ? t('filePreview.reverted') : t('filePreview.revert') }}</button>
           <button type="button" :disabled="!active.data" @click="copy(active.data?.content ?? '')">{{ isCopied ? t('common.copied') : t('common.copy') }}</button>
           <button type="button" :disabled="active.loading" @click="emit('refresh', active)">{{ t('common.refresh') }}</button>
           <button type="button" :title="t('filePreview.openWithSystem')" @click="emit('open')">{{ t('common.open') }}</button>
           <button type="button" :title="t('filePreview.revealInFolder')" @click="emit('reveal')">{{ t('filePreview.reveal') }}</button>
         </div>
+      </div>
+      <div v-if="revertMessage" class="revert-notice" :class="{ 'is-done': reverted }" role="status">
+        <span>{{ revertMessage }}</span>
+        <button type="button" @click="revertMessage = ''">×</button>
       </div>
       <div v-if="active?.error" class="preview-error" role="alert">
         <span>{{ active.error }}</span>
@@ -245,7 +297,7 @@ watch(() => props.activeId, () => {
               <div v-for="(line, index) in mergedLines" :key="index" class="diff-line" :class="`is-${line.kind}`">
                 <span class="diff-no">{{ line.lineNumber ?? '' }}</span>
                 <span class="diff-sigil">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : '' }}</span>
-                <span class="diff-text">{{ line.text }}</span>
+                <span class="diff-text" v-html="highlightLine(line.text)"></span>
               </div>
             </div>
           </div>
@@ -259,7 +311,6 @@ watch(() => props.activeId, () => {
         <div v-else class="preview-placeholder">{{ t('filePreview.noOpenFile') }}</div>
       </div>
       <div v-if="hasEdit && diffTruncated && diffView === 'diff'" class="preview-truncated">{{ t('filePreview.diffTruncated') }}</div>
-      <div v-if="hasEdit && revertMessage" class="preview-status" role="status">{{ revertMessage }}</div>
       <footer v-if="active" class="preview-status">
         <span>{{ active.loading ? t('filePreview.refreshing') : active.error && active.data ? t('filePreview.showLastContent') : active.data?.watchId ? t('filePreview.autoRefresh') : t('filePreview.readOnly') }}</span>
         <span v-if="active.data">{{ active.data.encoding }} · {{ Math.ceil(active.data.size / 1024) }} KB</span>
@@ -317,18 +368,81 @@ button:disabled { opacity: .4; cursor: default; }
 .file-heading > span { font-size: var(--lx-font-size-sm); color: var(--file-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-preview { flex: 1; min-height: 0; overflow: hidden; }
 .preview-placeholder { height: 100%; display: grid; place-items: center; font-size: var(--lx-font-size-lg); color: var(--file-muted); }
+.revert-button { color: #dc2626 !important; font-weight: 500; }
+.revert-button:hover:not(:disabled) { background: #ef444415 !important; }
+.revert-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; font-size: var(--lx-font-size-sm); color: #dc2626; background: #ef444410; border-bottom: 1px solid var(--file-line); }
+.revert-notice.is-done { color: #16a34a; background: #22c55e10; }
 .preview-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; font-size: var(--lx-font-size-md); color: #dc2626; background: #ef444410; }
 .preview-status { font-size: var(--lx-font-size-sm); color: var(--file-muted); padding: 9px 14px; border-top: 1px solid var(--file-line); }
 .preview-truncated { padding: 6px 14px; font-size: var(--lx-font-size-sm); color: #b45309; background: #f59e0b10; }
-/* 差异视图：行号列定宽右对齐，增删只换底纹不换行高，滚动时不抖动。
-   正文前景色保持中性：整行染红绿会压掉代码本身的可读性，也削弱增删的可辨识度（色弱）。 */
-.diff-preview { height: 100%; overflow: auto; font-family: var(--font-lx-code); font-size: var(--lx-font-size-md); line-height: 1.55; }
+/* 差异视图：行号列定宽右对齐并带分隔线，增删行区分淡色背景与指示符，正文走规范代码字体与语法高亮。 */
+.diff-preview {
+  height: 100%;
+  overflow: auto;
+  font-family: var(--font-lx-code, 'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'SF Mono', Consolas, Menlo, Monaco, 'Courier New', monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
 .diff-lines { min-width: max-content; }
 .diff-line { display: flex; align-items: flex-start; white-space: pre; }
-.diff-line.is-add { background: var(--lx-diff-add-bg); }
-.diff-line.is-del { background: var(--lx-diff-del-bg); }
-.diff-no { flex: none; width: 48px; padding-right: 8px; text-align: right; opacity: .55; user-select: none; }
-.diff-sigil { flex: none; width: 16px; user-select: none; }
-.diff-text { flex: 1 1 auto; padding-right: 12px; }
+.diff-line:hover { background-color: rgba(128, 128, 128, 0.05); }
+.diff-line.is-add { background: var(--lx-diff-add-bg, rgba(34, 197, 94, 0.12)); }
+.diff-line.is-del { background: var(--lx-diff-del-bg, rgba(239, 68, 68, 0.12)); }
+.diff-no {
+  flex: none;
+  width: 50px;
+  padding-right: 10px;
+  text-align: right;
+  opacity: .45;
+  user-select: none;
+  border-right: 1px solid var(--file-line);
+  margin-right: 8px;
+}
+.diff-sigil {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  font-weight: 600;
+}
+.diff-line.is-add .diff-sigil { color: #16a34a; }
+.diff-line.is-del .diff-sigil { color: #dc2626; }
+.diff-text { flex: 1 1 auto; padding-right: 16px; min-width: 0; }
+
+/* 语法高亮（浅色） */
+.diff-preview :deep(.hljs-keyword),
+.diff-preview :deep(.hljs-selector-tag),
+.diff-preview :deep(.hljs-subst) { color: #cf222e; font-weight: 600; }
+.diff-preview :deep(.hljs-string),
+.diff-preview :deep(.hljs-section),
+.diff-preview :deep(.hljs-attribute) { color: #0a3069; }
+.diff-preview :deep(.hljs-title),
+.diff-preview :deep(.hljs-title.function_) { color: #8250df; }
+.diff-preview :deep(.hljs-type),
+.diff-preview :deep(.hljs-title.class_),
+.diff-preview :deep(.hljs-class) { color: #953800; font-weight: 500; }
+.diff-preview :deep(.hljs-comment),
+.diff-preview :deep(.hljs-quote) { color: #6e7781; font-style: italic; }
+.diff-preview :deep(.hljs-number),
+.diff-preview :deep(.hljs-literal) { color: #0550ae; }
+
+/* 语法高亮（深色） */
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-keyword),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-selector-tag),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-subst) { color: #ff7b72; font-weight: 600; }
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-string),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-section),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-attribute) { color: #a5d6ff; }
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-title),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-title.function_) { color: #d2a8ff; }
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-type),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-title.class_),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-class) { color: #ffa657; font-weight: 500; }
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-comment),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-quote) { color: #8b949e; font-style: italic; }
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-number),
+.file-preview-panel.is-dark .diff-preview :deep(.hljs-literal) { color: #79c0ff; }
 @media (max-width: 900px) { .file-preview-panel { position: absolute; inset: 0; z-index: 40; width: 100% !important; max-width: none; } .resize-handle { display: none; } }
 </style>
