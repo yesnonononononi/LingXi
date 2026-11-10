@@ -101,6 +101,30 @@ class EditFileToolExecutorMetaDataTest {
         assertEquals("before", Files.readString(second));
     }
 
+    /**
+     * 记录的轮次必须取自事件元数据里的业务轮次，<b>不是</b> {@code ToolExecution.turnId}。
+     *
+     * <p>回归守卫：框架 {@code DefaultToolExecutionManager} 把 {@code turnId} 赋成
+     * {@code command.executionId()}，两者数值恰好可能不同。这里刻意让执行标识与轮次不同，
+     * 一旦有人改回 {@code toolExecution.getTurnId()}，这条断言立刻失败。</p>
+     */
+    @Test
+    void recordTurnIdComesFromEventMetadataNotToolExecution() throws Exception {
+        Path target = tempDir.resolve("turn.txt");
+        Files.writeString(target, "one\n");
+        FileRecordManager records = fileRecordManager();
+        EditFileToolExecutor executor = new EditFileToolExecutor(new ObjectMapper(), differ(), records);
+        ToolExecution toolExecution = execution(executor, tempDir, """
+                {"type":"REPLACE","path":"turn.txt","oldText":"one","newText":"two"}""",
+                Map.of("turnId", "9527"));
+
+        assertTrue(executor.execute(toolExecution).isSuccess());
+
+        FileRecord record = records.listRecords("1").getFirst();
+        assertEquals("9527", record.turnId(), "轮次必须来自事件元数据的业务轮次");
+        assertNotEquals(toolExecution.getTurnId(), record.turnId());
+    }
+
     private Differ differ() {
         return new EditDiffer();
     }
@@ -111,6 +135,12 @@ class EditFileToolExecutorMetaDataTest {
     }
 
     private ToolExecution execution(EditFileToolExecutor executor, Path workspaceRoot, String args) {
+        // 真实链路里业务轮次来自事件元数据（RequestPreparer 写入），不是 ToolExecution.turnId。
+        return execution(executor, workspaceRoot, args, Map.of("turnId", "1"));
+    }
+
+    private ToolExecution execution(EditFileToolExecutor executor, Path workspaceRoot, String args,
+                                    Map<String, Object> eventMetaData) {
         ToolDefinition<?> definition = ToolDefinition.builder().id("edit_file").name("edit_file")
                 .maxOutput(200).timeout(5L).executor(executor).build();
         Workspace workspace = new Workspace() {
@@ -149,6 +179,7 @@ class EditFileToolExecutorMetaDataTest {
                 .turnId("1")
                 .workspace(workspace)
                 .args(args)
+                .eventMetaData(eventMetaData)
                 .build();
     }
 

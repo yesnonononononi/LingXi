@@ -70,6 +70,7 @@
           :isDark="isDark"
           :turn="turnMap?.get(msg)?.turn ?? null"
           :isGroupTail="turnMap ? (turnMap.get(msg)?.isGroupTail ?? false) : undefined"
+          :turnHasFileChanges="turnHasFileChanges.get(msg.turnId ?? '') ?? false"
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
           :canResend="allowResend && !isSending"
@@ -87,6 +88,8 @@
 import {computed, ref} from 'vue';
 import {t} from '../../i18n';
 import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
+import {isEditFileTool} from '../../utils/toolMeta';
+import {collectTurnFileChangeFlags} from '../../utils/turnFileChanges';
 import ScrollCursorLoader from '../common/ScrollCursorLoader.vue';
 import ChatMessageItem from './ChatMessageItem.vue';
 
@@ -131,6 +134,15 @@ const computedLastAssistantIndex = computed(() => {
   }
   return -1;
 });
+
+/**
+ * 哪些轮次真的改过文件（按 turnId 索引）。
+ *
+ * <p>改动清单卡片要按轮次向后端要汇总，若对每一条已完成轮次都发一次请求，
+ * 一页 20 轮就是 20 个请求。这里先用消息上已有的工具轨迹做一次预筛，
+ * 没有编辑工具痕迹的轮次根本不挂卡片、也不发请求。</p>
+ */
+const turnHasFileChanges = computed(() => collectTurnFileChangeFlags(props.messages, isEditFileTool));
 
 const handleScroll = (e: Event) => {
   emit('scroll', e);

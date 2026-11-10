@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.api.controller;
 
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileHasher;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
@@ -10,11 +11,14 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestore
 import org.junit.jupiter.api.Test;
 
 import java.io.Serializable;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 记录读侧：差异按需返回、超限截断要显式标记、记录不存在明确报错；撤销依赖真实工作空间，
@@ -55,9 +59,23 @@ class FileEditRecordControllerTest {
         assertThrows(ClientException.class, () -> controller.diff("e1", "missing"));
     }
 
+    /**
+     * 整轮撤销的会话归属取自轮次本身，因此轮次不存在时必须直接拒绝，
+     * 而不是拿客户端传来的 sessionId 去猜工作空间。
+     */
+    @Test
+    void rejectTurnWithoutTurnIsRejected() {
+        ChatTurnRepository turns = mock(ChatTurnRepository.class);
+        when(turns.findById(404L)).thenReturn(Optional.empty());
+        FileEditRecordController controller = new FileEditRecordController(
+                newRecordManager(), null, null, null, null, null, turns);
+
+        assertThrows(ClientException.class, () -> controller.rejectTurn(404L));
+    }
+
     private FileEditRecordController controller(FileRecordManager records) {
         // 读差异不触碰会话与工作空间；撤销路径需要真实工作空间，改由集成测试覆盖。
-        return new FileEditRecordController(records, null, null, null, null);
+        return new FileEditRecordController(records, null, null, null, null, null, null);
     }
 
     private FileRecord draft(String diff) {

@@ -7,6 +7,7 @@ import com.summit.core.anno.type.*;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
+import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
@@ -123,6 +124,25 @@ public class EditFileToolExecutor implements ToolExecutor {
         }
     }
 
+    /**
+     * 取本轮的业务轮次 ID（{@code chat_turn} 主键）。
+     *
+     * <p><b>不能用 {@code toolExecution.getTurnId()}</b>：框架 {@code DefaultToolExecutionManager}
+     * 把它赋成了 {@code command.executionId()}，那是执行标识而不是轮次主键。轮次汇总与整轮撤销
+     * 都按业务轮次定位记录，用执行标识当轮次会让它们一条也匹配不到 —— 清单恒空、撤销恒 0，
+     * 且不会报错。</p>
+     *
+     * <p>真正的业务轮次在事件元数据里：{@code RequestPreparer} 用
+     * {@code ExecutionEventMetadata.of(...)} 写入，框架随 {@code eventMetaData} 一起注入工具。</p>
+     *
+     * @return 业务轮次 ID 的字符串形态；元数据缺失时返回 {@code null} ——
+     *         该编辑仍登记为可回滚记录，只是不归属任何轮次，因而不进轮次清单
+     */
+    private String businessTurnId(ToolExecution toolExecution) {
+        Object turnId = toolExecution.getEventMetaData().get(ExecutionEventMetadata.TURN_ID);
+        return turnId == null ? null : turnId.toString();
+    }
+
     private void throwIf(boolean condition, String err) {
         if (condition) {
             throw new ClientException(err);
@@ -131,7 +151,7 @@ public class EditFileToolExecutor implements ToolExecutor {
 
     private Serializable recordEdit(ToolExecution toolExecution, EditOutcome outcome) {
         try {
-            return fileRecordManager.record(toolExecution.getExecutionId(), toolExecution.getTurnId(),
+            return fileRecordManager.record(toolExecution.getExecutionId(), businessTurnId(toolExecution),
                     FileRecord.builder()
                             .filePath(outcome.path())
                             .oldContent(outcome.existed() ? outcome.oldContent() : null)

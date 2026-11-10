@@ -21,7 +21,7 @@ public class DefaultFileRecordManager implements FileRecordManager {
     private final FileHasher fileHasher;
 
     @Override
-    public Serializable record(@NonNull Serializable executionId, @NonNull Serializable turnId,
+    public Serializable record(@NonNull Serializable executionId, Serializable turnId,
                                @NonNull FileRecord draft) throws FileModificationException {
         FileRecord normalized = this.normalize(executionId, turnId, draft);
         FileRecord stored = this.store.put(normalized);
@@ -38,6 +38,11 @@ public class DefaultFileRecordManager implements FileRecordManager {
     @Override
     public List<FileRecord> listPendingRecords(@NonNull Serializable executionId) {
         return this.store.listPending(executionId);
+    }
+
+    @Override
+    public List<FileRecord> listRecords(@NonNull Serializable executionId) {
+        return this.store.listByExecution(executionId);
     }
 
     @Override

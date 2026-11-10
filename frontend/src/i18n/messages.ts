@@ -317,6 +317,16 @@ export const messages: MessageSchema = {
       modePage: '项目页面',
       modeDesign: '设计原型',
     },
+    turnFileChanges: {
+      title: '本轮改动',
+      fileCount: '{count} 个文件',
+      edits: '{count} 次编辑',
+      created: '新建',
+      undoAll: '撤销本轮全部改动',
+      undoConfirm: '撤销会把本轮改动的所有文件还原到编辑前的内容，确定继续？',
+      undoDone: '已撤销本轮 {count} 个文件的改动',
+      undoFailed: '撤销失败：{reason}',
+    },
     designPreview: {
       title: '设计原型预览',
     },
@@ -1675,6 +1685,16 @@ export const messages: MessageSchema = {
       modeFile: 'File',
       modePage: 'Project page',
       modeDesign: 'Design',
+    },
+    turnFileChanges: {
+      title: 'Changed files',
+      fileCount: '{count} files',
+      edits: '{count} edits',
+      created: 'New',
+      undoAll: 'Undo all changes in this turn',
+      undoConfirm: 'Undo restores every file changed in this turn to its pre-edit content. Continue?',
+      undoDone: 'Undone — {count} file(s) restored',
+      undoFailed: 'Undo failed: {reason}',
     },
     designPreview: {
       title: 'Design Prototype Preview',
