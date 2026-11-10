@@ -1,4 +1,4 @@
-import type {ChatMessage, ChatSession, ChatTurn, SubSessionVO, ToolCallTrace} from '../types/chat';
+import type {ChatMessage, ChatSession, ChatTurn, SubSessionVO} from '../types/chat';
 import type {TurnViewVO} from '../types/block';
 import {isTempSessionId} from './ids';
 import {upsertTurnViewIntoMessages} from '../views/chat/blockProjection';
@@ -265,7 +265,7 @@ function resolveSenderName(role: string): string {
   return role;
 }
 
-/** 构造消息元信息副标题（模型名称与时间戳）。 */
+/** 构造消息元信息副标题（模型名称、时间戳与工具调用概括）。 */
 function buildMessageMetaLine(message: ChatMessage): string | null {
   const parts: string[] = [];
   if (message.model && message.role === 'assistant') {
@@ -275,18 +275,11 @@ function buildMessageMetaLine(message: ChatMessage): string | null {
   if (timeStr) {
     parts.push(`${t('chatExport.time')}：${timeStr}`);
   }
+  if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
+    parts.push(t('chatExport.toolInvocations', { count: message.toolCalls.length }));
+  }
   if (parts.length === 0) return null;
   return `> *${parts.join(' · ')}*`;
-}
-
-/** 构造工具调用摘要折叠块。 */
-function buildToolCallSummary(toolCalls?: ToolCallTrace[]): string | null {
-  if (!toolCalls || toolCalls.length === 0) return null;
-  const items = toolCalls.map(tc => {
-    const detail = tc.target ? `: \`${tc.target}\`` : (tc.command ? `: \`${tc.command}\`` : '');
-    return `- \`${tc.toolName}\`${detail}`;
-  });
-  return `<details>\n<summary>${t('chatExport.toolInvocations', { count: toolCalls.length })}</summary>\n\n${items.join('\n')}\n\n</details>`;
 }
 
 /** 会话 Markdown 导出可选参数。 */
@@ -315,12 +308,10 @@ export function buildSessionMarkdown(
   const resolvedTitle = title?.trim() || t('chatExport.defaultTitle');
   const exportTime = formatDateTime(options?.exportTime ?? new Date());
 
-  // 过滤未发送气泡与完全无内容的幽灵气泡（既无正文也无工具调用），杜绝导出空白标题
+  // 过滤未发送气泡与正文为空的幽灵气泡，杜绝导出空白标题与冗余结构
   const validMessages = messages.filter(message => {
     if (message.unsent) return false;
-    const hasContent = typeof message.content === 'string' && message.content.trim().length > 0;
-    const hasTools = Array.isArray(message.toolCalls) && message.toolCalls.length > 0;
-    return hasContent || hasTools;
+    return typeof message.content === 'string' && message.content.trim().length > 0;
   });
 
   if (validMessages.length === 0) {
@@ -337,7 +328,7 @@ export function buildSessionMarkdown(
     '---',
     `title: "${safeTitle}"`,
     `date: "${exportTime}"`,
-    'generator: "LingXi"',
+    'generator: "agent"',
     `turns: ${turnCount}`,
     `messages: ${messageCount}`,
     '---',
@@ -367,11 +358,6 @@ export function buildSessionMarkdown(
       const metaLine = buildMessageMetaLine(message);
       if (metaLine) {
         blocks.push(metaLine);
-      }
-
-      const toolBlock = buildToolCallSummary(message.toolCalls);
-      if (toolBlock) {
-        blocks.push(toolBlock);
       }
 
       if (typeof message.content === 'string' && message.content.trim().length > 0) {

@@ -3,7 +3,7 @@ import test from 'node:test';
 import type {ChatMessage} from '../src/types/chat';
 import {buildSessionMarkdown} from '../src/utils/session';
 
-test('会话导出：格式严谨且绝对不含唐人 Emoji (🤖 / 👤)', () => {
+test('会话导出：格式严谨且绝对不含唐人 Emoji (🤖 / 👤)，助手标头直接叫 agent', () => {
   const messages: ChatMessage[] = [
     {
       id: 'msg-1',
@@ -27,7 +27,7 @@ test('会话导出：格式严谨且绝对不含唐人 Emoji (🤖 / 👤)', () 
   assert.equal(md.includes('🤖'), false, '导出正文不得包含 🤖 图标');
   assert.equal(md.includes('👤'), false, '导出正文不得包含 👤 图标');
   assert.match(md, /### 用户/, '必须包含规范的用户标头');
-  assert.match(md, /### 灵犀/, '必须包含规范的灵犀标头');
+  assert.match(md, /### agent/, '助手标头必须直接叫 agent');
 });
 
 test('会话导出：结构化 YAML Frontmatter 与概览信息表', () => {
@@ -56,7 +56,7 @@ test('会话导出：结构化 YAML Frontmatter 与概览信息表', () => {
   // Frontmatter 检查
   assert.match(md, /^---\r?\ntitle: "测试会话"/, '必须以标准 YAML Frontmatter 开头');
   assert.match(md, /date: "2026-11-11 00:05:52"/, 'Frontmatter 必须记录导出时间');
-  assert.match(md, /generator: "LingXi"/, 'Frontmatter 必须记录生成器名称');
+  assert.match(md, /generator: "agent"/, 'Frontmatter 生成器标识为 agent');
   assert.match(md, /turns: 1/, 'Frontmatter 必须统计轮次数');
   assert.match(md, /messages: 2/, 'Frontmatter 必须统计有效消息数');
 
@@ -76,7 +76,7 @@ test('会话导出：杜绝僵尸空气泡与未发送气泡', () => {
       content: '第一问',
       timestamp: 1731254400000,
     },
-    // 空气泡 1：content 为空字符串且无工具
+    // 空气泡 1：content 为空字符串
     {
       id: 'msg-empty-1',
       turnId: 'turn-1',
@@ -84,7 +84,7 @@ test('会话导出：杜绝僵尸空气泡与未发送气泡', () => {
       content: '',
       timestamp: 1731254401000,
     },
-    // 空气泡 2：仅空白字符且无工具
+    // 空气泡 2：仅空白字符
     {
       id: 'msg-empty-2',
       turnId: 'turn-1',
@@ -118,12 +118,12 @@ test('会话导出：杜绝僵尸空气泡与未发送气泡', () => {
   assert.match(md, /messages: 2/, '有效消息数应严格为 2，空气泡与未发送必须剔除');
   assert.equal(md.includes('受理被拒的废弃输入'), false, '未发送气泡不得泄露至导出文件');
 
-  // 严禁存在连续的灵犀标题（空气泡遗留）
-  const assistantCount = (md.match(/### 灵犀/g) || []).length;
-  assert.equal(assistantCount, 1, '助手标题仅应出现 1 次，不得产生孤立空标题');
+  // 严禁存在连续的 agent 标题（空气泡遗留）
+  const assistantCount = (md.match(/### agent/g) || []).length;
+  assert.equal(assistantCount, 1, 'agent 标题仅应出现 1 次，不得产生孤立空标题');
 });
 
-test('会话导出：纯工具调用气泡以 details 折叠块清晰呈现', () => {
+test('会话导出：工具调用概括收敛于元信息副标题，不输出生硬不可折叠的 details 标签', () => {
   const messages: ChatMessage[] = [
     {
       id: 'msg-1',
@@ -136,8 +136,9 @@ test('会话导出：纯工具调用气泡以 details 折叠块清晰呈现', ()
       id: 'msg-2',
       turnId: 'turn-1',
       role: 'assistant',
-      content: '', // 正文为空，但有工具调用
+      content: '已完成文件查看与修改。',
       timestamp: 1731254410000,
+      model: 'Gemini 1.5 Pro',
       toolCalls: [
         {
           id: 'tool-1',
@@ -159,10 +160,12 @@ test('会话导出：纯工具调用气泡以 details 折叠块清晰呈现', ()
     exportTime: '2026-11-11 00:05:52',
   });
 
-  assert.match(md, /<details>/, '工具调用必须包裹在 details 折叠块中');
-  assert.match(md, /<summary>执行工具 \(2 项\)<\/summary>/, '必须展示工具调用数量摘要');
-  assert.match(md, /- `read_file`: `src\/utils\/session\.ts`/, '必须列出工具名与目标参数');
-  assert.match(md, /- `execute_command`: `npm test`/, '必须列出命令类工具的命令内容');
+  // 不得输出在 Typora / 某些 Markdown 编辑器中无法折叠的 details 标签
+  assert.equal(md.includes('<details>'), false, 'Markdown 导出不得使用原生 details 标签');
+  assert.equal(md.includes('</details>'), false, 'Markdown 导出不得使用原生 details 闭合标签');
+
+  // 工具调用应优雅收敛于消息元数据行
+  assert.match(md, /> \*模型：Gemini 1\.5 Pro · 时间：.* · 调用工具 2 次\*/);
 });
 
 test('会话导出：多轮次边界与元信息（模型/时间戳）分段清晰', () => {
@@ -172,7 +175,7 @@ test('会话导出：多轮次边界与元信息（模型/时间戳）分段清�
       turnId: 'turn-101',
       role: 'user',
       content: '轮次一问',
-      timestamp: 1731254400000, // 2024-11-10 16:00:00 UTC
+      timestamp: 1731254400000,
     },
     {
       id: 'msg-2',
