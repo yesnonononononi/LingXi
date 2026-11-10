@@ -48,7 +48,7 @@ public class SchemaScriptLoader {
                 if (!matcher.matches()) {
                     continue;
                 }
-                String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                String content = stripBom(new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
                 scripts.add(new SchemaScript(Integer.parseInt(matcher.group(1)), filename, content,
                         checksum(content)));
             }
@@ -117,7 +117,8 @@ public class SchemaScriptLoader {
         }
         List<String> statements = new ArrayList<>();
         StringBuilder current = new StringBuilder();
-        for (String rawLine : script.content().split("\n")) {
+        String content = stripBom(script.content());
+        for (String rawLine : content.split("\n")) {
             String trimmed = rawLine.strip();
             if (trimmed.isEmpty() || trimmed.startsWith("--")) {
                 continue;
@@ -132,5 +133,13 @@ public class SchemaScriptLoader {
             throw new IllegalStateException("建库脚本末尾存在不完整语句: " + script.filename());
         }
         return statements;
+    }
+
+    /** 剥除 UTF-8 BOM，防止首行注释被当成 SQL 或导致 H2 词法解析报错。 */
+    public static String stripBom(String content) {
+        if (content != null && content.startsWith("\uFEFF")) {
+            return content.substring(1);
+        }
+        return content;
     }
 }

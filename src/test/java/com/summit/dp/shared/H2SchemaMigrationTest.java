@@ -18,6 +18,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -169,6 +170,17 @@ class H2SchemaMigrationTest {
                         List.of(new SchemaScript(1, "V1__destructive.sql", content, loader.checksum(content)))));
         assertTrue(failure.getMessage().contains("破坏性"),
                 "必须说明命中了破坏性语句，实际=" + failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("脚本含 UTF-8 BOM 且首行为注释时能正常剥除 BOM 并切分执行，不报语法错误")
+    void scriptWithUtf8BomAndLeadingCommentIsHandledSafely() {
+        String content = "\uFEFF-- 首行注释\nCREATE TABLE IF NOT EXISTS mcp (id VARCHAR(36) PRIMARY KEY);\n";
+        SchemaScript script = new SchemaScript(1, "V1__bom.sql", content, loader.checksum(content));
+        List<String> statements = loader.splitStatements(script);
+        assertEquals(1, statements.size());
+        assertTrue(statements.get(0).startsWith("CREATE TABLE IF NOT EXISTS mcp"));
+        assertFalse(statements.get(0).contains("\uFEFF"));
     }
 
     @Test
