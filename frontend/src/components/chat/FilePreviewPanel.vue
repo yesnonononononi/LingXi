@@ -153,7 +153,13 @@ onBeforeUnmount(stopResize);
     </template>
     <!-- 隐藏只暂停显示，页面状态由主进程保留；拖拽时让指针事件留在主页面。 -->
     <ProjectPagePreview v-show="isPageMode" :active="isPageMode && !resizing" class="page-preview-frame" />
-    <DesignCanvasPreview v-if="isDesignMode" :active="isDesignMode" :tabs="tabs" :activeId="activeId" class="design-preview-frame" />
+    <DesignCanvasPreview
+      v-if="isDesignMode"
+      :active="isDesignMode"
+      :initialContent="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.data?.content : undefined"
+      :initialFileName="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.name : undefined"
+      class="design-preview-frame"
+    />
   </aside>
 </template>
 
