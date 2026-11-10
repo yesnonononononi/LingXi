@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, ref} from 'vue';
+import {computed, nextTick, ref, watch} from 'vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import {usePersonalizationTab} from './usePersonalizationTab';
 
@@ -10,6 +10,21 @@ const identityInput = ref<HTMLInputElement | null>(null);
 const instructionInput = ref<HTMLTextAreaElement | null>(null);
 const editingInstruction = ref(false);
 let instructionBeforeEdit = '';
+
+function syncInstructionHeight() {
+  const element = instructionInput.value;
+  if (!element) return;
+  element.style.height = 'auto';
+  const target = Math.min(Math.max(element.scrollHeight, 128), 320);
+  element.style.height = `${target}px`;
+}
+
+watch(() => config.value, async (loaded) => {
+  if (loaded) {
+    await nextTick();
+    syncInstructionHeight();
+  }
+}, { immediate: true });
 
 async function editIdentity(field: 'title' | 'commonAgentName') {
   editing.value = field;
@@ -27,6 +42,7 @@ async function editInstruction() {
 function cancelInstruction() {
   draft.customInstruction = instructionBeforeEdit;
   editingInstruction.value = false;
+  nextTick(syncInstructionHeight);
 }
 
 async function submit() {
@@ -34,6 +50,7 @@ async function submit() {
   if (saved.value) {
     editing.value = null;
     editingInstruction.value = false;
+    nextTick(syncInstructionHeight);
   }
 }
 </script>
@@ -76,10 +93,20 @@ async function submit() {
             </div>
             <button type="button" class="personalization-input shrink-0 px-3 cursor-pointer" @click="editingInstruction ? cancelInstruction() : editInstruction()">{{ editingInstruction ? copy.cancel : copy.edit }}</button>
           </div>
-          <textarea id="personalization-instruction" ref="instructionInput" v-model="draft.customInstruction" :readonly="!editingInstruction" :placeholder="copy.placeholder" class="personalization-input mt-4 w-full min-h-32 resize-y leading-relaxed" />
+          <textarea
+            id="personalization-instruction"
+            ref="instructionInput"
+            v-model="draft.customInstruction"
+            :readonly="!editingInstruction"
+            :placeholder="copy.placeholder"
+            :class="[
+              'personalization-input mt-4 w-full min-h-32 max-h-80 leading-relaxed overflow-y-auto',
+              editingInstruction ? 'resize-y' : 'resize-none'
+            ]"
+          />
         </section>
 
-        <div class="sticky bottom-0 flex items-center justify-end gap-3 bg-white/95 pt-3 pb-1 dark:bg-black/95">
+        <div class="flex items-center justify-end gap-3 pt-2">
           <span v-if="saved && !dirty" role="status" class="text-xs text-lx-muted">{{ copy.saved }}</span>
           <button type="submit" :disabled="!dirty || saving || loading" class="rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">{{ saving ? copy.saving : copy.save }}</button>
         </div>
