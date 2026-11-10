@@ -539,6 +539,7 @@ export const messages: MessageSchema = {
       view: {
         filePreview: '文件预览 · {count}',
         projectPagePreview: '项目页面预览',
+        designPreview: '设计原型',
         disconnected: '实时连接已断开，生成结果可能有延迟。可重新连接并同步最新进度。',
         reconnecting: '实时连接已中断，正在自动重连并同步最新进度…',
         reconnect: '重新连接',
@@ -1884,6 +1885,7 @@ export const messages: MessageSchema = {
       view: {
         filePreview: 'File preview · {count}',
         projectPagePreview: 'Project page preview',
+        designPreview: 'Design Preview',
         disconnected: 'The live connection was lost, so results may be delayed. You can reconnect and sync the latest progress.',
         reconnecting: 'Live connection interrupted. Reconnecting and syncing the latest progress…',
         reconnect: 'Reconnect',

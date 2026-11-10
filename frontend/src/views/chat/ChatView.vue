@@ -51,6 +51,14 @@
             class="rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900"
             @click="openProjectPagePanel"
           >{{ t('chat.view.projectPagePreview') }}</button>
+          <button
+            type="button"
+            data-test="chat-design-preview-entry"
+            :aria-label="t('chat.view.designPreview')"
+            :title="t('chat.view.designPreview')"
+            class="rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900"
+            @click="openDesignPreviewPanel"
+          >{{ t('chat.view.designPreview') }}</button>
           <!-- 用量审计入口：与上面两个入口并排。面板是绝对定位抽屉，故入口始终留在入口行里，
                收起后由它重新打开（面板自带的「收起」按钮只负责关）。 -->
           <button
@@ -381,7 +389,7 @@
       </div>
 
       <FilePreviewPanel
-        v-if="fileTabs.length || pagePreviewOpen"
+        v-if="fileTabs.length || pagePreviewOpen || designPreviewOpen"
         v-show="previewPanelVisible"
         :tabs="fileTabs"
         :activeId="activeFileId"
@@ -573,13 +581,12 @@ provide(FILE_PREVIEW_KEY, openFilePreview);
 const previewMode = ref<PreviewPanelMode>('file');
 const pagePreview = useProjectPagePreview();
 provide(PROJECT_PAGE_PREVIEW_KEY, pagePreview);
+const designPreviewOpen = ref(false);
 
 /**
- * 面板可见性：文件链路（filePreviewOpen）与页面链路（pagePreview.open）任一为真即显示。
- *
- * <p>不用 `mode` 参与判断：切换模式不应该把面板藏起来，否则「点了文件标签就整块消失」。</p>
+ * 面板可见性：文件链路（filePreviewOpen）、页面链路（pagePreview.open）与设计模式任一为真即显示。
  */
-const previewPanelVisible = computed<boolean>(() => filePreviewOpen.value || pagePreview.open.value);
+const previewPanelVisible = computed<boolean>(() => filePreviewOpen.value || pagePreview.open.value || designPreviewOpen.value);
 
 /**
  * 页面模式是否已打开（模板用）。
@@ -601,15 +608,23 @@ const openProjectPagePanel = (): void => {
   pagePreview.open.value = true;
 };
 
+/** 打开设计原型模式：即使零个文件标签也能进。 */
+const openDesignPreviewPanel = (): void => {
+  previewMode.value = 'design';
+  designPreviewOpen.value = true;
+};
+
 /**
  * 面板内的模式切换。
  *
  * @param mode 目标模式。
  */
 const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
-  previewMode.value = mode === 'page' ? 'page' : 'file';
-  if (previewMode.value === 'page') {
+  previewMode.value = mode;
+  if (mode === 'page') {
     pagePreview.open.value = true;
+  } else if (mode === 'design') {
+    designPreviewOpen.value = true;
   } else if (fileTabs.value.length) {
     filePreviewOpen.value = true;
   }
@@ -618,6 +633,7 @@ const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
 /** 「关闭」是明确关闭：文件链路的可见性归零，页面实例销毁并释放订阅。 */
 const closePreviewPanel = (): void => {
   filePreviewOpen.value = false;
+  designPreviewOpen.value = false;
   pagePreview.close();
 };
 
