@@ -892,15 +892,20 @@ provide(SIDEBAR_SLOTS_KEY, {
 </script>
 
 <style scoped>
-/* 预览面板抽屉滑入滑出平滑过渡 */
+/* 预览面板抽屉滑入滑出平滑过渡：宽度协同过渡，杜绝瞬间挤压撞击左侧区域 */
 .preview-panel-slide-enter-active,
 .preview-panel-slide-leave-active {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease-out;
+  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease-out;
+  overflow: hidden !important;
+}
+.preview-panel-slide-enter-active > *,
+.preview-panel-slide-leave-active > * {
+  min-width: 540px;
 }
 .preview-panel-slide-enter-from,
 .preview-panel-slide-leave-to {
-  transform: translateX(100%);
-  opacity: 0.4;
+  width: 0 !important;
+  opacity: 0;
 }
 
 /* 右上角浮动操作栏淡入淡出过渡：进场延迟等待右侧预览面板完全收起，避免在收缩容器中央突兀闪现 */

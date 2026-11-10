@@ -98,4 +98,11 @@ test('控制栏关闭防漂移与侧边栏防挤压布局契约', () => {
     /\.parentElement\?\.scrollIntoView/,
     'ProjectPagePreview 禁止对父容器调用 scrollIntoView，应操作容器 scrollLeft'
   );
+
+  // 6. preview-panel-slide 必须基于宽度过渡，避免 flexbox 瞬间扣减宽度挤压左侧正文区
+  assert.match(
+    chatViewSrc,
+    /\.preview-panel-slide-enter-active[\s\S]*?width\s+0\.28s/,
+    'preview-panel-slide 必须基于宽度过渡，避免 flexbox 瞬间扣减宽度挤压左侧正文区'
+  );
 });
