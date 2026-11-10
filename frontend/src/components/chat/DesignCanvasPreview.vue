@@ -1,34 +1,55 @@
 <script setup lang="ts">
-import {nextTick, onBeforeUnmount, onMounted, ref} from 'vue';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import Moveable from 'moveable';
 import Selecto from 'selecto';
+import type {FilePreviewTab} from '../../types/filePreview';
 
-defineProps<{
+const props = defineProps<{
   active?: boolean;
+  tabs?: FilePreviewTab[];
+  activeId?: string;
 }>();
 
 const canvasRef = ref<HTMLElement | null>(null);
 const artboardRef = ref<HTMLElement | null>(null);
+const artboardContentRef = ref<HTMLElement | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
 let moveableInstance: Moveable | null = null;
 let selectoInstance: Selecto | null = null;
 
+// 加载的文件状态
+const loadedFileName = ref<string>('');
+const loadedHtml = ref<string>('');
+const customStyleTag = ref<string>('');
+const isDragOver = ref(false);
+
+// 画板视口尺寸：390 (移动端), 768 (平板), 1024 (桌面), '100%' (流式自适应)
+const viewportWidth = ref<string>('390');
+
+// 选中与样式属性状态
 const selectedInfo = ref<string>('未选中元素（点击或拖拽框选画布组件）');
 const isSelected = ref(false);
 const selectedElement = ref<HTMLElement | null>(null);
 const isEditingText = ref(false);
+const copySuccess = ref(false);
 
-// 提取当前元素的实际计算样式
+// 当前打开的文件列表中是否有可用文件
+const currentTab = computed(() => {
+  if (!props.tabs?.length) return null;
+  return props.tabs.find(t => t.id === props.activeId) || props.tabs[0];
+});
+
+// 计算样式状态
 const currentStyles = ref({
   color: '#000000',
   backgroundColor: '#ffffff',
   borderRadius: 0,
   fontSize: 14,
   fontWeight: '400',
-  textAlign: 'left',
 });
 
-// rgb/rgba 转 hex 辅助函数
+// rgb/rgba 转 hex
 const rgbToHex = (color: string): string => {
   if (!color || color === 'transparent' || color.startsWith('rgba(0, 0, 0, 0)')) return '#ffffff';
   if (color.startsWith('#')) return color;
@@ -42,80 +63,160 @@ const rgbToHex = (color: string): string => {
 
 const syncElementStyles = (el: HTMLElement) => {
   selectedElement.value = el;
-  const computed = window.getComputedStyle(el);
+  const computedStyle = window.getComputedStyle(el);
   currentStyles.value = {
-    color: rgbToHex(computed.color),
-    backgroundColor: rgbToHex(computed.backgroundColor),
-    borderRadius: parseInt(computed.borderRadius, 10) || 0,
-    fontSize: parseInt(computed.fontSize, 10) || 14,
-    fontWeight: computed.fontWeight || '400',
-    textAlign: computed.textAlign || 'left',
+    color: rgbToHex(computedStyle.color),
+    backgroundColor: rgbToHex(computedStyle.backgroundColor),
+    borderRadius: parseInt(computedStyle.borderRadius, 10) || 0,
+    fontSize: parseInt(computedStyle.fontSize, 10) || 14,
+    fontWeight: computedStyle.fontWeight || '400',
   };
 };
 
-const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSize' | 'fontWeight' | 'textAlign', val: string | number) => {
+/**
+ * 样式调整函数（重点解决字号/颜色被内部 class 覆盖的问题）。
+ */
+const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSize' | 'fontWeight', val: string | number) => {
   if (!selectedElement.value) return;
   const el = selectedElement.value;
-  if (key === 'borderRadius') {
-    el.style.borderRadius = `${val}px`;
-    currentStyles.value.borderRadius = Number(val);
-  } else if (key === 'fontSize') {
-    el.style.fontSize = `${val}px`;
-    currentStyles.value.fontSize = Number(val);
-  } else if (key === 'fontWeight') {
-    el.style.fontWeight = String(val);
-    currentStyles.value.fontWeight = String(val);
-  } else if (key === 'backgroundColor') {
-    el.style.backgroundColor = String(val);
-    currentStyles.value.backgroundColor = String(val);
+
+  if (key === 'fontSize') {
+    const num = Number(val);
+    currentStyles.value.fontSize = num;
+    // 自身强制生效
+    el.style.setProperty('font-size', `${num}px`, 'important');
+    // 如果是包含文字的容器，内部所有直接文字子节点同步生效，解决 Tailwind text-* class 覆盖问题
+    const textChildren = el.querySelectorAll<HTMLElement>('p, span, h1, h2, h3, h4, h5, h6, a, button, label, strong, b, em, i');
+    textChildren.forEach(child => {
+      child.style.setProperty('font-size', `${num}px`, 'important');
+    });
   } else if (key === 'color') {
-    el.style.color = String(val);
     currentStyles.value.color = String(val);
+    el.style.setProperty('color', String(val), 'important');
+    const textChildren = el.querySelectorAll<HTMLElement>('p, span, h1, h2, h3, h4, h5, h6, a, button, label, strong, b, em, i');
+    textChildren.forEach(child => {
+      child.style.setProperty('color', String(val), 'important');
+    });
+  } else if (key === 'borderRadius') {
+    currentStyles.value.borderRadius = Number(val);
+    el.style.setProperty('border-radius', `${val}px`, 'important');
+  } else if (key === 'backgroundColor') {
+    currentStyles.value.backgroundColor = String(val);
+    el.style.setProperty('background-color', String(val), 'important');
+  } else if (key === 'fontWeight') {
+    currentStyles.value.fontWeight = String(val);
+    el.style.setProperty('font-weight', String(val), 'important');
+    const textChildren = el.querySelectorAll<HTMLElement>('p, span, h1, h2, h3, h4, h5, h6, a, button, label, strong, b, em, i');
+    textChildren.forEach(child => {
+      child.style.setProperty('font-weight', String(val), 'important');
+    });
   }
-  // 变更后立即更新 Moveable 边界框
+
   nextTick(() => {
     moveableInstance?.updateRect();
   });
 };
 
-const resetArtboard = () => {
-  if (!artboardRef.value) return;
-  const targets = artboardRef.value.querySelectorAll<HTMLElement>('.design-target');
-  targets.forEach(el => {
-    el.style.transform = '';
-    el.style.width = '';
-    el.style.height = '';
-    el.style.borderRadius = '';
-    el.style.fontSize = '';
-    el.style.fontWeight = '';
-    el.style.backgroundColor = '';
-    el.style.color = '';
-  });
+/**
+ * 解析用户文件内容（HTML / Vue SFC / SVG / 文本）。
+ */
+const parseAndLoad = (content: string, name: string) => {
+  loadedFileName.value = name;
+  let html = content;
+  let styles = '';
+
+  // 如果是 Vue 单文件组件，提取 <template> 和 <style>
+  if (name.toLowerCase().endsWith('.vue')) {
+    const templateMatch = content.match(/<template[\s\S]*?>([\s\S]*?)<\/template>/i);
+    const styleMatch = content.match(/<style[\s\S]*?>([\s\S]*?)<\/style>/i);
+    html = templateMatch ? templateMatch[1]!.trim() : content;
+    styles = styleMatch ? styleMatch[1]!.trim() : '';
+  }
+
+  loadedHtml.value = html;
+  customStyleTag.value = styles;
+
+  // 清空选中并重新打标
   if (moveableInstance) {
     moveableInstance.target = [];
-    moveableInstance.updateRect();
   }
   isSelected.value = false;
   selectedElement.value = null;
-  selectedInfo.value = '未选中元素（点击或拖拽框选画布组件）';
+  selectedInfo.value = `已加载文件: ${name}（点击组件开始设计）`;
+
+  nextTick(() => {
+    makeElementsInteractive();
+  });
 };
 
-const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
-  if (!target || !(target instanceof HTMLElement)) {
-    isSelected.value = false;
-    selectedElement.value = null;
-    selectedInfo.value = '未选中元素（点击或拖拽框选画布组件）';
-    return;
+/**
+ * 遍历载入的真实 DOM 结构，智能赋予可设计标记与手势。
+ */
+const makeElementsInteractive = () => {
+  const container = artboardContentRef.value;
+  if (!container) return;
+
+  // 为直接子元素以及常用交互/容器元素附加 design-target
+  const candidates = container.querySelectorAll<HTMLElement>('*');
+  candidates.forEach(el => {
+    const tag = el.tagName.toLowerCase();
+    // 忽略 script / style / svg 内部细节
+    if (['script', 'style', 'path', 'g', 'circle', 'line', 'defs'].includes(tag)) return;
+    // 拥有直接子节点或者是常用视觉组件
+    if (el.parentElement === container || ['div', 'section', 'article', 'button', 'a', 'header', 'nav', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'input', 'img'].includes(tag)) {
+      el.classList.add('design-target');
+      el.style.touchAction = 'none';
+      if (!el.getAttribute('data-label')) {
+        el.setAttribute('data-label', tag);
+      }
+    }
+  });
+
+  if (moveableInstance) {
+    moveableInstance.updateRect();
   }
-  isSelected.value = true;
-  syncElementStyles(target);
-  const tag = target.tagName.toLowerCase();
-  const label = target.getAttribute('data-label') || tag;
-  const rect = target.getBoundingClientRect();
-  selectedInfo.value = `选中: <${label}> · 宽 ${Math.round(rect.width)}px · 高 ${Math.round(rect.height)}px`;
 };
 
-// 双击就地文字编辑（Inline Text Editing）
+// 触发本地文件选择
+const triggerFilePicker = () => {
+  fileInputRef.value?.click();
+};
+
+const handleFileInputChange = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = String(e.target?.result || '');
+    parseAndLoad(text, file.name);
+    input.value = '';
+  };
+  reader.readAsText(file);
+};
+
+// 拖拽文件进入
+const handleDrop = (event: DragEvent) => {
+  isDragOver.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = String(e.target?.result || '');
+    parseAndLoad(text, file.name);
+  };
+  reader.readAsText(file);
+};
+
+// 一键载入当前打开的文件
+const loadCurrentTab = () => {
+  if (!currentTab.value?.data?.content) return;
+  parseAndLoad(currentTab.value.data.content, currentTab.value.name);
+};
+
+// 双击就地文字编辑
 const handleDblClick = (e: MouseEvent) => {
   const target = (e.target as HTMLElement).closest('.design-target') as HTMLElement | null;
   if (!target) return;
@@ -124,14 +225,12 @@ const handleDblClick = (e: MouseEvent) => {
   target.contentEditable = 'true';
   target.focus();
 
-  // 选中文本内容
   const range = document.createRange();
   range.selectNodeContents(target);
   const sel = window.getSelection();
   sel?.removeAllRanges();
   sel?.addRange(range);
 
-  // 编辑期间临时让 Moveable 移出，避免手柄遮挡输入
   if (moveableInstance) {
     moveableInstance.target = [];
   }
@@ -142,7 +241,6 @@ const handleDblClick = (e: MouseEvent) => {
     target.removeEventListener('blur', finishEdit);
     target.removeEventListener('keydown', onKey);
 
-    // 恢复 Moveable 选中与外框同步
     if (moveableInstance) {
       moveableInstance.target = [target];
       moveableInstance.updateRect();
@@ -160,6 +258,72 @@ const handleDblClick = (e: MouseEvent) => {
   target.addEventListener('blur', finishEdit);
   target.addEventListener('keydown', onKey);
 };
+
+// 重置画板
+const resetArtboard = () => {
+  if (!artboardContentRef.value) return;
+  const targets = artboardContentRef.value.querySelectorAll<HTMLElement>('.design-target');
+  targets.forEach(el => {
+    el.style.transform = '';
+    el.style.width = '';
+    el.style.height = '';
+    el.style.removeProperty('font-size');
+    el.style.removeProperty('color');
+    el.style.removeProperty('border-radius');
+    el.style.removeProperty('background-color');
+    el.style.removeProperty('font-weight');
+  });
+  if (moveableInstance) {
+    moveableInstance.target = [];
+    moveableInstance.updateRect();
+  }
+  isSelected.value = false;
+  selectedElement.value = null;
+  selectedInfo.value = '已重置所有样式与布局';
+};
+
+// 复制调整后的 HTML
+const copyModifiedHtml = async () => {
+  if (!artboardContentRef.value) return;
+  const clone = artboardContentRef.value.cloneNode(true) as HTMLElement;
+  // 移除运行时标记 class
+  clone.querySelectorAll('.design-target').forEach(el => el.classList.remove('design-target'));
+  try {
+    await navigator.clipboard.writeText(clone.innerHTML.trim());
+    copySuccess.value = true;
+    setTimeout(() => {
+      copySuccess.value = false;
+    }, 2000);
+  } catch {
+    // 兜底
+  }
+};
+
+const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
+  if (!target || !(target instanceof HTMLElement)) {
+    isSelected.value = false;
+    selectedElement.value = null;
+    selectedInfo.value = '未选中元素（点击或拖拽框选画布组件）';
+    return;
+  }
+  isSelected.value = true;
+  syncElementStyles(target);
+  const tag = target.tagName.toLowerCase();
+  const label = target.getAttribute('data-label') || tag;
+  const rect = target.getBoundingClientRect();
+  selectedInfo.value = `选中: <${label}> · 宽 ${Math.round(rect.width)}px · 高 ${Math.round(rect.height)}px`;
+};
+
+// 监听当前 active tab 的变化，若初次且有打开文件，可友好提示或自动载入
+watch(
+  () => props.activeId,
+  () => {
+    if (!loadedHtml.value && currentTab.value?.data?.content) {
+      loadCurrentTab();
+    }
+  },
+  {immediate: true}
+);
 
 onMounted(async () => {
   await nextTick();
@@ -183,7 +347,6 @@ onMounted(async () => {
     throttleDrag: 0,
     throttleResize: 0,
     throttleRotate: 0,
-    // 智能吸附与对齐参考线配置（Figma / Stitch 核心体验）
     snappable: true,
     snapThreshold: 5,
     isDisplaySnapDigit: true,
@@ -194,13 +357,11 @@ onMounted(async () => {
     elementGuidelines: ['.design-target'],
   });
 
-  // 单元素拖拽
   moveableInstance.on('drag', ({ target, transform }) => {
     target.style.transform = transform;
     updateSelectionInfo(target);
   });
 
-  // 单元素缩放拉伸
   moveableInstance.on('resize', ({ target, width, height, drag }) => {
     target.style.width = `${width}px`;
     target.style.height = `${height}px`;
@@ -208,13 +369,11 @@ onMounted(async () => {
     updateSelectionInfo(target);
   });
 
-  // 单元素旋转
   moveableInstance.on('rotate', ({ target, transform }) => {
     target.style.transform = transform;
     updateSelectionInfo(target);
   });
 
-  // 多选批量拖拽支持
   moveableInstance.on('dragGroup', ({ events }) => {
     events.forEach(ev => {
       ev.target.style.transform = ev.transform;
@@ -240,7 +399,6 @@ onMounted(async () => {
     }
     const inputEvent = e.inputEvent;
     const target = inputEvent.target as HTMLElement;
-    // 如果点击的是 moveable 自身的控制手柄或正在输入的元素，不触发框选
     if (moveableInstance?.isMoveableElement(target) || target.closest('.moveable-control-box') || target.isContentEditable) {
       e.stop();
     }
@@ -269,6 +427,10 @@ onMounted(async () => {
       moveableInstance.updateRect();
     }
   });
+
+  if (loadedHtml.value) {
+    makeElementsInteractive();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -281,18 +443,103 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="design-canvas-container">
-    <!-- 顶部状态栏 -->
-    <div class="design-top-bar">
+    <!-- 隐藏的文件选择器 -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept=".html,.htm,.vue,.svg,.txt"
+      class="hidden"
+      @change="handleFileInputChange"
+    />
+
+    <!-- 顶栏：文件源管理与视口切换 -->
+    <div class="design-header-bar">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="header-action-btn primary"
+          @click="triggerFilePicker"
+          title="从本地计算机选择任意 .html / .vue 文件"
+        >
+          📂 打开本地文件
+        </button>
+
+        <button
+          v-if="currentTab?.data?.content"
+          type="button"
+          class="header-action-btn"
+          @click="loadCurrentTab"
+          :title="`载入正在预览的文件: ${currentTab.name}`"
+        >
+          载入当前标签 ({{ currentTab.name }})
+        </button>
+
+        <span v-if="loadedFileName" class="loaded-file-badge">
+          已加载: <strong>{{ loadedFileName }}</strong>
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <!-- 视口宽度切换 -->
+        <div class="viewport-selector">
+          <button
+            type="button"
+            class="viewport-btn"
+            :class="{ active: viewportWidth === '390' }"
+            @click="viewportWidth = '390'"
+          >
+            📱 移动 (390)
+          </button>
+          <button
+            type="button"
+            class="viewport-btn"
+            :class="{ active: viewportWidth === '768' }"
+            @click="viewportWidth = '768'"
+          >
+            💻 平板 (768)
+          </button>
+          <button
+            type="button"
+            class="viewport-btn"
+            :class="{ active: viewportWidth === '100%' }"
+            @click="viewportWidth = '100%'"
+          >
+            🖥️ 自适应
+          </button>
+        </div>
+
+        <button
+          v-if="loadedHtml"
+          type="button"
+          class="header-action-btn"
+          @click="copyModifiedHtml"
+          title="复制当前已修改的 HTML 代码"
+        >
+          {{ copySuccess ? '✓ 已复制代码' : '📋 复制代码' }}
+        </button>
+
+        <button
+          v-if="loadedHtml"
+          type="button"
+          class="header-action-btn danger"
+          @click="resetArtboard"
+          title="清除所有拖拽与样式改动"
+        >
+          重置布局
+        </button>
+      </div>
+    </div>
+
+    <!-- 选中状态提示条 -->
+    <div class="design-status-bar">
       <div class="selection-status" :class="{ 'is-active': isSelected }">
         <span class="status-dot"></span>
         <span class="status-text">{{ selectedInfo }}</span>
       </div>
-      <div class="design-actions">
-        <span class="feature-tag">双击文字直接编辑</span>
-        <span class="feature-tag">智能吸附线</span>
-        <button type="button" class="btn-reset" title="重置位置、尺寸与样式" @click="resetArtboard">
-          重置布局
-        </button>
+      <div class="flex items-center gap-2 text-xs text-slate-500">
+        <span>💡 双击文字直接编辑</span>
+        <span>•</span>
+        <span>智能吸附对齐</span>
       </div>
     </div>
 
@@ -310,7 +557,7 @@ onBeforeUnmount(() => {
             title="选择自定义背景色"
           />
           <div class="color-presets">
-            <button type="button" class="preset-btn bg-white" @click="applyStyle('backgroundColor', '#ffffff')" title="纯白"></button>
+            <button type="button" class="preset-btn bg-white border border-slate-300" @click="applyStyle('backgroundColor', '#ffffff')" title="纯白"></button>
             <button type="button" class="preset-btn bg-slate-900" @click="applyStyle('backgroundColor', '#0f172a')" title="暗黑"></button>
             <button type="button" class="preset-btn bg-indigo-600" @click="applyStyle('backgroundColor', '#4f46e5')" title="靛蓝"></button>
             <button type="button" class="preset-btn bg-emerald-600" @click="applyStyle('backgroundColor', '#059669')" title="翠绿"></button>
@@ -337,6 +584,7 @@ onBeforeUnmount(() => {
             <button type="button" class="preset-btn bg-slate-900 border border-slate-300" @click="applyStyle('color', '#0f172a')" title="深色字"></button>
             <button type="button" class="preset-btn bg-white border border-slate-300" @click="applyStyle('color', '#ffffff')" title="白色字"></button>
             <button type="button" class="preset-btn bg-indigo-600" @click="applyStyle('color', '#4f46e5')" title="蓝色字"></button>
+            <button type="button" class="preset-btn bg-rose-600" @click="applyStyle('color', '#e11d48')" title="红色字"></button>
           </div>
         </div>
       </div>
@@ -348,22 +596,23 @@ onBeforeUnmount(() => {
         <span class="inspector-label">圆角</span>
         <div class="flex items-center gap-1">
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 0 }" @click="applyStyle('borderRadius', 0)">0</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 8 }" @click="applyStyle('borderRadius', 8)">8px</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 16 }" @click="applyStyle('borderRadius', 16)">16px</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 6 }" @click="applyStyle('borderRadius', 6)">6px</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 12 }" @click="applyStyle('borderRadius', 12)">12px</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius >= 999 }" @click="applyStyle('borderRadius', 9999)">全圆</button>
         </div>
       </div>
 
       <div class="inspector-divider"></div>
 
-      <!-- 字体与大小调节 -->
+      <!-- 字号与大小调节 -->
       <div class="inspector-group">
         <span class="inspector-label">字号</span>
         <div class="flex items-center gap-1">
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize <= 12 }" @click="applyStyle('fontSize', 12)">12</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 12 }" @click="applyStyle('fontSize', 12)">12</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 14 }" @click="applyStyle('fontSize', 14)">14</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 18 }" @click="applyStyle('fontSize', 18)">18</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize >= 24 }" @click="applyStyle('fontSize', 24)">24</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 24 }" @click="applyStyle('fontSize', 24)">24</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize >= 32 }" @click="applyStyle('fontSize', 32)">32</button>
         </div>
         <button
           type="button"
@@ -377,69 +626,66 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 可视化设计画布主区域（带现代点阵背景） -->
-    <div ref="canvasRef" class="canvas-viewport" @dblclick="handleDblClick">
-      <!-- 居中画板（Artboard / Screen） -->
-      <div ref="artboardRef" class="artboard-card">
-        <!-- 头部应用栏 -->
-        <header class="artboard-header design-target" data-label="导航栏">
-          <div class="flex items-center gap-2">
-            <div class="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">LX</div>
-            <span class="font-bold text-sm tracking-tight text-slate-800 dark:text-slate-100">Stitch Design Preview</span>
-          </div>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 font-medium">Live</span>
-        </header>
-
-        <!-- 主视觉统计卡片 -->
-        <div class="hero-card design-target" data-label="主视窗卡片">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <p class="text-xs font-medium text-indigo-100/90">AI 原生设计原型</p>
-              <h3 class="text-xl font-extrabold text-white mt-0.5 tracking-tight">智能界面编排</h3>
-            </div>
-            <span class="p-1.5 rounded-lg bg-white/15 backdrop-blur-md text-white text-xs">✨ Vibe</span>
-          </div>
-          <p class="text-xs text-indigo-100/80 leading-relaxed mb-4">
-            双击任意文字直接打字修改；点击元素在顶部面板实时修改背景、圆角、字号！
-          </p>
-          <div class="flex items-center gap-3">
-            <button type="button" class="action-btn-primary design-target" data-label="主按钮">
-              立即应用
-            </button>
-            <button type="button" class="action-btn-secondary design-target" data-label="次级按钮">
-              查看源码
-            </button>
-          </div>
+    <!-- 可视化设计画布主区域 -->
+    <div
+      ref="canvasRef"
+      class="canvas-viewport"
+      @dragover.prevent="isDragOver = true"
+      @dragleave.prevent="isDragOver = false"
+      @drop.prevent="handleDrop"
+      @dblclick="handleDblClick"
+    >
+      <!-- 空状态：引导用户选择文件 -->
+      <div
+        v-if="!loadedHtml"
+        class="empty-drop-zone"
+        :class="{ 'is-hover': isDragOver }"
+        @click="triggerFilePicker"
+      >
+        <div class="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 flex items-center justify-center text-2xl mb-3 shadow-sm">
+          📂
         </div>
+        <h3 class="text-base font-bold text-slate-800 dark:text-slate-100">请选择要进行可视化设计的文件</h3>
+        <p class="text-xs text-slate-500 max-w-sm text-center mt-1.5 leading-relaxed">
+          点击或将本地文件拖拽到此处，支持 <strong>.html</strong>、<strong>.vue</strong> 模板或 <strong>.svg</strong>。
+        </p>
 
-        <!-- 搜索与筛选交互条 -->
-        <div class="search-bar design-target" data-label="搜索框">
-          <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <span class="text-xs text-slate-400 select-none">双击修改搜索框提示语 (Prompt)...</span>
+        <div class="flex items-center gap-3 mt-4">
+          <button type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-md transition-all">
+            选择本地文件
+          </button>
+          <button
+            v-if="currentTab?.data?.content"
+            type="button"
+            class="px-4 py-2 rounded-xl border border-indigo-200 dark:border-indigo-900 bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:bg-indigo-50 transition-all"
+            @click.stop="loadCurrentTab"
+          >
+            载入当前打开的 {{ currentTab.name }}
+          </button>
         </div>
+      </div>
 
-        <!-- 列表项目与指标 -->
-        <div class="grid grid-cols-2 gap-2.5">
-          <div class="metric-card design-target" data-label="指标卡片 1">
-            <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium">渲染响应延迟</span>
-            <div class="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">12 ms</div>
-            <span class="text-[10px] text-emerald-600 font-semibold mt-1">↑ 原生 DOM 级变换</span>
-          </div>
-          <div class="metric-card design-target" data-label="指标卡片 2">
-            <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium">吸附对齐精度</span>
-            <div class="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">0.5 px</div>
-            <span class="text-[10px] text-indigo-600 font-semibold mt-1">✨ 磁吸辅助参考线</span>
-          </div>
-        </div>
+      <!-- 居中画板（Artboard）：渲染真实加载的文件内容 -->
+      <div
+        v-else
+        ref="artboardRef"
+        class="artboard-card"
+        :style="{
+          width: viewportWidth === '100%' ? '100%' : `${viewportWidth}px`,
+          maxWidth: viewportWidth === '100%' ? '100%' : `${viewportWidth}px`,
+        }"
+      >
+        <!-- 注入自定义样式（来自 .vue 的 <style>） -->
+        <component :is="'style'" v-if="customStyleTag">
+          {{ customStyleTag }}
+        </component>
 
-        <!-- 底部快速操作标签 -->
-        <div class="flex items-center gap-2 pt-1">
-          <span class="pill-tag design-target" data-label="标签 1">#移动端原型</span>
-          <span class="pill-tag design-target" data-label="标签 2">#Tailwind</span>
-          <span class="pill-tag design-target" data-label="标签 3">#可视化微调</span>
-        </div>
+        <!-- 真实内容挂载点 -->
+        <div
+          ref="artboardContentRef"
+          class="artboard-content"
+          v-html="loadedHtml"
+        ></div>
       </div>
     </div>
   </div>
@@ -455,23 +701,164 @@ onBeforeUnmount(() => {
   background: var(--file-bg, #ffffff);
 }
 
-.design-top-bar {
+/* 顶部操作条 */
+.design-header-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 8px 14px;
-  font-size: 12px;
   border-bottom: 1px solid var(--file-line, #e4e4e7);
   background: var(--file-bg, #ffffff);
+  flex-shrink: 0;
 }
 
-.is-dark .design-top-bar {
+.is-dark .design-header-bar {
   background: #0c0e13;
   border-color: #252933;
 }
 
-/* 顶部悬浮属性检查面板（Inspector Bar） */
+.header-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #f4f4f5;
+  color: #3f3f46;
+  border: 1px solid #e4e4e7;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.is-dark .header-action-btn {
+  background: #1b1f29;
+  color: #d4d4d8;
+  border-color: #2c3144;
+}
+
+.header-action-btn.primary {
+  background: #6366f1;
+  color: #ffffff;
+  border-color: #6366f1;
+}
+
+.header-action-btn.primary:hover {
+  background: #4f46e5;
+}
+
+.header-action-btn.danger {
+  color: #ef4444;
+}
+
+.header-action-btn:hover {
+  background: #e4e4e7;
+}
+
+.is-dark .header-action-btn:hover {
+  background: #282e3f;
+}
+
+.loaded-file-badge {
+  font-size: 11px;
+  color: #64748b;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+}
+
+.is-dark .loaded-file-badge {
+  background: #181d28;
+  color: #94a3b8;
+}
+
+/* 视口切换器 */
+.viewport-selector {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.is-dark .viewport-selector {
+  background: #181d28;
+  border-color: #262c3c;
+}
+
+.viewport-btn {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.is-dark .viewport-btn {
+  color: #94a3b8;
+}
+
+.viewport-btn.active {
+  background: #ffffff;
+  color: #4f46e5;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.is-dark .viewport-btn.active {
+  background: #25283b;
+  color: #818cf8;
+}
+
+/* 状态条 */
+.design-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--file-line, #e4e4e7);
+  background: #fafafa;
+}
+
+.is-dark .design-status-bar {
+  background: #11141c;
+  border-color: #252933;
+}
+
+.selection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--file-muted, #71717a);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.selection-status.is-active {
+  color: #6366f1;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #cbd5e1;
+}
+
+.selection-status.is-active .status-dot {
+  background: #6366f1;
+  box-shadow: 0 0 6px #6366f1a0;
+}
+
+/* 属性面板（Inspector Bar） */
 .design-inspector-bar {
   display: flex;
   align-items: center;
@@ -481,7 +868,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #6366f130;
   background: #f5f3ff;
   overflow-x: auto;
-  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideDown 0.15s ease-out;
 }
 
 .is-dark .design-inspector-bar {
@@ -490,7 +877,7 @@ onBeforeUnmount(() => {
 }
 
 @keyframes slideDown {
-  from { opacity: 0; transform: translateY(-6px); }
+  from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -531,7 +918,6 @@ onBeforeUnmount(() => {
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
   cursor: pointer;
   transition: transform 0.1s;
 }
@@ -576,75 +962,14 @@ onBeforeUnmount(() => {
   background: #2c3144;
 }
 
-.selection-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--file-muted, #71717a);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
-.selection-status.is-active {
-  color: #6366f1;
-  font-weight: 600;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: #cbd5e1;
-}
-
-.selection-status.is-active .status-dot {
-  background: #6366f1;
-  box-shadow: 0 0 6px #6366f1a0;
-}
-
-.design-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.feature-tag {
-  font-size: 11px;
-  padding: 2px 7px;
-  border-radius: 9999px;
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.is-dark .feature-tag {
-  background: #1e222d;
-  color: #94a3b8;
-}
-
-.btn-reset {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 6px;
-  background: #6366f115;
-  color: #6366f1;
-  border: 1px solid #6366f130;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-reset:hover {
-  background: #6366f1;
-  color: #ffffff;
-}
-
-/* 画布背景：类似 Figma / Stitch 的点阵网格 */
+/* 画布主视口 */
 .canvas-viewport {
   position: relative;
   flex: 1;
   width: 100%;
   height: 100%;
   overflow: auto;
-  padding: 32px 20px;
+  padding: 28px 20px;
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -659,19 +984,42 @@ onBeforeUnmount(() => {
   background-image: radial-gradient(#1f2430 1px, transparent 1px);
 }
 
-/* 居中画板卡片（Artboard / Screen） */
+/* 空状态拖拽上传区 */
+.empty-drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40px;
+  padding: 48px 32px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 20px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.empty-drop-zone:hover, .empty-drop-zone.is-hover {
+  border-color: #6366f1;
+  background: #f5f3ff20;
+  transform: translateY(-2px);
+}
+
+.is-dark .empty-drop-zone {
+  background: #131620;
+  border-color: #2a3142;
+}
+
+/* 居中画板（Artboard） */
 .artboard-card {
   position: relative;
-  width: 360px;
-  min-height: 520px;
-  border-radius: 20px;
-  padding: 18px;
+  min-height: 480px;
+  border-radius: 16px;
+  padding: 16px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  transition: width 0.2s ease, max-width 0.2s ease;
 }
 
 .is-dark .artboard-card {
@@ -680,104 +1028,24 @@ onBeforeUnmount(() => {
   box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.6);
 }
 
-/* 画板内部元素样式（均标注 .design-target） */
-.artboard-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
+.artboard-content {
+  width: 100%;
+  height: 100%;
 }
 
-.is-dark .artboard-header {
-  border-color: #1e2433;
-}
-
-.hero-card {
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-  border-radius: 14px;
-  padding: 16px;
-  color: #ffffff;
-  box-shadow: 0 8px 20px -4px rgba(79, 70, 229, 0.35);
-}
-
-.action-btn-primary {
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #4f46e5;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-}
-
-.action-btn-secondary {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-  cursor: pointer;
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-
-.is-dark .search-bar {
-  background: #181d28;
-  border-color: #283042;
-}
-
-.metric-card {
-  padding: 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  display: flex;
-  flex-direction: column;
-}
-
-.is-dark .metric-card {
-  background: #181d28;
-  border-color: #283042;
-}
-
-.pill-tag {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: #f1f5f9;
-  color: #475569;
-  cursor: pointer;
-}
-
-.is-dark .pill-tag {
-  background: #1e2433;
-  color: #94a3b8;
-}
-
-/* 赋予可设计目标元素优雅的鼠标手势与悬浮微动 */
-.design-target {
+/* 深度选择器：让载入的真实 DOM 元素获得交互感 */
+:deep(.design-target) {
   cursor: pointer;
   touch-action: none;
-  transition: background-color 0.15s, border-radius 0.15s, color 0.15s;
+  transition: background-color 0.15s, border-radius 0.15s;
 }
 
-.design-target:hover {
+:deep(.design-target:hover) {
   outline: 1px dashed #6366f180;
   outline-offset: 2px;
 }
 
-.design-target[contenteditable="true"] {
+:deep(.design-target[contenteditable="true"]) {
   outline: 2px solid #6366f1 !important;
   outline-offset: 2px;
   cursor: text;
