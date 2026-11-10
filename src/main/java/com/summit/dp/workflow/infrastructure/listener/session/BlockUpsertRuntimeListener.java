@@ -42,17 +42,24 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
     public void onToolCall(ToolCallStartEvent event) {
         if (event != null) {
             broadcastToolBlock(new ToolBlockEventFacts(event.getRequestId(), event.getResponseId(),
-                    event.getRequestIndex(), event.getToolName(), event.getArgs()), event);
+                    event.getRequestIndex(), event.getToolName(), event.getArgs(), event.getMetaData()), event);
         }
     }
 
+    /**
+     * 工具收尾时推的帧必须带事件元数据。
+     *
+     * <p>{@code metaData} 里的 {@code fileEdit} 是行号的唯一来源：不给它，前端收到的就是一个
+     * 「行号全空」的块，并把已经拿到的行号覆盖成空 —— 流式期间 diff 行号消失就是这个原因。
+     * 这里只传引用，不解析、不查库。</p>
+     */
     @Override
     public void onToolCallOutput(ToolCallEndEvent event) {
         if (event == null || event.resultStatus() == ToolCallStatus.PROMISED) {
             return;
         }
         broadcastToolBlock(new ToolBlockEventFacts(event.getRequestId(), event.getResponseId(),
-                event.getRequestIndex(), event.getToolName(), event.getArgs()), event);
+                event.getRequestIndex(), event.getToolName(), event.getArgs(), event.getMetaData()), event);
     }
 
     /**

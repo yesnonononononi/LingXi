@@ -171,8 +171,9 @@ public class TurnViewAssembler {
         String responseId = requireResponseId(facts.responseId());
         ToolCallRequest request = new ToolCallRequest(facts.toolCallId(), facts.toolName(),
                 facts.requestIndex(), facts.args());
+        // 行号取自事件元数据（不是回查 meta_data CLOB）：这一帧若不带，前端会把已拿到的行号覆盖成空。
         return Optional.of(buildToolBlock(responseId, BlockOrder.tool(facts.requestIndex()), request,
-                ToolFacts.toFacts(toolCall)));
+                ToolFacts.toFacts(toolCall, FileEditRange.fromEventMetaData(facts.metaData()))));
     }
 
     /**
@@ -245,6 +246,42 @@ public class TurnViewAssembler {
             }
         }
 
+        /**
+         * 事件元数据 → 编辑区间：单块增量帧的行号来源。
+         *
+         * <p>与 {@link #parse(String, ObjectMapper)} 同形不同源：那边读的是落库后的 {@code meta_data}
+         * 字符串（历史装配），这边读的是框架事件里那份 {@code Map}（实时推送）。两条路都要给行号，
+         * 否则总有一侧的前端拿不到。解析失败一律降级为 {@code null}，不拖垮推送。</p>
+         */
+        static FileEditRange fromEventMetaData(Map<String, Object> metaData) {
+            if (metaData == null || metaData.isEmpty()) {
+                return null;
+            }
+            Object raw = metaData.get(ToolCallKeys.FILE_EDIT);
+            if (!(raw instanceof Map<?, ?> fileEdit)) {
+                return null;
+            }
+            try {
+                Object record = fileEdit.get("recordId");
+                String recordId = record == null ? null : String.valueOf(record);
+                Integer oldStart = intOf(fileEdit.get("oldStartLine"));
+                Integer oldEnd = intOf(fileEdit.get("oldEndLine"));
+                Integer newStart = intOf(fileEdit.get("newStartLine"));
+                Integer newEnd = intOf(fileEdit.get("newEndLine"));
+                // 「一个字段都没有」才等于没有区间；任意一个有值就保留（行号 0 也是值）。
+                return oldStart != null || oldEnd != null || newStart != null || newEnd != null || recordId != null
+                        ? new FileEditRange(oldStart, oldEnd, newStart, newEnd, recordId)
+                        : null;
+            } catch (RuntimeException e) {
+                return null;
+            }
+        }
+
+        /** 事件里的行号是数值对象；只有真的数值才当行号，其它一律视为缺失。 */
+        private static Integer intOf(Object value) {
+            return value instanceof Number number ? number.intValue() : null;
+        }
+
         private static Integer intOrNull(JsonNode node, String field) {
             JsonNode value = node.path(field);
             return value.isNumber() ? value.asInt() : null;
@@ -274,15 +311,16 @@ public class TurnViewAssembler {
         /**
          * 只读投影 → 事实；{@code null} 表示行尚未落库。
          *
-         * <p>这条路径刻意不读 {@code meta_data}（CLOB，单块推送读它是纯写放大），所以
-         * 编辑区间为 {@code null}。实时帧的区间由事件元数据直接带给前端，不依赖它。</p>
+         * <p>这条路径刻意不读 {@code meta_data}（CLOB，单块推送读它是纯写放大），编辑区间改由
+         * 调用方从<b>事件元数据</b>传入（见 {@code FileEditRange.fromEventMetaData}）——
+         * 实时帧的行号必须自带，不能指望前端缓存。</p>
          */
-        static ToolFacts toFacts(ToolCallBlockView toolCall) {
+        static ToolFacts toFacts(ToolCallBlockView toolCall, FileEditRange fileEdit) {
             if (toolCall == null) {
                 return null;
             }
             return new ToolFacts(toolCall.toolName(), toolCall.status(),
-                    toolCall.rawOutput(), toolCall.version(), null,
+                    toolCall.rawOutput(), toolCall.version(), fileEdit,
                     toolCall.executionId() == null ? null : String.valueOf(toolCall.executionId()));
         }
     }

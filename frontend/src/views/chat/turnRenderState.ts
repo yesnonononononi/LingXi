@@ -90,6 +90,9 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
   // 较新持久化版本已证明状态推进，不能把批准后的执行中仍锁在待审批。
   const retainResult = (terminal && incoming.status !== 'success' && incoming.status !== 'failed') ||
     (incoming.version === undefined && previous.status === 'pending' && incoming.status === 'calling');
+  // 编辑定位（行号区间 / 记录标识 / 执行标识）一旦获得就不会再「没有」：来源只有更晚的那条链，
+  // 而任何一帧缺字段都不代表信息失效。`{...incoming}` 里这些键的值是 undefined 也照样存在，
+  // Object.assign 会把它赋进去 —— 少写一条回退就等于允许后到的帧把行号抹成空（踩过）。
   Object.assign(previous, { ...incoming,
     version: incoming.version ?? previous.version,
     order: incoming.order ?? previous.order,
@@ -99,7 +102,13 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
     result: retainResult ? previous.result : incoming.result ?? previous.result,
     status: retainResult ? previous.status : incoming.status,
     plusLines: incoming.plusLines ?? previous.plusLines,
-    minusLines: incoming.minusLines ?? previous.minusLines });
+    minusLines: incoming.minusLines ?? previous.minusLines,
+    oldStartLine: incoming.oldStartLine ?? previous.oldStartLine,
+    oldEndLine: incoming.oldEndLine ?? previous.oldEndLine,
+    newStartLine: incoming.newStartLine ?? previous.newStartLine,
+    newEndLine: incoming.newEndLine ?? previous.newEndLine,
+    recordId: incoming.recordId ?? previous.recordId,
+    executionId: incoming.executionId ?? previous.executionId });
 }
 
 /** 保留条目身份，只有成员或位置变化才替换数组，已排序的列表不重复排序。 */

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.dp.session.application.convert.ToolBlockEventFacts;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
@@ -12,6 +13,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.*;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
@@ -122,6 +124,129 @@ class TurnViewAssemblerTest {
 
         assertNull(tool.oldStartLine());
         assertNull(tool.fileRecordId());
+    }
+
+    /**
+     * 单块增量帧必须自带编辑区间：行号只在事件元数据里存在，块帧不带就没有第二次机会
+     * （前端拿到一个行号全空的块，会把已有的行号覆盖掉）。
+     */
+    @Test
+    void singleBlockCarriesEditRangeFromEventMetaData() {
+        ToolBlockEventFacts facts = new ToolBlockEventFacts("call_edit", RESPONSE_ID, 0, "edit_file", "{}",
+                Map.of("fileEdit", Map.of("oldStartLine", 0, "oldEndLine", 0,
+                        "newStartLine", 5, "newEndLine", 7, "recordId", "r-9")));
+
+        Block block = assembler.buildSingleToolBlock(facts, blockView()).orElseThrow();
+
+        ToolBlock tool = (ToolBlock) block;
+        assertEquals(0, tool.oldStartLine(), "0 表示该侧不存在，不能被当成缺失");
+        assertEquals(0, tool.oldEndLine());
+        assertEquals(5, tool.newStartLine());
+        assertEquals(7, tool.newEndLine());
+        assertEquals("r-9", tool.fileRecordId());
+        assertEquals("900", tool.executionId(), "执行标识来自只读投影，取差异要靠它");
+    }
+
+    /** 事件里没有 fileEdit（读文件、命令等）时行号为空，但块照常产出。 */
+    @Test
+    void singleBlockWithoutFileEditHasNoEditRange() {
+        ToolBlockEventFacts facts = new ToolBlockEventFacts("call_edit", RESPONSE_ID, 0, "edit_file", "{}");
+
+        ToolBlock tool = (ToolBlock) assembler.buildSingleToolBlock(facts, blockView()).orElseThrow();
+
+        assertNull(tool.oldStartLine());
+        assertNull(tool.fileRecordId());
+        assertEquals("900", tool.executionId());
+    }
+
+    /** 事件元数据里的 fileEdit 结构不对时降级为空行号，不能把推送整条炸掉。 */
+    @Test
+    void singleBlockToleratesBrokenFileEditMetaData() {
+        ToolBlockEventFacts facts = new ToolBlockEventFacts("call_edit", RESPONSE_ID, 0, "edit_file", "{}",
+                Map.of("fileEdit", "not-a-map"));
+
+        ToolBlock tool = (ToolBlock) assembler.buildSingleToolBlock(facts, blockView()).orElseThrow();
+
+        assertNull(tool.newStartLine());
+        assertNull(tool.fileRecordId());
+    }
+
+    /**
+     * 区间降级规则要逐个分支验证：四个行号与记录标识「全空」才算没有区间，
+     * 只带其中任何一个就必须保留（行号 0 也是有效值）。
+     *
+     * <p>这些用例看似啰嗦，但 {@code fromEventMetaData} 的返回值只经 {@code buildSingleToolBlock}
+     * 对外可见，漏掉一个组合就等于让某个短路分支永远没人走 —— 变异测试会如实报出来。</p>
+     */
+    @Test
+    void singleBlockKeepsEditRangeWhenOnlyRecordIdPresent() {
+        ToolBlock tool = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of("recordId", "r-1")), blockView()).orElseThrow();
+
+        assertEquals("r-1", tool.fileRecordId());
+        assertNull(tool.oldStartLine());
+        assertNull(tool.oldEndLine());
+        assertNull(tool.newStartLine());
+        assertNull(tool.newEndLine());
+    }
+
+    @Test
+    void singleBlockKeepsEditRangeWhenOnlyFirstLinePresent() {
+        ToolBlock oldStart = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of("oldStartLine", 4)), blockView()).orElseThrow();
+        assertEquals(4, oldStart.oldStartLine());
+        assertNull(oldStart.newStartLine());
+
+        ToolBlock oldEnd = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of("oldEndLine", 6)), blockView()).orElseThrow();
+        assertEquals(6, oldEnd.oldEndLine());
+        assertNull(oldEnd.oldStartLine());
+    }
+
+    @Test
+    void singleBlockKeepsEditRangeWhenOnlyNewStartLinePresent() {
+        ToolBlock tool = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of("newStartLine", 8)), blockView()).orElseThrow();
+
+        assertEquals(8, tool.newStartLine());
+        assertNull(tool.newEndLine());
+        assertNull(tool.oldStartLine());
+    }
+
+    @Test
+    void singleBlockKeepsEditRangeWhenOnlyLastLinePresent() {
+        ToolBlock tool = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of("newEndLine", 9)), blockView()).orElseThrow();
+
+        assertEquals(9, tool.newEndLine());
+        assertNull(tool.oldStartLine());
+        assertNull(tool.oldEndLine());
+        assertNull(tool.newStartLine());
+        assertNull(tool.fileRecordId());
+    }
+
+    /** 空 fileEdit 等于没有区间；行号给成字符串也当缺失（只认数值）。 */
+    @Test
+    void singleBlockTreatsEmptyOrNonNumericFileEditAsNoRange() {
+        ToolBlock empty = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of()), blockView()).orElseThrow();
+        assertNull(empty.oldStartLine());
+        assertNull(empty.fileRecordId());
+
+        ToolBlock text = (ToolBlock) assembler.buildSingleToolBlock(
+                factsWithFileEdit(Map.of("oldStartLine", "12", "recordId", 777)), blockView()).orElseThrow();
+        assertNull(text.oldStartLine(), "字符串行号不是行号");
+        assertEquals("777", text.fileRecordId(), "记录标识是数字也照转字符串");
+    }
+
+    private static ToolBlockEventFacts factsWithFileEdit(Map<String, Object> fileEdit) {
+        return new ToolBlockEventFacts("call_edit", RESPONSE_ID, 0, "edit_file", "{}",
+                Map.of("fileEdit", fileEdit));
+    }
+
+    private static ToolCallBlockView blockView() {
+        return new ToolCallBlockView("call_edit", SESSION_ID, "edit_file",
+                ToolCallType.EXECUTE, ToolCallStatus.COMPLETED, "{\"outcome\":\"SUCCEEDED\"}", 3L, 900L);
     }
 
     /** 思考 → 正文 → 工具块按此顺序，工具块 order 递增且跟在正文之后。 */
