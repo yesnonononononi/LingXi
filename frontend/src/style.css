@@ -87,6 +87,18 @@
   --text-lx-fs-3xl:            var(--lx-font-size-3xl);
 
   /*
+   * 代码字体族：`--font-*` 是 Tailwind v4 的字体命名空间，故生成 font-lx-code。
+   * 直接给值不进 tokens.css —— 字体族是「明暗同值」的形态类，进令牌体系要连带
+   * 改 tokens.ts 元数据与亮色豁免清单，纯增益为零。
+   * 不改 `--font-mono`：那是全局默认等宽族，覆盖面太宽（输入框、标识符），
+   * 本令牌只给「成块展示代码/差异」的地方用，避免顺手改掉别人的排版基线。
+   * 排序原则：装了就用、没装退到系统自带 —— JetBrains Mono 观感最好但多数机器没装，
+   * 所以后面必须接 Cascadia / Consolas / Menlo 这些必有族，末尾 monospace 兜底。
+   */
+  --font-lx-code:              'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'SF Mono',
+                               'Consolas', 'Menlo', 'Liberation Mono', ui-monospace, monospace;
+
+  /*
    * 对话列宽单一真源：生成 `max-w-lx-chat` 工具类（Tailwind v4 由 --container-* 自动派生
    * max-w-* 工具类）。消息列表 / 输入区 / 执行控制条 / 后台任务面板必须全部消费它，
    * 任一处写死具体宽度都会导致左右不对齐。回归守卫见 tests/chatColumnWidth.test.cjs。

@@ -320,14 +320,13 @@ button:disabled { opacity: .4; cursor: default; }
 .preview-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; font-size: var(--lx-font-size-md); color: #dc2626; background: #ef444410; }
 .preview-status { font-size: var(--lx-font-size-sm); color: var(--file-muted); padding: 9px 14px; border-top: 1px solid var(--file-line); }
 .preview-truncated { padding: 6px 14px; font-size: var(--lx-font-size-sm); color: #b45309; background: #f59e0b10; }
-/* 差异视图：行号列定宽右对齐，增删只换色不换行高，滚动时不抖动 */
-.diff-preview { height: 100%; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--lx-font-size-md); line-height: 1.55; }
+/* 差异视图：行号列定宽右对齐，增删只换底纹不换行高，滚动时不抖动。
+   正文前景色保持中性：整行染红绿会压掉代码本身的可读性，也削弱增删的可辨识度（色弱）。 */
+.diff-preview { height: 100%; overflow: auto; font-family: var(--font-lx-code); font-size: var(--lx-font-size-md); line-height: 1.55; }
 .diff-lines { min-width: max-content; }
 .diff-line { display: flex; align-items: flex-start; white-space: pre; }
-.diff-line.is-add { background: #10b9811f; color: #047857; }
-.diff-line.is-del { background: #ef44441f; color: #b42c3f; }
-.file-preview-panel.is-dark .diff-line.is-add { background: #10b98126; color: #6ee7b7; }
-.file-preview-panel.is-dark .diff-line.is-del { background: #ef444426; color: #fda4af; }
+.diff-line.is-add { background: var(--lx-diff-add-bg); }
+.diff-line.is-del { background: var(--lx-diff-del-bg); }
 .diff-no { flex: none; width: 48px; padding-right: 8px; text-align: right; opacity: .55; user-select: none; }
 .diff-sigil { flex: none; width: 16px; user-select: none; }
 .diff-text { flex: 1 1 auto; padding-right: 12px; }

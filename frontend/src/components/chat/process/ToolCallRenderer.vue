@@ -226,23 +226,26 @@ const copyResult = (): void => {
             </div>
 
             <div class="p-4">
-              <!-- edit_file 行级 diff：单滚动框，红删绿增，最左侧行号列垂直对齐 -->
+              <!-- edit_file 行级 diff：单滚动框，行号列垂直对齐。
+                   文字统一走中性前景色，增删只靠淡色底纹区分 —— 整行染红绿会让代码难读，
+                   也让色弱用户分不出增删。 -->
               <div
                 v-if="isEditFileTool(tool.toolName) && diffLines"
                 class="rounded-xl border overflow-hidden"
                 :class="isDark ? 'border-zinc-800/80 bg-[#0e1118]' : 'border-zinc-200 bg-zinc-50/60'"
               >
-                <div class="max-h-[19rem] overflow-y-auto py-1.5 font-mono text-xs leading-5 select-text scrollbar-thin">
+                <div
+                  class="max-h-[19rem] overflow-y-auto py-1.5 font-lx-code text-xs leading-5 select-text scrollbar-thin"
+                  :class="isDark ? 'text-zinc-200' : 'text-zinc-800'"
+                >
                   <div
                     v-for="(line, index) in diffLines"
                     :key="index"
                     class="flex items-start"
-                    :class="line.kind === 'add'
-                      ? 'bg-emerald-500/10 text-[#088f50] dark:text-emerald-300'
-                      : 'bg-red-500/10 text-[#b42c3f] dark:text-rose-300'"
+                    :class="line.kind === 'add' ? 'bg-emerald-500/10' : 'bg-red-500/10'"
                   >
-                    <span class="w-12 shrink-0 select-none pr-2 text-right opacity-60">{{ line.lineNumber ?? '' }}</span>
-                    <span class="w-4 shrink-0 select-none">{{ line.kind === 'add' ? '+' : '-' }}</span>
+                    <span class="w-12 shrink-0 select-none pr-2 text-right opacity-45">{{ line.lineNumber ?? '' }}</span>
+                    <span class="w-4 shrink-0 select-none opacity-55">{{ line.kind === 'add' ? '+' : '-' }}</span>
                     <span class="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3">{{ line.text }}</span>
                   </div>
                 </div>
