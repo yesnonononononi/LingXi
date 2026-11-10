@@ -73,6 +73,55 @@ class TurnViewAssemblerTest {
         assertNull(unpersisted.version());
     }
 
+    /**
+     * 历史装配必须从落库的 {@code _meta.fileEdit} 取回编辑区间：行号只在执行那一刻存在，
+     * 没落库就永久丢失（表现就是刷新后 diff 没有行号）。{@code 0} 有语义（该侧不存在），
+     * 不能被当成「缺失」丢掉。
+     */
+    @Test
+    void toolBlockCarriesEditRangeFromPersistedMetaData() {
+        SessionMessage ai = aiRow(0, null, null, request("call_edit"));
+        ToolCall call = ToolCall.builder()
+                .id("call_edit").conversationId(SESSION_ID).executionId(900L)
+                .toolName("edit_file").type(ToolCallType.EXECUTE).status(ToolCallStatus.COMPLETED)
+                .rawOutput("{\"outcome\":\"SUCCEEDED\"}")
+                .metaData("{\"_meta\":{\"fileEdit\":{\"oldStartLine\":0,\"oldEndLine\":0,"
+                        + "\"newStartLine\":5,\"newEndLine\":7,\"recordId\":\"r-9\"}}}")
+                .createdAt(Instant.now()).updatedAt(Instant.now())
+                .build();
+
+        List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(ai), Map.of("call_edit", call),
+                ChatTurnStatus.COMPLETED);
+        ToolBlock tool = (ToolBlock) blocks.stream()
+                .filter(block -> block instanceof ToolBlock).findFirst().orElseThrow();
+
+        assertEquals(0, tool.oldStartLine(), "0 表示该侧不存在，必须原样保留");
+        assertEquals(0, tool.oldEndLine());
+        assertEquals(5, tool.newStartLine());
+        assertEquals(7, tool.newEndLine());
+        assertEquals("r-9", tool.fileRecordId());
+    }
+
+    /** 元数据缺失或坏掉时行号为空，但不得因此装配失败（少一列数字不能拖垮整轮历史）。 */
+    @Test
+    void toolBlockToleratesBrokenMetaData() {
+        SessionMessage ai = aiRow(0, null, null, request("call_edit"));
+        ToolCall broken = ToolCall.builder()
+                .id("call_edit").conversationId(SESSION_ID).executionId(900L)
+                .toolName("edit_file").type(ToolCallType.EXECUTE).status(ToolCallStatus.COMPLETED)
+                .rawOutput("{\"outcome\":\"SUCCEEDED\"}").metaData("not-json")
+                .createdAt(Instant.now()).updatedAt(Instant.now())
+                .build();
+
+        List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(ai), Map.of("call_edit", broken),
+                ChatTurnStatus.COMPLETED);
+        ToolBlock tool = (ToolBlock) blocks.stream()
+                .filter(block -> block instanceof ToolBlock).findFirst().orElseThrow();
+
+        assertNull(tool.oldStartLine());
+        assertNull(tool.fileRecordId());
+    }
+
     /** 思考 → 正文 → 工具块按此顺序，工具块 order 递增且跟在正文之后。 */
     @Test
     void blocksAreOrderedThinkingThenTextThenTools() {

@@ -5,10 +5,13 @@ import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.core.tool.ToolCallStatus;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
+import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /**
  * 框架 {@code RuntimeListener} 的可观测挂载点：把**所有普通工具**（{@code EXECUTE}）的
@@ -50,10 +53,26 @@ public class ToolCallExecutionListener implements RuntimeListener {
         try {
             ToolCallOutcome outcome = ToolCallOutcome.fromFrameworkStatus(event.resultStatus());
             registrar.completeExecute(event.getRequestId(), numericId(event.getExecutionId()),
-                    event.getToolName(), event.getArgs(), event.getOutput(), outcome);
+                    event.getToolName(), event.getArgs(), event.getOutput(), outcome,
+                    fileEditOf(event.getMetaData()));
         } catch (RuntimeException e) {
             log.warn("登记工具调用结束失败: requestId={}, error={}", event.getRequestId(), e.toString());
         }
+    }
+
+    /**
+     * 从工具结束事件元数据里取出编辑区间。
+     *
+     * <p>只在 {@code edit_file} 这类会带来 {@code fileEdit} 的工具上出现；其余工具返回 {@code null}，
+     * 登记器据此不改动元数据。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> fileEditOf(Map<String, Object> metaData) {
+        if (metaData == null) {
+            return null;
+        }
+        Object fileEdit = metaData.get(ToolCallKeys.FILE_EDIT);
+        return fileEdit instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
     }
 
     /** 执行 id 解析失败返回 {@code -1}（登记器据此降级跳过，不抛异常拖垮主流程）。 */

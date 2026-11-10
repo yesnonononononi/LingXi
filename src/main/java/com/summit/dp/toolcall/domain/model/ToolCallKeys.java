@@ -81,4 +81,16 @@ public final class ToolCallKeys {
     public static final String EXECUTION_ID = "executionId";
     /** 原始工具名。 */
     public static final String TOOL_NAME = "toolName";
+
+    /**
+     * 文件编辑区间：{@code {oldStartLine, oldEndLine, newStartLine, newEndLine, recordId}}。
+     *
+     * <p>行号 {@code 0} 表示该侧不存在（纯插入无旧行、纯删除无新行）。落库是为了让历史消息
+     * 也能按行渲染 diff —— 事件里带一次就没了。</p>
+     */
+    public static final String FILE_EDIT = "fileEdit";
+
+    /** {@link #FILE_EDIT} 允许的字段，写读两侧共用；多出来的键不写。 */
+    public static final java.util.List<String> FILE_EDIT_KEYS = java.util.List.of(
+            "oldStartLine", "oldEndLine", "newStartLine", "newEndLine", "recordId");
 }

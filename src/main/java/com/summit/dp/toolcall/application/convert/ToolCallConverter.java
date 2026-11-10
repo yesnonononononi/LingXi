@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 工具调用领域对象 → 视图对象转换，以及 JSON 载荷「写读同源」构建。
@@ -174,14 +175,55 @@ public class ToolCallConverter {
 
     /** {@code meta_data} = {@code {"_meta":{"schemaVersion":1,"executionId":"...","toolName":"..."}}}（id 写字符串）。 */
     public String executionMeta(long executionId, String toolName) {
+        return this.executionMeta(executionId, toolName, null);
+    }
+
+    /**
+     * {@code meta_data}，可附带编辑区间：
+     * {@code _meta.fileEdit = {oldStartLine, oldEndLine, newStartLine, newEndLine, recordId}}。
+     *
+     * <p><b>为什么必须落库</b>：行号只在工具执行完那一刻存在于事件元数据里，历史消息重建工具块时
+     * 再也拿不到 —— 结果是刷新后 diff 的行号列永远空白。这不是渲染缺陷，是数据没存。</p>
+     *
+     * <p>只存四个整数与记录标识，不存任何正文：{@code meta_data} 是展示用的小载荷，不是内容仓库。</p>
+     */
+    public String executionMeta(long executionId, String toolName, Map<String, Object> fileEdit) {
         ObjectNode meta = objectMapper.createObjectNode();
         meta.put(ToolCallKeys.SCHEMA_VERSION, 1);
         // 手工拼 JSON 树的 ID 必须写字符串：JsonConfig 的 Long→String 不作用于数值节点。
         meta.put(ToolCallKeys.EXECUTION_ID, String.valueOf(executionId));
         meta.put(ToolCallKeys.TOOL_NAME, toolName);
+        ObjectNode edit = this.fileEditNode(meta, fileEdit);
+        if (edit == null) {
+            meta.remove(ToolCallKeys.FILE_EDIT);
+        }
         ObjectNode root = objectMapper.createObjectNode();
         root.set(ToolCallKeys.META, meta);
         return root.toString();
+    }
+
+    /**
+     * 写入 {@code _meta.fileEdit}，返回该节点；没有可写字段时返回 {@code null}。
+     *
+     * <p>行号按整数写、记录标识按字符串写：前端要拿行号参与数值计算，标识要参与 URL 拼接。</p>
+     */
+    private ObjectNode fileEditNode(ObjectNode meta, Map<String, Object> fileEdit) {
+        if (fileEdit == null || fileEdit.isEmpty()) {
+            return null;
+        }
+        ObjectNode edit = meta.putObject(ToolCallKeys.FILE_EDIT);
+        for (String key : ToolCallKeys.FILE_EDIT_KEYS) {
+            Object value = fileEdit.get(key);
+            if (value == null) {
+                continue;
+            }
+            if (value instanceof Number number) {
+                edit.put(key, number.intValue());
+            } else {
+                edit.put(key, String.valueOf(value));
+            }
+        }
+        return edit.isEmpty() ? null : edit;
     }
 
     /** {@code content.kind=PLAN}：{@code {kind,title,text}}。 */

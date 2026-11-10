@@ -33,7 +33,7 @@ class FileToolEncodingTest {
     private static final String ORIGINAL = "中文\r\n\r\n末行🙂";
     private static final String UPDATED = "修改后🚀\r\n\r\n末行🙂";
     private final ObjectMapper mapper = new ObjectMapper();
-    private final DefaultFileHasher hasher = new DefaultFileHasher();
+    private final EditDiffer differ = new EditDiffer();
     @TempDir Path root;
 
     @Test void wholeFileReadUsesUtf8WithGbkTerminal() throws Exception {
@@ -73,8 +73,8 @@ class FileToolEncodingTest {
         assertEdits(gbkWorkspace(), false);
     }
 
-    @Test void rollbackReadsAndWritesUtf8AndStillRejectsConflicts() throws Exception {
-        assertRestores(gbkWorkspace());
+    @Test void recordedDiffReplaysBackToUtf8Content() throws Exception {
+        assertDiffReplayKeepsUtf8();
     }
 
     @Test void nativeSandboxFileToolsPreserveUtf8AlongsideCmdOutput() throws Exception {
@@ -96,7 +96,7 @@ class FileToolEncodingTest {
         assertReads(workspace, 1, 2, "\n末行🙂");
         assertEdits(workspace, true);
         assertEdits(workspace, false);
-        assertRestores(workspace);
+        assertDiffReplayKeepsUtf8();
     }
 
     private Workspace gbkWorkspace() {
@@ -122,8 +122,7 @@ class FileToolEncodingTest {
         String name = existing ? "existing.txt" : "created.txt";
         Path file = workspace.resolve(name);
         if (existing) Files.writeString(file, ORIGINAL);
-        DefaultFileRecordManager manager = new DefaultFileRecordManager(new DefaultFileRecordStore(),
-                new FileRecordRestorer(hasher), hasher);
+        DefaultFileRecordManager manager = new DefaultFileRecordManager(new DefaultFileRecordStore());
         EditFileToolExecutor executor = new EditFileToolExecutor(mapper, new EditDiffer(), manager);
         EditFileRequest request = EditFileRequest.builder().path(name).type(existing ? "REPLACE" : "INSERT_AFTER")
                 .oldText(existing ? "中文" : "").newText(existing ? "修改后🚀" : UPDATED).build();
@@ -131,21 +130,23 @@ class FileToolEncodingTest {
                 .turnId("turn").args(mapper.writeValueAsString(request)).build());
         assertTrue(result.isSuccess(), result.getToolOutput());
         assertArrayEquals(UPDATED.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(file));
-        FileRecord record = manager.listPendingRecords("encoding").getFirst();
-        assertEquals(existing ? ORIGINAL : null, record.oldContent());
-        assertEquals(UPDATED, record.newContent());
+        FileRecord record = manager.listRecords("encoding").getFirst();
+        // 记录只留基线与差异：基线必须还是编辑前的原文，差异重放后要能还原出编辑后的原文。
+        // 重放按行拼接（换行统一成 \n），与差异生成侧的行切分口径一致，所以这里也按归一化后比较。
+        assertEquals(existing ? ORIGINAL : null, record.baseline());
+        assertEquals(UPDATED.replace("\r\n", "\n"),
+                UnifiedDiffReplayer.replay(record.baseline(), java.util.List.of(record.diff())).orElseThrow());
     }
 
-    private void assertRestores(Workspace workspace) throws Exception {
-        Path file = workspace.resolve("restore.txt");
-        Files.writeString(file, UPDATED);
-        FileRecord record = FileRecord.builder().id("encoding-record").filePath("restore.txt")
-                .oldContent(ORIGINAL).newContent(UPDATED).newContentHash(hasher.hash(UPDATED)).build();
-        FileRecordRestorer restorer = new FileRecordRestorer(hasher);
-        restorer.restore(record, workspace);
-        assertArrayEquals(ORIGINAL.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(file));
-        Files.writeString(file, "后续修改🙂");
-        assertThrows(FileModificationException.class, () -> restorer.restore(record, workspace));
-        assertEquals("后续修改🙂", Files.readString(file));
+    /** 差异重放是纯文本操作：只要两侧内容按 UTF-8 读入，GBK 环境不会影响重建结果。 */
+    private void assertDiffReplayKeepsUtf8() {
+        DiffResult diff = differ.diff("restore.txt", ORIGINAL, UPDATED);
+        FileRecord record = FileRecord.builder().filePath("restore.txt")
+                .baseline(ORIGINAL).diff(diff.unifiedDiff())
+                .plusLines(diff.plusLines()).minusLines(diff.minusLines()).build();
+        assertEquals(UPDATED.replace("\r\n", "\n"), UnifiedDiffReplayer.replay(record.baseline(),
+                java.util.List.of(record.diff())).orElseThrow());
+        assertEquals(1, record.plusLines());
+        assertEquals(1, record.minusLines());
     }
 }

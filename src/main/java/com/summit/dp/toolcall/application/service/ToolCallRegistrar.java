@@ -3,6 +3,8 @@ package com.summit.dp.toolcall.application.service;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 
+import java.util.Map;
+
 /**
  * 唯一写入登记器：{@code tool_call} 表**只由它写入**。
  *
@@ -30,7 +32,11 @@ public interface ToolCallRegistrar {
     /**
      * EXECUTE 结束：命中且为 EXECUTE 则 complete + 写 {@code raw_output}；
      * 命中 PROMISE 则 no-op（交给 {@link ToolCallService#decide} 收尾）；缺失则兜底插入 completed。
+     *
+     * @param fileEdit 编辑区间元数据（4 个行号 + 记录标识），非编辑类工具传 {@code null}。
+     *                 只在这一刻可得 —— 工具执行完才知道自己改了哪几行，所以随收尾一起落库，
+     *                 否则历史消息重建工具块时行号永远是空的。
      */
     void completeExecute(String toolCallId, long executionId, String toolName, String argsJson,
-                         String output, ToolCallOutcome outcome);
+                         String output, ToolCallOutcome outcome, Map<String, Object> fileEdit);
 }

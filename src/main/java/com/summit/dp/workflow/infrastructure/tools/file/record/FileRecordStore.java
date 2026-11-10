@@ -4,11 +4,15 @@ import lombok.NonNull;
 
 import java.io.Serializable;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 记录标识和同文件版本由存储分配，调用方不能自行推导顺序。 */
+/**
+ * 记录只追加、不原地改：一条记录描述一次修改，改状态的需求随撤销功能一起移除。
+ *
+ * <p><b>顺序是契约的一部分</b>：{@link #listByExecution} 必须按写入顺序返回，
+ * 差异重放依赖它（基线在前、后续修改依次叠加），所以实现不能返回无序集合。</p>
+ */
 public interface FileRecordStore {
 
     /** 存储可覆盖标识生成方式，但必须与 put 的分配规则一致。 */
@@ -21,32 +25,11 @@ public interface FileRecordStore {
 
     Optional<FileRecord> get(@NonNull Serializable executionId, @NonNull Serializable recordId);
 
-    void update(@NonNull FileRecord record);
-
-    boolean removeById(@NonNull Serializable executionId, @NonNull Serializable recordId);
-
     void clearByExecutionId(@NonNull Serializable executionId);
 
-    /** 返回顺序必须保持插入顺序，回滚依赖版本顺序。 */
+    /** 返回顺序必须保持插入顺序：差异重放按写入顺序叠加。 */
     List<FileRecord> listByExecution(@NonNull Serializable executionId);
 
     void clear();
-
-    default List<FileRecord> listPending(@NonNull Serializable executionId) {
-        return this.listByExecution(executionId).stream()
-                .filter(FileRecord::isPending)
-                .toList();
-    }
-
-    default List<FileRecord> listPendingByTurn(@NonNull Serializable executionId, @NonNull Serializable turnId) {
-        return this.listPending(executionId).stream()
-                .filter(r -> Objects.equals(r.turnId(), turnId))
-                .toList();
-    }
-
-    default List<FileRecord> listByFile(@NonNull Serializable executionId, @NonNull String filePath) {
-        return this.listByExecution(executionId).stream()
-                .filter(r -> Objects.equals(r.filePath(), filePath))
-                .toList();
-    }
 }
+

@@ -64,10 +64,13 @@ class EditFileToolExecutorMetaDataTest {
         assertFalse(fileEdit.containsKey("oldContent"));
         assertFalse(fileEdit.containsKey("newContent"));
 
-        FileRecord record = records.listPendingRecords("1").getFirst();
+        FileRecord record = records.listRecords("1").getFirst();
         assertEquals(expectedPath, record.filePath());
-        assertTrue(records.reject("1", record.id(), toolExecution.getWorkspace()));
-        assertEquals("alpha\nbeta\n", Files.readString(target));
+        // 记录里只有基线与差异：基线是编辑前的原文，全文不再进记录。
+        assertEquals("alpha\nbeta\n", record.baseline());
+        assertNotNull(record.diff());
+        assertFalse(record.diff().isBlank());
+        assertEquals(fileEdit.get("recordId"), record.id());
     }
 
     @Test
@@ -89,16 +92,17 @@ class EditFileToolExecutorMetaDataTest {
         ToolExecuteResult secondResult = executor.execute(secondExecution);
         assertTrue(firstResult.isSuccess(), firstResult.getToolOutput());
         assertTrue(secondResult.isSuccess(), secondResult.getToolOutput());
-        List<FileRecord> pending = records.listPendingRecords("1");
-        assertEquals(2, pending.size());
-        assertEquals(first.toAbsolutePath().normalize().toString(), pending.getFirst().filePath());
-        assertEquals(second.toAbsolutePath().normalize().toString(), pending.getLast().filePath());
-        assertEquals(1, pending.getFirst().version());
-        assertEquals(1, pending.getLast().version());
-        assertTrue(records.reject("1", pending.getFirst().id(), firstExecution.getWorkspace()));
-        assertTrue(records.reject("1", pending.getLast().id(), secondExecution.getWorkspace()));
-        assertEquals("before", Files.readString(first));
-        assertEquals("before", Files.readString(second));
+        List<FileRecord> recorded = records.listRecords("1");
+        assertEquals(2, recorded.size());
+        assertEquals(first.toAbsolutePath().normalize().toString(), recorded.getFirst().filePath());
+        assertEquals(second.toAbsolutePath().normalize().toString(), recorded.getLast().filePath());
+        // 两个不同文件各自都是本轮首条，所以都带基线，版本都从 1 起。
+        assertEquals(1, recorded.getFirst().version());
+        assertEquals(1, recorded.getLast().version());
+        assertEquals("before", recorded.getFirst().baseline());
+        assertEquals("before", recorded.getLast().baseline());
+        assertEquals("after", Files.readString(first));
+        assertEquals("after", Files.readString(second));
     }
 
     /**
@@ -130,8 +134,7 @@ class EditFileToolExecutorMetaDataTest {
     }
 
     private FileRecordManager fileRecordManager() {
-        return new DefaultFileRecordManager(new DefaultFileRecordStore(),
-                new FileRecordRestorer(new DefaultFileHasher()), new DefaultFileHasher());
+        return new DefaultFileRecordManager(new DefaultFileRecordStore());
     }
 
     private ToolExecution execution(EditFileToolExecutor executor, Path workspaceRoot, String args) {

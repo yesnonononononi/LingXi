@@ -152,12 +152,25 @@ public class ToolCall {
      * <p>终态幂等：已是 completed 时不再覆盖已有结论，返回 {@code false}。</p>
      */
     public boolean complete(String rawOutputJson) {
+        return this.complete(rawOutputJson, null);
+    }
+
+    /**
+     * 收尾并顺带补齐扩展元数据。
+     *
+     * <p>{@code metaDataJson} 为 {@code null} 时保留原有元数据。之所以在收尾这一刻写，
+     * 是因为 {@code fileEdit}（改动行号区间）只在工具真正执行完才存在 —— 开始占位时无从得知。</p>
+     */
+    public boolean complete(String rawOutputJson, String metaDataJson) {
         if (status == ToolCallStatus.COMPLETED) {
             return false;
         }
         boolean changed = transferTo(ToolCallStatus.COMPLETED);
         if (rawOutputJson != null) {
             this.rawOutput = rawOutputJson;
+        }
+        if (metaDataJson != null) {
+            this.metaData = metaDataJson;
         }
         this.updatedAt = Instant.now();
         return changed;

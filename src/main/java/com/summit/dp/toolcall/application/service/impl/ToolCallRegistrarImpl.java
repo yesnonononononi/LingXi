@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 
 /** 登记时只建立准备槽位；重复登记不得覆盖已开放或已处理的互动。 */
@@ -99,11 +100,12 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
     @Override
     @Transactional
     public void completeExecute(String toolCallId, long executionId, String toolName, String argsJson,
-                                String output, ToolCallOutcome outcome) {
+                                String output, ToolCallOutcome outcome, Map<String, Object> fileEdit) {
         if (toolCallId == null || toolCallId.isBlank()) {
             return;
         }
         String rawOutput = converter.executeOutcome(outcome, output);
+        String metaData = converter.executionMeta(executionId, toolName, fileEdit);
         ToolCall existing = toolCallRepository.findById(toolCallId).orElse(null);
         if (existing == null) {
             // 兜底：无占位行（如框架 REJECTED/超时且未发 START）时补一条 completed。
@@ -122,7 +124,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
                     .status(ToolCallStatus.COMPLETED)
                     .rawInput(converter.rawInput(argsJson))
                     .rawOutput(rawOutput)
-                    .metaData(converter.executionMeta(executionId, toolName))
+                    .metaData(metaData)
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .build();
@@ -135,7 +137,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
         if (existing.isCompleted()) {
             return;   // 终态幂等
         }
-        existing.complete(rawOutput);
+        existing.complete(rawOutput, metaData);
         toolCallRepository.updateById(existing);
     }
 

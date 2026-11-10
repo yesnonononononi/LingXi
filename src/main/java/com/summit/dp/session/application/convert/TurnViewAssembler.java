@@ -1,5 +1,6 @@
 package com.summit.dp.session.application.convert;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.compact.ContextUsageMetric;
 import com.summit.core.conversation.api.ToolCallRequest;
@@ -12,6 +13,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.*;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
+import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
@@ -144,7 +146,7 @@ public class TurnViewAssembler {
             }
             ToolCall toolCall = toolCalls == null ? null : toolCalls.get(request.id());
             blocks.add(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()), request,
-                    ToolFacts.toFacts(toolCall)));
+                    ToolFacts.toFacts(toolCall, objectMapper)));
         }
     }
 
@@ -198,12 +200,54 @@ public class TurnViewAssembler {
         if (facts == null) {
             return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                     BlockStatus.TOOL_STARTED, toolCallId, request.name(), request.arguments(),
-                    null, null, null, null);
+                    null, null, null, null, null, null, null, null, null);
         }
+        FileEditRange fileEdit = facts.fileEdit();
         return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                 toolBlockStatusResolver.resolve(facts.status(), facts.rawOutput()), toolCallId,
                 facts.toolName() == null ? request.name() : facts.toolName(),
-                request.arguments(), facts.rawOutput(), null, null, facts.version());
+                request.arguments(), facts.rawOutput(), null, null, facts.version(),
+                fileEdit == null ? null : fileEdit.oldStartLine(),
+                fileEdit == null ? null : fileEdit.oldEndLine(),
+                fileEdit == null ? null : fileEdit.newStartLine(),
+                fileEdit == null ? null : fileEdit.newEndLine(),
+                fileEdit == null ? null : fileEdit.recordId());
+    }
+
+    /**
+     * 编辑区间：从落库的 {@code _meta.fileEdit} 解析出来的四个行号与记录标识。
+     *
+     * <p>行号 {@code 0} 有语义（该侧不存在），所以不能把 0 当成「缺失」丢掉 —— 置空只发生在
+     * 字段真的不存在时。</p>
+     */
+    private record FileEditRange(Integer oldStartLine, Integer oldEndLine,
+                                 Integer newStartLine, Integer newEndLine, String recordId) {
+
+        static FileEditRange parse(String metaDataJson, ObjectMapper objectMapper) {
+            if (metaDataJson == null || metaDataJson.isBlank()) {
+                return null;
+            }
+            try {
+                JsonNode node = objectMapper.readTree(metaDataJson)
+                        .path(ToolCallKeys.META).path(ToolCallKeys.FILE_EDIT);
+                if (node.isMissingNode() || !node.isObject()) {
+                    return null;
+                }
+                return new FileEditRange(
+                        intOrNull(node, "oldStartLine"), intOrNull(node, "oldEndLine"),
+                        intOrNull(node, "newStartLine"), intOrNull(node, "newEndLine"),
+                        node.path("recordId").isMissingNode() || node.path("recordId").isNull()
+                                ? null : node.path("recordId").asText());
+            } catch (Exception e) {
+                // 元数据坏了不该拖垮整轮历史装配：行号缺失只是少一列数字。
+                return null;
+            }
+        }
+
+        private static Integer intOrNull(JsonNode node, String field) {
+            JsonNode value = node.path(field);
+            return value.isNumber() ? value.asInt() : null;
+        }
     }
 
     /**
@@ -211,24 +255,31 @@ public class TurnViewAssembler {
      *
      * <p>两条路径共用 {@link #buildToolBlock} 的同一份字段映射，避免「历史一套、增量一套」。</p>
      */
-    private record ToolFacts(String toolName, ToolCallStatus status, String rawOutput, Long version) {
+    private record ToolFacts(String toolName, ToolCallStatus status, String rawOutput, Long version,
+                             FileEditRange fileEdit) {
 
         /** 领域实体 → 事实；{@code null} 表示行尚未落库。 */
-        static ToolFacts toFacts(ToolCall toolCall) {
+        static ToolFacts toFacts(ToolCall toolCall, ObjectMapper objectMapper) {
             if (toolCall == null) {
                 return null;
             }
             return new ToolFacts(toolCall.getToolName(), toolCall.getStatus(),
-                    toolCall.getRawOutput(), toolCall.getVersion());
+                    toolCall.getRawOutput(), toolCall.getVersion(),
+                    FileEditRange.parse(toolCall.getMetaData(), objectMapper));
         }
 
-        /** 只读投影 → 事实；{@code null} 表示行尚未落库。 */
+        /**
+         * 只读投影 → 事实；{@code null} 表示行尚未落库。
+         *
+         * <p>这条路径刻意不读 {@code meta_data}（CLOB，单块推送读它是纯写放大），所以
+         * 编辑区间为 {@code null}。实时帧的区间由事件元数据直接带给前端，不依赖它。</p>
+         */
         static ToolFacts toFacts(ToolCallBlockView toolCall) {
             if (toolCall == null) {
                 return null;
             }
             return new ToolFacts(toolCall.toolName(), toolCall.status(),
-                    toolCall.rawOutput(), toolCall.version());
+                    toolCall.rawOutput(), toolCall.version(), null);
         }
     }
 

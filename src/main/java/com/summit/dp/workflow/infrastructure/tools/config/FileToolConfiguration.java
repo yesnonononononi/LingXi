@@ -31,14 +31,8 @@ public class FileToolConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public FileHasher fileHasher() {
-        return new DefaultFileHasher();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public FileRecordManager fileRecordManager(FileRecordStore fileRecordStore, FileHasher fileHasher) {
-        return new DefaultFileRecordManager(fileRecordStore, new FileRecordRestorer(fileHasher), fileHasher);
+    public FileRecordManager fileRecordManager(FileRecordStore fileRecordStore) {
+        return new DefaultFileRecordManager(fileRecordStore);
     }
 
 }

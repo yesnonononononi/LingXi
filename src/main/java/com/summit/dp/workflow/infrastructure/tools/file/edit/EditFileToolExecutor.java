@@ -154,12 +154,14 @@ public class EditFileToolExecutor implements ToolExecutor {
             return fileRecordManager.record(toolExecution.getExecutionId(), businessTurnId(toolExecution),
                     FileRecord.builder()
                             .filePath(outcome.path())
-                            .oldContent(outcome.existed() ? outcome.oldContent() : null)
-                            .newContent(outcome.newContent())
+                            // 基线只对本轮首条有效，是否保留由登记器判定；这里如实给出「改之前是什么」。
+                            .baseline(outcome.existed() ? outcome.oldContent() : null)
                             .diff(outcome.diffResult().unifiedDiff())
+                            .plusLines(outcome.plusLines())
+                            .minusLines(outcome.minusLines())
                             .build());
         } catch (Exception e) {
-            // 文件已经落盘；登记失败仍返回写入结果，但该编辑将无法回滚。
+            // 文件已经落盘；登记失败仍返回写入结果，只是这一改动事后查不到差异。
             log.warn("登记已落盘编辑失败: filePath={}, sessionId={}, reason={}",
                     outcome.path(), toolExecution.getExecutionId(), e.getMessage());
             return null;

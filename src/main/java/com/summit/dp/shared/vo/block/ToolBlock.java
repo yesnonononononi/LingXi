@@ -15,7 +15,19 @@ public record ToolBlock(
         @JsonProperty("output") String output,
         @JsonProperty("plusLines") Integer plusLines,
         @JsonProperty("minusLines") Integer minusLines,
-        @JsonProperty("version") Long version
+        @JsonProperty("version") Long version,
+        /**
+         * 该次编辑在文件中的行号区间：{@code 0} 表示该侧不存在（纯插入无旧行、纯删除无新行）。
+         *
+         * <p>来自 {@code tool_call.meta_data._meta.fileEdit}。**历史消息能不能按行渲染 diff
+         * 全靠它** —— 只在事件里带一次的话，刷新之后位置信息就永久丢了。</p>
+         */
+        @JsonProperty("oldStartLine") Integer oldStartLine,
+        @JsonProperty("oldEndLine") Integer oldEndLine,
+        @JsonProperty("newStartLine") Integer newStartLine,
+        @JsonProperty("newEndLine") Integer newEndLine,
+        /** 对应的文件编辑记录标识（按需取差异用）；非编辑工具为空。 */
+        @JsonProperty("fileRecordId") String fileRecordId
 ) implements Block {
 
     /** 身份规则：{@code tool:<toolCallId>}。 */

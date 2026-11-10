@@ -78,7 +78,8 @@ class ToolCallRegistrarImplTest {
         registrar.registerPromise(ToolCallRegisterCommand.promise(
                 "call-y", 5L, 100L, "create_plan", ToolCallKind.PLAN, "t", "{\"kind\":\"PLAN\"}", "{}"));
 
-        registrar.completeExecute("call-y", 100L, "create_plan", "{}", "should-be-ignored", ToolCallOutcome.SUCCEEDED);
+        registrar.completeExecute("call-y", 100L, "create_plan", "{}", "should-be-ignored", ToolCallOutcome.SUCCEEDED,
+                null);
 
         ToolCall after = repository.findById("call-y").orElseThrow();
         assertEquals(ToolCallStatus.PREPARING, after.getStatus(), "PROMISE 的收尾交给 decide 端点");
@@ -106,7 +107,7 @@ class ToolCallRegistrarImplTest {
         registrar.markExecuteStarted("call-exec", 100L, "read_file", "{\"path\":\"a\"}");
 
         registrar.completeExecute("call-exec", 100L, "read_file", "{\"path\":\"a\"}", "file-body",
-                ToolCallOutcome.SUCCEEDED);
+                ToolCallOutcome.SUCCEEDED, null);
 
         ToolCall done = repository.findById("call-exec").orElseThrow();
         assertEquals(ToolCallType.EXECUTE, done.getType());
@@ -121,7 +122,7 @@ class ToolCallRegistrarImplTest {
     void completeExecuteFallsBackToInsertWhenNoPlaceholderRow() {
         when(identity.sessionId("100")).thenReturn(5L);
 
-        registrar.completeExecute("call-orphan", 100L, "create_plan", "{}", "out", ToolCallOutcome.SUCCEEDED);
+        registrar.completeExecute("call-orphan", 100L, "create_plan", "{}", "out", ToolCallOutcome.SUCCEEDED, null);
 
         assertEquals(1, repository.rowCount());
         ToolCall fallback = repository.findById("call-orphan").orElseThrow();

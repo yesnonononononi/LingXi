@@ -29,9 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FileToolContractRegressionTest {
     @TempDir Path root;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final DefaultFileHasher hasher = new DefaultFileHasher();
-    private final DefaultFileRecordManager records = new DefaultFileRecordManager(
-            new DefaultFileRecordStore(), new FileRecordRestorer(hasher), hasher);
+    private final DefaultFileRecordManager records = new DefaultFileRecordManager(new DefaultFileRecordStore());
     private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(), records);
 
     @Test
@@ -137,7 +135,7 @@ class FileToolContractRegressionTest {
         ToolExecuteResult result = edit(args);
         assertFalse(result.isSuccess(), result.getToolOutput());
         assertEquals(original, Files.readString(root.resolve("demo.txt")));
-        assertTrue(records.listPendingRecords("test-execution").isEmpty());
+        assertTrue(records.listRecords("test-execution").isEmpty());
     }
 
     private ToolExecuteResult edit(Map<String, Object> args) throws Exception {

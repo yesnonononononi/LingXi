@@ -1,6 +1,6 @@
 package com.summit.dp.workflow.infrastructure.tools.file.record;
 
-import org.jspecify.annotations.NonNull;
+import lombok.NonNull;
 
 import java.io.Serializable;
 import java.util.List;
@@ -10,14 +10,23 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** 原位更新必须保留插入顺序，拒绝回滚依赖同文件版本的稳定顺序。 */
+/**
+ * 内存存储：只追加，按执行分区。
+ *
+ * <p><b>顺序是契约</b>：差异重放按写入顺序叠加，所以用 {@link CopyOnWriteArrayList}
+ * 保持插入顺序，且不提供任何重排手段。</p>
+ *
+ * <p><b>已知边界</b>：进程重启即丢，历史会话的改动清单因此重建不出来。落库是下一步的事，
+ * 这里不做半个持久化 —— 那只会让「有时有、有时没有」更难排查。</p>
+ */
 public class DefaultFileRecordStore implements FileRecordStore {
+
     private final Map<Serializable, List<FileRecord>> records = new ConcurrentHashMap<>();
 
     @Override
     public FileRecord put(@NonNull FileRecord record) {
         FileRecord stored = this.assignIdentity(record);
-        this.records.computeIfAbsent(stored.executionId(), k -> new CopyOnWriteArrayList<>()).add(stored);
+        this.records.computeIfAbsent(stored.executionId(), key -> new CopyOnWriteArrayList<>()).add(stored);
         return stored;
     }
 
@@ -25,25 +34,7 @@ public class DefaultFileRecordStore implements FileRecordStore {
     public Optional<FileRecord> get(@NonNull Serializable executionId, @NonNull Serializable recordId) {
         List<FileRecord> list = this.records.get(executionId);
         return list == null ? Optional.empty()
-                : list.stream().filter(r -> recordId.equals(r.id())).findFirst();
-    }
-
-    @Override
-    public void update(@NonNull FileRecord record) {
-        List<FileRecord> list = this.records.get(record.executionId());
-        if (list == null) return;
-        for (int i = 0; i < list.size(); i++) {
-            if (record.id().equals(list.get(i).id())) {
-                list.set(i, record);
-                return;
-            }
-        }
-    }
-
-    @Override
-    public boolean removeById(@NonNull Serializable executionId, @NonNull Serializable recordId) {
-        List<FileRecord> list = this.records.get(executionId);
-        return list != null && list.removeIf(r -> recordId.equals(r.id()));
+                : list.stream().filter(record -> recordId.equals(record.id())).findFirst();
     }
 
     @Override
@@ -62,28 +53,24 @@ public class DefaultFileRecordStore implements FileRecordStore {
         this.records.clear();
     }
 
+    /** 补齐标识与同文件版本号；顺序语义由此确定，调用方不能自己造。 */
     private FileRecord assignIdentity(FileRecord record) {
+        if (record.id() != null && record.version() != null) {
+            return record;
+        }
         Serializable id = record.id() != null ? record.id() : this.generateId();
         Integer version = record.version();
         if (version == null) {
             version = this.records.getOrDefault(record.executionId(), List.<FileRecord>of()).stream()
-                    .filter(r -> Objects.equals(r.filePath(), record.filePath()))
-                    .mapToInt(r -> r.version() == null ? 0 : r.version())
+                    .filter(existing -> Objects.equals(existing.filePath(), record.filePath()))
+                    .mapToInt(existing -> existing.version() == null ? 0 : existing.version())
                     .max().orElse(0) + 1;
         }
-        if (record.id() != null && version.equals(record.version())) {
-            return record;
-        }
-        return this.withIdentity(record, id, version);
-    }
-
-    private FileRecord withIdentity(FileRecord record, Serializable id, Integer version) {
         return FileRecord.builder()
                 .id(id).executionId(record.executionId()).turnId(record.turnId())
-                .version(version).oldContent(record.oldContent()).newContent(record.newContent())
-                .diff(record.diff()).filePath(record.filePath())
-                .oldContentHash(record.oldContentHash()).newContentHash(record.newContentHash())
-                .state(record.state()).createAt(record.createAt())
+                .version(version).filePath(record.filePath()).baseline(record.baseline())
+                .diff(record.diff()).plusLines(record.plusLines()).minusLines(record.minusLines())
+                .createAt(record.createAt())
                 .build();
     }
 }

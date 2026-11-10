@@ -27,14 +27,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class EditFileLineEndingRegressionTest {
     @TempDir Path root;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final DefaultFileHasher hasher = new DefaultFileHasher();
-    private final DefaultFileRecordManager records = new DefaultFileRecordManager(
-            new DefaultFileRecordStore(), new FileRecordRestorer(hasher), hasher);
+    private final DefaultFileRecordManager records = new DefaultFileRecordManager(new DefaultFileRecordStore());
     private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(), records);
 
     @ParameterizedTest
     @MethodSource("editVariants")
-    void multilineEditsKeepFileBytesAndCanBeRolledBack(String type, String fileEnding, String argumentEnding) throws Exception {
+    void multilineEditsKeepFileBytesAndCanBeRebuiltFromTheRecord(String type, String fileEnding, String argumentEnding) throws Exception {
         String prefix = "\uFEFF前言🙂" + fileEnding;
         String originalMatch = "  first" + fileEnding + "    second";
         String original = prefix + originalMatch + fileEnding + "尾部";
@@ -53,13 +51,13 @@ class EditFileLineEndingRegressionTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         assertBytes(expected);
-        List<FileRecord> pending = records.listPendingRecords("line-ending-test");
-        assertEquals(1, pending.size());
-        FileRecord record = pending.getFirst();
-        assertEquals(original, record.oldContent());
-        assertEquals(expected, record.newContent());
-        assertTrue(records.reject("line-ending-test", record.id(), workspace()));
-        assertBytes(original);
+        List<FileRecord> recorded = records.listRecords("line-ending-test");
+        assertEquals(1, recorded.size());
+        FileRecord record = recorded.getFirst();
+        // 基线是编辑前原文；差异重放后是编辑后原文（重放按行拼接，换行统一为 \n，与差异口径一致）。
+        assertEquals(original, record.baseline());
+        assertEquals(expected.replace("\r\n", "\n"),
+                UnifiedDiffReplayer.replay(record.baseline(), List.of(record.diff())).orElseThrow());
     }
 
     @ParameterizedTest
@@ -71,7 +69,7 @@ class EditFileLineEndingRegressionTest {
         assertFalse(result.isSuccess(), result.getToolOutput());
         assertTrue(result.getToolOutput().contains("命中多处"), result.getToolOutput());
         assertBytes(original);
-        assertTrue(records.listPendingRecords("line-ending-test").isEmpty());
+        assertTrue(records.listRecords("line-ending-test").isEmpty());
     }
 
     @ParameterizedTest
@@ -83,7 +81,7 @@ class EditFileLineEndingRegressionTest {
         assertFalse(result.isSuccess(), result.getToolOutput());
         assertTrue(result.getToolOutput().contains("命中多处"), result.getToolOutput());
         assertBytes(original);
-        assertTrue(records.listPendingRecords("line-ending-test").isEmpty());
+        assertTrue(records.listRecords("line-ending-test").isEmpty());
     }
 
     @Test
@@ -142,7 +140,7 @@ class EditFileLineEndingRegressionTest {
         ToolExecuteResult result = edit("REPLACE", match, "changed");
         assertFalse(result.isSuccess(), result.getToolOutput());
         assertBytes(original);
-        assertTrue(records.listPendingRecords("line-ending-test").isEmpty());
+        assertTrue(records.listRecords("line-ending-test").isEmpty());
     }
 
     private void writeOriginal(String content) throws Exception {
@@ -169,3 +167,4 @@ class EditFileLineEndingRegressionTest {
                 Arguments.of(type, "\r\n", "\r\n"), Arguments.of(type, "\n", "\n")));
     }
 }
+
