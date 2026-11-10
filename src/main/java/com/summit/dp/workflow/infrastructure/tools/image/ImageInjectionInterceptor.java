@@ -10,6 +10,7 @@ import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.tool.ToolExecuteResult;
+import com.summit.dp.device.interfaces.tool.DeviceToolNames;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,15 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
 
     /** 待注入队列：工具执行时写入，下一轮模型调用前消费。 */
     static final String KEY_PENDING = "lingxi.image.pending";
+
+    /**
+     * 允许把图送进模型上下文的工具。
+     *
+     * <p>白名单而不是"凡带 imageId 就注入"：图很贵（一张截图数万 token），
+     * 而且谁能往上下文里塞像素，就等于谁能影响模型看到的世界。加一个工具必须显式来这里登记。</p>
+     */
+    private static final Set<String> IMAGE_CARRYING_TOOLS =
+            Set.of(ToolCatalog.READ_IMAGE, DeviceToolNames.OBSERVE);
 
     private final ImageCacheDirectory cache;
 
@@ -55,7 +65,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
         List<Map<String, Object>> pending = new ArrayList<>(readPending(execution));
         for (ToolExecuteResult result : results) {
             if (result == null || !result.isSuccess() || result.getToolSpecification() == null
-                    || !ToolCatalog.READ_IMAGE.equals(result.getToolSpecification().name())) continue;
+                    || !IMAGE_CARRYING_TOOLS.contains(result.getToolSpecification().name())) continue;
             Map<String, Object> metadata = result.getToolMetaData();
             if (metadata == null || metadata.get("imageId") == null) continue;
             pending.add(new HashMap<>(metadata));
@@ -109,8 +119,8 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
 
         // 队列必须清空：同一张图不能在后续每一轮重复注入。
         String intro = images.isEmpty()
-                ? "以下是 read_image 的结果说明：\n"
-                : "以下是上一轮 read_image 的结果，图片内容按上下文窗口保留：\n";
+                ? "以下是图片读取结果说明：\n"
+                : "以下是上一轮读取到的图片，图片内容按上下文窗口保留：\n";
         String text = intro + String.join("\n", lines);
         UserMessageEntity message = images.isEmpty()
                 ? UserMessageEntity.from(text)

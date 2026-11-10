@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceScreenshot;
+import com.summit.dp.device.application.model.ObserveMode;
+import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.port.DeviceUnavailableException;
@@ -29,6 +32,7 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -160,6 +164,100 @@ class WsDeviceChannelTest {
         assertEquals("WLAN", snapshot.elements().get(0).text());
         assertTrue(snapshot.elements().get(0).checked());
         assertEquals("com.android.settings", channel.foregroundPackage(), "前台包名要缓存给危险判定用");
+    }
+
+    @Test
+    void 观察请求如实上报模式_只取节点时不要截图() {
+        WsDeviceChannel channel = newChannel();
+        AtomicReference<String> sentPayload = new AtomicReference<>();
+        respondOnSend(sent -> {
+            sentPayload.set(sent);
+            return observeResult(correlationOf(sent));
+        });
+
+        channel.observe(80);
+
+        WireMessage envelope = WireMessage.parse(mapper, sentPayload.get());
+        // 曾经把 mode 写死成 both 再丢掉截图：设备白截一张图，白白多花约 300ms。
+        // 这条断言就是防它回来。
+        assertEquals("nodes", envelope.payload().get("mode").asText(),
+                "只取节点就必须说 nodes，否则设备会白截一张没人看的图");
+        assertFalse(envelope.payload().get("includeScreenshot").asBoolean(true),
+                "不要截图时 includeScreenshot 必须是 false");
+    }
+
+    @Test
+    void 观察带截图时能解析出图片字节与像素空间() {
+        WsDeviceChannel channel = newChannel();
+        String base64 = java.util.Base64.getEncoder().encodeToString(new byte[]{1, 2, 3, 4, 5});
+        AtomicReference<String> sentPayload = new AtomicReference<>();
+        respondOnSend(sent -> {
+            sentPayload.set(sent);
+            String reqId = correlationOf(sent);
+            return """
+                    {"v":1,"type":"observe_result","id":"m-%s","deviceId":"%s","seq":1,"ts":1,"payload":{
+                      "reqId":"%s","screen":{"w":1080,"h":2376,"density":3,"rotation":0},
+                      "frameHash":"fh-shot","focusedPkg":"com.android.settings","truncated":false,"nodes":[],
+                      "screenshot":{"shotB64":"%s","width":727,"height":1600,
+                                    "rawWidth":1080,"rawHeight":2376,"mimeType":"image/jpeg"}
+                    }}
+                    """.formatted(reqId, DEVICE_ID, reqId, base64);
+        });
+
+        ObserveSnapshot snapshot = channel.observe(new ObserveRequest(80, ObserveMode.SHOT));
+
+        WireMessage envelope = WireMessage.parse(mapper, sentPayload.get());
+        assertEquals("shot", envelope.payload().get("mode").asText());
+        assertTrue(envelope.payload().get("includeScreenshot").asBoolean(false));
+
+        DeviceScreenshot screenshot = snapshot.screenshot();
+        assertNotNull(screenshot, "带截图却解析不出来，等于把唯一能看的东西丢了");
+        assertEquals(5, screenshot.image().length);
+        assertEquals(727, screenshot.width());
+        assertEquals(1600, screenshot.height());
+        assertEquals("image/jpeg", screenshot.mimeType());
+        assertEquals(DeviceScreenshot.CoordinateSpace.MATCH, screenshot.coordinateSpace(snapshot.screen()));
+    }
+
+    @Test
+    void 截图缺图片宽高时仍是可解析的_但要在文本里告警() {
+        WsDeviceChannel channel = newChannel();
+        respondOnSend(sent -> {
+            String reqId = correlationOf(sent);
+            // 协议允许"只让我看一眼"，所以不缺字段就不该拒绝；但换算不出坐标这件事必须说出来
+            return """
+                    {"v":1,"type":"observe_result","id":"m-%s","deviceId":"%s","seq":1,"ts":1,"payload":{
+                      "reqId":"%s","screen":{"w":1080,"h":2376,"density":3,"rotation":0},
+                      "frameHash":"fh-shot","focusedPkg":"com.android.settings","truncated":false,"nodes":[],
+                      "screenshot":{"shotB64":"AAEC","rawWidth":1080,"rawHeight":2376}
+                    }}
+                    """.formatted(reqId, DEVICE_ID, reqId);
+        });
+
+        ObserveSnapshot snapshot = channel.observe(new ObserveRequest(80, ObserveMode.BOTH));
+
+        assertFalse(snapshot.screenshot().hasImageSize());
+        assertTrue(snapshot.toPromptText().contains("无法把图上的像素换算"),
+                snapshot.toPromptText());
+    }
+
+    @Test
+    void 截图只给一半尺寸必须报错() {
+        WsDeviceChannel channel = newChannel();
+        respondOnSend(sent -> {
+            String reqId = correlationOf(sent);
+            // 只给宽度：这是对面实现不一致，不能猜，必须拒
+            return """
+                    {"v":1,"type":"observe_result","id":"m-%s","deviceId":"%s","seq":1,"ts":1,"payload":{
+                      "reqId":"%s","screen":{"w":1080,"h":2376,"density":3,"rotation":0},
+                      "frameHash":"fh-shot","focusedPkg":"com.android.settings","truncated":false,"nodes":[],
+                      "screenshot":{"shotB64":"AAEC","width":727}
+                    }}
+                    """.formatted(reqId, DEVICE_ID, reqId);
+        });
+
+        assertThrows(DeviceUnavailableException.class,
+                () -> channel.observe(new ObserveRequest(80, ObserveMode.BOTH)));
     }
 
     @Test

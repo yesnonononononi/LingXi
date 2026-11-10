@@ -2,6 +2,7 @@ package com.summit.dp.device.application.port;
 
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.domain.Device;
@@ -17,8 +18,19 @@ public interface DeviceChannel {
     /** 当前设备身份与能力。断线时由注册表负责摘除，这里始终返回已知身份。 */
     Device device();
 
-    /** 观察一次界面；节点数受上限约束，超限必须回传 truncated。 */
-    ObserveSnapshot observe(int maxNodes);
+    /**
+     * 观察一次界面：节点数受上限约束，超限必须回传 truncated；模式决定是否附带截图。
+     *
+     * <p>模式必须一层层如实传下去（工具参数 → 请求 → 协议字段）。桌面端曾经固定发
+     * {@code mode=both} 再丢掉截图，设备因此每次都多做一次 300ms 的截屏——请求说一套、
+     * 消费做另一套，是最贵的 bug 形态。</p>
+     */
+    ObserveSnapshot observe(ObserveRequest request);
+
+    /** 只要节点的常见情形，便于调用方少写一个参数。 */
+    default ObserveSnapshot observe(int maxNodes) {
+        return observe(ObserveRequest.nodes(maxNodes));
+    }
 
     /** 执行一次动作。实现方负责真实的幂等保护，调用方不得假设它一定成功。 */
     ActionOutcome perform(ActionRequest request);

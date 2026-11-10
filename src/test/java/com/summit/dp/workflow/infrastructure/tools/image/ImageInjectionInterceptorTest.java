@@ -13,6 +13,7 @@ import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
+import com.summit.dp.device.interfaces.tool.DeviceToolNames;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadImageRequest;
@@ -161,6 +162,23 @@ class ImageInjectionInterceptorTest {
         UserMessageEntity message = assertInstanceOf(UserMessageEntity.class, appended.getFirst());
         assertEquals(1, message.getContent().size());
         assertTrue(message.text().contains("不要臆测内容"));
+    }
+
+    @Test
+    void deviceObserveScreenshotEntersTheSameInjectionPath() throws Exception {
+        // device_observe 的截图必须和白名单里的 read_image 走同一条注入路径。
+        // 这条断言守的是白名单本身：把 DeviceToolNames.OBSERVE 从 IMAGE_CARRYING_TOOLS 里删掉，
+        // 截图会静静地变成一条只有文字的回执，模型再也"看不见"手机画面。
+        prepareImage("screen.png");
+        Execution execution = execution();
+        ToolExecuteResult result = read("screen.png", execution);
+        result.setToolSpecification(definition(DeviceToolNames.OBSERVE));
+        ImageInjectionInterceptor interceptor = interceptor();
+        interceptor.onAfterToolCall(context(execution), List.of(result));
+        List<Message> appended = new ArrayList<>();
+        interceptor.onBeforeModelInvoke(context(execution, appended));
+        UserMessageEntity message = assertInstanceOf(UserMessageEntity.class, appended.getFirst());
+        assertEquals(1, message.getContent().stream().filter(ImageContent.class::isInstance).count());
     }
 
     private void injectOnce(ImageInjectionInterceptor interceptor, Execution execution,

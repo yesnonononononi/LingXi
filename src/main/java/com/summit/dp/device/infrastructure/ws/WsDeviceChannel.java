@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.port.DeviceChannel;
@@ -78,14 +79,14 @@ public class WsDeviceChannel implements DeviceChannel {
     }
 
     @Override
-    public ObserveSnapshot observe(int maxNodes) {
+    public ObserveSnapshot observe(ObserveRequest request) {
         requireAlive();
         String reqId = "ob-" + correlationCounter.incrementAndGet();
         var future = pending.register(reqId);
         try {
-            send("observe", reqId, payloadMapper.observePayload(reqId, maxNodes));
+            send("observe", reqId, payloadMapper.observePayload(reqId, request));
             // 超时按请求节点数自适应：节点翻倍而超时不变，会让大请求必然超时
-            WireMessage response = pending.await(reqId, future, properties.observeTimeoutFor(maxNodes));
+            WireMessage response = pending.await(reqId, future, properties.observeTimeoutFor(request.maxNodes()));
             ObserveSnapshot snapshot = payloadMapper.toSnapshot(response);
             foregroundPackage.set(snapshot.focusedPackage());
             return snapshot;

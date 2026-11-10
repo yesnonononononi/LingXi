@@ -41,7 +41,7 @@ class DeviceToolServiceTest {
 
     @Test
     void 观察能拿到节点与帧指纹() {
-        String text = service.observe(null, 80);
+        String text = service.observe(null, 80).toPromptText();
 
         assertTrue(text.contains("device=dev-test"));
         assertTrue(text.contains("package=com.android.settings"));
@@ -52,68 +52,68 @@ class DeviceToolServiceTest {
 
     @Test
     void 点击开关会真的改变界面状态() {
-        String before = service.observe(null, 80);
+        String before = service.observe(null, 80).toPromptText();
         String frame = frameOf(before);
         assertTrue(wlanLine(before).contains("checked") == false, "初始状态 WLAN 应为关闭");
 
         String outcome = service.act(null, tap("a-1", WLAN_SWITCH_POINT, frame, "WLAN"));
         assertTrue(outcome.startsWith("ok"), "动作应成功，实际=" + outcome);
 
-        String after = service.observe(null, 80);
+        String after = service.observe(null, 80).toPromptText();
         assertTrue(wlanLine(after).contains("checked"), "点过开关之后 WLAN 必须变成开启");
         assertTrue(frameOf(after) != null && !frameOf(after).equals(frame), "界面变了，帧指纹必须跟着变");
     }
 
     @Test
     void 帧指纹不匹配必须拒绝执行() {
-        service.observe(null, 80);
+        service.observe(null, 80).toPromptText();
 
         String outcome = service.act(null, tap("a-2", WLAN_SWITCH_POINT, "fh-stale", "WLAN"));
 
         assertTrue(outcome.contains("STALE_FRAME"), "画面变了还按旧坐标点，等于随机点击");
-        assertTrue(wlanLine(service.observe(null, 80)).contains("checked") == false,
+        assertTrue(wlanLine(service.observe(null, 80).toPromptText()).contains("checked") == false,
                 "被拒绝的动作不允许产生副作用");
     }
 
     @Test
     void 同一动作重放不会执行第二次() {
-        String frame = frameOf(service.observe(null, 80));
+        String frame = frameOf(service.observe(null, 80).toPromptText());
         service.act(null, tap("a-3", WLAN_SWITCH_POINT, frame, "WLAN"));
 
         String replay = service.act(null, tap("a-3", WLAN_SWITCH_POINT, frame, "WLAN"));
 
         assertTrue(replay.contains("已执行过"), "重放必须被台账拦下，实际=" + replay);
-        assertTrue(service.observe(null, 80).contains("WLAN"));
+        assertTrue(service.observe(null, 80).toPromptText().contains("WLAN"));
     }
 
     @Test
     void 危险动作先挂起_确认后才执行() {
-        String frame = frameOf(service.observe(null, 80));
+        String frame = frameOf(service.observe(null, 80).toPromptText());
 
         String pending = service.act(null, tap("a-4", WLAN_SWITCH_POINT, frame, "确认支付"));
         assertTrue(pending.contains("需要用户确认"), "命中危险词时必须先问，实际=" + pending);
-        assertTrue(wlanLine(service.observe(null, 80)).contains("checked") == false,
+        assertTrue(wlanLine(service.observe(null, 80).toPromptText()).contains("checked") == false,
                 "待确认期间不允许执行");
 
         String confirmed = service.confirm(dangerIdOf(pending), true);
         assertTrue(confirmed.startsWith("ok"), "用户同意后应执行，实际=" + confirmed);
-        assertTrue(wlanLine(service.observe(null, 80)).contains("checked"), "同意后动作必须真的生效");
+        assertTrue(wlanLine(service.observe(null, 80).toPromptText()).contains("checked"), "同意后动作必须真的生效");
     }
 
     @Test
     void 危险动作被拒绝则不执行() {
-        String frame = frameOf(service.observe(null, 80));
+        String frame = frameOf(service.observe(null, 80).toPromptText());
         String pending = service.act(null, tap("a-5", WLAN_SWITCH_POINT, frame, "转账"));
 
         String rejected = service.confirm(dangerIdOf(pending), false);
 
         assertTrue(rejected.contains("未执行"), "拒绝后必须明确告知未执行，实际=" + rejected);
-        assertTrue(wlanLine(service.observe(null, 80)).contains("checked") == false);
+        assertTrue(wlanLine(service.observe(null, 80).toPromptText()).contains("checked") == false);
     }
 
     @Test
     void 二次确认同一个dangerId不会重复执行() {
-        String frame = frameOf(service.observe(null, 80));
+        String frame = frameOf(service.observe(null, 80).toPromptText());
         String pending = service.act(null, tap("a-6", WLAN_SWITCH_POINT, frame, "支付"));
         String dangerId = dangerIdOf(pending);
 
@@ -125,7 +125,7 @@ class DeviceToolServiceTest {
 
     @Test
     void 急停之后动作会被拒绝() {
-        String frame = frameOf(service.observe(null, 80));
+        String frame = frameOf(service.observe(null, 80).toPromptText());
         service.stop(null);
 
         String outcome = service.act(null, tap("a-7", WLAN_SWITCH_POINT, frame, "WLAN"));

@@ -7,12 +7,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.NormalizedBounds;
+import com.summit.dp.device.application.model.DeviceScreenshot;
+import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.UiElement;
 import com.summit.dp.device.domain.DeviceScreen;
 import com.summit.dp.device.interfaces.ws.WireMessage;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -27,6 +30,13 @@ import java.util.List;
  */
 public class DevicePayloadMapper {
 
+    /**
+     * 内联截图的 base64 长度上限（字符）。
+     *
+     * <p>2MB 原始字节 → 约 2.8M 字符。超过它就是对面把图当附件传了，应该改走 shotRef 落盘。</p>
+     */
+    private static final int MAX_INLINE_BASE64_CHARS = 2_800_000;
+
     private final ObjectMapper mapper;
 
     public DevicePayloadMapper(ObjectMapper mapper) {
@@ -35,12 +45,14 @@ public class DevicePayloadMapper {
 
     // ---------- 出站 ----------
 
-    public ObjectNode observePayload(String reqId, int maxNodes) {
+    public ObjectNode observePayload(String reqId, ObserveRequest request) {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("reqId", reqId);
-        payload.put("mode", "both");
-        payload.put("maxNodes", maxNodes);
-        payload.put("includeScreenshot", false);
+        // 如实上报模式：曾把 mode 固定成 both 却丢弃截图，设备于是每次都白截一张图（约 300ms +
+        // 一张 60KB 图）。请求和消费必须同源，否则"省 token"就成了空话。
+        payload.put("mode", request.mode().wire());
+        payload.put("maxNodes", request.maxNodes());
+        payload.put("includeScreenshot", request.mode().wantsScreenshot());
         return payload;
     }
 
@@ -88,12 +100,6 @@ public class DevicePayloadMapper {
                 elements.add(toElement(node));
             }
         }
-        String screenshotRef = null;
-        JsonNode shot = payload.get("screenshot");
-        if (shot != null && shot.isObject()) {
-            JsonNode ref = shot.get("shotRef");
-            screenshotRef = ref == null || ref.isNull() ? null : ref.asText();
-        }
 
         return new ObserveSnapshot(
                 message.deviceId(),
@@ -102,7 +108,75 @@ public class DevicePayloadMapper {
                 payload.path("truncated").asBoolean(false),
                 screen,
                 elements,
-                screenshotRef);
+                toScreenshot(payload.get("screenshot")));
+    }
+
+    /**
+     * 解析截图载荷。字段缺失一律显式报错，不用默认值糊过去。
+     *
+     * <p>直接复用协议里的两个字段语义：{@code width/height} 是图片尺寸（换算必需），
+     * {@code rawWidth/rawHeight} 是原始像素（尺度校验用）。两者混用会让落点整体偏移，
+     * 而症状只是"点了没反应"。</p>
+     */
+    private DeviceScreenshot toScreenshot(JsonNode shot) {
+        if (shot == null || shot.isNull()) {
+            return null;
+        }
+        if (!shot.isObject()) {
+            throw new IllegalArgumentException("screenshot 必须是对象");
+        }
+        String ref = optionalText(shot, "shotRef");
+        String base64 = optionalText(shot, "shotB64");
+        byte[] bytes = decodeInline(shot, base64);
+        return new DeviceScreenshot(
+                ref,
+                bytes,
+                optionalText(shot, "mimeType"),
+                optionalInt(shot, "width"),
+                optionalInt(shot, "height"),
+                optionalInt(shot, "rawWidth"),
+                optionalInt(shot, "rawHeight"));
+    }
+
+    /**
+     * 内联 base64 → 字节。
+     *
+     * <p>上限先按 base64 字符串长度拦一道：真解码 3MB 字符串只为发现"太大了"是浪费；
+     * 解码后再由 [DeviceScreenshot] 复核一次真实字节数。</p>
+     */
+    private byte[] decodeInline(JsonNode shot, String base64) {
+        if (base64 == null) {
+            return null;
+        }
+        if (base64.length() > MAX_INLINE_BASE64_CHARS) {
+            throw new IllegalArgumentException(
+                    "内联截图过大（base64 " + base64.length() + " 字符），设备应落盘后只回 shotRef");
+        }
+        try {
+            return Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException undecodable) {
+            throw new IllegalArgumentException("截图的 base64 无法解码，载荷已损坏");
+        }
+    }
+
+    private static Integer optionalInt(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.canConvertToInt()) {
+            throw new IllegalArgumentException("字段 " + field + " 不是合法整数: " + value);
+        }
+        return value.asInt();
+    }
+
+    private static String optionalText(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        String text = value.asText();
+        return text == null || text.isBlank() ? null : text;
     }
 
     private UiElement toElement(JsonNode node) {

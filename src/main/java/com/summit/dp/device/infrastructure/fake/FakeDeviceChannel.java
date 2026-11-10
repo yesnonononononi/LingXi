@@ -3,6 +3,7 @@ package com.summit.dp.device.infrastructure.fake;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.NormalizedBounds;
+import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.model.UiElement;
@@ -56,11 +57,13 @@ public class FakeDeviceChannel implements DeviceChannel {
     }
 
     @Override
-    public ObserveSnapshot observe(int maxNodes) {
+    public ObserveSnapshot observe(ObserveRequest request) {
         ScreenState current = state.get();
         List<UiElement> elements = buildElements(current);
-        boolean truncated = elements.size() > maxNodes;
-        List<UiElement> visible = truncated ? List.copyOf(elements.subList(0, maxNodes)) : List.copyOf(elements);
+        boolean truncated = elements.size() > request.maxNodes();
+        List<UiElement> visible = truncated
+                ? List.copyOf(elements.subList(0, request.maxNodes()))
+                : List.copyOf(elements);
         return new ObserveSnapshot(
                 device.deviceId(),
                 current.frameHash(),
@@ -68,6 +71,8 @@ public class FakeDeviceChannel implements DeviceChannel {
                 truncated,
                 device.screen(),
                 visible,
+                // 假设备不产图：截图通路属于真机能力，这里如实为空而不是塞一张假图，
+                // 否则"截图链路"会在假设备上得到一路绿灯的假验证。
                 null);
     }
 

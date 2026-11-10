@@ -5,6 +5,7 @@ import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.device.application.DeviceRegistry;
 import com.summit.dp.device.application.DeviceToolService;
+import com.summit.dp.device.application.port.ObserveImageAttacher;
 import com.summit.dp.device.domain.ActionLedger;
 import com.summit.dp.device.domain.DangerPolicy;
 import com.summit.dp.device.infrastructure.fake.FakeDeviceChannel;
@@ -69,20 +70,26 @@ public class DeviceToolConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "deviceObserveToolDefinition")
     public ToolDefinition<DeviceObserveExecutor> deviceObserveToolDefinition(
-            DeviceToolService deviceToolService, ObjectMapper objectMapper) {
-        String name = "device_observe";
+            DeviceToolService deviceToolService, ObjectMapper objectMapper,
+            ObjectProvider<ObserveImageAttacher> imageAttacher) {
+        String name = DeviceToolNames.OBSERVE;
         ToolDefinition<DeviceObserveExecutor> definition = ToolDefinition.<DeviceObserveExecutor>builder()
-                .executor(new DeviceObserveExecutor(deviceToolService, objectMapper))
+                .executor(new DeviceObserveExecutor(deviceToolService, objectMapper, imageAttacher.getIfAvailable()))
                 .id(name)
                 .name(name)
                 .description("查看手机当前界面：返回可交互节点列表、当前前台应用和帧指纹(frame)。"
-                        + "每次动作前都必须先观察；返回的 frame 值要原样带进 device_action 的 expectFrameHash。")
+                        + "每次动作前都必须先观察；返回的 frame 值要原样带进 device_action 的 expectFrameHash。"
+                        + "默认 mode=nodes 只给节点；若回执显示节点为空（第三方应用的节点树常被系统截断），"
+                        + "改用 mode=\"both\" 或 \"shot\" 取截图，再按图片宽高把图上像素换算成 0~1000 归一化坐标点击。"
+                        + "截图很贵（一张约数万 token），节点够用时不要加图。")
                 .parametersJsonSchema("""
                         {
                           "type": "object",
                           "properties": {
                             "deviceId": {"type": "string", "description": "设备标识；只有一台设备时可省略"},
-                            "maxNodes": {"type": "integer", "description": "返回节点上限，默认 80，范围 1~120"}
+                            "maxNodes": {"type": "integer", "description": "返回节点上限，默认 80，范围 1~120"},
+                            "mode": {"type": "string", "enum": ["nodes", "shot", "both"],
+                                     "description": "nodes=只要节点（默认，便宜）；shot=只要截图；both=节点+截图"}
                           }
                         }
                         """)
@@ -98,12 +105,14 @@ public class DeviceToolConfiguration {
     @ConditionalOnMissingBean(name = "deviceActionToolDefinition")
     public ToolDefinition<DeviceActionExecutor> deviceActionToolDefinition(
             DeviceToolService deviceToolService, ObjectMapper objectMapper) {
-        String name = "device_action";
+        String name = DeviceToolNames.ACTION;
         ToolDefinition<DeviceActionExecutor> definition = ToolDefinition.<DeviceActionExecutor>builder()
                 .executor(new DeviceActionExecutor(deviceToolService, objectMapper))
                 .id(name)
                 .name(name)
-                .description("在手机上执行一次动作。坐标一律用归一化 0~1000（x 为屏宽百分比千分比，y 为屏高千分比）。"
+                .description("在手机上执行一次动作。坐标一律用归一化 0~1000（x 为屏宽千分比，y 为屏高千分比）。"
+                        + "如果你是从截图上读到元素的像素位置，直接传 params.imagePoint={x,y}（单位=上一张截图的像素），"
+                        + "系统会按该图宽高换算，不要自己算除法；此时不能同时传 params.point。"
                         + "必须带上一次 device_observe 返回的 frame 作为 expectFrameHash：画面变了会被拒绝（STALE_FRAME），"
                         + "此时应重新观察而不是重试旧坐标。危险动作（支付/转账/删除等）会返回 dangerId，"
                         + "必须先用 device_confirm 取得用户同意。重试同一动作时务必复用同一个 actionId。")
@@ -113,7 +122,7 @@ public class DeviceToolConfiguration {
                           "properties": {
                             "deviceId": {"type": "string", "description": "设备标识；只有一台设备时可省略"},
                             "kind": {"type": "string", "enum": ["tap", "long_press", "swipe", "set_text", "back", "home", "recents", "open_app", "notify_list", "key"]},
-                            "params": {"type": "object", "description": "参数：tap/long_press 需 point={x,y}；swipe 需 from/to/durationMs；set_text 需 text；open_app 需 packageName；key 需 keyCode"},
+                            "params": {"type": "object", "description": "参数：tap/long_press 需 point={x,y}（归一化）或 imagePoint={x,y}（上一张截图的像素）；swipe 需 from/to/durationMs；set_text 需 text；open_app 需 packageName；key 需 keyCode"},
                             "expectFrameHash": {"type": "string", "description": "上一次观察返回的 frame 值，必须原样带回"},
                             "actionId": {"type": "string", "description": "幂等键。重试同一动作时必须复用，否则会被当成新动作"},
                             "targetText": {"type": "string", "description": "目标元素的可读文本，用于危险动作判定"}
@@ -133,7 +142,7 @@ public class DeviceToolConfiguration {
     @ConditionalOnMissingBean(name = "deviceConfirmToolDefinition")
     public ToolDefinition<DeviceConfirmExecutor> deviceConfirmToolDefinition(
             DeviceToolService deviceToolService, ObjectMapper objectMapper) {
-        String name = "device_confirm";
+        String name = DeviceToolNames.CONFIRM;
         ToolDefinition<DeviceConfirmExecutor> definition = ToolDefinition.<DeviceConfirmExecutor>builder()
                 .executor(new DeviceConfirmExecutor(deviceToolService, objectMapper))
                 .id(name)
@@ -162,7 +171,7 @@ public class DeviceToolConfiguration {
     @ConditionalOnMissingBean(name = "deviceStopToolDefinition")
     public ToolDefinition<DeviceStopExecutor> deviceStopToolDefinition(
             DeviceToolService deviceToolService, ObjectMapper objectMapper) {
-        String name = "device_stop";
+        String name = DeviceToolNames.STOP;
         ToolDefinition<DeviceStopExecutor> definition = ToolDefinition.<DeviceStopExecutor>builder()
                 .executor(new DeviceStopExecutor(deviceToolService, objectMapper))
                 .id(name)
