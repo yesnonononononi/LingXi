@@ -1,5 +1,6 @@
 <script setup lang="ts">
 /** 正文文本和结构化图片共用一个入口，历史与实时不重复实现。 */
+import {computed} from 'vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import MessageImage from './MessageImage.vue';
 import {resolveApiUrl} from '../../utils/apiConfig';
@@ -7,6 +8,7 @@ import {t} from '../../i18n';
 import type {ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
 
 const props = defineProps<ChatMessageBodySlotProps>();
+const isStreaming = computed(() => Boolean(props.isThinking && !props.message.isComplete && !props.message.isSuspended));
 </script>
 
 <template>
@@ -15,6 +17,8 @@ const props = defineProps<ChatMessageBodySlotProps>();
     :content="props.message.content"
     :is-dark="props.isDark"
     :is-thinking="props.isThinking"
+    :streaming="isStreaming"
+    :smooth-streaming="true"
   />
   <div v-if="props.message.responseImageUrls?.length" class="flex flex-wrap gap-3" data-testid="response-images">
     <MessageImage v-for="(url, index) in props.message.responseImageUrls" :key="url"

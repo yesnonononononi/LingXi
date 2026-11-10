@@ -117,3 +117,16 @@ test('真实 2893 次 thinking 到达时序回放：减少突发峰值，有界�
   assert.ok(maximumLag <= THINKING_MAX_LAG + THINKING_FRAME_INTERVAL + 17, `积压不应失控: lag=${maximumLag}`);
   assert.ok(commits <= finalTime / THINKING_FRAME_INTERVAL);
 });
+test('正文流式契约：MarkdownRenderer 与 MessageBodyDefault 声明并接入 smoothStreaming 平滑流式调度', () => {
+  const rendererPath = new URL('../src/components/chat/MarkdownRenderer.vue', import.meta.url);
+  const rendererContent = fs.readFileSync(rendererPath, 'utf8');
+  assert.match(rendererContent, /smoothStreaming\?: boolean;/, 'MarkdownRenderer 必须声明 smoothStreaming 属性');
+  assert.match(rendererContent, /const isPaced = computed\(\(\) => \(props\.thinkingText \|\| props\.smoothStreaming\) && streaming\.value\);/, '思考与平滑正文均接入 isPaced 判定');
+  assert.match(rendererContent, /useThinkingText\(\(\) => props\.content \|\| '', \(\) => isPaced\.value\);/, '调度器入参由 isPaced 控制');
+  assert.match(rendererContent, /props\.smoothStreaming && displayedContent\.value !== props\.content/, '复制代码块在平滑正文流式中必须受真值保护');
+
+  const bodyPath = new URL('../src/components/chat/MessageBodyDefault.vue', import.meta.url);
+  const bodyContent = fs.readFileSync(bodyPath, 'utf8');
+  assert.match(bodyContent, /:smooth-streaming="true"/, '默认正文渲染器必须开启 smooth-streaming');
+  assert.match(bodyContent, /:streaming="isStreaming"/, '默认正文渲染器必须传递运行时流式状态');
+});

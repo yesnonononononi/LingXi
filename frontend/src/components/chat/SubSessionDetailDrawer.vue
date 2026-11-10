@@ -425,7 +425,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 ]"
               >
                 <MarkdownRenderer :content="msg.content" :is-dark="isDark"
-                  :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended" />
+                  :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended"
+                  :smooth-streaming="true" />
               </div>
             </div>
           </template>

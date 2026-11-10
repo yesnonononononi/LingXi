@@ -19,6 +19,8 @@ const props = withDefaults(
     processText?: boolean;
     /** 思考内容独立弱化，正文与过程叙述保持各自样式。 */
     thinkingText?: boolean;
+    /** 启用平滑流式吐字调度（正文与思考通用），按 32ms 逐帧平滑释放以避免网络突发分片顿挫。 */
+    smoothStreaming?: boolean;
     /** 首帧携带首个未完结流式分片挂载时显式开启首包渐显；未传时按挂载是否为空判定。 */
     revealInitial?: boolean;
   }>(),
@@ -29,6 +31,7 @@ const props = withDefaults(
     streaming: undefined,
     processText: false,
     thinkingText: false,
+    smoothStreaming: false,
     revealInitial: undefined
   }
 );
@@ -39,9 +42,10 @@ const isDark = computed(() => props.isDark ?? globalIsDark.value);
 // 初次挂载时已有内容属于快照；只有从空正文开始接收的首批文字需要显现。
 const revealInitial = props.revealInitial ?? !props.content;
 const streaming = computed(() => props.streaming ?? props.isThinking);
-const displayedContent = useThinkingText(() => props.content || '', () => props.thinkingText && streaming.value);
+const isPaced = computed(() => (props.thinkingText || props.smoothStreaming) && streaming.value);
+const displayedContent = useThinkingText(() => props.content || '', () => isPaced.value);
 watch(displayedContent, () => {
-  if (props.thinkingText) emit('content-rendered');
+  if (props.thinkingText || props.smoothStreaming) emit('content-rendered');
 }, { flush: 'post' });
 
 const markdownDocument = computed(() => renderMarkdownDocument(displayedContent.value, streaming.value));
@@ -57,7 +61,7 @@ const handleContainerClick = async (event: MouseEvent) => {
 
   event.stopPropagation();
   let encoded = btn.getAttribute('data-code');
-  if (props.thinkingText && displayedContent.value !== props.content) {
+  if ((props.thinkingText && displayedContent.value !== props.content) || (props.smoothStreaming && displayedContent.value !== props.content)) {
     // 复制必须取已收到的完整代码，不能把显示游标当成消息真值。
     const container = event.currentTarget as HTMLElement;
     const index = [...container.querySelectorAll('.copy-code-btn[data-code]')].indexOf(btn);
