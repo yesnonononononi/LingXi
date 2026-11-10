@@ -25,6 +25,15 @@ export function consumeToolEvent(bubble: ChatMessage, event: ToolCallStartEvent 
       plusLines: fileEdit?.plusLines, minusLines: fileEdit?.minusLines });
     trace.plusLines = diff?.plusLines ?? undefined;
     trace.minusLines = diff?.minusLines ?? undefined;
+    // 行号区间与记录标识只用于按行渲染 diff 和事后撤销，缺失时保持 undefined，不编造 0 之外的值。
+    if (fileEdit) {
+      trace.oldStartLine = fileEdit.oldStartLine;
+      trace.oldEndLine = fileEdit.oldEndLine;
+      trace.newStartLine = fileEdit.newStartLine;
+      trace.newEndLine = fileEdit.newEndLine;
+      trace.recordId = fileEdit.recordId;
+      trace.executionId = event.executionId ?? trace.executionId;
+    }
   }
   writeToolTrace(bubble, trace);
   if (event.responseId && event.isBody !== undefined) {

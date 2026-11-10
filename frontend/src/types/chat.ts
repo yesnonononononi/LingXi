@@ -19,8 +19,22 @@ export interface ThoughtStep extends ResponsePosition {
   timestamp?: number;
 }
 
+/**
+ * 一次编辑覆盖的行号区间（行号从 1 起，`0` 表示该侧不存在）。
+ *
+ * <p>正交口径与后端 `FileEditorResult.ContentInfo` 一致：REPLACE 双侧都有；
+ * DELETE 只有旧侧；INSERT 与新建文件只有新侧。前端据此直接给 diff 行标号，
+ * 不需要回取全文或再算一次差异。</p>
+ */
+export interface EditLineRange {
+  oldStartLine?: number;
+  oldEndLine?: number;
+  newStartLine?: number;
+  newEndLine?: number;
+}
+
 /** Agent 工具调用日志 */
-export interface ToolCallTrace extends ResponsePosition {
+export interface ToolCallTrace extends ResponsePosition, EditLineRange {
   id: string;
   /** 权威工具块版本；框架事件不携带持久化版本。 */
   version?: number;
@@ -46,6 +60,9 @@ export interface ToolCallTrace extends ResponsePosition {
   subPrompt?: string;            // Commander 提供的补充提示词
   plusLines?: number;            // 文件变更添加行数 (+N)
   minusLines?: number;           // 文件变更删除行数 (-N)
+  /** 产生该次编辑的执行标识；预览面板撤销要按它定位记录分区。 */
+  executionId?: string;
+  recordId?: string;             // 文件记录标识，差异与撤销都按它取
   displayIndex?: number;         // 团队协同成员显示序号 (1-indexed)
   order?: number;                // 执行时间线顺序
   timestamp?: number;
@@ -60,7 +77,7 @@ export interface ToolCallTrace extends ResponsePosition {
 export type { TokenInfo };
 
 /** 文件编辑记录（来源：TOOL_COMPLETED 事件的 metaData.fileEdit，由后端 edit_file 工具写入） */
-export interface FileEditRecord {
+export interface FileEditRecord extends EditLineRange {
   turnId?: string;
   recordId?: any;
   filePath: string;

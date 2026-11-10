@@ -104,6 +104,10 @@ public class EditFileToolExecutor implements ToolExecutor {
                     existed,
                     oldContent,
                     editRes.getData().newContent(),
+                    editRes.getData().oldStartLine(),
+                    editRes.getData().oldEndLine(),
+                    editRes.getData().newStartLine(),
+                    editRes.getData().newEndLine(),
                     differ.diff(
                             request.getPath(),
                             oldContent == null ? "" : oldContent,
@@ -153,6 +157,11 @@ public class EditFileToolExecutor implements ToolExecutor {
         }
         fileEdit.put("plusLines", outcome.plusLines());
         fileEdit.put("minusLines", outcome.minusLines());
+        // 只给行号不给内容：前端据此按行渲染 diff，不需要额外请求，也不撞 SSE 帧预算。
+        fileEdit.put("oldStartLine", outcome.oldStartLine());
+        fileEdit.put("oldEndLine", outcome.oldEndLine());
+        fileEdit.put("newStartLine", outcome.newStartLine());
+        fileEdit.put("newEndLine", outcome.newEndLine());
         return Map.of("fileEdit", fileEdit);
     }
 
@@ -165,7 +174,9 @@ public class EditFileToolExecutor implements ToolExecutor {
     }
 
     private record EditOutcome(String path, boolean existed,
-                               String oldContent, String newContent, DiffResult diffResult) {
+                               String oldContent, String newContent,
+                               int oldStartLine, int oldEndLine, int newStartLine, int newEndLine,
+                               DiffResult diffResult) {
 
         boolean created() {
             return !existed;

@@ -43,6 +43,27 @@ public  class FileEditor {
         return line;
     }
 
+    /**
+     * 从起始行推算文本覆盖到的最后一行。
+     *
+     * <p>末尾换行只表示「该行结束」，不多占一行，否则每个以换行结尾的编辑区间都会多算一行。
+     * 调用方保证 {@code startLine >= 1} 且文本非空（插入空字符串是无操作编辑，直接沿用起始行）；
+     * 行号 0 表示「该侧不存在」，不进入本方法。</p>
+     */
+    static int endLineOf(int startLine, String text) {
+        if (text.isEmpty()) {
+            return startLine;
+        }
+        int newlines = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                newlines++;
+            }
+        }
+        int span = text.endsWith("\n") ? newlines - 1 : newlines;
+        return startLine + Math.max(span, 0);
+    }
+
     static int findEndLineIndex(String content, int index) {
         int end = content.indexOf("\n", index);
         return end == -1 ? content.length() : end;

@@ -33,15 +33,23 @@ public class FileInsertor  {
                 insertIndex = matcher.toOriginalIndex(insertIndex);
                 newText = matcher.normalizeNewText(newText, type == EditType.INSERT_BEFORE ? insertIndex : anchorEnd);
                 String newContent;
+                // 插入点所在行即新内容起始行；插入不覆盖旧行，旧侧区间固定为 0。
+                int insertLine;
                 if (type.equals(EditType.INSERT_BEFORE)) {
                     newContent = content.substring(0, insertIndex) + newText + content.substring(insertIndex);
+                    insertLine = FileEditor.findLineNumber(content, insertIndex);
                 } else {
                     newContent = content.substring(0, anchorEnd) + newText + content.substring(anchorEnd);
+                    insertLine = FileEditor.findLineNumber(content, anchorEnd);
                 }
                 return FileEditorResult.success(
                         FileEditorResult.ContentInfo.builder()
                                 .oldContent(content)
                                 .newContent(newContent)
+                                .oldStartLine(0)
+                                .oldEndLine(0)
+                                .newStartLine(insertLine)
+                                .newEndLine(FileEditor.endLineOf(insertLine, newText))
                                 .build()
                 );
             } else {
@@ -51,6 +59,10 @@ public class FileInsertor  {
                         FileEditorResult.ContentInfo.builder()
                                 .oldContent("")
                                 .newContent(newText)
+                                .oldStartLine(0)
+                                .oldEndLine(0)
+                                .newStartLine(1)
+                                .newEndLine(FileEditor.endLineOf(1, newText))
                                 .build()
                 );
             }

@@ -28,10 +28,11 @@ export interface ToolRowDiffStat {
   minusLines?: number;
 }
 
-/** `edit_file` 的前后文本块。 */
-export interface EditDiffChunks {
-  oldText: string;
-  newText: string;
+/** diff 中的一行；行号未知（历史消息没有区间下发）时为 null，绝不编造。 */
+export interface EditDiffLine {
+  kind: 'add' | 'del';
+  lineNumber: number | null;
+  text: string;
 }
 
 /**
@@ -127,13 +128,42 @@ export function toolRowHeaderClass(tool: ToolCallTrace, dark: boolean): string[]
   return [base, 'cursor-pointer hover:text-lx-primary'];
 }
 
-/** `edit_file` 的前后文本块；两侧都为空时返回 null（不渲染 diff 区）。 */
-export function buildEditDiffChunks(query?: string): EditDiffChunks | null {
-  const args = toObject(query, {});
+/**
+ * 把 `edit_file` 调用渲染成按行的 diff。
+ *
+ * <p>纯前端渲染：文本取自工具入参，行号取自后端随事件下发的区间（`oldStartLine` /
+ * `newStartLine`，0 表示该侧不存在）。因此流式过程中**不需要**再请求文件内容或差异文本，
+ * 也不会把全文塞进事件流。</p>
+ *
+ * <p>返回 null 表示这不是一次有内容的编辑（两侧文本都为空），不渲染 diff 区。</p>
+ */
+export function buildEditDiffLines(input: {
+  query?: string;
+  oldStartLine?: number;
+  newStartLine?: number;
+}): EditDiffLine[] | null {
+  const args = toObject(input.query, {});
   const oldText = typeof args.oldText === 'string' ? args.oldText : '';
   const newText = typeof args.newText === 'string' ? args.newText : '';
   if (!oldText && !newText) return null;
-  return { oldText, newText };
+  const lines = [
+    ...toDiffLines('del', oldText, input.oldStartLine),
+    ...toDiffLines('add', newText, input.newStartLine)
+  ];
+  return lines.length ? lines : null;
+}
+
+/** 一段文本 → diff 行；末尾换行只表示该行结束，不额外产生一条空行。 */
+function toDiffLines(kind: 'add' | 'del', text: string, startLine?: number): EditDiffLine[] {
+  if (!text) return [];
+  const parts = text.replace(/\r\n/g, '\n').split('\n');
+  if (parts.length && parts[parts.length - 1] === '') parts.pop();
+  const first = typeof startLine === 'number' && startLine > 0 ? startLine : null;
+  return parts.map((line, index) => ({
+    kind,
+    lineNumber: first === null ? null : first + index,
+    text: line
+  }));
 }
 
 /** 去掉路径尾部的 `(+N -M)` 统计后缀（diff 统计另有独立展示位）。 */

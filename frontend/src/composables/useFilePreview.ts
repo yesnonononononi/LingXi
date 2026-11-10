@@ -2,7 +2,7 @@ import {computed, onBeforeUnmount, ref} from 'vue';
 import {getApiBaseUrl} from '../utils/apiConfig';
 import {createLocalId} from '../utils/ids';
 import {t} from '../i18n';
-import type {FilePreviewTab} from '../types/filePreview';
+import type {FilePreviewEditRef, FilePreviewTab} from '../types/filePreview';
 
 export function useFilePreview() {
   const fileTabs = ref<FilePreviewTab[]>([]);
@@ -39,7 +39,8 @@ export function useFilePreview() {
     }
   };
 
-  const openFilePreview = (sessionId: string | number | undefined, path: string) => {
+  const openFilePreview = (sessionId: string | number | undefined, path: string,
+                           edit?: FilePreviewEditRef) => {
     // 主进程需要完整地址，才能和开发页面走同一个 Vite 代理。
     const baseUrl = getApiBaseUrl() || window.location.origin;
     const normalizedPath = path.replace(/\\/g, '/');
@@ -52,10 +53,13 @@ export function useFilePreview() {
       if (fileTabs.value.length >= 12) closeFileTab(fileTabs.value[0]!.id);
       fileTabs.value.push({
         id, name: normalizedPath.split('/').pop() || path,
-        request: { sessionId: sessionId != null ? String(sessionId) : '', path, baseUrl, watchKey: createLocalId('file-watch') },
+        request: { sessionId: sessionId != null ? String(sessionId) : '', path, baseUrl, watchKey: createLocalId('file-watch'), edit },
         loading: false, error: '',
       });
       tab = fileTabs.value[fileTabs.value.length - 1]!;
+    } else {
+      // 同一文件可能被多次编辑：以最后一次打开的编辑上下文为准，传空即回到「只看文件」。
+      tab.request.edit = edit;
     }
     activeFileId.value = id;
     filePreviewOpen.value = true;

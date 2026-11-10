@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onBeforeUnmount, ref} from 'vue';
+import {computed, defineAsyncComponent, onBeforeUnmount, ref, watch} from 'vue';
 import type {FilePreviewTab} from '../../types/filePreview';
 import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {getApiBaseUrl} from '../../utils/apiConfig';
+import {mergeFullFileDiff, type MergedDiffLine} from '../../utils/fileDiff';
 import {t} from '../../i18n';
 import ProjectPagePreview from './ProjectPagePreview.vue';
 import DesignCanvasPreview from './DesignCanvasPreview.vue';
@@ -85,6 +87,95 @@ const startResize = (event: PointerEvent) => {
   window.addEventListener('pointercancel', stopResize);
 };
 onBeforeUnmount(stopResize);
+
+/* ============================ 编辑差异与撤销 ============================ */
+
+/** 当前标签是否带着「某次编辑」的上下文（由编辑工具行打开时才有）。 */
+const editRef = computed(() => active.value?.request.edit);
+const hasEdit = computed(() => !!editRef.value && isFileMode.value);
+
+const diffView = ref<'diff' | 'source'>('diff');
+const diffText = ref('');
+const diffTruncated = ref(false);
+const diffLoading = ref(false);
+const diffError = ref('');
+const reverting = ref(false);
+const reverted = ref(false);
+const revertMessage = ref('');
+
+/** 全文与差异合并后的逐行结果；没有全文时不渲染，避免出现「只有 diff 没有文件」的错位视图。 */
+const mergedLines = computed<MergedDiffLine[]>(() =>
+  active.value?.data ? mergeFullFileDiff(active.value.data.content, diffText.value) : []);
+
+const editEndpoint = (suffix = ''): string => {
+  const edit = editRef.value!;
+  const base = getApiBaseUrl() || window.location.origin;
+  return `${base}/a/file-edits/${encodeURIComponent(edit.executionId)}/${encodeURIComponent(edit.recordId)}${suffix}`;
+};
+
+/** 按需拉取本次编辑的差异：只在打开带编辑上下文的标签时请求，不进入事件流。 */
+const loadDiff = async (): Promise<void> => {
+  if (!editRef.value) return;
+  diffLoading.value = true;
+  diffError.value = '';
+  try {
+    const response = await fetch(editEndpoint());
+    if (!response.ok) throw new Error(String(response.status));
+    const body = await response.json();
+    if (!body?.data) throw new Error('empty diff');
+    diffText.value = body.data.unifiedDiff ?? '';
+    diffTruncated.value = !!body.data.truncated;
+    diffView.value = 'diff';
+    reverted.value = false;
+    revertMessage.value = '';
+  } catch {
+    diffError.value = t('filePreview.diffUnavailable');
+  } finally {
+    diffLoading.value = false;
+  }
+};
+
+/**
+ * 撤销这次编辑。
+ *
+ * <p>失败原因原样透传：后端会在「文件在编辑后又被改过」时拒绝回滚（内容 hash 不匹配），
+ * 这类信息必须让用户看到，不能统一吞成「撤销失败」。</p>
+ */
+const revertEdit = async (): Promise<void> => {
+  const current = active.value;
+  if (!current?.request.edit || reverting.value) return;
+  if (!window.confirm(t('filePreview.revertConfirm'))) return;
+  reverting.value = true;
+  revertMessage.value = '';
+  try {
+    const query = current.request.sessionId ? `?sessionId=${encodeURIComponent(current.request.sessionId)}` : '';
+    const response = await fetch(editEndpoint(`/reject${query}`), {method: 'POST'});
+    const body = await response.json().catch(() => null);
+    if (!response.ok || body?.code === 0) throw new Error(body?.errMsg || String(response.status));
+    reverted.value = true;
+    revertMessage.value = t('filePreview.revertDone');
+    // 文件已还原，差异视图不再成立，回到源码态并让主进程重新读一次内容。
+    diffView.value = 'source';
+    emit('refresh', current);
+  } catch (error) {
+    revertMessage.value = t('filePreview.revertFailed', {
+      reason: error instanceof Error ? error.message : ''
+    });
+  } finally {
+    reverting.value = false;
+  }
+};
+
+// 切换标签时按新标签的编辑上下文重新取差异；没有上下文的标签不发请求。
+watch(() => props.activeId, () => {
+  diffText.value = '';
+  diffTruncated.value = false;
+  diffError.value = '';
+  reverted.value = false;
+  revertMessage.value = '';
+  diffView.value = 'diff';
+  void loadDiff();
+}, {immediate: true});
 </script>
 
 <template>
@@ -127,6 +218,12 @@ onBeforeUnmount(stopResize);
           <span>{{ active.data?.path ?? active.request.path }}</span>
         </div>
         <div class="toolbar-actions">
+          <!-- 只有带编辑上下文的标签才出现「差异/源码」与撤销，普通预览行为完全不变 -->
+          <div v-if="hasEdit" class="mode-switch" role="group" :aria-label="t('filePreview.viewDiff')">
+            <button type="button" :aria-pressed="diffView === 'diff'" @click="diffView = 'diff'">{{ t('filePreview.viewDiff') }}</button>
+            <button type="button" :aria-pressed="diffView === 'source'" @click="diffView = 'source'">{{ t('filePreview.viewSource') }}</button>
+          </div>
+          <button v-if="hasEdit" type="button" :disabled="reverting || reverted" @click="revertEdit">{{ t('filePreview.revert') }}</button>
           <button type="button" :disabled="!active.data" @click="copy(active.data?.content ?? '')">{{ isCopied ? t('common.copied') : t('common.copy') }}</button>
           <button type="button" :disabled="active.loading" @click="emit('refresh', active)">{{ t('common.refresh') }}</button>
           <button type="button" :title="t('filePreview.openWithSystem')" @click="emit('open')">{{ t('common.open') }}</button>
@@ -139,12 +236,30 @@ onBeforeUnmount(stopResize);
       </div>
       <div class="code-preview" :role="active ? 'tabpanel' : undefined" :aria-label="t('filePreview.codeAria')">
         <template v-if="active">
-          <CodePreview v-show="!!active.data" :tabs="tabs" :activeId="activeId" :isDark="isDark" />
+          <!-- 差异视图：完整文件逐行渲染，本次改动行红绿标注 -->
+          <div v-if="hasEdit && diffView === 'diff'" class="diff-preview">
+            <div v-if="diffLoading" class="preview-placeholder" role="status">{{ t('filePreview.diffLoading') }}</div>
+            <div v-else-if="diffError" class="preview-placeholder">{{ diffError }}</div>
+            <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
+            <div v-else class="diff-lines">
+              <div v-for="(line, index) in mergedLines" :key="index" class="diff-line" :class="`is-${line.kind}`">
+                <span class="diff-no">{{ line.lineNumber ?? '' }}</span>
+                <span class="diff-sigil">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : '' }}</span>
+                <span class="diff-text">{{ line.text }}</span>
+              </div>
+            </div>
+          </div>
+          <CodePreview
+            v-show="!!active.data && !(hasEdit && diffView === 'diff')"
+            :tabs="tabs" :activeId="activeId" :isDark="isDark"
+          />
           <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
           <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
         </template>
         <div v-else class="preview-placeholder">{{ t('filePreview.noOpenFile') }}</div>
       </div>
+      <div v-if="hasEdit && diffTruncated && diffView === 'diff'" class="preview-truncated">{{ t('filePreview.diffTruncated') }}</div>
+      <div v-if="hasEdit && revertMessage" class="preview-status" role="status">{{ revertMessage }}</div>
       <footer v-if="active" class="preview-status">
         <span>{{ active.loading ? t('filePreview.refreshing') : active.error && active.data ? t('filePreview.showLastContent') : active.data?.watchId ? t('filePreview.autoRefresh') : t('filePreview.readOnly') }}</span>
         <span v-if="active.data">{{ active.data.encoding }} · {{ Math.ceil(active.data.size / 1024) }} KB</span>
@@ -205,5 +320,16 @@ button:disabled { opacity: .4; cursor: default; }
 .preview-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; font-size: var(--lx-font-size-md); color: #dc2626; background: #ef444410; }
 .preview-status { font-size: var(--lx-font-size-sm); color: var(--file-muted); padding: 9px 14px; border-top: 1px solid var(--file-line); }
 .preview-truncated { padding: 6px 14px; font-size: var(--lx-font-size-sm); color: #b45309; background: #f59e0b10; }
+/* 差异视图：行号列定宽右对齐，增删只换色不换行高，滚动时不抖动 */
+.diff-preview { height: 100%; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--lx-font-size-md); line-height: 1.55; }
+.diff-lines { min-width: max-content; }
+.diff-line { display: flex; align-items: flex-start; white-space: pre; }
+.diff-line.is-add { background: #10b9811f; color: #047857; }
+.diff-line.is-del { background: #ef44441f; color: #b42c3f; }
+.file-preview-panel.is-dark .diff-line.is-add { background: #10b98126; color: #6ee7b7; }
+.file-preview-panel.is-dark .diff-line.is-del { background: #ef444426; color: #fda4af; }
+.diff-no { flex: none; width: 48px; padding-right: 8px; text-align: right; opacity: .55; user-select: none; }
+.diff-sigil { flex: none; width: 16px; user-select: none; }
+.diff-text { flex: 1 1 auto; padding-right: 12px; }
 @media (max-width: 900px) { .file-preview-panel { position: absolute; inset: 0; z-index: 40; width: 100% !important; max-width: none; } .resize-handle { display: none; } }
 </style>

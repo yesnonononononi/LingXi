@@ -25,7 +25,11 @@
  */
 export interface EventMetaData {
   /** 编辑统计独立于模型结果文本，避免输出截断导致摘要丢失。 */
-  fileEdit?: { filePath?: string; recordId?: string; plusLines?: number; minusLines?: number };
+  fileEdit?: {
+    filePath?: string; recordId?: string; plusLines?: number; minusLines?: number;
+    /** 本次编辑覆盖的行号区间；0 表示该侧不存在（见 `EditLineRange`）。 */
+    oldStartLine?: number; oldEndLine?: number; newStartLine?: number; newEndLine?: number;
+  };
   /** 事件权威归属根会话 id（子执行归父任务） */
   rootSessionId?: string;
   /** 本次执行所属会话 id（子执行取其子会话） */

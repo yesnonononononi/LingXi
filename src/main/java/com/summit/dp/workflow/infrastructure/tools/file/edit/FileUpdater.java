@@ -40,9 +40,19 @@ public class FileUpdater {
                             + newText
                             + content.substring(oldEnd);
 
+            // 旧侧按被替换原文的真实跨度算；新侧从同一行起算，因为替换点之前的内容完全未变。
+            int oldStartLine = FileEditor.findLineNumber(content, oldStart);
+            int oldEndLine = FileEditor.findLineNumber(content, Math.max(oldStart, oldEnd - 1));
+            boolean deleting = newText.isEmpty();
+            int newStartLine = deleting ? 0 : oldStartLine;
+
             return FileEditorResult.success(FileEditorResult.ContentInfo.builder()
                     .oldContent(content)
                     .newContent(newContent)
+                    .oldStartLine(oldStartLine)
+                    .oldEndLine(oldEndLine)
+                    .newStartLine(newStartLine)
+                    .newEndLine(deleting ? 0 : FileEditor.endLineOf(newStartLine, newText))
                     .build()
             );
         } catch (Exception e){

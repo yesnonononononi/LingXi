@@ -11,7 +11,7 @@ import type {ToolCallTrace} from '../src/types/chat';
 import {AgentToolName} from '../src/utils/toolNames';
 import {TOOL_CATEGORY} from '../src/utils/toolMeta';
 import {
-    buildEditDiffChunks,
+    buildEditDiffLines,
     canExpandToolRow,
     cleanDisplayPath,
     formatThoughtTitle,
@@ -85,13 +85,51 @@ test('toolRowHeaderClass：不可展开的行没有「可点」的视觉暗示',
     ['text-zinc-600', 'cursor-pointer hover:text-lx-primary']);
 });
 
-test('buildEditDiffChunks：解析 oldText/newText，两侧都空或非法 JSON 时返回 null', () => {
-  assert.deepEqual(buildEditDiffChunks(JSON.stringify({ oldText: '旧', newText: '新' })),
-    { oldText: '旧', newText: '新' });
-  assert.deepEqual(buildEditDiffChunks(JSON.stringify({ newText: '只有新' })), { oldText: '', newText: '只有新' });
-  assert.equal(buildEditDiffChunks(JSON.stringify({})), null);
-  assert.equal(buildEditDiffChunks('not-json'), null);
-  assert.equal(buildEditDiffChunks(undefined), null);
+test('buildEditDiffLines：删行在前、增行在后，行号从下发区间起算', () => {
+  const lines = buildEditDiffLines({
+    query: JSON.stringify({ oldText: '旧一\n旧二', newText: '新一' }),
+    oldStartLine: 12,
+    newStartLine: 12,
+  });
+  assert.deepEqual(lines, [
+    { kind: 'del', lineNumber: 12, text: '旧一' },
+    { kind: 'del', lineNumber: 13, text: '旧二' },
+    { kind: 'add', lineNumber: 12, text: '新一' },
+  ]);
+});
+
+test('buildEditDiffLines：末尾换行不算多一行，CRLF 等价', () => {
+  const lines = buildEditDiffLines({
+    query: JSON.stringify({ oldText: 'a\r\nb\r\n', newText: 'a\n' }),
+    oldStartLine: 1,
+    newStartLine: 1,
+  });
+  assert.deepEqual(lines, [
+    { kind: 'del', lineNumber: 1, text: 'a' },
+    { kind: 'del', lineNumber: 2, text: 'b' },
+    { kind: 'add', lineNumber: 1, text: 'a' },
+  ]);
+});
+
+test('buildEditDiffLines：缺行号区间时行号为 null，不编造', () => {
+  const lines = buildEditDiffLines({ query: JSON.stringify({ oldText: '旧', newText: '新' }) });
+  assert.deepEqual(lines, [
+    { kind: 'del', lineNumber: null, text: '旧' },
+    { kind: 'add', lineNumber: null, text: '新' },
+  ]);
+});
+
+test('buildEditDiffLines：删除只有旧侧，插入只有新侧', () => {
+  assert.deepEqual(buildEditDiffLines({ query: JSON.stringify({ oldText: '旧' }), oldStartLine: 3 }),
+    [{ kind: 'del', lineNumber: 3, text: '旧' }]);
+  assert.deepEqual(buildEditDiffLines({ query: JSON.stringify({ newText: '新' }), newStartLine: 1 }),
+    [{ kind: 'add', lineNumber: 1, text: '新' }]);
+});
+
+test('buildEditDiffLines：两侧都空或参数非法时返回 null', () => {
+  assert.equal(buildEditDiffLines({ query: JSON.stringify({}) }), null);
+  assert.equal(buildEditDiffLines({ query: 'not-json' }), null);
+  assert.equal(buildEditDiffLines({ query: undefined }), null);
 });
 
 test('cleanDisplayPath：剥掉尾部 (+N -M) 统计后缀并去空白', () => {

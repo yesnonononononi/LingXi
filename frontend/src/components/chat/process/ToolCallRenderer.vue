@@ -20,7 +20,7 @@ import {
 } from '../../../utils/toolMeta';
 import {resolveToolRenderName} from '../../../utils/toolDisplayNames';
 import {
-  buildEditDiffChunks,
+  buildEditDiffLines,
   canExpandToolRow,
   cleanDisplayPath,
   isToolInProgress,
@@ -48,7 +48,11 @@ const tool = computed(() => props.item.tool);
 const meta = computed(() => (tool.value ? resolveToolRowMeta(tool.value) : null));
 const diff = computed(() => (tool.value ? resolveToolRowDiff(tool.value, props.fileEdits) : null));
 const expandable = computed(() => !!tool.value && canExpandToolRow(tool.value.toolName));
-const chunks = computed(() => buildEditDiffChunks(tool.value?.query));
+const diffLines = computed(() => (tool.value ? buildEditDiffLines({
+  query: tool.value.query,
+  oldStartLine: tool.value.oldStartLine,
+  newStartLine: tool.value.newStartLine,
+}) : null));
 
 /** 工具行的折叠状态（`:key="item.id"` 保证同 id 实例不被销毁，语义与原来的 Record 等价）。 */
 const expanded = ref(false);
@@ -67,7 +71,12 @@ const canPreviewFile = computed(() => !!openFilePreview && !!tool.value
 
 const previewTarget = (): void => {
   if (!tool.value || !canPreviewFile.value) return;
-  openFilePreview?.(props.sessionId, meta.value?.target ?? '');
+  const {executionId, recordId} = tool.value;
+  // 只有编辑工具且两个标识齐全时才带差异上下文；读文件保持「只看文件」的原行为。
+  const edit = isEditFileTool(tool.value.toolName) && executionId && recordId
+    ? {executionId, recordId}
+    : undefined;
+  openFilePreview?.(props.sessionId, meta.value?.target ?? '', edit);
 };
 
 // 复制反馈：每个工具行一个实例，键仍是 `tool.id`（语义与原来单一实例 + copiedKey 等价）。
@@ -217,21 +226,25 @@ const copyResult = (): void => {
             </div>
 
             <div class="p-4">
-              <!-- edit_file 工具展示增删对比块 -->
-              <div v-if="isEditFileTool(tool.toolName) && chunks" class="space-y-2.5 font-mono text-xs select-text">
-                <div v-if="chunks.oldText" class="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-[#b42c3f] dark:text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
-                  <div class="text-lx-fs-sm font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                    <span>{{ t('chat.message.diffBefore') }}</span>
+              <!-- edit_file 行级 diff：单滚动框，红删绿增，最左侧行号列垂直对齐 -->
+              <div
+                v-if="isEditFileTool(tool.toolName) && diffLines"
+                class="rounded-xl border overflow-hidden"
+                :class="isDark ? 'border-zinc-800/80 bg-[#0e1118]' : 'border-zinc-200 bg-zinc-50/60'"
+              >
+                <div class="max-h-[19rem] overflow-y-auto py-1.5 font-mono text-xs leading-5 select-text scrollbar-thin">
+                  <div
+                    v-for="(line, index) in diffLines"
+                    :key="index"
+                    class="flex items-start"
+                    :class="line.kind === 'add'
+                      ? 'bg-emerald-500/10 text-[#088f50] dark:text-emerald-300'
+                      : 'bg-red-500/10 text-[#b42c3f] dark:text-rose-300'"
+                  >
+                    <span class="w-12 shrink-0 select-none pr-2 text-right opacity-60">{{ line.lineNumber ?? '' }}</span>
+                    <span class="w-4 shrink-0 select-none">{{ line.kind === 'add' ? '+' : '-' }}</span>
+                    <span class="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3">{{ line.text }}</span>
                   </div>
-                  {{ chunks.oldText }}
-                </div>
-                <div v-if="chunks.newText" class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[#088f50] dark:text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
-                  <div class="text-lx-fs-sm font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    <span>{{ t('chat.message.diffAfter') }}</span>
-                  </div>
-                  {{ chunks.newText }}
                 </div>
               </div>
               <pre

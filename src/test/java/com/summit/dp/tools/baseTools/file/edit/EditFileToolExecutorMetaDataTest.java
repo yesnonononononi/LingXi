@@ -55,6 +55,11 @@ class EditFileToolExecutorMetaDataTest {
         assertTrue((Integer) fileEdit.get("plusLines") > 0);
         assertTrue((Integer) fileEdit.get("minusLines") > 0);
         assertNotNull(fileEdit.get("recordId"));
+        // 行号区间随事件下发：前端靠它按行渲染 diff，无需再取全文。
+        assertEquals(2, fileEdit.get("oldStartLine"));
+        assertEquals(2, fileEdit.get("oldEndLine"));
+        assertEquals(2, fileEdit.get("newStartLine"));
+        assertEquals(2, fileEdit.get("newEndLine"));
         // 全文不入事件：元数据里不允许出现内容字段
         assertFalse(fileEdit.containsKey("oldContent"));
         assertFalse(fileEdit.containsKey("newContent"));
