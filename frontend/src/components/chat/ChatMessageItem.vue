@@ -81,7 +81,7 @@
     <div v-else class="flex flex-col items-start w-full max-w-lx-chat space-y-2.5">
       
       <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process">
-        <button v-if="hasBody" type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
+        <button v-if="showWholeProcessToggle" type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
           class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer"
           :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
           @click="processExpansion = !wholeProcessExpanded">
@@ -297,10 +297,27 @@ const processSummaries = computed(() => deriveProcessSummaries(processParts.valu
 const processViews = computed(() => deriveProcessViews(
   processParts.value, processSummaries.value, processIsOngoing.value));
 
+/** 终态底栏不依赖正文，只有思考内容也必须展示；须在完成判据首次求值前声明。 */
+const isTerminalTurn = computed(() => props.message.cancelled === true || props.message.failed === true);
+
+/** 一切执行终态判定：无论是正常完成（COMPLETED / isComplete 且无在跑动作）、失败还是取消。 */
+const isTerminalExecution = computed(() => {
+  if (isTerminalTurn.value) return true;
+  const status = String(props.turn?.status ?? '').toUpperCase();
+  if (isTerminalTurnStatus(status)) return true;
+  if (props.message.isComplete === true && !isTurnRunning.value) return true;
+  return isMessageCompleted.value;
+});
+
 // 挂起和等待审批仍未结束，不能用实时输出状态决定收起；用户操作后保留其选择。
 const processExpansion = ref<boolean | null>(null);
 const hasBody = computed(() => Boolean(props.message.content || props.message.responseImageUrls?.length));
-const wholeProcessExpanded = computed(() => !hasBody.value || (processExpansion.value ?? processIsOngoing.value));
+/**
+ * 最外层收束框显示时机扩大：正文到达后展示，且一切执行终态（无论有无正文）均须展示并支持收束。
+ * 仅在执行中且正文尚未到达时保持不显示，让过程内容直接流式铺开。
+ */
+const showWholeProcessToggle = computed(() => hasBody.value || isTerminalExecution.value);
+const wholeProcessExpanded = computed(() => !showWholeProcessToggle.value || (processExpansion.value ?? processIsOngoing.value));
 // 整组总览直接合并各段摘要，不再对全部 items 跑第二趟 summarizeProcess（每 token 省一趟）。
 const wholeProcessSummary = computed(() => processViews.value.totals);
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));
@@ -326,7 +343,7 @@ const cardItems = computed<PromptCardEntry[]>(() =>
  */
 const isTurnRunning = computed(() => {
   // 轮次终态已落定，历史工具残留与迟到的流状态都不能继续隐藏底栏。
-  if (isTerminalTurnStatus(String(props.turn?.status ?? '').toUpperCase())) return false;
+  if (isTerminalTurnStatus(String(props.turn?.status ?? '').toUpperCase()) || isTerminalTurn.value) return false;
   if (props.message.isThinking || props.message.isExploring) return true;
   if (props.message.isComplete === false) return true;
   if (props.isSending && props.isLastAssistant) return true;
@@ -340,8 +357,6 @@ const processIsOngoing = computed(() => props.turn
   ? isActiveTurnStatus(props.turn.status)
   : props.message.isComplete !== true && isTurnRunning.value);
 
-/** 终态底栏不依赖正文，只有思考内容也必须展示；须在完成判据首次求值前声明。 */
-const isTerminalTurn = computed(() => props.message.cancelled === true || props.message.failed === true);
 
 /** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
 const isMessageCompleted = computed(() => {

@@ -501,18 +501,79 @@ test('整轮默认跟随执行阶段，正文到达前不显示总收束栏，�
   untouched.isThinking = false;
   untouched.isComplete = true;
   await nextTick();
-  assert.equal(resolveAuto(), undefined, '终态但仍无正文时也不显示总收束栏');
-  assert.notEqual(secondContent().style.display, 'none', '无正文时过程内容不能被收起隐藏');
+  assert.ok(resolveAuto(), '一切执行终态即使无正文也必须显示总收束栏并支持收束');
+  assert.equal(resolveAuto().props['aria-expanded'], false, '执行终态默认自动收起整轮过程');
+  assert.equal(secondContent().style.display, 'none', '收起后过程内容折叠隐藏');
+  resolveAuto().props.onClick();
+  await nextTick();
+  assert.equal(resolveAuto().props['aria-expanded'], true, '点击收束栏后展开过程内容');
+  assert.notEqual(secondContent().style.display, 'none', '展开后过程内容可见');
+  resolveAuto().props.onClick();
+  await nextTick();
+  assert.equal(resolveAuto().props['aria-expanded'], false, '再次点击重新收束');
+  assert.equal(secondContent().style.display, 'none', '再次收束后内容隐藏');
   untouched.content = '最终正文';
   await nextTick();
-  assert.ok(resolveAuto(), '正文到达后出现总收束栏');
-  assert.equal(resolveAuto().props['aria-expanded'], false, '用户没操作过时，终态正文到达后自动收起整轮过程');
+  assert.ok(resolveAuto(), '正文到达后继续保持总收束栏');
+  assert.equal(resolveAuto().props['aria-expanded'], false, '终态正文到达后依然保持收束状态');
   const imageOnly = message({ content: '', responseImageUrls: ['https://example.com/1.png'], isComplete: true, isThinking: false,
     thoughtSteps: [{ id: 's3', title: '思考', content: '生成图片', order: 0, status: 'success' }] });
   const imageRoot = mount(t, imageOnly);
   const imageWhole = find(imageRoot, node => node.props?.['data-testid'] === 'whole-process-toggle');
   assert.ok(imageWhole, '纯图片正文同样显示执行过程总收束栏');
   assert.equal(imageWhole.props['aria-expanded'], false);
+});
+
+test('bug修复：一切执行终态均显示最外层收束框并支持收束（无正文的失败、取消与完成）', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  // 1. 无正文失败终态（对应用户截图场景：多类操作/工具调用后失败）
+  const failedAnswer = message({
+    content: '',
+    failed: true,
+    isComplete: true,
+    isThinking: false,
+    toolCalls: [
+      { id: 't1', toolName: AgentToolName.ExecuteCommand, status: 'failed', query: '{"command":"./gradlew test"}' },
+      { id: 't2', toolName: AgentToolName.WriteFile, status: 'success', args: { path: 'DeviceCapability.kt' } }
+    ]
+  });
+  const failedRoot = mount(t, failedAnswer);
+  const failedToggle = find(failedRoot, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  const failedContent = find(failedRoot, node => node.props?.['data-testid'] === 'whole-process-content');
+  assert.ok(failedToggle, '无正文失败终态必须显示最外层收束框');
+  assert.equal(failedToggle.props['aria-expanded'], false, '失败终态默认收束');
+  assert.equal(failedContent.style.display, 'none', '过程内容折叠隐藏');
+  failedToggle.props.onClick();
+  await nextTick();
+  assert.equal(failedToggle.props['aria-expanded'], true, '点击后展开');
+  assert.notEqual(failedContent.style.display, 'none', '展开后过程内容可见');
+
+  // 2. 无正文取消终态
+  const cancelledAnswer = message({
+    content: '',
+    cancelled: true,
+    isComplete: true,
+    isThinking: false,
+    thoughtSteps: [{ id: 's1', title: '思考', content: '被中止的思考', order: 0, status: 'success' }]
+  });
+  const cancelledRoot = mount(t, cancelledAnswer);
+  const cancelledToggle = find(cancelledRoot, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  assert.ok(cancelledToggle, '无正文取消终态必须显示最外层收束框');
+  assert.equal(cancelledToggle.props['aria-expanded'], false, '取消终态默认收束');
+
+  // 3. 轮次状态为 FAILED / CANCELLED / COMPLETED
+  for (const status of ['FAILED', 'CANCELLED', 'COMPLETED']) {
+    const turnAnswer = message({
+      content: '',
+      isComplete: true,
+      isThinking: false,
+      thoughtSteps: [{ id: 'turn-s', title: '思考', content: '轮次内容', order: 0, status: 'success' }]
+    });
+    const root = mount(t, turnAnswer, { turn: { status } });
+    const toggle = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+    assert.ok(toggle, `${status} 轮次终态无正文也必须显示最外层收束框`);
+    assert.equal(toggle.props['aria-expanded'], false, `${status} 轮次终态默认收束`);
+  }
 });
 
 test('切入未结束会话时展开整轮过程，挂起与等待审批也直接显示过程文本', t => {
