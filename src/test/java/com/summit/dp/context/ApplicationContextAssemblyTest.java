@@ -12,6 +12,7 @@ import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
+import com.summit.dp.device.interfaces.tool.DeviceToolNames;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.tools.application.port.ToolCatalog;
@@ -208,8 +209,20 @@ class ApplicationContextAssemblyTest {
                         + "白名单=" + new TreeSet<>(expectedAnnotationTools) + "，实际=" + annotationTools);
         assertEquals(expectedAnnotationTools.size(), annotationTools.size(),
                 "数量由白名单推导，白名单自身必须无重复：" + expectedAnnotationTools.size());
-        assertEquals(5, context.getBeansOfType(ToolDefinition.class).size(),
-                "只有配置驱动的网页检索与四个框架内核工具保留定义 Bean");
+        // 不用裸数字：定义 Bean 分两组——配置驱动的 web_search、框架四个内核工具
+        // （渐进披露三件 + 上下文压缩），以及设备四件套（device_observe/action/confirm/stop）。
+        // 设备工具刻意保留定义 Bean 而不改成 @Tool：executor 需要注入 DeviceToolService，
+        // 且 Schema 要按 mode 枚举单独维护。compact_context 无 ToolCatalog 常量（实现在框架内核），
+        // 只能写字面量，改框架侧名字时这里会红——这正是要的效果。
+        Set<String> expectedDefinitionBeanNames = new TreeSet<>(Set.of(ToolCatalog.WEB_SEARCH, "compact_context",
+                ToolCatalog.SEARCH_TOOL, ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.READ_SKILL,
+                DeviceToolNames.OBSERVE, DeviceToolNames.ACTION, DeviceToolNames.CONFIRM, DeviceToolNames.STOP));
+        Set<String> definitionBeanNames = new TreeSet<>();
+        context.getBeansOfType(ToolDefinition.class).values()
+                .forEach(definition -> definitionBeanNames.add(definition.name()));
+        assertEquals(expectedDefinitionBeanNames, definitionBeanNames,
+                "定义 Bean 的集合必须精确一致（多一件=新工具没登记；少一件=有人把它改成了 @Tool）。"
+                        + "白名单在 ApplicationContextAssemblyTest 里维护，设备工具名取自 DeviceToolNames。");
         definitions.values().stream()
                 .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class))
                 .forEach(definition -> assertTrue(context.getBeansOfType(ToolExecutor.class).values().stream()
