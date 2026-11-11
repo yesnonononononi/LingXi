@@ -102,14 +102,6 @@ const handleKeydown = (event: KeyboardEvent) => {
   >
     <div class="flex items-center justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0">
-        <span class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/60 dark:border-emerald-800/40">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-            <path d="M3 3v5h5"/>
-            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-            <path d="M16 21h5v-5"/>
-          </svg>
-        </span>
         <div class="min-w-0">
           <h3 class="text-sm font-semibold truncate">{{ t('projectPagePreview.showWithAgentModalTitle') }}</h3>
           <p class="text-xs text-zinc-500 dark:text-zinc-400 truncate">{{ pageTitle }}</p>
@@ -132,7 +124,7 @@ const handleKeydown = (event: KeyboardEvent) => {
       <div class="min-w-0 flex-1 text-xs space-y-1">
         <div class="font-medium text-zinc-800 dark:text-zinc-200 truncate">{{ pageTitle }}</div>
         <div class="text-zinc-400 dark:text-zinc-500 truncate font-mono text-[11px]">{{ payload?.url }}</div>
-        <div v-if="payload?.selectionText" class="mt-1 px-2 py-1 rounded bg-zinc-200/70 dark:bg-zinc-800 border-l-2 border-emerald-500 text-zinc-700 dark:text-zinc-300 text-[11px] line-clamp-2">
+        <div v-if="payload?.selectionText" class="mt-1 px-2 py-1 rounded bg-zinc-200/70 dark:bg-zinc-800 border-l-2 text-zinc-700 dark:text-zinc-300 text-[11px] line-clamp-2">
           {{ payload.selectionText }}
         </div>
       </div>
@@ -146,7 +138,7 @@ const handleKeydown = (event: KeyboardEvent) => {
         id="show-with-agent-requirement"
         ref="textareaRef"
         v-model="requirement"
-        class="w-full h-24 p-2.5 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 focus:outline-none resize-none placeholder-zinc-400 dark:placeholder-zinc-500 text-zinc-900 dark:text-zinc-100"
+        class="w-full h-24 p-2.5 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 focus:outline-none resize-none placeholder-zinc-400 dark:placeholder-zinc-500 text-zinc-900 dark:text-zinc-100"
         :placeholder="t('projectPagePreview.showWithAgentPromptPlaceholder')"
         @keydown="handleKeydown"
       ></textarea>
@@ -166,14 +158,14 @@ const handleKeydown = (event: KeyboardEvent) => {
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 transition-colors"
+          class="px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-600 dark:text-zinc-400 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 transition-colors"
           @click="emit('close')"
         >
           {{ t('common.cancel') }}
         </button>
         <button
           type="button"
-          class="px-4 py-1.5 text-xs font-medium rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-sm transition-colors"
+          class="px-4 py-1.5 text-xs font-medium rounded-lg text-white bg-blue-500 cursor-pointer hover:bg-blue-600 shadow-sm transition-colors"
           @click="handleSend"
         >
           {{ t('projectPagePreview.showWithAgentSend') }}
