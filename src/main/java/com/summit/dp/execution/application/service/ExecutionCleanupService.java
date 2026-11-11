@@ -21,6 +21,9 @@ import java.util.List;
  * <p>同一个手动清理入口顺带回收检查点正文文件：先按执行逐条提交数据库删除（提交后才删该行的
  * 正文文件），再按批扫一遍 {@code checkpoints} 根目录，收掉删文件失败留下的旧文件、
  * 行已消失的孤儿文件和未完成的临时文件。清全文文件不读正文，也不碰数据目录里的其它内容。</p>
+ *
+ * <p>执行行一旦删掉，它名下的文件编辑记录也一起走：{@code file_record} 只按 {@code execution_id}
+ * 归属，行没了就再也认不回来；只等 15 天 TTL 会让基线目录白占磁盘。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -68,15 +71,19 @@ public class ExecutionCleanupService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CleanupResult cleanup() {
         long deleted = 0;
+        long cascadedRecords = 0;
         long afterId = 0;
         // 只限制本次请求的扫描量，每条快照独立提交，避免累积大体积回滚日志。
         for (int batch = 0; batch < MAX_BATCHES; batch++) {
             List<Execution> candidates = repository.findReclaimable(afterId, BATCH_SIZE);
             for (Execution candidate : candidates) {
                 afterId = candidate.getId();
-                if (reclaimer.reclaim(candidate)) {
-                    deleted++;
+                if (!reclaimer.reclaim(candidate)) {
+                    continue;
                 }
+                deleted++;
+                // 行已提交删除，它名下的编辑记录同时失去归属：只等 15 天 TTL 会让基线目录白占磁盘。
+                cascadedRecords += fileRecords.deleteByExecutionIds(List.of(String.valueOf(candidate.getId())));
             }
             if (candidates.size() < BATCH_SIZE) break;
         }
@@ -91,9 +98,11 @@ public class ExecutionCleanupService {
         int purgedRecords = fileRecords.purgeBefore(fileRecordCutoff());
         log.info("清理无用执行数据: deletedCount={}, remainingCount={}, deletedFiles={},"
                         + " skippedInFlightFiles={}, deletedDirectories={}, purgedFileRecords={},"
-                        + " deletedContextDirs={}, deletedImageDirs={}, skippedActiveSessionDirs={}",
+                        + " cascadedFileRecords={}, deletedContextDirs={}, deletedImageDirs={},"
+                        + " skippedActiveSessionDirs={}",
                 deleted, remaining, files.deletedFiles(), files.skippedInFlight(), files.deletedDirectories(),
-                purgedRecords, orphans.deletedContextDirs(), orphans.deletedImageDirs(), orphans.skippedActiveDirs());
+                purgedRecords, cascadedRecords, orphans.deletedContextDirs(), orphans.deletedImageDirs(),
+                orphans.skippedActiveDirs());
         return new CleanupResult(deleted, remaining);
     }
 
