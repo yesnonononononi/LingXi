@@ -8,6 +8,7 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.shared.utils.TokenEstimatorTestSupport;
 import com.summit.dp.workflow.infrastructure.memory.AgentsMdLoader;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import org.junit.jupiter.api.DisplayName;
@@ -73,7 +74,7 @@ class RequestPreparerMemoryTest {
         RequestPreparer preparer = RequestPreparerTestSupport.builder()
                 .mcpService(mcpService)
                 .sessionRepository(sessionRepository)
-                .memoryLoaders(List.of(new AgentsMdLoader()))
+                .memoryLoaders(List.of(new AgentsMdLoader(TokenEstimatorTestSupport.charCount(), 3000)))
                 .build();
 
         AgentRequest request = preparer.buildRequest("prompt", context(new MxcWorkspaceSpec(project.toString())), List.of());
@@ -90,7 +91,7 @@ class RequestPreparerMemoryTest {
         RequestPreparer preparer = RequestPreparerTestSupport.builder()
                 .mcpService(mcpService)
                 .sessionRepository(sessionRepository)
-                .memoryLoaders(List.of(new AgentsMdLoader()))
+                .memoryLoaders(List.of(new AgentsMdLoader(TokenEstimatorTestSupport.charCount(), 3000)))
                 .build();
 
         AgentRequest request = preparer.buildRequest("prompt", context(null), List.of());

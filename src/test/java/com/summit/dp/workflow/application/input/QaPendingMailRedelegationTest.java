@@ -361,7 +361,7 @@ class QaPendingMailRedelegationTest {
             argument.setAgentId(6L); argument.setTask(CURRENT_TASK);
             AgentRequest request = new SubAgentRequestFactory(mock(WorkspaceService.class), models, settings,
                     mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""),
-                    ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create())
+                    ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of())
                     .build(argument, member, TeamVO.builder().id(3L).commanderAgentId(7L).agents(List.of(member)).build(),
                             ToolExecution.builder().executionId("900").attributes(Map.of(
                                     ExecutionAttributes.SESSION_ID, "10", ExecutionAttributes.AGENT_ID, "7", ExecutionAttributes.TEAM_ID, "3")).build(),

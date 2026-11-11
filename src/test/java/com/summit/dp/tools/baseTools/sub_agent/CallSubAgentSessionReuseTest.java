@@ -84,7 +84,7 @@ class CallSubAgentSessionReuseTest {
 
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
         this.tool = new CallSubAgentTool(new ObjectMapper(), agentService, teamService, requestFactory,
                 subSessionResolver, registry, sessionRepository, asyncSubmitter,
                 new AsyncDelegationResultRenderer(new ObjectMapper()));

@@ -25,6 +25,7 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgent
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -36,11 +37,11 @@ class AgentModelConfigurationTest {
     private final SettingsProvider settings = mock(SettingsProvider.class);
     private final AgentService agents = mock(AgentService.class);
     private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), agents, null,
-            new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create()),
+            new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of()),
             null, null, null, null, null);
     /** 子模型解析已下沉到请求组装器，这里直接打它，避免再经工具入口绕行。 */
     private final SubAgentRequestFactory childModels = new SubAgentRequestFactory(null, models, settings, null,
-            new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+            new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
 
     @Test void unconfiguredChildFailsBeforeCreatingSessionOrInvokingModel() {
         AgentVO agent = new AgentVO();

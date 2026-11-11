@@ -103,7 +103,7 @@ class SubAgentRequestFactoryTest {
 
     /** Skill 关闭（空配置）时的组装器：本类多数用例的基线。 */
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
 
     @TempDir
     Path skillDir;
@@ -111,7 +111,7 @@ class SubAgentRequestFactoryTest {
     /** Skill 开启时的组装器：根目录指向一个真实存在的临时目录。 */
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
     }
 
     @ParameterizedTest
@@ -280,7 +280,7 @@ class SubAgentRequestFactoryTest {
     void imageCapabilityUsesTheChildModelRatherThanTheParentModel() {
         stubModel();
         SubAgentRequestFactory target = new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
         AgentVO member = agent(6L, "图片评审员", "检查图片");
         member.setToolList(List.of(ToolCatalog.READ_FILE));
         ToolExecution parent = ToolExecution.builder().executionId("900")
@@ -458,6 +458,21 @@ class SubAgentRequestFactoryTest {
         AgentRequest withoutSkills = build(member, team, parentToolExecution(), List.of());
         assertFalse(withoutSkills.getToolList().contains(ToolCatalog.READ_SKILL));
         assertNull(withoutSkills.getSkillConfig());
+    }
+
+    @Test
+    @DisplayName("子执行与根会话同一口径：MemoryLoader 的正文一并进入 ContextSpec.memory")
+    void childRequestCarriesTheSameMemoryBodies() {
+        stubModel();
+        AgentVO member = agent(6L, "工程师", "执行委派任务");
+        SubAgentRequestFactory withMemory = new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
+                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""),
+                ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(),
+                List.of(workspace -> List.of("公约正文"), workspace -> List.of()));
+
+        AgentRequest request = build(withMemory, member, buildTeam(member), parentToolExecution(), List.of());
+
+        assertEquals(List.of("公约正文"), request.getContextSpec().getMemory());
     }
 
     private AgentRequest build(AgentVO member, TeamVO team, ToolExecution toolExecution) {

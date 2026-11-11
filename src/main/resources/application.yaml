@@ -80,6 +80,9 @@ lingxi:
       max-tokens: 3000
     wiki:
       relative-location: .lingxi/memory/wiki
+    agents:
+      # 项目公约注入上限：超出即按行截断，并在正文末尾告知模型已截断、剩余部分自行读文件。
+      max-tokens: 3000
     work:
       relative-location: .lingxi/memory/work
     instructions: |

@@ -84,7 +84,7 @@ class CallSubAgentAsyncDelegationTest {
         lenient().when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
 
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService, RuntimeConfigurationTestSupport.create());
 

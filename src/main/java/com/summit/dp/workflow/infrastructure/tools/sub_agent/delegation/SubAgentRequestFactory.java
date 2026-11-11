@@ -29,6 +29,7 @@ import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.application.chat.MemoryLoader;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
@@ -59,6 +60,8 @@ public class SubAgentRequestFactory {
     private final BusinessSystemPromptBuilder systemPromptBuilder;
     private final ToolListProcessor toolListProcessor;
     private final RuntimeConfigurationService runtimeConfigurations;
+    /** 记忆正文来源：与根会话共用 {@link MemoryLoader#collect}，子 Agent 拿到的口径完全一致。 */
+    private final List<MemoryLoader> memoryLoaders;
 
     /**
      * 组装子执行请求。
@@ -110,6 +113,7 @@ public class SubAgentRequestFactory {
                         .context(buildContext(priorMessages, task))
                         .systemPrompt(systemPromptBuilder.buildMemberPrompt(
                                 subAgent, team, argument.getPrompt(), workspaceSpec))
+                        .memory(MemoryLoader.collect(memoryLoaders, workspaceSpec))
                         .build())
                 .modelConfigSpec(runtimeConfigurations.freezeModel(subAgent.getModelId(), childModel.config()))
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())

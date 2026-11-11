@@ -97,7 +97,7 @@ public class RequestPreparer {
     private final BusinessSystemPromptBuilder systemPromptBuilder;
     private final PersonalizationRepository personalizationRepository;
     private final RuntimeConfigurationService runtimeConfigurations;
-    /** 本轮并入 {@code ContextSpec.memory} 的记忆正文来源，按 Spring 注册顺序拼接。 */
+    /** 记忆正文来源，按 {@code @Order} 拼接（公约在前、目录在后）；与子 Agent 共用同一入口。 */
     private final List<MemoryLoader> memoryLoaders;
 
     /**
@@ -414,9 +414,8 @@ public class RequestPreparer {
                 .contextSpec(ContextSpec.builder()
                         .context(context.messageList())
                         .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization, context.workspace()))
-                        // 记忆正文由框架追加到系统提示词尾部；未绑定工作区时各来源自己返回空列表。
-                        .memory(memoryLoaders.stream()
-                                .flatMap(loader -> loader.load(context.workspace()).stream()).toList())
+                        // 记忆正文由框架追加到系统提示词尾部；子 Agent 走同一个入口，口径一致。
+                        .memory(MemoryLoader.collect(memoryLoaders, context.workspace()))
                         .build())
                 .workspaceSpec(context.workspace())
                 .toolList(toolListProcessor.process(toolList, ToolProcessingContext.builder()

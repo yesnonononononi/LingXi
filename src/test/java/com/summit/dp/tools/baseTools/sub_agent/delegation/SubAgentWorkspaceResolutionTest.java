@@ -51,7 +51,7 @@ class SubAgentWorkspaceResolutionTest {
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
             workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""),
             new BusinessSystemPromptBuilder("", workspace -> workspace == null ? "" : "wiki=" + workspace.workDir()),
-            ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+            ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create(), List.of());
 
     @BeforeEach
     void stubModel() {
