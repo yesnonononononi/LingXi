@@ -264,10 +264,10 @@ public class TurnViewAssembler {
             try {
                 Object record = fileEdit.get("recordId");
                 String recordId = record == null ? null : String.valueOf(record);
-                Integer oldStart = intOf(fileEdit.get("oldStartLine"));
-                Integer oldEnd = intOf(fileEdit.get("oldEndLine"));
-                Integer newStart = intOf(fileEdit.get("newStartLine"));
-                Integer newEnd = intOf(fileEdit.get("newEndLine"));
+                Integer oldStart = toLineNumber(fileEdit.get("oldStartLine"));
+                Integer oldEnd = toLineNumber(fileEdit.get("oldEndLine"));
+                Integer newStart = toLineNumber(fileEdit.get("newStartLine"));
+                Integer newEnd = toLineNumber(fileEdit.get("newEndLine"));
                 // 「一个字段都没有」才等于没有区间；任意一个有值就保留（行号 0 也是值）。
                 return oldStart != null || oldEnd != null || newStart != null || newEnd != null || recordId != null
                         ? new FileEditRange(oldStart, oldEnd, newStart, newEnd, recordId)
@@ -278,7 +278,7 @@ public class TurnViewAssembler {
         }
 
         /** 事件里的行号是数值对象；只有真的数值才当行号，其它一律视为缺失。 */
-        private static Integer intOf(Object value) {
+        private static Integer toLineNumber(Object value) {
             return value instanceof Number number ? number.intValue() : null;
         }
 

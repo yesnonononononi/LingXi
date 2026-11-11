@@ -1,7 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.file.record;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.summit.dp.execution.application.port.FileRecordMaintenance;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordMapper;
 import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordPO;
 import lombok.NonNull;
@@ -16,24 +16,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 记录落 H2 的实现：库表存元数据与差异，基线正文落文件系统，库内只留绝对路径。
+ * 记录落 H2：库表存元数据与差异，基线正文落文件系统、库内只留绝对路径。
  *
- * <p><b>相对内存实现的唯一目的就是「活过重启」</b>：此前记录只在进程内存里，
- * 后端一重启，历史会话的改动清单就重建不出来。重建算法（基线 + 顺序重放）一个字没动，
- * 换的只是存放地点 —— 所以这里不重新设计任何语义。</p>
+ * <p>换存储只为「活过重启」，重建算法一个字没动。</p>
  *
- * <p><b>三条不能破的约束</b>：</p>
- * <ol>
- *   <li>顺序由库承担：读侧固定 {@code ORDER BY seq}，服务层不排序；</li>
- *   <li>「本轮是否已改过该文件」用计数查询判定，<b>不能</b>为了省事去 {@link #listByExecution}
- *       再过滤 —— 那会把每条基线文件都读进内存，正是先前 OOM 的形态；</li>
- *   <li>基线读不出来时整条跳过而不是当成空文件：编造出来的差异比缺一条记录更糟。</li>
- * </ol>
- *
- * <p><b>过期回收</b>：{@link #purgeBefore} 整条回收（行 + 基线文件）。刻意不单独删基线文件 ——
- * 只删文件会留下「baseline_path 悬空」的记录，读回来变成 {@code baseline = null}，
- * 而 {@code null} 在这条链路上表示「本轮新建文件」，于是历史差异会被算成「整份文件都是新增」，
- * 一路骗到界面上。</p>
+ * <p>三条约束：顺序由库承担（{@code ORDER BY seq}）；存在性判定必须走计数查询，不能 list 全量
+ * 再过滤（那会把每条基线读进内存）；基线读不出来时整条跳过，不当成空文件。</p>
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -84,10 +72,8 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
     @Override
     public void clearByExecutionId(@NonNull Serializable executionId) {
         String key = String.valueOf(executionId);
-        this.mapper.delete(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<FileRecordPO>()
-                .eq("execution_id", key));
-        // 基线只可能落在这个执行的目录下，整棵删掉即可；逐文件再删一遍是冗余步骤，
-        // 两处都做只会多出一个永远杀不掉的等价变异体。
+        this.mapper.delete(new LambdaQueryWrapper<FileRecordPO>().eq(FileRecordPO::getExecutionId, key));
+        // 基线只可能落在这个执行的目录下，整棵删掉即可；逐文件再删一遍是冗余步骤。
         this.baselines.deleteExecution(key);
     }
 
@@ -101,19 +87,30 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         return records;
     }
 
+    /**
+     * 本轮是否已为这个文件登记过记录。
+     *
+     * <p>{@code turnId} 为 {@code null} 也要当作「同一轮」去匹配：工具在正常链路之外被调用时
+     * 拿不到轮次元数据，这些记录本身就归在 {@code null} 名下。这里若直接返回 {@code false}，
+     * 同一文件的每次无轮次编辑都会重新保留一份全文基线 —— 正是 P2 消掉的那个放大。</p>
+     */
     @Override
     public boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath) {
+        LambdaQueryWrapper<FileRecordPO> query = new LambdaQueryWrapper<FileRecordPO>()
+                .eq(FileRecordPO::getExecutionId, String.valueOf(executionId))
+                .eq(FileRecordPO::getFilePath, filePath);
         if (turnId == null) {
-            return false;
+            query.isNull(FileRecordPO::getTurnId);
+        } else {
+            query.eq(FileRecordPO::getTurnId, String.valueOf(turnId));
         }
-        return this.mapper.countByTurnAndFile(String.valueOf(executionId), String.valueOf(turnId), filePath) > 0;
+        return this.mapper.selectCount(query) > 0;
     }
 
     /**
      * 回收 {@code cutoff} 之前建立的记录（连同基线文件）。
      *
-     * <p>条数以 SQL 实际删除行为准（一次条件删），不是「先查出来再数一遍」——
-     * 后者要么多一次往返，要么漏掉并发删除导致的差异。</p>
+     * <p>条数以一次条件删的影响行为准，不再「先查出来自己数」。</p>
      *
      * @return 实际删除的记录条数
      */
@@ -121,22 +118,20 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
     public int purgeBefore(@NonNull Instant cutoff) {
         // 先取基线路径再删行：行没了就再也找不到这些文件，会变成永久孤儿。
         List<FileRecordPO> expired = this.mapper.listCreatedBefore(cutoff);
-        int deleted = this.mapper.delete(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<FileRecordPO>()
-                .lt("create_at", cutoff));
+        int deleted = this.mapper.delete(new LambdaQueryWrapper<FileRecordPO>()
+                .lt(FileRecordPO::getCreateAt, cutoff));
         for (FileRecordPO po : expired) {
             this.baselines.delete(po.getBaselinePath());
         }
         return deleted;
     }
 
-    /**
-     * 清空全部记录：仅测试与本地重置使用，生产不做全表删除。
-     */
+    /** 清空全部记录：仅测试与本地重置使用，生产不做全表删除。 */
     @Override
     public void clear() {
         List<String> executions = this.mapper.selectList(null).stream()
                 .map(FileRecordPO::getExecutionId).distinct().toList();
-        this.mapper.delete(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<>());
+        this.mapper.delete(new LambdaQueryWrapper<>());
         for (String executionId : executions) {
             this.baselines.deleteExecution(executionId);
         }
@@ -148,12 +143,8 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
                 .id(po.getId()).executionId(po.getExecutionId()).turnId(po.getTurnId())
                 .version(po.getVersion()).filePath(po.getFilePath())
                 .baseline(this.baselines.read(po.getBaselinePath()).orElse(null))
-                .diff(po.getDiff()).plusLines(orZero(po.getPlusLines())).minusLines(orZero(po.getMinusLines()))
+                .diff(po.getDiff()).plusLines(po.getPlusLines()).minusLines(po.getMinusLines())
                 .createAt(po.getCreateAt())
                 .build();
-    }
-
-    private static int orZero(Integer value) {
-        return value == null ? 0 : value;
     }
 }

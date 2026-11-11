@@ -27,11 +27,6 @@ public interface FileRecordMapper extends BaseMapper<FileRecordPO> {
     @Select("SELECT * FROM file_record WHERE execution_id = #{executionId} AND id = #{id}")
     FileRecordPO selectByExecutionAndId(@Param("executionId") String executionId, @Param("id") String id);
 
-    /** 本轮是否已经改过这个文件：决定基线还要不要留。 */
-    @Select("SELECT COUNT(1) FROM file_record WHERE execution_id = #{executionId} "
-            + "AND turn_id = #{turnId} AND file_path = #{filePath}")
-    int countByTurnAndFile(@Param("executionId") String executionId, @Param("turnId") String turnId,
-                           @Param("filePath") String filePath);
 
     /** 同一文件的下一个版本号；由存储分配，调用方不能自行编造。 */
     @Select("SELECT COALESCE(MAX(version), 0) FROM file_record WHERE execution_id = #{executionId} "
@@ -42,7 +37,4 @@ public interface FileRecordMapper extends BaseMapper<FileRecordPO> {
     @Select("SELECT id, execution_id, baseline_path FROM file_record WHERE create_at < #{cutoff}")
     List<FileRecordPO> listCreatedBefore(@Param("cutoff") Instant cutoff);
 
-    /** 按业务标识删单条（过期回收用；先删行再删文件，文件删失败只是留个孤儿，不会出现悬空引用）。 */
-    @Delete("DELETE FROM file_record WHERE id = #{id}")
-    int deleteByIdValue(@Param("id") String id);
 }

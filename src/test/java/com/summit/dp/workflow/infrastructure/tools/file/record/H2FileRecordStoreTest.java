@@ -17,7 +17,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -69,8 +71,8 @@ class H2FileRecordStoreTest {
     @AfterEach
     void tearDown() throws Exception {
         database.close();
-        try (var walk = Files.walk(baselineRoot)) {
-            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+        try (Stream<Path> walk = Files.walk(baselineRoot)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(path -> {
                 try {
                     Files.deleteIfExists(path);
                 } catch (Exception ignored) {
@@ -156,7 +158,21 @@ class H2FileRecordStoreTest {
         assertFalse(store.existsForTurn(EXECUTION, "78", "demo.txt"), "别的轮次不算");
         assertFalse(store.existsForTurn(EXECUTION, TURN, "other.txt"), "别的文件不算");
         assertFalse(store.existsForTurn("9002", TURN, "demo.txt"), "别的执行不算");
-        assertFalse(store.existsForTurn(EXECUTION, null, "demo.txt"), "没有轮次归属时不算改过");
+    }
+
+    /**
+     * 没有轮次归属的编辑也算「同一轮」。
+     *
+     * <p>工具在正常链路之外被调用时拿不到轮次元数据，这类记录本身就归在 {@code null} 名下。
+     * 若这里判成「从未改过」，同一文件的每次无轮次编辑都会重新保留一份全文基线 ——
+     * 正是 P2 消掉的那个内存放大。</p>
+     */
+    @Test
+    void recordsWithoutTurnBelongToTheSameBucket() {
+        store.put(draft("demo.txt", "v1\n", "+v2", null, null));
+
+        assertTrue(store.existsForTurn(EXECUTION, null, "demo.txt"), "无轮次记录也必须被算作已改过");
+        assertFalse(store.existsForTurn(EXECUTION, null, "other.txt"));
     }
 
     @Test
@@ -243,9 +259,13 @@ class H2FileRecordStoreTest {
     }
 
     private FileRecord draft(String path, String baseline, String diff, Instant createAt) {
+        return draft(path, baseline, diff, createAt, TURN);
+    }
+
+    private FileRecord draft(String path, String baseline, String diff, Instant createAt, String turnId) {
         return FileRecord.builder()
                 .executionId((Serializable) EXECUTION)
-                .turnId((Serializable) TURN)
+                .turnId(turnId)
                 .filePath(path)
                 .baseline(baseline)
                 .diff(diff)

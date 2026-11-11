@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.record;
 import lombok.NonNull;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,9 +40,9 @@ public interface FileRecordStore {
      * 回收 {@code cutoff} 之前建立的记录（含基线大文本），返回删除条数。
      *
      * <p>整条回收而不是只删基线：只删基线会留下 {@code baseline} 悬空的记录，读回来变成
-     * 「本轮新建文件」，历史差异就会被算成整份新增 —— 静默骗人。记录本身过期后也没人再看。</p>
+     * 「本轮新建文件」，历史差异就会被算成整份新增 —— 静默骗人。</p>
      */
-    int purgeBefore(@NonNull java.time.Instant cutoff);
+    int purgeBefore(@NonNull Instant cutoff);
 
     void clearByExecutionId(@NonNull Serializable executionId);
 

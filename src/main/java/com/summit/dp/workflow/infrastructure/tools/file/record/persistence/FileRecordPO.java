@@ -36,7 +36,8 @@ public class FileRecordPO {
     /** 这一次编辑的 unified diff：可能很长，H2 侧 CLOB。 */
     @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String diff;
-    private Integer plusLines;
-    private Integer minusLines;
+    /** 增删行数：列是 NOT NULL，用原始类型，省掉读侧的空值兜底。 */
+    private int plusLines;
+    private int minusLines;
     private Instant createAt;
 }

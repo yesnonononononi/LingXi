@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -25,14 +27,8 @@ import java.util.List;
 public class ExecutionCleanupService {
     private static final int BATCH_SIZE = 200;
     private static final int MAX_BATCHES = 50;
-    /**
-     * 文件编辑记录的保留期：过期后连同落盘的基线大文本一起回收。
-     *
-     * <p>基线的价值只在「一段时间内还想看这轮改了什么」，而它是这条链路里唯一的超大字段；
-     * 15 天后仍在库里就是纯占盘。回收整条记录而不是只删基线，理由见
-     * {@link com.summit.dp.execution.application.port.FileRecordMaintenance}。</p>
-     */
-    private static final java.time.Duration FILE_RECORD_RETENTION = java.time.Duration.ofDays(15);
+    /** 文件编辑记录的保留期：过期后连同落盘的基线大文本一起回收。 */
+    private static final Duration FILE_RECORD_RETENTION = Duration.ofDays(15);
     /** 单次清理最多扫多少个执行目录 / 每个目录最多处理多少个文件。 */
     private static final int MAX_FILE_DIRECTORIES = 400;
     private static final int MAX_FILES_PER_EXECUTION = 50;
@@ -74,7 +70,7 @@ public class ExecutionCleanupService {
                 checkpoints.reclaimUnreferenced(MAX_FILE_DIRECTORIES, MAX_FILES_PER_EXECUTION);
         long remaining = repository.countReclaimable();
         // 文件编辑记录按时间淘汰：与检查点无关，即使没有可回收的执行也会顺手清掉过期记录。
-        int purgedRecords = fileRecords.purgeBefore(java.time.Instant.now().minus(FILE_RECORD_RETENTION));
+        int purgedRecords = fileRecords.purgeBefore(Instant.now().minus(FILE_RECORD_RETENTION));
         log.info("清理无用执行数据: deletedCount={}, remainingCount={}, deletedFiles={},"
                         + " skippedInFlightFiles={}, deletedDirectories={}, purgedFileRecords={}",
                 deleted, remaining, files.deletedFiles(), files.skippedInFlight(), files.deletedDirectories(),

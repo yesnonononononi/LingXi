@@ -10,20 +10,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
- * 文件编辑基线的大文本落盘：{@code <数据目录>/file-records/<executionId>/<recordId>.baseline}。
+ * 文件编辑基线的落盘：{@code <数据目录>/file-records/<executionId>/<recordId>.baseline}。
  *
- * <p><b>为什么基线不落库</b>：基线是「本轮第一次改该文件之前的全文」，是这条链路里唯一的
- * 超大字段。落 CLOB 意味着每次工具收尾都要写一次大 LOB（写放大），还会把大文本压进库文件；
- * 落文件系统则是一次普通顺序写，库表里只留绝对路径，读单条记录时不会连带读基线。</p>
+ * <p>基线是这条链路唯一的超大字段，落 CLOB 会带来大 LOB 写放大，所以写文件、库里只留路径。</p>
  *
- * <p><b>写入顺序</b>：先写临时文件再 {@code ATOMIC_MOVE} 发布。进程在中途被杀时，
- * 目录里最多留一个 {@code .part}，不会出现「路径已写入库、文件却只有半截」的坏基线 ——
- * 半截基线比没有基线危险得多：它会被当成完整内容参与重放，静默产出错误的差异。</p>
- *
- * <p><b>目录只认安全标识</b>：{@code executionId} 与 {@code recordId} 直接拼进路径，
- * 所以写入前拒绝任何分隔符与上跳，落点必须仍在根目录内。</p>
+ * <p>先写 {@code .part} 再 {@code ATOMIC_MOVE}：半截基线会被当成完整内容参与重放，比没有基线危险得多。</p>
  */
 @Slf4j
 @Component
@@ -61,19 +56,19 @@ public class BaselineFileStore {
     /**
      * 读取基线正文。
      *
-     * @return 基线内容；路径为空、文件不存在或读失败时返回 {@code Optional.empty()}
-     *         （调用方据此整条跳过该记录，不做「当作空文件」的猜测）
+     * @return 基线内容；路径为空、文件不存在或读失败时为 {@code Optional.empty()}
+     *         （调用方据此整条跳过，不做「当作空文件」的猜测）
      */
-    public java.util.Optional<String> read(String path) {
-        if (path == null || path.isBlank()) return java.util.Optional.empty();
+    public Optional<String> read(String path) {
+        if (path == null || path.isBlank()) return Optional.empty();
         try {
             Path file = Path.of(path);
             return Files.isRegularFile(file)
-                    ? java.util.Optional.of(Files.readString(file, StandardCharsets.UTF_8))
-                    : java.util.Optional.empty();
+                    ? Optional.of(Files.readString(file, StandardCharsets.UTF_8))
+                    : Optional.empty();
         } catch (IOException e) {
             log.warn("读取文件编辑基线失败: path={}, reason={}", path, e.getMessage());
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
     }
 
@@ -91,7 +86,7 @@ public class BaselineFileStore {
     public void deleteExecution(String executionId) {
         Path directory = root.resolve(executionId).normalize();
         if (!directory.startsWith(root) || directory.equals(root)) return;
-        try (var entries = Files.list(directory)) {
+        try (Stream<Path> entries = Files.list(directory)) {
             for (Path entry : entries.toList()) {
                 Files.deleteIfExists(entry);
             }
