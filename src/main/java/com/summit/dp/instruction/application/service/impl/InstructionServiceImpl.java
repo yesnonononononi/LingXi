@@ -1,8 +1,11 @@
 package com.summit.dp.instruction.application.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.instruction.api.vo.InstructionVO;
 import com.summit.dp.instruction.application.service.InstructionService;
@@ -14,10 +17,13 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.service.UserConfigService;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.user_configs.application.vo.UserConfigVO;
+import com.summit.dp.workflow.application.chat.PendingChatQueue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -29,10 +35,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 指令预测：拿上一轮「用户提问 + Agent 正文」让模型猜用户下一句会说什么。
+ * 指令预测：拿已终态轮次的「用户提问 + Agent 终态正文」让模型猜用户下一句会说什么。
  *
- * <p>模型调用走 {@link ModelChatGateway}，与本项目其它一次性文本生成共用同一入口；
- * 预测模型是用户设置里的独立选项，空表示功能未启用。</p>
+ * <p>对外只有一个入口 {@code next}：有旧的就返回旧的，没有才生成 —— 每个轮次只产出一条预测。
+ * 不生成的情况（功能未开启、轮次未终态、队列里还有接力消息）统一返回空，不当成错误。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -53,29 +59,50 @@ public class InstructionServiceImpl implements InstructionService {
 
     private final InstructionRepository instructionRepository;
     private final MessageRepository messageRepository;
+    private final ChatTurnRepository chatTurnRepository;
+    private final PendingChatQueue pendingChats;
     private final UserConfigService userConfigService;
     private final ModelService modelService;
     private final SettingsProvider settingsProvider;
     private final ModelChatGateway chatGateway;
+    private final ObjectMapper json;
 
     @Override
     public Result<InstructionVO> next(Long sessionId, Long turnId) {
         throwIf(sessionId == null || turnId == null, "会话或轮次标识不能为空");
-        // 同一轮只预测一次：结果落库后直接复用，重复点击不再消耗模型调用。
-        Optional<Instruction> cached = instructionRepository.findBySessionAndTurn(sessionId, turnId);
-        if (cached.isPresent()) {
-            return Result.success(toVO(cached.get()));
+        // 不论新旧，这一轮只返回一条：已有预测直接复用，不再花模型调用。
+        Optional<Instruction> existing = instructionRepository.findBySessionAndTurn(sessionId, turnId);
+        if (existing.isPresent()) {
+            return Result.success(toVO(existing.get()));
         }
 
         UserConfigVO userConfig = userConfigService.current().getData();
         Long predicateModelId = userConfig == null ? null : userConfig.getPredicateModelId();
-        throwIf(predicateModelId == null, "当前没有配置指令预测模型，请先在设置中选择或关闭此功能");
+        // 功能没开（或模型没选）：前端只是问一句，返回空即可。
+        if (predicateModelId == null) {
+            return Result.success(null);
+        }
+
+        // 队列里还有待发送消息：这一轮会被接力，用户的「下一句」已经存在，预测没有意义。
+        if (pendingChats.hasPending(sessionId)) {
+            return Result.success(null);
+        }
+
+        ChatTurn turn = chatTurnRepository.findById(turnId)
+                .orElseThrow(() -> new ClientException("轮次不存在: " + turnId));
+        throwIf(!sessionId.equals(turn.getSessionId()), "轮次不属于该会话");
+        // 终态只认 chat_turn.status：前端的 isTerminal 只是触发时机，不能当作生成依据。
+        if (!turn.getStatus().isTerminal()) {
+            return Result.success(null);
+        }
 
         List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turnId));
-        String userText = lastText(messages, SessionMessageType.USER);
-        String agentText = lastText(messages, SessionMessageType.AI);
-        throwIf(userText == null, "当前轮次没有用户提问，无法预测下一步指令");
-        throwIf(agentText == null, "当前轮次还没有 Agent 回复正文，无法预测下一步指令");
+        String userText = lastUserText(messages);
+        String agentText = finalAgentText(messages);
+        if (userText == null || agentText == null) {
+            log.warn("指令预测跳过: reason=缺少用户消息或 Agent 终态正文, sessionId={}, turnId={}", sessionId, turnId);
+            return Result.success(null);
+        }
 
         String prediction = predict(predicateModelId, userText, agentText);
         Instruction instruction = Instruction.builder()
@@ -93,14 +120,6 @@ public class InstructionServiceImpl implements InstructionService {
             return Result.success(toVO(instructionRepository.findBySessionAndTurn(sessionId, turnId)
                     .orElse(instruction)));
         }
-        return Result.success(toVO(instruction));
-    }
-
-    @Override
-    public Result<InstructionVO> queryById(Long instructionId) {
-        throwIf(instructionId == null, "指令标识不能为空");
-        Instruction instruction = instructionRepository.findById(instructionId)
-                .orElseThrow(() -> new ClientException("指令预测结果不存在: " + instructionId));
         return Result.success(toVO(instruction));
     }
 
@@ -130,15 +149,55 @@ public class InstructionServiceImpl implements InstructionService {
         return message.text().strip();
     }
 
-    /** 同一轮可能有多条同类型消息（补充要求、重发），取最后一条。 */
-    private String lastText(List<SessionMessage> messages, SessionMessageType type) {
-        String text = null;
-        for (SessionMessage message : messages) {
-            if (message.getType() == type && message.getText() != null && !message.getText().isBlank()) {
-                text = message.getText();
+    /** USER 行载荷是序列化后的 UserMessageEntity，取该轮最后一条非空文本。 */
+    private String lastUserText(List<SessionMessage> messages) {
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            SessionMessage message = messages.get(index);
+            if (message.getType() != SessionMessageType.USER) {
+                continue;
+            }
+            UserMessageEntity user = parse(message.getText(), UserMessageEntity.class);
+            if (user != null && user.text() != null && !user.text().isBlank()) {
+                return user.text();
             }
         }
-        return text;
+        return null;
+    }
+
+    /**
+     * Agent 正文：该轮最后一条「无工具调用」的 AI 行文本。
+     *
+     * <p>工具循环里每次模型响应都会落一行 AI，带 toolCalls 的那些是中间态，
+     * 拿它们当正文会把工具调用参数喂给预测模型。</p>
+     */
+    private String finalAgentText(List<SessionMessage> messages) {
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            SessionMessage message = messages.get(index);
+            if (message.getType() != SessionMessageType.AI) {
+                continue;
+            }
+            AiMessageEntity ai = parse(message.getText(), AiMessageEntity.class);
+            if (ai == null || ai.getToolCalls() != null && !ai.getToolCalls().isEmpty()) {
+                continue;
+            }
+            if (ai.text() != null && !ai.text().isBlank()) {
+                return ai.text();
+            }
+        }
+        return null;
+    }
+
+    /** 历史行可能是脏载荷；解析失败只跳过该行，不让整次预测失败。 */
+    private <T> T parse(String content, Class<T> type) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        try {
+            return json.readValue(content, type);
+        } catch (JsonProcessingException error) {
+            log.warn("指令预测跳过无法解析的消息行: type={}", type.getSimpleName());
+            return null;
+        }
     }
 
     private String truncate(String text) {
