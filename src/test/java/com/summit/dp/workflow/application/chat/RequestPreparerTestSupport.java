@@ -19,6 +19,7 @@ import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.Mockito.mock;
@@ -28,7 +29,7 @@ import static org.mockito.Mockito.when;
  * {@link RequestPreparer} 的测试侧构造器（命名参数化）。
  *
  * <p><b>为什么必须有它：</b>{@code RequestPreparer} 是 Lombok {@code @RequiredArgsConstructor}，
- * 18 个必填依赖只能按位置传。历史上测试直接写
+ * 19 个必填依赖只能按位置传。历史上测试直接写
  * {@code new RequestPreparer(null, mock(...), null, null, null, null, ...)} —— 只要有人新增一个
  * 同类型字段、或调整两个字段顺序，编译器一句话都不会说，运行期才在某条分支上炸成 NPE
  * （{@code RuntimeConfigurationIntegrationTest} 的 {@code settingsProvider} 就是这么变成 null 的：
@@ -71,6 +72,7 @@ public final class RequestPreparerTestSupport {
     private BusinessSystemPromptBuilder systemPromptBuilder;
     private PersonalizationRepository personalizationRepository;
     private RuntimeConfigurationService runtimeConfigurations;
+    private List<MemoryLoader> memoryLoaders;
 
     private RequestPreparerTestSupport() {
         this.sessionService = mock(SessionService.class);
@@ -93,6 +95,7 @@ public final class RequestPreparerTestSupport {
         this.systemPromptBuilder = new BusinessSystemPromptBuilder("");
         this.personalizationRepository = mock(PersonalizationRepository.class);
         this.runtimeConfigurations = mock(RuntimeConfigurationService.class);
+        this.memoryLoaders = List.of();
     }
 
     /**
@@ -194,6 +197,11 @@ public final class RequestPreparerTestSupport {
         return this;
     }
 
+    public RequestPreparerTestSupport memoryLoaders(List<MemoryLoader> value) {
+        this.memoryLoaders = value;
+        return this;
+    }
+
     /**
      * 装配被测对象。
      *
@@ -222,6 +230,7 @@ public final class RequestPreparerTestSupport {
                 chatImageResolver,           // 15 chatImageResolver
                 systemPromptBuilder,         // 16 systemPromptBuilder
                 personalizationRepository,   // 17 personalizationRepository
-                runtimeConfigurations);      // 18 runtimeConfigurations
+                runtimeConfigurations,      // 18 runtimeConfigurations
+                memoryLoaders);              // 19 memoryLoaders
     }
 }

@@ -16,15 +16,10 @@ import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.mcp.application.service.McpService;
-import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.application.service.TranscriptReplayMatcher;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
@@ -33,7 +28,6 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
@@ -42,14 +36,10 @@ import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.dp.workspace.application.convert.WorkspaceConverter;
-import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -127,12 +117,12 @@ class ChatAdmissionTransactionTest {
                 new TranscriptRecordAssembler(new JsonConfig().objectMapper()),
                 new TranscriptReplayMatcher(new JsonConfig().objectMapper()));
         // 真实受理器：只替换与本次无关的协作者，落库两条链都是真实现。
-        RequestPreparer requestPreparer = new RequestPreparer(mock(SessionService.class),
-                mock(SessionRepository.class), mock(WorkspaceService.class), mock(ModelService.class),
-                mock(WorkspaceConverter.class), mock(SettingsProvider.class), ToolListProcessorTestSupport.create(),
-                transcriptService, mock(ModelContextService.class),
-                chatTurnService, mock(com.summit.dp.agent.application.service.AgentService.class),
-                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+        RequestPreparer requestPreparer = RequestPreparerTestSupport.builder()
+                .toolListProcessor(ToolListProcessorTestSupport.create())
+                .transcriptService(transcriptService)
+                .chatTurnService(chatTurnService)
+                .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+                .build();
         ExecutionControl control = mock(ExecutionControl.class);
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,
                 mock(ModelContextService.class), mock(SessionExecutionRegistry.class),

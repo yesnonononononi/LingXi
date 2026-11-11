@@ -1,19 +1,14 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
@@ -51,14 +46,19 @@ class RequestPreparerSettingsPropagationTest {
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final McpService mcpService = mock(McpService.class);
 
-    private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
-            mock(com.summit.dp.workspace.application.service.WorkspaceService.class), modelService,
-            mock(com.summit.dp.workspace.application.convert.WorkspaceConverter.class),
-            settingsProvider, ToolListProcessorTestSupport.create(),
-            mock(ConversationTranscriptService.class), modelContextService,
-            mock(ChatTurnService.class), mock(AgentService.class), mock(TeamService.class), mcpService,
-            new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""),
-            mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+    private final RequestPreparer preparer = RequestPreparerTestSupport.builder()
+            .sessionService(sessionService)
+            .sessionRepository(sessionRepository)
+            .modelService(modelService)
+            .settingsProvider(settingsProvider)
+            .toolListProcessor(ToolListProcessorTestSupport.create())
+            .modelContextService(modelContextService)
+            .mcpService(mcpService)
+            .skillRootResolver(new SkillRootResolver(""))
+            .chatImageResolver(new ChatImageResolver())
+            .systemPromptBuilder(new BusinessSystemPromptBuilder(""))
+            .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+            .build();
 
     @BeforeEach
     void stubSingleSession() {

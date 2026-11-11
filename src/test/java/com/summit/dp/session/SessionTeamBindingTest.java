@@ -7,11 +7,9 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.ModelConfigVO;
 import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
@@ -22,7 +20,6 @@ import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.*;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
@@ -53,11 +50,20 @@ class SessionTeamBindingTest {
     private final com.summit.dp.session.domain.repo.SessionRepository sessionRepository =
             mock(com.summit.dp.session.domain.repo.SessionRepository.class);
 
-    private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
-            workspaceService, modelService, workspaceConverter, settingsProvider, ToolListProcessorTestSupport.create(), transcriptService, modelContextService,
-            mock(com.summit.dp.turn.application.service.ChatTurnService.class),
-            agentService, teamService,
-            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+    private final RequestPreparer preparer = RequestPreparerTestSupport.builder()
+            .sessionService(sessionService)
+            .sessionRepository(sessionRepository)
+            .workspaceService(workspaceService)
+            .modelService(modelService)
+            .workspaceConverter(workspaceConverter)
+            .settingsProvider(settingsProvider)
+            .toolListProcessor(ToolListProcessorTestSupport.create())
+            .transcriptService(transcriptService)
+            .modelContextService(modelContextService)
+            .agentService(agentService)
+            .teamService(teamService)
+            .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+            .build();
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;

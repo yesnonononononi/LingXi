@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 「第 6 位传 null」——那正是本次 CI 红灯的成因（{@code settingsProvider} 被传成 null，
  * 参数个数没变，编译通过，运行期 NPE）。要真正防复发，只能让「按位置传一串 null」这种写法
  * 从代码里消失：新写的一律走 {@link RequestPreparerTestSupport}（命名参数），
- * 存量 9 处列进基线，基线只允许收缩。</p>
+ * 存量 9 处已全部迁移，基线现在只剩装配点本身。</p>
  *
  * <p>命中口径：测试源码里出现 {@code new + 类名 + 左括号} 的文件。本类自己不含该字面量
  * （needle 是拼出来的），所以无需把自己排除在外。</p>
@@ -35,17 +35,7 @@ class RequestPreparerConstructionRatchetTest {
      */
     private static final Set<String> ALLOWED = Set.of(
             // 唯一合法装配点
-            "com/summit/dp/workflow/application/chat/RequestPreparerTestSupport.java",
-            // 存量（技术债：迁移到 RequestPreparerTestSupport 后从本清单删除）
-            "com/summit/dp/agent/ChatAdmissionTransactionTest.java",
-            "com/summit/dp/model/AgentModelConfigurationTest.java",
-            "com/summit/dp/session/SessionTeamBindingTest.java",
-            "com/summit/dp/shared/utils/ChatImageResolverTest.java",
-            "com/summit/dp/shared/utils/CollaborationToolExposureTest.java",
-            "com/summit/dp/shared/utils/RequestPreparerExecutionIdentityTest.java",
-            "com/summit/dp/workflow/application/chat/AgentWorkflowOrchestratorPromptTest.java",
-            "com/summit/dp/workflow/application/chat/RequestPreparerModelFallbackTest.java",
-            "com/summit/dp/workflow/application/chat/RequestPreparerSettingsPropagationTest.java");
+            "com/summit/dp/workflow/application/chat/RequestPreparerTestSupport.java");
 
     @Test
     @DisplayName("棘轮：只有测试侧构造器可以按位置装配 RequestPreparer")

@@ -12,14 +12,13 @@ import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.application.chat.ChatImageResolver;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
+import com.summit.dp.workflow.application.chat.RequestPreparerTestSupport;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
@@ -92,8 +91,12 @@ class AgentModelConfigurationTest {
     }
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
-        RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, ToolListProcessorTestSupport.create(),
-                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+        RequestPreparer root = RequestPreparerTestSupport.builder()
+                .modelService(models)
+                .settingsProvider(settings)
+                .toolListProcessor(ToolListProcessorTestSupport.create())
+                .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+                .build();
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high", null, 10);
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");

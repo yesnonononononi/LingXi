@@ -8,30 +8,20 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-import com.summit.dp.mcp.application.service.McpService;
-import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.personalization.domain.model.Personalization;
 import com.summit.dp.personalization.domain.model.ReplyStyle;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.session.application.service.SessionService;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.dp.workspace.application.convert.WorkspaceConverter;
-import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -50,12 +40,15 @@ class AgentWorkflowOrchestratorPromptTest {
     private final TeamService teamService = mock(TeamService.class);
     private final AgentService agentService = mock(AgentService.class);
     private final PersonalizationRepository personalizationRepository = mock(PersonalizationRepository.class);
-    private final RequestPreparer preparer = new RequestPreparer(
-            mock(SessionService.class), mock(SessionRepository.class), mock(WorkspaceService.class),
-            mock(ModelService.class), mock(WorkspaceConverter.class), mock(SettingsProvider.class), ToolListProcessorTestSupport.create(), mock(ConversationTranscriptService.class), mock(ModelContextService.class),
-            mock(ChatTurnService.class), agentService, teamService, mock(McpService.class),
-            new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"),
-            personalizationRepository, RuntimeConfigurationTestSupport.create());
+    private final RequestPreparer preparer = RequestPreparerTestSupport.builder()
+            .toolListProcessor(ToolListProcessorTestSupport.create())
+            .agentService(agentService)
+            .teamService(teamService)
+            .skillRootResolver(new SkillRootResolver(""))
+            .systemPromptBuilder(new BusinessSystemPromptBuilder("全局规则"))
+            .personalizationRepository(personalizationRepository)
+            .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+            .build();
     private final AgentWorkflowOrchestratorImpl orchestrator = new AgentWorkflowOrchestratorImpl(
             subAgent, teamService, preparer, agentService, chatAgent);
 

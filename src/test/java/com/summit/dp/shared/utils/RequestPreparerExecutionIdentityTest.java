@@ -75,10 +75,26 @@ class RequestPreparerExecutionIdentityTest {
             mock(com.summit.dp.session.domain.repo.SessionRepository.class);
 
     private final PersonalizationRepository personalizationRepository = mock(PersonalizationRepository.class);
-    private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
-            workspaceService, modelService, workspaceConverter, settingsProvider, new ToolListProcessor(toolCatalog),
-            transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository, RuntimeConfigurationTestSupport.create());
+    private final RequestPreparer preparer = RequestPreparerTestSupport.builder()
+            .sessionService(sessionService)
+            .sessionRepository(sessionRepository)
+            .workspaceService(workspaceService)
+            .modelService(modelService)
+            .workspaceConverter(workspaceConverter)
+            .settingsProvider(settingsProvider)
+            .toolListProcessor(new ToolListProcessor(toolCatalog))
+            .transcriptService(transcriptService)
+            .modelContextService(modelContextService)
+            .chatTurnService(chatTurnService)
+            .agentService(agentService)
+            .teamService(teamService)
+            .mcpService(mcpService)
+            .skillRootResolver(new SkillRootResolver(""))
+            .chatImageResolver(new ChatImageResolver())
+            .systemPromptBuilder(new BusinessSystemPromptBuilder("全局规则"))
+            .personalizationRepository(personalizationRepository)
+            .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+            .build();
 
     @Test
     void requestReadsLatestPreferencesAndKeepsThemBeforeTeamPrompt() {

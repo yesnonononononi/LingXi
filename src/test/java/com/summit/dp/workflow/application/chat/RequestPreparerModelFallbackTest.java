@@ -13,7 +13,6 @@ import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
@@ -74,14 +73,24 @@ class RequestPreparerModelFallbackTest {
     private final TeamService teamService = mock(TeamService.class);
     private final McpService mcpService = mock(McpService.class);
 
-    private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
-            mock(com.summit.dp.workspace.application.service.WorkspaceService.class), modelService,
-            mock(com.summit.dp.workspace.application.convert.WorkspaceConverter.class),
-            settingsProvider, ToolListProcessorTestSupport.create(),
-            transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""),
-            new ChatImageResolver(), new BusinessSystemPromptBuilder("", workspace -> workspace == null ? "" : "wiki=" + workspace.workDir()),
-            mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
+    private final RequestPreparer preparer = RequestPreparerTestSupport.builder()
+            .sessionService(sessionService)
+            .sessionRepository(sessionRepository)
+            .modelService(modelService)
+            .settingsProvider(settingsProvider)
+            .toolListProcessor(ToolListProcessorTestSupport.create())
+            .transcriptService(transcriptService)
+            .modelContextService(modelContextService)
+            .chatTurnService(chatTurnService)
+            .agentService(agentService)
+            .teamService(teamService)
+            .mcpService(mcpService)
+            .skillRootResolver(new SkillRootResolver(""))
+            .chatImageResolver(new ChatImageResolver())
+            .systemPromptBuilder(new BusinessSystemPromptBuilder("",
+                    workspace -> workspace == null ? "" : "wiki=" + workspace.workDir()))
+            .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
+            .build();
 
     @BeforeEach
     void stubCommonPath() {
