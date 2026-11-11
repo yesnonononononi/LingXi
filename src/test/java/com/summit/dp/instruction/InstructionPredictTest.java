@@ -356,6 +356,24 @@ class InstructionPredictTest {
     }
 
     @Test
+    @DisplayName("提示词要求「用户提需求」而不是「用户来问」：禁止要不要/是否需要这类征询句式")
+    void systemPromptDemandsImperativeRequest() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)))
+                .thenReturn(completedTurnMessages("把指令预测接上", "已经接好了"));
+
+        service.next(SESSION_ID, TURN_ID);
+
+        ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
+        verify(chatGateway).chat(any(), systemPrompt.capture(), any());
+        String prompt = systemPrompt.getValue();
+        assertTrue(prompt.contains("预测"), "提示词必须说清自己在做预测");
+        assertTrue(prompt.contains("提需求") || prompt.contains("直接下要求"),
+                "必须要求写成用户直接下达的需求，而不是替 Agent 征求意见");
+        assertTrue(prompt.contains("要不要") && prompt.contains("是否需要"),
+                "必须逐条点名禁止「要不要/是否需要」这类征询句式（模型最容易写成问句）");
+    }
+
+    @Test
     @DisplayName("该轮没有可用的 Agent 终态正文：返回空，不生成")
     void missingFinalAgentTextReturnsNothing() throws Exception {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(

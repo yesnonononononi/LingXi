@@ -57,11 +57,22 @@ public class InstructionServiceImpl implements InstructionService {
     private static final Duration PREDICT_TIMEOUT = Duration.ofSeconds(30);
     /** Agent 正文可能几万字，超出部分对预测没有价值，只取开头。 */
     private static final int MAX_CONTEXT_CHARS = 8_000;
+    /**
+     * 预测的落点必须是「用户向 Agent 提的要求」，不是「用户拿不准的问题」。
+     *
+     * <p>模型很容易写成「要不要给脚本加个提醒？」这种替 Agent 征求意见的句子 —— 那是把用户的话
+     * 写成了提问，Tab 补全之后用户还得自己再改一遍，等于没补。所以这里明确要求祈使式需求，
+     * 并逐条列出禁止的征询句式。</p>
+     */
     private static final String SYSTEM_PROMPT = """
             你负责预测用户下一步会对 Agent 说什么。用户消息是上一轮的提问，Agent 回复是上一轮的回答。
-            结合这两段内容判断对话接下来最可能的走向，写出用户紧接着会提出的下一条指令。
-            只输出指令正文，一句话，保持用户原本的语言和称呼习惯。
-            不要解释理由，不要编号、引号或代码围栏；无法判断时输出空字符串。
+            结合这两段内容判断对话接下来最可能的走向，直接写出用户紧接着要下达的下一条指令。
+
+            写法要求：
+            1. 用用户的口吻直接下要求，像提需求一样动宾开头，例如「给脚本加一个版本升级前先跑 compact 的提醒」。
+            2. 不要征询同意或征求意见：「要不要……」「是否需要……」「可不可以……」「你觉得……」「要不……」这类句式一律不要。
+            3. 不要替 Agent 表态，不要解释理由，不要编号、引号或代码围栏。
+            4. 保持用户原本的语言和称呼习惯，只输出这一句指令正文；无法判断时输出空字符串。
             """;
 
     private final InstructionRepository instructionRepository;
