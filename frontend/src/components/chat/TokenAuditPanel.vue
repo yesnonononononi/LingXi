@@ -300,8 +300,13 @@ watch(
         </div>
       </header>
 
-      <!-- 内容区：浮层内部独立滚动 -->
-      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2.5">
+      <!-- 内容区：浮层内部独立滚动。
+           scrollbar-gutter: stable 恒定预留滚动条槽位：展开任一下拉框会让内容变高、滚动条出现，
+           不预留时内容可用宽度瞬间窄一条滚动条，整块结构横向抖一下（SettingsModal 同一口径）。 -->
+      <div
+        data-testid="token-audit-scroll"
+        class="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2.5 [scrollbar-gutter:stable]"
+      >
         <!-- 刷新失败时保留上一份已展示的快照。 -->
         <div
           v-if="errorMessage"

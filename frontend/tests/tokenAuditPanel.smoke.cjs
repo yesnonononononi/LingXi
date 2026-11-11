@@ -10,6 +10,7 @@
  *   <li>token 单位文案是 `token` 不是 `tok`（`\btok\b` 不会误伤 `token`，用词边界精确判定）。</li>
  *   <li>系统消息的归因明细（记忆正文）是「系统消息」下拉框里的项：默认展开、可折叠、与下方工具框左右对齐、
  *       展开走 collapse-transition 过渡；0 与未知时整块不渲染。</li>
+ *   <li>滚动条出现/消失不得改变内容可用宽度（`scrollbar-gutter: stable`），否则展开下拉时整块结构横向抖一下。</li>
  * </ol>
  *
  * <p>通过流推送和 HTTP 适配器验证同一面板的展示，并守住「只读、不重算」这条边界：
@@ -359,6 +360,33 @@ window.ready = true;`);
   await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
   assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-system-attribution"]')`),
     '恢复完整快照后归因行应重新出现');
+
+  // ④''''' 滚动条不得挤窄内容：展开下拉让内容变高、滚动条出现时，整块不能横向抖一下
+  const widthGap = () => evaluate(`(() => {
+    const box = document.querySelector('[data-testid="token-audit-scroll"]');
+    return box ? box.offsetWidth - box.clientWidth : null;
+  })()`);
+  const isScrolling = () => evaluate(`(() => {
+    const box = document.querySelector('[data-testid="token-audit-scroll"]');
+    return box ? box.scrollHeight > box.clientHeight : null;
+  })()`);
+  const shortSnapshot = {
+    ...SNAPSHOT,
+    tools: null,
+    requestOverhead: null,
+    contextAttribution: null,
+    messages: [{type: 'SYSTEM', tokens: 9953, ratio: 0.039, expandable: false}],
+  };
+  await run(`window.__inject(${JSON.stringify(shortSnapshot)})`);
+  const gapNoScroll = await widthGap();
+  assert(await isScrolling() === false, '短快照用例前提不成立：此时内容不应产生滚动');
+  await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
+  const gapScrolled = await widthGap();
+  assert(await isScrolling() === true, '长快照用例前提不成立：此时内容应产生滚动');
+  assert(gapScrolled > 0,
+    '滚动条在本次环境里不占宽度（实测 ' + gapScrolled + 'px），本条守卫会变成空转，需改用可测量的滚动条形态');
+  assert(gapNoScroll === gapScrolled,
+    '滚动条出现改变了内容可用宽度（缺 scrollbar-gutter:stable），不滚动时 ' + gapNoScroll + 'px / 滚动时 ' + gapScrolled + 'px');
 
   // ⑤ 刷新重算已移除：按钮不存在，且任何交互都不得再打 POST
   assert(await evaluate(`document.querySelector('[data-testid="token-audit-refresh"]') === null`),
