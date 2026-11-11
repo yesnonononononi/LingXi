@@ -80,7 +80,8 @@ const props = defineProps<{
   /**
    * 「下一条指令」建议（后端按终态轮次预测）。
    *
-   * <p>只在输入框为空时展示：用户已经在打字时按自己的思路走，还塞一条建议只会抢注意力。</p>
+   * <p>渲染方式是**占位文本**而不是独立气泡：建议本来就该待在用户要写字的那个位置，
+   * 按 Tab 直接补全。输入框一有内容占位文本自然消失，不需要额外判空。</p>
    */
   prediction?: string;
   /**
@@ -128,8 +129,8 @@ const emit = defineEmits<{
   (e: 'openSettingsTab', tab: string): void;
   /** 采纳「下一条指令」建议（宿主据此清空建议） */
   (e: 'applyPrediction', text: string): void;
-  /** 关掉建议条；本轮不再展示 */
-  (e: 'dismissPrediction'): void;
+  /** 输入框是否已空：宿主据此决定要不要开始预测计时（有草稿就别预测） */
+  (e: 'updateDraftEmpty', empty: boolean): void;
 }>();
 
 defineSlots<{
@@ -151,10 +152,15 @@ const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+/** 有预测且没在听写/plan 模式时，占位文本就是那条建议 + 补全提示。 */
+const predictionHint = computed(() => {
+  const text = (props.prediction ?? '').trim();
+  return text ? `${text} ${t('chat.input.predictionHint')}` : '';
+});
 const inputPlaceholder = computed(() => {
   if (listening.value) return t('chat.input.placeholderListening');
   if (isPlanMode.value) return t('chat.input.placeholderPlan');
-  return t('chat.input.placeholderDefault');
+  return predictionHint.value || t('chat.input.placeholderDefault');
 });
 /**
  * plan 模式的可写视图：读受控 prop，写回 `updateMode` 事件。
@@ -193,6 +199,15 @@ const applyPrediction = () => {
   writeInputText(text);
   focusInput();
 };
+
+/**
+ * 空态上抛：宿主用它当预测闸门之一（输入框有草稿就不该计时）。
+ *
+ * <p>只上报「空/非空」这一个事实，不把整段草稿传出去 —— 草稿是输入框的私有状态。</p>
+ */
+watch(inputText, () => {
+  emit('updateDraftEmpty', inputText.value.trim() === '');
+}, {immediate: true});
 
 const promptOptimization = usePromptOptimization(inputText, () => props.selectedModelId, focusInput, text => {
   // 草稿回填只是文本替换：不解析命令、不切模式、不改写内容，只收起可能挡视线的浮层。
@@ -1163,6 +1178,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
   const isEmpty = !inputText.value;
 
+  // Tab 补全预测指令：占位文本里写的就是这条提示，只在该「空输入框 + 有建议」时生效，
+  // 不抢命令菜单的 Tab（菜单那种情况上面已 return）。
+  if (e.key === 'Tab' && !e.shiftKey && !e.isComposing && isEmpty && predictionHint.value) {
+    e.preventDefault();
+    applyPrediction();
+    return;
+  }
+
   if (e.key === 'Backspace' && isPlanMode.value && isEmpty) {
     e.preventDefault();
     isPlanMode.value = false;
@@ -1658,34 +1681,6 @@ defineExpose({
           @remove="removePastedDocument(index)"
           @expand="expandDocumentToInput(doc)"
         />
-      </div>
-
-      <!-- 指令预测建议：点一下即填入输入框，输入框已有内容时不展示（见 props 注释） -->
-      <div
-        v-if="prediction && !inputText.trim()"
-        class="flex items-start gap-1.5 w-full min-w-0"
-        data-testid="prediction-suggestion"
-      >
-        <button
-          type="button"
-          class="group inline-flex items-start gap-1.5 max-w-full text-left text-xs leading-[18px] px-2 py-1 rounded-lg transition cursor-pointer [color:color-mix(in_srgb,var(--pb-ink)_78%,transparent)] [background:color-mix(in_srgb,var(--pb-ink)_7%,transparent)] hover:[background:color-mix(in_srgb,var(--pb-ink)_12%,transparent)]"
-          :title="prediction"
-          @mousedown.prevent
-          @click="applyPrediction"
-        >
-          <HugeiconsIcon :icon="SparklesIcon as IconArray" :size="13" :stroke-width="2" class="mt-[2px] shrink-0 opacity-70" />
-          <span class="min-w-0 line-clamp-2">{{ prediction }}</span>
-        </button>
-        <button
-          type="button"
-          class="shrink-0 mt-[3px] w-4 h-4 inline-flex items-center justify-center rounded-full transition cursor-pointer opacity-55 hover:opacity-100"
-          :aria-label="t('chat.input.dismissPrediction')"
-          :title="t('chat.input.dismissPrediction')"
-          @mousedown.prevent
-          @click="$emit('dismissPrediction')"
-        >
-          <HugeiconsIcon :icon="Cancel01Icon as IconArray" :size="12" :stroke-width="2" />
-        </button>
       </div>
 
       <!-- 文本输入区 -->

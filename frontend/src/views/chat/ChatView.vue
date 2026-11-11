@@ -395,7 +395,7 @@
               @updateAgent="handleUpdateAgent"
               @updateMode="handleUpdateMode"
               @applyPrediction="clearInstructionPrediction"
-              @dismissPrediction="clearInstructionPrediction"
+              @updateDraftEmpty="draftEmpty = $event"
               @openModelEditor="handleOpenModelEditor"
               @openTeamModal="handleOpenTeamModal"
               @selectWorkspace="handleSelectWorkspace"
@@ -861,6 +861,9 @@ const lastTurnTerminal = computed<boolean>(() => {
   return turn != null && isTerminalTurnStatus(String(turn.status));
 });
 
+/** 输入框是否为空的镜像：预测闸门之一（有草稿就不该计时）。由 ChatInputArea 上抛。 */
+const draftEmpty = ref(true);
+
 const { suggestion: instructionPrediction, clear: clearInstructionPrediction } = useInstructionPredict({
   sessionId: computed(() => localActiveId.value),
   rootSessionId: computed(() => currentActiveSession.value?.rootSessionId ?? null),
@@ -868,6 +871,7 @@ const { suggestion: instructionPrediction, clear: clearInstructionPrediction } =
   turnTerminal: lastTurnTerminal,
   // 后端以「预测模型为空」表示功能关闭：前端据此免发必然返回空的请求。
   enabled: computed(() => userConfig.predicateModelId != null),
+  inputEmpty: computed(() => draftEmpty.value),
 });
 
 const handleSidebarSessionSelect = (id: string): void => {
