@@ -7,6 +7,7 @@ import com.summit.dp.session.application.port.SessionImageCache;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionDataPurger;
+import com.summit.dp.session.application.service.SessionNodeDeletion;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
@@ -17,9 +18,16 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Method;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
@@ -70,13 +78,12 @@ class SessionDeleteCascadeTest {
                 images);
     }
 
-    /** 顺序是契约：先解析树、再问执行、然后删行、最后清附属数据。 */
+    /** 顺序是契约：先解析树、再问执行、然后逐会话删行、再清附属数据。 */
     @Test
     void guardRunsBeforeAnyDeletion() {
         SessionRepository sessions = mock(SessionRepository.class);
         SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
-        SessionAggregateService aggregate = new SessionAggregateService(sessions, messages, turns, guard, purger,
-                mock(ApplicationEventPublisher.class));
+        SessionAggregateService aggregate = aggregate(sessions, guard);
         when(sessions.resolveTreeIds(7L)).thenReturn(TREE);
 
         aggregate.deleteById(7L);
@@ -84,24 +91,70 @@ class SessionDeleteCascadeTest {
         InOrder order = inOrder(sessions, guard, messages);
         order.verify(sessions).resolveTreeIds(7L);
         order.verify(guard).requireNoRunningExecution(TREE);
-        order.verify(sessions).delSessionTreeByRootSId(7L);
-        order.verify(messages).batchDelBySessionIds(TREE);
+        order.verify(sessions).deleteByIds(List.of(12L));
+        order.verify(messages).batchDelBySessionIds(List.of(12L));
+    }
+
+    /**
+     * 一个会话一个短事务：整棵树不再打包成一个大事务。
+     *
+     * <p>子会话（后建、id 更大）先删，根会话最后删 —— 根行一消失，列表里就看不到这棵树，
+     * 剩下的子会话也不会在删除中途被人打开。</p>
+     */
+    @Test
+    void deletesEachSessionInItsOwnNodeLeafFirst() {
+        SessionRepository sessions = mock(SessionRepository.class);
+        SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
+        SessionAggregateService aggregate = aggregate(sessions, guard);
+        when(sessions.resolveTreeIds(7L)).thenReturn(TREE);
+
+        aggregate.deleteById(7L);
+
+        InOrder order = inOrder(sessions, executions);
+        order.verify(sessions).deleteByIds(List.of(12L));
+        order.verify(executions).deleteBySessions(List.of(12L));
+        order.verify(sessions).deleteByIds(List.of(11L));
+        order.verify(executions).deleteBySessions(List.of(11L));
+        verify(sessions, never()).deleteByIds(TREE);
+    }
+
+    /** 反向守护：入口方法自己不能带事务，否则又会退化成「整棵树一个大事务」。 */
+    @Test
+    void entryPointCarriesNoTransactionOfItsOwn() throws NoSuchMethodException {
+        Method entry = SessionAggregateService.class.getMethod("deleteById", Long.class);
+
+        assertNull(AnnotatedElementUtils.findMergedAnnotation(entry, Transactional.class),
+                "deleteById 不能自带事务：事务边界必须落在单个会话上");
+    }
+
+    /** 反向守护：单会话删除必须是独立新事务，否则仍会被外层事务拉成一个长事务。 */
+    @Test
+    void singleNodeDeletionRunsInItsOwnTransaction() throws NoSuchMethodException {
+        Transactional tx = SessionNodeDeletion.class.getMethod("deleteNode", Long.class)
+                .getAnnotation(Transactional.class);
+
+        assertNotNull(tx, "deleteNode 必须声明事务，且是 REQUIRES_NEW");
+        assertEquals(Propagation.REQUIRES_NEW, tx.propagation());
     }
 
     @Test
     void rejectedDeletionLeavesEverythingInPlace() {
         SessionRepository sessions = mock(SessionRepository.class);
         SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
-        SessionAggregateService aggregate = new SessionAggregateService(sessions, messages, turns, guard, purger,
-                mock(ApplicationEventPublisher.class));
+        SessionAggregateService aggregate = aggregate(sessions, guard);
         when(sessions.resolveTreeIds(7L)).thenReturn(TREE);
         doThrow(new ClientException("会话仍在执行中，请先停止后再删除"))
                 .when(guard).requireNoRunningExecution(TREE);
 
         assertThrows(ClientException.class, () -> aggregate.deleteById(7L));
 
-        verify(sessions, never()).delSessionTreeByRootSId(anyLong());
+        verify(sessions, never()).deleteByIds(anyList());
         verify(messages, never()).batchDelBySessionIds(anyList());
         verifyNoInteractions(images, executions, contexts);
+    }
+
+    private SessionAggregateService aggregate(SessionRepository sessions, SessionDeletionGuard guard) {
+        return new SessionAggregateService(sessions, messages, turns, guard,
+                new SessionNodeDeletion(sessions, purger), mock(ApplicationEventPublisher.class));
     }
 }

@@ -117,7 +117,7 @@ class ApplicationSessionStateTest {
     void deletedSessionDoesNotPreventExecutionFromFinishing() {
         save(101L, 11L, ExecutionStatusCodes.CREATED);
         int delivered = stream.frames.size();
-        sessions.delSessionTreeByRootSId(11L);
+        sessions.deleteByIds(List.of(11L));
 
         save(101L, null, ExecutionStatusCodes.COMPLETED);
 

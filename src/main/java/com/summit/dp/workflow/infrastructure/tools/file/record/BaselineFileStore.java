@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -93,6 +94,13 @@ public class BaselineFileStore {
             Files.deleteIfExists(directory);
         } catch (IOException e) {
             log.warn("删除文件编辑基线目录失败: executionId={}, reason={}", executionId, e.getMessage());
+        }
+    }
+
+    /** 批量回收多个执行的基线目录；目录不存在算成功（清理必须幂等）。 */
+    public void deleteExecutions(Collection<String> executionIds) {
+        for (String executionId : executionIds) {
+            deleteExecution(executionId);
         }
     }
 

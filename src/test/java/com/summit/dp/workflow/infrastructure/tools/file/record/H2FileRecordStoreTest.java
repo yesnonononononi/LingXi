@@ -378,6 +378,44 @@ class H2FileRecordStoreTest {
         assertEquals(0, store.countBefore(Instant.now().minus(30, ChronoUnit.DAYS)));
     }
 
+    /**
+     * 会话删除按执行批量回收：行与基线目录一起走，且不碰别的执行。
+     *
+     * <p>{@code file_record} 只有 {@code execution_id}、没有会话列，会话行一删这些记录就再也
+     * 展示不出来、也重放不了；基线文件却是一份份真实的大文本，只靠时间淘汰要等很久。</p>
+     */
+    @Test
+    void deleteByExecutionIdsRemovesRowsAndBaselineDirectories() {
+        FileRecord kept = store.put(draft("demo.txt", "v1\n", "+v2", null));
+        store.put(FileRecord.builder()
+                .executionId((Serializable) "9002").turnId((Serializable) TURN)
+                .filePath("doomed.txt").baseline("d1\n").diff("+d2")
+                .plusLines(1).minusLines(0).createAt(Instant.now()).build());
+        Path doomedBaseline = Path.of(database.queryString(
+                "SELECT baseline_path FROM file_record WHERE execution_id = '9002'"));
+
+        int deleted = store.deleteByExecutionIds(List.of("9002"));
+
+        assertEquals(1, deleted);
+        assertTrue(store.listByExecution("9002").isEmpty());
+        assertFalse(Files.exists(doomedBaseline), "基线文件必须回收");
+        assertFalse(Files.exists(doomedBaseline.getParent()), "整个执行目录一并回收");
+        assertEquals(1, store.listByExecution(EXECUTION).size(), "不能误删别的执行");
+        assertTrue(Files.exists(Path.of(database.queryString(
+                "SELECT baseline_path FROM file_record WHERE id = '" + kept.id() + "'"))));
+    }
+
+    /** 清理必须幂等：空入参与「本来就没有记录的执行」都不能报错。 */
+    @Test
+    void deleteByExecutionIdsIsIdempotent() {
+        assertEquals(0, store.deleteByExecutionIds(List.of()));
+        assertEquals(0, store.deleteByExecutionIds(List.of("nobody")));
+
+        store.put(draft("demo.txt", "v1\n", "+v2", null));
+        assertEquals(1, store.deleteByExecutionIds(List.of(EXECUTION)));
+        assertEquals(0, store.deleteByExecutionIds(List.of(EXECUTION)), "重复回收不能再删任何行");
+    }
+
     private FileRecord draft(String path, String baseline, String diff, Instant createAt) {
         return draft(path, baseline, diff, createAt, TURN);
     }

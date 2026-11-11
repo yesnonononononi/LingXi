@@ -43,14 +43,14 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
      */
     Optional<Session> findByRootAndAgent(Long rootSessionId, Long agentId);
 
-    /** 删除 {@code id} 所属的整棵会话树（自动把子会话 id 解析成根会话），返回被删的会话 id。 */
-    List<Long> delSessionTreeByRootSId(Long id);
+    /** 按主键删掉这批会话行。 */
+    int deleteByIds(Collection<Long> ids);
 
     /**
      * 解析出 {@code id} 所属整棵会话树的会话 id（**只读，不删**）。
      *
      * <p>删除前必须先知道要删哪些会话：执行闸门、级联清理都按这批 id 走。
-     * 与 {@link #delSessionTreeByRootSId(Long)} 共用同一套根解析规则，避免「查的是这棵树、删的是另一棵」。</p>
+     * 根解析只有这一处，避免「查的是这棵树、删的是另一棵」。</p>
      *
      * @param id 根会话或子会话 id
      * @return 整棵树的会话 id（含根），按主键升序

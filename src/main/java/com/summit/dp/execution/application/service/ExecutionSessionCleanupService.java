@@ -1,6 +1,7 @@
 package com.summit.dp.execution.application.service;
 
 import com.summit.dp.execution.application.port.ExecutionCheckpointMaintenance;
+import com.summit.dp.execution.application.port.FileRecordMaintenance;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +14,7 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * 会话删除时的执行侧级联清理：删行在事务内，删检查点目录在提交后。
+ * 会话删除时的执行侧级联清理：删行在事务内，删检查点与基线目录在提交后。
  *
  * <p><b>顺序不能反</b>：库是唯一权威。先删目录再删行，一旦事务回滚就留下「有行、没正文」的执行，
  * 恢复与重发会直接读空。现在最坏的情况是「行已删、目录还在」，那只是垃圾，由孤儿清扫带走。</p>
@@ -29,9 +30,11 @@ public class ExecutionSessionCleanupService {
     private final ExecutionRepository executions;
     private final ExecutionResumeTaskRepository resumeTasks;
     private final ExecutionCheckpointMaintenance checkpoints;
+    /** 文件编辑记录按执行归属：会话没了它们既不可展示也不可重放，基线文件必须一起走。 */
+    private final FileRecordMaintenance fileRecords;
 
     /**
-     * 回收这批会话名下的执行行、恢复请求与检查点目录。
+     * 回收这批会话名下的执行行、恢复请求、检查点目录与文件编辑记录。
      *
      * @param sessionIds 会话 id 集合；空入参直接返回
      * @return 被清理的执行 id（按 id 升序）
@@ -44,9 +47,12 @@ public class ExecutionSessionCleanupService {
         // 恢复请求只认执行 id，必须在执行行删掉之前取出来。
         int purgedTasks = resumeTasks.deleteByExecutionIds(executionIds);
         int deletedRows = executions.deleteBySessionIds(sessionIds);
+        // 记录行跟着事务走；基线目录由实现挂在提交后，与检查点目录同理。
+        int purgedRecords = fileRecords.deleteByExecutionIds(executionIds.stream().map(String::valueOf).toList());
         scheduleDirectoryCleanup(executionIds);
         log.info("清理会话执行数据: sessionCount={}, executionCount={}, deletedExecutions={},"
-                        + " deletedResumeTasks={}", sessionIds.size(), executionIds.size(), deletedRows, purgedTasks);
+                        + " deletedResumeTasks={}, deletedFileRecords={}",
+                sessionIds.size(), executionIds.size(), deletedRows, purgedTasks, purgedRecords);
         return executionIds;
     }
 

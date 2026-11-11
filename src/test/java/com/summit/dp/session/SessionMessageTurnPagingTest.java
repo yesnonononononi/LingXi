@@ -3,7 +3,7 @@ package com.summit.dp.session;
 import com.summit.dp.session.application.port.SessionDeletionGuard;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionAggregateService;
-import com.summit.dp.session.application.service.SessionDataPurger;
+import com.summit.dp.session.application.service.SessionNodeDeletion;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
@@ -44,7 +44,7 @@ class SessionMessageTurnPagingTest {
 
     private final SessionAggregateService service = new SessionAggregateService(
             sessionRepository, messageRepository, chatTurnRepository,
-            mock(SessionDeletionGuard.class), mock(SessionDataPurger.class),
+            mock(SessionDeletionGuard.class), mock(SessionNodeDeletion.class),
             mock(ApplicationEventPublisher.class));
 
     private static ChatTurn turn(long id) {

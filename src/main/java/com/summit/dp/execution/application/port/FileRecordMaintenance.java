@@ -1,6 +1,7 @@
 package com.summit.dp.execution.application.port;
 
 import java.time.Instant;
+import java.util.Collection;
 
 /**
  * 文件编辑记录的回收口：清理入口据此按时间淘汰旧记录（含落盘的基线大文本）。
@@ -29,4 +30,20 @@ public interface FileRecordMaintenance {
      * @return 实际删除的记录条数（0 表示没有可回收内容，重复调用幂等）
      */
     int purgeBefore(Instant cutoff);
+
+    /**
+     * 按执行批量回收：行在调用方事务内删掉，基线目录在事务提交后才删。
+     *
+     * <p><b>为什么会话删除必须走到这里</b>：{@code file_record} 只按 {@code execution_id} 归属，
+     * 没有会话列。会话行一删，这些记录既不可展示也不可重放，但基线文件仍占着磁盘；
+     * 只靠按时间淘汰的话，它们要等到 {@code cutoff} 之后才走，长会话删完还剩一坨垃圾。
+     * 按批一次删行，是为了避免「逐执行调一次单条删除」把删除动作变成 N 次往返。</p>
+     *
+     * <p><b>顺序不能反</b>：先删行、提交后再删目录。反过来一旦事务回滚，
+     * 就留下「有行、没基线」的记录，重放会把它当成「整份文件新增」。</p>
+     *
+     * @param executionIds 执行标识（数字串）；空入参直接返回 {@code 0}
+     * @return 删除的记录条数
+     */
+    int deleteByExecutionIds(Collection<String> executionIds);
 }

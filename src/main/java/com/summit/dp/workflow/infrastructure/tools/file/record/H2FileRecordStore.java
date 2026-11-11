@@ -8,12 +8,15 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -29,6 +32,9 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Component
 public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance {
+
+    /** 单批 IN 的执行数：长会话的执行可能上千，分批避免超长 SQL。 */
+    private static final int EXECUTION_DELETE_BATCH = 500;
 
     private final FileRecordMapper mapper;
     private final BaselineFileStore baselines;
@@ -90,6 +96,50 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         this.mapper.delete(new LambdaQueryWrapper<FileRecordPO>().eq(FileRecordPO::getExecutionId, key));
         // 基线只可能落在这个执行的目录下，整棵删掉即可；逐文件再删一遍是冗余步骤。
         this.baselines.deleteExecution(key);
+    }
+
+    /**
+     * 按执行批量回收记录，并在提交后删掉各自的基线目录。
+     *
+     * <p>只按 {@code execution_id} 删，不逐条比对 {@code baseline_path}：基线只会落在
+     * {@code file-records/<executionId>/} 下，整目录删掉比逐文件删更省事，也顺带带走
+     * 上次删除失败留下的孤儿基线文件。</p>
+     */
+    @Override
+    public int deleteByExecutionIds(Collection<String> executionIds) {
+        List<String> keys = executionIds == null ? List.of()
+                : executionIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (keys.isEmpty()) {
+            return 0;
+        }
+        int deleted = 0;
+        for (int start = 0; start < keys.size(); start += EXECUTION_DELETE_BATCH) {
+            List<String> batch = keys.subList(start, Math.min(start + EXECUTION_DELETE_BATCH, keys.size()));
+            deleted += this.mapper.delete(new LambdaQueryWrapper<FileRecordPO>()
+                    .in(FileRecordPO::getExecutionId, batch));
+        }
+        scheduleBaselineCleanup(keys);
+        log.info("回收执行的文件编辑记录: executionCount={}, deletedRecords={}", keys.size(), deleted);
+        return deleted;
+    }
+
+    /**
+     * 基线目录在提交后删：行已删，目录里的文件全部失去引用，不必逐文件比对。
+     *
+     * <p>没有活动事务（直连调用、用例）时行已落库，直接同步删。</p>
+     */
+    private void scheduleBaselineCleanup(List<String> executionIds) {
+        Runnable cleanup = () -> this.baselines.deleteExecutions(executionIds);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cleanup.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cleanup.run();
+            }
+        });
     }
 
     @Override

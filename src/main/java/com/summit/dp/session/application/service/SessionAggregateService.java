@@ -34,8 +34,8 @@ public class SessionAggregateService {
     private final ChatTurnRepository chatTurnRepository;
     /** 删除前的执行闸门：还有线程在跑的会话一律拒绝。 */
     private final SessionDeletionGuard deletionGuard;
-    /** 会话附属数据（消息、轮次、任务、清单、审计、卡片、执行、上下文、图片）的清理归它。 */
-    private final SessionDataPurger dataPurger;
+    /** 一个会话一个短事务地删：树多大都不会构成一个大事务。 */
+    private final SessionNodeDeletion nodeDeletion;
     private final ApplicationEventPublisher events;
 
 
@@ -93,14 +93,17 @@ public class SessionAggregateService {
      * <ol>
      *   <li>先解析树：后面每一步都要按这批 id 干活，删完再查就没有了；</li>
      *   <li>再问执行：仍有线程在跑的会话一律拒绝，否则线程收尾时会写出指向已删会话的孤儿行；</li>
-     *   <li>删会话行 → 删消息、轮次、工具卡片、任务、清单、审计、执行与恢复请求；</li>
+     *   <li>逐个会话删（子会话先、根最后），每个会话一个独立短事务；</li>
      *   <li>最后发事件：待放行的排队请求见到会话已消失即作废。</li>
      * </ol>
      *
-     * <p>文件（检查点目录、上下文正文、图片目录）一律由各自的模块在<b>提交之后</b>删：
+     * <p><b>为什么整棵树不打包成一个事务</b>：那样事务长度随会话规模线性增长 —— 持锁时间同样
+     * 线性增长，删除期间库基本不可用。拆成「一个会话一个短事务」后，单次锁窗口只覆盖一个会话；
+     * 中途失败也天然可重入，重跑会从库里仍存在的会话继续。</p>
+     *
+     * <p>文件（检查点目录、上下文正文、图片目录、编辑基线目录）一律由各自的模块在<b>提交之后</b>删：
      * 库是唯一权威，文件删不掉只是垃圾，由孤儿清扫带走。</p>
      */
-    @Transactional
     public boolean deleteById(Long id) {
         List<Long> ids = sessionRepository.resolveTreeIds(id);
         if (ids.isEmpty()) {
@@ -108,12 +111,24 @@ public class SessionAggregateService {
         }
         // 先问执行再动手：仍在跑的会话一律拒绝，否则线程收尾会写出指向已删会话的孤儿行。
         deletionGuard.requireNoRunningExecution(ids);
-        sessionRepository.delSessionTreeByRootSId(id);
-        // 附属数据（消息、轮次、任务、清单、审计、卡片、执行、上下文、图片）交给专职清理类。
-        dataPurger.purge(ids);
+        deleteNodesLeafFirst(ids);
         events.publishEvent(new SessionTreeDeleted(ids));
         log.info("删除会话树: rootSessionId={}, sessionCount={}", id, ids.size());
         return true;
+    }
+
+    /**
+     * 逆 id 序逐个删：子会话后建、id 更大，先走；根会话最后走。
+     *
+     * <p>根行留到最后的意义：根行一消失，会话列表里就看不到这棵树，剩下的子会话也不会在
+     * 删除中途以「半棵树」的形态被人打开。</p>
+     */
+    private void deleteNodesLeafFirst(List<Long> ids) {
+        List<Long> ordered = new ArrayList<>(ids);
+        ordered.sort(Comparator.reverseOrder());
+        for (Long sessionId : ordered) {
+            nodeDeletion.deleteNode(sessionId);
+        }
     }
 
     /**

@@ -166,15 +166,18 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
                 .stream().map(SessionPO::getId).toList();
     }
 
+    /**
+     * 按主键删掉这批会话行。
+     *
+     * <p>只做最原始的按 id 删：会话树的删除按「一个会话一个短事务」推进，
+     * 这里再包一层「解析整棵树」会把事务边界藏起来，调用方反而看不清一次事务删了几行。</p>
+     */
     @Override
-    public List<Long> delSessionTreeByRootSId(Long id) {
-        // 根解析只有一处：删的和查的必须是同一棵树。
-        List<Long> list = resolveTreeIds(id);
-        if (list.isEmpty()) {
-            return list;
+    public int deleteByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
         }
-        sessionMapper.deleteByIds(list);
-        return list;
+        return sessionMapper.deleteByIds(ids);
     }
 
     @Override

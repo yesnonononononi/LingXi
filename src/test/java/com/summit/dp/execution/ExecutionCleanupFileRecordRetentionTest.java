@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -96,6 +97,11 @@ class ExecutionCleanupFileRecordRetentionTest {
         public int purgeBefore(Instant cutoff) {
             this.cutoffSeen.set(cutoff);
             return (int) this.expired;
+        }
+
+        @Override
+        public int deleteByExecutionIds(Collection<String> executionIds) {
+            return 0;
         }
     }
 }
