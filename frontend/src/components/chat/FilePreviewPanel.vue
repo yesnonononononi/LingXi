@@ -406,9 +406,8 @@ button:disabled { opacity: .4; cursor: default; }
   text-align: center;
   user-select: none;
   font-weight: 600;
+  color: var(--file-muted);
 }
-.diff-line.is-add .diff-sigil { color: #16a34a; }
-.diff-line.is-del .diff-sigil { color: #dc2626; }
 .diff-text { flex: 1 1 auto; padding-right: 16px; min-width: 0; }
 
 /* 语法高亮（浅色） */

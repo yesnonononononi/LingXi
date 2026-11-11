@@ -74,8 +74,8 @@
   --lx-code-bg:               #08080a;
   --lx-code-text:             #e4e4e7;
   --lx-inline-code-bg:        rgba(255, 255, 255, 0.08);
-  --lx-diff-add-bg:           rgba(34, 197, 94, 0.12);
-  --lx-diff-del-bg:           rgba(239, 68, 68, 0.12);
+  --lx-diff-add-bg:           rgba(34, 197, 94, 0.20);
+  --lx-diff-del-bg:           rgba(239, 68, 68, 0.20);
 
   /* 形态 / 效果（用户不可覆盖：改圆角/阴影容易把界面撑坏，产品价值低） */
   --lx-radius-sm:             8px;
@@ -160,8 +160,8 @@ html[data-theme="light"] {
   --lx-code-bg:               #f4f4f5;
   --lx-code-text:             #27272a;
   --lx-inline-code-bg:        rgba(0, 0, 0, 0.06);
-  --lx-diff-add-bg:           rgba(22, 163, 74, 0.10);
-  --lx-diff-del-bg:           rgba(220, 38, 38, 0.10);
+  --lx-diff-add-bg:           rgba(34, 197, 94, 0.22);
+  --lx-diff-del-bg:           rgba(239, 68, 68, 0.16);
 
   --lx-shadow-1:              0 1px 2px rgba(16, 24, 40, 0.06);
   --lx-shadow-2:              0 8px 24px -8px rgba(16, 24, 40, 0.14);

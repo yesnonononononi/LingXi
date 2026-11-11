@@ -242,7 +242,7 @@ const copyResult = (): void => {
                     v-for="(line, index) in diffLines"
                     :key="index"
                     class="flex items-start"
-                    :class="line.kind === 'add' ? 'bg-emerald-500/10' : 'bg-red-500/10'"
+                    :class="line.kind === 'add' ? 'bg-lx-diff-add-bg' : 'bg-lx-diff-del-bg'"
                   >
                     <span class="w-12 shrink-0 select-none pr-2 text-right opacity-45">{{ line.lineNumber ?? '' }}</span>
                     <span class="w-4 shrink-0 select-none opacity-55">{{ line.kind === 'add' ? '+' : '-' }}</span>
