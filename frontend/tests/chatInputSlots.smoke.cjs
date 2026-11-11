@@ -132,11 +132,13 @@ ${productionIdentityBlock}
 window.__probeState = { sendCalls: 0 };
 const ProbeContextUsage = {
   name: 'ProbeContextUsage',
-  props: ['isDark', 'contextUsageText', 'contextRingDash', 'tooltipVisible'],
+  props: ['isDark', 'contextUsageText', 'contextUsageTip', 'hasUsage', 'contextRingDash', 'tooltipVisible'],
   setup(props) {
     return () => h('div', {
       'data-slot-probe': 'contextUsage',
       'data-probe-text': props.contextUsageText,
+      'data-probe-tip': props.contextUsageTip,
+      'data-probe-has-usage': String(!!props.hasUsage),
       'data-probe-dash': props.contextRingDash,
       'data-probe-tooltip': String(!!props.tooltipVisible)
     }, 'probe-context');
@@ -191,6 +193,13 @@ const PRESETS = {
     models: MODELS,
     selectedModelId: 'm1',
     contextUsage: { usedTokens: 24600, maxTokens: 200000 }
+  },
+  // 未采集用量：框架按 usageReportInterval（默认 5 个模型轮次）节流汇报，
+  // 会话头几轮就是这个状态。环必须常驻，只有底轨。
+  noUsage: {
+    isDark: false,
+    models: MODELS,
+    selectedModelId: 'm1'
   },
   driven: {
     isDark: false,
@@ -429,6 +438,8 @@ app.whenReady().then(async () => {
       assert.equal(counts.defaults.sendButton, 0, `注册探针后默认发送按钮仍在（双渲染）：${counts.defaults.sendButton}`);
       const contextProbe = await evaluate('window.__probeAttrs("contextUsage")');
       assert.match(contextProbe.attrs['data-probe-text'], /24\.6K/, `探针未拿到格式化用量文本：${JSON.stringify(contextProbe)}`);
+      assert.match(contextProbe.attrs['data-probe-tip'], /24\.6K/, `探针未拿到浮层文案：${JSON.stringify(contextProbe)}`);
+      assert.equal(contextProbe.attrs['data-probe-has-usage'], 'true', `有数据时 hasUsage 应为 true：${JSON.stringify(contextProbe)}`);
       assert.match(contextProbe.attrs['data-probe-dash'], /^[\d.]+ [\d.]+$/, '探针未拿到环形进度值');
       const modelProbe = await evaluate('window.__probeAttrs("modelSelector")');
       assert.equal(modelProbe.attrs['data-probe-models'], '2', `探针未拿到模型列表：${JSON.stringify(modelProbe)}`);
@@ -556,6 +567,36 @@ app.whenReady().then(async () => {
       await wait(320);
       tooltip = await evaluate('window.__tooltip()');
       assert.equal(tooltip.found, false, `容器 mouseleave 后浮层未消失：${JSON.stringify(tooltip)}`);
+    });
+
+    // 用例 8：环常驻（框架按 usageReportInterval 节流汇报，头几轮没有用量事件）
+    await runCase('用例8 未采集用量时环常驻（空底轨 + 占位浮层），不被卸载', async () => {
+      const circumference = 2 * Math.PI * 6;
+      await evaluate('window.__render("default", "noUsage")');
+      const counts = await evaluate('window.__slotCounts()');
+      assert.equal(counts.defaults.contextUsage, 1, '未采集用量时上下文环被卸载（图标凭空消失）');
+      const dash = await evaluate('window.__ringDash()');
+      assert.equal(dash, `0 ${circumference}`, `未采集时应画空进度，实际 ${JSON.stringify(dash)}`);
+
+      const container = await evaluate('window.__contextContainer()');
+      assert.equal(container.found, true, '未采集时触发区容器消失（悬停无法解释现状）');
+      assert.ok(Math.abs(container.height - 28) <= 1, `未采集时容器高度应为 28px，实际 ${container.height}`);
+
+      await evaluate('window.__hoverContainer("mouseenter")');
+      await wait(280);
+      const tooltip = await evaluate('window.__tooltip()');
+      assert.equal(tooltip.found, true, '未采集时悬停应给出占位说明');
+      assert.match(tooltip.text, /待采集/, `占位浮层文案不对，实际 ${JSON.stringify(tooltip.text)}`);
+      await evaluate('window.__hoverContainer("mouseleave")');
+      await wait(320);
+
+      // 插槽消费者同样要能区分「未采集」：文本为空但 tip 有兜底、hasUsage 为 false
+      await evaluate('window.__render("probes", "noUsage")');
+      const probe = await evaluate('window.__probeAttrs("contextUsage")');
+      assert.equal(probe.attrs['data-probe-text'], '', `未采集时数据文本应为空串，实际 ${JSON.stringify(probe)}`);
+      assert.equal(probe.attrs['data-probe-has-usage'], 'false', `未采集时 hasUsage 应为 false：${JSON.stringify(probe)}`);
+      assert.match(probe.attrs['data-probe-tip'], /待采集/, `未采集时探针应拿到占位文案：${JSON.stringify(probe)}`);
+      assert.equal(probe.attrs['data-probe-dash'], `0 ${circumference}`, '未采集时环形进度应为空');
     });
 
     await fs.writeFile(path.join(logDir, 'smoke-result.json'),

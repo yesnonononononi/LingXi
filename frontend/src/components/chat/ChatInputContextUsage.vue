@@ -2,8 +2,9 @@
 /**
  * 上下文用量指示器默认实现（原 `ChatInputArea.vue` 1548–1572 的 `<svg>` + `<Transition>` 浮层，逐字搬家）。
  *
- * <p>外层容器（`relative inline-flex h-7 …`、`v-if="contextUsageText"`、`MUTED` 配色）仍归
- * `ChatInputArea` 所有 —— 插槽只替换容器内部，消费者改不掉「什么时候出现」。
+ * <p>外层容器（`relative inline-flex h-7 …`、`MUTED` 配色）仍归 `ChatInputArea` 所有 —— 插槽只替换
+ * 容器内部，消费者改不掉「什么时候出现」。容器现在**常驻**：框架按 `usageReportInterval` 节流汇报用量，
+ * 未采集时这里只画空底轨（`hasUsage === false`），浮层显示 `contextUsageTip` 的占位文案。
  * 浮层用 `absolute bottom-full` 定位，其包含块是外层那个带 `relative` 的容器，因此这里
  * **不能**再加 `relative` 包装，否则浮层会改成相对本组件定位。</p>
  *
@@ -36,10 +37,11 @@ const props = defineProps<ChatInputContextUsageSlotProps & { tooltipId?: string;
       cx="8" cy="8" r="6" fill="none" stroke-width="2.3"
       class="stroke-zinc-200 dark:stroke-zinc-700/60"
     />
-    <!-- 已占用进度：浅色模式为黑色，深色模式为白色 -->
+    <!-- 已占用进度：浅色模式为黑色，深色模式为白色；未采集时 dash 为 0，只留底轨 -->
     <circle
       cx="8" cy="8" r="6" fill="none" stroke-width="2.3" stroke-linecap="round"
       class="stroke-zinc-900 dark:stroke-zinc-100 transition-[stroke-dasharray] duration-500"
+      :class="props.hasUsage ? '' : 'opacity-40'"
       :stroke-dasharray="props.contextRingDash"
     />
   </svg>
@@ -60,7 +62,7 @@ const props = defineProps<ChatInputContextUsageSlotProps & { tooltipId?: string;
       :class="props.tooltipStyle ? 'fixed -translate-x-1/2' : 'absolute bottom-full left-1/2 -translate-x-1/2 mb-2'"
       class="pointer-events-none whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-xl z-50 [background:var(--pb-menu)] border-white/[0.08] backdrop-blur-md [color:var(--pb-ink)] text-xs"
     >
-      {{ props.contextUsageText }}
+      {{ props.contextUsageTip }}
     </div>
   </Transition>
   </Teleport>

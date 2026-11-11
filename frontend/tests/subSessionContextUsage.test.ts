@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveContextRingDash, resolveContextUsageText} from '../src/views/chat/contextUsagePresentation';
+import {resolveContextRingDash, resolveContextUsageText, resolveContextUsageTip} from '../src/views/chat/contextUsagePresentation';
 import {setPreference} from '../src/i18n';
 
 setPreference('zh-CN');
@@ -13,6 +13,16 @@ test('沿用输入区的百分比、K 单位和上下文文案', () => {
 test('未采集时隐藏，缺少窗口上限时不编造分母和比例', () => {
   for (const usage of [undefined, null, {}, { usedTokens: 0 }]) assert.equal(resolveContextUsageText(usage), '');
   assert.equal(resolveContextUsageText({ usedTokens: 1200 }), '1.2K 上下文已使用');
+});
+
+test('浮层文案永不为空：未采集给占位，已采集沿用同一口径', () => {
+  for (const usage of [undefined, null, {}, { usedTokens: 0 }]) {
+    const tip = resolveContextUsageTip(usage);
+    assert.notEqual(tip, '');
+    assert.match(tip, /待采集/);
+  }
+  assert.equal(resolveContextUsageTip({ usedTokens: 800, maxTokens: 1000 }), '80.0% · 800 / 1.0K 上下文已使用');
+  assert.match(resolveContextUsageTip({ usedTokens: 1000, maxTokens: 2000, phase: 'SQUEEZE_STARTED', band: 'SUMMARY' }), /压缩/);
 });
 
 test('深度压缩显示压缩中，本地剪枝不闪烁压缩标签', () => {

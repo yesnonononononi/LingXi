@@ -22,6 +22,9 @@ const usage = computed(() => {
   };
 });
 const text = computed(() => resolveContextUsageText(usage.value));
+// 子会话行只在采集到用量时才渲染该图标（行内空间宝贵，空环会污染侧栏列表），
+// 因此这里的 hasUsage 恒为 true；浮层文案直接用数据文本。
+const hasUsage = computed(() => text.value !== '');
 const ringDash = computed(() => resolveContextRingDash(usage.value));
 
 const positionTooltip = async () => {
@@ -80,7 +83,8 @@ onBeforeUnmount(closeTooltip);
     class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded cursor-help text-lx-muted focus-visible:outline focus-visible:outline-1 [&>svg]:translate-y-0"
     :aria-label="text" :aria-describedby="tooltipVisible ? tooltipId : undefined"
     @mouseenter="openTooltip" @mouseleave="closeTooltip" @focus="openTooltip" @blur="closeTooltip" @keydown.esc="closeTooltip">
-    <ChatInputContextUsage :isDark="!!isDark" :contextUsageText="text" :contextRingDash="ringDash"
+    <ChatInputContextUsage :isDark="!!isDark" :contextUsageText="text" :contextUsageTip="text" :hasUsage="hasUsage"
+      :contextRingDash="ringDash"
       :tooltipVisible="tooltipVisible" :tooltipId="tooltipId" :tooltipStyle="tooltipStyle" />
   </button>
 </template>

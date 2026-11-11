@@ -23,6 +23,18 @@ export function resolveContextUsageText(usage: ContextUsageIndicatorData | null 
   return percent ? `${percent} · ${amount} ${label}` : `${amount} ${label}`;
 }
 
+/**
+ * 浮层文案：**永不为空**。
+ *
+ * <p>为什么不能直接用 {@link resolveContextUsageText}：框架按 `usageReportInterval`（默认 5 个模型轮次）
+ * 节流汇报用量，会话头几轮根本没有 `CONTEXT_UPDATE`；模型未配上下文窗口时采集结果本身就是 null。
+ * 环必须常驻（否则用户会看到图标凭空消失），常驻就得有话说 —— 未采集时给占位文案，
+ * 而不是让浮层空着或渲染器自己编一句。</p>
+ */
+export function resolveContextUsageTip(usage: ContextUsageIndicatorData | null | undefined): string {
+  return resolveContextUsageText(usage) || t('chat.input.contextUsagePending');
+}
+
 export function resolveContextRingDash(usage: ContextUsageIndicatorData | null | undefined): string {
   const ratio = usage?.ratio ?? (usage?.maxTokens && usage.maxTokens > 0 && usage.usedTokens != null
     ? usage.usedTokens / usage.maxTokens : null);

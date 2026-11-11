@@ -41,7 +41,7 @@ import type {
 } from '../../types/chatInputSlots';
 import {CHAT_INPUT_SLOTS_KEY} from '../../types/chatInputSlots';
 import ChatInputContextUsage from './ChatInputContextUsage.vue';
-import {resolveContextRingDash, resolveContextUsageText} from '../../views/chat/contextUsagePresentation';
+import {resolveContextRingDash, resolveContextUsageText, resolveContextUsageTip} from '../../views/chat/contextUsagePresentation';
 import ChatInputModelSelector from './ChatInputModelSelector.vue';
 import ChatInputSendButton from './ChatInputSendButton.vue';
 import {ICON_BTN, MUTED, TOOL_BTN} from '../../utils/promptBarStyles';
@@ -661,6 +661,9 @@ const drivenModel = computed<{ text: string; tip: string; missing: boolean } | n
 
 const contextUsageText = computed(() => resolveContextUsageText(props.contextUsage));
 const contextRingDash = computed(() => resolveContextRingDash(props.contextUsage));
+// 环常驻，「有没有数据」只影响画法：未采集时只有空底轨 + 占位浮层文案。
+const hasContextUsage = computed(() => contextUsageText.value !== '');
+const contextUsageTip = computed(() => resolveContextUsageTip(props.contextUsage));
 
 // 上下文浮层的悬停状态**没有**随浮层搬进 `ChatInputContextUsage.vue`：触发区是外层容器
 // （28px 高）的交互属性，容器归组件所有；渲染器只按 `tooltipVisible` 决定画不画。
@@ -993,6 +996,8 @@ const onSendClick = () => {
 const contextUsageSlotProps = computed<ChatInputContextUsageSlotProps>(() => ({
   isDark: props.isDark !== false,
   contextUsageText: contextUsageText.value,
+  contextUsageTip: contextUsageTip.value,
+  hasUsage: hasContextUsage.value,
   contextRingDash: contextRingDash.value,
   tooltipVisible: isContextTooltipVisible.value
 }));
@@ -1662,11 +1667,11 @@ defineExpose({
 
         <!-- 右侧工具组：上下文用量环、模型选择、语音听写、Morphing 发送按钮 -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <!-- 上下文用量指示器：仅悬浮于圆环图标时触发浮层 -->
+          <!-- 上下文用量指示器：常驻（未采集时不卸载，只画空环）；仅悬浮于圆环图标时触发浮层 -->
           <div
-            v-if="contextUsageText"
             class="relative inline-flex h-7 items-center justify-center select-none cursor-help mr-0.5"
             :class="MUTED"
+            :data-has-usage="hasContextUsage ? '' : undefined"
             @mouseenter="isContextTooltipVisible = true"
             @mouseleave="isContextTooltipVisible = false"
           >

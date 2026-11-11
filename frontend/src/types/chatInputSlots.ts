@@ -4,14 +4,20 @@ import type {ModelConfig} from './chat';
 /**
  * 上下文用量指示器插槽：**零回调**的纯展示边界（对应 ChatInputArea 1537–1573）。
  *
- * <p>「有没有数据」由组件裁决（`contextUsageText` 为空串即不渲染该区域，见 640–645），
- * 消费者的职责只是「有了数据怎么画」，因此这里不给任何行为回调。</p>
+ * <p><b>容器常驻，不再按「有没有数据」整块卸载</b>：框架按 `usageReportInterval`（默认 5 个模型轮次）
+ * 节流汇报用量，会话头几轮没有 `CONTEXT_UPDATE`；模型未配上下文窗口时采集结果本身就是 null。
+ * 曾经用 `v-if` 按文本存在与否卸载环，表现就是「图标有时凭空消失」，故容器恒渲染，
+ * 「有没有数据」改由 {@link ChatInputContextUsageSlotProps.hasUsage} 表达，消费者自行决定空环长什么样。</p>
  */
 export interface ChatInputContextUsageSlotProps {
   readonly isDark: boolean;
-  /** 已格式化的人读文本（形如 `12.3% · 24.6K / 200K 上下文已用`）；空串 = 无数据（组件已用 v-if 拦截，防御性保留）。 */
+  /** 已格式化的人读文本（形如 `12.3% · 24.6K / 200K 上下文已使用`）；**空串 = 尚未采集到用量**。 */
   readonly contextUsageText: string;
-  /** 环形进度的 stroke-dasharray 值（已按半径 6 算好，直接绑到 circle 上即可）。 */
+  /** 浮层文案，**永不为空**；未采集时是占位文案（`resolveContextUsageTip`）。 */
+  readonly contextUsageTip: string;
+  /** 是否已采集到用量：false 时环只该画空底轨，不要伪造百分比。 */
+  readonly hasUsage: boolean;
+  /** 环形进度的 stroke-dasharray 值（已按半径 6 算好，直接绑到 circle 上即可）；未采集时为 `0 <周长>`。 */
   readonly contextRingDash: string;
   /**
    * 悬浮浮层是否显示。
