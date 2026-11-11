@@ -721,6 +721,7 @@ export const messages: MessageSchema = {
         attribution: {
           memory: '记忆正文',
           memoryHint: '记忆正文（项目规范与 wiki 索引）已包含在系统消息内，不重复计入合计',
+          systemComposition: '系统消息构成',
         },
       },
       subSessions: {
@@ -2127,6 +2128,7 @@ export const messages: MessageSchema = {
         attribution: {
           memory: 'Memory text',
           memoryHint: 'Memory text (project rules and wiki index) is already included in system messages, so it is not counted twice',
+          systemComposition: 'System message composition',
         },
       },
       subSessions: {

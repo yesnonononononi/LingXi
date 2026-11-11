@@ -8,7 +8,8 @@
  *   <li>MCP / Skill 合计与逐项列表之间真的有间距（拿两个 `getBoundingClientRect()` 相减），
  *       且它们**不在**滚动容器里（否则滚动时合计会被滚出视野）。</li>
  *   <li>token 单位文案是 `token` 不是 `tok`（`\btok\b` 不会误伤 `token`，用词边界精确判定）。</li>
- *   <li>系统消息的归因明细（记忆正文）挂在系统消息行内、不新增消息分项、0 与未知都不渲染。</li>
+ *   <li>系统消息的归因明细（记忆正文）是「系统消息」下拉框里的项：默认展开、可折叠、与下方工具框左右对齐、
+ *       展开走 collapse-transition 过渡；0 与未知时整块不渲染。</li>
  * </ol>
  *
  * <p>通过流推送和 HTTP 适配器验证同一面板的展示，并守住「只读、不重算」这条边界：
@@ -109,7 +110,8 @@ window.__setExecuting = value => { executing.value = value; };
   await fs.writeFile(path.join(fixture, 'entry.js'), `import { createApp, nextTick } from 'vue';
 import App from './App.vue';
 createApp(App).mount('#app');
-window.flush = async () => { await nextTick(); await new Promise(r => setTimeout(r, 80)); };
+window.flush = async () => { await nextTick(); await new Promise(r => setTimeout(r, 380)); };
+window.nextTickOnly = async () => { await nextTick(); };
 window.clickSelector = selector => {
   const el = document.querySelector(selector);
   if (!el) throw new Error('元素缺失: ' + selector);
@@ -300,6 +302,52 @@ window.ready = true;`);
     '记忆归因不得新增消息分项（应仍是系统/用户/模型/工具返回四行），实际: ' + attribution.rowCount);
   assert(!!attribution.title && /系统消息/.test(attribution.title),
     '记忆归因旁应有提示，说明已含在系统消息内，实际: ' + JSON.stringify(attribution.title));
+
+  // ④'''' 记忆项是「系统消息」下拉框里的项：可折叠、默认展开、容器与下方工具框左右对齐
+  const alignment = await evaluate(`(() => {
+    const button = document.querySelector('[data-testid="token-audit-system-row"]');
+    const attr = document.querySelector('[data-testid="token-audit-system-attribution"]');
+    const sources = document.querySelector('[data-testid="token-audit-tool-sources"]');
+    const rect = el => { const r = el.getBoundingClientRect(); return {left: Math.round(r.left), right: Math.round(r.right)}; };
+    return {
+      hasButton: !!button,
+      expanded: button ? button.getAttribute('aria-expanded') : null,
+      attr: attr ? rect(attr) : null,
+      sources: sources ? rect(sources) : null,
+      header: attr ? (attr.firstElementChild ? attr.firstElementChild.innerText.replace(/\\s+/g, ' ').trim() : '') : '',
+    };
+  })()`);
+  assert(alignment.hasButton, '系统消息行应变成可展开按钮（记忆项是下拉框里的项）');
+  assert(alignment.expanded === 'true', '记忆明细默认展开（否则等于又看不到记忆用量）');
+  assert(alignment.attr !== null, '默认展开时记忆项应在 DOM 中');
+  assert(/系统消息构成/.test(alignment.header) && /token/.test(alignment.header),
+    '记忆下拉框应有与工具来源同款的表头，实际: ' + JSON.stringify(alignment.header));
+  assert(alignment.attr.left === alignment.sources.left && alignment.attr.right === alignment.sources.right,
+    '记忆下拉框必须与下方工具来源框左右对齐，实测 ' + JSON.stringify([alignment.attr, alignment.sources]));
+
+  // 折叠：点一次收起（记忆块消失、aria-expanded 翻转），再点恢复
+  await run(`window.clickSelector('[data-testid="token-audit-system-row"]')`);
+  const collapsed = await evaluate(`(() => {
+    const button = document.querySelector('[data-testid="token-audit-system-row"]');
+    return {
+      expanded: button ? button.getAttribute('aria-expanded') : null,
+      attr: !!document.querySelector('[data-testid="token-audit-system-attribution"]'),
+    };
+  })()`);
+  assert(collapsed.expanded === 'false', '点击后 aria-expanded 应为 false');
+  assert(collapsed.attr === false, '收起后记忆块应离开 DOM（不是只改高度）');
+  // 展开第一帧就取样：run() 会等到动画结束，那时 Transition 的 enter class 已经摘掉
+  await evaluate(`window.clickSelector('[data-testid="token-audit-system-row"]')`);
+  await evaluate('window.nextTickOnly()');
+  const entering = await evaluate(`(() => {
+    const el = document.querySelector('[data-testid="token-audit-system-attribution"]');
+    return el ? el.className : null;
+  })()`);
+  await evaluate('window.flush()');
+  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-system-attribution"]')`),
+    '再次点击应重新展开记忆块');
+  assert(entering !== null && /collapse-transition-enter-active/.test(entering),
+    '记忆下拉框展开应有折叠过渡（缺少 collapse-transition-enter-active），实际 class: ' + JSON.stringify(entering));
 
   // 记忆为 0（这一轮没注入记忆正文）或未知时整行不渲染：0 是噪声、null 是不知道
   await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: {memoryTokens: 0}})})`);

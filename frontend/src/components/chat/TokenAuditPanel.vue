@@ -33,6 +33,7 @@
  * 因此不改 `tokens.css`、不新增令牌，也不触碰主题残余基线。</p>
  */
 import {computed, ref, watch} from 'vue';
+import CollapseTransition from '../common/CollapseTransition.vue';
 import {t} from '../../i18n';
 import {isOk} from '../../utils/api';
 import {ApiError, describeKind} from '../../services/interceptor';
@@ -121,6 +122,13 @@ const isStreamDriven = computed<boolean>(() => streamEntry.value !== null);
 const toolRowExpanded = ref(false);
 /** 「其他消息」二级拆解是否展开。 */
 const overheadExpanded = ref(false);
+/**
+ * 「系统消息」归因明细是否展开。
+ *
+ * <p>默认展开（与其他两个下拉相反）：记忆正文用量是这次要展示的信息本身，
+ * 收起来等于又回到「面板看不到记忆占用」。</p>
+ */
+const systemRowExpanded = ref(true);
 /** 采集状态；无数据时按「未采集」处理，绝不臆造 COLLECTED。 */
 const displayState = computed<string>(() => displayed.value?.displayState ?? 'NOT_COLLECTED');
 const isFailed = computed<boolean>(() => displayState.value === 'FAILED');
@@ -160,6 +168,7 @@ const failText = computed<string>(() => {
 const resetExpansion = (): void => {
   toolRowExpanded.value = false;
   overheadExpanded.value = false;
+  systemRowExpanded.value = true;
 };
 
 /**
@@ -212,6 +221,11 @@ const toggleToolRow = (): void => {
 /** 切换「其他消息」二级拆解。 */
 const toggleOverhead = (): void => {
   overheadExpanded.value = !overheadExpanded.value;
+};
+
+/** 切换「系统消息」归因明细。 */
+const toggleSystemRow = (): void => {
+  systemRowExpanded.value = !systemRowExpanded.value;
 };
 
 /** 文本形式的占比；空串表示「不知道」，模板据此不渲染该列。 */
@@ -421,6 +435,25 @@ watch(
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
+                    <!-- 系统消息：记忆正文的归因明细可展开 -->
+                    <button
+                      v-else-if="row.type === 'SYSTEM' && systemAttributionRows.length > 0"
+                      type="button"
+                      data-testid="token-audit-system-row"
+                      :aria-expanded="systemRowExpanded"
+                      class="flex min-w-0 items-center gap-1 text-left"
+                      @click="toggleSystemRow"
+                    >
+                      <span :class="['inline-block h-1.5 w-1.5 shrink-0 rounded-lx-full', CATEGORY_DOT_CLASS[row.type]]"></span>
+                      <span class="shrink-0 text-lx-fs-sm font-medium text-lx-primary">{{ t(row.labelKey) }}</span>
+                      <svg
+                        class="h-2.5 w-2.5 shrink-0 text-lx-faint transition-transform"
+                        :class="systemRowExpanded ? 'rotate-180' : ''"
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
                     <div v-else class="flex min-w-0 items-center gap-1">
                       <span :class="['inline-block h-1.5 w-1.5 shrink-0 rounded-lx-full', CATEGORY_DOT_CLASS[row.type]]"></span>
                       <span class="truncate text-lx-fs-sm text-lx-secondary">{{ t(row.labelKey) }}</span>
@@ -443,38 +476,45 @@ watch(
 
                   <!-- 系统消息的归因明细：记忆正文已并入系统提示词，这里只说「其中有多少是记忆」。
                        不做成独立消息分项 —— 那会让消息构成合计多算一份记忆，和快照总量对不上。 -->
-                  <div
-                    v-if="row.type === 'SYSTEM' && systemAttributionRows.length"
-                    data-testid="token-audit-system-attribution"
-                    class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
-                  >
+                  <CollapseTransition>
                     <div
-                      v-for="item in systemAttributionRows"
-                      :key="item.key"
-                      class="flex items-center justify-between gap-2"
+                      v-if="row.type === 'SYSTEM' && systemRowExpanded && systemAttributionRows.length"
+                      data-testid="token-audit-system-attribution"
+                      class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
                     >
-                      <span class="flex min-w-0 items-center gap-1">
-                        <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
-                        <span
-                          data-testid="token-audit-attribution-hint"
-                          class="inline-flex shrink-0 cursor-help text-lx-faint"
-                          :title="t('chat.tokenAudit.attribution.memoryHint')"
-                          :aria-label="t('chat.tokenAudit.attribution.memoryHint')"
+                      <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
+                        <span>{{ t('chat.tokenAudit.attribution.systemComposition') }}</span>
+                        <span>{{ t('chat.tokenAudit.tokenUnit') }}</span>
+                      </div>
+                      <div class="mt-1.5 space-y-1">
+                        <div
+                          v-for="item in systemAttributionRows"
+                          :key="item.key"
+                          class="flex items-center justify-between gap-2"
                         >
-                          <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="12" cy="12" r="9" stroke-width="2" />
-                            <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
-                            <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
-                          </svg>
-                        </span>
-                      </span>
-                      <span class="flex shrink-0 items-center gap-1.5 font-mono text-lx-fs-xs">
-                        <span class="text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
-                      </span>
+                          <span class="flex min-w-0 items-center gap-1">
+                            <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
+                            <span
+                              data-testid="token-audit-attribution-hint"
+                              class="inline-flex shrink-0 cursor-help text-lx-faint"
+                              :title="t('chat.tokenAudit.attribution.memoryHint')"
+                              :aria-label="t('chat.tokenAudit.attribution.memoryHint')"
+                            >
+                              <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="12" cy="12" r="9" stroke-width="2" />
+                                <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
+                                <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
+                              </svg>
+                            </span>
+                          </span>
+                          <span class="shrink-0 font-mono text-lx-fs-xs text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  </CollapseTransition>
 
                   <!-- 工具来源二级拆解：普通工具（逐项，限高滚动）/ MCP / Skill（分组合计） -->
+                  <CollapseTransition>
                   <div
                     v-if="row.type === 'TOOL' && toolRowExpanded && (toolGroupRows.length || ordinaryToolRows.length)"
                     data-testid="token-audit-tool-sources"
@@ -535,6 +575,7 @@ watch(
                       </div>
                     </div>
                   </div>
+                  </CollapseTransition>
                 </div>
               </div>
             </section>
@@ -582,11 +623,12 @@ watch(
                 </span>
               </button>
 
-              <div
-                v-if="definitionRows.length > 0 && overheadExpanded"
-                data-testid="token-audit-definitions"
-                class="space-y-1 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
-              >
+              <CollapseTransition>
+                <div
+                  v-if="definitionRows.length > 0 && overheadExpanded"
+                  data-testid="token-audit-definitions"
+                  class="space-y-1 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
+                >
                 <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
                   <span>{{ t('chat.tokenAudit.toolDefinitionComposition') }}</span>
                   <span>{{ t('chat.tokenAudit.ratio') }}</span>
@@ -615,6 +657,7 @@ watch(
                   </span>
                 </div>
               </div>
+              </CollapseTransition>
             </section>
           </template>
         </template>
