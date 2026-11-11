@@ -338,7 +338,7 @@
                       class="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium"
                       :class="displayIsDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-500/10 text-emerald-600'"
                     >
-                      <span class="h-1.5 w-1.5 rounded-full bg-current animate-pulse" aria-hidden="true" />
+                      <span class="h-1.5 w-1.5 rounded-full bg-current lx-live-dot" aria-hidden="true" />
                       {{ t('chat.pending.sending') }}
                     </span>
                     <button
