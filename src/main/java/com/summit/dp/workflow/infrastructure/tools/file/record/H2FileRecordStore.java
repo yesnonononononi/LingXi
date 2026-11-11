@@ -1,11 +1,13 @@
 package com.summit.dp.workflow.infrastructure.tools.file.record;
 
 import com.summit.dp.execution.application.port.FileRecordMaintenance;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordMapper;
 import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordPO;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.io.Serializable;
 import java.time.Instant;
@@ -35,6 +37,7 @@ import java.util.Optional;
  */
 @Slf4j
 @RequiredArgsConstructor
+@Component
 public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance {
 
     private final FileRecordMapper mapper;
@@ -81,11 +84,10 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
     @Override
     public void clearByExecutionId(@NonNull Serializable executionId) {
         String key = String.valueOf(executionId);
-        for (FileRecordPO po : this.mapper.listByExecution(key)) {
-            this.baselines.delete(po.getBaselinePath());
-        }
         this.mapper.delete(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<FileRecordPO>()
                 .eq("execution_id", key));
+        // 基线只可能落在这个执行的目录下，整棵删掉即可；逐文件再删一遍是冗余步骤，
+        // 两处都做只会多出一个永远杀不掉的等价变异体。
         this.baselines.deleteExecution(key);
     }
 
@@ -110,17 +112,18 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
     /**
      * 回收 {@code cutoff} 之前建立的记录（连同基线文件）。
      *
+     * <p>条数以 SQL 实际删除行为准（一次条件删），不是「先查出来再数一遍」——
+     * 后者要么多一次往返，要么漏掉并发删除导致的差异。</p>
+     *
      * @return 实际删除的记录条数
      */
     @Override
     public int purgeBefore(@NonNull Instant cutoff) {
+        // 先取基线路径再删行：行没了就再也找不到这些文件，会变成永久孤儿。
         List<FileRecordPO> expired = this.mapper.listCreatedBefore(cutoff);
-        int deleted = 0;
+        int deleted = this.mapper.delete(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<FileRecordPO>()
+                .lt("create_at", cutoff));
         for (FileRecordPO po : expired) {
-            // 先删行：行没了，文件最多是个孤儿；反过来会留下指向空路径的活记录。
-            if (this.mapper.deleteByIdValue(po.getId()) > 0) {
-                deleted++;
-            }
             this.baselines.delete(po.getBaselinePath());
         }
         return deleted;
@@ -131,10 +134,12 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
      */
     @Override
     public void clear() {
-        for (FileRecordPO po : this.mapper.selectList(null)) {
-            this.baselines.delete(po.getBaselinePath());
-        }
+        List<String> executions = this.mapper.selectList(null).stream()
+                .map(FileRecordPO::getExecutionId).distinct().toList();
         this.mapper.delete(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<>());
+        for (String executionId : executions) {
+            this.baselines.deleteExecution(executionId);
+        }
     }
 
     /** 库行 → 领域记录：基线按需从文件读回，读不到就当这条没有基线（不编造空文件）。 */

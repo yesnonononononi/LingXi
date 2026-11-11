@@ -213,13 +213,33 @@ class H2FileRecordStoreTest {
     }
 
     @Test
-    void clearWipesEverythingForLocalReset() {
-        store.put(draft("demo.txt", "v1\n", "+v2", null));
+    void clearWipesEverythingForLocalReset() throws Exception {
+        FileRecord stored = store.put(draft("demo.txt", "v1\n", "+v2", null));
         store.put(draft("b.txt", "b1\n", "+b2", null));
+        Path baseline = Path.of(database.queryString(
+                "SELECT baseline_path FROM file_record WHERE id = '" + stored.id() + "'"));
 
         store.clear();
 
         assertTrue(store.listByExecution(EXECUTION).isEmpty());
+        assertFalse(Files.exists(baseline), "重置必须连基线文件一起清，否则磁盘上留一堆无主大文本");
+    }
+
+    /**
+     * 行数必须原样读回：{@code plusLines/minusLines} 是汇总页唯一的数字来源，
+     * 写成常量或漏写某个 setter 都不会报错，只会让「+N −M」永远显示 0。
+     */
+    @Test
+    void lineCountsRoundTripThroughTheRow() {
+        store.put(FileRecord.builder()
+                .executionId((Serializable) EXECUTION).turnId((Serializable) TURN)
+                .filePath("demo.txt").baseline("v1\n").diff("+v2")
+                .plusLines(3).minusLines(2).createAt(Instant.now()).build());
+
+        FileRecord reloaded = newStore().listByExecution(EXECUTION).getFirst();
+
+        assertEquals(3, reloaded.plusLines());
+        assertEquals(2, reloaded.minusLines());
     }
 
     private FileRecord draft(String path, String baseline, String diff, Instant createAt) {
