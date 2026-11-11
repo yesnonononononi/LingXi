@@ -562,7 +562,7 @@ export const messages: MessageSchema = {
         deepThought: '深度思考',
         generating: '生成中...',
         thinking: '思考中...',
-        awaitModelResponse: '等待模型响应',
+        awaitModelResponse: '正在等待模型响应',
         thoughtAndTools: '已思考并调用 {count} 个工具',
         tools: '已调用 {count} 个工具',
         thought: '已思考',

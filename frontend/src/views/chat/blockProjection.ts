@@ -84,6 +84,9 @@ export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): boolean 
   // 「本轮改动」清单一并落到气泡上：与状态同一帧，卡片不再自己请求，也就不会有迟到的第二次排版。
   // 快照/历史页都走完整视图，缺省即「本轮没改文件」。
   bubble.turnFileChanges = view.fileChanges ?? [];
+  if (bubble.isComplete || (view.blocks && view.blocks.length > 0)) {
+    bubble.isCompressingContext = false;
+  }
   return true;
 }
 

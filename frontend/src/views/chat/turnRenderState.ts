@@ -29,6 +29,10 @@ export function applyTurnStatus(bubble: ChatMessage, status: string): void {
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = false;
+    bubble.isCompressingContext = false;
+    if (bubble.contextUsage?.phase === 'SQUEEZE_STARTED') {
+      bubble.contextUsage = { ...bubble.contextUsage, phase: undefined, band: undefined };
+    }
   } else if (status === 'WAITING') {
     bubble.modelRetry = undefined;
     bubble.isSuspended = true;

@@ -58,6 +58,97 @@ test('旧轮次的终态快照只清除本轮的压缩提示', () => {
   assert.equal(sessionUsage.at(-1)?.tokenCount, 600);
 });
 
+test('压缩中切走会话错过 SQUEEZE_COMPLETED 时，新流式消息（思考/正文/工具/块）到达必须清除压缩中提示', () => {
+  const sessionId = 'session-compact-stream';
+  const identity = { executionId: 'exec-cs-1', timestamp: '', metaData: { turnId: 'turn-cs-1' } };
+  const usage = { tokenCount: 800, maxTokens: 2000, ratio: 0.4 };
+
+  // 1. 模拟思考流式到达时清除压缩提示
+  {
+    const messages: ChatMessage[] = [];
+    const sessionUsage: ContextUsageData[] = [];
+    const reducer = new TurnStreamReducer(messages, { sessionId, onContextUsageUpdate: (_, u) => sessionUsage.push(u) });
+    reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
+    assert.equal(messages[0].isCompressingContext, true);
+    assert.equal(sessionUsage.at(-1)?.phase, 'SQUEEZE_STARTED');
+
+    reducer.consume({
+      ...identity,
+      type: 'PARTIAL_THINKING',
+      responseId: '101',
+      content: '正在思考后续方案',
+    });
+    assert.equal(messages[0].isCompressingContext, false, '流式思考到达必须清除压缩提示');
+    assert.equal(messages[0].contextUsage?.phase, undefined);
+    assert.equal(sessionUsage.at(-1)?.phase, undefined);
+  }
+
+  // 2. 模拟工具调用到达时清除压缩提示
+  {
+    const messages: ChatMessage[] = [];
+    const reducer = new TurnStreamReducer(messages, { sessionId });
+    reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
+    assert.equal(messages[0].isCompressingContext, true);
+
+    reducer.consume({
+      ...identity,
+      type: 'TOOL_CALL',
+      toolName: AgentToolName.ReadFile,
+      requestId: 'call-1',
+      args: '{"path":"a.txt"}',
+      resultStatus: 'STARTED',
+    });
+    assert.equal(messages[0].isCompressingContext, false, '流式工具调用到达必须清除压缩提示');
+  }
+
+  // 3. 模拟块增量 BLOCK_UPSERT 到达时清除压缩提示
+  {
+    const messages: ChatMessage[] = [];
+    const reducer = new TurnStreamReducer(messages, { sessionId });
+    reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
+    assert.equal(messages[0].isCompressingContext, true);
+
+    reducer.consume({
+      type: 'BLOCK_UPSERT',
+      turnId: 'turn-cs-1',
+      view: {
+        sessionId,
+        turnId: 'turn-cs-1',
+        status: 'RUNNING',
+        viewVersion: 1,
+        blocks: [
+          { blockId: 'text:1', type: 'TEXT', order: 0, status: 'STREAMING', isBody: true, text: '开始输出正文' }
+        ]
+      }
+    } as unknown as AgentEvent);
+    assert.equal(messages[0].isCompressingContext, false, '块增量到达必须清除压缩提示');
+  }
+
+  // 4. 模拟带块的快照 TURN_SNAPSHOT 到达时清除压缩提示
+  {
+    const messages: ChatMessage[] = [];
+    const reducer = new TurnStreamReducer(messages, { sessionId });
+    reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
+    assert.equal(messages[0].isCompressingContext, true);
+
+    reducer.consume({
+      type: 'TURN_SNAPSHOT',
+      turnId: 'turn-cs-1',
+      viewVersion: 1,
+      view: {
+        sessionId,
+        turnId: 'turn-cs-1',
+        status: 'RUNNING',
+        viewVersion: 1,
+        blocks: [
+          { blockId: 'text:1', type: 'TEXT', order: 0, status: 'STREAMING', isBody: true, text: '快照恢复输出' }
+        ]
+      }
+    } as unknown as AgentEvent);
+    assert.equal(messages[0].isCompressingContext, false, '带块的快照到达必须清除压缩提示');
+  }
+});
+
 function assertPendingText(bubble: ChatMessage, responseId: string, text: string): void {
   assert.equal(bubble.content, '', '用途未确认不能进入正文');
   assert.equal(bubble.aiMessages?.find(item => item.id === `text:${responseId}`)?.text, text, '每次写入同步更新过程文本');

@@ -151,6 +151,9 @@ export class TurnStreamReducer {
         if (!turnId || this.disposed) break;
         const bubble = this.obtainActiveBubble(turnId);
         if (bubble.isComplete || bubble.isSuspended) break;
+        if (bubble.isCompressingContext) {
+          this.clearCompression(bubble);
+        }
         const state = getTurnState(bubble);
         if (state.rejectedResponses?.[event.responseId]) break;
         (state.rejectedResponses ??= {})[event.responseId] = true;
@@ -182,6 +185,9 @@ export class TurnStreamReducer {
         if (!turnId || !event.responseId || this.disposed) break;
         const bubble = this.obtainActiveBubble(turnId);
         if (bubble.isComplete || bubble.isSuspended) break;
+        if (bubble.isCompressingContext) {
+          this.clearCompression(bubble);
+        }
         if (consumeResponseText(bubble, event)) {
           if (bubble.modelRetry && BigInt(event.responseId) > BigInt(bubble.modelRetry.responseId)) {
             bubble.modelRetry = undefined;
@@ -196,7 +202,10 @@ export class TurnStreamReducer {
       case 'TOOL_CALL': {
         if (turnId && !this.disposed) {
           const bubble = this.obtainActiveBubble(turnId);
-          if (!bubble.isComplete && !bubble.isSuspended && consumeToolEvent(bubble, event)) this.onScrollFollow?.();
+          if (!bubble.isComplete && !bubble.isSuspended) {
+            if (bubble.isCompressingContext) this.clearCompression(bubble);
+            if (consumeToolEvent(bubble, event)) this.onScrollFollow?.();
+          }
         }
         this.handleToolActivity(turnId, event.requestId, event.toolName);
         break;
@@ -205,6 +214,7 @@ export class TurnStreamReducer {
       case 'TOOL_COMPLETED': {
         if (turnId && !this.disposed) {
           const bubble = this.obtainActiveBubble(turnId);
+          if (bubble.isCompressingContext) this.clearCompression(bubble);
           if (consumeToolEvent(bubble, event)) this.onScrollFollow?.();
         }
         this.handleToolCompleted(event);
@@ -254,7 +264,9 @@ export class TurnStreamReducer {
     if (!payload) return;
     const bubble = upsertTurnViewIntoMessages(this.getMessages(), payload.view);
     if (!bubble) return;
-    if (bubble.isComplete) this.clearCompression(bubble);
+    if (bubble.isComplete || (payload.view.blocks && payload.view.blocks.length > 0)) {
+      this.clearCompression(bubble);
+    }
     this.activeBubbleId = bubble.id;
     this.requestBlockCards(bubble);
     this.onScrollFollow?.();
@@ -275,6 +287,10 @@ export class TurnStreamReducer {
     // 在此凭空造气泡会让「同一轮两条气泡」复发（历史侧还有一条权威的）。
     const bubble = this.findBubbleByTurnId(turnId);
     if (!bubble) return;
+
+    if (bubble.isCompressingContext) {
+      this.clearCompression(bubble);
+    }
 
     upsertBlockIntoBubble(bubble, payload.view);
     this.requestBlockCards(bubble);
@@ -357,6 +373,9 @@ export class TurnStreamReducer {
 
   private handleExecutionStarted(turnId: string | null): void {
     const bubble = this.obtainActiveBubble(turnId);
+    if (bubble.isCompressingContext) {
+      this.clearCompression(bubble);
+    }
     bubble.turnStatus = 'RUNNING';
     bubble.modelRetry = undefined;
     bubble.isThinking = true;
@@ -461,6 +480,7 @@ export class TurnStreamReducer {
 
   private handleExecutionResumed(): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    this.clearCompression(bubble);
     bubble.turnStatus = 'RUNNING';
     bubble.modelRetry = undefined;
     bubble.isSuspended = false;

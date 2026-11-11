@@ -121,7 +121,7 @@
       <!-- 上下文压缩提示：与「模型重试」是两件不同的事，各自有唯一实现 -->
       <transition name="context-compact-fade">
         <div
-          v-if="props.message.isCompressingContext"
+          v-if="isCompressingContextActive"
           role="status"
           class="w-full my-3 py-1 flex items-center gap-3 select-none context-compact-bar"
           :title="compactingTitle"
@@ -241,6 +241,17 @@ const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.i
 const resendTitle = computed(() => !props.message.serverMessageId ? t('chat.controls.messageSyncPending')
   : !props.canResend ? t('chat.controls.waitUntilIdle') : t('chat.controls.editResend'));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
+/**
+ * 上下文压缩条显示判定：已终态的轮次一律不显示。
+ */
+const isCompressingContextActive = computed(() => {
+  if (props.message.isComplete) return false;
+  if (props.message.turnStatus === 'COMPLETED' || props.message.turnStatus === 'FAILED' || props.message.turnStatus === 'CANCELLED') {
+    return false;
+  }
+  return Boolean(props.message.isCompressingContext);
+});
+
 /**
  * 上下文压缩提示的 title：权威用量缺失时退回提示文案本身。
  *
