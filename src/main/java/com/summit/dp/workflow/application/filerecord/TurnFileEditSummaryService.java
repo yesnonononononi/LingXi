@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.filerecord;
 
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
@@ -31,6 +32,9 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TurnFileEditSummaryService {
 
+    /** 差异文本上限：与前端预览面板对齐，超出部分截断并显式标记。 */
+    private static final int MAX_DIFF_CHARS = 256 * 1024;
+
     private final FileRecordManager records;
     private final ChatTurnRepository turns;
     private final Differ differ;
@@ -56,22 +60,27 @@ public class TurnFileEditSummaryService {
     }
 
     /**
-     * 某条记录对应的累计差异：基线 → 该条为止的末态。
+     * 一条记录的差异视图：查记录、重建差异、按上限截断。
      *
-     * <p>按记录标识取（而不是按轮次取）是为了让「点开某一行」在历史轮次里也成立 ——
-     * 即便界面当前只在最新轮次暴露入口，接口本身不该是个只对最新轮次才有效的东西。</p>
+     * <p>截断与「记录不存在」都是业务口径，属于应用层，不该散在接口层里 —— 接口层只做转发。</p>
      *
-     * @return 统一差异文本；记录不存在或差异重放失败时为空
+     * @throws ClientException 记录不存在（对外就是「已失效」）
      */
-    public Optional<String> accumulatedDiff(String executionId, String recordId) {
-        FileRecord target = records.getRecord(executionId, recordId).orElse(null);
-        if (target == null) {
-            return Optional.empty();
-        }
+    public FileEditDiff diffOf(String executionId, String recordId) {
+        FileRecord target = records.getRecord(executionId, recordId)
+                .orElseThrow(() -> new ClientException("文件编辑记录不存在或已失效"));
+        String diff = this.rebuildUpTo(target).orElse("");
+        boolean truncated = diff.length() > MAX_DIFF_CHARS;
+        return new FileEditDiff(target.filePath(),
+                truncated ? diff.substring(0, MAX_DIFF_CHARS) : diff, truncated);
+    }
+
+    /** 从基线重放到目标记录为止；目标不在同一轮同一文件时自然重放不出东西。 */
+    private Optional<String> rebuildUpTo(FileRecord target) {
         // 只重放到目标记录为止：它表达的是「这条记录当时的文件状态」，不是本轮最终状态。
         // 取的是「这一轮 + 这个文件」的窄查询，不是整执行全量 —— 后者会连其它轮次的基线一起读。
         List<FileRecord> upToTarget = new ArrayList<>();
-        for (FileRecord record : records.listTurnRecords(executionId, target.turnId())) {
+        for (FileRecord record : records.listTurnRecords(target.executionId(), target.turnId())) {
             if (!Objects.equals(record.filePath(), target.filePath())) {
                 continue;
             }

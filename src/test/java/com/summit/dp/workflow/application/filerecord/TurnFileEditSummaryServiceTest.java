@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.filerecord;
 
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService.TurnFileEdit;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,6 +45,9 @@ class TurnFileEditSummaryServiceTest {
     private static final String EXECUTION_KEY = "100";
     /** 记录侧的轮次标识是框架给的字符串，与业务轮次的数值主键不同形。 */
     private static final String TURN_KEY = "7";
+    /** 与 TurnFileEditSummaryService.MAX_DIFF_CHARS 对齐：差异文本上限。 */
+    private static final int MAX_DIFF_CHARS = 256 * 1024;
+    private static final String BASELINE = "alpha\n";
 
     private final Differ differ = new EditDiffer();
 
@@ -141,12 +146,12 @@ class TurnFileEditSummaryServiceTest {
     }
 
     @Test
-    void accumulatedDiffStopsAtTheTargetRecord() throws FileModificationException {
+    void diffStopsAtTheTargetRecord() throws FileModificationException {
         givenTurn(TURN_ID, EXECUTION_ID);
         Serializable first = records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\n", "a\nb\n"));
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", null, "a\nb\n", "a\nb\nc\n"));
 
-        String upToFirst = service.accumulatedDiff(EXECUTION_KEY, String.valueOf(first)).orElseThrow();
+        String upToFirst = service.diffOf(EXECUTION_KEY, String.valueOf(first)).unifiedDiff();
 
         // 只重放到第一条为止：后面那次编辑的内容不能提前出现。
         assertTrue(upToFirst.contains("+b"), upToFirst);
@@ -154,10 +159,32 @@ class TurnFileEditSummaryServiceTest {
     }
 
     @Test
-    void accumulatedDiffIsEmptyForUnknownRecord() {
+    void diffOfUnknownRecordIsRejected() {
         givenTurn(TURN_ID, EXECUTION_ID);
 
-        assertTrue(service.accumulatedDiff(EXECUTION_KEY, "missing").isEmpty());
+        assertThrows(ClientException.class, () -> service.diffOf(EXECUTION_KEY, "missing"));
+    }
+
+    /**
+     * 截断判据必须是严格大于上限。
+     *
+     * <p>单行内容下 unified diff 长度 = 头部长度 + 正文长度，所以先测一条短记录拿到头部长度，
+     * 再把正文补到恰好等于上限：写成「大于等于」会白白砍掉最后一个字符，这条断言会红。</p>
+     */
+    @Test
+    void truncationBoundaryIsStrictlyGreaterThanTheLimit() throws FileModificationException {
+        givenTurn(TURN_ID, EXECUTION_ID);
+        Serializable shortRecord = records.record(EXECUTION_KEY, TURN_KEY, draft("a.txt", BASELINE, BASELINE, "x"));
+        int headerLength = service.diffOf(EXECUTION_KEY, String.valueOf(shortRecord)).unifiedDiff().length() - 1;
+        String atLimit = "y".repeat(MAX_DIFF_CHARS - headerLength);
+
+        Serializable exact = records.record(EXECUTION_KEY, TURN_KEY, draft("b.txt", BASELINE, BASELINE, atLimit));
+        FileEditDiff exactDiff = service.diffOf(EXECUTION_KEY, String.valueOf(exact));
+        assertEquals(MAX_DIFF_CHARS, exactDiff.unifiedDiff().length());
+        assertFalse(exactDiff.truncated(), "恰好等于上限不算超限");
+
+        Serializable over = records.record(EXECUTION_KEY, TURN_KEY, draft("c.txt", BASELINE, BASELINE, atLimit + "z"));
+        assertTrue(service.diffOf(EXECUTION_KEY, String.valueOf(over)).truncated(), "超限必须显式标记");
     }
 
     @Test
