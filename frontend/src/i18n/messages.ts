@@ -616,6 +616,9 @@ export const messages: MessageSchema = {
         rootSessionNotBound: '根会话未绑定',
       },
       sidebar: {
+        deleteSession: '删除会话',
+        deleteSessionConfirm: '确定要删除会话 “{name}” 吗？此操作无法撤销。',
+        deleteSessionActiveBlocked: '会话正在进行中，无法删除',
         deleteWorkspace: '删除工作空间',
         deleteWorkspaceConfirm: '确定要删除工作空间 “{name}” 吗？此操作无法撤销。',
         collapseDisplay: '收起显示',
@@ -2019,6 +2022,9 @@ export const messages: MessageSchema = {
         rootSessionNotBound: 'Root session is not bound',
       },
       sidebar: {
+        deleteSession: 'Delete conversation',
+        deleteSessionConfirm: 'Delete the conversation “{name}”? This cannot be undone.',
+        deleteSessionActiveBlocked: 'Cannot delete conversation while it is active',
         deleteWorkspace: 'Delete workspace',
         deleteWorkspaceConfirm: 'Delete the workspace “{name}”? This cannot be undone.',
         collapseDisplay: 'Collapse',

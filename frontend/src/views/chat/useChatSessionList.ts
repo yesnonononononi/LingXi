@@ -4,6 +4,7 @@ import {chatApi} from '../../services/chat';
 import type {ChatMessage, ChatSession} from '../../types/chat';
 import {
     buildSessionMarkdown,
+    isSessionActive,
     mergeSubSessionTree,
     mergeTurns,
     mergeTurnViews,
@@ -12,6 +13,7 @@ import {
 import {upsertTurnViewIntoMessages} from './blockProjection';
 import {attachPromptCards} from '../../utils/toolCallCard';
 import {isTempSessionId} from '../../utils/ids';
+import {useConfirm} from '../../composables/useConfirm';
 import {t} from '../../i18n';
 
 export interface ChatSessionListOptions {
@@ -56,6 +58,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     onNewSession,
   } = options;
 
+  const { confirm } = useConfirm();
   const isLoadingCurrentSession = ref(false);
   const sessionLoadError = ref('');
 
@@ -164,13 +167,34 @@ export function useChatSessionList(options: ChatSessionListOptions) {
   };
 
   const handleDeleteSession = async (id: string) => {
+    const session = localSessions.value.find(s => s.id === id);
+    // 硬性门槛：会话处于活跃状态时禁止删除
+    if (isSessionActive(session, {
+      isGenerating: isGenerating(),
+      activeSessionId: localActiveId.value,
+      applicationStates: applicationSessions.states
+    })) {
+      window.alert(t('chat.sidebar.deleteSessionActiveBlocked'));
+      return;
+    }
+
+    const ok = await confirm({
+      title: t('chat.sidebar.deleteSession'),
+      content: t('chat.sidebar.deleteSessionConfirm', {
+        name: session?.title || t('session.newConversation')
+      }),
+      type: 'danger',
+      confirmText: t('common.remove')
+    });
+    if (!ok) return;
+
     if (isTempSessionId(id)) {
       localSessions.value = localSessions.value.filter(s => s.id !== id);
       if (localActiveId.value === id) localActiveId.value = null;
       return;
     }
-    const ok = await chatApi.deleteSession(id);
-    if (ok) {
+    const deleteOk = await chatApi.deleteSession(id);
+    if (deleteOk) {
       applicationSessions.forget(id);
       localSessions.value = localSessions.value.filter(s => s.id !== id);
       if (localActiveId.value === id) localActiveId.value = null;

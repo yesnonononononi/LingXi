@@ -130,6 +130,61 @@ export function isSessionRunning(runStatus: string | null | undefined): boolean 
   return runStatus === 'RUNNING' || runStatus === 'SUSPENDED';
 }
 
+export interface SessionActiveOptions {
+  /** 当前是否有消息正在流式生成或在途提交 */
+  isGenerating?: boolean;
+  /** 当前处于选中态的会话 ID */
+  activeSessionId?: string | number | null;
+  /** 权威全局状态字典（可选） */
+  applicationStates?: Map<string, { runStatus?: string | null; renderStatus?: string | null; rootSessionId?: string | number | null }>;
+}
+
+/**
+ * 判断会话是否处于活跃状态（正在执行、挂起等待或流式生成中）。
+ *
+ * <p>删除会话的硬性门槛：处于活跃状态的会话一律禁止删除。
+ * 判定依据包括：当前会话前台生成态、实体本身的 runStatus/renderStatus、
+ * 子会话树的活跃态以及全局权威同步状态。</p>
+ */
+export function isSessionActive(
+  session: Pick<ChatSession, 'id' | 'runStatus' | 'renderStatus' | 'subSessions'> | null | undefined,
+  options?: SessionActiveOptions
+): boolean {
+  if (!session || session.id == null) return false;
+  const idStr = String(session.id);
+
+  // 1. 若当前会话正处于选中态且前台正在生成/提交，视为活跃
+  if (options?.isGenerating && options.activeSessionId != null && idStr === String(options.activeSessionId)) {
+    return true;
+  }
+
+  // 2. 本地实体自身的运行态或展示态
+  if (isSessionRunning(session.runStatus)) {
+    return true;
+  }
+  if (session.renderStatus === 'RUNNING') {
+    return true;
+  }
+
+  // 3. 委派产生的子会话树任一处于活跃中
+  if (session.subSessions?.some(sub => isSessionRunning(sub.runStatus) || sub.renderStatus === 'RUNNING')) {
+    return true;
+  }
+
+  // 4. 全局权威会话状态（若有提供）
+  if (options?.applicationStates) {
+    for (const state of options.applicationStates.values()) {
+      if (String(state.rootSessionId) === idStr || String(state.id ?? '') === idStr) {
+        if (isSessionRunning(state.runStatus) || state.renderStatus === 'RUNNING') {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * 会话树对账时合并子会话：树只下发元数据、不带消息正文，按 id 保留旧 VO 上已加载的消息。
  *

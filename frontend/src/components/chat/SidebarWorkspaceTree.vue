@@ -32,6 +32,7 @@ import SidebarSubSessions from './SidebarSubSessions.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import {t} from '../../i18n';
 import {SESSION_VISIBLE_LIMIT} from '../../composables/sidebar/useSessionVisibility';
+import {isSessionActive} from '../../utils/session';
 import {useSessionBranchExpansion} from '../../composables/sidebar/useSessionBranchExpansion';
 import type {ProjectGroup} from '../../composables/sidebar/useSessionGrouping';
 import type {ChatSession, WorkspaceVO} from '../../types/chat';
@@ -318,9 +319,15 @@ const emit = emitShim as TreeEmitShim;
                   </svg>
                 </button>
                                 <button
-                  @click.stop="emit('deleteSession', item.value)"
-                  class="p-0.5 hover:text-red-400 transition cursor-pointer"
-                  :title="t('common.remove')"
+                  :disabled="isSessionActive(item.raw, { activeSessionId })"
+                  @click.stop="isSessionActive(item.raw, { activeSessionId }) ? undefined : emit('deleteSession', item.value)"
+                  :class="[
+                    'p-0.5 transition',
+                    isSessionActive(item.raw, { activeSessionId })
+                      ? 'opacity-30 cursor-not-allowed text-zinc-500'
+                      : 'hover:text-red-400 cursor-pointer'
+                  ]"
+                  :title="isSessionActive(item.raw, { activeSessionId }) ? t('chat.sidebar.deleteSessionActiveBlocked') : t('common.remove')"
                 >
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -475,7 +482,17 @@ const emit = emitShim as TreeEmitShim;
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
-                      <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" :title="t('common.remove')">
+                      <button
+                        :disabled="isSessionActive(session, { activeSessionId })"
+                        @click.stop="isSessionActive(session, { activeSessionId }) ? undefined : emit('deleteSession', session.id)"
+                        :class="[
+                          'p-0.5 transition',
+                          isSessionActive(session, { activeSessionId })
+                            ? 'opacity-30 cursor-not-allowed text-zinc-400'
+                            : 'hover:text-red-500 cursor-pointer'
+                        ]"
+                        :title="isSessionActive(session, { activeSessionId }) ? t('chat.sidebar.deleteSessionActiveBlocked') : t('common.remove')"
+                      >
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
@@ -543,7 +560,17 @@ const emit = emitShim as TreeEmitShim;
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
-                  <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" :title="t('common.remove')">
+                  <button
+                    :disabled="isSessionActive(session, { activeSessionId })"
+                    @click.stop="isSessionActive(session, { activeSessionId }) ? undefined : emit('deleteSession', session.id)"
+                    :class="[
+                      'p-0.5 transition',
+                      isSessionActive(session, { activeSessionId })
+                        ? 'opacity-30 cursor-not-allowed text-zinc-400'
+                        : 'hover:text-red-500 cursor-pointer'
+                    ]"
+                    :title="isSessionActive(session, { activeSessionId }) ? t('chat.sidebar.deleteSessionActiveBlocked') : t('common.remove')"
+                  >
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
