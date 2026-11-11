@@ -47,7 +47,8 @@ class TurnViewServiceLoadScopeTest {
             messageRepository,
             chatTurnRepository,
             toolCallRepository,
-            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))),
+            mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     /** 装载以 turnId 为过滤条件下发；整会话读法（findBySessionId）绝不被调用。 */
     @Test

@@ -160,6 +160,37 @@ export interface TurnViewVO {
   blocks: Block[];
   /** 上下文用量快照；未配置上限或未采集为 null */
   metric?: ContextUsageVO | null;
+  /**
+   * 「本轮改动」清单（对应后端 {@code TurnViewVO.fileChanges}）。
+   *
+   * <p><b>随视图同帧到达</b>：卡片不再自己请求汇总。曾经是挂载后单独 fetch，
+   * 结果会话加载完毕后卡片迟到、列表高度二次增长，视图被强行顶走一段。</p>
+   */
+  fileChanges?: TurnFileChangeVO[];
+}
+
+/**
+ * 一轮里单个文件的净改动（「本轮改动」清单的一行，对应后端 {@code TurnFileChangeVO}）。
+ *
+ * <p>数字是后端重放后算出的**净改动**，前端不得自行累加。</p>
+ */
+export interface TurnFileChangeVO {
+  /** 文件绝对路径 */
+  filePath: string;
+  /** 净新增行数 */
+  plusLines: number;
+  /** 净删除行数 */
+  minusLines: number;
+  /** 本轮编辑次数 */
+  edits: number;
+  /** 该文件是否由本轮新建 */
+  created: boolean;
+  /** 执行标识，打开差异视图要用 */
+  executionId?: string | null;
+  /** 末条记录标识，打开差异视图要用 */
+  recordId?: string | null;
+  /** 差异能否点开；仅最新轮次为 true（历史轮次没有差异正文） */
+  diffAvailable?: boolean;
 }
 
 /** 上下文用量（对应后端 {@code ContextUsageMetric}）。 */

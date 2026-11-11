@@ -74,7 +74,8 @@ class BlockUpsertSingleBlockTest {
     private final TurnViewAssembler turnViewAssembler = spy(new TurnViewAssembler(json,
             new ToolBlockStatusResolver(new ToolCallConverter(json))));
     private final TurnViewService service = new TurnViewService(
-            messageRepository, chatTurnRepository, toolCallRepository, turnViewAssembler);
+            messageRepository, chatTurnRepository, toolCallRepository, turnViewAssembler,
+            mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     @Test
     @DisplayName("等价性：单块结果 == 整轮装配后过滤出的同一块（含全部 VO 字段）")
@@ -198,7 +199,7 @@ class BlockUpsertSingleBlockTest {
         List<Block> filtered = view.blocks().stream().filter(block -> blockId.equals(block.getBlockId())).toList();
         return new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
                 view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(),
-                view.resumeSupplements(), view.parentTurnId());
+                view.resumeSupplements(), view.parentTurnId(), view.fileChanges());
     }
 
     private List<SessionMessage> turnMessages() {

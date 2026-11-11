@@ -132,7 +132,8 @@ class ToolBlockBroadcastSqlGuardTest {
         sseEventPublisher = mock(SseEventPublisher.class);
         TurnViewService turnViewService = new TurnViewService(messageRepository, chatTurnRepository,
                 toolCallRepository, new TurnViewAssembler(json,
-                new ToolBlockStatusResolver(new ToolCallConverter(json))));
+                new ToolBlockStatusResolver(new ToolCallConverter(json))),
+                mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
         broadcaster = new TurnViewBroadcaster(turnViewService, chatTurnRepository, sessionRepository,
                 sseEventPublisher, executionLocator);
         listener = new BlockUpsertRuntimeListener(broadcaster, chatTurnRepository);

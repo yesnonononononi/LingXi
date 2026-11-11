@@ -1,9 +1,9 @@
 package com.summit.dp.workflow.application.filerecord;
 
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.vo.block.TurnFileChangeVO;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService.TurnFileEdit;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
@@ -21,7 +21,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -35,7 +34,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>净改动与累加最容易混淆的场景是「改过去又改回来」：逐次累加会得到 +2/−2，
  * 净改动必须是 0/0。这一条是本节的核心断言，其余用例守顺序、过滤、新建语义，
- * 以及「只有最新轮次带差异正文」这条展示契约。</p>
+ * 以及「只有最新轮次能点开差异」这条展示契约。</p>
  */
 class TurnFileEditSummaryServiceTest {
 
@@ -69,10 +68,10 @@ class TurnFileEditSummaryServiceTest {
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "x\n", "x\n", "y\n"));
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", null, "y\n", "x\n"));
 
-        List<TurnFileEdit> summary = service.summarize(TURN_ID);
+        List<TurnFileChangeVO> summary = service.summarize(TURN_ID);
 
         assertEquals(1, summary.size(), "同一文件的两次编辑必须合并成一条");
-        TurnFileEdit edit = summary.getFirst();
+        TurnFileChangeVO edit = summary.getFirst();
         assertEquals("demo.txt", edit.filePath());
         assertEquals(2, edit.edits());
         assertEquals(0, edit.plusLines(), "净改动必须是重算结果，不是逐次累加");
@@ -87,9 +86,9 @@ class TurnFileEditSummaryServiceTest {
         records.record(EXECUTION_KEY, TURN_KEY, draft("b.txt", "b\n", "b\n", "b\nc\n"));
         records.record(EXECUTION_KEY, TURN_KEY, draft("a.txt", null, "a\nb\n", "a\nb\nd\n"));
 
-        List<TurnFileEdit> summary = service.summarize(TURN_ID);
+        List<TurnFileChangeVO> summary = service.summarize(TURN_ID);
 
-        assertEquals(List.of("a.txt", "b.txt"), summary.stream().map(TurnFileEdit::filePath).toList());
+        assertEquals(List.of("a.txt", "b.txt"), summary.stream().map(TurnFileChangeVO::filePath).toList());
         // a.txt 两次编辑合并后的净改动：a → a,b,d 共 +2。
         assertEquals(2, summary.getFirst().plusLines());
         assertEquals(0, summary.getFirst().minusLines());
@@ -103,9 +102,9 @@ class TurnFileEditSummaryServiceTest {
         // 同一执行下的另一轮：数值主键不同，字符串形态也不同。
         records.record(EXECUTION_KEY, "8", draft("other.txt", "o\n", "o\n", "o\np\n"));
 
-        List<TurnFileEdit> summary = service.summarize(TURN_ID);
+        List<TurnFileChangeVO> summary = service.summarize(TURN_ID);
 
-        assertEquals(List.of("mine.txt"), summary.stream().map(TurnFileEdit::filePath).toList());
+        assertEquals(List.of("mine.txt"), summary.stream().map(TurnFileChangeVO::filePath).toList());
     }
 
     @Test
@@ -113,7 +112,7 @@ class TurnFileEditSummaryServiceTest {
         givenTurn(TURN_ID, EXECUTION_ID);
         records.record(EXECUTION_KEY, TURN_KEY, draft("new.txt", null, "", "one\ntwo\n"));
 
-        TurnFileEdit edit = service.summarize(TURN_ID).getFirst();
+        TurnFileChangeVO edit = service.summarize(TURN_ID).getFirst();
 
         assertTrue(edit.created());
         assertEquals(2, edit.plusLines());
@@ -125,24 +124,23 @@ class TurnFileEditSummaryServiceTest {
         givenTurn(TURN_ID, EXECUTION_ID);
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\nb\nc\n", "a\nb\nc\n", "a\nc\n"));
 
-        TurnFileEdit edit = service.summarize(TURN_ID).getFirst();
+        TurnFileChangeVO edit = service.summarize(TURN_ID).getFirst();
 
         assertEquals(0, edit.plusLines());
         assertEquals(1, edit.minusLines(), "删掉一行必须记在新侧之外的那一栏");
     }
 
     @Test
-    void onlyLatestTurnCarriesDiffBody() throws FileModificationException {
+    void onlyLatestTurnCanOpenDiff() throws FileModificationException {
         givenTurn(TURN_ID, EXECUTION_ID);
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\n", "a\nb\n"));
 
-        // 历史轮次：只给行数，差异正文为 null。
-        assertNull(service.summarize(TURN_ID).getFirst().diff(), "历史轮次不该带差异正文");
+        // 历史轮次：只给行数，差异不可点开。
+        assertFalse(service.summarize(TURN_ID).getFirst().diffAvailable(), "历史轮次不给差异入口");
 
-        // 成为最新轮次后才给正文。
+        // 成为最新轮次后才可点开（正文仍由预览面板现取，不进视图）。
         givenLatestTurn(TURN_ID);
-        String diff = service.summarize(TURN_ID).getFirst().diff();
-        assertTrue(diff != null && diff.contains("+b"), "最新轮次必须带差异正文");
+        assertTrue(service.summarize(TURN_ID).getFirst().diffAvailable(), "最新轮次必须能点开差异");
     }
 
     @Test
@@ -194,9 +192,9 @@ class TurnFileEditSummaryServiceTest {
                 Optional.of(ChatTurn.builder().id(TURN_ID).executionId(EXECUTION_ID).build()));
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\n", "a\nb\n"));
 
-        TurnFileEdit edit = service.summarize(TURN_ID).getFirst();
+        TurnFileChangeVO edit = service.summarize(TURN_ID).getFirst();
 
-        assertNull(edit.diff(), "没有会话就断定不了最新，不能凭猜测把差异正文带出来");
+        assertFalse(edit.diffAvailable(), "没有会话就断定不了最新，不能凭猜测给出差异入口");
         assertEquals(1, edit.plusLines());
     }
 

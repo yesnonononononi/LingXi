@@ -53,7 +53,8 @@ class TurnViewServiceIsBodyTest {
             messageRepository,
             chatTurnRepository,
             toolCallRepository,
-            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))),
+            mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     /**
      * 同一条无工具请求的收尾 AI 行，只改轮次状态：只有 {@code COMPLETED} 时 {@code isBody} 才为真。

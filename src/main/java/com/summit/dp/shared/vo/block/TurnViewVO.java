@@ -32,23 +32,27 @@ public record TurnViewVO(
         @JsonProperty("userMessageId") Long userMessageId,
         @JsonProperty("resumeSupplements") List<ResumeSupplementVO> resumeSupplements,
         // 委派身份随正文下发，避免展示依赖稍后到达的轮次摘要。
-        @JsonProperty("parentTurnId") Long parentTurnId
+        @JsonProperty("parentTurnId") Long parentTurnId,
+        // 「本轮改动」清单：随视图同帧下发，卡片不再自己请求汇总（详见 TurnFileChangeVO）。
+        @JsonProperty("fileChanges") List<TurnFileChangeVO> fileChanges
 ) {
     public TurnViewVO(Long sessionId, Long turnId, String status, long viewVersion, String userMessage,
                       List<String> userImageUrls, List<Block> blocks, ContextUsageMetric metric, Long userMessageId,
                       List<ResumeSupplementVO> resumeSupplements) {
         this(sessionId, turnId, status, viewVersion, userMessage, userImageUrls, blocks, metric, userMessageId,
-                resumeSupplements, null);
+                resumeSupplements, null, List.of());
     }
 
     public TurnViewVO(Long sessionId, Long turnId, String status, long viewVersion, String userMessage,
                       List<String> userImageUrls, List<Block> blocks, ContextUsageMetric metric, Long userMessageId) {
-        this(sessionId, turnId, status, viewVersion, userMessage, userImageUrls, blocks, metric, userMessageId, List.of());
+        this(sessionId, turnId, status, viewVersion, userMessage, userImageUrls, blocks, metric, userMessageId,
+                List.of(), null, List.of());
     }
 
     public TurnViewVO {
         userImageUrls = userImageUrls == null ? List.of() : List.copyOf(userImageUrls);
         blocks = blocks == null ? List.of() : List.copyOf(blocks);
         resumeSupplements = resumeSupplements == null ? List.of() : List.copyOf(resumeSupplements);
+        fileChanges = fileChanges == null ? List.of() : List.copyOf(fileChanges);
     }
 }

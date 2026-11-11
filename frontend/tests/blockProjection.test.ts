@@ -385,3 +385,21 @@ test('分页响应缺 turnViews 字段时归一为 {}，且不再凭空造出气
     }
   );
 });
+
+test('★ 本轮改动清单随视图落到气泡上，增量帧不会把它抹掉', () => {
+  const message = bubble();
+  const changes = [
+    {filePath: '/ws/a.ts', plusLines: 3, minusLines: 1, edits: 2, created: false,
+      executionId: 'e1', recordId: 'r1', diffAvailable: true},
+  ];
+  const completed = {...view([bodyText(1)], 2), status: 'COMPLETED' as const, fileChanges: changes};
+
+  projectTurnView(message, completed);
+
+  // 清单与状态同一帧到达 —— 卡片因此不需要在挂载后再请求一次（那会二次撑高列表）。
+  assert.deepEqual(message.turnFileChanges, changes);
+
+  // 单块增量只带一个块：不能把已到达的清单清空。
+  upsertBlockIntoBubble(message, {...completed, blocks: [tool(3)]});
+  assert.deepEqual(message.turnFileChanges, changes, '增量帧不得抹掉清单');
+});

@@ -61,7 +61,8 @@ class QaBodyPlacementIndependentTest {
     private final ChatTurnRepository chatTurnRepository = mock(ChatTurnRepository.class);
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final TurnViewService service =
-            new TurnViewService(messageRepository, chatTurnRepository, toolCallRepository, assembler);
+            new TurnViewService(messageRepository, chatTurnRepository, toolCallRepository, assembler,
+                    mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     // ─────────────────────────── A1 ───────────────────────────
 

@@ -134,7 +134,7 @@ public class TurnViewBroadcaster {
                 .toList();
         return new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
                 view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(), view.resumeSupplements(),
-                view.parentTurnId());
+                view.parentTurnId(), view.fileChanges());
     }
 
     /**

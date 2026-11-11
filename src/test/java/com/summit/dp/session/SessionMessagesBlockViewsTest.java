@@ -118,7 +118,8 @@ class SessionMessagesBlockViewsTest {
         TurnViewAssembler assembler = new TurnViewAssembler(json,
                 new ToolBlockStatusResolver(new ToolCallConverter(json)));
         TurnViewService turnViewService = new TurnViewService(
-                messageRepository, mock(ChatTurnRepository.class), toolCallRepository, assembler);
+                messageRepository, mock(ChatTurnRepository.class), toolCallRepository, assembler,
+                mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
         SessionMessageQueryService queryService = new SessionMessageQueryService(
                 new SessionMessageViewAssembler(json, new ToolCallConverter(json)),
                 new ToolCallConverter(json), mock(SessionMessageRepositoryImpl.class));

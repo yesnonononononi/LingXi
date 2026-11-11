@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {buildTurnFileChangeRows, collectTurnFileChangeFlags, turnFileChangeTotals} from '../src/utils/turnFileChanges';
-import {isEditFileTool} from '../src/utils/toolMeta';
+import {buildTurnFileChangeRows, turnFileChangeTotals} from '../src/utils/turnFileChanges';
 import {toFilePreviewIpcRequest} from '../src/types/filePreview';
 
 test('buildTurnFileChangeRows：同一文件已被后端合并成一条，前端只投影不累加', () => {
   const rows = buildTurnFileChangeRows([
     {filePath: '/ws/src/a.ts', plusLines: 5, minusLines: 2, edits: 3, created: false,
-      executionId: 'e1', recordId: 'r1', diff: '@@ -1 +1 @@'},
+      executionId: 'e1', recordId: 'r1', diffAvailable: true},
   ]);
 
   assert.equal(rows.length, 1);
@@ -20,9 +19,10 @@ test('buildTurnFileChangeRows：同一文件已被后端合并成一条，前端
   assert.deepEqual(rows[0].edit, {executionId: 'e1', recordId: 'r1'});
 });
 
-test('buildTurnFileChangeRows：最新轮次没有差异正文时该行不可点开', () => {
+test('buildTurnFileChangeRows：diffAvailable 为假的轮次该行不可点开', () => {
   const rows = buildTurnFileChangeRows([
-    {filePath: 'a.ts', plusLines: 1, minusLines: 0, executionId: 'e1', recordId: 'r1'},
+    {filePath: 'a.ts', plusLines: 1, minusLines: 0, edits: 1, created: false,
+      executionId: 'e1', recordId: 'r1', diffAvailable: false},
   ]);
 
   assert.equal(rows[0].edit, null, '历史轮次只给行数，不能点开差异');
@@ -30,8 +30,10 @@ test('buildTurnFileChangeRows：最新轮次没有差异正文时该行不可点
 
 test('buildTurnFileChangeRows：缺执行或记录标识时该行不可点开差异', () => {
   const rows = buildTurnFileChangeRows([
-    {filePath: 'a.ts', plusLines: 1, minusLines: 0, executionId: 'e1'},
-    {filePath: 'b.ts', plusLines: 1, minusLines: 0, recordId: 'r1'},
+    {filePath: 'a.ts', plusLines: 1, minusLines: 0, edits: 1, created: false,
+      executionId: 'e1', diffAvailable: true},
+    {filePath: 'b.ts', plusLines: 1, minusLines: 0, edits: 1, created: false,
+      recordId: 'r1', diffAvailable: true},
   ]);
 
   assert.equal(rows[0].edit, null, '只有 executionId 无法定位记录');
@@ -39,14 +41,18 @@ test('buildTurnFileChangeRows：缺执行或记录标识时该行不可点开差
 });
 
 test('buildTurnFileChangeRows：Windows 反斜杠路径也能拆出文件名', () => {
-  const rows = buildTurnFileChangeRows([{filePath: 'D:\\repo\\src\\b.vue', plusLines: 0, minusLines: 3}]);
+  const rows = buildTurnFileChangeRows([
+    {filePath: 'D:\\repo\\src\\b.vue', plusLines: 0, minusLines: 3, edits: 1, created: false},
+  ]);
 
   assert.equal(rows[0].name, 'b.vue');
   assert.equal(rows[0].dir, 'D:/repo/src');
 });
 
 test('buildTurnFileChangeRows：根级文件没有目录副文案，缺失字段按 0 而非 NaN', () => {
-  const rows = buildTurnFileChangeRows([{filePath: 'README.md'}]);
+  const rows = buildTurnFileChangeRows([
+    {filePath: 'README.md', plusLines: 0, minusLines: 0, edits: 0, created: false},
+  ]);
 
   assert.equal(rows[0].name, 'README.md');
   assert.equal(rows[0].dir, '');
@@ -54,6 +60,7 @@ test('buildTurnFileChangeRows：根级文件没有目录副文案，缺失字段
   assert.equal(rows[0].minusLines, 0);
   assert.equal(rows[0].edits, 0);
   assert.equal(rows[0].created, false);
+  assert.equal(rows[0].edit, null);
 });
 
 test('buildTurnFileChangeRows：空输入返回空数组', () => {
@@ -64,34 +71,11 @@ test('buildTurnFileChangeRows：空输入返回空数组', () => {
 
 test('turnFileChangeTotals：逐行相加得到全轮合计', () => {
   const rows = buildTurnFileChangeRows([
-    {filePath: 'a.ts', plusLines: 5, minusLines: 2},
-    {filePath: 'b.ts', plusLines: 1, minusLines: 4},
+    {filePath: 'a.ts', plusLines: 5, minusLines: 2, edits: 1, created: false},
+    {filePath: 'b.ts', plusLines: 1, minusLines: 4, edits: 1, created: false},
   ]);
 
   assert.deepEqual(turnFileChangeTotals(rows), {plusLines: 6, minusLines: 6});
-});
-
-test('collectTurnFileChangeFlags：只有带编辑痕迹的轮次才进入清单候选', () => {
-  const flags = collectTurnFileChangeFlags([
-    {turnId: '1', toolCalls: [{toolName: 'execute_command'}]},
-    {turnId: '2', toolCalls: [{toolName: 'edit_file'}]},
-    {turnId: '3', fileEdits: [{filePath: 'a.ts'}]},
-  ], isEditFileTool);
-
-  assert.equal(flags.get('1') ?? false, false, '只跑过命令的轮次不该发汇总请求');
-  assert.equal(flags.get('2'), true);
-  assert.equal(flags.get('3'), true);
-});
-
-test('collectTurnFileChangeFlags：无归属的旧数据与空输入都不会被算成改过文件', () => {
-  const flags = collectTurnFileChangeFlags([
-    {turnId: null, toolCalls: [{toolName: 'edit_file'}]},
-    {toolCalls: [{toolName: 'edit_file'}]},
-    {turnId: '9', toolCalls: []},
-  ], isEditFileTool);
-
-  assert.equal(flags.size, 0);
-  assert.equal(collectTurnFileChangeFlags(null, isEditFileTool).size, 0);
 });
 
 test('toFilePreviewIpcRequest：跨界载荷必须是可结构化克隆的纯对象', () => {

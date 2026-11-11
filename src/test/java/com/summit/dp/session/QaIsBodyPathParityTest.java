@@ -72,7 +72,8 @@ class QaIsBodyPathParityTest {
     private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
 
     private final TurnViewService turnViewService =
-            new TurnViewService(messageRepository, chatTurnRepository, toolCallRepository, assembler);
+            new TurnViewService(messageRepository, chatTurnRepository, toolCallRepository, assembler,
+                    mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
     private final TurnViewBroadcaster broadcaster =
             new TurnViewBroadcaster(turnViewService, chatTurnRepository, sessionRepository,
                     sseEventPublisher, executionIdentity);

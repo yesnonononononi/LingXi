@@ -7,10 +7,12 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.vo.block.Block;
+import com.summit.dp.shared.vo.block.TurnFileChangeVO;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallBlockView;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.turn.application.port.TurnFileChangeQuery;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,11 @@ import java.util.stream.Collectors;
  *
  * <p><b>版本号</b>：{@code viewVersion} 是「该轮展示的更新批次号」，由调用方决定（历史查询用
  * 轮次自身的 {@code version}；实时装配由发布侧递增并作废旧请求）。本类只透传。</p>
+ *
+ * <p><b>改动清单随视图下发</b>：{@code fileChanges} 由 {@link TurnFileChangeQuery} 提供，
+ * 且<b>只在终态轮次装配</b>。曾经由前端卡片挂载后单独请求，于是会话加载后卡片迟到、
+ * 列表高度二次增长，视图被顶走一段；数据同帧到达就没有这次突变。运行中的轮次不查 ——
+ * 每个工具块收尾都会走本类，那样会把文件重放搬进热路径。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -50,6 +57,7 @@ public class TurnViewService {
     private final ChatTurnRepository chatTurnRepository;
     private final ToolCallRepository toolCallRepository;
     private final TurnViewAssembler turnViewAssembler;
+    private final TurnFileChangeQuery turnFileChanges;
 
     /**
      * 装配一次会话中某一轮的展示视图。
@@ -189,7 +197,22 @@ public class TurnViewService {
                         && message.getType() == SessionMessageType.USER)
                         .map(SessionMessage::getId).findFirst().orElse(null),
                 turnViewAssembler.resolveResumeSupplements(turnId, messages),
-                turn.getParentTurnId());
+                turn.getParentTurnId(),
+                resolveFileChanges(turn));
+    }
+
+    /**
+     * 本轮改动清单：**只在终态轮次装配**。
+     *
+     * <p>进行中的轮次每块收尾都会装配一次视图，在那里查文件改动等于把整份文件重放搬进热路径，
+     * 而前端在轮次收尾前也不展示清单。终态判定复用 {@link ChatTurn#getStatus()} 的
+     * {@code isTerminal}，不在这里另写一套「结束没结束」的口径。</p>
+     */
+    private List<TurnFileChangeVO> resolveFileChanges(ChatTurn turn) {
+        if (turn.getId() == null || turn.getStatus() == null || !turn.getStatus().isTerminal()) {
+            return List.of();
+        }
+        return turnFileChanges.summarize(turn.getId());
     }
 
     /** 按 {@code turnId} 分组当页消息；孤儿行（{@code turnId} 为 null）不参与任何一轮。 */

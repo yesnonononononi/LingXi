@@ -64,7 +64,8 @@ class BlockUpsertEventFactsTest {
     private final TurnViewAssembler assembler = new TurnViewAssembler(json,
             new ToolBlockStatusResolver(new ToolCallConverter(json)));
     private final TurnViewService service = new TurnViewService(
-            messageRepository, chatTurnRepository, toolCallRepository, assembler);
+            messageRepository, chatTurnRepository, toolCallRepository, assembler,
+            mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     @Test
     @DisplayName("工具行尚未落库（null 投影）：两条路径都装出 TOOL_STARTED，逐字段相等")
@@ -239,7 +240,7 @@ class BlockUpsertEventFactsTest {
         assertTrue(!filtered.isEmpty(), "整轮装配里必须存在目标块 " + blockId);
         return new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
                 view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(),
-                view.resumeSupplements(), view.parentTurnId());
+                view.resumeSupplements(), view.parentTurnId(), view.fileChanges());
     }
 
     private static ToolBlockEventFacts facts(String toolCallId, String responseId, int requestIndex,

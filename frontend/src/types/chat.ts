@@ -1,6 +1,6 @@
 import type {TokenInfo} from './Event';
 import type {ResponsePosition} from '../utils/responseOrder';
-import type {TurnViewVO} from './block';
+import type {TurnFileChangeVO, TurnViewVO} from './block';
 
 /** 消息角色定义 */
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -224,6 +224,12 @@ export interface ChatMessage {
   promptCards?: ToolCallVO[];
   aiMessages?: AiMessageItem[];      // 运行时收到的所有 AI 轮次消息
   fileEdits?: FileEditRecord[];      // 文件修改记录
+  /**
+   * 「本轮改动」清单：由轮次视图（{@code TurnViewVO.fileChanges}）投影而来，随视图同帧到达。
+   *
+   * <p>卡片只读这一份数据，不再挂载后单独请求汇总 —— 那会让清单迟到、列表高度二次增长。</p>
+   */
+  turnFileChanges?: TurnFileChangeVO[];
   contextUsage?: ContextUsageData;   // 上下文用量与压缩状态
   isCompressingContext?: boolean;    // 是否正在压缩上下文中
   modelRetry?: ModelRetryState;

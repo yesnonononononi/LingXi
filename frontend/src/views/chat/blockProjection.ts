@@ -81,6 +81,9 @@ export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): boolean 
   // 不往 content 里拼字 —— 正文每次投影都会重算，拼进去的文字会被下一次投影抹掉。
   bubble.cancelled = view.status === 'CANCELLED';
   bubble.failed = view.status === 'FAILED';
+  // 「本轮改动」清单一并落到气泡上：与状态同一帧，卡片不再自己请求，也就不会有迟到的第二次排版。
+  // 快照/历史页都走完整视图，缺省即「本轮没改文件」。
+  bubble.turnFileChanges = view.fileChanges ?? [];
   return true;
 }
 

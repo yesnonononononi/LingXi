@@ -85,7 +85,8 @@ class SessionBlockUpsertSqlGuardTest {
                 H2TestDatabase.sqlSession(sessionFactory).getMapper(ToolCallMapper.class),
                 new ObjectMapper(), cardAvailabilityPolicy());
         service = new TurnViewService(messageRepository, mock(ChatTurnRepository.class), toolCallRepository,
-                new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+                new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))),
+                mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
         toolCallRepository.save(heavyRow());
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(turnMessages());

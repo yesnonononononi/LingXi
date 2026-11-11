@@ -107,7 +107,8 @@ class SessionBlockUpsertBaselineTest {
                 H2TestDatabase.sqlSession(sessionFactory).getMapper(ToolCallMapper.class),
                 new ObjectMapper(), cardAvailabilityPolicy());
         service = new TurnViewService(messageRepository, mock(ChatTurnRepository.class), toolCallRepository,
-                new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+                new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))),
+                mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
         seedFixture();
     }
 
@@ -306,7 +307,7 @@ class SessionBlockUpsertBaselineTest {
         assertFalse(filtered.isEmpty(), "整轮装配里必须存在目标块 " + blockId);
         return new TurnViewVO(view.sessionId(), view.turnId(), view.status(), view.viewVersion(),
                 view.userMessage(), view.userImageUrls(), filtered, view.metric(), view.userMessageId(),
-                view.resumeSupplements(), view.parentTurnId());
+                view.resumeSupplements(), view.parentTurnId(), view.fileChanges());
     }
 
     private static String callId(int index) {

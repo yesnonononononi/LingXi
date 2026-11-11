@@ -152,7 +152,8 @@ class ResumeSupplementTest {
                 .type(SessionMessageType.USER).text(json.writeValueAsString(UserMessageEntity.from("原提问"))).build());
         String acceptedId = service.accept(SESSION_ID, command("补充要求"));
         TurnViewService views = new TurnViewService(messages, mock(ChatTurnRepository.class), mock(ToolCallRepository.class),
-                new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+                new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))),
+                mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
         TurnViewVO view = views.assembleTurnView(null, turns.findByExecutionId(900L).orElseThrow(), 1L).orElseThrow();
         assertEquals("原提问", view.userMessage());
         assertEquals(100L, view.userMessageId());

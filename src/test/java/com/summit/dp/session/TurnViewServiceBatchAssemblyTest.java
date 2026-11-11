@@ -55,7 +55,8 @@ class TurnViewServiceBatchAssemblyTest {
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final TurnViewService service = new TurnViewService(
             messageRepository, chatTurnRepository, toolCallRepository,
-            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))));
+            new TurnViewAssembler(json, new ToolBlockStatusResolver(new ToolCallConverter(json))),
+            mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     @Test
     @DisplayName("一次页装配：消息 0 次回查、工具调用恰好 1 次 IN（跨轮并集）")

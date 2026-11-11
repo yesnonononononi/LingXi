@@ -57,50 +57,50 @@ function renderer() {
   });
 }
 
-interface Captured {
-  url: string;
-  method: string;
+/** 后端随轮次视图下发的清单（`TurnViewVO.fileChanges` 同形）。 */
+const ITEMS = [
+  {filePath: '/ws/src/a.ts', plusLines: 5, minusLines: 2, edits: 2, created: false,
+    executionId: 'e1', recordId: 'r1', diffAvailable: true},
+  {filePath: '/ws/README.md', plusLines: 3, minusLines: 0, edits: 1, created: true,
+    executionId: 'e1', recordId: 'r2', diffAvailable: false}
+];
+
+interface Mounted {
+  root: Element;
+  opened: {path: string; edit: any}[];
+  requests: string[];
 }
 
-/** 一次真实挂载：桩 fetch 记录请求，返回可断言的根节点与请求列表。 */
-async function mountCard(t: test.TestContext, paths: string[] = []) {
+/**
+ * 一次真实挂载：清单**只从 props 来**。
+ *
+ * <p>桩住的 {@code fetch} 不是装饰 —— 它记录「卡片有没有偷偷发请求」。
+ * 曾经这里挂载后自己请求 `/a/file-edits/turns/{id}/summary`，于是加载会话时卡片迟到、
+ * 列表高度二次增长，视图被强行顶走一段。这条契约必须在用例里钉住。</p>
+ */
+async function mountCard(t: test.TestContext, items: any[] | null = ITEMS): Promise<Mounted> {
   const component = (await loadComponent('components/chat/TurnFileChangeCard.vue', t)) as DefineComponent;
-  const requests: Captured[] = [];
-  const responses: Record<string, unknown> = {
-    summary: {code: 1, data: [
-      {filePath: '/ws/src/a.ts', plusLines: 5, minusLines: 2, edits: 2, created: false,
-        executionId: 'e1', recordId: 'r1'},
-      {filePath: '/ws/README.md', plusLines: 3, minusLines: 0, edits: 1, created: true,
-        executionId: 'e1', recordId: 'r2'}
-    ]},
-    reject: {code: 1, data: 2}
-  };
+  const requests: string[] = [];
   const previousFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: any, init?: any) => {
-    const url = String(input);
-    requests.push({url, method: init?.method ?? 'GET'});
-    const body = url.includes('/reject') ? responses.reject : responses.summary;
-    return {ok: true, status: 200, json: async () => body} as any;
+  globalThis.fetch = (async (input: any) => {
+    requests.push(String(input));
+    throw new Error('卡片不得自行发请求：清单必须随轮次视图同帧到达');
   }) as any;
   t.after(() => { globalThis.fetch = previousFetch; });
 
   const opened: {path: string; edit: any}[] = [];
-  const app = renderer().createApp(component, {turnId: '9001', sessionId: 's1', isDark: true});
+  const app = renderer().createApp(component, {items, sessionId: 's1', isDark: true});
   app.provide(FILE_PREVIEW_KEY, (_sessionId: any, path: string, edit: any) => opened.push({path, edit}));
   const root = element('root');
   app.mount(root);
   t.after(() => app.unmount());
-  // onMounted 里的 await 链需要多轮微任务才落地。
   await nextTick();
-  await Promise.resolve();
-  await nextTick();
-  return {root, requests, opened};
+  return {root, opened, requests};
 }
 
-test('TurnFileChangeCard：拉取本轮汇总，同一文件只渲染一行并显示净改动', async (t) => {
-  const {root, requests} = await mountCard(t);
+test('TurnFileChangeCard：清单来自 props，同一文件只渲染一行并显示净改动', async (t) => {
+  const {root} = await mountCard(t);
 
-  assert.ok(requests[0].url.endsWith('/a/file-edits/turns/9001/summary'), `实际请求 ${requests[0].url}`);
   const rows = findAll(root, node => node.props['data-testid'] === 'turn-file-changes-row');
   assert.equal(rows.length, 2, '后端已合并同文件，前端不得再拆行');
   assert.match(text(rows[0]), /a\.ts/);
@@ -113,49 +113,27 @@ test('TurnFileChangeCard：拉取本轮汇总，同一文件只渲染一行并�
   assert.match(text(rows[1]), /新建/);
 });
 
-test('TurnFileChangeCard：点行带着记录定位打开差异视图', async (t) => {
+test('TurnFileChangeCard：不自行请求汇总，数据只走 props', async (t) => {
+  const {requests} = await mountCard(t);
+
+  assert.deepEqual(requests, [], '卡片挂载后不得再发任何请求（否则清单会迟到并二次撑高列表）');
+});
+
+test('TurnFileChangeCard：点行带着记录定位打开差异视图，不可点开的行没有入口', async (t) => {
   const {root, opened} = await mountCard(t);
 
   const rows = findAll(root, node => node.props['data-testid'] === 'turn-file-changes-row');
   rows[0].props.onClick();
+  assert.deepEqual(opened, [{path: '/ws/src/a.ts', edit: {executionId: 'e1', recordId: 'r1'}}],
+    '最新轮次有差异正文，点行必须带着两个标识');
 
-  assert.deepEqual(opened, [{path: '/ws/src/a.ts', edit: {executionId: 'e1', recordId: 'r1'}}]);
+  // 第二行 diffAvailable=false（历史轮次没有正文）：点了也不能打开一个空白面板。
+  rows[1].props.onClick?.();
+  assert.equal(opened.length, 1, '差异不可用的行不得打开预览');
 });
 
-test('TurnFileChangeCard：整轮撤销走 POST 并带上会话，成功后给出反馈而不是静默消失', async (t) => {
-  // 桩一个「像浏览器」的 window：组件走 resolveApiUrl → getApiBaseUrl，
-  // 那里在有 window 时会读 localStorage，缺了它等于把宿主环境当成半残浏览器。
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'window', {
-    value: {confirm: () => true}, configurable: true
-  });
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: {getItem: () => null, setItem() {}, removeItem() {}}, configurable: true
-  });
-  t.after(() => {
-    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
-    else Reflect.deleteProperty(globalThis, 'window');
-    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else Reflect.deleteProperty(globalThis, 'localStorage');
-  });
+test('TurnFileChangeCard：空清单整卡不渲染，不占位', async (t) => {
+  const {root} = await mountCard(t, []);
 
-  const {root, requests} = await mountCard(t);
-  const undo = findAll(root, node => node.props['data-testid'] === 'turn-file-changes-undo')[0];
-  assert.ok(undo, '有改动时必须提供整轮撤销入口');
-
-  await undo.props.onClick();
-  await nextTick();
-  await Promise.resolve();
-  await nextTick();
-
-  const reject = requests.find(request => request.url.includes('/reject'))!;
-  assert.equal(reject.method, 'POST', '撤销不能退化成 GET');
-  // 还原目标工作空间由后端按轮次归属判定：客户端传 sessionId 等于允许把 A 会话的改动还原到 B 的工作空间。
-  assert.ok(!reject.url.includes('sessionId'), `撤销请求不接受客户端指定会话：${reject.url}`);
-  assert.ok(reject.url.endsWith('/a/file-edits/turns/9001/reject'), `实际请求 ${reject.url}`);
-
-  const card = findAll(root, node => node.props['data-testid'] === 'turn-file-changes')[0];
-  assert.match(text(card), /已撤销本轮 2 个文件的改动/, '点完就整块消失会让人以为没生效');
-  assert.equal(findAll(root, node => node.props['data-testid'] === 'turn-file-changes-row').length, 0);
+  assert.equal(findAll(root, node => node.props['data-testid'] === 'turn-file-changes').length, 0);
 });

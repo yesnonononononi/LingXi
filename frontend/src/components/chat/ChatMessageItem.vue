@@ -164,10 +164,10 @@
       <div v-if="inputNotice && isGroupTail !== false" role="status"
            class="whitespace-pre-wrap text-xs text-zinc-500 dark:text-zinc-400">{{ inputNotice }}</div>
 
-      <!-- 本轮改动文件清单：同一文件合并成一行展示净改动，可点开差异、可整轮撤销 -->
+      <!-- 本轮改动文件清单：数据随轮次视图同帧到达，卡片本身不发请求 -->
       <TurnFileChangeCard
-        v-if="isMessageCompleted && isGroupTail !== false && turnHasFileChanges"
-        :turnId="turnFileChangeTurnId"
+        v-if="isMessageCompleted && isGroupTail !== false"
+        :items="props.message.turnFileChanges"
         :sessionId="sessionId"
         :isDark="isDark"
       />
@@ -231,8 +231,6 @@ const props = defineProps<{
    * 避免「同一执行跨页」时两个部分组各挂一次。
    */
   isGroupTail?: boolean;
-  /** 本轮是否改过文件；false 时不挂改动清单卡片，也不发汇总请求。 */
-  turnHasFileChanges?: boolean;
   isLastAssistant?: boolean;
   isSending?: boolean;
   canResend?: boolean;
@@ -243,8 +241,6 @@ const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.i
 const resendTitle = computed(() => !props.message.serverMessageId ? t('chat.controls.messageSyncPending')
   : !props.canResend ? t('chat.controls.waitUntilIdle') : t('chat.controls.editResend'));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
-/** 本轮改动清单要用的轮次标识：优先取轮次实体，退回落在本条消息上的 turnId。 */
-const turnFileChangeTurnId = computed(() => props.turn?.turnId ?? props.message.turnId ?? null);
 /**
  * 上下文压缩提示的 title：权威用量缺失时退回提示文案本身。
  *

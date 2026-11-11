@@ -69,7 +69,8 @@ class SessionMessagePageTurnsTest {
                     mock(com.summit.dp.session.domain.repo.MessageRepository.class),
                     mock(com.summit.dp.turn.domain.repo.ChatTurnRepository.class),
                     mock(com.summit.dp.toolcall.domain.repo.ToolCallRepository.class),
-                    new TurnViewAssembler(new ObjectMapper(), mock(ToolBlockStatusResolver.class))));
+                    new TurnViewAssembler(new ObjectMapper(), mock(ToolBlockStatusResolver.class)),
+                    mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class)));
 
     @BeforeEach void ownedSessionHasRevision() {
         when(aggregateService.requireOwned(SESSION_ID)).thenReturn(Session.builder().id(SESSION_ID).rootSessionId(0L).build());

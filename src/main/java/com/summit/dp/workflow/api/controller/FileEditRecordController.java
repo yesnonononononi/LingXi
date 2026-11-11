@@ -11,13 +11,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 /**
- * 文件编辑记录的读侧接口：按需拉取差异文本、按轮次取改动清单。
+ * 文件编辑记录的读侧接口：按需拉取差异文本。
  *
  * <p>差异不进 SSE 事件（全文会击穿单帧预算），前端只在需要时现取；记录由 {@code edit_file}
  * 落盘后登记，这里是唯一暴露口。</p>
+ *
+ * <p><b>没有「按轮次汇总」端点</b>：改动清单随轮次视图（{@code TurnViewVO.fileChanges}）下发，
+ * 避免卡片挂载后再请求一次导致列表高度二次增长。本类只剩「打开某条记录的差异」。</p>
  *
  * <p><b>没有写接口</b>：撤销功能整体暂缓，本类只读。一个不能写文件的接口面，就不会在
  * 某个边界条件上写坏用户的文件。</p>
@@ -25,7 +26,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/a/file-edits")
 @RequiredArgsConstructor
-@Tag(name = "文件编辑记录", description = "差异查看与改动清单")
+@Tag(name = "文件编辑记录", description = "差异查看")
 public class FileEditRecordController {
 
     private final TurnFileEditSummaryService turnEdits;
@@ -34,12 +35,6 @@ public class FileEditRecordController {
     @GetMapping("/{executionId}/{recordId}")
     public Result<FileEditDiff> diff(@PathVariable String executionId, @PathVariable String recordId) {
         return Result.success(turnEdits.diffOf(executionId, recordId));
-    }
-
-    @Operation(summary = "汇总一轮内所有文件的净改动")
-    @GetMapping("/turns/{turnId}/summary")
-    public Result<List<TurnFileEditSummaryService.TurnFileEdit>> turnSummary(@PathVariable Long turnId) {
-        return Result.success(turnEdits.summarize(turnId));
     }
 }
 

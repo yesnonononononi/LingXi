@@ -61,7 +61,8 @@ class TurnViewBroadcasterTest {
 
     private final TurnViewService turnViewService = new TurnViewService(
             messageRepository, chatTurnRepository, toolCallRepository,
-            new TurnViewAssembler(new ObjectMapper(), mock(ToolBlockStatusResolver.class)));
+            new TurnViewAssembler(new ObjectMapper(), mock(ToolBlockStatusResolver.class)),
+            mock(com.summit.dp.turn.application.port.TurnFileChangeQuery.class));
 
     private final TurnViewBroadcaster broadcaster = new TurnViewBroadcaster(
             turnViewService, chatTurnRepository, sessionRepository, sseEventPublisher, executionIdentity);
