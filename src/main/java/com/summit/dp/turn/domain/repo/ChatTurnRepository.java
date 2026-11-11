@@ -79,6 +79,14 @@ public interface ChatTurnRepository extends RepositoryTemplate<ChatTurn, Long> {
     List<ChatTurn> findLatest(Long sessionId, Long cursorTurnId, int limit);
 
     /**
+     * 按一批会话 id 取这些会话的全部轮次标识（一次 IN 查询）。
+     *
+     * <p>跨轮次文件差异要按「会话范围」定位记录，而记录只带 {@code turn_id}。
+     * 把会话 → 轮次的解析留在轮次模块，记录层就不必认识会话表。</p>
+     */
+    List<Long> findIdsBySessionIds(Collection<Long> sessionIds);
+
+    /**
      * 按一批会话 id 批量取**进行中**轮次（ACCEPTED / RUNNING / WAITING），一次 IN 查询。
      *
      * <p>bootstrap 用它补「历史分页取不到的活跃轮次」：已终结轮次走 {@code history.turns}，

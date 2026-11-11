@@ -5,6 +5,12 @@ import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {getApiBaseUrl} from '../../utils/apiConfig';
 import {mergeFullFileDiff, type MergedDiffLine} from '../../utils/fileDiff';
+import type {FileDiffContext, FileDiffView} from '../../utils/filePreviewDiffView';
+import {
+  canUseDiffView,
+  isLatestChangeOfCurrentRecord,
+  resolveDiffEndpoint
+} from '../../utils/filePreviewDiffView';
 import hljs from 'highlight.js';
 import {t} from '../../i18n';
 import ProjectPagePreview from './ProjectPagePreview.vue';
@@ -91,22 +97,47 @@ onBeforeUnmount(stopResize);
 
 /* ============================ 编辑差异与撤销 ============================ */
 
-/** 当前标签是否带着「某次编辑」的上下文（由编辑工具行打开时才有）。 */
+/** 当前标签是否带着「某次编辑」的上下文（由编辑工具行或产物清单打开时才有）。 */
 const editRef = computed(() => active.value?.request.edit);
 const hasEdit = computed(() => !!editRef.value && isFileMode.value);
 
-const diffView = ref<'diff' | 'source'>('diff');
-const diffText = ref('');
-const diffTruncated = ref(false);
-const diffLoading = ref(false);
-const diffError = ref('');
+/** 单档差异的加载状态：三档各自记账，切回来不重复请求。 */
+interface DiffState {
+  text: string;
+  truncated: boolean;
+  loading: boolean;
+  error: string;
+  loaded: boolean;
+}
+
+const emptyDiffState = (): DiffState =>
+  ({text: '', truncated: false, loading: false, error: '', loaded: false});
+
+const diffView = ref<FileDiffView>('turn');
+const turnDiff = ref<DiffState>(emptyDiffState());
+const latestDiff = ref<DiffState>(emptyDiffState());
+/** 「最新改动」是否就是当前这条记录：相同要说明，否则两档内容一样会让人以为按钮坏了。 */
+const latestIsCurrent = ref(false);
 const reverting = ref(false);
 const reverted = ref(false);
 const revertMessage = ref('');
 
+/** 当前档位的差异状态：源码档不参与，取到的永远是最近选中过的差异档。 */
+const currentDiff = computed<DiffState>(() =>
+  diffView.value === 'latest' ? latestDiff.value : turnDiff.value);
+const isDiffMode = computed<boolean>(() => diffView.value !== 'source');
+
+/** 拼地址与请求只需要这三个字段。 */
+const diffContext = (): FileDiffContext => ({
+  edit: active.value?.request.edit,
+  sessionId: active.value?.request.sessionId,
+  path: active.value?.request.path ?? ''
+});
+const canUseLatest = computed<boolean>(() => canUseDiffView('latest', diffContext()));
+
 /** 全文与差异合并后的逐行结果；没有全文时不渲染，避免出现「只有 diff 没有文件」的错位视图。 */
 const mergedLines = computed<MergedDiffLine[]>(() =>
-  active.value?.data ? mergeFullFileDiff(active.value.data.content, diffText.value) : []);
+  active.value?.data ? mergeFullFileDiff(active.value.data.content, currentDiff.value.text) : []);
 
 const codeLanguage = computed(() => {
   const name = active.value?.name.toLowerCase() ?? '';
@@ -150,32 +181,49 @@ function highlightLine(text: string): string {
   }
 }
 
-const editEndpoint = (suffix = ''): string => {
-  const edit = editRef.value!;
-  const base = getApiBaseUrl() || window.location.origin;
-  return `${base}/a/file-edits/${encodeURIComponent(edit.executionId)}/${encodeURIComponent(edit.recordId)}${suffix}`;
-};
+const apiBase = (): string => getApiBaseUrl() || window.location.origin;
 
-/** 按需拉取本次编辑的差异：只在打开带编辑上下文的标签时请求，不进入事件流。 */
-const loadDiff = async (): Promise<void> => {
-  if (!editRef.value) return;
-  diffLoading.value = true;
-  diffError.value = '';
+/** 本次改动（含撤销）仍按记录定位；地址拼装统一在 utils 里，别在这里写第二份。 */
+const editEndpoint = (suffix = ''): string =>
+  `${resolveDiffEndpoint('turn', diffContext(), apiBase()) ?? ''}${suffix}`;
+
+/**
+ * 按档位拉取差异：只在需要时请求，每档一次。
+ *
+ * <p>差异不进入事件流（全文会击穿单帧预算），面板打开或切档时才现取。</p>
+ */
+const loadDiff = async (view: FileDiffView): Promise<void> => {
+  const context = diffContext();
+  if (!canUseDiffView(view, context)) return;
+  const state = view === 'latest' ? latestDiff.value : turnDiff.value;
+  if (state.loaded || state.loading) return;
+  const url = resolveDiffEndpoint(view, context, apiBase());
+  if (!url) return;
+  state.loading = true;
+  state.error = '';
   try {
-    const response = await fetch(editEndpoint());
+    const response = await fetch(url);
     if (!response.ok) throw new Error(String(response.status));
     const body = await response.json();
     if (!body?.data) throw new Error('empty diff');
-    diffText.value = body.data.unifiedDiff ?? '';
-    diffTruncated.value = !!body.data.truncated;
-    diffView.value = 'diff';
-    reverted.value = false;
-    revertMessage.value = '';
+    state.text = body.data.unifiedDiff ?? '';
+    state.truncated = !!body.data.truncated;
+    state.loaded = true;
+    if (view === 'latest') {
+      latestIsCurrent.value = isLatestChangeOfCurrentRecord(context.edit, body.data);
+    }
   } catch {
-    diffError.value = t('filePreview.diffUnavailable');
+    state.error = t('filePreview.diffUnavailable');
   } finally {
-    diffLoading.value = false;
+    state.loading = false;
   }
+};
+
+/** 切档：源码档不发请求；不可用的档位直接忽略（按钮本身也会禁用）。 */
+const setDiffView = (view: FileDiffView): void => {
+  if (!canUseDiffView(view, diffContext())) return;
+  diffView.value = view;
+  void loadDiff(view);
 };
 
 /**
@@ -209,13 +257,15 @@ const revertEdit = async (): Promise<void> => {
   }
 };
 
-/** 切换标签时按新标签的编辑上下文重新取差异；没有上下文的标签不发请求。 */
+/** 切换标签时把三档状态清干净再按新标签取数；默认回到「本次改动」。 */
 watch(() => props.activeId, () => {
-  diffText.value = '';
-  diffTruncated.value = false;
-  diffError.value = '';
-  diffView.value = 'diff';
-  void loadDiff();
+  turnDiff.value = emptyDiffState();
+  latestDiff.value = emptyDiffState();
+  latestIsCurrent.value = false;
+  diffView.value = 'turn';
+  reverted.value = false;
+  revertMessage.value = '';
+  void loadDiff('turn');
 }, {immediate: true});
 </script>
 
@@ -259,10 +309,17 @@ watch(() => props.activeId, () => {
           <span>{{ active.data?.path ?? active.request.path }}</span>
         </div>
         <div class="toolbar-actions">
-          <!-- 只有带编辑上下文的标签才出现「差异/源码」切换，普通预览行为完全不变 -->
-          <div v-if="hasEdit" class="mode-switch" role="group" :aria-label="t('filePreview.viewDiff')">
-            <button type="button" :aria-pressed="diffView === 'diff'" @click="diffView = 'diff'">{{ t('filePreview.viewDiff') }}</button>
-            <button type="button" :aria-pressed="diffView === 'source'" @click="diffView = 'source'">{{ t('filePreview.viewSource') }}</button>
+          <!-- 三档：本次改动 / 最新改动 / 当前源码。只有带编辑上下文的标签才出现，普通预览行为不变 -->
+          <div v-if="hasEdit" class="mode-switch" role="group" :aria-label="t('filePreview.diffViews')">
+            <button type="button" :aria-pressed="diffView === 'turn'" @click="setDiffView('turn')">{{ t('filePreview.viewThisChange') }}</button>
+            <button
+              type="button"
+              :aria-pressed="diffView === 'latest'"
+              :disabled="!canUseLatest"
+              :title="canUseLatest ? t('filePreview.viewLatestChangeHint') : t('filePreview.latestNeedsSession')"
+              @click="setDiffView('latest')"
+            >{{ t('filePreview.viewLatestChange') }}</button>
+            <button type="button" :aria-pressed="diffView === 'source'" @click="setDiffView('source')">{{ t('filePreview.viewSource') }}</button>
           </div>
           <button
             v-if="hasEdit && active.request.edit"
@@ -289,20 +346,26 @@ watch(() => props.activeId, () => {
       <div class="code-preview" :role="active ? 'tabpanel' : undefined" :aria-label="t('filePreview.codeAria')">
         <template v-if="active">
           <!-- 差异视图：完整文件逐行渲染，本次改动行红绿标注 -->
-          <div v-if="hasEdit && diffView === 'diff'" class="diff-preview">
-            <div v-if="diffLoading" class="preview-placeholder" role="status">{{ t('filePreview.diffLoading') }}</div>
-            <div v-else-if="diffError" class="preview-placeholder">{{ diffError }}</div>
+          <div v-if="hasEdit && isDiffMode" class="diff-preview">
+            <div v-if="currentDiff.loading" class="preview-placeholder" role="status">{{ t('filePreview.diffLoading') }}</div>
+            <div v-else-if="currentDiff.error" class="preview-placeholder">{{ currentDiff.error }}</div>
             <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
-            <div v-else class="diff-lines">
-              <div v-for="(line, index) in mergedLines" :key="index" class="diff-line" :class="`is-${line.kind}`">
-                <span class="diff-no">{{ line.lineNumber ?? '' }}</span>
-                <span class="diff-sigil">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : '' }}</span>
-                <span class="diff-text" v-html="highlightLine(line.text)"></span>
+            <template v-else>
+              <!-- 「最新改动」可能属于别的轮次：不说明就会出现「数字是哪一轮」的误会 -->
+              <div v-if="diffView === 'latest'" class="diff-note" role="status">
+                {{ latestIsCurrent ? t('filePreview.latestIsCurrent') : t('filePreview.latestFromOtherTurn') }}
               </div>
-            </div>
+              <div class="diff-lines">
+                <div v-for="(line, index) in mergedLines" :key="index" class="diff-line" :class="`is-${line.kind}`">
+                  <span class="diff-no">{{ line.lineNumber ?? '' }}</span>
+                  <span class="diff-sigil">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : '' }}</span>
+                  <span class="diff-text" v-html="highlightLine(line.text)"></span>
+                </div>
+              </div>
+            </template>
           </div>
           <CodePreview
-            v-show="!!active.data && !(hasEdit && diffView === 'diff')"
+            v-show="!!active.data && !(hasEdit && isDiffMode)"
             :tabs="tabs" :activeId="activeId" :isDark="isDark"
           />
           <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
@@ -310,7 +373,7 @@ watch(() => props.activeId, () => {
         </template>
         <div v-else class="preview-placeholder">{{ t('filePreview.noOpenFile') }}</div>
       </div>
-      <div v-if="hasEdit && diffTruncated && diffView === 'diff'" class="preview-truncated">{{ t('filePreview.diffTruncated') }}</div>
+      <div v-if="hasEdit && currentDiff.truncated && isDiffMode" class="preview-truncated">{{ t('filePreview.diffTruncated') }}</div>
       <footer v-if="active" class="preview-status">
         <span>{{ active.loading ? t('filePreview.refreshing') : active.error && active.data ? t('filePreview.showLastContent') : active.data?.watchId ? t('filePreview.autoRefresh') : t('filePreview.readOnly') }}</span>
         <span v-if="active.data">{{ active.data.encoding }} · {{ Math.ceil(active.data.size / 1024) }} KB</span>
@@ -375,6 +438,8 @@ button:disabled { opacity: .4; cursor: default; }
 .preview-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; font-size: var(--lx-font-size-md); color: #dc2626; background: #ef444410; }
 .preview-status { font-size: var(--lx-font-size-sm); color: var(--file-muted); padding: 9px 14px; border-top: 1px solid var(--file-line); }
 .preview-truncated { padding: 6px 14px; font-size: var(--lx-font-size-sm); color: #b45309; background: #f59e0b10; }
+/* 档位说明条：只解释「这份差异属于哪一轮」，不承载交互。 */
+.diff-note { padding: 6px 14px; font-size: var(--lx-font-size-sm); color: var(--file-muted); border-bottom: 1px solid var(--file-line); }
 /* 差异视图：行号列定宽右对齐并带分隔线，增删行区分淡色背景与指示符，正文走规范代码字体与语法高亮。 */
 .diff-preview {
   height: 100%;

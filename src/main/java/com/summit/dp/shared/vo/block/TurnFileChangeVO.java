@@ -21,7 +21,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param created       该文件是否由本轮新建
  * @param executionId   执行标识，打开差异视图要用
  * @param recordId      末条记录标识，打开差异视图要用
- * @param diffAvailable 差异能否点开；<b>仅最新轮次为 true</b>，历史轮次没有差异正文
+ * @param diffAvailable 差异能否点开；<b>该文件本轮有可重放的记录就为 true</b>（不限最新轮次），
+ *                      差异正文仍按需现取
  */
 public record TurnFileChangeVO(
         @JsonProperty("filePath") String filePath,

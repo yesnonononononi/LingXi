@@ -27,8 +27,10 @@ import java.util.Optional;
  * 同一行被改两次就会记成两次增删。正确做法是把各次差异依次重放回基线得到末态，
  * 再与基线做一次完整差异 —— 那才是这个文件真实的净变化量。</p>
  *
- * <p><b>契约</b>：清单只给增删行数与定位，差异正文不进视图（会击穿单帧预算），
- * 只有最新轮次的 {@code diffAvailable} 为真 —— 历史 diff 既没有展示位，也没必要让它留在热路径上。</p>
+ * <p><b>契约</b>：清单只给增删行数与定位，差异正文不进视图（会击穿单帧预算），由预览面板现取。
+ * 「这一轮改了什么」与「这个文件最新长什么样」是两件事：前者由 {@link #diffOf} 按记录重放，
+ * 后者由 {@link #latestDiffOf} 按文件名找最新记录。任何一轮只要有可重放的记录就能点开，
+ * 不再只给最新轮次开绿灯。</p>
  *
  * <p><b>它同时是 {@link TurnFileChangeQuery} 的实现</b>：轮次视图装配只要「这轮改了哪些文件、
  * 多少行」，不该依赖本类的记录与重放细节。</p>
@@ -42,6 +44,7 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
 
     private final FileRecordManager records;
     private final ChatTurnRepository turns;
+    private final FileEditSceneScope scenes;
     private final Differ differ;
 
     /**
@@ -58,27 +61,53 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
         }
         String executionKey = String.valueOf(turn.getExecutionId());
         Map<String, List<FileRecord>> byFile = this.groupByFile(executionKey, String.valueOf(turnId));
-        boolean latest = this.isLatestTurnOfSession(turn);
         List<TurnFileChangeVO> summary = new ArrayList<>(byFile.size());
         byFile.forEach((path, fileRecords) ->
-                summary.add(this.summarizeFile(executionKey, path, fileRecords, latest)));
+                summary.add(this.summarizeFile(executionKey, path, fileRecords)));
         return summary;
     }
 
     /**
      * 一条记录的差异视图：查记录、重建差异、按上限截断。
      *
-     * <p>截断与「记录不存在」都是业务口径，属于应用层，不该散在接口层里 —— 接口层只做转发。</p>
+     * <p>截断与「记录不存在」「基线过期」都是业务口径，属于应用层，不该散在接口层里 ——
+     * 接口层只做转发。</p>
      *
-     * @throws ClientException 记录不存在（对外就是「已失效」）
+     * @throws ClientException 记录不存在，或基线已过期导致差异重建不出来
      */
     public FileEditDiff diffOf(String executionId, String recordId) {
         FileRecord target = records.getRecord(executionId, recordId)
                 .orElseThrow(() -> new ClientException("文件编辑记录不存在或已失效"));
-        String diff = this.rebuildUpTo(target).orElse("");
+        return this.toDiff(target, this.requireDiff(target));
+    }
+
+    /**
+     * 这个文件在整棵会话树里最新的一份差异。
+     *
+     * <p>按文件名定位、不认轮次：从任何一轮的产物清单点开「最新改动」，看到的都该是这个文件
+     * 此刻最后一次改动，而不是那条记录所属轮次的中间状态。</p>
+     *
+     * @throws ClientException 文件没有编辑记录，或作用域内的记录已过期
+     */
+    public FileEditDiff latestDiffOf(long sessionId, String filePath) {
+        List<String> turnIds = scenes.resolveSceneTurnIds(sessionId);
+        FileRecord target = records.findLatestRecord(filePath, turnIds)
+                .orElseThrow(() -> new ClientException("这个文件还没有编辑记录，看不到差异"));
+        return this.toDiff(target, this.requireDiff(target));
+    }
+
+    /** 差异给不出来时一律抛业务异常：空串会被前端当成功渲染成一份空差异。 */
+    private String requireDiff(FileRecord target) {
+        return this.rebuildUpTo(target)
+                .orElseThrow(() -> new ClientException("这条编辑记录的基线已过期，差异无法重建"));
+    }
+
+    /** 截断口径只有一处：超过上限切掉并显式标记，同时带上记录定位供前端比对。 */
+    private FileEditDiff toDiff(FileRecord target, String diff) {
         boolean truncated = diff.length() > MAX_DIFF_CHARS;
         return new FileEditDiff(target.filePath(),
-                truncated ? diff.substring(0, MAX_DIFF_CHARS) : diff, truncated);
+                truncated ? diff.substring(0, MAX_DIFF_CHARS) : diff, truncated,
+                String.valueOf(target.executionId()), String.valueOf(target.id()));
     }
 
     /** 从基线重放到目标记录为止；目标不在同一轮同一文件时自然重放不出东西。 */
@@ -113,19 +142,30 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
     /**
      * 单个文件的净改动：基线 → 重放各次差异后的末态。
      *
-     * <p>重放失败时不编数字：行数给 0、差异标记为不可用。宁可显示「算不出来」，
+     * <p>重放不出来时不编数字：行数给 0、差异标记为不可用。宁可显示「算不出来」，
      * 也不要把逐次累加值伪装成净改动 —— 那正是这条链路最容易骗人的地方。</p>
      */
-    private TurnFileChangeVO summarizeFile(String executionKey, String path, List<FileRecord> fileRecords,
-                                           boolean latest) {
-        String baseline = fileRecords.getFirst().baseline();
-        Optional<String> finalContent = this.replay(baseline, fileRecords);
-        DiffResult combined = finalContent.isEmpty() ? null : differ.diff(path,
-                baseline == null ? "" : baseline, finalContent.get());
+    private TurnFileChangeVO summarizeFile(String executionKey, String path, List<FileRecord> fileRecords) {
+        FileRecord first = fileRecords.getFirst();
+        String baseline = first.baseline();
+        Optional<String> finalContent = this.replay(fileRecords);
+        DiffResult combined = finalContent.isEmpty() ? null
+                : differ.diff(path, baseline == null ? "" : baseline, finalContent.get());
         int plusLines = combined == null ? 0 : combined.plusLines();
         int minusLines = combined == null ? 0 : combined.minusLines();
-        return new TurnFileChangeVO(path, plusLines, minusLines, fileRecords.size(), baseline == null,
-                executionKey, String.valueOf(fileRecords.getLast().id()), latest && combined != null);
+        return new TurnFileChangeVO(path, plusLines, minusLines, fileRecords.size(),
+                this.createdInTurn(first), executionKey, String.valueOf(fileRecords.getLast().id()),
+                combined != null);
+    }
+
+    /**
+     * 本轮是否新建了这个文件。
+     *
+     * <p>首条记录没有基线有两种原因：本轮开始时文件不存在，或者基线已被回收 ——
+     * 后者不能标成「新建」，那是我们自己把数据弄丢了，不是用户的改动。</p>
+     */
+    private boolean createdInTurn(FileRecord first) {
+        return first.baseline() == null && !first.baselineMissing();
     }
 
     /** 重放该文件各次差异并生成「基线 → 末态」的统一差异（差异视图专用）。 */
@@ -134,7 +174,7 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
             return Optional.empty();
         }
         String baseline = fileRecords.getFirst().baseline();
-        Optional<String> finalContent = this.replay(baseline, fileRecords);
+        Optional<String> finalContent = this.replay(fileRecords);
         if (finalContent.isEmpty()) {
             return Optional.empty();
         }
@@ -142,21 +182,13 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
         return result.isSuccess() ? Optional.of(result.unifiedDiff()) : Optional.empty();
     }
 
-    private Optional<String> replay(String baseline, List<FileRecord> fileRecords) {
-        return UnifiedDiffReplayer.replay(baseline, fileRecords.stream().map(FileRecord::diff).toList());
-    }
-
-    /**
-     * 该轮次是否为所在会话的最新一轮。
-     *
-     * <p>用 {@code findLatest} 而不是「看有没有更大的 executionId」：仓储已经提供了
-     * 「取最新一轮」的语义，不该在这里再发明一套。</p>
-     */
-    private boolean isLatestTurnOfSession(ChatTurn turn) {
-        if (turn.getSessionId() == null) {
-            return false;
+    /** 基线丢了就不重放：拿空串顶上会把整份文件算成新增。 */
+    private Optional<String> replay(List<FileRecord> fileRecords) {
+        FileRecord first = fileRecords.getFirst();
+        if (first.baseline() == null && first.baselineMissing()) {
+            return Optional.empty();
         }
-        List<ChatTurn> latest = turns.findLatest(turn.getSessionId(), null, 1);
-        return !latest.isEmpty() && Objects.equals(latest.getFirst().getId(), turn.getId());
+        return UnifiedDiffReplayer.replay(first.baseline(),
+                fileRecords.stream().map(FileRecord::diff).toList());
     }
 }

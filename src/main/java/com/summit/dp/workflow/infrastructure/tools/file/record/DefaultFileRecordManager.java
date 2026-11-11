@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,6 +48,11 @@ public class DefaultFileRecordManager implements FileRecordManager {
     @Override
     public List<FileRecord> listRecords(@NonNull Serializable executionId) {
         return this.store.listByExecution(executionId);
+    }
+
+    @Override
+    public Optional<FileRecord> findLatestRecord(@NonNull String filePath, @NonNull Collection<String> turnIds) {
+        return this.store.findLatestRecord(filePath, turnIds);
     }
 
     private FileRecord normalize(Serializable executionId, Serializable turnId, FileRecord draft)

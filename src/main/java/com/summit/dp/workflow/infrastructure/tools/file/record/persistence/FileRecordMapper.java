@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -39,6 +40,20 @@ public interface FileRecordMapper extends BaseMapper<FileRecordPO> {
     /** 按业务标识取单条（按执行隔离，避免跨执行的标识碰撞读到别人的记录）。 */
     @Select("SELECT * FROM file_record WHERE execution_id = #{executionId} AND id = #{id}")
     FileRecordPO selectByExecutionAndId(@Param("executionId") String executionId, @Param("id") String id);
+
+    /**
+     * 作用域内该文件最新的一条记录（跨轮次视图用来定位）。
+     *
+     * <p>顺序同样交给 SQL：{@code seq} 是插入顺序，倒序第一条就是「最后一次改这个文件」。
+     * 只查本表，轮次集合由调用方解析，避免基础设施层去 join 别的模块的表。</p>
+     */
+    @Select({"<script>",
+            "SELECT * FROM file_record WHERE file_path = #{filePath} AND turn_id IN ",
+            "<foreach collection='turnIds' item='turnId' open='(' separator=',' close=')'>#{turnId}</foreach>",
+            " ORDER BY seq DESC LIMIT 1",
+            "</script>"})
+    FileRecordPO selectLatestRecord(@Param("filePath") String filePath,
+                                    @Param("turnIds") Collection<String> turnIds);
 
 
     /** 同一文件的下一个版本号；由存储分配，调用方不能自行编造。 */

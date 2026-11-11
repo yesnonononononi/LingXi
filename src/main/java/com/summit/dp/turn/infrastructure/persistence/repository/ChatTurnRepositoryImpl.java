@@ -121,6 +121,18 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
     }
 
     @Override
+    public List<Long> findIdsBySessionIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return List.of();
+        }
+        return chatTurnMapper.selectList(Wrappers.<ChatTurnPO>lambdaQuery()
+                        .select(ChatTurnPO::getId)
+                        .in(ChatTurnPO::getSessionId, sessionIds)
+                        .orderByAsc(ChatTurnPO::getId))
+                .stream().map(ChatTurnPO::getId).toList();
+    }
+
+    @Override
     public int markOrphansFailed(Instant completedAt) {
         return chatTurnMapper.markOrphansFailed(ChatTurnStatus.FAILED.name(),
                 ChatTurnStatus.ACCEPTED.name(), ChatTurnStatus.RUNNING.name(), completedAt);

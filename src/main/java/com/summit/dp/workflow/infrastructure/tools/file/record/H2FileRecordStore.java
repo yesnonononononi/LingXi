@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -109,6 +110,16 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         return records;
     }
 
+    /** 跨轮次定位：作用域内该文件最新的一条记录，顺序与「最新」判定都由 SQL 的 seq 承担。 */
+    @Override
+    public Optional<FileRecord> findLatestRecord(@NonNull String filePath, @NonNull Collection<String> turnIds) {
+        if (turnIds.isEmpty()) {
+            return Optional.empty();
+        }
+        FileRecordPO po = this.mapper.selectLatestRecord(filePath, turnIds);
+        return po == null ? Optional.empty() : Optional.of(this.toRecord(po));
+    }
+
     /**
      * 本轮是否已为这个文件登记过记录。
      *
@@ -164,12 +175,15 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         }
     }
 
-    /** 库行 → 领域记录：基线按需从文件读回，读不到就当这条没有基线（不编造空文件）。 */
+    /** 库行 → 领域记录：基线按需从文件读回；读不到就打上「基线缺失」，不编造空文件。 */
     private FileRecord toRecord(FileRecordPO po) {
+        String baseline = this.baselines.read(po.getBaselinePath()).orElse(null);
         return FileRecord.builder()
                 .id(po.getId()).executionId(po.getExecutionId()).turnId(po.getTurnId())
                 .version(po.getVersion()).filePath(po.getFilePath())
-                .baseline(this.baselines.read(po.getBaselinePath()).orElse(null))
+                .baseline(baseline)
+                // 有路径却没内容 = 基线丢了；没有路径才是「本轮新建」。
+                .baselineMissing(po.getBaselinePath() != null && baseline == null)
                 .diff(po.getDiff()).plusLines(po.getPlusLines()).minusLines(po.getMinusLines())
                 .createAt(po.getCreateAt())
                 .build();

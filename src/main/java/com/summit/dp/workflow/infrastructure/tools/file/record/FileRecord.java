@@ -18,6 +18,10 @@ import java.time.Instant;
  *
  * <p>{@code baseline} 为 {@code null} 只对首条有含义：表示本轮开始时该文件并不存在（新建文件）。
  * 非首条记录的 {@code baseline} 一律为 {@code null}，读的时候只能看首条。</p>
+ *
+ * <p>{@link #baselineMissing} 把「本轮新建」和「基线丢了」分开：库里存了基线路径却读不回内容
+ * （过期回收或文件被人删了）时必须为 {@code true}。两者都表现为 {@code baseline == null}，
+ * 混为一谈就会把整份文件算成新增，界面上的行数全是假的。</p>
  */
 @Builder
 public record FileRecord(
@@ -30,7 +34,9 @@ public record FileRecord(
         String diff,
         int plusLines,
         int minusLines,
-        Instant createAt
+        Instant createAt,
+        /** 基线引用过但内容已读不回来；{@code false} 且 {@code baseline == null} 表示本轮新建文件。 */
+        boolean baselineMissing
 ) {
 }
 

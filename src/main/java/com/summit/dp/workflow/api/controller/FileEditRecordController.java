@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -18,7 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 落盘后登记，这里是唯一暴露口。</p>
  *
  * <p><b>没有「按轮次汇总」端点</b>：改动清单随轮次视图（{@code TurnViewVO.fileChanges}）下发，
- * 避免卡片挂载后再请求一次导致列表高度二次增长。本类只剩「打开某条记录的差异」。</p>
+ * 避免卡片挂载后再请求一次导致列表高度二次增长。本类只有两个读入口：某条记录的差异、
+ * 该文件最新的差异。</p>
  *
  * <p><b>没有写接口</b>：撤销功能整体暂缓，本类只读。一个不能写文件的接口面，就不会在
  * 某个边界条件上写坏用户的文件。</p>
@@ -35,6 +37,18 @@ public class FileEditRecordController {
     @GetMapping("/{executionId}/{recordId}")
     public Result<FileEditDiff> diff(@PathVariable String executionId, @PathVariable String recordId) {
         return Result.success(turnEdits.diffOf(executionId, recordId));
+    }
+
+    /**
+     * 该文件在整棵会话树里最新的一份差异：按文件名定位，不看轮次。
+     *
+     * <p>历史轮次的产物清单也能点开差异，但「当时改了什么」和「文件现在长什么样」是两件事，
+     * 所以给的是两个入口，不是一个入口两种口径。</p>
+     */
+    @Operation(summary = "读取该文件最新的一份差异")
+    @GetMapping("/latest/{sessionId}")
+    public Result<FileEditDiff> latest(@PathVariable long sessionId, @RequestParam String path) {
+        return Result.success(turnEdits.latestDiffOf(sessionId, path));
     }
 }
 

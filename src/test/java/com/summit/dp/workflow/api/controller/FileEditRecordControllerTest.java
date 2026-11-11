@@ -3,6 +3,7 @@ package com.summit.dp.workflow.api.controller;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.filerecord.FileEditDiff;
+import com.summit.dp.workflow.application.filerecord.FileEditSceneScope;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
@@ -14,12 +15,14 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager
 import org.junit.jupiter.api.Test;
 
 import java.io.Serializable;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 记录读侧接口：只做转发，差异内容与截断口径由应用层决定。
@@ -51,11 +54,39 @@ class FileEditRecordControllerTest {
         assertThrows(ClientException.class, () -> controller(newRecordManager()).diff("e1", "missing"));
     }
 
+    /** 按文件名取最新：定位由作用域解析，控制器只转发路径与业务结果。 */
+    @Test
+    void latestForwardsTheNewestDiffOfThatFile() {
+        FileRecordManager records = newRecordManager();
+        records.record("e1", "t1", draft(BASELINE, UPDATED));
+        FileEditSceneScope scenes = mock(FileEditSceneScope.class);
+        when(scenes.resolveSceneTurnIds(5L)).thenReturn(List.of("t1"));
+
+        FileEditDiff diff = controller(records, scenes).latest(5L, "demo.txt").getData();
+
+        assertEquals("demo.txt", diff.filePath());
+        assertTrue(diff.unifiedDiff().contains("+BETA"), diff.unifiedDiff());
+        assertEquals("e1", diff.executionId(), "定位回给前端，用来判断「最新是否就是当前这条」");
+    }
+
+    @Test
+    void latestWithoutAnyRecordIsRejected() {
+        FileEditSceneScope scenes = mock(FileEditSceneScope.class);
+        when(scenes.resolveSceneTurnIds(5L)).thenReturn(List.of("t1"));
+
+        assertThrows(ClientException.class,
+                () -> controller(newRecordManager(), scenes).latest(5L, "never-touched.txt"));
+    }
+
     private final Differ differ = new EditDiffer();
 
     private FileEditRecordController controller(FileRecordManager records) {
+        return controller(records, mock(FileEditSceneScope.class));
+    }
+
+    private FileEditRecordController controller(FileRecordManager records, FileEditSceneScope scenes) {
         TurnFileEditSummaryService turnEdits =
-                new TurnFileEditSummaryService(records, mock(ChatTurnRepository.class), differ);
+                new TurnFileEditSummaryService(records, mock(ChatTurnRepository.class), scenes, differ);
         return new FileEditRecordController(turnEdits);
     }
 

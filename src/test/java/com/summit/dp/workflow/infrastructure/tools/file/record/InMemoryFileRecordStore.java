@@ -4,11 +4,10 @@ import lombok.NonNull;
 
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -21,74 +20,85 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class InMemoryFileRecordStore implements FileRecordStore {
 
-    private final Map<Serializable, List<FileRecord>> records = new ConcurrentHashMap<>();
+    /** 单一真源：全局插入顺序就是生产实现里的 {@code seq}，跨执行的「最新」判定也靠它。 */
+    private final List<FileRecord> insertionOrder = new CopyOnWriteArrayList<>();
 
     @Override
     public FileRecord put(@NonNull FileRecord record) {
         FileRecord stored = this.assignIdentity(record);
-        this.records.computeIfAbsent(stored.executionId(), key -> new CopyOnWriteArrayList<>()).add(stored);
+        this.insertionOrder.add(stored);
         return stored;
     }
 
     @Override
     public Optional<FileRecord> get(@NonNull Serializable executionId, @NonNull Serializable recordId) {
-        List<FileRecord> list = this.records.get(executionId);
-        return list == null ? Optional.empty()
-                : list.stream().filter(record -> recordId.equals(record.id())).findFirst();
+        return this.insertionOrder.stream()
+                .filter(record -> executionId.equals(record.executionId()) && recordId.equals(record.id()))
+                .findFirst();
     }
 
     @Override
     public void clearByExecutionId(@NonNull Serializable executionId) {
-        this.records.remove(executionId);
+        this.insertionOrder.removeIf(record -> executionId.equals(record.executionId()));
     }
 
     @Override
     public List<FileRecord> listByExecution(@NonNull Serializable executionId) {
-        List<FileRecord> list = this.records.get(executionId);
-        return list == null ? List.of() : List.copyOf(list);
-    }
-
-    @Override
-    public List<FileRecord> listByTurn(@NonNull Serializable executionId, Serializable turnId) {
-        return this.records.getOrDefault(executionId, List.of()).stream()
-                .filter(record -> Objects.equals(record.turnId(), turnId))
+        return this.insertionOrder.stream()
+                .filter(record -> executionId.equals(record.executionId()))
                 .toList();
     }
 
     @Override
+    public List<FileRecord> listByTurn(@NonNull Serializable executionId, Serializable turnId) {
+        return this.insertionOrder.stream()
+                .filter(record -> executionId.equals(record.executionId()))
+                .filter(record -> Objects.equals(record.turnId(), turnId))
+                .toList();
+    }
+
+    /** 倒着扫就是「最新优先」：与生产实现 {@code ORDER BY seq DESC} 同一口径。 */
+    @Override
+    public Optional<FileRecord> findLatestRecord(@NonNull String filePath, @NonNull Collection<String> turnIds) {
+        FileRecord latest = null;
+        for (FileRecord record : this.insertionOrder) {
+            if (!Objects.equals(record.filePath(), filePath) || record.turnId() == null
+                    || !turnIds.contains(String.valueOf(record.turnId()))) {
+                continue;
+            }
+            latest = record;
+        }
+        return Optional.ofNullable(latest);
+    }
+
+    @Override
     public boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath) {
-        return this.records.getOrDefault(executionId, List.of()).stream()
+        return this.insertionOrder.stream()
+                .filter(record -> executionId.equals(record.executionId()))
                 .anyMatch(record -> Objects.equals(record.turnId(), turnId)
                         && Objects.equals(record.filePath(), filePath));
     }
 
     @Override
     public int purgeBefore(@NonNull Instant cutoff) {
-        int deleted = 0;
-        for (Map.Entry<Serializable, List<FileRecord>> entry : this.records.entrySet()) {
-            List<FileRecord> kept = new CopyOnWriteArrayList<>();
-            for (FileRecord record : entry.getValue()) {
-                if (record.createAt() != null && record.createAt().isBefore(cutoff)) {
-                    deleted++;
-                } else {
-                    kept.add(record);
-                }
-            }
-            this.records.put(entry.getKey(), kept);
-        }
-        return deleted;
+        List<FileRecord> expired = this.insertionOrder.stream()
+                .filter(record -> record.createAt() != null && record.createAt().isBefore(cutoff))
+                .toList();
+        this.insertionOrder.removeAll(expired);
+        return expired.size();
     }
 
     @Override
     public void clear() {
-        this.records.clear();
+        this.insertionOrder.clear();
     }
 
-    /** 补齐标识与同文件版本号；与生产实现同一套规则。 */
+    /** 补齐标识与同文件版本号；与生产实现同一套规则（版本按执行 + 文件递增）。 */
     private FileRecord assignIdentity(FileRecord record) {
         Serializable id = record.id() != null ? record.id() : this.generateId();
-        int version = this.records.getOrDefault(record.executionId(), List.<FileRecord>of()).stream()
-                .filter(existing -> Objects.equals(existing.filePath(), record.filePath()))
+        int version = this.insertionOrder.stream()
+                .filter(existing -> Objects.equals(existing.executionId(), record.executionId())
+                        && Objects.equals(existing.filePath(), record.filePath()))
                 .mapToInt(existing -> existing.version() == null ? 0 : existing.version())
                 .max().orElse(0) + 1;
         return FileRecord.builder()
@@ -96,6 +106,8 @@ public class InMemoryFileRecordStore implements FileRecordStore {
                 .version(version).filePath(record.filePath()).baseline(record.baseline())
                 .diff(record.diff()).plusLines(record.plusLines()).minusLines(record.minusLines())
                 .createAt(record.createAt())
+                // 缺失标记原样保留：测试靠它造出「基线被回收」的记录，否则这条路径没法覆盖。
+                .baselineMissing(record.baselineMissing())
                 .build();
     }
 }

@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.record;
 import lombok.NonNull;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,4 +45,12 @@ public interface FileRecordManager {
      * {@link #listTurnRecords}，否则会把无关轮次的基线一并 hydrate。</p>
      */
     List<FileRecord> listRecords(@NonNull Serializable executionId);
+
+    /**
+     * 作用域内该文件最新的一条记录（跨轮次差异视图的定位入口）。
+     *
+     * <p>{@code turnIds} 是调用方按会话范围解析出来的轮次集合；这里只负责「最新」，
+     * 不解释作用域，避免把会话树的语义漏进记录层。</p>
+     */
+    Optional<FileRecord> findLatestRecord(@NonNull String filePath, @NonNull Collection<String> turnIds);
 }

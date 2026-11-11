@@ -189,7 +189,7 @@ export interface TurnFileChangeVO {
   executionId?: string | null;
   /** 末条记录标识，打开差异视图要用 */
   recordId?: string | null;
-  /** 差异能否点开；仅最新轮次为 true（历史轮次没有差异正文） */
+  /** 差异能否点开；该文件本轮有可重放的记录就为 true（不限最新轮次） */
   diffAvailable?: boolean;
 }
 

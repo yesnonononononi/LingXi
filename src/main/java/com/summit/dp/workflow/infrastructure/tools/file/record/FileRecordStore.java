@@ -4,6 +4,7 @@ import lombok.NonNull;
 
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +62,17 @@ public interface FileRecordStore {
      * 基线大文本一起读进内存，长会话下正是 OOM 的形态。</p>
      */
     List<FileRecord> listByTurn(@NonNull Serializable executionId, Serializable turnId);
+
+    /**
+     * 取「这些轮次里、这个文件」最新的一条记录。
+     *
+     * <p>跨轮次差异视图用它定位：作用域（本会话还是整棵会话树）由调用方解析成轮次集合，
+     * 存储层只做本表的窄查询 —— 不 join 别的模块的表，也不读其它文件的基线。</p>
+     *
+     * @param filePath 文件路径，与记录里的 {@code filePath} 等值匹配
+     * @param turnIds  作用域内的轮次标识（字符串形态，与 {@code turn_id} 列同形）；空集合直接返回空
+     */
+    Optional<FileRecord> findLatestRecord(@NonNull String filePath, @NonNull Collection<String> turnIds);
 
     void clear();
 }

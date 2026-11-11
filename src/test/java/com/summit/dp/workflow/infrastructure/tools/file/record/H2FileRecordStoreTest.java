@@ -194,7 +194,29 @@ class H2FileRecordStoreTest {
         FileRecord reloaded = store.get(EXECUTION, stored.id()).orElseThrow();
 
         assertNull(reloaded.baseline(), "读不到就当没有基线，不能编成空串（空串会被当成「整份新增」）");
+        assertTrue(reloaded.baselineMissing(), "有基线引用却没内容 = 基线丢了，必须和「本轮新建」区分开");
         assertEquals("+v2", reloaded.diff(), "差异本身仍在");
+    }
+
+    /**
+     * 按文件名取最新：作用域由调用方给的轮次集合界定，顺序由 {@code seq} 承担。
+     *
+     * <p>「最新」不能靠 {@code create_at} 猜：同一毫秒插入的两条记录时间可能相同，
+     * 而 {@code seq} 是库发放的严格顺序。</p>
+     */
+    @Test
+    void findLatestRecordPicksTheNewestRowWithinTheGivenTurns() {
+        store.put(draft("demo.txt", "v1\n", "+v2", null, TURN));
+        store.put(draft("other.txt", "o1\n", "+o2", null, "78"));
+        store.put(draft("demo.txt", null, "+v3", null, "78"));
+
+        FileRecord latest = store.findLatestRecord("demo.txt", List.of(TURN, "78")).orElseThrow();
+
+        assertEquals("78", latest.turnId(), "取的是更晚那一轮的行");
+        assertEquals(2, latest.version(), "同执行同文件的第二版");
+        assertEquals("+v3", latest.diff());
+        assertTrue(store.findLatestRecord("demo.txt", List.of("999")).isEmpty(), "作用域外的轮次不参与");
+        assertTrue(store.findLatestRecord("demo.txt", List.of()).isEmpty(), "空作用域直接返回空，不拼 IN ()");
     }
 
     @Test

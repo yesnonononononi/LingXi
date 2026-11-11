@@ -39,7 +39,8 @@ export function buildTurnFileChangeRows(items?: TurnFileChangeVO[] | null): Turn
   if (!items?.length) return [];
   return items.map(item => {
     const {name, dir} = splitPath(item.filePath ?? '');
-    // 只有最新轮次的可点：历史轮次既没有差异正文，也不该给一个点开一片空白的入口。
+    // 可点与否只看后端给的 diffAvailable（有可重放记录即为真）+ 定位是否齐全；
+    // 不再拿「是不是最新一轮」当条件 —— 历史轮次改了什么同样值得看。
     const canOpenDiff = !!item.diffAvailable && !!item.executionId && !!item.recordId;
     return {
       filePath: item.filePath ?? '',

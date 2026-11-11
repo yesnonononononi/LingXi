@@ -61,6 +61,7 @@ function renderer() {
 const ITEMS = [
   {filePath: '/ws/src/a.ts', plusLines: 5, minusLines: 2, edits: 2, created: false,
     executionId: 'e1', recordId: 'r1', diffAvailable: true},
+  // 第二行 diffAvailable=false：后端重放不出差异（例如基线已过期），不是「历史轮次」。
   {filePath: '/ws/README.md', plusLines: 3, minusLines: 0, edits: 1, created: true,
     executionId: 'e1', recordId: 'r2', diffAvailable: false}
 ];
@@ -127,7 +128,7 @@ test('TurnFileChangeCard：点行带着记录定位打开差异视图，不可�
   assert.deepEqual(opened, [{path: '/ws/src/a.ts', edit: {executionId: 'e1', recordId: 'r1'}}],
     '最新轮次有差异正文，点行必须带着两个标识');
 
-  // 第二行 diffAvailable=false（历史轮次没有正文）：点了也不能打开一个空白面板。
+  // 第二行 diffAvailable=false（后端重放不出差异）：点了也不能打开一个空白面板。
   rows[1].props.onClick?.();
   assert.equal(opened.length, 1, '差异不可用的行不得打开预览');
 });

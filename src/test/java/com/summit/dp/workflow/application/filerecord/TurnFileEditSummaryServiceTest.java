@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,9 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -34,7 +32,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>净改动与累加最容易混淆的场景是「改过去又改回来」：逐次累加会得到 +2/−2，
  * 净改动必须是 0/0。这一条是本节的核心断言，其余用例守顺序、过滤、新建语义，
- * 以及「只有最新轮次能点开差异」这条展示契约。</p>
+ * 以及「有记录就能看差异」与「按文件名取最新差异」两条展示口径。</p>
  */
 class TurnFileEditSummaryServiceTest {
 
@@ -50,15 +48,19 @@ class TurnFileEditSummaryServiceTest {
 
     private final Differ differ = new EditDiffer();
 
+    private InMemoryFileRecordStore store;
     private FileRecordManager records;
     private ChatTurnRepository turns;
+    private FileEditSceneScope scenes;
     private TurnFileEditSummaryService service;
 
     @BeforeEach
     void setUp() {
-        records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
+        store = new InMemoryFileRecordStore();
+        records = new DefaultFileRecordManager(store);
         turns = mock(ChatTurnRepository.class);
-        service = new TurnFileEditSummaryService(records, turns, differ);
+        scenes = mock(FileEditSceneScope.class);
+        service = new TurnFileEditSummaryService(records, turns, scenes, differ);
     }
 
     @Test
@@ -131,16 +133,72 @@ class TurnFileEditSummaryServiceTest {
     }
 
     @Test
-    void onlyLatestTurnCanOpenDiff() throws FileModificationException {
+    void everyTurnWithReplayableRecordsCanOpenDiff() throws FileModificationException {
         givenTurn(TURN_ID, EXECUTION_ID);
         records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\n", "a\nb\n"));
 
-        // 历史轮次：只给行数，差异不可点开。
-        assertFalse(service.summarize(TURN_ID).getFirst().diffAvailable(), "历史轮次不给差异入口");
+        TurnFileChangeVO edit = service.summarize(TURN_ID).getFirst();
 
-        // 成为最新轮次后才可点开（正文仍由预览面板现取，不进视图）。
-        givenLatestTurn(TURN_ID);
-        assertTrue(service.summarize(TURN_ID).getFirst().diffAvailable(), "最新轮次必须能点开差异");
+        // 「是不是最新轮」与「能不能看这一轮的改动」无关：记录还在、重放得出来就能点。
+        assertTrue(edit.diffAvailable(), "历史轮次同样要给差异入口");
+    }
+
+    @Test
+    void latestDiffFollowsTheFileNameAcrossTurns() throws FileModificationException {
+        givenTurn(TURN_ID, EXECUTION_ID);
+        when(scenes.resolveSceneTurnIds(SESSION_ID)).thenReturn(List.of(TURN_KEY, "8"));
+        records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\n", "a\nb\n"));
+        // 更晚的一轮（另一个执行）又改了这个文件：最新差异必须落在它身上。
+        records.record("200", "8", draft("demo.txt", "a\nb\n", "a\nb\n", "a\nb\nc\n"));
+
+        FileEditDiff latest = service.latestDiffOf(SESSION_ID, "demo.txt");
+
+        assertEquals("200", latest.executionId(), "定位指向更晚那一轮的记录");
+        assertTrue(latest.unifiedDiff().contains("+c"), latest.unifiedDiff());
+        assertFalse(latest.unifiedDiff().contains("+b"), "取最新只能用最后一次改动: " + latest.unifiedDiff());
+    }
+
+    @Test
+    void latestDiffWithoutAnyRecordIsRejected() {
+        when(scenes.resolveSceneTurnIds(SESSION_ID)).thenReturn(List.of(TURN_KEY));
+
+        assertThrows(ClientException.class, () -> service.latestDiffOf(SESSION_ID, "never-touched.txt"));
+    }
+
+    /**
+     * 基线被回收 ≠ 本轮新建。
+     *
+     * <p>两者都表现为 {@code baseline == null}。混为一谈的后果是「整份文件算成新增」：
+     * 行数是假的、差异也是假的，而且看不出来哪里错了。</p>
+     */
+    @Test
+    void missingBaselineIsNotCountedAsNewFile() {
+        givenTurn(TURN_ID, EXECUTION_ID);
+        store.put(lostBaselineRecord("lost.txt"));
+
+        TurnFileChangeVO edit = service.summarize(TURN_ID).getFirst();
+
+        assertFalse(edit.created(), "基线丢了不能标成新建");
+        assertEquals(0, edit.plusLines(), "算不出来就不许编数字");
+        assertEquals(0, edit.minusLines());
+        assertFalse(edit.diffAvailable(), "重放不出来就没有差异可看");
+    }
+
+    @Test
+    void diffOfExpiredBaselineIsRejected() {
+        Serializable id = store.put(lostBaselineRecord("lost.txt")).id();
+
+        assertThrows(ClientException.class, () -> service.diffOf(EXECUTION_KEY, String.valueOf(id)),
+                "空串当成功会让前端白等一份空差异");
+    }
+
+    /** 基线引用过、内容却已读不回来的记录（过期回收后的形态）。 */
+    private FileRecord lostBaselineRecord(String path) {
+        return FileRecord.builder()
+                .executionId((Serializable) EXECUTION_KEY).turnId(TURN_KEY)
+                .filePath(path).baseline(null).baselineMissing(true)
+                .diff("+lost").plusLines(1).minusLines(0).createAt(Instant.now())
+                .build();
     }
 
     @Test
@@ -186,19 +244,6 @@ class TurnFileEditSummaryServiceTest {
     }
 
     @Test
-    void turnWithoutSessionIsNeverTreatedAsLatest() throws FileModificationException {
-        // 会话尚未绑定（或旧数据没有 sessionId）时无从判断「最新」，按历史轮次处理：只给行数。
-        when(turns.findById(TURN_ID)).thenReturn(
-                Optional.of(ChatTurn.builder().id(TURN_ID).executionId(EXECUTION_ID).build()));
-        records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\n", "a\nb\n"));
-
-        TurnFileChangeVO edit = service.summarize(TURN_ID).getFirst();
-
-        assertFalse(edit.diffAvailable(), "没有会话就断定不了最新，不能凭猜测给出差异入口");
-        assertEquals(1, edit.plusLines());
-    }
-
-    @Test
     void emptyWhenTurnIsUnknown() {
         when(turns.findById(TURN_ID)).thenReturn(Optional.empty());
 
@@ -216,11 +261,6 @@ class TurnFileEditSummaryServiceTest {
     private void givenTurn(long turnId, long executionId) {
         when(turns.findById(turnId)).thenReturn(
                 Optional.of(ChatTurn.builder().id(turnId).sessionId(SESSION_ID).executionId(executionId).build()));
-    }
-
-    private void givenLatestTurn(long turnId) {
-        when(turns.findLatest(any(), isNull(), anyInt())).thenReturn(List.of(
-                ChatTurn.builder().id(turnId).sessionId(SESSION_ID).executionId(EXECUTION_ID).build()));
     }
 
     /**
