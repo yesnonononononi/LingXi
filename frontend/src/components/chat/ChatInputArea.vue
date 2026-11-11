@@ -33,6 +33,14 @@ import {useSkillMenu} from '../../composables/useSkillMenu';
 import {isPromptOptimizationCommand, usePromptOptimization} from '../../composables/usePromptOptimization';
 import {useConfirm} from '../../composables/useConfirm';
 import {isImageAvatar} from '../../utils/avatar';
+import PastedDocumentCard from './PastedDocumentCard.vue';
+import PastedDocumentPreviewModal from './PastedDocumentPreviewModal.vue';
+import {
+  composeMessageWithDocuments,
+  createPastedDocument,
+  isLargePastedText,
+  type PastedDocument
+} from '../../utils/pastedDocument';
 import {t} from '../../i18n';
 import type {
   ChatInputContextUsageSlotProps,
@@ -246,14 +254,61 @@ watch(inputText, () => {
   input.style.height = `${Math.min(120, Math.max(22, input.scrollHeight))}px`;
 }, { flush: 'post' });
 
+// ====== 粘贴大文本转文档小卡片管理 ======
+const pastedDocuments = ref<PastedDocument[]>([]);
+const previewingDocument = ref<PastedDocument | null>(null);
+const isDocumentPreviewOpen = ref(false);
+
+const addPastedDocument = (text: string) => {
+  const doc = createPastedDocument(text);
+  pastedDocuments.value.push(doc);
+  focusInput();
+};
+
+const removePastedDocument = (index: number) => {
+  pastedDocuments.value.splice(index, 1);
+};
+
+const clearPastedDocuments = () => {
+  pastedDocuments.value = [];
+  previewingDocument.value = null;
+  isDocumentPreviewOpen.value = false;
+};
+
+const openDocumentPreview = (doc: PastedDocument) => {
+  previewingDocument.value = doc;
+  isDocumentPreviewOpen.value = true;
+};
+
+const closeDocumentPreview = () => {
+  isDocumentPreviewOpen.value = false;
+  previewingDocument.value = null;
+};
+
+const expandDocumentToInput = (doc: PastedDocument) => {
+  const index = pastedDocuments.value.findIndex(d => d.id === doc.id);
+  if (index >= 0) pastedDocuments.value.splice(index, 1);
+  closeDocumentPreview();
+  const existing = inputText.value.trim();
+  writeInputText(existing ? `${existing}\n\n${doc.content}` : doc.content);
+  focusInput();
+};
+
 const handlePaste = (e: ClipboardEvent) => {
   const items = e.clipboardData?.items;
-  if (!items || items.length === 0) return;
-  const files = Array.from(items).filter(item => item.type.startsWith('image/'))
-    .map(item => item.getAsFile()).filter((file): file is File => file !== null);
-  if (files.length > 0) {
+  if (items && items.length > 0) {
+    const files = Array.from(items).filter(item => item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter((file): file is File => file !== null);
+    if (files.length > 0) {
+      e.preventDefault();
+      processImageFiles(files);
+      return;
+    }
+  }
+  const text = e.clipboardData?.getData('text/plain') || e.clipboardData?.getData('text') || '';
+  if (text && isLargePastedText(text)) {
     e.preventDefault();
-    processImageFiles(files);
+    addPastedDocument(text);
   }
 };
 
@@ -929,12 +984,13 @@ type SpeechRecognitionInstance = {
 const canSend = computed(() => {
   if (props.reasoningEffortPending) return false;
   if (attachments.value.length > 0) return true;
+  if (pastedDocuments.value.length > 0) return true;
   const text = inputText.value.trim();
   return text.length > 0;
 });
 const queueSubmitting = ref(false);
 const hasQueueableInput = computed(() => !!props.queueMessage && !props.reasoningEffortPending
-  && attachments.value.length === 0 && inputText.value.trim().length > 0);
+  && attachments.value.length === 0 && (inputText.value.trim().length > 0 || pastedDocuments.value.length > 0));
 const canQueue = computed(() => hasQueueableInput.value && !queueSubmitting.value);
 // 运行中但输入框已有可入队文本时，按钮切换为「可发送」态，点击即存入待发送队列。
 const showStop = computed(() => !!props.isSending && !hasQueueableInput.value);
@@ -1032,6 +1088,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleClickOutside);
   dictation += 1;
   clearImages();
+  clearPastedDocuments();
 });
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -1161,19 +1218,25 @@ const handleSend = () => {
 
   const text = draft.text.trim();
   const images = attachments.value.map(attachment => attachment.file);
-  if ((!text && images.length === 0) || props.reasoningEffortPending || queueSubmitting.value) return;
+  const docs = pastedDocuments.value;
+  if ((!text && images.length === 0 && docs.length === 0) || props.reasoningEffortPending || queueSubmitting.value) return;
+
+  const combinedText = composeMessageWithDocuments(text, docs);
 
   if (props.isSending || props.queueMessage) {
     if (!canQueue.value || !props.queueMessage) return;
     const original = inputText.value;
     queueSubmitting.value = true;
-    void props.queueMessage(text, draft.requirePlan, localSelectedAgentId.value).then(accepted => {
-      if (accepted && inputText.value === original) writeInputText('');
+    void props.queueMessage(combinedText, draft.requirePlan, localSelectedAgentId.value).then(accepted => {
+      if (accepted && inputText.value === original) {
+        writeInputText('');
+        clearPastedDocuments();
+      }
     }).finally(() => { queueSubmitting.value = false; });
     return;
   }
 
-  const effectiveText = text || t('chat.input.analyzeImagesPrompt');
+  const effectiveText = combinedText || (images.length > 0 ? t('chat.input.analyzeImagesPrompt') : '');
 
   emit(
     'sendMessage',
@@ -1186,6 +1249,7 @@ const handleSend = () => {
 
   writeInputText('');
   clearImages();
+  clearPastedDocuments();
 };
 
 /**
@@ -1242,7 +1306,9 @@ defineExpose({
     emit('updateAgent', id ?? null);
   },
   openAgentMenu,
-  openSkillMenu
+  openSkillMenu,
+  addPastedDocument,
+  clearPastedDocuments
 });
 </script>
 
@@ -1558,6 +1624,19 @@ defineExpose({
         <p v-if="attachmentError" class="text-red-500" role="alert">{{ attachmentError }}</p>
       </div>
 
+      <!-- 粘贴文档小卡片栏 -->
+      <div v-if="pastedDocuments.length" class="flex flex-wrap gap-1.5 pb-0.5" data-testid="pasted-documents">
+        <PastedDocumentCard
+          v-for="(doc, index) in pastedDocuments"
+          :key="doc.id"
+          :document="doc"
+          :is-dark="isDark"
+          @preview="openDocumentPreview(doc)"
+          @remove="removePastedDocument(index)"
+          @expand="expandDocumentToInput(doc)"
+        />
+      </div>
+
       <!-- 文本输入区 -->
       <div class="flex items-start gap-1.5 w-full min-w-0">
         <span
@@ -1720,6 +1799,15 @@ defineExpose({
       </div>
     </div>
     </BorderGlow>
+
+    <!-- 文档小卡片全文预览弹窗 -->
+    <PastedDocumentPreviewModal
+      :open="isDocumentPreviewOpen"
+      :document="previewingDocument"
+      :is-dark="isDark"
+      @close="closeDocumentPreview"
+      @expand="previewingDocument && expandDocumentToInput(previewingDocument)"
+    />
   </div>
 </template>
 
