@@ -285,11 +285,23 @@ test('实际侧栏在子会话重跑时显示根会话运行图标，亮暗主�
                 handleSelectWorkspace() {}, handleNewSessionInProject() {}, toggleProjectMenu() {}, handleDeleteProject() {},
                 startEdit() {}, saveEdit() {}, handleBranchedSelect() {}, handleBranchedToggle() {}, actions: {},
               }));
-              const rootHtml = html.slice(0, html.indexOf(child.name));
+              // 子会话行只在**它所属分支展开时**才在 DOM 里：分支展开态由「激活会话 / 激活子会话的所属根会话」
+              // 自动推导（见 useSessionBranchExpansion）。两边都没激活时整条分支折叠，DOM 里只有根会话那一行。
+              // 所以期望值不是恒定的 2：
+              //   分支展开 ⇒ 根 + 子两行（2）；子会话自己是激活态 ⇒ 它隐藏标记 ⇒ 只剩根（1）；
+              //   分支折叠 ⇒ 只有根那一行（1）。而根那一行**始终**在子会话运行时报 RUNNING（聚合）。
+              const branchExpanded = activeSessionId !== null || activeSubSessionId === 'child';
+              const childRowStart = html.indexOf(child.name);
+              const rootHtml = branchExpanded ? html.slice(0, childRowStart) : html;
               assert.equal(rootHtml.includes('data-state="RUNNING"'), running,
                 `根会话图标: dark=${isDark}, grouped=${grouped}, active=${activeSessionId}, sub=${activeSubSessionId}, running=${running}`);
-              assert.equal(html.split('data-state="RUNNING"').length - 1,
-                running ? (activeSubSessionId === 'child' ? 1 : 2) : 0);
+              const expected = running
+                ? (!branchExpanded || activeSubSessionId === 'child' ? 1 : 2)
+                : 0;
+              assert.equal(html.split('data-state="RUNNING"').length - 1, expected,
+                `dark=${isDark}, grouped=${grouped}, active=${activeSessionId}, sub=${activeSubSessionId}, running=${running}`);
+              assert.equal(html.includes(child.name), branchExpanded,
+                `子会话行渲染与分支展开态一致: dark=${isDark}, grouped=${grouped}, active=${activeSessionId}, sub=${activeSubSessionId}`);
             }
           }
         }
