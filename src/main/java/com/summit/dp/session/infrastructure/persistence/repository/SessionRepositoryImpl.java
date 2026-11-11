@@ -1,5 +1,6 @@
 package com.summit.dp.session.infrastructure.persistence.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
@@ -145,8 +146,8 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
         if (id == null) {
             throw new SessionNoFoundException();
         }
-        Session owned = findBy(new QueryWrapper<SessionPO>()
-                .eq("id", id))
+        Session owned = findBy(new LambdaQueryWrapper<SessionPO>()
+                .eq(SessionPO::getId, id))
                 .orElseThrow(SessionNoFoundException::new);
         Long rootSessionId = owned.getRootSessionId();
         Long rootId = rootSessionId == null || rootSessionId == SessionPO.ROOT_SESSION_ID

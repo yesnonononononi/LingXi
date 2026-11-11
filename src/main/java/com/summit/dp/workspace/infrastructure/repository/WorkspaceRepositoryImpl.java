@@ -1,5 +1,6 @@
 package com.summit.dp.workspace.infrastructure.repository;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -57,7 +58,7 @@ public class WorkspaceRepositoryImpl extends AbstractRepository<Workspace, Works
 
     @Override
     public IPage<Workspace> queryByPage(int current, int size) {
-        return queryByPage(current, size, new QueryWrapper<WorkspacePO>().orderByDesc("id"));
+        return queryByPage(current, size, new LambdaQueryWrapper<WorkspacePO>().orderByDesc(WorkspacePO::getId));
     }
 
     @Override
