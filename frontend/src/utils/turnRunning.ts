@@ -11,12 +11,13 @@ import {isActiveTurnStatus, isTerminalTurnStatus} from './turnStatus';
  */
 export type TurnRunningMessage = Pick<
   ChatMessage,
-  'isThinking' | 'isExploring' | 'isComplete' | 'cancelled' | 'failed' | 'durationMs' | 'tokenInfo' | 'tokens' | 'toolCalls'
+  'isThinking' | 'isExploring' | 'isComplete' | 'cancelled' | 'failed' | 'durationMs' | 'tokenInfo' | 'tokens'
+  | 'toolCalls' | 'turnStatus'
 >;
 
 export interface TurnRunningFacts {
   message: TurnRunningMessage;
-  /** 本条消息所属轮次的摘要状态；null / 缺失 = 历史行没有轮次摘要。 */
+  /** 本条消息所属轮次的摘要状态（组绑定来的 `ChatTurn.status`）；null / 缺失 = 历史行没有轮次摘要。 */
   turnStatus?: string | null;
   /** 全局「生成中」（受理在途或会话运行中）。注意它是**会话级**状态，不是轮次级。 */
   isSending: boolean;
@@ -57,7 +58,8 @@ export function hasPendingTool(toolCalls?: ToolCallTrace[]): boolean {
  */
 export function resolveTurnRunning(facts: TurnRunningFacts): boolean {
   const {message} = facts;
-  const status = String(facts.turnStatus ?? '').toUpperCase();
+  // 权威优先：消息自带的轮次状态（后端逐条下发）> 组绑定的轮次摘要。
+  const status = String(message.turnStatus ?? facts.turnStatus ?? '').toUpperCase();
 
   // 1. 轮次终态已落定：历史工具残留与迟到的流状态都不能再隐藏终态底栏。
   if (isTerminalTurnStatus(status) || message.cancelled === true || message.failed === true) return false;
@@ -68,17 +70,19 @@ export function resolveTurnRunning(facts: TurnRunningFacts): boolean {
   // 3. 本端明确收到「未完成」（受理即建的行、被重试打断的行）。
   if (message.isComplete === false) return true;
 
-  // 4. 兜底：全局生成中 + 本条是末条回答 ⇒ 猜它还在跑。
-  //
-  //    ⚠️ 这一步必须被「本条自带终态证据」否掉。待发送消息（pendingChat）投递后会紧接着开
-  //    下一轮，会话在「上一轮刚收尾 → 下一轮接管」的窗口里始终是运行态，而末条 assistant
-  //    仍是**上一轮**那条 —— 兜底会把已收尾的轮次也当成在跑，终态底栏与产物清单被整段藏起来，
-  //    直到待发送轮次跑完、末条回答移位才恢复。
-  if (facts.isSending && facts.isLastAssistant && !hasTerminalEvidence(message)) return true;
-
-  // 5. 轮次摘要仍在活跃态，事实层面这一轮没结束。
+  // 4. 轮次摘要仍在活跃态，事实层面这一轮没结束。
   if (isActiveTurnStatus(status)) return true;
 
+  // 5. 只有**状态未知**时才允许推断，且必须同时满足「没有终态证据」。
+  //
+  //    ⚠️ 这一步以前是无条件的，于是存在待发送消息（pendingChat）时翻车：会话在
+  //    「上一轮刚收尾 → 下一轮接管」的窗口里始终是运行态，而末条 assistant 仍是**上一轮**那条
+  //    ⇒ 已收尾轮次的终态底栏与产物清单被整段藏起来。
+  //    现在状态由后端逐条下发（`ChatMessage.turnStatus`），推断只服务于「状态缺失」的旧数据；
+  //    真拿不到状态时仍靠终态证据兜住，绝不再用会话级 `isSending` 覆盖轮次级事实。
+  if (facts.isSending && facts.isLastAssistant && !hasTerminalEvidence(message)) return true;
+
   // 6. 多轮工具调用期间「守卫真空」的补丁：只要有工具停在调用中/待定，轮次就没结束。
+  //    它不依赖任何状态是否及时到位，因此不存在同样的真空。
   return hasPendingTool(message.toolCalls);
 }

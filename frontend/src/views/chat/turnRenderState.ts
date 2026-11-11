@@ -1,6 +1,7 @@
 import type {
     AiMessageItem,
     ChatMessage,
+    ChatTurn,
     ResponseTextBuffer,
     ThoughtStep,
     ToolCallTrace,
@@ -8,6 +9,7 @@ import type {
 } from '../../types/chat';
 import type {ResponsePosition} from '../../utils/responseOrder';
 import {compareResponsePosition} from '../../utils/responseOrder';
+import {TURN_STATUSES} from '../../utils/turnStatus';
 import {t} from '../../i18n';
 
 export function getTurnState(bubble: ChatMessage): TurnRenderState {
@@ -18,6 +20,9 @@ export function getTurnState(bubble: ChatMessage): TurnRenderState {
 export function applyTurnStatus(bubble: ChatMessage, status: string): void {
   if (bubble.isComplete && (status === 'RUNNING' || status === 'WAITING' || status === 'ACCEPTED')) return;
   if (bubble.isSuspended && (status === 'RUNNING' || status === 'ACCEPTED')) return;
+  // 权威状态逐条记在消息上：渲染层判「这一轮收尾没有」只认它，不再拿会话级运行态去推断。
+  // 未收录的状态不写（不臆断），保持 undefined = 未知。
+  if (TURN_STATUSES.includes(status)) bubble.turnStatus = status as ChatTurn['status'];
   if (status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') {
     bubble.modelRetry = undefined;
     bubble.isComplete = true;

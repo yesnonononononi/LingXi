@@ -37,6 +37,27 @@ test('待发送轮次接管期间，已收尾的上一轮不再被当成在跑',
   assert.equal(resolveTurnRunning(streaming), true, '没有终态证据的末条回答仍视为在跑');
 });
 
+test('消息自带的轮次状态是权威，不再靠会话级 isSending 推断', () => {
+  // 后端已逐条下发终态 ⇒ 无论会话是否仍在运行、本条是不是末条，都必须放行底栏。
+  for (const turnStatus of ['COMPLETED', 'FAILED', 'CANCELLED'] as const) {
+    const closed = facts({turnStatus}, {isSending: true, isLastAssistant: true});
+    assert.equal(resolveTurnRunning(closed), false, `${turnStatus} 必须直接放行`);
+  }
+  // 甚至没有 durationMs/tokenInfo/tokens 这些证据也一样放行：权威状态本身就够了。
+  assert.equal(resolveTurnRunning(facts({turnStatus: 'COMPLETED', durationMs: undefined},
+    {isSending: true, isLastAssistant: true})), false);
+
+  // 活跃态同理：后端说 RUNNING，会话级 isSending 为假（例如刚受理、runStatus 还没回写）也算在跑。
+  for (const turnStatus of ['ACCEPTED', 'RUNNING', 'WAITING'] as const) {
+    assert.equal(resolveTurnRunning(facts({turnStatus}, {isSending: false, isLastAssistant: false})), true,
+      `${turnStatus} 必须判在跑`);
+  }
+
+  // 消息级状态盖过组绑定的摘要状态：摘要还停在 RUNNING 时，以逐条下发的终态为准。
+  assert.equal(resolveTurnRunning(facts({turnStatus: 'COMPLETED'}, {turnStatus: 'RUNNING'})), false);
+  assert.equal(resolveTurnRunning(facts({turnStatus: 'RUNNING'}, {turnStatus: 'COMPLETED'})), true);
+});
+
 test('终态证据只看终结帧写入的三个字段', () => {
   assert.equal(hasTerminalEvidence({}), false);
   assert.equal(hasTerminalEvidence({durationMs: 0}), true, '0 毫秒也是证据，不能按假值判');

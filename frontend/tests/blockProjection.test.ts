@@ -105,6 +105,18 @@ test('块状态映射到工具四态：completed≠成功、PROMISED→pending�
   }
 });
 
+test('投影把后端轮次状态逐条写到消息上（渲染层不再推断）', () => {
+  const b = bubble();
+  assert.equal(b.turnStatus, undefined, '未投影前是未知');
+  projectTurnView(b, view([thinking(0)]));
+  assert.equal(b.turnStatus, 'RUNNING', '活跃态必须落到消息上');
+  projectTurnView(b, {...view([thinking(0)]), status: 'COMPLETED'});
+  assert.equal(b.turnStatus, 'COMPLETED', '终态必须覆盖活跃态');
+  // 旧快照不得把已终结的轮次重新打开，状态也不能被抹回 RUNNING。
+  projectTurnView(b, view([thinking(0)]));
+  assert.equal(b.turnStatus, 'COMPLETED');
+});
+
 test('重复投影同一视图是幂等的（整体重写，不追加）', () => {
   const b = bubble();
   const v = view([thinking(0), tool(2)]);

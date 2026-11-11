@@ -357,6 +357,7 @@ export class TurnStreamReducer {
 
   private handleExecutionStarted(turnId: string | null): void {
     const bubble = this.obtainActiveBubble(turnId);
+    bubble.turnStatus = 'RUNNING';
     bubble.modelRetry = undefined;
     bubble.isThinking = true;
     bubble.isExploring = true;
@@ -440,6 +441,7 @@ export class TurnStreamReducer {
 
   private handleExecutionSuspended(): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.turnStatus = 'WAITING';
     bubble.modelRetry = undefined;
     bubble.isThinking = false;
     bubble.isExploring = false;
@@ -459,6 +461,7 @@ export class TurnStreamReducer {
 
   private handleExecutionResumed(): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.turnStatus = 'RUNNING';
     bubble.modelRetry = undefined;
     bubble.isSuspended = false;
     bubble.isThinking = true;
@@ -472,6 +475,7 @@ export class TurnStreamReducer {
   private handleExecutionCompleted(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     this.clearCompression(bubble);
+    bubble.turnStatus = 'COMPLETED';
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -489,6 +493,7 @@ export class TurnStreamReducer {
   private handleExecutionFailed(errMsg: string | undefined, tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     this.clearCompression(bubble);
+    bubble.turnStatus = 'FAILED';
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -513,6 +518,7 @@ export class TurnStreamReducer {
   private handleExecutionCancelled(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     this.clearCompression(bubble);
+    bubble.turnStatus = 'CANCELLED';
     bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;

@@ -303,11 +303,19 @@ const processViews = computed(() => deriveProcessViews(
 /** 终态底栏不依赖正文，只有思考内容也必须展示；须在完成判据首次求值前声明。 */
 const isTerminalTurn = computed(() => props.message.cancelled === true || props.message.failed === true);
 
+/**
+ * 本条消息所属轮次的权威状态（大写归一）。
+ *
+ * <p><b>唯一来源</b>：消息自带的 `turnStatus`（后端逐条下发）优先，其次才是组绑定来的轮次摘要。
+ * 「是否在跑 / 过程是否 ongoing / 是否终态执行 / 能否展示底栏」四处判据全部读它 ——
+ * 别再各自 `String(props.turn?.status ?? '')` 一遍，改一处漏三处的事故已经有过。</p>
+ */
+const turnStatus = computed(() => String(props.message.turnStatus ?? props.turn?.status ?? '').toUpperCase());
+
 /** 一切执行终态判定：无论是正常完成（COMPLETED / isComplete 且无在跑动作）、失败还是取消。 */
 const isTerminalExecution = computed(() => {
   if (isTerminalTurn.value) return true;
-  const status = String(props.turn?.status ?? '').toUpperCase();
-  if (isTerminalTurnStatus(status)) return true;
+  if (isTerminalTurnStatus(turnStatus.value)) return true;
   if (props.message.isComplete === true && !isTurnRunning.value) return true;
   return isMessageCompleted.value;
 });
@@ -345,31 +353,30 @@ const terminalEvidence = computed(() => hasTerminalEvidence(props.message));
  */
 const isTurnRunning = computed(() => resolveTurnRunning({
   message: props.message,
-  turnStatus: props.turn?.status,
+  turnStatus: turnStatus.value,
   isSending: props.isSending === true,
   isLastAssistant: props.isLastAssistant === true,
 }));
 
 /** 暂停不代表结束；历史残留的待确认工具不能重开已终结轮次。 */
 const processIsOngoing = computed(() => props.turn
-  ? isActiveTurnStatus(props.turn.status)
+  ? isActiveTurnStatus(turnStatus.value)
   : props.message.isComplete !== true && isTurnRunning.value);
 
 
 /** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
 const isMessageCompleted = computed(() => {
-  // 1~4. 权威「仍在运行」判据集中收敛在 isTurnRunning（含思考中 / 显式未完成 /
-  //      全局发送中且为最新回答 / 轮次摘要活跃 / 仍有工具未收尾）。
+  // 1~6. 权威「仍在运行」判据集中收敛在 isTurnRunning（含思考中 / 显式未完成 / 轮次活跃 /
+  //      无状态时的兜底推断 / 仍有工具未收尾）。
   if (isTurnRunning.value) {
     return false;
   }
-  // 5. 轮次摘要若存在且仍在活跃态，且没有本端收到的终结证据，则不算完成。
+  // 5. 轮次状态若仍在活跃态，且没有本端收到的终结证据，则不算完成。
   //
-  // ⚠️ 只在 **status 明确存在** 时用摘要拦截：status 为空（历史行没有轮次摘要）时不能拦 ——
+  // ⚠️ 只在 **status 明确存在** 时拦截：status 为空（历史行没有轮次摘要）时不能拦 ——
   // 那会把「旧数据 / 老会话」整片挡掉（工具条与收起行为全失效）。历史行的完成性由
   // isTurnRunning 里「已无未收尾工具」放行，不需要在这里再判一次。
-  const status = String(props.turn?.status ?? '').toUpperCase();
-  if (status !== '' && isActiveTurnStatus(status) && !terminalEvidence.value) {
+  if (turnStatus.value !== '' && isActiveTurnStatus(turnStatus.value) && !terminalEvidence.value) {
     return false;
   }
   // 终态标记不依赖正文或轮次摘要是否已到，运行中的守卫仍须先判断。

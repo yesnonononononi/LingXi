@@ -16,7 +16,10 @@ import {t} from '../i18n';
 export const ACTIVE_TURN_STATUSES = ['ACCEPTED', 'RUNNING', 'WAITING'] as const;
 
 /** 已落定的轮次不再被迟到的工具状态重新打开。 */
-const TERMINAL_TURN_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
+export const TERMINAL_TURN_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
+
+/** 全部轮次状态（写回消息前用来判「这是不是一个后端真给过的状态」）。 */
+export const TURN_STATUSES: readonly string[] = [...ACTIVE_TURN_STATUSES, ...TERMINAL_TURN_STATUSES];
 
 /** 轮次状态 → i18n key。`Record` 而非 Map：键集合由 `TurnVO['status']` 约束，漏词编译即报错。 */
 const TURN_STATUS_KEYS: Record<ChatTurn['status'], string> = {
