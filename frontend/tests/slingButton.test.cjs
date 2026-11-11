@@ -38,10 +38,10 @@ test('ChatInputSendButton 统一为纯净发送与取消按钮样式（去除动
   assert.match(source, /<svg[\s\S]*?class="[^"]*text-white[^"]*"[\s\S]*?>/, '发送状态图标必须为白色');
   assert.match(source, /<path d="M5 12h14" \/>\s*<path d="m13 6 6 6-6 6" \/>/, '发送状态必须为白色向右箭头 (->)');
 
-  // 3. 取消状态：红色边框，向内阴影，白色小方块居中
+  // 3. 取消状态：红色边框，向内阴影，居中小方块（亮色为红、暗色为白保证可读性）
   assert.match(source, /border-red-500/, '取消状态必须具备红色边框');
   assert.match(source, /shadow-\[inset_0_1px_4px_rgba\(239,68,68,0\.4\)\]|shadow-inner/, '取消状态必须具备向内阴影');
-  assert.match(source, /class="[^"]*bg-white[^"]*"[^>]*aria-hidden="true"/, '取消状态未包含白色小方块');
+  assert.match(source, /props\.isDark\s*\?\s*['"]bg-white['"]\s*:\s*['"]bg-red-500['"]/, '取消状态未按亮暗模式区分小方块色彩（亮色红、暗色白）');
 
   // 4. 交互与状态绑定：禁用与发送/停止事件
   assert.match(source, /:disabled="!(?:props\.)?armed"/, '未绑定 disabled 属性到 armed 状态');
