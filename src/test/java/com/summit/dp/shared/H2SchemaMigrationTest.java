@@ -9,6 +9,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,6 +22,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -99,6 +103,93 @@ class H2SchemaMigrationTest {
 
         assertEquals(0, initializer.initialize(database), "第二次建库必须一条都不执行");
         assertEquals(String.valueOf(loader.load(H2Storage.SCHEMA_LOCATION).size()), database.queryString("SELECT COUNT(*) FROM schema_version"));
+    }
+
+    @Test
+    @DisplayName("只有换行符在 LF/CRLF 之间变化 → 不算脚本被改动，照常启动（工作区被 git/IDE 重写）")
+    void lineEndingRewriteIsNotTreatedAsScriptModification() {
+        H2TestDatabase database = newDatabase("eol");
+        SchemaScript baseline = baselineScript();
+        String lf = baseline.content().replace("\r\n", "\n");
+        String crlf = lf.replace("\n", "\r\n");
+        assertNotEquals(lf, crlf, "基线脚本必须含换行，否则这条用例证明不了任何事");
+
+        assertEquals(1, new H2SchemaInitializer().initialize(database,
+                List.of(new SchemaScript(1, baseline.filename(), lf, loader.checksum(lf)))));
+        assertEquals(0, new H2SchemaInitializer().initialize(database,
+                        List.of(new SchemaScript(1, baseline.filename(), crlf, loader.checksum(crlf)))),
+                "正文只差换行符时必须视为同一脚本，不能被指纹守卫拦下");
+        assertEquals(0, new H2SchemaInitializer().initialize(database,
+                        List.of(new SchemaScript(1, baseline.filename(), lf, loader.checksum(lf)))),
+                "反方向（CRLF → LF）同样不能被拦");
+    }
+
+    @Test
+    @DisplayName("历史库登记的是 raw 口径指纹（按当时原始字节算）→ 升级后仍能启动")
+    void legacyRawChecksumStaysAcceptable() {
+        H2TestDatabase database = newDatabase("legacy-fingerprint");
+        SchemaScript baseline = baselineScript();
+        String crlf = baseline.content().replace("\r\n", "\n").replace("\n", "\r\n");
+        // 模拟旧版行为：正文带 CRLF，指纹直接对原始字节取 SHA-256（不经规范化）。
+        SchemaScript legacy = new SchemaScript(1, baseline.filename(), crlf, rawSha256(crlf));
+        assertEquals(1, new H2SchemaInitializer().initialize(database, List.of(legacy)));
+
+        assertEquals(0, new H2SchemaInitializer().initialize(database, List.of(baseline)),
+                "库里登记的旧口径指纹必须仍被接受，否则升级即锁死启动");
+    }
+
+    @Test
+    @DisplayName("历史库登记的是「混用换行符」文件的原始指纹 → 仍能启动（V7 实测就是这个形态）")
+    void legacyMixedLineEndingFingerprintStaysAcceptable() {
+        H2TestDatabase database = newDatabase("legacy-mixed");
+        SchemaScript baseline = baselineScript();
+        String[] lines = baseline.content().replace("\r\n", "\n").split("\n", -1);
+        StringBuilder mixed = new StringBuilder();
+        for (int index = 0; index < lines.length; index++) {
+            // 奇数行 CRLF、偶数行 LF：任何「整体换行符变体」都枚举不到这种形态
+            mixed.append(lines[index]).append(index % 2 == 0 ? "\r\n" : "\n");
+        }
+        String mixedContent = mixed.toString();
+        assertNotEquals(loader.checksum(mixedContent), rawSha256(mixedContent),
+                "混用换行符时两种口径必须不同，否则这条用例没有证明力");
+
+        assertEquals(1, new H2SchemaInitializer().initialize(database,
+                List.of(new SchemaScript(1, baseline.filename(), mixedContent, rawSha256(mixedContent)))));
+        assertEquals(0, new H2SchemaInitializer().initialize(database,
+                        List.of(new SchemaScript(1, baseline.filename(), mixedContent, rawSha256(mixedContent)))),
+                "混用换行符的历史指纹必须被接受（按当时原始字节登记，规范化口径复算不出来）");
+    }
+
+    @Test
+    @DisplayName("改的是一句注释（语义无关但内容变了）→ 仍然拒绝，指纹不是白设的")
+    void commentOnlyEditIsStillRejected() {
+        H2TestDatabase database = newDatabase("comment-edit");
+        SchemaScript baseline = baselineScript();
+        assertEquals(1, new H2SchemaInitializer().initialize(database, List.of(baseline)));
+
+        String edited = baseline.content().replace("\n", "\n-- 补一句注释\n");
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> new H2SchemaInitializer().initialize(database,
+                        List.of(new SchemaScript(1, baseline.filename(), edited, loader.checksum(edited)))));
+        assertTrue(failure.getMessage().contains("已被修改"),
+                "内容变化必须被抓住，实际=" + failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("规范化：BOM 与 CRLF 都被抹平，且规范化可重复（幂等）")
+    void canonicalizeIsIdempotentAndEolAgnostic() {
+        String crlf = "-- 注释\r\nCREATE TABLE IF NOT EXISTS mcp (id VARCHAR(36) PRIMARY KEY);\r\n";
+        String canonical = SchemaScriptLoader.canonicalize("\uFEFF" + crlf);
+        assertEquals(canonical, SchemaScriptLoader.canonicalize(canonical), "规范化必须幂等");
+        assertFalse(canonical.contains("\r"), "规范化后不能残留回车");
+        assertFalse(canonical.startsWith("\uFEFF"), "规范化后不能残留 BOM");
+        assertEquals(loader.checksum("\uFEFF" + crlf), loader.checksum(canonical),
+                "指纹必须在 BOM/换行符差异下不变");
+        assertTrue(loader.matchesRegistered(rawSha256(crlf), crlf), "旧口径指纹必须被接受");
+        assertFalse(loader.matchesRegistered("deadbeef", crlf), "乱写的指纹不能被接受");
+        assertFalse(loader.matchesRegistered(null, crlf), "空指纹不能被接受");
+        assertEquals(3, loader.acceptedChecksums("-- a\n-- b\n").size(),
+                "无 BOM 的两行脚本应给出三个不同口径的指纹");
     }
 
     @Test
@@ -209,6 +300,39 @@ class H2SchemaMigrationTest {
         }
         assertEquals(declared, new LinkedHashSet<>(H2SchemaInitializer.expectedTables()),
                 "期望表清单必须与 db/h2 全部版本脚本声明的表集合一致");
+    }
+
+    @Test
+    @DisplayName("脚本按版本号升序执行，且重复版本号必须拒绝（classpath 返回顺序不在契约内）")
+    void scriptsAreOrderedByVersionAndDuplicatesRejected() {
+        SchemaScript first = new SchemaScript(1, "V1__a.sql", "-- a\n", loader.checksum("-- a\n"));
+        SchemaScript second = new SchemaScript(2, "V2__b.sql", "-- b\n", loader.checksum("-- b\n"));
+        SchemaScript third = new SchemaScript(10, "V10__c.sql", "-- c\n", loader.checksum("-- c\n"));
+
+        assertEquals(List.of(1, 2, 10),
+                loader.orderByVersion(List.of(third, first, second)).stream()
+                        .map(SchemaScript::version).toList(),
+                "版本号必须升序，10 要排在 2 之后（不能按字符串排）");
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> loader.orderByVersion(List.of(first, first)));
+        assertTrue(failure.getMessage().contains("版本号重复"), "必须点名重复，实际=" + failure.getMessage());
+        assertEquals(List.of(1, 2), loader.load(H2Storage.SCHEMA_LOCATION).stream()
+                .map(SchemaScript::version).toList().subList(0, 2), "真实脚本集也必须是从 1 开始升序");
+    }
+
+    /** 旧口径指纹：直接对给定字符串的 UTF-8 字节取 SHA-256（不经任何规范化）。 */
+    private static String rawSha256(String text) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte value : hash) {
+                hex.append(Character.forDigit((value >> 4) & 0xF, 16));
+                hex.append(Character.forDigit(value & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("当前 JVM 不支持 SHA-256", e);
+        }
     }
 
     /** 临时库：只开文件不建表，建库交给被测的初始化器。 */

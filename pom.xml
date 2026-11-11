@@ -205,6 +205,8 @@
                     <!-- 默认目标=纯逻辑核心包；多 glob 必须写成多个 param，XML 里的逗号不会被拆分。 -->
                     <targetClasses>
                         <param>com.summit.dp.shared.utils.*</param>
+                        <!-- 建库指纹/脚本切分：换行符口径事故的现场，必须留在变异射程内。 -->
+                        <param>com.summit.dp.shared.persistence.schema.*</param>
                         <param>com.summit.dp.shared.vo.block.*</param>
                         <param>com.summit.dp.toolcall.domain.model.*</param>
                         <param>com.summit.dp.toolcall.application.convert.*</param>

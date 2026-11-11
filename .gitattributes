@@ -4,3 +4,7 @@
 
 # 桌宠美术母版：PSD 体积大（v3 约 11.8MB），走 Git LFS，避免撑大仓库历史
 *.psd filter=lfs diff=lfs merge=lfs -text
+
+# 建库脚本的换行符必须钉死成 LF：Windows 工作区（core.autocrlf=true）一旦把 V*.sql 写成 CRLF，
+# 建库指纹就会与登记值不一致，表现为「脚本被偷偷改过」而拒绝启动（2026-11 实际事故）。
+*.sql text eol=lf

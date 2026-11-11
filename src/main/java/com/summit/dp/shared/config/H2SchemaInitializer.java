@@ -134,10 +134,12 @@ public class H2SchemaInitializer implements SchemaInitializer {
                 expected.addAll(authoritative.getOrDefault(script.version(), declaredTables(script)));
                 String appliedChecksum = applied.get(script.version());
                 if (appliedChecksum != null) {
-                    if (!appliedChecksum.equalsIgnoreCase(script.checksum())) {
+                    // 口径无关比对：换行符差异（CRLF/LF）与历史直算口径的指纹都算「同一脚本」，
+                    // 只有语义内容真的变了才拒绝。详见 SchemaScriptLoader#acceptedChecksums。
+                    if (!loader.matchesRegistered(appliedChecksum, script.content())) {
                         throw new IllegalStateException("H2 建库脚本已被修改但版本号没升（已登记指纹 "
                                 + appliedChecksum + "，当前 " + script.checksum() + "），拒绝启动: "
-                                + script.filename());
+                                + script.filename() + "。改了已发布的脚本就新增 V<n>__*.sql，不要原地改。");
                     }
                     continue;
                 }

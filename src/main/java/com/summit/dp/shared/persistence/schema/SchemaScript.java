@@ -8,8 +8,8 @@ package com.summit.dp.shared.persistence.schema;
  *
  * @param version  版本号（来自文件名 {@code V<版本>__<说明>.sql}）
  * @param filename 文件名，仅用于日志与登记表
- * @param content  脚本正文（UTF-8 解码后）
- * @param checksum 正文的 SHA-256（十六进制小写）
+ * @param content  脚本正文（UTF-8 解码后、已剥 BOM 的原样文本；指纹口径见 {@link SchemaScriptLoader}）
+ * @param checksum 规范化正文（换行符统一 LF）的 SHA-256（十六进制小写）
  */
 public record SchemaScript(int version, String filename, String content, String checksum) {
 
@@ -27,11 +27,5 @@ public record SchemaScript(int version, String filename, String content, String 
         if (checksum == null || checksum.isBlank()) {
             throw new IllegalArgumentException("建库脚本指纹不能为空: " + filename);
         }
-    }
-
-    /** 前 N 个字符的正文摘要，用于「第几条语句失败」这类报错。 */
-    public String preview() {
-        String single = content.replaceAll("\\s+", " ").strip();
-        return single.length() <= 80 ? single : single.substring(0, 80);
     }
 }
