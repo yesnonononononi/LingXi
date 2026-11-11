@@ -14,9 +14,11 @@ import com.summit.dp.instruction.domain.model.Instruction;
 import com.summit.dp.instruction.domain.repository.InstructionRepository;
 import com.summit.dp.model.application.service.ModelChatGateway;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
+import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
@@ -49,6 +51,7 @@ class InstructionPredictTest {
     private static final long PREDICATE_MODEL_ID = 5L;
 
     private final InstructionRepository instructionRepository = mock(InstructionRepository.class);
+    private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final MessageRepository messageRepository = mock(MessageRepository.class);
     private final ChatTurnRepository chatTurnRepository = mock(ChatTurnRepository.class);
     private final PendingChatQueue pendingChats = mock(PendingChatQueue.class);
@@ -56,11 +59,13 @@ class InstructionPredictTest {
     private final ModelService modelService = mock(ModelService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
     private final ModelChatGateway chatGateway = mock(ModelChatGateway.class);
-    private final InstructionServiceImpl service = new InstructionServiceImpl(instructionRepository, messageRepository,
-            chatTurnRepository, pendingChats, userConfigService, modelService, settingsProvider, chatGateway, JSON);
+    private final InstructionServiceImpl service = new InstructionServiceImpl(instructionRepository, sessionRepository,
+            messageRepository, chatTurnRepository, pendingChats, userConfigService, modelService, settingsProvider,
+            chatGateway, JSON);
 
     @BeforeEach
     void setUp() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(rootSession()));
         when(instructionRepository.findBySessionAndTurn(SESSION_ID, TURN_ID)).thenReturn(Optional.empty());
         when(userConfigService.current()).thenReturn(Result.success(
                 UserConfigVO.builder().predicateModelId(PREDICATE_MODEL_ID).build()));
@@ -71,6 +76,29 @@ class InstructionPredictTest {
                 .baseUrl("https://example.invalid/v1").apiKey("key").modelName("predict-model")
                 .maxTokens(32768).returnThinking(true).sendThinking(true).build());
         when(chatGateway.chat(any(), any(), any())).thenReturn(response("帮我补一个单元测试"));
+    }
+
+    @Test
+    @DisplayName("子会话：即使已有旧预测也直接拒绝，不返回也不生成")
+    void subSessionIsRejected() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).rootSessionId(1L).build()));
+        when(instructionRepository.findBySessionAndTurn(SESSION_ID, TURN_ID)).thenReturn(Optional.of(
+                Instruction.builder().sessionId(SESSION_ID).turnId(TURN_ID).nextInstruction("子会话残留预测")
+                        .createAt(Instant.now()).build()));
+
+        assertThrows(ClientException.class, () -> service.next(SESSION_ID, TURN_ID));
+        verifyNoInteractions(chatGateway, messageRepository);
+        verify(instructionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("会话不存在：拒绝")
+    void unknownSessionIsRejected() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.empty());
+
+        assertThrows(ClientException.class, () -> service.next(SESSION_ID, TURN_ID));
+        verifyNoInteractions(chatGateway);
     }
 
     @Test
@@ -179,6 +207,10 @@ class InstructionPredictTest {
         assertThrows(ClientException.class, () -> service.next(SESSION_ID, TURN_ID));
 
         verify(instructionRepository, never()).save(any());
+    }
+
+    private static Session rootSession() {
+        return Session.builder().id(SESSION_ID).rootSessionId(Session.ROOT_SESSION_ID).build();
     }
 
     private static ChatTurn turn(ChatTurnStatus status) {

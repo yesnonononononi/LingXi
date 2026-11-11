@@ -13,9 +13,11 @@ import com.summit.dp.instruction.domain.model.Instruction;
 import com.summit.dp.instruction.domain.repository.InstructionRepository;
 import com.summit.dp.model.application.service.ModelChatGateway;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
+import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
@@ -58,6 +60,7 @@ public class InstructionServiceImpl implements InstructionService {
             """;
 
     private final InstructionRepository instructionRepository;
+    private final SessionRepository sessionRepository;
     private final MessageRepository messageRepository;
     private final ChatTurnRepository chatTurnRepository;
     private final PendingChatQueue pendingChats;
@@ -70,6 +73,11 @@ public class InstructionServiceImpl implements InstructionService {
     @Override
     public Result<InstructionVO> next(Long sessionId, Long turnId) {
         throwIf(sessionId == null || turnId == null, "会话或轮次标识不能为空");
+        // 子会话是委派出来的执行体，用户不会在里面继续输入；必须在查旧预测之前拒绝，
+        // 否则子会话里历史遗留的预测行照样会被返回。
+        Session session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ClientException("会话不存在: " + sessionId));
+        throwIf(session.isSubSession(), "子会话不支持指令预测");
         // 不论新旧，这一轮只返回一条：已有预测直接复用，不再花模型调用。
         Optional<Instruction> existing = instructionRepository.findBySessionAndTurn(sessionId, turnId);
         if (existing.isPresent()) {
