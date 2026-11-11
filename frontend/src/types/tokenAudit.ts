@@ -100,6 +100,17 @@ export interface TokenAuditRequestOverheadVO {
   /** 框架残差（可为负），前端展示为「其它」。 */
   framingResidualTokens?: TokenAuditNumeric;
 }
+/**
+ * 归因明细：**已包含在某个消息分项内部**的二级说明。**原始载荷**。
+ *
+ * <p>这里的数值不允许参与任何合计：`memoryTokens` 已经算在 SYSTEM 分项里，
+ * 再加一次就会让「消息构成合计」与快照总量对不上（恒等式当场破）。</p>
+ */
+export interface TokenAuditContextAttributionVO {
+  /** 记忆正文 token（AGENTS.md 正文 + 项目 wiki 索引）；null/undefined 表示后端没给。 */
+  memoryTokens?: TokenAuditNumeric;
+}
+
 
 /** 会话用量审计聚合视图对象。**原始载荷**：数值字段可能是字符串。 */
 export interface SessionTokenAuditVO {
@@ -131,6 +142,8 @@ export interface SessionTokenAuditVO {
   tools?: TokenAuditToolBreakdownVO | null;
   /** 其他消息（请求开销）。 */
   requestOverhead?: TokenAuditRequestOverheadVO | null;
+  /** 归因明细（记忆正文等）；缺失表示后端没给。 */
+  contextAttribution?: TokenAuditContextAttributionVO | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,6 +225,17 @@ export interface TokenAuditRequestOverhead {
  * <p>渲染层只认这个类型：所有数值字段都是 `number | null`，`sessionId` 永远是字符串
  * （雪花 ID 不得转数值）。它只能由 `normalizeTokenAuditSnapshot` 产出。</p>
  */
+/**
+ * 归因明细（**已归一**）。
+ *
+ * <p>它是「某个分项内部的构成说明」，不是独立开销：`memoryTokens` 已含在 SYSTEM 分项内，
+ * 既不加进消息构成合计，也不参与 `total = messages + requestOverhead`。</p>
+ */
+export interface TokenAuditContextAttribution {
+  /** 记忆正文 token；null = 不知道（不是 0）。 */
+  memoryTokens: number | null;
+}
+
 export interface SessionTokenAuditSnapshot {
   /** 会话 ID（字符串，雪花精度安全）。 */
   sessionId: string;
@@ -241,4 +265,6 @@ export interface SessionTokenAuditSnapshot {
   tools: TokenAuditToolBreakdown | null;
   /** 其他消息（请求开销）。 */
   requestOverhead: TokenAuditRequestOverhead | null;
+  /** 归因明细（记忆正文等）；null = 后端没给该小节。 */
+  contextAttribution: TokenAuditContextAttribution | null;
 }

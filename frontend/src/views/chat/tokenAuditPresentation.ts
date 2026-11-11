@@ -64,6 +64,20 @@ export interface TokenAuditMessageRow {
 }
 
 /** 工具来源分组的一行（含组内明细）。 */
+/**
+ * 归因明细的一行（记忆正文等）。
+ *
+ * <p>它挂在**所属消息分项下方**，不是消息分项的兄弟行：这部分 token 已经算在那个分项里，
+ * 平铺出去就是重复计数。</p>
+ */
+export interface TokenAuditAttributionRow {
+  key: 'memory';
+  labelKey: string;
+  tokens: number;
+  /** 后端不提供该明细的占比，恒为 null（前端不补假百分比）。 */
+  ratio: null;
+}
+
 export interface TokenAuditToolGroupRow {
   kind: TokenAuditToolGroupKind;
   labelKey: string;
@@ -227,6 +241,31 @@ export function resolveMessageRows(messages?: TokenAuditCategory[] | null): Toke
       ratio: item.ratio ?? null,
       expandable: item.expandable === true,
     }));
+}
+
+/**
+ * 「系统消息」下的归因明细行：记忆正文（AGENTS.md 正文 + 项目 wiki 索引）。
+ *
+ * <p><b>为什么是子行而不是消息分项</b>：框架已把记忆正文并入 {@code SYSTEM} 分项，
+ * 平铺成第五类会让「消息构成合计」比快照总量多出一份记忆，恒等式当场破。
+ * 因此它只作为系统消息内部的构成说明存在，不参与任何合计。</p>
+ *
+ * <p>渲染规则（与「其它」残差行同口径）：</p>
+ * <ol>
+ *   <li>未知（`null`）不渲染，不猜 0；</li>
+ *   <li>已知为 0 不渲染：说明这一轮没有注入记忆正文，多一行 0 只是噪声；</li>
+ *   <li>`ratio` 恒为 `null` —— 后端不给该明细的占比，前端不做除法补假百分比。</li>
+ * </ol>
+ *
+ * @param audit 已归一快照
+ * @returns 可渲染的归因明细行；不可渲染时返回空数组
+ */
+export function resolveSystemAttributionRows(
+  audit?: SessionTokenAuditSnapshot | null
+): TokenAuditAttributionRow[] {
+  const memory = audit?.contextAttribution?.memoryTokens;
+  if (!isKnownNumber(memory) || memory <= 0) return [];
+  return [{key: 'memory', labelKey: 'chat.tokenAudit.attribution.memory', tokens: memory, ratio: null}];
 }
 
 /**

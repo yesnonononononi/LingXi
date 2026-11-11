@@ -49,6 +49,7 @@ import {
   resolveContextSummary,
   resolveMessageRows,
   resolveOverheadSummary,
+  resolveSystemAttributionRows,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   countToolGroupKinds,
@@ -136,6 +137,8 @@ const messageRows = computed(() => resolveMessageRows(displayed.value?.messages)
 const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools));
 const ordinaryToolRows = computed(() => resolveOrdinaryToolRows(displayed.value?.tools));
 const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
+/** 系统消息的归因明细（记忆正文）：只做说明，不进消息构成合计。 */
+const systemAttributionRows = computed(() => resolveSystemAttributionRows(displayed.value));
 const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
 
 const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
@@ -388,7 +391,13 @@ watch(
               </div>
 
               <div class="space-y-2.5">
-                <div v-for="row in messageRows" :key="row.type" class="space-y-1">
+                <div
+                  v-for="row in messageRows"
+                  :key="row.type"
+                  data-testid="token-audit-message-row"
+                  :data-category="row.type"
+                  class="space-y-1"
+                >
                   <div class="flex items-center justify-between gap-2">
                     <!-- 工具返回消息：可展开二级拆解 -->
                     <button
@@ -430,6 +439,39 @@ watch(
                       :class="['h-full rounded-lx-full', CATEGORY_DOT_CLASS[row.type]]"
                       :style="{width: barWidth(row.ratio) ?? '0%'}"
                     ></div>
+                  </div>
+
+                  <!-- 系统消息的归因明细：记忆正文已并入系统提示词，这里只说「其中有多少是记忆」。
+                       不做成独立消息分项 —— 那会让消息构成合计多算一份记忆，和快照总量对不上。 -->
+                  <div
+                    v-if="row.type === 'SYSTEM' && systemAttributionRows.length"
+                    data-testid="token-audit-system-attribution"
+                    class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
+                  >
+                    <div
+                      v-for="item in systemAttributionRows"
+                      :key="item.key"
+                      class="flex items-center justify-between gap-2"
+                    >
+                      <span class="flex min-w-0 items-center gap-1">
+                        <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
+                        <span
+                          data-testid="token-audit-attribution-hint"
+                          class="inline-flex shrink-0 cursor-help text-lx-faint"
+                          :title="t('chat.tokenAudit.attribution.memoryHint')"
+                          :aria-label="t('chat.tokenAudit.attribution.memoryHint')"
+                        >
+                          <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" stroke-width="2" />
+                            <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
+                            <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
+                          </svg>
+                        </span>
+                      </span>
+                      <span class="flex shrink-0 items-center gap-1.5 font-mono text-lx-fs-xs">
+                        <span class="text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
+                      </span>
+                    </div>
                   </div>
 
                   <!-- 工具来源二级拆解：普通工具（逐项，限高滚动）/ MCP / Skill（分组合计） -->

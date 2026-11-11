@@ -4,6 +4,7 @@ import type {
   TokenAuditAmount,
   TokenAuditCategory,
   TokenAuditCategoryType,
+  TokenAuditContextAttribution,
   TokenAuditDisplayState,
   TokenAuditRequestOverhead,
   TokenAuditToolBreakdown,
@@ -177,6 +178,20 @@ const normalizeRequestOverhead = (raw: unknown): TokenAuditRequestOverhead | nul
   };
 };
 
+/**
+ * 归出归因明细（记忆正文等）。
+ *
+ * <p>小节不存在 → `null`（后端没给）；小节存在但某项未知 → 对象保留、值 `null`。
+ * 与 {@link normalizeAmount} 同一取向：「存在但未知」和「不存在」不是一回事。</p>
+ *
+ * @param raw 原始值
+ * @returns 已归一对象，或 null
+ */
+const normalizeContextAttribution = (raw: unknown): TokenAuditContextAttribution | null => {
+  if (!isRecord(raw)) return null;
+  return {memoryTokens: toTokenAuditNumber(readField(raw, 'memoryTokens'))};
+};
+
 /** 模块级单例：sessionId → 最新推送。整体替换 Map 以触发 Vue 响应式更新。 */
 const entries = ref<Map<string, TokenAuditStreamEntry>>(new Map());
 
@@ -248,6 +263,7 @@ export function normalizeTokenAuditSnapshot(
       : null,
     tools: normalizeToolBreakdown(readField(raw, 'tools')),
     requestOverhead: normalizeRequestOverhead(readField(raw, 'requestOverhead')),
+    contextAttribution: normalizeContextAttribution(readField(raw, 'contextAttribution')),
   };
 }
 

@@ -567,7 +567,7 @@ export const messages: MessageSchema = {
         deepThought: '深度思考',
         generating: '生成中...',
         thinking: '思考中...',
-        awaitModelResponse: '正在等待模型响应',
+        awaitModelResponse: '等待模型响应',
         thoughtAndTools: '已思考并调用 {count} 个工具',
         tools: '已调用 {count} 个工具',
         thought: '已思考',
@@ -714,6 +714,10 @@ export const messages: MessageSchema = {
           mcp: 'MCP 工具定义',
           framing: '其它',
           framingHint: '框架分词口径的微小偏差（合并计数与分开计数不同），可能为负数',
+        },
+        attribution: {
+          memory: '记忆正文',
+          memoryHint: '记忆正文（项目规范与 wiki 索引）已包含在系统消息内，不重复计入合计',
         },
       },
       subSessions: {
@@ -2113,6 +2117,10 @@ export const messages: MessageSchema = {
           mcp: 'MCP tool definitions',
           framing: 'Other',
           framingHint: 'Tiny difference from how the framework tokenizes merged vs. separate inputs. It can be negative.',
+        },
+        attribution: {
+          memory: 'Memory text',
+          memoryHint: 'Memory text (project rules and wiki index) is already included in system messages, so it is not counted twice',
         },
       },
       subSessions: {

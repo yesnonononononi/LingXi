@@ -24,6 +24,7 @@ import {
   resolveContextSummary,
   resolveMessageRows,
   resolveOverheadSummary,
+  resolveSystemAttributionRows,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   resolveOrdinaryToolRows,
@@ -81,6 +82,8 @@ const collectedAudit = (): SessionTokenAuditSnapshot => ({
     toolDefinition: {tokens: 10400, ratio: 0.684},
     mcpToolDefinition: {tokens: 4800, ratio: 0.316},
   },
+  // 记忆正文已含在 SYSTEM 的 12,400 内，只作归因说明
+  contextAttribution: {memoryTokens: 6400},
 });
 
 // ─────────────────────────── 文本格式化 ───────────────────────────
@@ -272,6 +275,40 @@ test('残差为 0 或未知时不渲染「其它」行：两项已精确解释�
     toolDefinition: {tokens: 10400, ratio: 0.684}, mcpToolDefinition: {tokens: 4800, ratio: 0.316},
   });
   assert.deepEqual(unknown.map(row => row.key), ['kernel', 'mcp'], '未知不猜 0，也不渲染');
+});
+
+test('resolveSystemAttributionRows：记忆正文作为系统消息的归因明细，不参与合计', () => {
+  const rows = resolveSystemAttributionRows(collectedAudit());
+  assert.deepEqual(rows, [{
+    key: 'memory',
+    labelKey: 'chat.tokenAudit.attribution.memory',
+    tokens: 6400,
+    ratio: null,
+  }], '记忆归因只有一个金额行，占比恒为 null（后端不给，前端不补算）');
+
+  const messages = resolveMessageRows(collectedAudit().messages);
+  assert.deepEqual(messages.map(row => row.type), ['SYSTEM', 'USER', 'AI', 'TOOL'],
+    '记忆不是第五个消息分项');
+  assert.equal(messages.find(row => row.type === 'SYSTEM')!.tokens, 12400,
+    '记忆已含在 SYSTEM 内，不得被重复加进消息构成');
+});
+
+test('resolveSystemAttributionRows：0 与未知都不渲染（0 是噪声，null 是不知道）', () => {
+  const zero = {...collectedAudit(), contextAttribution: {memoryTokens: 0}};
+  assert.deepEqual(resolveSystemAttributionRows(zero), [], '这一轮没注入记忆正文时不占位');
+  const unknown = {...collectedAudit(), contextAttribution: {memoryTokens: null}};
+  assert.deepEqual(resolveSystemAttributionRows(unknown), [], '未知不猜 0');
+  const missing = {...collectedAudit(), contextAttribution: null};
+  assert.deepEqual(resolveSystemAttributionRows(missing), [], '整节缺失时不渲染');
+});
+
+test('normalizeTokenAuditSnapshot：记忆归因按字符串数字收敛，非数字串为 null', () => {
+  const fromString = normalizeTokenAuditSnapshot({...collectedAudit(), contextAttribution: {memoryTokens: '6400'}}, null);
+  assert.equal(fromString!.contextAttribution!.memoryTokens, 6400, '纯数字字符串要收敛成数值');
+  const fromGarbage = normalizeTokenAuditSnapshot({...collectedAudit(), contextAttribution: {memoryTokens: '1e5'}}, null);
+  assert.equal(fromGarbage!.contextAttribution!.memoryTokens, null, '非数字串是未知，不是 100000');
+  const absent = normalizeTokenAuditSnapshot({...collectedAudit(), contextAttribution: undefined}, null);
+  assert.equal(absent!.contextAttribution, null, '后端没给时整节为 null，不造空对象');
 });
 
 test('resolveOverheadSummary：父项金额与占比消费后端字段，未知保持 null', () => {

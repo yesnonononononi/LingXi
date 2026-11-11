@@ -8,6 +8,7 @@
  *   <li>MCP / Skill 合计与逐项列表之间真的有间距（拿两个 `getBoundingClientRect()` 相减），
  *       且它们**不在**滚动容器里（否则滚动时合计会被滚出视野）。</li>
  *   <li>token 单位文案是 `token` 不是 `tok`（`\btok\b` 不会误伤 `token`，用词边界精确判定）。</li>
+ *   <li>系统消息的归因明细（记忆正文）挂在系统消息行内、不新增消息分项、0 与未知都不渲染。</li>
  * </ol>
  *
  * <p>通过流推送和 HTTP 适配器验证同一面板的展示，并守住「只读、不重算」这条边界：
@@ -66,6 +67,8 @@ const SNAPSHOT = {
     mcpToolDefinition: {tokens: 2100, ratio: 0.014},
     framingResidualTokens: -50,
   },
+  // 归因明细：记忆正文已含在 SYSTEM 的 20,000 里，只做说明、不参与合计
+  contextAttribution: {memoryTokens: 6400},
 };
 
 app.whenReady().then(async () => {
@@ -272,6 +275,42 @@ window.ready = true;`);
   const ratioScope = await evaluate(`document.querySelector('[data-testid="token-audit-ratio-scope"]')?.innerText || ''`);
   assert(/占上下文上限/.test(ratioScope),
     '「消息构成」旁应标明占比分母是上下文上限，实际: ' + JSON.stringify(ratioScope));
+
+  // ④''' 系统消息的归因明细（记忆正文）：挂在系统消息下方，且不新增一个消息分项
+  const attribution = await evaluate(`(() => {
+    const root = document.querySelector('[data-testid="token-audit-system-attribution"]');
+    const hint = document.querySelector('[data-testid="token-audit-attribution-hint"]');
+    const systemRow = document.querySelector('[data-testid="token-audit-message-row"][data-category="SYSTEM"]');
+    const toolSources = document.querySelector('[data-testid="token-audit-tool-sources"]');
+    return {
+      text: root ? root.innerText : null,
+      title: hint ? hint.getAttribute('title') : null,
+      rowCount: document.querySelectorAll('[data-testid="token-audit-message-row"]').length,
+      insideSystemRow: !!(root && systemRow && systemRow.contains(root)),
+      insideToolSources: !!(root && toolSources && toolSources.contains(root)),
+    };
+  })()`);
+  assert(attribution.text !== null, '系统消息下方应渲染记忆正文归因行');
+  assert(/记忆正文/.test(attribution.text) && /6,400/.test(attribution.text),
+    '记忆归因行应显示「记忆正文」与金额，实际: ' + JSON.stringify(attribution.text));
+  assert(!/%/.test(attribution.text), '记忆归因行不得出现百分比（后端不给占比，前端不许补算）');
+  assert(attribution.insideSystemRow, '记忆归因行必须挂在系统消息行内');
+  assert(attribution.insideToolSources === false, '记忆归因行不得混进工具来源小节');
+  assert(attribution.rowCount === 4,
+    '记忆归因不得新增消息分项（应仍是系统/用户/模型/工具返回四行），实际: ' + attribution.rowCount);
+  assert(!!attribution.title && /系统消息/.test(attribution.title),
+    '记忆归因旁应有提示，说明已含在系统消息内，实际: ' + JSON.stringify(attribution.title));
+
+  // 记忆为 0（这一轮没注入记忆正文）或未知时整行不渲染：0 是噪声、null 是不知道
+  await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: {memoryTokens: 0}})})`);
+  assert(await evaluate(`document.querySelector('[data-testid="token-audit-system-attribution"]') === null`),
+    '记忆为 0 时不应渲染归因行');
+  await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: null})})`);
+  assert(await evaluate(`document.querySelector('[data-testid="token-audit-system-attribution"]') === null`),
+    '后端未给归因明细时不应渲染归因行（不得猜 0）');
+  await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
+  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-system-attribution"]')`),
+    '恢复完整快照后归因行应重新出现');
 
   // ⑤ 刷新重算已移除：按钮不存在，且任何交互都不得再打 POST
   assert(await evaluate(`document.querySelector('[data-testid="token-audit-refresh"]') === null`),
