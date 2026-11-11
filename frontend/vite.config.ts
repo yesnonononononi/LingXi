@@ -64,6 +64,7 @@ function petAssetIsolation(): Plugin {
  * 否则 '/interaction' 会先匹配并吞掉 '/interaction-status'。
  */
 const API_PREFIXES = [
+  '/application',
   '/a',
   '/agent',
   '/api',
@@ -73,6 +74,7 @@ const API_PREFIXES = [
   '/execution',
   '/interaction-status',
   '/interaction',
+  '/instruction',
   '/log',
   '/mcp',
   '/model',
