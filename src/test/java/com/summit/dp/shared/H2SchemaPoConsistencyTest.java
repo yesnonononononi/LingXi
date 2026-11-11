@@ -94,12 +94,16 @@ class H2SchemaPoConsistencyTest {
             "checklist_step.content",
             "execution_resume_task.error_reason",
             "chat_turn.error_reason",
-            "file_record.diff");
+            "file_record.diff",
+            // 指令预测（V15）：预测正文可长可短，按大文本存，别让模型输出挤进有界 VARCHAR。
+            "instruction_predict.next_instruction");
 
     /** 自增主键表（PO 侧 {@code IdType.AUTO}）；其余表主键由应用生成。 */
     private static final Set<String> IDENTITY_TABLES = Set.of(
             "mcp", "provider_config", "model_config", "workspace", "session", "agent", "team", "execution",
-            "execution_resume_task", "session_token_audit_item");
+            "execution_resume_task", "session_token_audit_item",
+            // 指令预测（V15）：一轮一条，行只插入不更新。
+            "instruction_predict");
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(\\w+)\\s*\\(([\\s\\S]*?)\\n\\);",
@@ -172,8 +176,9 @@ class H2SchemaPoConsistencyTest {
                         + " WHERE TABLE_SCHEMA = 'PUBLIC'"
                         + " AND COLUMN_NAME IN ('UPDATE_TIME', 'UPDATED_AT', 'UPDATE_AT')"
                         + " AND COLUMN_ON_UPDATE IS NULL ORDER BY TABLE_NAME, COLUMN_NAME");
-        assertEquals(List.of("CHECKLIST.UPDATE_AT", "CHECKLIST_STEP.UPDATE_AT"), missing,
-                "只有 checklist/checklist_step 的 update_at 由仓储显式写（SQLite 侧也没有触发器），其余必须带 ON UPDATE");
+        assertEquals(List.of("CHECKLIST.UPDATE_AT", "CHECKLIST_STEP.UPDATE_AT", "INSTRUCTION_PREDICT.UPDATE_TIME"), missing,
+                "只有 checklist/checklist_step 的 update_at 由仓储显式写（SQLite 侧也没有触发器），"
+                        + "以及 instruction_predict.update_time（行只插入不更新、没有 touch 语义），其余必须带 ON UPDATE");
 
         assertEquals("17", database.queryString(
                         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC'"
