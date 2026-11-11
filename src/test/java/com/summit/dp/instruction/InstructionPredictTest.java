@@ -31,11 +31,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,6 +69,9 @@ class InstructionPredictTest {
     private final ModelService modelService = mock(ModelService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
     private final ModelChatGateway chatGateway = mock(ModelChatGateway.class);
+    /** 假仓储里已落库的预测，按「会话:轮次」索引；saveCount 用于「只写一次」的计数断言。 */
+    private final Map<String, Instruction> store = new ConcurrentHashMap<>();
+    private final AtomicInteger saveCount = new AtomicInteger();
     private final InstructionServiceImpl service = new InstructionServiceImpl(instructionRepository, sessionRepository,
             messageRepository, chatTurnRepository, pendingChats, userConfigService, modelService, settingsProvider,
             chatGateway, JSON);
@@ -110,6 +123,160 @@ class InstructionPredictTest {
 
         assertEquals("已有的预测", service.next(SESSION_ID, TURN_ID).getData().getNextInstruction());
         verifyNoInteractions(chatGateway, messageRepository, chatTurnRepository);
+    }
+
+    @Test
+    @DisplayName("同一轮连续问三次：只调一次模型、只写一条库，后两次复用旧结果")
+    void repeatedRequestsPersistOnlyOnce() {
+        usePersistentStore();
+
+        for (int round = 0; round < 3; round++) {
+            assertEquals("帮我补一个单元测试", service.next(SESSION_ID, TURN_ID).getData().getNextInstruction());
+        }
+
+        assertEquals(1, saveCount.get(), "同一轮只允许写一次库");
+        verify(chatGateway, times(1)).chat(any(), any(), any());
+        verify(messageRepository, times(1)).findByTurnIds(SESSION_ID, List.of(TURN_ID));
+    }
+
+    @Test
+    @DisplayName("同一轮 8 个并发请求：模型只调一次、库里只有一条，后到者返回空而不是排队等模型")
+    void concurrentRequestsShareOneGeneration() throws Exception {
+        usePersistentStore();
+        CountDownLatch modelEntered = new CountDownLatch(1);
+        when(chatGateway.chat(any(), any(), any())).thenAnswer(invocation -> {
+            modelEntered.countDown();
+            // 卡住模型响应，保证其它线程都在「生成中」这个窗口里撞进来。
+            assertTrue(modelEntered.await(5, TimeUnit.SECONDS));
+            Thread.sleep(150);
+            return response("并发下也只该有一条");
+        });
+
+        int threads = 8;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        int answered = 0;
+        try {
+            CountDownLatch startLine = new CountDownLatch(1);
+            List<Future<Result<InstructionVO>>> futures = new ArrayList<>();
+            for (int index = 0; index < threads; index++) {
+                futures.add(pool.submit(() -> {
+                    assertTrue(startLine.await(5, TimeUnit.SECONDS));
+                    return service.next(SESSION_ID, TURN_ID);
+                }));
+            }
+            startLine.countDown();
+            for (Future<Result<InstructionVO>> future : futures) {
+                InstructionVO vo = future.get(10, TimeUnit.SECONDS).getData();
+                if (vo == null) {
+                    continue;
+                }
+                answered++;
+                assertEquals("并发下也只该有一条", vo.getNextInstruction(), "并发下不许出现第二个版本的预测");
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertTrue(answered > 0, "并发里至少要有一个请求拿到预测");
+        verify(chatGateway, times(1)).chat(any(), any(), any());
+        assertEquals(1, saveCount.get(), "并发请求只允许落一条预测");
+    }
+
+    @Test
+    @DisplayName("双检锁：锁内读到别的线程刚写好的结果，不调模型也不重复落库")
+    void predictionStoredWhileWaitingIsReused() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)))
+                .thenReturn(completedTurnMessages("把指令预测接上", "已经接好了"));
+        when(instructionRepository.findBySessionAndTurn(SESSION_ID, TURN_ID))
+                .thenReturn(Optional.empty(), Optional.of(stored("锁内读到的旧预测")));
+
+        assertEquals("锁内读到的旧预测", service.next(SESSION_ID, TURN_ID).getData().getNextInstruction());
+        verifyNoInteractions(chatGateway);
+        verify(instructionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("双检锁：窗口期里下一条已入队，放弃生成")
+    void pendingChatArrivedWhileWaitingAbortsGeneration() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)))
+                .thenReturn(completedTurnMessages("把指令预测接上", "已经接好了"));
+        // 进方法时队列还空，拿到生成权之后再查就已经有接力消息了。
+        when(pendingChats.hasPending(SESSION_ID)).thenReturn(false, true);
+
+        assertNull(service.next(SESSION_ID, TURN_ID).getData());
+        verifyNoInteractions(chatGateway);
+        verify(instructionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("双检锁：窗口期里会话已经开跑新一轮，这一轮的预测过时，放弃生成")
+    void newerTurnStartedWhileWaitingAbortsGeneration() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)))
+                .thenReturn(completedTurnMessages("把指令预测接上", "已经接好了"));
+        when(chatTurnRepository.findFromId(SESSION_ID, TURN_ID)).thenReturn(List.of(
+                turn(ChatTurnStatus.COMPLETED),
+                ChatTurn.builder().id(TURN_ID + 1).sessionId(SESSION_ID).status(ChatTurnStatus.RUNNING).build()));
+
+        assertNull(service.next(SESSION_ID, TURN_ID).getData());
+        verifyNoInteractions(chatGateway);
+        verify(instructionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("正在生成时重复进来：当场返回空，不并发调第二次模型")
+    void inFlightGenerationRejectsSecondRequest() throws Exception {
+        usePersistentStore();
+        CountDownLatch modelEntered = new CountDownLatch(1);
+        CountDownLatch releaseModel = new CountDownLatch(1);
+        when(chatGateway.chat(any(), any(), any())).thenAnswer(invocation -> {
+            modelEntered.countDown();
+            assertTrue(releaseModel.await(5, TimeUnit.SECONDS));
+            return response("生成中的那一条");
+        });
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<InstructionVO> leader = pool.submit(() -> service.next(SESSION_ID, TURN_ID).getData());
+            assertTrue(modelEntered.await(5, TimeUnit.SECONDS));
+
+            assertNull(service.next(SESSION_ID, TURN_ID).getData(), "生成中的重复请求必须当场返回空");
+
+            releaseModel.countDown();
+            assertEquals("生成中的那一条", leader.get(10, TimeUnit.SECONDS).getNextInstruction());
+        } finally {
+            pool.shutdownNow();
+        }
+
+        verify(chatGateway, times(1)).chat(any(), any(), any());
+        assertEquals(1, saveCount.get());
+    }
+
+    @Test
+    @DisplayName("生成失败也要释放生成权：下一次仍能重新生成")
+    void failedGenerationReleasesSlot() {
+        usePersistentStore();
+        when(chatGateway.chat(any(), any(), any()))
+                .thenThrow(new IllegalStateException("网络断了"))
+                .thenReturn(response("重试后成功"));
+
+        assertThrows(ClientException.class, () -> service.next(SESSION_ID, TURN_ID));
+        assertEquals("重试后成功", service.next(SESSION_ID, TURN_ID).getData().getNextInstruction());
+        verify(chatGateway, times(2)).chat(any(), any(), any());
+        assertEquals(1, saveCount.get());
+    }
+
+    @Test
+    @DisplayName("别的进程抢先落库（唯一索引冲突）：返回先到者的内容，不当成错误")
+    void duplicateKeyFromAnotherProcessReusesWinner() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)))
+                .thenReturn(completedTurnMessages("把指令预测接上", "已经接好了"));
+        when(instructionRepository.findBySessionAndTurn(SESSION_ID, TURN_ID))
+                .thenReturn(Optional.empty(), Optional.empty(), Optional.of(stored("先到者写下的指令")));
+        doThrow(new DuplicateKeyException("ux_instruction_predict_turn"))
+                .when(instructionRepository).save(any());
+
+        assertEquals("先到者写下的指令", service.next(SESSION_ID, TURN_ID).getData().getNextInstruction());
+        verify(instructionRepository, times(1)).save(any());
     }
 
     @Test
@@ -225,6 +392,43 @@ class InstructionPredictTest {
         assertThrows(ClientException.class, () -> service.next(SESSION_ID, TURN_ID));
 
         verify(instructionRepository, never()).save(any());
+    }
+
+    /**
+     * 换成「真能存住、能读回」的假仓储。
+     *
+     * <p>@BeforeEach 里的空 stub 只能验证「库里已有预测就不重复生成」；要验证重复请求、
+     * 并发请求也不会重复生成，必须先让第一次生成的结果真的留在这个假仓储里。</p>
+     */
+    private void usePersistentStore() {
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID)))
+                .thenReturn(completedTurnMessages("把指令预测接上", "已经接好了"));
+        when(instructionRepository.findBySessionAndTurn(anyLong(), anyLong())).thenAnswer(call -> Optional
+                .ofNullable(store.get(key(call.getArgument(0, Long.class), call.getArgument(1, Long.class)))));
+        doAnswer(call -> {
+            Instruction saved = call.getArgument(0);
+            store.put(key(saved.getSessionId(), saved.getTurnId()), saved);
+            saveCount.incrementAndGet();
+            return null;
+        }).when(instructionRepository).save(any());
+    }
+
+    private static String key(Long sessionId, Long turnId) {
+        return sessionId + ":" + turnId;
+    }
+
+    private static Instruction stored(String text) {
+        return Instruction.builder().sessionId(SESSION_ID).turnId(TURN_ID).nextInstruction(text)
+                .createAt(Instant.now()).build();
+    }
+
+    private static List<SessionMessage> completedTurnMessages(String userText, String agentText) {
+        try {
+            return List.of(message(SessionMessageType.USER, userJson(userText)),
+                    message(SessionMessageType.AI, aiJson(AiMessageEntity.builder().text(agentText).build())));
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException("测试载荷序列化失败", error);
+        }
     }
 
     private static Session rootSession() {

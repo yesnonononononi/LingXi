@@ -36,12 +36,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 指令预测：拿已终态轮次的「用户提问 + Agent 终态正文」让模型猜用户下一句会说什么。
  *
  * <p>对外只有一个入口 {@code next}：有旧的就返回旧的，没有才生成 —— 每个轮次只产出一条预测。
- * 不生成的情况（功能未开启、轮次未正常完成、队列里还有接力消息、子会话）统一返回空，不当成错误。</p>
+ * 同一轮只有一个请求能拿到生成权，锁内要复检「库里已生成」和「会话是否已经开跑新一轮」；
+ * 跨进程与重启由 {@code (session_id, turn_id)} 唯一索引兜底。</p>
+ * <p>不生成的情况（功能未开启、轮次未正常完成、队列里还有接力消息、子会话）统一返回空，不当成错误。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -70,6 +74,8 @@ public class InstructionServiceImpl implements InstructionService {
     private final SettingsProvider settingsProvider;
     private final ModelChatGateway chatGateway;
     private final ObjectMapper json;
+    /** 正在生成预测的轮次（{@code sessionId:turnId}）：占位成功才算拿到这一轮的生成权，释放必须无条件。 */
+    private final Set<String> generating = ConcurrentHashMap.newKeySet();
 
     @Override
     public Result<InstructionVO> next(Long sessionId, Long turnId) {
@@ -114,11 +120,61 @@ public class InstructionServiceImpl implements InstructionService {
             return Result.success(null);
         }
 
-        String prediction = predict(predicateModelId, userText, agentText);
+        Optional<Instruction> generated = generateOnce(sessionId, turnId, predicateModelId, userText, agentText);
+        return Result.success(generated.map(this::toVO).orElse(null));
+    }
+
+    /**
+     * 同一轮只许一个请求去调模型：在 {@code generating} 里占位成功才算拿到锁，其余请求当场返回空。
+     *
+     * <p>为什么后到者不等：先到者马上会把结果落库，下一次触发（前端静止 5 秒后）直接命中旧结果；
+     * 让第二个请求陪着模型再挂 30 秒只会白占一个 HTTP 线程。</p>
+     *
+     * <p>锁内要重判两次：库里的旧结果（别的线程或别的进程刚写完）与会话是否已经开跑新一轮 ——
+     * 后者尤其容易被忽略，取锁到调模型之间用户完全可能已经发出了下一条。</p>
+     */
+    private Optional<Instruction> generateOnce(Long sessionId, Long turnId, Long modelId,
+                                               String userText, String agentText) {
+        String key = sessionId + ":" + turnId;
+        if (!generating.add(key)) {
+            log.info("指令预测跳过: reason=该轮已在生成, sessionId={}, turnId={}", sessionId, turnId);
+            return Optional.empty();
+        }
+        try {
+            Optional<Instruction> stored = instructionRepository.findBySessionAndTurn(sessionId, turnId);
+            if (stored.isPresent()) {
+                return stored;
+            }
+            if (hasNewerTurn(sessionId, turnId)) {
+                log.info("指令预测跳过: reason=会话已经开始新一轮, sessionId={}, turnId={}", sessionId, turnId);
+                return Optional.empty();
+            }
+            return Optional.of(saveOnce(sessionId, turnId, modelId, userText, agentText));
+        } finally {
+            // 必须无条件释放：留着就是随轮次增长的内存泄漏，也会让这一轮再也生成不出来。
+            generating.remove(key);
+        }
+    }
+
+    /**
+     * 窗口期内是否已经开跑了新一轮：待发送队列进了人，或者库里已经落了更新的一轮。
+     *
+     * <p>用户手速完全可能快过模型延迟，此时上一轮的「下一句」早已被真实输入取代。</p>
+     */
+    private boolean hasNewerTurn(Long sessionId, Long turnId) {
+        if (pendingChats.hasPending(sessionId)) {
+            return true;
+        }
+        return chatTurnRepository.findFromId(sessionId, turnId).stream()
+                .anyMatch(turn -> turn.getId() != null && turn.getId() > turnId);
+    }
+
+    private Instruction saveOnce(Long sessionId, Long turnId, Long modelId, String userText, String agentText) {
+        String prediction = predict(modelId, userText, agentText);
         Instruction instruction = Instruction.builder()
                 .sessionId(sessionId)
                 .turnId(turnId)
-                .modelId(predicateModelId)
+                .modelId(modelId)
                 .nextInstruction(prediction)
                 .createAt(Instant.now())
                 .updateAt(Instant.now())
@@ -126,11 +182,10 @@ public class InstructionServiceImpl implements InstructionService {
         try {
             instructionRepository.save(instruction);
         } catch (DuplicateKeyException collision) {
-            // 同一轮并发预测：先到者已落库，复用它的结果，别让用户看到系统错误。
-            return Result.success(toVO(instructionRepository.findBySessionAndTurn(sessionId, turnId)
-                    .orElse(instruction)));
+            // 别的进程抢先落库：复用先到者那一行，别让用户看到系统错误。
+            return instructionRepository.findBySessionAndTurn(sessionId, turnId).orElse(instruction);
         }
-        return Result.success(toVO(instruction));
+        return instruction;
     }
 
     private String predict(Long modelId, String userText, String agentText) {
