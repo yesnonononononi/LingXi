@@ -12,6 +12,7 @@ import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import com.summit.dp.shared.utils.TestTimeouts;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -63,7 +64,7 @@ class SessionContextStorageFootprintTest {
     private final Path dataDir = Path.of(FOOTPRINT_DIR);
 
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void repeatedReplacementKeepsTheDatabaseFlat() throws IOException {
         long before = sizeOfDatabase();
         for (int round = 0; round < ROUNDS; round++) {
@@ -84,7 +85,7 @@ class SessionContextStorageFootprintTest {
 
     /** 磁盘上也只该剩最后一份正文：整笔替换不是追加。 */
     @Test
-    @Timeout(120)
+    @Timeout(TestTimeouts.HANG_GUARD)
     void onlyTheLatestBodyStaysOnDisk() throws IOException {
         for (int round = 0; round < 5; round++) {
             service.replace(SESSION_ID, messages(round));
