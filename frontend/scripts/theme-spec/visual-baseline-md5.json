@@ -1,6 +1,6 @@
 {
   "$comment": "视觉基线完整性 oracle（G-4 根治用）：记录本机视觉基线的 MD5 指纹，用来在 compare 之前证明「基线是完整的」。基线 PNG 本体不入仓（像素结果与机器/DPI/字体/浏览器版本绑定，见 scripts/visual/README.md 第 4 条），入仓会让换环境 clone 就一片红，团队最终会无视门禁 —— 那比假绿更糟。所以本文件只是「基线应该长什么样」的凭据，不是像素基线本体。path 一律相对该 suite 的 baselineDir；三个脚本在 --mode baseline（全量、无过滤参数）时自动重写自己那一节并重算 counts/generatedAt；--mode check 时先按本文件校验完整性，不通过即 exit 2（基础设施故障，不是视觉回归）。",
-  "generatedAt": "2026-10-29T10:12:03.580Z",
+  "generatedAt": "2026-11-11T06:50:47.210Z",
   "forms": {
     "components": "per-scene-v1",
     "hover": "per-scene-v1"
@@ -51,7 +51,7 @@
       },
       {
         "path": "dark/atRow-roi.png",
-        "md5": "25340f573fd7d22e2b7b9d9aacf6ee77"
+        "md5": "6083d7594e47d52f8e4f23c13b5157d9"
       },
       {
         "path": "dark/cardHeaderTitle-roi.png",
@@ -99,11 +99,11 @@
       },
       {
         "path": "dark/scene-chat-input-driven.png",
-        "md5": "389d330ee768bc13c684fe7227ce0a22"
+        "md5": "72e0c804a28a44796abd77f7987b488f"
       },
       {
         "path": "dark/scene-chat-input.png",
-        "md5": "781bf693aa7128abadd831067b4df5fb"
+        "md5": "bdbcedfb302cc893f285a107f93e2806"
       },
       {
         "path": "dark/scene-chat-message-item.png",
@@ -119,7 +119,7 @@
       },
       {
         "path": "dark/scene-settings-modal-card.png",
-        "md5": "0ed49e891afcf93e9d0b74b02e1c5519"
+        "md5": "67cd62d2c7e081a1583cbdc7ec463163"
       },
       {
         "path": "dark/scene-sidebar-collapsed.png",
@@ -131,11 +131,11 @@
       },
       {
         "path": "dark/scene-sidebar-history.png",
-        "md5": "f3990007ead119b8d39a6ea4b12eeb97"
+        "md5": "19f1c1b6a12471ccb75511e1de1a5791"
       },
       {
         "path": "dark/scene-sidebar-open.png",
-        "md5": "e126d2c16dd7bd42578218ac2b46320b"
+        "md5": "a333701f42628e48f96a45e7839436fc"
       },
       {
         "path": "dark/scene-subagent-panel.png",
@@ -159,7 +159,7 @@
       },
       {
         "path": "dark/sidebarSessionTitle-roi.png",
-        "md5": "7cc121c4a02c1749a47b17e0f3c588bb"
+        "md5": "b6e2bce92cf91558d24885559069d458"
       },
       {
         "path": "dark/sidebarWorkspaceLabel-roi.png",
@@ -167,7 +167,7 @@
       },
       {
         "path": "dark/smCard-roi.png",
-        "md5": "db2ccacb3057d9bdfb3fe5ba9b94b1f7"
+        "md5": "789a4ae118bc85616072ca1db212c015"
       },
       {
         "path": "dark/smTitle-roi.png",
@@ -191,7 +191,7 @@
       },
       {
         "path": "light/atRow-roi.png",
-        "md5": "b198bf500fd4ac4f419d01c9b7c8c4ee"
+        "md5": "50edcd834eba383eaa525d274f29f44e"
       },
       {
         "path": "light/cardHeaderTitle-roi.png",
@@ -239,11 +239,11 @@
       },
       {
         "path": "light/scene-chat-input-driven.png",
-        "md5": "19ccf3cc68601781206825e681839234"
+        "md5": "9726618ba82459e9dd8c11616ed7ccd9"
       },
       {
         "path": "light/scene-chat-input.png",
-        "md5": "16e1034fcfcb540e66eb0df4c356c1c5"
+        "md5": "bd33f264c4f4ad1e60c08cfc825db49d"
       },
       {
         "path": "light/scene-chat-message-item.png",
@@ -259,7 +259,7 @@
       },
       {
         "path": "light/scene-settings-modal-card.png",
-        "md5": "ea7c995e7ad37d7379a14a600f91e4cd"
+        "md5": "aa190e4079b86592a3b3efbe552262f7"
       },
       {
         "path": "light/scene-sidebar-collapsed.png",
@@ -307,7 +307,7 @@
       },
       {
         "path": "light/smCard-roi.png",
-        "md5": "15572e422180fba2c1a1ee7e39fb133a"
+        "md5": "e9f3ad5245050584ebccfc7dc0a278bc"
       },
       {
         "path": "light/smTitle-roi.png",
