@@ -6,6 +6,7 @@ import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.DeviceCommand;
 import com.summit.dp.device.application.model.DeviceCommandAck;
+import com.summit.dp.device.application.model.DeviceReply;
 import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
@@ -51,6 +52,9 @@ public class WsDeviceChannel implements DeviceChannel {
 
     private final AtomicLong outboundSeq = new AtomicLong(0);
     private final AtomicLong correlationCounter = new AtomicLong(0);
+
+    /** 回推消息的 id 序号。与请求关联计数分开：一个是"这次请求的键"，一个是"这条通知的标识"。 */
+    private final AtomicLong replyCounter = new AtomicLong(0);
     private final AtomicReference<Device> device;
     private final AtomicReference<String> foregroundPackage = new AtomicReference<>(null);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -268,6 +272,28 @@ public class WsDeviceChannel implements DeviceChannel {
             return payloadMapper.commandIdOf(message.payload());
         } catch (RuntimeException ignored) {
             return "unknown";
+        }
+    }
+
+    /**
+     * 回推一条会话结果。
+     *
+     * <p>失败只记 warn 并返回 false：答复丢了不该把会话执行打成失败，
+     * 但也不能静默——"手机为什么没收到"必须能从日志里查出来。</p>
+     */
+    @Override
+    public boolean pushReply(DeviceReply reply) {
+        try {
+            send("device_reply", "reply-" + replyCounter.incrementAndGet(),
+                    payloadMapper.replyPayload(reply));
+            log.info("会话结果已回推: deviceId={}, sessionId={}, kind={}, chars={}",
+                    device.get().deviceId(), reply.sessionId(), reply.kind().wire(),
+                    reply.text().length());
+            return true;
+        } catch (RuntimeException failure) {
+            log.warn("会话结果回推失败: deviceId={}, sessionId={}, kind={}, reason={}",
+                    device.get().deviceId(), reply.sessionId(), reply.kind().wire(), failure.getMessage());
+            return false;
         }
     }
 

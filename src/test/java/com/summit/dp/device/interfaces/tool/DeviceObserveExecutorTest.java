@@ -7,6 +7,7 @@ import com.summit.dp.device.application.DeviceRegistry;
 import com.summit.dp.device.application.DeviceToolService;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceReply;
 import com.summit.dp.device.application.model.DeviceScreenshot;
 import com.summit.dp.device.application.model.NormalizedBounds;
 import com.summit.dp.device.application.model.ObserveRequest;
@@ -56,6 +57,12 @@ class DeviceObserveExecutorTest {
 
         ShotChannel(DeviceScreenshot screenshot) {
             this.screenshot = screenshot;
+        }
+
+        @Override
+        public boolean pushReply(DeviceReply reply) {
+            // 观察链路不涉及回推
+            return true;
         }
 
         @Override

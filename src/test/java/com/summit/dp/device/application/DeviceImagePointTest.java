@@ -2,6 +2,7 @@ package com.summit.dp.device.application;
 
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceReply;
 import com.summit.dp.device.application.model.DeviceScreenshot;
 import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
@@ -54,6 +55,12 @@ class DeviceImagePointTest {
             // 帧指纹跟着变，模拟"换了一张画面"
             nextSnapshot = new ObserveSnapshot("dev-img", "fh-img-2", "com.android.settings", false, SCREEN,
                     List.<UiElement>of(), shot);
+        }
+
+        @Override
+        public boolean pushReply(DeviceReply reply) {
+            // 这些用例只关心观察/动作，回推不参与断言
+            return true;
         }
 
         @Override

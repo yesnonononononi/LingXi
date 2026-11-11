@@ -8,6 +8,7 @@ import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
 import com.summit.dp.device.application.model.DeviceCommand;
 import com.summit.dp.device.application.model.DeviceCommandAck;
+import com.summit.dp.device.application.model.DeviceReply;
 import com.summit.dp.device.application.model.NormalizedBounds;
 import com.summit.dp.device.application.model.DeviceScreenshot;
 import com.summit.dp.device.application.model.ObserveRequest;
@@ -277,6 +278,26 @@ public class DevicePayloadMapper {
             sessionId = session.asLong();
         }
         return new DeviceCommand(commandId, text, sessionId);
+    }
+
+    /**
+     * 回推载荷。字段语义与 schema 的 deviceReply 一一对应。
+     *
+     * <p>可选字段只在有值时出现：发一个 {@code "commandId": null} 出去，
+     * 设备的 {@code additionalProperties:false} 校验会把它当成非法字段。</p>
+     */
+    public ObjectNode replyPayload(DeviceReply reply) {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("sessionId", reply.sessionId());
+        payload.put("kind", reply.kind().wire());
+        payload.put("text", reply.text());
+        if (reply.commandId() != null && !reply.commandId().isBlank()) {
+            payload.put("commandId", reply.commandId());
+        }
+        if (reply.turnId() != null) {
+            payload.put("turnId", reply.turnId());
+        }
+        return payload;
     }
 
     /** 指令回执载荷。字段语义与 schema 的 deviceCommandAck 一一对应。 */

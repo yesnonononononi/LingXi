@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 把手机发来的指令翻译成一次会话受理。
@@ -42,9 +41,7 @@ public class DeviceCommandChatHandler implements DeviceCommandHandler {
 
     private final ChatService chatService;
     private final DeviceWsProperties properties;
-
-    /** deviceId → sessionId。断线不清：重连后追问仍应落在同一会话。 */
-    private final Map<String, Long> bindings = new ConcurrentHashMap<>();
+    private final DeviceSessionBindings bindings;
 
     /** deviceId|commandId → 已受理的回执。只缓存成功受理的，被拒的允许重试。 */
     private final Map<String, DeviceCommandAck> accepted = Collections.synchronizedMap(
@@ -56,9 +53,11 @@ public class DeviceCommandChatHandler implements DeviceCommandHandler {
             });
 
     @Autowired
-    public DeviceCommandChatHandler(ChatService chatService, DeviceWsProperties properties) {
+    public DeviceCommandChatHandler(ChatService chatService, DeviceWsProperties properties,
+                                    DeviceSessionBindings bindings) {
         this.chatService = chatService;
         this.properties = properties;
+        this.bindings = bindings;
     }
 
     @Override
@@ -84,7 +83,7 @@ public class DeviceCommandChatHandler implements DeviceCommandHandler {
             return previous.duplicate();
         }
 
-        Long sessionId = command.sessionId() != null ? command.sessionId() : bindings.get(deviceId);
+        Long sessionId = command.sessionId() != null ? command.sessionId() : bindings.sessionOf(deviceId).orElse(null);
         try {
             Result<ChatAcceptanceVO> result = chatService.acceptCommand(ChatCommand.builder()
                     .input(text)
@@ -99,7 +98,8 @@ public class DeviceCommandChatHandler implements DeviceCommandHandler {
             }
             ChatAcceptanceVO acceptedVo = result.getData();
             if (acceptedVo.getSessionId() != null) {
-                bindings.put(deviceId, acceptedVo.getSessionId());
+                // 绑定表与回推共用同一份：手机发进去的会话，结果必须推回同一台设备
+                bindings.bind(deviceId, acceptedVo.getSessionId());
             }
             DeviceCommandAck ack = DeviceCommandAck.accepted(
                     command.commandId(), acceptedVo.getSessionId(), acceptedVo.getPendingId());

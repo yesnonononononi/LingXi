@@ -2,6 +2,7 @@ package com.summit.dp.device.application.port;
 
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceReply;
 import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
@@ -41,6 +42,16 @@ public interface DeviceChannel {
      * <p>返回结果而不是 void：实现对"停住了"是否有把握，调用方必须知道。</p>
      */
     StopResult stop();
+
+    /**
+     * 回推一条会话结果给设备。
+     *
+     * <p>放在这个端口而不是另起一个：回推与"看/做"走的是同一条连接、同一份 deviceId 路由，
+     * 另起端口只会让"哪条通道才算当前连接"出现两份答案。</p>
+     *
+     * <p><b>返回 false 而不是抛异常</b>：答复丢了不该让会话执行失败。上层按"丢了一条通知"记日志即可。</p>
+     */
+    boolean pushReply(DeviceReply reply);
 
     /**
      * 当前前台应用包名；未知时返回 null。

@@ -2,6 +2,7 @@ package com.summit.dp.device.infrastructure.fake;
 
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceReply;
 import com.summit.dp.device.application.model.NormalizedBounds;
 import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -34,6 +36,9 @@ public class FakeDeviceChannel implements DeviceChannel {
     private final Device device;
     private final AtomicReference<ScreenState> state = new AtomicReference<>(ScreenState.of(SETTINGS_PACKAGE, false, ""));
     private final AtomicReference<Boolean> stopped = new AtomicReference<>(false);
+
+    /** 收到的回推。测试据此断言"答复真的到了设备"，而不是只看调用没抛异常。 */
+    private final List<DeviceReply> replies = new CopyOnWriteArrayList<>();
 
     public FakeDeviceChannel(String deviceId) {
         this.device = new Device(
@@ -113,6 +118,23 @@ public class FakeDeviceChannel implements DeviceChannel {
         // 假设备是进程内的，没有"送达不了"这回事，直接确认
         stopped.set(true);
         return StopResult.acknowledged(0);
+    }
+
+    /**
+     * 假设备把回推记在内存里。
+     *
+     * <p>刻意做成可断言而不是空实现：否则"结果回推"这条链路在单测里只能验证"没抛异常"，
+     * 验证不了"答复去哪了"。</p>
+     */
+    @Override
+    public boolean pushReply(DeviceReply reply) {
+        replies.add(reply);
+        return true;
+    }
+
+    /** 收到的回推，按到达顺序。 */
+    public List<DeviceReply> replies() {
+        return List.copyOf(replies);
     }
 
     /** 恢复到可操作状态，便于连续测试。 */

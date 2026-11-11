@@ -38,13 +38,15 @@ class DeviceCommandChatHandlerTest {
 
     private ChatService chatService;
     private DeviceWsProperties properties;
+    private DeviceSessionBindings bindings;
     private DeviceCommandChatHandler handler;
 
     @BeforeEach
     void setUp() {
         chatService = mock(ChatService.class);
         properties = new DeviceWsProperties();
-        handler = new DeviceCommandChatHandler(chatService, properties);
+        bindings = new DeviceSessionBindings();
+        handler = new DeviceCommandChatHandler(chatService, properties, bindings);
     }
 
     private void enable() {
