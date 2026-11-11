@@ -20,6 +20,7 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.service.UserConfigService;
@@ -40,7 +41,7 @@ import java.util.Optional;
  * 指令预测：拿已终态轮次的「用户提问 + Agent 终态正文」让模型猜用户下一句会说什么。
  *
  * <p>对外只有一个入口 {@code next}：有旧的就返回旧的，没有才生成 —— 每个轮次只产出一条预测。
- * 不生成的情况（功能未开启、轮次未终态、队列里还有接力消息）统一返回空，不当成错误。</p>
+ * 不生成的情况（功能未开启、轮次未正常完成、队列里还有接力消息、子会话）统一返回空，不当成错误。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -99,8 +100,9 @@ public class InstructionServiceImpl implements InstructionService {
         ChatTurn turn = chatTurnRepository.findById(turnId)
                 .orElseThrow(() -> new ClientException("轮次不存在: " + turnId));
         throwIf(!sessionId.equals(turn.getSessionId()), "轮次不属于该会话");
-        // 终态只认 chat_turn.status：前端的 isTerminal 只是触发时机，不能当作生成依据。
-        if (!turn.getStatus().isTerminal()) {
+        // 只对「正常完成」的轮次预测：状态只认 chat_turn.status，前端的终态判断只是触发时机。
+        // 失败/取消的轮次没有可信的下文 —— 拿错误现场去猜用户下一句，只会把跑歪的对话当成走向。
+        if (turn.getStatus() != ChatTurnStatus.COMPLETED) {
             return Result.success(null);
         }
 

@@ -140,6 +140,24 @@ class InstructionPredictTest {
     }
 
     @Test
+    @DisplayName("只有 COMPLETED 才生成：失败/取消/挂起/受理中一律不预测")
+    void onlyCompletedTurnIsPredicted() throws Exception {
+        // 必须让这一轮「正文齐全」：否则用例会因为「缺正文」而通过，根本区分不出状态闸门是否生效。
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(
+                message(SessionMessageType.USER, userJson("提问")),
+                message(SessionMessageType.AI, aiJson(AiMessageEntity.builder().text("回答").build()))));
+
+        for (ChatTurnStatus status : List.of(ChatTurnStatus.FAILED, ChatTurnStatus.CANCELLED,
+                ChatTurnStatus.WAITING, ChatTurnStatus.ACCEPTED)) {
+            when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(turn(status)));
+
+            assertNull(service.next(SESSION_ID, TURN_ID).getData(), status + " 不该生成预测");
+            verifyNoInteractions(chatGateway);
+            verify(instructionRepository, never()).save(any());
+        }
+    }
+
+    @Test
     @DisplayName("用最后一条用户消息与最后一条无工具调用的 AI 正文，并按短请求口径覆盖思考与预算")
     void predictsFromUserAndFinalAgentText() throws Exception {
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(

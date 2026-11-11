@@ -38,6 +38,14 @@ export const isActiveTurnStatus = (status: string): boolean =>
 export const isTerminalTurnStatus = (status: string): boolean =>
   (TERMINAL_TURN_STATUSES as readonly string[]).includes(status);
 
+/**
+ * 该轮次是否「正常完成」（COMPLETED）。
+ *
+ * <p>与 {@link isTerminalTurnStatus} 的区别：失败/取消也是终态，但它们的下文不可信。
+ * 需要「这一轮真正跑完、可以接着往下猜」的场景（如指令预测）必须用这个，不能用终态。</p>
+ */
+export const isCompletedTurnStatus = (status: string): boolean => status === 'COMPLETED';
+
 /** 该轮次是否已失败（用于附上失败原因全文）。 */
 export const isFailedTurnStatus = (status: string): boolean => status === 'FAILED';
 

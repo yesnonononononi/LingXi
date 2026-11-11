@@ -19,7 +19,7 @@ const validTarget = {
   sessionId: '11',
   rootSessionId: '0',
   turnId: '22',
-  turnTerminal: true,
+  turnCompleted: true,
   enabled: true,
   inputEmpty: true,
 };
@@ -32,10 +32,11 @@ test('子会话判定：根会话的 rootSessionId 为 0 或等于自身都不�
   assert.equal(isSubSessionOf(null, '22'), false);
 });
 
-test('只要有一项不成立就不发请求：功能关闭 / 未终态 / 无轮次 / 子会话', () => {
+test('只要有一项不成立就不发请求：功能关闭 / 未正常完成 / 无轮次 / 子会话 / 有草稿', () => {
   assert.deepEqual(resolvePredictTarget(validTarget), {sessionId: '11', turnId: '22'});
   assert.equal(resolvePredictTarget({...validTarget, enabled: false}), null);
-  assert.equal(resolvePredictTarget({...validTarget, turnTerminal: false}), null);
+  // 失败/取消虽然也是终态，但下文不可信：只有正常完成才算「会话空闲」。
+  assert.equal(resolvePredictTarget({...validTarget, turnCompleted: false}), null);
   assert.equal(resolvePredictTarget({...validTarget, turnId: null}), null);
   assert.equal(resolvePredictTarget({...validTarget, sessionId: null}), null);
   // 输入框有草稿：用户已经在写了，预测没有意义。
@@ -44,7 +45,7 @@ test('只要有一项不成立就不发请求：功能关闭 / 未终态 / 无�
   assert.equal(resolvePredictTarget({...validTarget, rootSessionId: '9'}), null);
 });
 
-test('终态后静止 5 秒才请求一次，结果直接来自后端', async context => {
+test('正常完成后静止 5 秒才请求一次，结果直接来自后端', async context => {
   context.mock.timers.enable({apis: ['setTimeout']});
   const calls: string[] = [];
   context.mock.method(InstructionAPI, 'next', async (sessionId: unknown, turnId: unknown) => {
@@ -57,7 +58,7 @@ test('终态后静止 5 秒才请求一次，结果直接来自后端', async co
     sessionId,
     rootSessionId: ref<string | null>('0'),
     turnId: ref<string | null>('22'),
-    turnTerminal: ref(true),
+    turnCompleted: ref(true),
     enabled: ref(true),
     inputEmpty: ref(true),
   });
@@ -87,7 +88,7 @@ test('静止期内切换会话：旧请求不再发出，迟到结果也不覆�
     sessionId,
     rootSessionId: ref<string | null>('0'),
     turnId: ref<string | null>('22'),
-    turnTerminal: ref(true),
+    turnCompleted: ref(true),
     enabled: ref(true),
     inputEmpty: ref(true),
   });
@@ -114,7 +115,7 @@ test('输入框有草稿就不计时；清空草稿后重新计时 5 秒', async
     sessionId: ref<string | null>('11'),
     rootSessionId: ref<string | null>('0'),
     turnId: ref<string | null>('22'),
-    turnTerminal: ref(true),
+    turnCompleted: ref(true),
     enabled: ref(true),
     inputEmpty,
   });
@@ -144,13 +145,13 @@ test('目标反复切换：旧计时器必须被回收，只在最后一次目�
   });
 
   const sessionId = ref<string | null>('11');
-  const turnTerminal = ref(true);
+  const turnCompleted = ref(true);
   const inputEmpty = ref(true);
   useInstructionPredict({
     sessionId,
     rootSessionId: ref<string | null>('0'),
     turnId: ref<string | null>('22'),
-    turnTerminal,
+    turnCompleted,
     enabled: ref(true),
     inputEmpty,
   });
@@ -180,6 +181,9 @@ test('输入区接线契约：建议走占位文本、Tab 补全、空态上抛�
   assert.match(input, /e\.key === 'Tab'[\s\S]{0,160}applyPrediction\(\)/, 'Tab 必须触发补全');
   assert.match(input, /updateDraftEmpty/, '输入框空态必须上抛');
   assert.match(view, /inputEmpty: computed\(\(\) => draftEmpty\.value\)/, '空态必须接进预测闸门');
+  // 闸门是「正常完成」而不是「终态」：失败/取消不能触发预测。
+  assert.match(view, /isCompletedTurnStatus\(String\(turn\.status\)\)/, '必须按 COMPLETED 判定，不能用终态');
+  assert.doesNotMatch(view, /isTerminalTurnStatus\(String\(turn\.status\)\)/, '别把闸门悄悄退回终态');
   assert.match(i18n, /predictionHint: '\(tab补全\)'/);
 });
 
@@ -192,7 +196,7 @@ test('后端返回空或业务失败：建议保持为空且不抛错', async co
     sessionId: ref<string | null>('11'),
     rootSessionId: ref<string | null>('0'),
     turnId: ref<string | null>('22'),
-    turnTerminal: ref(true),
+    turnCompleted: ref(true),
     enabled: ref(true),
     inputEmpty: ref(true),
   });
@@ -206,7 +210,7 @@ test('后端返回空或业务失败：建议保持为空且不抛错', async co
     sessionId: ref<string | null>('44'),
     rootSessionId: ref<string | null>('0'),
     turnId: ref<string | null>('55'),
-    turnTerminal: ref(true),
+    turnCompleted: ref(true),
     enabled: ref(true),
     inputEmpty: ref(true),
   });

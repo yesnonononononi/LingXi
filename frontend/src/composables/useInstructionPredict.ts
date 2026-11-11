@@ -12,8 +12,8 @@ export interface InstructionPredictFacts {
   rootSessionId: Ref<string | number | null | undefined>;
   /** 要预测的那一轮（最后一轮）。 */
   turnId: Ref<string | null | undefined>;
-  /** 该轮是否已终态（由 turns 摘要的 status 判定，不猜）。 */
-  turnTerminal: Ref<boolean>;
+  /** 该轮是否**正常完成**（COMPLETED；失败/取消虽也是终态，但下文不可信）。 */
+  turnCompleted: Ref<boolean>;
   /** 功能是否开启：后端以「预测模型为空」表示关闭，前端据此省掉无效请求。 */
   enabled: Ref<boolean>;
   /** 输入框是否为空（草稿为空才计时；用户一开始打字就该掐掉计时器）。 */
@@ -43,22 +43,21 @@ export function resolvePredictTarget(facts: {
   sessionId: string | number | null | undefined;
   rootSessionId: string | number | null | undefined;
   turnId: string | number | null | undefined;
-  turnTerminal: boolean;
+  turnCompleted: boolean;
   enabled: boolean;
   /** 输入框是否为空：有草稿说明用户已经在写了，预测没有意义。 */
   inputEmpty: boolean;
 }): { sessionId: string; turnId: string } | null {
   if (!facts.enabled) return null;
-
   if (!facts.inputEmpty) return null;
   if (facts.sessionId == null || facts.turnId == null) return null;
-  if (!facts.turnTerminal) return null;
+  if (!facts.turnCompleted) return null;
   if (isSubSessionOf(facts.rootSessionId, facts.sessionId)) return null;
   return {sessionId: String(facts.sessionId), turnId: String(facts.turnId)};
 }
 
 /**
- * 指令预测：会话空闲（终态 + 输入框为空）并静止 {@link PREDICT_IDLE_MS} 毫秒后，
+ * 指令预测：会话空闲（轮次正常完成 + 输入框为空）并静止 {@link PREDICT_IDLE_MS} 毫秒后，
  * 向后端要一条「下一条指令」。
  *
  * <p><b>为什么由前端计时</b>：后端不知道用户是刚跑完还是已经盯着结果看了十秒。
@@ -82,7 +81,7 @@ export function useInstructionPredict(facts: InstructionPredictFacts, idleMs = P
     sessionId: facts.sessionId.value,
     rootSessionId: facts.rootSessionId.value,
     turnId: facts.turnId.value,
-    turnTerminal: facts.turnTerminal.value,
+    turnCompleted: facts.turnCompleted.value,
     enabled: facts.enabled.value,
     inputEmpty: facts.inputEmpty.value,
   }));

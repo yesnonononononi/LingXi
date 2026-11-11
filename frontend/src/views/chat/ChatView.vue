@@ -558,7 +558,7 @@ import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import {useChatView} from './useChatView';
 import {useInstructionPredict} from '../../composables/useInstructionPredict';
-import {isTerminalTurnStatus} from '../../utils/turnStatus';
+import {isCompletedTurnStatus} from '../../utils/turnStatus';
 import {useUserConfigStore} from '../../stores/userConfigStore';
 import Sidebar from '../../components/chat/Sidebar.vue';
 import type {SidebarTreeSlotProps} from '../../types/sidebarSlots';
@@ -840,10 +840,10 @@ const {
 const userConfig = useUserConfigStore();
 
 /**
- * 指令预测：最后一轮的终态与轮次 id 全部取自后端下发的事实。
+ * 指令预测：最后一轮的完成状态与轮次 id 全部取自后端下发的事实。
  *
- * <p>末轮 id 取「最后一条带 turnId 的消息」—— 失败/取消的轮次同样有终态正文值得预测下一句，
- * 因此不按成功与否过滤。</p>
+ * <p>末轮 id 取「最后一条带 turnId 的消息」；是否生成由该轮 {@code turns[turnId].status}
+ * 决定 —— 只有 COMPLETED 才算「正常完成」，失败/取消即便有终态正文也不预测。</p>
  */
 const lastTurnId = computed<string | null>(() => {
   const messages = displayedMessages.value;
@@ -854,11 +854,11 @@ const lastTurnId = computed<string | null>(() => {
   return null;
 });
 
-const lastTurnTerminal = computed<boolean>(() => {
+const lastTurnCompleted = computed<boolean>(() => {
   const turnId = lastTurnId.value;
   if (!turnId) return false;
   const turn = currentActiveSession.value?.turns?.[turnId];
-  return turn != null && isTerminalTurnStatus(String(turn.status));
+  return turn != null && isCompletedTurnStatus(String(turn.status));
 });
 
 /** 输入框是否为空的镜像：预测闸门之一（有草稿就不该计时）。由 ChatInputArea 上抛。 */
@@ -868,7 +868,7 @@ const { suggestion: instructionPrediction, clear: clearInstructionPrediction } =
   sessionId: computed(() => localActiveId.value),
   rootSessionId: computed(() => currentActiveSession.value?.rootSessionId ?? null),
   turnId: lastTurnId,
-  turnTerminal: lastTurnTerminal,
+  turnCompleted: lastTurnCompleted,
   // 后端以「预测模型为空」表示功能关闭：前端据此免发必然返回空的请求。
   enabled: computed(() => userConfig.predicateModelId != null),
   inputEmpty: computed(() => draftEmpty.value),
