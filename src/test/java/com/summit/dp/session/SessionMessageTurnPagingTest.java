@@ -43,7 +43,7 @@ class SessionMessageTurnPagingTest {
     private final SessionAggregateService service = new SessionAggregateService(
             sessionRepository, messageRepository, chatTurnRepository,
             mock(ToolCallRepository.class), mock(ModelContextService.class),
-            mock(SessionContextRepository.class), mock(ApplicationEventPublisher.class));
+            mock(ApplicationEventPublisher.class));
 
     private static ChatTurn turn(long id) {
         ChatTurn turn = ChatTurn.accept(id, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));

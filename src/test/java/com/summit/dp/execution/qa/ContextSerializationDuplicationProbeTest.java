@@ -1,6 +1,7 @@
 package com.summit.dp.execution.qa;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -18,6 +19,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
@@ -30,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mybatis.spring.SqlSessionTemplate;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -80,8 +83,9 @@ class ContextSerializationDuplicationProbeTest {
             ObjectMapper mapper = new JsonConfig().objectMapper();
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);
             LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(executions, mapper, store);
-            ModelContextService modelContextService = new ModelContextService(mapper,
-                    new SessionContextRepositoryImpl(contexts));
+            ModelContextService modelContextService = new ModelContextService(
+                    new SessionContextRepositoryImpl(contexts),
+                    new LocalSessionContextFileStore(dataDir.toString(), mapper));
 
             ExecutionPO row = new ExecutionPO();
             row.setId(EXECUTION_ID);
@@ -114,7 +118,7 @@ class ContextSerializationDuplicationProbeTest {
                 long startedAt = System.nanoTime();
                 modelContextService.replace(SESSION_ID, messages);
                 long elapsed = System.nanoTime() - startedAt;
-                contextBytes = contextContentBytes(contexts);
+                contextBytes = contextContentBytes(dataDir, contexts);
                 if (round >= WARMUP_ROUNDS) {
                     replaceNanos.add(elapsed);
                 }
@@ -145,7 +149,7 @@ class ContextSerializationDuplicationProbeTest {
             // 检查点正文里嵌了一份 messages，session_context 里又存了一份 —— 结构化比对确认「同一份」，
             // 而不是「两份凑巧字数相近的 JSON」。
             JsonNode checkpointMessages = mapper.readTree(checkpointFile(dataDir, executions).toFile()).get("messages");
-            JsonNode contextMessages = mapper.readTree(contexts.selectById(SESSION_ID).getContent());
+            JsonNode contextMessages = readContextMessages(mapper, dataDir, contexts);
             assertNotNull(checkpointMessages, "检查点正文里必须有 messages 字段");
             assertEquals(messages.size(), checkpointMessages.size(), "检查点里的消息条数必须与内存一致");
             assertEquals(messages.size(), contextMessages.size(), "session_context 里的消息条数必须与内存一致");
@@ -250,11 +254,29 @@ class ContextSerializationDuplicationProbeTest {
         return dataDir.resolve("checkpoints").resolve(String.valueOf(EXECUTION_ID)).resolve(fileId + ".json");
     }
 
-    private static long contextContentBytes(SessionContextMapper contexts) {
+    /** 正文已经不在库里：量的是库内引用指向的那份 JSONL 文件大小。 */
+    private static long contextContentBytes(Path dataDir, SessionContextMapper contexts) throws IOException {
+        return Files.size(contextFile(dataDir, contexts));
+    }
+
+    private static Path contextFile(Path dataDir, SessionContextMapper contexts) {
         SessionContextPO current = contexts.selectById(SESSION_ID);
         assertNotNull(current, "replace 之后 session_context 必须有一行");
-        // 直接量落库字符串的 UTF-8 字节：建临时文件再取长度会把 fsync 成本混进字节统计里。
-        return current.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        assertNotNull(current.getSnapshotFile(), "replace 之后库内必须留下正文标识");
+        return dataDir.resolve("session-context").resolve(String.valueOf(SESSION_ID))
+                .resolve(current.getSnapshotFile() + ".jsonl");
+    }
+
+    /** 把 JSONL 逐行还原成一个数组节点，便于和检查点里的 messages 做结构化比对。 */
+    private static JsonNode readContextMessages(ObjectMapper mapper, Path dataDir,
+                                                SessionContextMapper contexts) throws IOException {
+        ArrayNode restored = mapper.createArrayNode();
+        for (String line : Files.readAllLines(contextFile(dataDir, contexts))) {
+            if (!line.isBlank()) {
+                restored.add(mapper.readTree(line));
+            }
+        }
+        return restored;
     }
 
     private static long median(List<Long> values) {

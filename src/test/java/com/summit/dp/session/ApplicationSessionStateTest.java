@@ -292,7 +292,8 @@ class ApplicationSessionStateTest {
 
         @Bean
         SessionService service(SessionRepository sessions, ExecutionRepositoryImpl executions) {
-            return new SessionServiceImpl(new SessionAggregateService(sessions, null, null, null, null, null, mock(ApplicationEventPublisher.class)),
+            return new SessionServiceImpl(new SessionAggregateService(sessions, null, null, null, null,
+                    mock(ApplicationEventPublisher.class)),
                     mock(WorkspaceService.class), sessions, mock(SessionMessageQueryService.class),
                     new ExecutionQueryServiceImpl(executions), mock(TeamService.class), mock(AgentRepository.class),
                     mock(ChatTurnService.class), new ChatTurnConverter(), mock(TurnViewService.class));

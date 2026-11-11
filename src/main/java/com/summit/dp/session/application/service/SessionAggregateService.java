@@ -6,7 +6,6 @@ import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.repo.MessageRepository;
-import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.CursorResult;
@@ -34,8 +33,8 @@ public class SessionAggregateService {
     /** 历史分页的游标维度：分页单位是完整轮次，轮次仓储是取数与游标的真源。 */
     private final ChatTurnRepository chatTurnRepository;
     private final ToolCallRepository toolCallRepository;
+    /** 上下文（正文文件 + 引用行）的删除由它统一收口，本类不直接碰 session_context。 */
     private final ModelContextService modelContextService;
-    private final SessionContextRepository sessionContextRepository;
     private final ApplicationEventPublisher events;
 
 
@@ -93,8 +92,8 @@ public class SessionAggregateService {
         messageRepository.batchDelBySessionIds(ids);
         // 级联清理工具调用（卡片数据）：按 conversation_id 批量删除，避免孤儿卡片无界累积。
         toolCallRepository.deleteByConversationIds(ids);
+        // 上下文正文的行与文件都由服务统一收口：库里删行、提交后删文件，这里不再单独删一次行。
         modelContextService.deleteBySessionIds(ids);
-        sessionContextRepository.batchDeleteBySessionIds(ids);
         events.publishEvent(new SessionTreeDeleted(ids));
         return true;
     }

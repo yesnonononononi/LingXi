@@ -22,7 +22,9 @@ import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.service.ResumeDisposition;
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
@@ -187,8 +189,10 @@ class CommandTwoPhaseGuardTest {
         executions = com.summit.dp.execution.ExecutionRepositoryTestFactory.create(
                 session.getMapper(com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper.class),
                 mapper);
-        contexts = new ModelContextService(mapper,
-                new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)));
+        contexts = new ModelContextService(
+                new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)),
+                new LocalSessionContextFileStore(
+                        ExecutionRepositoryTestFactory.tempDataDir().toString(), mapper));
         converter = new ToolCallConverter(mapper);
         command = new CountingCommandExecutor(mapper, database, cardId -> slotText(cardId));
         registry = mock(ToolRegistry.class);

@@ -15,6 +15,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
@@ -168,8 +169,9 @@ public final class LimitedHeapCheckpointHarness {
             System.out.println("HISTORY_EXECUTIONS=" + historyExecutions);
 
             // ④ 会话上下文写入：本轮仍有整段 JSON 字符串，必须计入同一个堆压力。
-            ModelContextService contextService = new ModelContextService(plainMapper,
-                    new SessionContextRepositoryImpl(sql.getMapper(SessionContextMapper.class)));
+            ModelContextService contextService = new ModelContextService(
+                    new SessionContextRepositoryImpl(sql.getMapper(SessionContextMapper.class)),
+                    new LocalSessionContextFileStore(dataDir.toString(), plainMapper));
             for (int round = 0; round < contextRounds; round++) {
                 contextService.replace(900L + round, body);
             }

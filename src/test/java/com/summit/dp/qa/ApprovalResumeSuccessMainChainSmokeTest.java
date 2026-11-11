@@ -34,6 +34,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResume
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
@@ -154,8 +155,10 @@ class ApprovalResumeSuccessMainChainSmokeTest {
         tools = new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class), mapper,
                 mock(CardAvailabilityPolicy.class));
         executions = ExecutionRepositoryTestFactory.create(session.getMapper(ExecutionMapper.class), mapper);
-        contexts = new ModelContextService(mapper,
-                new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)));
+        contexts = new ModelContextService(
+                new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)),
+                new LocalSessionContextFileStore(
+                        ExecutionRepositoryTestFactory.tempDataDir().toString(), mapper));
 
         ExecutionControl executionControl = executionControl();
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(

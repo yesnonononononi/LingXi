@@ -1,9 +1,7 @@
 package com.summit.dp.session.application.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.message.Message;
+import com.summit.dp.session.application.port.SessionContextStore;
 import com.summit.dp.session.domain.model.SessionContext;
 import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.shared.persistence.TransactionRetryTemplate;
@@ -14,11 +12,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
-/** Mutable model-facing context snapshot. Compaction may replace this without affecting the transcript. */
+/**
+ * 会话的模型推理上下文：正文写 JSONL 文件，库内只留正文标识。
+ *
+ * <p>与对话记录无关：压缩只重写这份上下文，不动 {@code session_message} 里的一行。</p>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -27,50 +32,52 @@ public class ModelContextService {
     /** 重试器动作名，只用于日志与指标区分。 */
     private static final String RETRY_OPERATION = "替换会话模型上下文";
 
-    private final ObjectMapper objectMapper;
     private final SessionContextRepository repository;
+    private final SessionContextStore store;
 
-    /**
-     * 事务管理器：只用于「自己拥有事务时，整笔替换的每次重试开一个全新事务」。
-     *
-     * <p>可选注入 —— 直接 {@code new} 出来的用例没有事务基础设施，那就只尝试一次。</p>
-     */
+    /** 事务管理器：只用于「自己拥有事务时，整笔替换的每次重试开一个全新事务」。直接 new 的用例可缺省。 */
     @Autowired
     private PlatformTransactionManager transactionManager;
 
-    /**
-     * 整笔替换的重试器：{@link #initRetryTemplate()} 里预建，读路径只做一次 volatile 读。
-     *
-     * <p>直接 {@code new} 出来的用例没走 Spring 生命周期，该字段为 {@code null}，
-     * 由 {@link #replaceRetryTemplate()} 现场造一个降级使用（不持有、不加锁）。</p>
-     */
+    /** 预建的重试器，热路径只做一次 volatile 读；直接 new 的用例为 null，现场造一个降级用。 */
     private volatile TransactionRetryTemplate replaceRetry;
 
-    /**
-     * 预建重试器。
-     *
-     * <p>字段注入的 {@link PlatformTransactionManager} 发生在 {@code @PostConstruct} 之前，
-     * 因此这里能拿到事务管理器。放在这里建而不是每次调用时 double-check，
-     * 是为了让热路径（每轮对话都会 {@code replace}）在初始化之后**完全无锁**，
-     * 同时重试指标在同一实例上累计。</p>
-     */
     @PostConstruct
     void initRetryTemplate() {
         this.replaceRetry = new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
     }
 
+    /**
+     * 读取当前上下文。
+     *
+     * @return 行不存在返回 {@code Optional.empty()}；行存在但正文标识为空（历史行尚未迁移）同样返回空，
+     *         由调用方按「没有历史」起跑
+     */
     public Optional<List<Message>> find(Long sessionId) {
-        Optional<SessionContext> context = repository.findById(sessionId);
-        if (context.isEmpty()) return Optional.empty();
-        try {
-            return Optional.of(objectMapper.readValue(context.get().getContent(), new TypeReference<>() {
-            }));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to restore model context for session " + sessionId, e);
+        if (sessionId == null) {
+            return Optional.empty();
         }
+        Optional<SessionContext> summary = repository.findSummary(sessionId);
+        if (summary.isEmpty()) {
+            return Optional.empty();
+        }
+        SessionContext context = summary.get();
+        if (context.getSnapshotFile() == null || context.getSnapshotFile().isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(store.read(sessionId, context.getSnapshotFile()));
     }
 
-    /** 上下文版本竞争时重试整笔事务，保证摘要与正文基于同一版本。副作用必须留在重试边界之外。 */
+    /**
+     * 替换整份上下文。
+     *
+     * <p><b>顺序不能反</b>：先落盘拿到新正文标识，再在事务里换引用。反过来会留下「引用指向不存在的文件」
+     * 的窗口，而这份上下文正是下一轮模型调用的输入。</p>
+     *
+     * <p><b>为什么每次都是新文件</b>：多数调用点本身就跑在外层事务里（回滚、审批落定、决策落库），
+     * 恒定文件名一旦回滚就会变成「库内引用旧、磁盘内容新」。换新标识后旧文件仍是权威内容，
+     * 新文件按事务结果回收：提交后删旧份，回滚后删新份。</p>
+     */
     public void replace(Long sessionId, List<Message> messages) {
         if (sessionId == null) {
             throw new IllegalArgumentException("会话 ID 不能为空");
@@ -78,58 +85,96 @@ public class ModelContextService {
         if (messages == null) {
             throw new IllegalArgumentException("模型上下文不能为空: sessionId=" + sessionId);
         }
-        // 序列化在事务外做一次：重试只重放「读摘要 → 版本条件写」。
-        String content = serialize(sessionId, messages);
-        replaceRetryTemplate().execute(() -> {
-            upsert(sessionId, content);
-            return null;
-        });
+        // 落盘放在事务与重试之外：重试只重放「读摘要 → 换引用」，不重复写文件。
+        String bodyId = store.write(sessionId, messages);
+        String previous;
+        try {
+            previous = replaceRetryTemplate().execute(() -> upsert(sessionId, bodyId));
+        } catch (RuntimeException failure) {
+            // 库内引用没换成，这份新文件永远不会被读到，当场删掉。
+            store.delete(sessionId, bodyId);
+            throw failure;
+        }
+        scheduleCleanup(sessionId, bodyId, previous);
     }
 
-    /** 读摘要判命中再写：每次调用都必须发生在（可能是全新的）事务里。 */
-    private void upsert(Long sessionId, String content) {
-        // Upsert：session_context 没有独立的初始化写入方，首聊收尾/恢复/压缩都经本方法落第一行。
-        // 框架仓储 save=INSERT、updateById=UPDATE（对不存在行静默 0 行），必须按是否命中分支。
-        //
-        // 这里用**轻量摘要**（只读 session_id / version）判命中，绝不读旧正文：
-        // 替换是覆盖写，旧正文既不用来合并也不用来校验，读它只会把几十 MB 上下文搬进堆。
+    /**
+     * 换引用：命中就改，没命中就建第一行。
+     *
+     * <p>用轻量摘要判命中，绝不读旧正文 —— 替换是覆盖写，旧正文既不用来合并也不用来校验。</p>
+     *
+     * @return 被替换掉的旧正文标识，可空
+     */
+    private String upsert(Long sessionId, String bodyId) {
         Optional<SessionContext> summary = repository.findSummary(sessionId);
         SessionContext context = summary.orElseGet(() -> SessionContext.create(sessionId));
-        context.changeContent(content);
+        String previous = context.getSnapshotFile();
+        context.changeSnapshot(bodyId);
         if (summary.isPresent()) {
             repository.updateById(context);
         } else {
             repository.save(context);
         }
-    }
-
-    private String serialize(Long sessionId, List<Message> messages) {
-        try {
-            return objectMapper.writeValueAsString(messages);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize model context for session " + sessionId, e);
-        }
+        return previous;
     }
 
     /**
-     * 取重试器：初始化完成后只有一次 volatile 读，**不抢监视器**（热路径每轮对话都会调用）。
+     * 按事务结果回收文件：提交后删旧份，回滚后删本次新份。
      *
-     * <p>降级路径：直接 {@code new} 出来的用例没有 Spring 生命周期，{@code @PostConstruct}
-     * 不会执行，字段为 {@code null} —— 此时现场造一个用完就丢的实例（不持有、不加锁），
-     * 保证这些用例照样能跑；生产实例永远来自 {@link #initRetryTemplate()}。</p>
+     * <p>没有活动事务（直接 new 的用例、或事务基础设施缺省）时同步删旧份 —— 此时 upsert 已经生效。</p>
      */
+    private void scheduleCleanup(Long sessionId, String bodyId, String previous) {
+        boolean hasPrevious = previous != null && !previous.isBlank() && !Objects.equals(previous, bodyId);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            if (hasPrevious) {
+                store.delete(sessionId, previous);
+            }
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                if (hasPrevious) {
+                    store.delete(sessionId, previous);
+                }
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    // 回滚了：本次新文件没有任何引用，留着就是垃圾。
+                    store.delete(sessionId, bodyId);
+                }
+            }
+        });
+    }
+
+    /** 会话树删除：先删库行，提交后再删文件（库是权威，文件删不掉只是垃圾）。 */
+    @Transactional
+    public void deleteBySessionIds(List<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return;
+        }
+        repository.batchDeleteBySessionIds(sessionIds);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            store.deleteSessions(sessionIds);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                store.deleteSessions(sessionIds);
+            }
+        });
+    }
+
+    /** 取重试器；初始化完成后只有一次 volatile 读，不抢监视器。 */
     private TransactionRetryTemplate replaceRetryTemplate() {
         TransactionRetryTemplate prebuilt = replaceRetry;
         if (prebuilt != null) {
             return prebuilt;
         }
-        // 仅直接 new 的用例会走到这里：不写回字段，避免多个线程在这里争着发布实例。
+        // 仅直接 new 的用例会走到这里：不写回字段，避免多线程争着发布实例。
         return new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
-    }
-
-    @Transactional
-    public void deleteBySessionIds(List<Long> sessionIds) {
-        if (sessionIds == null || sessionIds.isEmpty()) return;
-        repository.batchDeleteBySessionIds(sessionIds);
     }
 }

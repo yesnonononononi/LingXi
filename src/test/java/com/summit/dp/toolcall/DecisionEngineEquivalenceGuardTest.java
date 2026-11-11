@@ -19,7 +19,9 @@ import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
@@ -141,8 +143,10 @@ class DecisionEngineEquivalenceGuardTest {
                 mock(CardAvailabilityPolicy.class));
         executions = com.summit.dp.execution.ExecutionRepositoryTestFactory
                 .create(session.getMapper(ExecutionMapper.class), mapper);
-        contexts = new ModelContextService(mapper,
-                new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)));
+        contexts = new ModelContextService(
+                new SessionContextRepositoryImpl(session.getMapper(SessionContextMapper.class)),
+                new LocalSessionContextFileStore(
+                        ExecutionRepositoryTestFactory.tempDataDir().toString(), mapper));
         activity = mock(ExecutionActivity.class);
         resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)),
                 contexts, provider(executionControl));

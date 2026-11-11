@@ -65,7 +65,8 @@ class SessionListOrderingTest {
         sessions = sql.getMapper(SessionMapper.class);
         executions = sql.getMapper(ExecutionMapper.class);
         SessionRepositoryImpl repository = new SessionRepositoryImpl(sessions);
-        SessionAggregateService aggregate = new SessionAggregateService(repository, null, null, null, null, null, mock(ApplicationEventPublisher.class));
+        SessionAggregateService aggregate = new SessionAggregateService(repository, null, null, null, null,
+                mock(ApplicationEventPublisher.class));
         service = new SessionServiceImpl(aggregate, mock(WorkspaceService.class), repository,
                 mock(SessionMessageQueryService.class), new ExecutionQueryServiceImpl(new ExecutionRepositoryImpl(executions)),
                 mock(TeamService.class), mock(AgentRepository.class), mock(ChatTurnService.class),

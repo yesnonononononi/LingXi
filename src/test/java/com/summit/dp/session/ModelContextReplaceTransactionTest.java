@@ -18,8 +18,10 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.session.application.port.SessionContextStore;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionContextRepository;
+import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
@@ -39,19 +41,23 @@ import org.mockito.stubbing.Answer;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -76,12 +82,92 @@ class ModelContextReplaceTransactionTest {
     @Autowired private ExecutionRepository executionRepository;
     @Autowired private LocalExecutionRepository runtime;
     @Autowired private SessionContextMapper contexts;
+    @Autowired private SessionContextStore store;
     @Autowired private ExecutionMapper executions;
+    @Autowired private DataSourceTransactionManager transactionManager;
+
+    @Autowired
+    @Qualifier("contextDataDir")
+    private Path contextDataDir;
 
     @BeforeEach
-    void cleanDatabase() {
+    void cleanDatabase() throws Exception {
         contexts.delete(null);
         executions.delete(null);
+        // 正文文件不随库行一起消失，用例之间必须自己清干净，否则上一轮的文件会被当成本轮的孤儿。
+        for (long sessionId : new long[]{SESSION_A, SESSION_B, SESSION_C}) {
+            clearSessionFiles(sessionId);
+        }
+    }
+
+    /**
+     * 回滚一致性守卫：{@code replace} 会被包在外层事务里，回滚后库内引用必须还是旧正文，
+     * 本次新写的文件必须被回收。
+     *
+     * <p>这条断言就是「文件名恒定」方案的翻红点：恒定文件名下磁盘内容已经是新的，
+     * 库里引用却回滚回旧的，读到的是错的历史。</p>
+     */
+    @Test
+    @Timeout(TestTimeouts.HANG_GUARD)
+    void rolledBackReplaceKeepsTheOldBodyAndDropsTheNewFile() throws Exception {
+        service.replace(SESSION_A, messages("旧上下文"));
+        String oldBodyId = contexts.selectById(SESSION_A).getSnapshotFile();
+        assertNotNull(oldBodyId);
+
+        assertThrows(IllegalStateException.class, () -> new TransactionTemplate(transactionManager)
+                .executeWithoutResult(status -> {
+                    service.replace(SESSION_A, messages("会被回滚的上下文"));
+                    throw new IllegalStateException("事务回滚");
+                }));
+
+        assertEquals(oldBodyId, contexts.selectById(SESSION_A).getSnapshotFile(), "回滚后引用必须还是旧正文");
+        assertEquals("旧上下文", service.find(SESSION_A).orElseThrow().get(0).text(), "读到的必须仍是旧正文");
+        assertEquals(1, bodyFileCount(SESSION_A), "回滚掉的那份新文件必须被删掉，不能留孤儿");
+    }
+
+    private void clearSessionFiles(long sessionId) throws Exception {
+        Path directory = contextDataDir.resolve("session-context").resolve(Long.toString(sessionId));
+        if (!Files.isDirectory(directory)) {
+            return;
+        }
+        try (Stream<Path> files = Files.list(directory)) {
+            for (Path file : files.toList()) {
+                Files.deleteIfExists(file);
+            }
+        }
+    }
+
+    /**
+     * 外层事务提交后回收旧文件：事务内的替换同样不能让旧正文留在盘上，
+     * 否则每轮都攒一份再也读不到的正文。
+     */
+    @Test
+    @Timeout(TestTimeouts.HANG_GUARD)
+    void committedReplaceInsideOuterTransactionDeletesTheSupersededFile() throws Exception {
+        service.replace(SESSION_B, messages("提交前上下文"));
+        String oldBodyId = contexts.selectById(SESSION_B).getSnapshotFile();
+        assertNotNull(oldBodyId);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                service.replace(SESSION_B, messages("提交后上下文")));
+
+        String newBodyId = contexts.selectById(SESSION_B).getSnapshotFile();
+        assertNotEquals(oldBodyId, newBodyId, "每次替换都是新正文标识");
+        assertEquals("提交后上下文", service.find(SESSION_B).orElseThrow().get(0).text());
+        assertFalse(Files.exists(contextDataDir.resolve("session-context")
+                .resolve(Long.toString(SESSION_B)).resolve(oldBodyId + ".jsonl")), "提交后旧文件必须删除");
+        assertEquals(1, bodyFileCount(SESSION_B), "任何时刻都只该留一份正文");
+    }
+
+    /** 会话目录里现存正文文件的份数：正常任何时候都只有一份。 */
+    private long bodyFileCount(long sessionId) throws Exception {
+        Path directory = contextDataDir.resolve("session-context").resolve(Long.toString(sessionId));
+        if (!Files.isDirectory(directory)) {
+            return 0L;
+        }
+        try (Stream<Path> files = Files.list(directory)) {
+            return files.filter(path -> path.getFileName().toString().endsWith(".jsonl")).count();
+        }
     }
 
 
@@ -209,13 +295,18 @@ class ModelContextReplaceTransactionTest {
 
 
     private void assertContextContent(long sessionId, String expectedText) {
+        SessionContextPO row = contexts.selectById(sessionId);
+        assertNull(row.getContent(), "正文必须搬出库，库里不得再留 CLOB: sessionId=" + sessionId);
+        assertNotNull(row.getSnapshotFile(), "库内必须留下正文标识: sessionId=" + sessionId);
+
         List<Message> restored = service.find(sessionId).orElseThrow();
         assertEquals(1, restored.size(), "上下文只应剩最后一次写入的那一条: sessionId=" + sessionId);
-        String content = contexts.selectById(sessionId).getContent();
-        assertTrue(content != null && content.contains(expectedText),
-                "库内正文必须包含最后一次写入的内容: sessionId=" + sessionId);
-        assertEquals(1, countOccurrences(content, expectedText),
-                "正文只能是最后一次写入的一份，不能拼接或重复: sessionId=" + sessionId);
+        assertEquals(expectedText, restored.get(0).text());
+
+        // 正文文件里也只能有一份：写入是整笔替换，不是追加。
+        List<Message> onDisk = store.read(sessionId, row.getSnapshotFile());
+        assertEquals(1, onDisk.size(), "正文文件只能有最后一次写入的一份，不能追加: sessionId=" + sessionId);
+        assertEquals(expectedText, onDisk.get(0).text());
     }
 
     private void seedExecution(long id) {
@@ -247,19 +338,6 @@ class ModelContextReplaceTransactionTest {
 
     private static List<Message> messages(String text) {
         return List.of(UserMessageEntity.from(text));
-    }
-
-    private static int countOccurrences(String content, String needle) {
-        if (content == null || needle.isEmpty()) {
-            return 0;
-        }
-        int count = 0;
-        int index = content.indexOf(needle);
-        while (index >= 0) {
-            count++;
-            index = content.indexOf(needle, index + needle.length());
-        }
-        return count;
     }
 
     private static void awaitQuietly(CountDownLatch latch, int seconds) {
@@ -319,13 +397,23 @@ class ModelContextReplaceTransactionTest {
         }
 
         @Bean
-        ModelContextService modelContextService(ObjectMapper objectMapper, SessionContextRepository repository) {
+        SessionContextStore sessionContextStore(Path contextDataDir, ObjectMapper objectMapper) {
+            return new LocalSessionContextFileStore(contextDataDir.toString(), objectMapper);
+        }
 
-            return new ModelContextService(objectMapper, repository);
+        @Bean
+        ModelContextService modelContextService(SessionContextRepository repository, SessionContextStore store) {
+            return new ModelContextService(repository, store);
         }
 
         @Bean
         Path checkpointDataDir() {
+            return ExecutionRepositoryTestFactory.tempDataDir();
+        }
+
+        /** 上下文正文与检查点各用各的目录：两者都按数据目录布局，混用会让用例互相干扰。 */
+        @Bean
+        Path contextDataDir() {
             return ExecutionRepositoryTestFactory.tempDataDir();
         }
 
