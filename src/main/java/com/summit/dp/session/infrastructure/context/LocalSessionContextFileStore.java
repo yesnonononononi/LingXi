@@ -15,9 +15,11 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -145,6 +147,67 @@ public class LocalSessionContextFileStore implements SessionContextStore {
                 log.warn("删除会话上下文目录失败，留待后续清理: sessionId={}, error={}",
                         sessionId, failure.toString());
             }
+        }
+    }
+
+    @Override
+    public List<Long> listSessionIds(int limit) {
+        if (!Files.isDirectory(root)) {
+            return List.of();
+        }
+        try (Stream<Path> children = Files.list(root)) {
+            return children
+                    .filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> SESSION_ID.matcher(name).matches())
+                    .limit(Math.max(limit, 1))
+                    .map(Long::parseLong)
+                    .toList();
+        } catch (IOException failure) {
+            log.warn("枚举会话上下文目录失败，跳过本轮: root={}, error={}", root, failure.toString());
+            return List.of();
+        }
+    }
+
+    @Override
+    public boolean deleteSessionDirectory(long sessionId, Instant idleBefore) {
+        Path directory;
+        try {
+            directory = sessionDirectory(sessionId);
+        } catch (RuntimeException illegal) {
+            // 目录名非法：不是本实现的产物，绝不按它拼路径。
+            return false;
+        }
+        try {
+            if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+                return false;
+            }
+            if (!isIdleSince(directory, idleBefore)) {
+                // 还有新文件：可能正处在「已落盘、尚未换引用」的窗口，这一轮不删。
+                return false;
+            }
+            deleteDirectory(directory);
+            return true;
+        } catch (IOException | RuntimeException failure) {
+            log.warn("删除会话上下文目录失败，留待下一轮: sessionId={}, error={}",
+                    sessionId, failure.toString());
+            return false;
+        }
+    }
+
+    /** 目录里没有任何条目比 {@code idleBefore} 更新，就认为它已静止。 */
+    private static boolean isIdleSince(Path directory, Instant idleBefore) throws IOException {
+        Instant cutoff = idleBefore == null ? Instant.EPOCH : idleBefore;
+        try (Stream<Path> entries = Files.list(directory)) {
+            return entries.allMatch(entry -> {
+                try {
+                    return Files.getLastModifiedTime(entry, LinkOption.NOFOLLOW_LINKS).toInstant()
+                            .isBefore(cutoff);
+                } catch (IOException probeFailed) {
+                    // 读不到时间就当作「不静止」：宁可不删，也不要删掉还在写的那份。
+                    return false;
+                }
+            });
         }
     }
 

@@ -32,4 +32,14 @@ public final class ExecutionStatusCodes {
         return status != null && status == SUSPENDED;
     }
 
+    /**
+     * 是否「真的还有线程在跑」：{@code CREATED}（已受理未起跑）与 {@code RUNNING}。
+     *
+     * <p>与 {@link #isTerminal(Integer)} 互补，但**不含 {@code SUSPENDED}**：挂起没有线程在写，
+     * 删会话时不必因为一条挂起执行就拒绝到底。</p>
+     */
+    public static boolean isRunning(Integer status) {
+        return status != null && (status == CREATED || status == RUNNING);
+    }
+
 }

@@ -21,6 +21,17 @@ public interface ExecutionCheckpointMaintenance {
     boolean deleteFile(String executionId, String fileId);
 
     /**
+     * 连目录一起回收某个执行的检查点（{@code execution} 行已提交删除之后调用）。
+     *
+     * <p>会话被删除时它的执行全部失去归属，逐文件比对引用已无意义；但仍有在途写入的执行
+     * （例如刚被取消、线程还在收尾）必须整体跳过，不能把正在写的那份删掉。</p>
+     *
+     * @param executionId 执行标识（数字串）
+     * @return 是否删掉了目录
+     */
+    boolean deleteExecutionDirectory(String executionId);
+
+    /**
      * 按批回收 {@code <数据目录>/checkpoints} 下所有无引用的文件，并顺手回收删空的执行目录。
      *
      * <p>覆盖三类垃圾：提交后删除失败留下的旧文件、数据库行已消失的孤儿文件、

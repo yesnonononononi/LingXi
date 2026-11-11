@@ -59,4 +59,12 @@ public interface ChecklistRepository extends RepositoryTemplate<Checklist, Long>
 
     /** 会话的全部清单（按标识倒序）；供测试与排障观察历史。 */
     List<Checklist> findAllBySessionId(long sessionId);
+
+    /**
+     * 按会话整组删除清单（会话删除的级联步骤）：先删步骤行，再删清单行。
+     *
+     * @param sessionIds 会话 id 集合；空入参返回 0
+     * @return 删除的清单行数（不含步骤行）
+     */
+    int deleteBySessionIds(Collection<Long> sessionIds);
 }

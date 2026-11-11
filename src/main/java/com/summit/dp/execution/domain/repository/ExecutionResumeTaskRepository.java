@@ -5,6 +5,7 @@ import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeSource;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -68,4 +69,15 @@ public interface ExecutionResumeTaskRepository extends RepositoryTemplate<Execut
 
     /** 终态请求回收：把 {@code cutoff} 之前结束的 SUCCEEDED / SUPERSEDED 行删掉，防止表无限增长。 */
     int purgeFinishedBefore(Instant cutoff);
+
+    /**
+     * 按执行批量删除恢复请求（会话删除的级联步骤）。
+     *
+     * <p><b>不能按时间挑</b>：会话一删，这些请求再也没有执行可恢复，留着只会让启动巡检
+     * 反复验证一批指向不存在执行的行。</p>
+     *
+     * @param executionIds 执行 id 集合；空入参返回 0
+     * @return 删除的行数
+     */
+    int deleteByExecutionIds(Collection<Long> executionIds);
 }

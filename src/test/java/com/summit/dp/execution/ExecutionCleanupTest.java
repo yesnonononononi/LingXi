@@ -10,6 +10,7 @@ import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.execution.api.controller.ExecutionCleanupController;
+import com.summit.dp.execution.application.port.AssetOrphanMaintenance;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.port.ExecutionCheckpointMaintenance;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
@@ -611,9 +612,25 @@ class ExecutionCleanupTest {
             return new ExecutionReclaimService(repository, activity, maintenance, transactionManager);
         }
 
+        /** 会话级文件资源由独立用例验证（{@code AssetOrphanMaintenanceTest}），这里只要求「不做任何事」。 */
+        @Bean AssetOrphanMaintenance orphanAssets() {
+            return new AssetOrphanMaintenance() {
+                @Override
+                public OrphanPreview preview(int maxSessions) {
+                    return new OrphanPreview(0, 0, 0);
+                }
+
+                @Override
+                public OrphanReclaimResult reclaim(int maxSessions, Instant idleBefore) {
+                    return new OrphanReclaimResult(0, 0, 0);
+                }
+            };
+        }
+
         @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionReclaimService reclaimer,
-                                                     ExecutionCheckpointMaintenance maintenance) {
-            return new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords());
+                                                     ExecutionCheckpointMaintenance maintenance,
+                                                     AssetOrphanMaintenance orphanAssets) {
+            return new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords(), orphanAssets);
         }
     }
 }

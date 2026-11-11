@@ -97,4 +97,15 @@ public interface ChatTurnRepository extends RepositoryTemplate<ChatTurn, Long> {
 
     /** 删除目标轮次及其之后的全部轮次，返回删除行数。只服务「重发」的会话回滚。 */
     int deleteFromId(Long sessionId, Long fromTurnId);
+
+    /**
+     * 按会话批量删除轮次行（会话删除的级联步骤）。
+     *
+     * <p>轮次行本身不带正文，但它是执行行「是否还有业务引用」的判据之一；
+     * 不一起删掉，被删会话的执行就永远回收不了。</p>
+     *
+     * @param sessionIds 会话 id 集合；空入参返回 0
+     * @return 删除的行数
+     */
+    int deleteBySessionIds(Collection<Long> sessionIds);
 }

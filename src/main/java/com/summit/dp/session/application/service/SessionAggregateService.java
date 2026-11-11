@@ -5,11 +5,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.session.application.port.SessionDeletionGuard;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.CursorResult;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,9 +32,10 @@ public class SessionAggregateService {
     private final MessageRepository messageRepository;
     /** 历史分页的游标维度：分页单位是完整轮次，轮次仓储是取数与游标的真源。 */
     private final ChatTurnRepository chatTurnRepository;
-    private final ToolCallRepository toolCallRepository;
-    /** 上下文（正文文件 + 引用行）的删除由它统一收口，本类不直接碰 session_context。 */
-    private final ModelContextService modelContextService;
+    /** 删除前的执行闸门：还有线程在跑的会话一律拒绝。 */
+    private final SessionDeletionGuard deletionGuard;
+    /** 会话附属数据（消息、轮次、任务、清单、审计、卡片、执行、上下文、图片）的清理归它。 */
+    private final SessionDataPurger dataPurger;
     private final ApplicationEventPublisher events;
 
 
@@ -85,16 +86,33 @@ public class SessionAggregateService {
         return sessionRepository.findByRootAndAgent(rootSessionId, agentId);
     }
 
+    /**
+     * 删除整棵会话树，并把属于这些会话的一切都带走。
+     *
+     * <p><b>顺序不能动</b>（每一步都有原因）：</p>
+     * <ol>
+     *   <li>先解析树：后面每一步都要按这批 id 干活，删完再查就没有了；</li>
+     *   <li>再问执行：仍有线程在跑的会话一律拒绝，否则线程收尾时会写出指向已删会话的孤儿行；</li>
+     *   <li>删会话行 → 删消息、轮次、工具卡片、任务、清单、审计、执行与恢复请求；</li>
+     *   <li>最后发事件：待放行的排队请求见到会话已消失即作废。</li>
+     * </ol>
+     *
+     * <p>文件（检查点目录、上下文正文、图片目录）一律由各自的模块在<b>提交之后</b>删：
+     * 库是唯一权威，文件删不掉只是垃圾，由孤儿清扫带走。</p>
+     */
     @Transactional
     public boolean deleteById(Long id) {
-        // 仓储先解析根会话，删掉整棵树，返回值必然非空。
-        List<Long> ids = sessionRepository.delSessionTreeByRootSId(id);
-        messageRepository.batchDelBySessionIds(ids);
-        // 级联清理工具调用（卡片数据）：按 conversation_id 批量删除，避免孤儿卡片无界累积。
-        toolCallRepository.deleteByConversationIds(ids);
-        // 上下文正文的行与文件都由服务统一收口：库里删行、提交后删文件，这里不再单独删一次行。
-        modelContextService.deleteBySessionIds(ids);
+        List<Long> ids = sessionRepository.resolveTreeIds(id);
+        if (ids.isEmpty()) {
+            return true;
+        }
+        // 先问执行再动手：仍在跑的会话一律拒绝，否则线程收尾会写出指向已删会话的孤儿行。
+        deletionGuard.requireNoRunningExecution(ids);
+        sessionRepository.delSessionTreeByRootSId(id);
+        // 附属数据（消息、轮次、任务、清单、审计、卡片、执行、上下文、图片）交给专职清理类。
+        dataPurger.purge(ids);
         events.publishEvent(new SessionTreeDeleted(ids));
+        log.info("删除会话树: rootSessionId={}, sessionCount={}", id, ids.size());
         return true;
     }
 

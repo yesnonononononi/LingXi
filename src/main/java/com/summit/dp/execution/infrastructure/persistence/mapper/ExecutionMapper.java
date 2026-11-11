@@ -85,6 +85,18 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
     List<ExecutionPO> findRecentBySession(@Param("sessionId") long sessionId, @Param("limit") int limit);
 
     /**
+     * 批量取这批会话名下的执行 id。
+     *
+     * <p>只选 {@code id}：会话删除要按执行 id 回收检查点目录，文件标识与正文一概不需要。
+     * sessionIds 必须非空，由仓储层短路。</p>
+     */
+    @Select("<script>"
+            + "SELECT id FROM execution WHERE session_id IN "
+            + "<foreach collection='sessionIds' item='sid' open='(' separator=',' close=')'>#{sid}</foreach>"
+            + "</script>")
+    List<Long> selectIdsBySessionIds(@Param("sessionIds") Collection<Long> sessionIds);
+
+    /**
      * 取「仍活跃」执行所属的会话 id 集合（去重）。
      *
      * <p>启动自检只需要候选会话，不需要执行行本身：先按状态挑出会话，再对这些会话解析最新执行，

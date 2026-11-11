@@ -141,7 +141,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
      * id 不存在时抛「会话不存在」。</p>
      */
     @Override
-    public List<Long> delSessionTreeByRootSId(Long id) {
+    public List<Long> resolveTreeIds(Long id) {
         if (id == null) {
             throw new SessionNoFoundException();
         }
@@ -152,8 +152,24 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
         Long rootId = rootSessionId == null || rootSessionId == SessionPO.ROOT_SESSION_ID
                 ? owned.getId()
                 : rootSessionId;
+        return sessionMapper.selectSessionTree(rootId).stream().map(SessionPO::getId).toList();
+    }
 
-        List<Long> list = sessionMapper.selectSessionTree(rootId).stream().map(SessionPO::getId).toList();
+    @Override
+    public List<Long> findExistingIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return sessionMapper.selectList(new LambdaQueryWrapper<SessionPO>()
+                        .select(SessionPO::getId)
+                        .in(SessionPO::getId, ids))
+                .stream().map(SessionPO::getId).toList();
+    }
+
+    @Override
+    public List<Long> delSessionTreeByRootSId(Long id) {
+        // 根解析只有一处：删的和查的必须是同一棵树。
+        List<Long> list = resolveTreeIds(id);
         if (list.isEmpty()) {
             return list;
         }

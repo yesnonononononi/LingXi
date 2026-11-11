@@ -64,6 +64,17 @@ public class LocalCheckpointMaintenance implements ExecutionCheckpointMaintenanc
     }
 
     @Override
+    public boolean deleteExecutionDirectory(String executionId) {
+        if (executionId == null || executionId.isBlank()) {
+            return false;
+        }
+        // 与读取/写入共用同一把门闩：删目录时不能有线程正往里发布新文件。
+        synchronized (ExecutionCoordination.monitor(executionId)) {
+            return checkpointStore.deleteExecutionDirectory(executionId);
+        }
+    }
+
+    @Override
     public boolean hasUnscannedFiles() {
         return checkpointStore.hasUnscannedFiles();
     }

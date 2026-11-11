@@ -49,6 +49,17 @@ public class SessionTokenAuditRepositoryImpl
         return auditMapper;
     }
 
+    @Override
+    public int deleteBySessionIds(java.util.Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0;
+        }
+        itemMapper.delete(new LambdaQueryWrapper<SessionTokenAuditItemPO>()
+                .in(SessionTokenAuditItemPO::getSessionId, sessionIds));
+        return auditMapper.delete(new LambdaQueryWrapper<SessionTokenAuditPO>()
+                .in(SessionTokenAuditPO::getSessionId, sessionIds));
+    }
+
     /** 模板要求的头表映射；明细由 {@link #findBySessionId(Long)} 装配，此处一律不查明细。 */
     @Override
     protected SessionTokenAuditPO toPO(SessionTokenAudit entity) {

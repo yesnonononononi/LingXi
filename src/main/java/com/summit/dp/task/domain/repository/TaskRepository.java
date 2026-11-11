@@ -40,4 +40,14 @@ public interface TaskRepository extends RepositoryTemplate<Task, Long> {
      * @return 去重后的会话 id；无候选返回空列表
      */
     List<Long> findSessionIdsWithUnconsumedTerminalTasks();
+
+    /**
+     * 按会话批量删除后台任务行（会话删除的级联步骤）。
+     *
+     * <p>任务行同样是执行行「是否还有业务引用」的判据之一，不一起删被删会话的执行就回收不了。</p>
+     *
+     * @param sessionIds 会话 id 集合；空入参返回 0
+     * @return 删除的行数
+     */
+    int deleteBySessionIds(Collection<Long> sessionIds);
 }

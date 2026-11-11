@@ -171,6 +171,51 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
         }
     }
 
+    @Override
+    public boolean deleteExecutionDirectory(String executionId) {
+        Path directory = executionDirectory(executionId);
+        gate.readLock().lock();
+        try {
+            if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+                return false;
+            }
+            // 还有写入没定论：会有线程继续往这个目录里写，整轮跳过比删掉半截安全。
+            if (!inFlightFileIds(executionId).isEmpty()) {
+                log.warn("执行目录仍有在途写入，本轮不回收: executionId={}", executionId);
+                return false;
+            }
+            try (Stream<Path> children = Files.list(directory)) {
+                for (Path child : children.toList()) {
+                    // 只删本实现的产物（.json / .part）：陌生人放进来的东西不归清理管。
+                    if (Files.isRegularFile(child, LinkOption.NOFOLLOW_LINKS)
+                            && isOwnFile(child.getFileName().toString())) {
+                        Files.deleteIfExists(child);
+                    }
+                }
+            }
+            return Files.deleteIfExists(directory);
+        } catch (java.nio.file.DirectoryNotEmptyException notEmpty) {
+            // 目录里还有不归我们管的条目：留着，下一轮再说。
+            return false;
+        } catch (IOException | RuntimeException failure) {
+            log.warn("回收执行目录失败，留待下一轮: directory={}, error={}", directory, failure.toString());
+            return false;
+        } finally {
+            gate.readLock().unlock();
+        }
+    }
+
+    /** 本实现的产物只有「发布后的 .json」和「写了一半的 .part」。 */
+    private static boolean isOwnFile(String name) {
+        if (name.endsWith(TEMP_SUFFIX)) {
+            return true;
+        }
+        if (!name.endsWith(SUFFIX)) {
+            return false;
+        }
+        return FILE_ID.matcher(name.substring(0, name.length() - SUFFIX.length())).matches();
+    }
+
     /**
      * 文件侧是否还有可能要回收的内容：只列 {@code checkpoints/} 根一层，不读正文。
      *

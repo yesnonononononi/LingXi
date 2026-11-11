@@ -18,6 +18,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -200,6 +201,15 @@ public class ExecutionResumeTaskRepositoryImpl
                 .in(ExecutionResumeTaskPO::getState,
                         ResumeTaskState.SUCCEEDED.dbValue(), ResumeTaskState.SUPERSEDED.dbValue())
                 .lt(ExecutionResumeTaskPO::getUpdatedAt, toLocalDateTime(cutoff)));
+    }
+
+    @Override
+    public int deleteByExecutionIds(Collection<Long> executionIds) {
+        if (executionIds == null || executionIds.isEmpty()) {
+            return 0;
+        }
+        return taskMapper.delete(Wrappers.<ExecutionResumeTaskPO>lambdaQuery()
+                .in(ExecutionResumeTaskPO::getExecutionId, executionIds));
     }
 
     @Override

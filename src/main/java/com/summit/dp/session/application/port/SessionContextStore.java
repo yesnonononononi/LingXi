@@ -49,5 +49,27 @@ public interface SessionContextStore {
 
     /** 删除这些会话的全部正文（会话树删除时调用）；由调用方先删库行。 */
     void deleteSessions(Collection<Long> sessionIds);
+
+    /**
+     * 列出磁盘上已有正文目录的会话 id（只读目录名，不打开任何正文）。
+     *
+     * <p>孤儿清扫用它枚举候选：目录名不是数字的一律跳过 —— 那不是本实现的产物。</p>
+     *
+     * @param limit 单批上限
+     */
+    List<Long> listSessionIds(int limit);
+
+    /**
+     * 删除某个会话的整个正文目录，**但只在目录已经静止时**。
+     *
+     * <p>{@code idleBefore} 是安全线：目录里只要还有比它更新的文件，就说明可能有一次替换正在
+     * 「已落盘、尚未换引用」的窗口里，此刻删文件会造出「库内引用指向不存在的正文」。
+     * 孤儿清扫只删早已死掉的目录，等一轮不亏。</p>
+     *
+     * @param sessionId  会话 id
+     * @param idleBefore 静止时间线（早于它才算静止）
+     * @return 是否真的删掉了目录
+     */
+    boolean deleteSessionDirectory(long sessionId, java.time.Instant idleBefore);
 }
 

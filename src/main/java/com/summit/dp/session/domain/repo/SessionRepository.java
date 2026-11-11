@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.ddd.domain.repository.RepositoryTemplate;
 import com.summit.dp.session.domain.model.Session;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,4 +45,25 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
 
     /** 删除 {@code id} 所属的整棵会话树（自动把子会话 id 解析成根会话），返回被删的会话 id。 */
     List<Long> delSessionTreeByRootSId(Long id);
+
+    /**
+     * 解析出 {@code id} 所属整棵会话树的会话 id（**只读，不删**）。
+     *
+     * <p>删除前必须先知道要删哪些会话：执行闸门、级联清理都按这批 id 走。
+     * 与 {@link #delSessionTreeByRootSId(Long)} 共用同一套根解析规则，避免「查的是这棵树、删的是另一棵」。</p>
+     *
+     * @param id 根会话或子会话 id
+     * @return 整棵树的会话 id（含根），按主键升序
+     */
+    List<Long> resolveTreeIds(Long id);
+
+    /**
+     * 从候选里挑出**仍然存在**的会话 id（一次 {@code IN} 查询）。
+     *
+     * <p>孤儿清扫拿它做存在性判定：逐个会话查一次会在历史几百个目录上变成 N 次往返。</p>
+     *
+     * @param ids 候选会话 id；空入参返回空列表
+     * @return 库内仍存在的那些 id（顺序不保证）
+     */
+    List<Long> findExistingIds(Collection<Long> ids);
 }

@@ -1,5 +1,6 @@
 package com.summit.dp.execution.application.service;
 
+import com.summit.dp.execution.application.port.AssetOrphanMaintenance;
 import com.summit.dp.execution.application.port.ExecutionCheckpointMaintenance;
 import com.summit.dp.execution.application.port.FileRecordMaintenance;
 import com.summit.dp.execution.domain.model.Execution;
@@ -32,11 +33,22 @@ public class ExecutionCleanupService {
     /** 单次清理最多扫多少个执行目录 / 每个目录最多处理多少个文件。 */
     private static final int MAX_FILE_DIRECTORIES = 400;
     private static final int MAX_FILES_PER_EXECUTION = 50;
+    /** 单次清理最多枚举多少个会话级目录（上下文正文 / 图片）。 */
+    private static final int MAX_SESSION_DIRECTORIES = 400;
+    /**
+     * 会话级目录的静止期：比这更近被写过的目录本轮跳过。
+     *
+     * <p>存在的意义是避开「正文已落盘、引用还没提交」的窗口 —— 那个窗口里文件看起来像无主垃圾，
+     * 删掉就是数据损坏。等一轮的成本只是晚几分钟回收。</p>
+     */
+    private static final Duration SESSION_DIRECTORY_IDLE_PERIOD = Duration.ofMinutes(10);
     private final ExecutionRepository repository;
     private final ExecutionReclaimService reclaimer;
     private final ExecutionCheckpointMaintenance checkpoints;
     /** 过期的文件编辑记录（连同基线大文本）与检查点一起在这里回收。 */
     private final FileRecordMaintenance fileRecords;
+    /** 会话级文件资源（上下文正文 / 图片目录）的孤儿清扫。 */
+    private final AssetOrphanMaintenance orphanAssets;
 
     /**
      * 清理预览：把「可回收的数据库行」、「文件侧是否还要扫描」与「过期文件编辑记录」分开报。
@@ -46,8 +58,10 @@ public class ExecutionCleanupService {
      * 清理既然会删它们，预览就必须先说出来 —— 否则界面会出现「预览说没啥可清、点一下却删了东西」。</p>
      */
     public Preview preview() {
+        AssetOrphanMaintenance.OrphanPreview orphans = orphanAssets.preview(MAX_SESSION_DIRECTORIES);
         return new Preview(repository.countReclaimable(), checkpoints.hasUnscannedFiles(),
-                fileRecords.countBefore(fileRecordCutoff()));
+                fileRecords.countBefore(fileRecordCutoff()), orphans.orphanSessionDirs(),
+                orphans.mayHaveMore(MAX_SESSION_DIRECTORIES));
     }
 
     // 查询也必须脱离调用方事务，避免清理后的计数仍命中旧的会话缓存。
@@ -70,12 +84,16 @@ public class ExecutionCleanupService {
         ExecutionCheckpointMaintenance.FileReclaimResult files =
                 checkpoints.reclaimUnreferenced(MAX_FILE_DIRECTORIES, MAX_FILES_PER_EXECUTION);
         long remaining = repository.countReclaimable();
+        // 会话级文件资源：只清「会话已经不存在」的目录，未删会话的东西一概不碰。
+        AssetOrphanMaintenance.OrphanReclaimResult orphans =
+                orphanAssets.reclaim(MAX_SESSION_DIRECTORIES, Instant.now().minus(SESSION_DIRECTORY_IDLE_PERIOD));
         // 文件编辑记录按时间淘汰：与检查点无关，即使没有可回收的执行也会顺手清掉过期记录。
         int purgedRecords = fileRecords.purgeBefore(fileRecordCutoff());
         log.info("清理无用执行数据: deletedCount={}, remainingCount={}, deletedFiles={},"
-                        + " skippedInFlightFiles={}, deletedDirectories={}, purgedFileRecords={}",
+                        + " skippedInFlightFiles={}, deletedDirectories={}, purgedFileRecords={},"
+                        + " deletedContextDirs={}, deletedImageDirs={}, skippedActiveSessionDirs={}",
                 deleted, remaining, files.deletedFiles(), files.skippedInFlight(), files.deletedDirectories(),
-                purgedRecords);
+                purgedRecords, orphans.deletedContextDirs(), orphans.deletedImageDirs(), orphans.skippedActiveDirs());
         return new CleanupResult(deleted, remaining);
     }
 
@@ -90,7 +108,10 @@ public class ExecutionCleanupService {
      * @param executionCount 可回收的数据库行数
      * @param filesNeedScan  文件侧是否还有要扫描的内容（孤儿 JSON / {@code .part} / 未扫到的目录）
      * @param expiredFileRecordCount 过期的文件编辑记录条数（连同落盘基线会被一并回收）
+     * @param orphanSessionDirCount 无主的会话级目录数（上下文正文 / 图片，会话已不存在）
+     * @param sessionDirsMayHaveMore 会话级目录是否还有没枚举到的（触发条件与文件侧一致）
      */
-    public record Preview(long executionCount, boolean filesNeedScan, long expiredFileRecordCount) { }
+    public record Preview(long executionCount, boolean filesNeedScan, long expiredFileRecordCount,
+                          int orphanSessionDirCount, boolean sessionDirsMayHaveMore) { }
     public record CleanupResult(long deletedCount, long remainingCount) { }
 }

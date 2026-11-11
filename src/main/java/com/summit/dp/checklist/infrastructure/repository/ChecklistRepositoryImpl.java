@@ -185,6 +185,23 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
     }
 
     @Override
+    public int deleteBySessionIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0;
+        }
+        // 步骤行没有 session_id 列，只能按清单 id 反查：先取 id 再删，避免留下无主步骤。
+        List<Long> checklistIds = mapper.selectList(new LambdaQueryWrapper<ChecklistPO>()
+                        .select(ChecklistPO::getId)
+                        .in(ChecklistPO::getSessionId, sessionIds))
+                .stream().filter(Objects::nonNull).map(ChecklistPO::getId).toList();
+        if (!checklistIds.isEmpty()) {
+            stepMapper.delete(new LambdaQueryWrapper<ChecklistStepPO>()
+                    .in(ChecklistStepPO::getChecklistId, checklistIds));
+        }
+        return mapper.delete(new LambdaQueryWrapper<ChecklistPO>().in(ChecklistPO::getSessionId, sessionIds));
+    }
+
+    @Override
     public List<Checklist> findAllBySessionId(long sessionId) {
         return mapper.selectList(new LambdaQueryWrapper<ChecklistPO>()
                         .eq(ChecklistPO::getSessionId, sessionId)

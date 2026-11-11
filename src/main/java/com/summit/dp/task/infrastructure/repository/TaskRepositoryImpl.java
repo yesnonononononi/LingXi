@@ -49,6 +49,14 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
     }
 
     @Override
+    public int deleteBySessionIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0;
+        }
+        return mapper.delete(new LambdaQueryWrapper<TaskPO>().in(TaskPO::getSessionId, sessionIds));
+    }
+
+    @Override
     protected Task toModel(TaskPO po) {
        return Task.builder()
                .id(po.getId())

@@ -43,6 +43,26 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
     Optional<Long> findLatestSuspendedId(long sessionId);
 
     /**
+     * 批量取这批会话名下的执行 id，供会话删除时回收检查点目录。
+     *
+     * <p>只取 {@code id} 一列：目录名就是执行 id，删目录不需要文件标识，更不需要读正文。</p>
+     *
+     * @param sessionIds 会话 id 集合；空入参返回空列表
+     */
+    List<Long> findIdsBySessions(Collection<Long> sessionIds);
+
+    /**
+     * 按会话批量删除执行行（会话删除的级联步骤）。
+     *
+     * <p><b>调用方必须先确认这些会话没有正在跑的执行</b>：删掉仍在运行的执行行，运行线程收尾时
+     * 会把它当成「行不存在」重新插一条，留下指向已删会话的孤儿。</p>
+     *
+     * @param sessionIds 会话 id 集合；空入参返回 0
+     * @return 删除的行数
+     */
+    int deleteBySessionIds(Collection<Long> sessionIds);
+
+    /**
      * 收口孤儿执行：把进程崩溃后遗留的 CREATED / RUNNING 执行条件更新为 FAILED 终态。
      *
      * <p>条件更新（仅命中 CREATED / RUNNING），SUSPENDED 与已终态行不受影响，重复调用幂等。

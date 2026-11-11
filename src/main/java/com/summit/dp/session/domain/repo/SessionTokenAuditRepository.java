@@ -26,6 +26,14 @@ public interface SessionTokenAuditRepository extends RepositoryTemplate<SessionT
     Optional<SessionTokenAudit> findBySessionId(Long sessionId);
 
     /**
+     * 按会话整组删除审计快照（会话删除的级联步骤）：先删明细，再删头表。
+     *
+     * @param sessionIds 会话 id 集合；空入参返回 0
+     * @return 删除的头表行数（不含明细）
+     */
+    int deleteBySessionIds(java.util.Collection<Long> sessionIds);
+
+    /**
      * 用新快照整体替换该会话的旧快照（同事务：头表 upsert + 明细先删后插）。
      *
      * <p>为什么明细必须先删：{@code saveOrUpdate} 只覆盖头表，旧工具名不会自动消失，

@@ -121,6 +121,21 @@ public interface ExecutionCheckpointStore {
     boolean deleteExecutionDirectoryIfEmpty(String executionId);
 
     /**
+     * 连文件一起回收整个执行目录：**只允许在 {@code execution} 行已提交删除之后调用**。
+     *
+     * <p>与 {@link #deleteExecutionDirectoryIfEmpty(String)} 的分工：那个是「顺手带走空壳」，
+     * 这个是「这个执行已经不存在了」。行都删了，目录里的文件不可能再被读到，因此不再逐个比对引用；
+     * 但仍守住两条底线：<b>有在途写入就整体跳过</b>（还有线程会往里写），
+     * <b>只删本实现的产物</b>（{@code .json} / {@code .part}），不递归、不跟随符号链接。</p>
+     *
+     * <p>删除失败只记录不抛出：会话行早已提交删除，目录残留由孤儿清扫下一轮带走。</p>
+     *
+     * @param executionId 执行标识（数字串）
+     * @return 是否删掉了目录
+     */
+    boolean deleteExecutionDirectory(String executionId);
+
+    /**
      * 文件侧是否还有可能需要回收的内容（**便宜的探测**：只列 {@code checkpoints/} 根，不读正文）。
      *
      * <p>用来把「没有可回收的数据库行」与「没有要扫描的文件」两件事分开：前者为 0 不代表

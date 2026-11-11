@@ -183,6 +183,15 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
     }
 
     @Override
+    public int deleteBySessionIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0;
+        }
+        return chatTurnMapper.delete(Wrappers.<ChatTurnPO>lambdaQuery()
+                .in(ChatTurnPO::getSessionId, sessionIds));
+    }
+
+    @Override
     protected ChatTurnPO toPO(ChatTurn turn) {
         return ChatTurnPO.builder()
                 .id(turn.getId())

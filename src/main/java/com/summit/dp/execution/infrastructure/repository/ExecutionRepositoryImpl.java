@@ -54,6 +54,22 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     }
 
     @Override
+    public List<Long> findIdsBySessions(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return List.of();
+        }
+        return mapper.selectIdsBySessionIds(sessionIds);
+    }
+
+    @Override
+    public int deleteBySessionIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0;
+        }
+        return mapper.delete(Wrappers.<ExecutionPO>lambdaQuery().in(ExecutionPO::getSessionId, sessionIds));
+    }
+
+    @Override
     public Collection<Execution> findList(Collection<Long> ids) {
         return super.findList(ids);
     }
