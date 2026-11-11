@@ -21,7 +21,12 @@ public interface FileRecordStore {
         return UUID.randomUUID().toString();
     }
 
-    /** 缺少标识或版本时由存储补齐，版本按同一 executionId 和 filePath 递增。 */
+    /**
+     * 登记一条记录：标识与版本都由存储分配。
+     *
+     * <p>版本号一律由存储按同一 {@code executionId + filePath} 递增发放，调用方传入的值不参与
+     * （唯一索引 {@code ux_file_record_file_version} 就是靠这个前提成立的）。</p>
+     */
     FileRecord put(@NonNull FileRecord record);
 
     Optional<FileRecord> get(@NonNull Serializable executionId, @NonNull Serializable recordId);
@@ -48,6 +53,14 @@ public interface FileRecordStore {
 
     /** 返回顺序必须保持插入顺序：差异重放按写入顺序叠加。 */
     List<FileRecord> listByExecution(@NonNull Serializable executionId);
+
+    /**
+     * 只取某一轮的记录（{@code turnId} 为 {@code null} 时取「无轮次」那一桶），顺序同上。
+     *
+     * <p>单轮汇总必须走这条窄查询：先用 {@link #listByExecution} 再过滤，会把其它轮次的
+     * 基线大文本一起读进内存，长会话下正是 OOM 的形态。</p>
+     */
+    List<FileRecord> listByTurn(@NonNull Serializable executionId, Serializable turnId);
 
     void clear();
 }

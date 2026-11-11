@@ -40,6 +40,11 @@ public class DefaultFileRecordManager implements FileRecordManager {
     }
 
     @Override
+    public List<FileRecord> listTurnRecords(@NonNull Serializable executionId, Serializable turnId) {
+        return this.store.listByTurn(executionId, turnId);
+    }
+
+    @Override
     public List<FileRecord> listRecords(@NonNull Serializable executionId) {
         return this.store.listByExecution(executionId);
     }

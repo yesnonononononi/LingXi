@@ -36,8 +36,6 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         String executionId = String.valueOf(record.executionId());
         String id = record.id() == null ? String.valueOf(this.generateId()) : String.valueOf(record.id());
         String filePath = record.filePath();
-        int version = record.version() != null ? record.version()
-                : this.mapper.maxVersion(executionId, filePath) + 1;
         // 基线先落盘再登记：登记成功却引用不到基线，比重放失败更隐蔽。
         String baselinePath = record.baseline() == null ? null
                 : this.baselines.write(executionId, id, record.baseline());
@@ -46,21 +44,33 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         po.setId(id);
         po.setExecutionId(executionId);
         po.setTurnId(record.turnId() == null ? null : String.valueOf(record.turnId()));
-        po.setVersion(version);
         po.setFilePath(filePath);
         po.setBaselinePath(baselinePath);
         po.setDiff(record.diff());
         po.setPlusLines(record.plusLines());
         po.setMinusLines(record.minusLines());
         po.setCreateAt(record.createAt() == null ? Instant.now() : record.createAt());
-        this.mapper.insert(po);
+        this.insertWithAllocatedVersion(po);
 
         return FileRecord.builder()
                 .id(id).executionId(record.executionId()).turnId(record.turnId())
-                .version(version).filePath(filePath).baseline(record.baseline())
+                .version(po.getVersion()).filePath(filePath).baseline(record.baseline())
                 .diff(record.diff()).plusLines(record.plusLines()).minusLines(record.minusLines())
                 .createAt(po.getCreateAt())
                 .build();
+    }
+
+    /**
+     * 分配同文件的下一个版本号并插入。
+     *
+     * <p>「先查 MAX 再插入」有竞争窗口，但重复版本由 {@code (execution_id, file_path, version)}
+     * 的唯一索引在库侧挡住 —— 不加约束时这里是同版本双写（静默错），加了就变成显式失败。
+     * 不做重试：同一文件的两次编辑本来就是顺序发生的（真要并行，文件内容早就写坏了），
+     * 为不存在的并发加补偿循环只会多一条永远进不去的分支。</p>
+     */
+    private void insertWithAllocatedVersion(FileRecordPO po) {
+        po.setVersion(this.mapper.maxVersion(po.getExecutionId(), po.getFilePath()) + 1);
+        this.mapper.insert(po);
     }
 
     @Override
@@ -80,6 +90,18 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
     @Override
     public List<FileRecord> listByExecution(@NonNull Serializable executionId) {
         List<FileRecordPO> rows = this.mapper.listByExecution(String.valueOf(executionId));
+        List<FileRecord> records = new ArrayList<>(rows.size());
+        for (FileRecordPO row : rows) {
+            records.add(this.toRecord(row));
+        }
+        return records;
+    }
+
+    /** 窄查询：只取一轮的行，不把其它轮次的基线读进内存。 */
+    @Override
+    public List<FileRecord> listByTurn(@NonNull Serializable executionId, Serializable turnId) {
+        List<FileRecordPO> rows = this.mapper.listByTurn(String.valueOf(executionId),
+                turnId == null ? null : String.valueOf(turnId));
         List<FileRecord> records = new ArrayList<>(rows.size());
         for (FileRecordPO row : rows) {
             records.add(this.toRecord(row));
@@ -107,6 +129,12 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         return this.mapper.selectCount(query) > 0;
     }
 
+    /** 过期记录条数：预览用，不读 diff 与基线。 */
+    @Override
+    public long countBefore(@NonNull Instant cutoff) {
+        return this.mapper.countCreatedBefore(cutoff);
+    }
+
     /**
      * 回收 {@code cutoff} 之前建立的记录（连同基线文件）。
      *
@@ -115,8 +143,7 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
      * @return 实际删除的记录条数
      */
     @Override
-    public int purgeBefore(@NonNull Instant cutoff) {
-        // 先取基线路径再删行：行没了就再也找不到这些文件，会变成永久孤儿。
+    public int purgeBefore(@NonNull Instant cutoff) {        // 先取基线路径再删行：行没了就再也找不到这些文件，会变成永久孤儿。
         List<FileRecordPO> expired = this.mapper.listCreatedBefore(cutoff);
         int deleted = this.mapper.delete(new LambdaQueryWrapper<FileRecordPO>()
                 .lt(FileRecordPO::getCreateAt, cutoff));

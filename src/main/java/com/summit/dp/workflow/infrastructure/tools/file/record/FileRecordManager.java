@@ -28,6 +28,20 @@ public interface FileRecordManager {
 
     Optional<FileRecord> getRecord(@NonNull Serializable executionId, @NonNull Serializable recordId);
 
-    /** 该执行下的全部记录（含各轮次各文件），保持写入顺序。 */
+    /**
+     * 某轮次的全部记录（各文件混排，保持写入顺序）。
+     *
+     * <p><b>为什么汇总不走 listRecords</b>：单轮汇总只需要这一轮的行。取整执行再过滤，会把其它
+     * 轮次的 diff 与基线一起读进内存 —— 持久化实现下每条基线都是一次文件读，长会话里正是这个
+     * 形态把内存吃满。</p>
+     */
+    List<FileRecord> listTurnRecords(@NonNull Serializable executionId, Serializable turnId);
+
+    /**
+     * 该执行下的全部记录（含各轮次各文件），保持写入顺序。
+     *
+     * <p>整执行视图，不是热路径：任何「只要某一轮」的读取都必须走
+     * {@link #listTurnRecords}，否则会把无关轮次的基线一并 hydrate。</p>
+     */
     List<FileRecord> listRecords(@NonNull Serializable executionId);
 }

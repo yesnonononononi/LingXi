@@ -49,6 +49,13 @@ public class InMemoryFileRecordStore implements FileRecordStore {
     }
 
     @Override
+    public List<FileRecord> listByTurn(@NonNull Serializable executionId, Serializable turnId) {
+        return this.records.getOrDefault(executionId, List.of()).stream()
+                .filter(record -> Objects.equals(record.turnId(), turnId))
+                .toList();
+    }
+
+    @Override
     public boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath) {
         return this.records.getOrDefault(executionId, List.of()).stream()
                 .anyMatch(record -> Objects.equals(record.turnId(), turnId)
@@ -79,17 +86,11 @@ public class InMemoryFileRecordStore implements FileRecordStore {
 
     /** 补齐标识与同文件版本号；与生产实现同一套规则。 */
     private FileRecord assignIdentity(FileRecord record) {
-        if (record.id() != null && record.version() != null) {
-            return record;
-        }
         Serializable id = record.id() != null ? record.id() : this.generateId();
-        Integer version = record.version();
-        if (version == null) {
-            version = this.records.getOrDefault(record.executionId(), List.<FileRecord>of()).stream()
-                    .filter(existing -> Objects.equals(existing.filePath(), record.filePath()))
-                    .mapToInt(existing -> existing.version() == null ? 0 : existing.version())
-                    .max().orElse(0) + 1;
-        }
+        int version = this.records.getOrDefault(record.executionId(), List.<FileRecord>of()).stream()
+                .filter(existing -> Objects.equals(existing.filePath(), record.filePath()))
+                .mapToInt(existing -> existing.version() == null ? 0 : existing.version())
+                .max().orElse(0) + 1;
         return FileRecord.builder()
                 .id(id).executionId(record.executionId()).turnId(record.turnId())
                 .version(version).filePath(record.filePath()).baseline(record.baseline())

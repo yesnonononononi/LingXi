@@ -5,6 +5,8 @@ export interface ExecutionCleanupPreview {
   executionCount: string;
   /** 文件侧是否还有要扫描的内容（孤儿正文 / .part 残留 / 上一轮没扫到的目录）。 */
   filesNeedScan: boolean;
+  /** 过期的文件编辑记录条数：清理会删它们，预览必须先说出来。 */
+  expiredFileRecordCount: string;
 }
 
 export interface ExecutionCleanupResult {

@@ -39,14 +39,15 @@ public class ExecutionCleanupService {
     private final FileRecordMaintenance fileRecords;
 
     /**
-     * 清理预览：把「可回收的数据库行」与「文件侧是否还要扫描」分开报。
+     * 清理预览：把「可回收的数据库行」、「文件侧是否还要扫描」与「过期文件编辑记录」分开报。
      *
      * <p>只报行数是不够的：孤儿 JSON、{@code .part} 残留、以及上一轮目录预算之后还没扫到的文件
-     * 都不会体现在行数里。行数为 0 但文件侧还有东西时，界面必须仍然允许触发清理 ——
-     * 否则这些垃圾永远轮不到回收，跨调用游标也就推不动。</p>
+     * 都不会体现在行数里；过期的文件编辑记录更是与执行行完全无关的另一类删除。
+     * 清理既然会删它们，预览就必须先说出来 —— 否则界面会出现「预览说没啥可清、点一下却删了东西」。</p>
      */
     public Preview preview() {
-        return new Preview(repository.countReclaimable(), checkpoints.hasUnscannedFiles());
+        return new Preview(repository.countReclaimable(), checkpoints.hasUnscannedFiles(),
+                fileRecords.countBefore(fileRecordCutoff()));
     }
 
     // 查询也必须脱离调用方事务，避免清理后的计数仍命中旧的会话缓存。
@@ -70,7 +71,7 @@ public class ExecutionCleanupService {
                 checkpoints.reclaimUnreferenced(MAX_FILE_DIRECTORIES, MAX_FILES_PER_EXECUTION);
         long remaining = repository.countReclaimable();
         // 文件编辑记录按时间淘汰：与检查点无关，即使没有可回收的执行也会顺手清掉过期记录。
-        int purgedRecords = fileRecords.purgeBefore(Instant.now().minus(FILE_RECORD_RETENTION));
+        int purgedRecords = fileRecords.purgeBefore(fileRecordCutoff());
         log.info("清理无用执行数据: deletedCount={}, remainingCount={}, deletedFiles={},"
                         + " skippedInFlightFiles={}, deletedDirectories={}, purgedFileRecords={}",
                 deleted, remaining, files.deletedFiles(), files.skippedInFlight(), files.deletedDirectories(),
@@ -78,12 +79,18 @@ public class ExecutionCleanupService {
         return new CleanupResult(deleted, remaining);
     }
 
+    /** 文件编辑记录的过期水位：预览与清理必须用同一口径，否则预览数字和实删对不上。 */
+    private static Instant fileRecordCutoff() {
+        return Instant.now().minus(FILE_RECORD_RETENTION);
+    }
+
     /**
      * 预览结果。
      *
      * @param executionCount 可回收的数据库行数
      * @param filesNeedScan  文件侧是否还有要扫描的内容（孤儿 JSON / {@code .part} / 未扫到的目录）
+     * @param expiredFileRecordCount 过期的文件编辑记录条数（连同落盘基线会被一并回收）
      */
-    public record Preview(long executionCount, boolean filesNeedScan) { }
+    public record Preview(long executionCount, boolean filesNeedScan, long expiredFileRecordCount) { }
     public record CleanupResult(long deletedCount, long remainingCount) { }
 }

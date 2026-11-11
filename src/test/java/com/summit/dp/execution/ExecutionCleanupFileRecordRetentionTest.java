@@ -1,6 +1,7 @@
 package com.summit.dp.execution;
 
 import com.summit.dp.execution.application.port.ExecutionCheckpointMaintenance;
+import com.summit.dp.execution.application.port.FileRecordMaintenance;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -41,10 +43,8 @@ class ExecutionCleanupFileRecordRetentionTest {
         when(repository.countReclaimable()).thenReturn(0L);
         when(checkpoints.reclaimUnreferenced(anyInt(), anyInt()))
                 .thenReturn(new ExecutionCheckpointMaintenance.FileReclaimResult(0, 0, 0));
-        ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, checkpoints, cutoff -> {
-            cutoffSeen.set(cutoff);
-            return 4;
-        });
+        ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, checkpoints,
+                new RecordingFileRecords(cutoffSeen, 4));
 
         Instant before = Instant.now();
         service.cleanup();
@@ -55,5 +55,46 @@ class ExecutionCleanupFileRecordRetentionTest {
         assertTrue(Math.abs(Duration.between(expected, cutoff).toSeconds()) < 60,
                 "保留期必须是 15 天，实际 cutoff=" + cutoff);
         assertEquals(0L, service.preview().executionCount());
+    }
+
+    /**
+     * 预览与清理必须用同一个水位，且预览要如实报出「本次会删多少条过期记录」。
+     *
+     * <p>这条守的是「预览说没啥可清、点一下却删了东西」那个缺口：过期记录与执行行无关，
+     * 不报出来，界面上看到的数字就是假的。</p>
+     */
+    @Test
+    void previewReportsExpiredFileRecordsWithTheSameCutoff() {
+        when(repository.countReclaimable()).thenReturn(0L);
+        when(checkpoints.hasUnscannedFiles()).thenReturn(false);
+        AtomicReference<Instant> previewCutoff = new AtomicReference<>();
+        ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, checkpoints,
+                new RecordingFileRecords(previewCutoff, 0));
+
+        Instant before = Instant.now();
+        ExecutionCleanupService.Preview preview = service.preview();
+
+        assertEquals(0L, preview.executionCount());
+        assertFalse(preview.filesNeedScan());
+        assertEquals(7L, preview.expiredFileRecordCount(), "过期记录条数必须进预览，不能只在清理时才知道");
+        Instant expected = before.minus(RETENTION);
+        assertTrue(Math.abs(Duration.between(expected, previewCutoff.get()).toSeconds()) < 60,
+                "预览必须与清理同口径（15 天），实际 cutoff=" + previewCutoff.get());
+    }
+
+    /** 记录侧端口的最小替身：只为观察 cutoff 与固定条数，不碰真实存储。 */
+    private record RecordingFileRecords(AtomicReference<Instant> cutoffSeen, long expired) implements FileRecordMaintenance {
+
+        @Override
+        public long countBefore(Instant cutoff) {
+            this.cutoffSeen.set(cutoff);
+            return 7L;
+        }
+
+        @Override
+        public int purgeBefore(Instant cutoff) {
+            this.cutoffSeen.set(cutoff);
+            return (int) this.expired;
+        }
     }
 }

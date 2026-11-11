@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -256,6 +257,59 @@ class H2FileRecordStoreTest {
 
         assertEquals(3, reloaded.plusLines());
         assertEquals(2, reloaded.minusLines());
+    }
+
+    /**
+     * 「同执行 + 同文件 + 同版本」在库侧唯一。
+     *
+     * <p>版本号是 {@code MAX(version)+1} 现场分配的，没有这条约束时并发撞车的后果是两条同版本
+     * 记录并存 —— 不报错、不显眼，只是重放链上多出一段没人认识的顺序。这里直接绕过 store 写两次
+     * 同版本，证明拦得住的是库而不是应用。</p>
+     */
+    @Test
+    void sameFileVersionCannotBeWrittenTwice() {
+        store.put(draft("demo.txt", "v1\n", "+v2", null));
+
+        RuntimeException conflict = assertThrows(RuntimeException.class, () -> database.execute(
+                "INSERT INTO file_record (id, execution_id, turn_id, version, file_path,"
+                        + " plus_lines, minus_lines, create_at)"
+                        + " VALUES ('dup', '" + EXECUTION + "', '" + TURN + "', 1, 'demo.txt', 0, 0, CURRENT_TIMESTAMP)"));
+
+        assertFalse(conflict.getMessage().isBlank(), "撞版本必须报错，不能静默写进去");
+        assertEquals("1", database.queryString("SELECT COUNT(1) FROM file_record WHERE file_path = 'demo.txt'"));
+    }
+
+    /** 列表窄查询只取本轮：其它轮次的行根本不该出现在结果里。 */
+    @Test
+    void listByTurnNarrowsToTheRequestedTurn() {
+        store.put(draft("mine.txt", "m1\n", "+m2", null));
+        store.put(draft("other.txt", "o1\n", "+o2", null, "78"));
+
+        List<FileRecord> mine = store.listByTurn(EXECUTION, TURN);
+
+        assertEquals(List.of("mine.txt"), mine.stream().map(FileRecord::filePath).toList());
+        assertEquals("m1\n", mine.getFirst().baseline(), "基线仍按需读回");
+    }
+
+    /** 无轮次记录自成一桶：{@code turnId = null} 要按 IS NULL 取，不能退化成「查不到」。 */
+    @Test
+    void listByTurnKeepsTheTurnlessBucket() {
+        store.put(draft("no-turn.txt", "n1\n", "+n2", null, null));
+        store.put(draft("mine.txt", "m1\n", "+m2", null));
+
+        List<FileRecord> turnless = store.listByTurn(EXECUTION, null);
+
+        assertEquals(List.of("no-turn.txt"), turnless.stream().map(FileRecord::filePath).toList());
+    }
+
+    /** 预览用的过期条数：只数 create_at 水位之前的行，且不读 diff 与基线。 */
+    @Test
+    void countBeforeCountsOnlyExpiredRows() {
+        store.put(draft("old.txt", "old\n", "+old", Instant.now().minus(20, ChronoUnit.DAYS)));
+        store.put(draft("fresh.txt", "fresh\n", "+fresh", Instant.now()));
+
+        assertEquals(1, store.countBefore(Instant.now().minus(15, ChronoUnit.DAYS)));
+        assertEquals(0, store.countBefore(Instant.now().minus(30, ChronoUnit.DAYS)));
     }
 
     private FileRecord draft(String path, String baseline, String diff, Instant createAt) {

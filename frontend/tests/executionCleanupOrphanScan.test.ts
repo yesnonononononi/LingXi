@@ -57,7 +57,8 @@ function mount() {
 }
 
 /** 预览会被多次调用（清理成功后组件会重拉），按顺序吐值，最后一个值兜底。 */
-function previewSequence(t: { mock: any }, ...values: Array<{ executionCount: string; filesNeedScan: boolean }>) {
+function previewSequence(t: { mock: any },
+  ...values: Array<{ executionCount: string; filesNeedScan: boolean; expiredFileRecordCount: string }>) {
   let index = 0;
   return t.mock.method(http, 'get', async () => ({
     code: 1, data: values[Math.min(index++, values.length - 1)],
@@ -65,7 +66,7 @@ function previewSequence(t: { mock: any }, ...values: Array<{ executionCount: st
 }
 
 test('只剩孤儿文件时，清理请求真的从 UI 发得出去（POST 走通）', async t => {
-  previewSequence(t, { executionCount: '0', filesNeedScan: true });
+  previewSequence(t, { executionCount: '0', filesNeedScan: true, expiredFileRecordCount: '0' });
   const post = t.mock.method(http, 'post', async () => ({
     code: 1, data: { deletedCount: '0', remainingCount: '0' },
   }));
@@ -87,9 +88,9 @@ test('只剩孤儿文件时，清理请求真的从 UI 发得出去（POST 走�
 test('清理后 remainingCount=0 但文件侧仍需扫描时，能发起第二轮扫描', async t => {
   // 前两轮预览都报「文件侧还要扫描」：第一轮目录预算之后的孤儿只能靠第二轮收。
   previewSequence(t,
-    { executionCount: '0', filesNeedScan: true },
-    { executionCount: '0', filesNeedScan: true },
-    { executionCount: '0', filesNeedScan: false });
+    { executionCount: '0', filesNeedScan: true, expiredFileRecordCount: '0' },
+    { executionCount: '0', filesNeedScan: true, expiredFileRecordCount: '0' },
+    { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '0' });
   const post = t.mock.method(http, 'post', async () => ({
     code: 1, data: { deletedCount: '0', remainingCount: '0' },
   }));
@@ -108,7 +109,7 @@ test('清理后 remainingCount=0 但文件侧仍需扫描时，能发起第二�
 });
 
 test('反向对照：文件侧干净且没有可回收行时，按钮禁用它不发请求', async t => {
-  previewSequence(t, { executionCount: '0', filesNeedScan: false });
+  previewSequence(t, { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '0' });
   const post = t.mock.method(http, 'post', async () => ({
     code: 1, data: { deletedCount: '0', remainingCount: '0' },
   }));

@@ -192,7 +192,13 @@ const handleClearSessions = async () => {
         class="text-lx-fs-sm text-lx-secondary" aria-live="polite">
         {{ cleanup.copy.value.filesPending }}
       </p>
-      <p v-else-if="cleanup.busy.value" class="text-lx-fs-sm text-lx-secondary">{{ cleanup.copy.value.loading }}</p>
+      <p v-if="cleanup.expiredRecordCount.value !== null && cleanup.expiredRecordCount.value !== '0'"
+        class="text-lx-fs-sm text-lx-secondary" aria-live="polite">
+        {{ cleanup.copy.value.recordsPending(cleanup.expiredRecordCount.value) }}
+      </p>
+      <p v-if="cleanup.busy.value && cleanup.count.value === null" class="text-lx-fs-sm text-lx-secondary">
+        {{ cleanup.copy.value.loading }}
+      </p>
       <p v-if="cleanup.deletedCount.value !== null" class="text-lx-fs-sm text-lx-secondary" role="status">
         {{ cleanup.copy.value.success(cleanup.deletedCount.value) }}
       </p>

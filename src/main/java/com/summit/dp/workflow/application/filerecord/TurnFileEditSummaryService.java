@@ -69,10 +69,10 @@ public class TurnFileEditSummaryService {
             return Optional.empty();
         }
         // 只重放到目标记录为止：它表达的是「这条记录当时的文件状态」，不是本轮最终状态。
+        // 取的是「这一轮 + 这个文件」的窄查询，不是整执行全量 —— 后者会连其它轮次的基线一起读。
         List<FileRecord> upToTarget = new ArrayList<>();
-        for (FileRecord record : records.listRecords(executionId)) {
-            if (!Objects.equals(record.turnId(), target.turnId())
-                    || !Objects.equals(record.filePath(), target.filePath())) {
+        for (FileRecord record : records.listTurnRecords(executionId, target.turnId())) {
+            if (!Objects.equals(record.filePath(), target.filePath())) {
                 continue;
             }
             upToTarget.add(record);
@@ -83,11 +83,11 @@ public class TurnFileEditSummaryService {
         return this.rebuildDiff(target.filePath(), upToTarget);
     }
 
-    /** 按文件分组，跳过不属于本轮、以及缺少路径的记录。 */
+    /** 按文件分组，跳过缺少路径的记录；行只来自本轮，故不再按轮次过滤。 */
     private Map<String, List<FileRecord>> groupByFile(String executionKey, String turnKey) {
         Map<String, List<FileRecord>> byFile = new LinkedHashMap<>();
-        for (FileRecord record : records.listRecords(executionKey)) {
-            if (record.filePath() == null || !Objects.equals(record.turnId(), turnKey)) {
+        for (FileRecord record : records.listTurnRecords(executionKey, turnKey)) {
+            if (record.filePath() == null) {
                 continue;
             }
             byFile.computeIfAbsent(record.filePath(), path -> new ArrayList<>()).add(record);

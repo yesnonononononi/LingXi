@@ -14,6 +14,7 @@ import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.port.ExecutionCheckpointMaintenance;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
+import com.summit.dp.execution.support.NoFileRecords;
 import com.summit.dp.execution.application.service.ExecutionCleanupService.CleanupResult;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.domain.model.Execution;
@@ -612,7 +613,7 @@ class ExecutionCleanupTest {
 
         @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionReclaimService reclaimer,
                                                      ExecutionCheckpointMaintenance maintenance) {
-            return new ExecutionCleanupService(repository, reclaimer, maintenance, cutoff -> 0);
+            return new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords());
         }
     }
 }

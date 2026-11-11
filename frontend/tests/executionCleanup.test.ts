@@ -25,6 +25,7 @@ interface Element {
 interface PreviewPayload {
   executionCount: string;
   filesNeedScan: boolean;
+  expiredFileRecordCount: string;
 }
 const element = (tag: string, text = ''): Element => ({ tag, text, props: {}, children: [], parent: null });
 const text = (node: Element): string => node.tag === '#comment' ? '' : node.text + node.children.map(text).join('');
@@ -91,7 +92,7 @@ async function loadDataTab(t: { after: (callback: () => void) => void }, name: s
 
 test('预览与清理分别使用只读 GET 和 POST，不携带前端拼接的候选 ID', async t => {
   const read = t.mock.method(http, 'get', async () => ({
-    code: 1, data: { executionCount: '8', filesNeedScan: false },
+    code: 1, data: { executionCount: '8', filesNeedScan: false, expiredFileRecordCount: '0' },
   }));
   const write = t.mock.method(http, 'post', async () => ({ code: 1, data: { deletedCount: '3', remainingCount: '2' } }));
   await ExecutionCleanupAPI.preview(); await ExecutionCleanupAPI.cleanup();
@@ -100,7 +101,7 @@ test('预览与清理分别使用只读 GET 和 POST，不携带前端拼接的�
 });
 
 test('实际删除数量与剩余数量均以清理接口为准，不把预览数量当成结果', async t => {
-  previewSequence(t, { executionCount: '8', filesNeedScan: false }, { executionCount: '2', filesNeedScan: false });
+  previewSequence(t, { executionCount: '8', filesNeedScan: false, expiredFileRecordCount: '0' }, { executionCount: '2', filesNeedScan: false, expiredFileRecordCount: '0' });
   t.mock.method(ExecutionCleanupAPI, 'cleanup', async () => ({ code: 1, data: { deletedCount: '3', remainingCount: '2' } }));
   const { state, app } = mount(); t.after(() => app.unmount()); await settle();
   assert.equal(state.count.value, '8'); assert.equal(state.canClean.value, true);
@@ -122,14 +123,37 @@ test('预览失败与响应缺失时禁用清理，重新检查后恢复', async
   // 契约校验：缺 filesNeedScan 也算返回不完整 —— 否则界面会把「文件侧还要扫」当成没事干。
   preview.mock.mockImplementation(async () => ({ code: 1, data: { executionCount: '0' } }));
   await state.load(); assert.equal(state.count.value, null); assert.ok(state.error.value);
+  // 缺过期记录条数同样算不完整：清理会删它们，预览漏报就是「说没啥可清、点一下却删了东西」。
   preview.mock.mockImplementation(async () => ({ code: 1, data: { executionCount: '0', filesNeedScan: false } }));
+  await state.load(); assert.equal(state.count.value, null); assert.ok(state.error.value);
+  preview.mock.mockImplementation(async () => ({ code: 1, data: { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '0' } }));
   await state.load(); assert.equal(state.count.value, '0'); assert.equal(state.error.value, '');
   assert.equal(state.canClean.value, false);
 });
 
+test('只剩过期文件编辑记录时也允许清理，并把它报出来', async t => {
+  // 行数与文件侧都空，但清理确实会删掉过期的编辑记录：预览必须先说出来，按钮也不能禁用。
+  const preview = previewSequence(t, { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '9' });
+  const cleanup = t.mock.method(ExecutionCleanupAPI, 'cleanup', async () => ({
+    code: 1, data: { deletedCount: '0', remainingCount: '0' },
+  }));
+  const { state, app } = mount(); t.after(() => app.unmount()); await settle();
+  assert.equal(state.expiredRecordCount.value, '9');
+  assert.equal(state.canClean.value, true, '还有过期记录可删时按钮必须可用');
+  await state.cleanup();
+  assert.equal(cleanup.mock.callCount(), 1);
+  // 清理后再拉预览：过期记录已被删掉，按钮随之禁用。
+  preview.mock.mockImplementation(async () => ({
+    code: 1, data: { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '0' },
+  }));
+  await state.load();
+  assert.equal(state.expiredRecordCount.value, '0');
+  assert.equal(state.canClean.value, false, '三侧都空时才允许禁用');
+});
+
 test('只剩孤儿文件时禁用被解除，清理真的发得出去', async t => {
   // 复核 R4 的现场：没有可回收的行，但磁盘上还有孤儿正文 / .part，界面必须还能点。
-  const preview = previewSequence(t, { executionCount: '0', filesNeedScan: true });
+  const preview = previewSequence(t, { executionCount: '0', filesNeedScan: true, expiredFileRecordCount: '0' });
   const cleanup = t.mock.method(ExecutionCleanupAPI, 'cleanup', async () => ({
     code: 1, data: { deletedCount: '0', remainingCount: '0' },
   }));
@@ -143,13 +167,13 @@ test('只剩孤儿文件时禁用被解除，清理真的发得出去', async t 
   assert.equal(preview.mock.callCount(), 2, '清理后必须重新拉预览，让按钮跟着最新事实走');
   assert.equal(state.canClean.value, true, '预览仍报告有文件要扫描时按钮保持可用');
   // 反面对照：两侧都空才禁用。
-  preview.mock.mockImplementation(async () => ({ code: 1, data: { executionCount: '0', filesNeedScan: false } }));
+  preview.mock.mockImplementation(async () => ({ code: 1, data: { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '0' } }));
   await state.load();
   assert.equal(state.canClean.value, false, '两侧都空时才允许禁用');
 });
 
 test('清理失败或返回缺失时不显示成功，要求重新检查', async t => {
-  previewSequence(t, { executionCount: '8', filesNeedScan: false });
+  previewSequence(t, { executionCount: '8', filesNeedScan: false, expiredFileRecordCount: '0' });
   const cleanup = t.mock.method(ExecutionCleanupAPI, 'cleanup', async () => ({ code: 0, errMsg: '删除失败' }));
   const { state, app } = mount(); t.after(() => app.unmount()); await settle();
   await state.cleanup(); assert.equal(state.error.value, '删除失败');
@@ -164,7 +188,7 @@ test('检查与清理互斥，重复点击只发送一次请求', async t => {
   let finishPreview!: (value: Result<PreviewPayload>) => void;
   let first = true;
   const preview = t.mock.method(ExecutionCleanupAPI, 'preview', () => {
-    if (!first) return Promise.resolve({ code: 1, data: { executionCount: '0', filesNeedScan: false } });
+    if (!first) return Promise.resolve({ code: 1, data: { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '0' } });
     first = false;
     return new Promise<Result<PreviewPayload>>(resolve => { finishPreview = resolve; });
   });
@@ -173,7 +197,7 @@ test('检查与清理互斥，重复点击只发送一次请求', async t => {
   const { state, app } = mount(); t.after(() => app.unmount());
   await state.load(); await state.cleanup();
   assert.equal(preview.mock.callCount(), 1); assert.equal(cleanup.mock.callCount(), 0);
-  finishPreview({ code: 1, data: { executionCount: '8', filesNeedScan: false } }); await settle();
+  finishPreview({ code: 1, data: { executionCount: '8', filesNeedScan: false, expiredFileRecordCount: '0' } }); await settle();
   const pending = state.cleanup(); await state.cleanup(); await state.load();
   assert.equal(cleanup.mock.callCount(), 1); assert.equal(preview.mock.callCount(), 1);
   finishCleanup({ code: 1, data: { deletedCount: '5', remainingCount: '0' } }); await pending;
@@ -181,7 +205,7 @@ test('检查与清理互斥，重复点击只发送一次请求', async t => {
 });
 
 test('卸载后忽略迟到响应，并保留大整数计数原值', async t => {
-  previewSequence(t, { executionCount: '9007199254740993', filesNeedScan: false });
+  previewSequence(t, { executionCount: '9007199254740993', filesNeedScan: false, expiredFileRecordCount: '0' });
   let finish!: (value: Result<ExecutionCleanupResult>) => void;
   t.mock.method(ExecutionCleanupAPI, 'cleanup', () => new Promise<Result<ExecutionCleanupResult>>(resolve => { finish = resolve; }));
   const { state, app } = mount(); await settle();
@@ -194,7 +218,7 @@ test('卸载后忽略迟到响应，并保留大整数计数原值', async t => 
 test('真实数据设置组件渲染数量，清理期间禁用按钮，成功和失败可见', async t => {
   setPreference('zh-CN');
   const component = await loadDataTab(t, 'execution-cleanup-component');
-  previewSequence(t, { executionCount: '8', filesNeedScan: false }, { executionCount: '2', filesNeedScan: false });
+  previewSequence(t, { executionCount: '8', filesNeedScan: false, expiredFileRecordCount: '0' }, { executionCount: '2', filesNeedScan: false, expiredFileRecordCount: '0' });
   let finish!: (value: Result<ExecutionCleanupResult>) => void;
   t.mock.method(ExecutionCleanupAPI, 'cleanup', () => new Promise<Result<ExecutionCleanupResult>>(resolve => { finish = resolve; }));
   const root = element('root');
@@ -213,7 +237,7 @@ test('真实数据设置组件渲染数量，清理期间禁用按钮，成功�
   finish({ code: 1, data: { deletedCount: '3', remainingCount: '2' } }); await pending; await nextTick();
   assert.match(text(root), /已清理 3 条执行记录/); assert.match(text(root), /预计可清理 2 条/);
   t.mock.restoreAll();
-  previewSequence(t, { executionCount: '2', filesNeedScan: false });
+  previewSequence(t, { executionCount: '2', filesNeedScan: false, expiredFileRecordCount: '0' });
   t.mock.method(ExecutionCleanupAPI, 'cleanup', async () => ({ code: 0, errMsg: '清理失败' }));
   await button.props.onClick(); await nextTick();
   assert.equal(text(find(root, node => node.props.role === 'alert')!), '清理失败');
@@ -221,10 +245,24 @@ test('真实数据设置组件渲染数量，清理期间禁用按钮，成功�
   assert.equal(button.props.disabled, true);
 });
 
+test('真实组件把过期文件编辑记录条数也显示出来', async t => {
+  setPreference('zh-CN');
+  const component = await loadDataTab(t, 'execution-cleanup-records-component');
+  previewSequence(t, { executionCount: '0', filesNeedScan: false, expiredFileRecordCount: '4' });
+  const root = element('root');
+  const pinia = createPinia();
+  const app = renderer().createApp(component, { isDark: true }); app.use(pinia);
+  app.mount(root); t.after(() => app.unmount()); await settle();
+  const button = find(root, node => node.props['data-testid'] === 'execution-cleanup-run')!;
+
+  assert.match(text(root), /另有 4 条过期文件编辑记录将一并清理/);
+  assert.equal(button.props.disabled, false, '只有过期记录可删时按钮不能禁用');
+});
+
 test('真实组件在只剩孤儿文件时按钮可用，文案说明文件侧还要扫描', async t => {
   setPreference('zh-CN');
   const component = await loadDataTab(t, 'execution-cleanup-orphan-component');
-  previewSequence(t, { executionCount: '0', filesNeedScan: true });
+  previewSequence(t, { executionCount: '0', filesNeedScan: true, expiredFileRecordCount: '0' });
   const cleanup = t.mock.method(ExecutionCleanupAPI, 'cleanup', async () => ({
     code: 1, data: { deletedCount: '0', remainingCount: '0' },
   }));

@@ -16,6 +16,14 @@ import java.time.Instant;
 public interface FileRecordMaintenance {
 
     /**
+     * {@code cutoff} 之前建立、下次清理会回收的记录条数。
+     *
+     * <p>预览必须报这个数：清理动作本来就会删它们，预览若只说「没有可回收执行」，
+     * 界面就会出现「预览说没啥可清、点一下却删了东西」—— 那是不诚实的预览。</p>
+     */
+    long countBefore(Instant cutoff);
+
+    /**
      * 回收 {@code cutoff} 之前建立的记录。
      *
      * @return 实际删除的记录条数（0 表示没有可回收内容，重复调用幂等）

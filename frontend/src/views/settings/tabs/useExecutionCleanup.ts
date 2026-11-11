@@ -16,24 +16,29 @@ export function useExecutionCleanup() {
   const copy = useExecutionCleanupCopy();
   const count = ref<string | null>(null);
   const filesNeedScan = ref(false);
+  const expiredRecordCount = ref<string | null>(null);
   const deletedCount = ref<string | null>(null);
   const busy = ref(false);
   const error = ref('');
   let disposed = false;
-  // 可回收行数为 0 不代表文件侧干净：孤儿正文、.part 残留、以及上一轮目录预算之后的文件
-  // 只能靠再扫一次回收，所以「文件侧需扫描」也必须让按钮可用。
+  // 可回收行数为 0 不代表没有东西可删：孤儿正文、.part 残留只能靠再扫一次回收，
+  // 过期的文件编辑记录更是与执行行无关的另一类删除。三者任一非空，按钮就必须可用。
   const canClean = computed(() => !busy.value
-    && ((count.value !== null && count.value !== '0') || filesNeedScan.value));
+    && ((count.value !== null && count.value !== '0')
+      || filesNeedScan.value
+      || (expiredRecordCount.value !== null && expiredRecordCount.value !== '0')));
 
   /** 拉一次预览；不做 busy/清理状态管理，供 load 与清理后刷新共用。 */
   async function refreshPreview() {
     const result = await ExecutionCleanupAPI.preview();
     if (!isOk(result.code)) throw new Error(result.errMsg || copy.value.loadError);
-    if (!isCount(result.data?.executionCount) || !isFlag(result.data?.filesNeedScan)) {
+    if (!isCount(result.data?.executionCount) || !isFlag(result.data?.filesNeedScan)
+      || !isCount(result.data?.expiredFileRecordCount)) {
       throw new Error(copy.value.contractError);
     }
     count.value = result.data.executionCount;
     filesNeedScan.value = result.data.filesNeedScan;
+    expiredRecordCount.value = result.data.expiredFileRecordCount;
   }
 
   async function load() {
@@ -42,6 +47,7 @@ export function useExecutionCleanup() {
     error.value = '';
     count.value = null;
     filesNeedScan.value = false;
+    expiredRecordCount.value = null;
     deletedCount.value = null;
     try {
       await refreshPreview();
@@ -72,6 +78,7 @@ export function useExecutionCleanup() {
       if (!disposed) {
         count.value = null;
         filesNeedScan.value = false;
+        expiredRecordCount.value = null;
         error.value = extractErrorMessage(cause);
       }
     } finally {
@@ -81,5 +88,5 @@ export function useExecutionCleanup() {
 
   onMounted(load);
   onBeforeUnmount(() => { disposed = true; });
-  return { copy, count, filesNeedScan, deletedCount, busy, error, canClean, load, cleanup };
+  return { copy, count, filesNeedScan, expiredRecordCount, deletedCount, busy, error, canClean, load, cleanup };
 }
