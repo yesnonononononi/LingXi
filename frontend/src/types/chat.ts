@@ -784,6 +784,13 @@ export interface UserConfigVO {
    * 不带这个键表示保持原值 —— 因此类型必须允许 null。</p>
    */
   compactModelId?: number | string | null;
+  /**
+   * 指令预测模型（关联 model_config.id）；空表示「指令预测」功能关闭。
+   *
+   * <p>与 compactModelId 独立：用户改压缩模型不该影响预测结果。显式传 null 才是关闭，
+   * 不带这个键表示保持原值。</p>
+   */
+  predicateModelId?: number | string | null;
   imageModelId?: number | string | null;
   imageGenerationMaxCalls?: number | null;
   /** 普通模型请求是否流式输出；未设置已归一为 true（流式）。 */
@@ -803,6 +810,18 @@ export interface UserConfigVO {
    * `normalizeFontScale` 降级，而不是在类型层强行断言成合法值。</p>
    */
   fontScale?: 'SMALL' | 'MEDIUM' | 'LARGE' | 'X_LARGE' | string;
+}
+
+/**
+ * 指令预测结果（对应后端 {@code InstructionVO}）。
+ *
+ * <p>每轮只产出一条并已落库：同一 turnId 重复请求拿到的是同一条，不会重复生成。</p>
+ */
+export interface InstructionVO {
+  sessionId: string | number;
+  turnId: string | number;
+  /** 预测出的下一条指令正文；后端在无法判断时会给出空文本。 */
+  nextInstruction: string;
 }
 
 /**

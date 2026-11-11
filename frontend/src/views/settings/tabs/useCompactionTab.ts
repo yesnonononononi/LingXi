@@ -8,7 +8,7 @@ import type {CompactionParamsVO, ProviderModelGroupVO} from '../../../types/chat
 import {isImageModel} from '../../../utils/modelCapabilities';
 
 /**
- * 其它模型配置页的状态与动作，压缩和生图独立保存。
+ * 其它模型配置页的状态与动作，压缩、生图与指令预测各自独立保存。
  *
  * <p>开关与下拉是**同一件事**：持久化的 compactModelId 非空即「已启用」。
  * 不再单独存一个 enabled 布尔 —— 两份状态必然有一天不同步，
@@ -41,6 +41,31 @@ export function useCompactionTab() {
   const imageSaveError = ref('');
   const imageLimitDraft = ref('');
   watch(() => store.imageGenerationMaxCalls, value => { imageLimitDraft.value = value == null ? '' : String(value); }, {immediate:true});
+
+  /**
+   * 指令预测模型：与压缩模型同口径筛选（凭据齐备 + 非图片），但**独立字段独立保存**。
+   *
+   * <p>取消用下拉里的「关闭」项（值空串 → 落库 null），不再单独存一个 enabled 布尔：
+   * 与生图模型同一形态，两种开关语义并存只会让人分不清哪个才是真值。</p>
+   */
+  const predicateSelectedId = computed(() => store.predicateModelId == null ? '' : String(store.predicateModelId));
+  const predicateOptions = computed(() => [{value:'',label:t('settings.compaction.predicateDisabled')},
+    ...readyModels.value.map(entry => ({
+      value:String(entry.model.id),label:buildModelLabel(entry.providerName,entry.model.modelName),desc:entry.model.baseUrl ?? undefined,
+    }))]);
+  const predicateUnavailable = computed(() => predicateSelectedId.value !== ''
+    && !predicateOptions.value.some(option => option.value === predicateSelectedId.value));
+  const predicateDisabled = computed(() => !store.loaded || loading.value || store.savingKeys.has('predicateModelId'));
+  const predicateSaveError = ref('');
+
+  async function choosePredicate(value: string) {
+    if (predicateDisabled.value) return;
+    predicateSaveError.value = '';
+    const id = value || null;
+    if (!await store.patch('predicateModelId', id, {predicateModelId:id})) {
+      predicateSaveError.value = t('settings.compaction.saveFailed');
+    }
+  }
 
   async function chooseImage(value: string) {
     if (imageDisabled.value) return;
@@ -141,6 +166,7 @@ export function useCompactionTab() {
   return {
     store,
     imageSelectedId, imageOptions, imageUnavailable, imageDisabled, imageSaveError, imageLimitDraft, chooseImage, saveImageLimit,
+    predicateSelectedId, predicateOptions, predicateUnavailable, predicateDisabled, predicateSaveError, choosePredicate,
     params,
     loading,
     loadError,

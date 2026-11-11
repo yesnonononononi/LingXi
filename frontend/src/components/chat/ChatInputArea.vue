@@ -78,6 +78,12 @@ const props = defineProps<{
   agents?: AgentVO[];
   selectedAgentId?: string | number | null;
   /**
+   * 「下一条指令」建议（后端按终态轮次预测）。
+   *
+   * <p>只在输入框为空时展示：用户已经在打字时按自己的思路走，还塞一条建议只会抢注意力。</p>
+   */
+  prediction?: string;
+  /**
    * plan 模式（受控）：宿主是唯一事实源，本组件只镜像并回传变更。
    *
    * <p>历史实现把它做成组件私有 ref，宿主既观察不到也控制不了，`updateMode` 事件发出去
@@ -120,6 +126,10 @@ const emit = defineEmits<{
   (e: 'openSettings'): void;
   /** 直达设置弹窗的指定 tab（如 'mcp'），由宿主透传给 SettingsModal 的 initialTab */
   (e: 'openSettingsTab', tab: string): void;
+  /** 采纳「下一条指令」建议（宿主据此清空建议） */
+  (e: 'applyPrediction', text: string): void;
+  /** 关掉建议条；本轮不再展示 */
+  (e: 'dismissPrediction'): void;
 }>();
 
 defineSlots<{
@@ -169,6 +179,19 @@ const focusInput = () => {
     inputRef.value.focus();
     inputRef.value.setSelectionRange(inputText.value.length, inputText.value.length);
   });
+};
+
+/**
+ * 采纳「下一条指令」建议：整段替换输入框内容并聚焦。
+ *
+ * <p>不解析命令、不切模式：预测出来的只是一句自然语言，按命令解析等于替用户改主意。</p>
+ */
+const applyPrediction = () => {
+  const text = (props.prediction ?? '').trim();
+  if (!text) return;
+  emit('applyPrediction', text);
+  writeInputText(text);
+  focusInput();
 };
 
 const promptOptimization = usePromptOptimization(inputText, () => props.selectedModelId, focusInput, text => {
@@ -1635,6 +1658,34 @@ defineExpose({
           @remove="removePastedDocument(index)"
           @expand="expandDocumentToInput(doc)"
         />
+      </div>
+
+      <!-- 指令预测建议：点一下即填入输入框，输入框已有内容时不展示（见 props 注释） -->
+      <div
+        v-if="prediction && !inputText.trim()"
+        class="flex items-start gap-1.5 w-full min-w-0"
+        data-testid="prediction-suggestion"
+      >
+        <button
+          type="button"
+          class="group inline-flex items-start gap-1.5 max-w-full text-left text-xs leading-[18px] px-2 py-1 rounded-lg transition cursor-pointer [color:color-mix(in_srgb,var(--pb-ink)_78%,transparent)] [background:color-mix(in_srgb,var(--pb-ink)_7%,transparent)] hover:[background:color-mix(in_srgb,var(--pb-ink)_12%,transparent)]"
+          :title="prediction"
+          @mousedown.prevent
+          @click="applyPrediction"
+        >
+          <HugeiconsIcon :icon="SparklesIcon as IconArray" :size="13" :stroke-width="2" class="mt-[2px] shrink-0 opacity-70" />
+          <span class="min-w-0 line-clamp-2">{{ prediction }}</span>
+        </button>
+        <button
+          type="button"
+          class="shrink-0 mt-[3px] w-4 h-4 inline-flex items-center justify-center rounded-full transition cursor-pointer opacity-55 hover:opacity-100"
+          :aria-label="t('chat.input.dismissPrediction')"
+          :title="t('chat.input.dismissPrediction')"
+          @mousedown.prevent
+          @click="$emit('dismissPrediction')"
+        >
+          <HugeiconsIcon :icon="Cancel01Icon as IconArray" :size="12" :stroke-width="2" />
+        </button>
       </div>
 
       <!-- 文本输入区 -->

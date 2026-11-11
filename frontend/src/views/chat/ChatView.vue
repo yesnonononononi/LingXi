@@ -385,6 +385,7 @@
               :selectedTeamId="localSelectedTeamId"
               :selectedAgentId="selectedAgentId"
               :mode="chatMode"
+              :prediction="instructionPrediction"
               @sendMessage="handleSendMessage"
               @stopGeneration="handleStopGeneration"
               @updateModel="handleUpdateModel"
@@ -393,6 +394,8 @@
               @updateTeam="handleUpdateTeam"
               @updateAgent="handleUpdateAgent"
               @updateMode="handleUpdateMode"
+              @applyPrediction="clearInstructionPrediction"
+              @dismissPrediction="clearInstructionPrediction"
               @openModelEditor="handleOpenModelEditor"
               @openTeamModal="handleOpenTeamModal"
               @selectWorkspace="handleSelectWorkspace"
@@ -554,6 +557,9 @@ import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector
 import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import {useChatView} from './useChatView';
+import {useInstructionPredict} from '../../composables/useInstructionPredict';
+import {isTerminalTurnStatus} from '../../utils/turnStatus';
+import {useUserConfigStore} from '../../stores/userConfigStore';
 import Sidebar from '../../components/chat/Sidebar.vue';
 import type {SidebarTreeSlotProps} from '../../types/sidebarSlots';
 import {SIDEBAR_SLOTS_KEY} from '../../types/sidebarSlots';
@@ -829,6 +835,40 @@ const {
   handleTouchStart,
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef, subSessionPanelVisible: computed(() => !previewPanelVisible.value) });
+
+/** 配置真源（与 useChatView 同一个 store 实例）：这里只读指令预测模型是否配置。 */
+const userConfig = useUserConfigStore();
+
+/**
+ * 指令预测：最后一轮的终态与轮次 id 全部取自后端下发的事实。
+ *
+ * <p>末轮 id 取「最后一条带 turnId 的消息」—— 失败/取消的轮次同样有终态正文值得预测下一句，
+ * 因此不按成功与否过滤。</p>
+ */
+const lastTurnId = computed<string | null>(() => {
+  const messages = displayedMessages.value;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const turnId = messages[index]?.turnId;
+    if (turnId) return String(turnId);
+  }
+  return null;
+});
+
+const lastTurnTerminal = computed<boolean>(() => {
+  const turnId = lastTurnId.value;
+  if (!turnId) return false;
+  const turn = currentActiveSession.value?.turns?.[turnId];
+  return turn != null && isTerminalTurnStatus(String(turn.status));
+});
+
+const { suggestion: instructionPrediction, clear: clearInstructionPrediction } = useInstructionPredict({
+  sessionId: computed(() => localActiveId.value),
+  rootSessionId: computed(() => currentActiveSession.value?.rootSessionId ?? null),
+  turnId: lastTurnId,
+  turnTerminal: lastTurnTerminal,
+  // 后端以「预测模型为空」表示功能关闭：前端据此免发必然返回空的请求。
+  enabled: computed(() => userConfig.predicateModelId != null),
+});
 
 const handleSidebarSessionSelect = (id: string): void => {
   if (localSessions.value.some(session => session.subSessions?.some(sub => String(sub.id) === id))) closePreviewPanel();
