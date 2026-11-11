@@ -1,6 +1,7 @@
 package com.summit.dp.agent;
 
 import com.summit.dp.workflow.api.controller.ReadImagePreviewController;
+import com.summit.dp.workflow.application.image.ImagePreviewService;
 import com.summit.dp.workflow.infrastructure.tools.image.ImageCacheDirectory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,7 +21,7 @@ class ReadImagePreviewEndpointTest {
     @Test
     void servesTheExactCachedBytesAndImageMediaType() throws Exception {
         ImageCacheDirectory cache = new ImageCacheDirectory(dataDir.toString());
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ReadImagePreviewController(cache)).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ReadImagePreviewController(new ImagePreviewService(cache))).build();
         for (String ext : new String[]{"png", "jpg"}) {
             byte[] bytes = new byte[]{1, 2, 3};
             String imageId = cache.store(42L, bytes, ext).imageId();
@@ -36,7 +37,7 @@ class ReadImagePreviewEndpointTest {
     void missingImagesWrongSessionsAndUnsupportedIdentifiersReturnNotFound() throws Exception {
         ImageCacheDirectory cache = new ImageCacheDirectory(dataDir.toString());
         String imageId = cache.store(42L, new byte[]{4, 5, 6}, "png").imageId();
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ReadImagePreviewController(cache)).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ReadImagePreviewController(new ImagePreviewService(cache))).build();
         mvc.perform(get("/a/images/43/" + imageId + ".png")).andExpect(status().isNotFound());
         mvc.perform(get("/a/images/42/0000000000000000.png")).andExpect(status().isNotFound());
         mvc.perform(get("/a/images/42/" + imageId + ".svg")).andExpect(status().isNotFound());
