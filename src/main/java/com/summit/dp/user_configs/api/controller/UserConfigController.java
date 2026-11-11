@@ -51,6 +51,8 @@ public class UserConfigController {
                 request.getTeamSize(),
                 request.getCompactModelId(),
                 request.isCompactModelIdPresent(),
+                request.getPredicateModelId(),
+                request.isPredicateModelIdPresent(),
                 request.getFontScale(),
                 request.isFontScalePresent(),
                 request.getImageModelId(),

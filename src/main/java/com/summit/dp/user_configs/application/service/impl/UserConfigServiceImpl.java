@@ -73,6 +73,8 @@ public class UserConfigServiceImpl implements UserConfigService {
         // 专用压缩模型同样只能在「模型存在且凭据齐备」时才落库：
         // 否则每次压缩都在运行时抛错，而错误出现在一轮对话的中途，用户根本无从定位。
         assertCompactModelUsable(command.compactModelId(), command.compactModelIdPresent());
+        // 指令预测模型与压缩模型同口径：存在且凭据齐备才允许落库，避免预测调用时才炸。
+        assertPredicateModelUsable(command.predicateModelId(), command.predicateModelIdPresent());
         if (command.imageModelIdPresent() && command.imageModelId() != null) {
             ModelConfigVO image = modelService.findById(command.imageModelId()).getData();
             throwIf(image == null || !DefaultModelProviderNames.DEFAULT_IMAGE.equals(image.getProvider()),
@@ -129,6 +131,17 @@ public class UserConfigServiceImpl implements UserConfigService {
         throwIf(DefaultModelProviderNames.DEFAULT_IMAGE.equals(compact.getProvider()), "压缩模型必须选择文本模型");
     }
 
+    /** 校验指令预测模型可用：存在且凭据齐备；不传该字段或显式取消时跳过。 */
+    private void assertPredicateModelUsable(Long predicateModelId, boolean present) {
+        if (!present || predicateModelId == null) {
+            return;
+        }
+        ModelConfigVO predicate = modelService.findById(predicateModelId).getData();
+        throwIf(predicate == null || !predicate.isCredentialConfigured(),
+                "指令预测模型缺少可用的 API 凭据，请先在模型页补全密钥");
+        throwIf(DefaultModelProviderNames.DEFAULT_IMAGE.equals(predicate.getProvider()), "指令预测模型必须选择文本模型");
+    }
+
 
     private UserConfig apply(UserConfigCommand command, UserConfig model) {
         String accessMode = command.accessMode();
@@ -152,6 +165,8 @@ public class UserConfigServiceImpl implements UserConfigService {
 
         // 压缩模型与 agentId 同构：显式 null = 回到「沿用对话模型」，不传 = 保持原值。
         if (command.compactModelIdPresent()) model.changeCompactModel(command.compactModelId());
+        // 指令预测模型同样是「显式 null 才关闭」，不传保持原值。
+        if (command.predicateModelIdPresent()) model.changePredicateModel(command.predicateModelId());
         if (command.imageModelIdPresent()) model.changeImageModel(command.imageModelId());
         if (command.imageGenerationMaxCalls() != null) model.changeImageGenerationMaxCalls(command.imageGenerationMaxCalls());
         // 流式开关与 agentId 同构：显式带上才改，不传保持原值。
@@ -249,6 +264,7 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .skillDir(settings == null ? null : settings.skillDir())
                 .teamSize(settings == null ? null : settings.teamSize())
                 .compactModelId(model.getCompactModelId())
+                .predicateModelId(model.getPredicateModelId())
                 .imageModelId(model.getImageModelId())
                 .imageGenerationMaxCalls(model.resolveImageGenerationMaxCalls())
                 .streamChat(model.resolveStreamChat())

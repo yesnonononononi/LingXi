@@ -19,6 +19,8 @@ public record UserConfigCommand(
         Integer teamSize,
         Long compactModelId,
         boolean compactModelIdPresent,
+        Long predicateModelId,
+        boolean predicateModelIdPresent,
         String fontScale,
         boolean fontScalePresent,
         Long imageModelId,
@@ -34,8 +36,8 @@ public record UserConfigCommand(
                              String fontScale, boolean fontScalePresent) {
         this(id, commandApprovalPolicy, accessMode, planMaxReminders, modelId, agentId, agentIdPresent,
                 workspaceType, maxTokens, reasoningEffort, renderTheme, dataDir, skillDir, teamSize,
-                compactModelId, compactModelIdPresent, fontScale, fontScalePresent, null, false, null,
-                null, false);
+                compactModelId, compactModelIdPresent, null, false, fontScale, fontScalePresent, null, false,
+                null, null, false);
     }
 
     public UserConfigCommand(Long id, String commandApprovalPolicy, String accessMode, Integer planMaxReminders,
@@ -46,7 +48,7 @@ public record UserConfigCommand(
                              boolean imageModelIdPresent, Integer imageGenerationMaxCalls) {
         this(id, commandApprovalPolicy, accessMode, planMaxReminders, modelId, agentId, agentIdPresent,
                 workspaceType, maxTokens, reasoningEffort, renderTheme, dataDir, skillDir, teamSize,
-                compactModelId, compactModelIdPresent, fontScale, fontScalePresent, imageModelId,
+                compactModelId, compactModelIdPresent, null, false, fontScale, fontScalePresent, imageModelId,
                 imageModelIdPresent, imageGenerationMaxCalls, null, false);
     }
 }
