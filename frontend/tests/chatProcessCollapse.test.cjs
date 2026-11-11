@@ -534,7 +534,7 @@ test('bug修复：一切执行终态均显示最外层收束框并支持收束�
     isThinking: false,
     toolCalls: [
       { id: 't1', toolName: AgentToolName.ExecuteCommand, status: 'failed', query: '{"command":"./gradlew test"}' },
-      { id: 't2', toolName: AgentToolName.WriteFile, status: 'success', args: { path: 'DeviceCapability.kt' } }
+      { id: 't2', toolName: AgentToolName.WriteFile, status: 'success', args: { path: 'SampleCapability.kt' } }
     ]
   });
   const failedRoot = mount(t, failedAnswer);

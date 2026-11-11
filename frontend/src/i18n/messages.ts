@@ -181,12 +181,6 @@ export const messages: MessageSchema = {
         imageGenerate: '生成图片',
         mcpList: '列举可用工具',
         skill: '读取技能',
-        // 手机设备四动作各自独立文案：流式工具行短名不得两两重名
-        device: '手机设备',
-        deviceObserve: '查看手机界面',
-        deviceAction: '操作手机',
-        deviceConfirm: '确认手机操作',
-        deviceStop: '停止手机操作',
         default: '工具',
       },
       /** 查看队员状态的工具行标题：队员名缺失时用 peekMember 兜底。 */
@@ -1594,12 +1588,6 @@ export const messages: MessageSchema = {
         imageGenerate: 'Generate image',
         mcpList: 'List available tools',
         skill: 'Read skill',
-        // One label per phone-device action so no two streaming tool rows read alike.
-        device: 'Phone device',
-        deviceObserve: 'View phone screen',
-        deviceAction: 'Act on phone',
-        deviceConfirm: 'Confirm phone action',
-        deviceStop: 'Stop phone action',
         default: 'Tool',
       },
       /** Tool-row title for the teammate-state tool; falls back to peekMember without a name. */

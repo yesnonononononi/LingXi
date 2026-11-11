@@ -23,7 +23,6 @@ export const TOOL_CATEGORY = {
   TOOL_SEARCH: 'TOOL_SEARCH',
   MCP_LIST: 'MCP_LIST',
   SKILL: 'SKILL',
-  DEVICE: 'DEVICE',
   DEFAULT: 'DEFAULT',
 } as const;
 
@@ -65,11 +64,6 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.ListMcpTools]: TOOL_CATEGORY.MCP_LIST,
   // Skill 正文读取
   [AgentToolName.ReadSkill]: TOOL_CATEGORY.SKILL,
-  // 手机设备：观测 / 操作 / 确认 / 急停同属设备通道，均不产生文件写入
-  [AgentToolName.DeviceObserve]: TOOL_CATEGORY.DEVICE,
-  [AgentToolName.DeviceAction]: TOOL_CATEGORY.DEVICE,
-  [AgentToolName.DeviceConfirm]: TOOL_CATEGORY.DEVICE,
-  [AgentToolName.DeviceStop]: TOOL_CATEGORY.DEVICE,
 };
 
 /** 未登记工具的统一兜底分类码（绝不裸显原生英文名）。 */
@@ -91,7 +85,6 @@ const TOOL_CATEGORY_LABEL_KEY: Record<string, string> = {
   [TOOL_CATEGORY.TOOL_SEARCH]: 'tool.category.toolSearch',
   [TOOL_CATEGORY.MCP_LIST]: 'tool.category.mcpList',
   [TOOL_CATEGORY.SKILL]: 'tool.category.skill',
-  [TOOL_CATEGORY.DEVICE]: 'tool.category.device',
   [TOOL_CATEGORY.DEFAULT]: 'tool.category.default',
 };
 

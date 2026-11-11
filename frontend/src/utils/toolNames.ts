@@ -6,8 +6,7 @@
  *   <li>业务常量 {@code com.summit.dp.shared.model.ToolCatalog}：call_sub_agent / create_plan /
  *       send_mail_to_agent / peek_teammate_state / execute_command / read_file / edit_file / web_search / search_tool / list_mcp_tools；</li>
  *   <li>各 {@code ToolDefinition} 注册名：{@code FileToolConfiguration}（read_file / edit_file）、
- *       {@code CommonToolConfiguration}（execute_command / web_search）、{@code ToolConfig}（require_choice）、
- *       {@code DeviceToolConfiguration}（device_observe / device_action / device_confirm / device_stop）；</li>
+ *       {@code CommonToolConfiguration}（execute_command / web_search）、{@code ToolConfig}（require_choice）；</li>
  *   <li>框架内核工具：{@code search_tool} / {@code list_mcp_tools}（harness-kernel-tools）、
  *       {@code compact_context}（上下文压缩）、{@code read_skill}（Skill 正文读取）。</li>
  * </ul>
@@ -67,14 +66,6 @@ export const AgentToolName = {
   ListMcpTools: 'list_mcp_tools',
   /** Skill 正文读取（入口路径由框架的 Skill 提示词下发） */
   ReadSkill: 'read_skill',
-  /** 手机设备：查看当前界面（返回节点树与帧指纹） */
-  DeviceObserve: 'device_observe',
-  /** 手机设备：执行一次动作（tap / swipe / set_text / back / open_app 等） */
-  DeviceAction: 'device_action',
-  /** 手机设备：危险动作的人工确认答复 */
-  DeviceConfirm: 'device_confirm',
-  /** 手机设备：急停，取消未执行动作 */
-  DeviceStop: 'device_stop',
 } as const;
 
 /** 后端固定工具名的联合类型（即上面任一键的值）。 */

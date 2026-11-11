@@ -10,7 +10,6 @@ import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.tool.ToolExecuteResult;
-import com.summit.dp.device.interfaces.tool.DeviceToolNames;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +37,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
      * 而且谁能往上下文里塞像素，就等于谁能影响模型看到的世界。加一个工具必须显式来这里登记。</p>
      */
     private static final Set<String> IMAGE_CARRYING_TOOLS =
-            Set.of(ToolCatalog.READ_IMAGE, DeviceToolNames.OBSERVE);
+            Set.of(ToolCatalog.READ_IMAGE);
 
     private final ImageCacheDirectory cache;
 
