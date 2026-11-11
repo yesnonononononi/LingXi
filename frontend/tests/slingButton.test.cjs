@@ -23,37 +23,27 @@ test('SlingButton 组件源文件存在且包含完整的弹弓力学与粒子�
   assert.match(source, /useReducedMotion\(\)/, '必须支持系统减弱动态效果');
 });
 
-test('ChatInputArea 正确集成 SlingButton 并映射发送/停止/禁用与主题状态', () => {
-  /**
-   * 扫描范围：插入区试点把发送按钮整段搬进默认实现组件 `ChatInputSendButton.vue`，
-   * 因此「集成方式」在 ChatInputArea 与默认实现里**任一处**断言成立即可；
-   * `slingColors` 的状态色映射仍留在 ChatInputArea（配色由组件裁决，不是渲染器的事）。
-   * 断言条件不变，只把 props 前缀与搬家后的入口名纳入匹配。
-   */
-  const inputAreaPath = path.resolve(__dirname, '../src/components/chat/ChatInputArea.vue');
+test('ChatInputSendButton 统一为纯净发送与取消按钮样式（去除动画，蓝底白右箭头，红框内阴影白方块）', () => {
   const sendButtonPath = path.resolve(__dirname, '../src/components/chat/ChatInputSendButton.vue');
-  const source = [inputAreaPath, sendButtonPath]
-    .map((file) => fs.readFileSync(file, 'utf8'))
-    .join('\n/* --- 下一个文件 --- */\n');
+  assert.equal(fs.existsSync(sendButtonPath), true, '未找到 ChatInputSendButton.vue 文件');
+  const source = fs.readFileSync(sendButtonPath, 'utf8');
 
-  // 验证组件导入
-  assert.match(source, /import SlingButton from '\.\.\/common\/SlingButton\.vue'/, '未导入 SlingButton 组件');
+  // 1. 去除弹弓与图标变形动画，采用标准按钮
+  assert.doesNotMatch(source, /import SlingButton/, '已去除按钮动画，不应再导入 SlingButton');
+  assert.doesNotMatch(source, /import MorphingSendIcon/, '已去除图标变形动画，不应再导入 MorphingSendIcon');
+  assert.match(source, /<button[\s\S]*?data-slot="send-button"/, '未保留 data-slot="send-button" 插槽标识');
 
-  // 验证模板中的组件渲染与核心 props
-  assert.match(source, /<SlingButton[\s\S]*?:pad-color="(?:slingColors|props\.colors)\.padColor"/, 'SlingButton 未绑定 pad-color');
-  assert.match(source, /:well-color="(?:slingColors|props\.colors)\.wellColor"/, 'SlingButton 未绑定 well-color');
-  assert.match(source, /:accent-color="(?:slingColors|props\.colors)\.accentColor"/, 'SlingButton 未绑定 accent-color');
-  assert.match(source, /:disabled="!(?:props\.)?armed"/, 'SlingButton 未正确绑定 disabled 状态');
-  assert.match(source, /@send="(?:onSendClick|props\.onSend)"/, 'SlingButton 未绑定 send 事件到发送入口');
-  assert.match(source, /<MorphingSendIcon :is-sending="!!?(?:props\.)?isSending"/, 'SlingButton 插槽未嵌入 MorphingSendIcon');
+  // 2. 发送状态：蓝色背景，白色箭头 (->) 向右
+  assert.match(source, /props\.armed\s*\?\s*['"][^'"]*bg-blue-600/, '发送就绪状态必须配置 bg-blue-600 蓝色背景');
+  assert.match(source, /<svg[\s\S]*?class="[^"]*text-white[^"]*"[\s\S]*?>/, '发送状态图标必须为白色');
+  assert.match(source, /<path d="M5 12h14" \/>\s*<path d="m13 6 6 6-6 6" \/>/, '发送状态必须为白色向右箭头 (->)');
 
-  // 验证状态色彩映射（发送中为红粉停止色，亮暗模式均为浅色边线，无突兀高亮蓝）
-  assert.match(source, /slingColors = computed/, '缺少 slingColors 状态色彩映射');
-  assert.match(source, /#e11d48/, '发送中/停止状态未配置玫瑰红 padColor');
-  assert.match(source, /#f5f5f5/, '暗色就绪状态未配置亮白 padColor');
-  assert.match(source, /#27272a/, '暗色就绪状态未配置深灰底座 wellColor');
-  assert.match(source, /#94a3b8/, '浅色就绪状态未配置浅灰/浅石板边线 accentColor');
-  assert.match(source, /#e4e4e7/, '暗色就绪状态未配置浅白灰边线 accentColor');
-  assert.doesNotMatch(source, /#0284c7/, '浅色模式不得残留高饱和度蓝色边线');
-  assert.doesNotMatch(source, /#38bdf8/, '暗色模式不得残留高饱和度蓝色边线');
+  // 3. 取消状态：红色边框，向内阴影，白色小方块居中
+  assert.match(source, /border-red-500/, '取消状态必须具备红色边框');
+  assert.match(source, /shadow-\[inset_0_1px_4px_rgba\(239,68,68,0\.4\)\]|shadow-inner/, '取消状态必须具备向内阴影');
+  assert.match(source, /class="[^"]*bg-white[^"]*"[^>]*aria-hidden="true"/, '取消状态未包含白色小方块');
+
+  // 4. 交互与状态绑定：禁用与发送/停止事件
+  assert.match(source, /:disabled="!(?:props\.)?armed"/, '未绑定 disabled 属性到 armed 状态');
+  assert.match(source, /@click="(?:props\.)?onSend"/, '未绑定 click 事件到 onSend 回调');
 });
