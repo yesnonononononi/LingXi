@@ -189,7 +189,7 @@
 import {computed, inject, ref} from 'vue';
 import type {ChatMessageActionsSlotProps, ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
-import type {ChatMessage, ChatTurn, ProcessTimelineItem, SubSessionVO, ToolCallTrace} from '../../types/chat';
+import type {ChatMessage, ChatTurn, ProcessTimelineItem, SubSessionVO} from '../../types/chat';
 import {toPromptCardData} from '../../utils/toolCallCard';
 import {buildProcessTimeline} from '../../utils/processTimeline';
 import {buildProcessSegments} from '../../utils/processSegments';
@@ -199,6 +199,7 @@ import {isActiveTurnStatus, isFailedTurnStatus, isTerminalTurnStatus, turnStatus
 import {formatDurationOrPlaceholder} from '../../utils/format';
 import {resolveTokenUsage} from '../../utils/tokenUsage';
 import {resolveAwaitModelResponse} from '../../utils/awaitModelResponse';
+import {hasPendingTool, hasTerminalEvidence, resolveTurnRunning} from '../../utils/turnRunning';
 import MessageActionsBar from './MessageActionsBar.vue';
 import TurnFileChangeCard from './TurnFileChangeCard.vue';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
@@ -288,17 +289,6 @@ const emit = defineEmits<{
   (e: 'editResend', message: ChatMessage): void;
 }>();
 
-/**
- * 是否还有工具停在「未收尾」态（调用中 / 待定）。
- *
- * <p>「未收尾」= 工具已经发起但还没拿到终态。只看这两种状态，不看成功/失败：
- * 历史行里工具恒为 success/failed，不会命中，因此不会把已完成的历史轮次误判成运行中。</p>
- */
-function hasPendingTool(toolCalls?: ToolCallTrace[]): boolean {
-  if (!toolCalls || toolCalls.length === 0) return false;
-  return toolCalls.some(call => call != null && (call.status === 'calling' || call.status === 'pending'));
-}
-
 // 复制反馈（消息正文按布尔键控；见 composables/useCopyFeedback.ts）
 const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
 
@@ -343,27 +333,22 @@ const cardItems = computed<PromptCardEntry[]>(() =>
     .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
 
+/** 本条气泡是否已带**本条轮次的终态证据**（判据在 utils/turnRunning，组件只读它）。 */
+const terminalEvidence = computed(() => hasTerminalEvidence(props.message));
+
 /**
  * 轮次是否**仍在运行**（权威判据，供「过程框展开态」与「工具条出现时机」共用）。
  *
- * <p>多轮工具调用期间会出现一个「守卫真空」：`handleToolCall` 清掉了
- * `isThinking` / `isExploring`（工具调用意味着本轮叙述告一段落），而后台 reconcile
- * 重建的行 `isComplete` 恒为 true，若此时 `turn.status` 尚未解析出来，所有既有守卫
- * 全部放行 —— 界面就会在轮次跑到一半时把过程框收起，且不再自动展开。</p>
- *
- * <p>这里补一条只看「事实」的判据：<b>只要有工具停在调用中 / 待定，轮次就没结束</b>。
- * 它不依赖 `isThinking` / `turn` 是否及时到位，因此不存在同样的真空。</p>
+ * <p>判定顺序（终态 → 实时标记 → 兜底）与每一道守卫的来历都在
+ * {@code utils/turnRunning.ts} 的 `resolveTurnRunning` 里，这里只负责喂 props：
+ * 它是消息渲染里最贵的一条判据，必须能被逐条单测钉住，而不是埋在模板附近。</p>
  */
-const isTurnRunning = computed(() => {
-  // 轮次终态已落定，历史工具残留与迟到的流状态都不能继续隐藏底栏。
-  if (isTerminalTurnStatus(String(props.turn?.status ?? '').toUpperCase()) || isTerminalTurn.value) return false;
-  if (props.message.isThinking || props.message.isExploring) return true;
-  if (props.message.isComplete === false) return true;
-  if (props.isSending && props.isLastAssistant) return true;
-  const status = String(props.turn?.status ?? '').toUpperCase();
-  if (isActiveTurnStatus(status)) return true;
-  return hasPendingTool(props.message.toolCalls);
-});
+const isTurnRunning = computed(() => resolveTurnRunning({
+  message: props.message,
+  turnStatus: props.turn?.status,
+  isSending: props.isSending === true,
+  isLastAssistant: props.isLastAssistant === true,
+}));
 
 /** 暂停不代表结束；历史残留的待确认工具不能重开已终结轮次。 */
 const processIsOngoing = computed(() => props.turn
@@ -384,10 +369,7 @@ const isMessageCompleted = computed(() => {
   // 那会把「旧数据 / 老会话」整片挡掉（工具条与收起行为全失效）。历史行的完成性由
   // isTurnRunning 里「已无未收尾工具」放行，不需要在这里再判一次。
   const status = String(props.turn?.status ?? '').toUpperCase();
-  const hasTerminalEvidence = props.message.durationMs != null
-    || props.message.tokenInfo != null
-    || props.message.tokens != null;
-  if (status !== '' && isActiveTurnStatus(status) && !hasTerminalEvidence) {
+  if (status !== '' && isActiveTurnStatus(status) && !terminalEvidence.value) {
     return false;
   }
   // 终态标记不依赖正文或轮次摘要是否已到，运行中的守卫仍须先判断。
