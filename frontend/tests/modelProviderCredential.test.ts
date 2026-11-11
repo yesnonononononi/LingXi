@@ -22,8 +22,9 @@ test('新增默认使用提供方密钥，保存显式来源且不回传密钥�
   state.modelForm.value.modelName = 'model';
   state.modelForm.value.apiKey = 'must-not-send';
   await state.saveModelForm();
+  // provider 是模型的高级选项（ModelAdvancedOptions 可编辑），载荷里必须原样回传
   assert.deepEqual(writes, [{ modelName: 'model', baseUrl: 'https://provider.invalid', vision: false,
-    apiKey: undefined, providerConfigId: '9007199254740993', useProvider: true }]);
+    provider: '', apiKey: undefined, providerConfigId: '9007199254740993', useProvider: true }]);
 });
 
 test('编辑读取后端来源，关闭时显式提交 false 与独立密钥', async t => {
@@ -38,7 +39,7 @@ test('编辑读取后端来源，关闭时显式提交 false 与独立密钥', a
   state.modelForm.value.apiKey = 'own-key';
   await state.saveModelForm();
   assert.deepEqual(writes, [{ id: '12', modelName: 'model', baseUrl: 'https://provider.invalid',
-    providerConfigId: '10', vision: false, useProvider: false, apiKey: 'own-key' }]);
+    provider: '', providerConfigId: '10', vision: false, useProvider: false, apiKey: 'own-key' }]);
   state.startEditModel({ id: '13', vision: false, useProvider: false });
   assert.equal(state.modelForm.value.useProvider, false);
 });

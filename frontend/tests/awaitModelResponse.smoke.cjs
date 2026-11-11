@@ -15,7 +15,10 @@ const deadline = setTimeout(() => { console.error('等待占位验证超时'); a
 app.whenReady().then(async () => {
   const component = await fs.readFile(path.join(root, 'src/components/chat/ChatProcessSegment.vue'), 'utf8');
   const script = component.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1];
-  const deferred = /\b(?:setTimeout|setInterval|requestAnimationFrame|watch|onMounted|onUnmounted)\s*\(/;
+  // 延迟展示必须由 CSS 承担：脚本里不许有任何定时器调度。
+  // `watch` 不在此列：段组件用它把贴底滚动重新绑到新的滚动容器上，与「延迟展示」无关，
+  // 把它一并禁掉等于让滚动跟随和等待占位互斥。
+  const deferred = /\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/;
   assert.ok(deferred.test('setTimeout(() => {}, 800)'), '扫描器须命中正对照');
   assert.doesNotMatch(script, deferred, '展示延迟不得引入调度回调');
   await fs.mkdir(output, {recursive: true});

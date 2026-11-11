@@ -913,11 +913,13 @@ test('过程区行样式统一：终端描述与工具行同字号同色，深�
       const thinking = find(root, node => node.tag === 'button' && text(node) === '深度思考');
       assert.ok(description);
       assert.ok(thinking);
-      // 过程区同一层级的行必须同字号：13px 是工具行与思考标题的共同取值（2026-10-21 统一）。
-      assert.match(description.props.class, /text-\[13px\]/, '终端描述必须与工具行/思考标题同为 13px');
-      assert.match(thinking.parent.props.class, /text-\[13px\]/, '思考标题行必须同为 13px');
+      // 过程区同一层级的行必须同字号：`text-lx-fs-lg` 即 13px（`--lx-font-size-lg`，
+      // 随 `--lx-font-scale` 缩放），历史上写死 `text-[13px]` 的写法同样算合格。
+      const rowFontSize = /text-(?:lx-fs-lg|\[13px\])/;
+      assert.match(description.props.class, rowFontSize, '终端描述必须与工具行/思考标题同为 13px');
+      assert.match(thinking.parent.props.class, rowFontSize, '思考标题行必须同为 13px');
       // 工具行容器是"读取/查看"这类工具标题的唯一字号来源（标题本身不带字号类），一并锁住。
-      assert.match(description.parent.props.class, /text-\[13px\]/, '工具行容器必须为 13px');
+      assert.match(description.parent.props.class, rowFontSize, '工具行容器必须为 13px');
       const colors = isDark ? ['text-zinc-100'] : ['text-zinc-700'];
       for (const color of colors) {
         assert.equal(description.props.class.split(' ').includes(color), true, `终端描述必须与工具行同色：${color}`);

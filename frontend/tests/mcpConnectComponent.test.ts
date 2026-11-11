@@ -45,14 +45,29 @@ test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功
   let finish!: (result: Result<McpConnectionVO>) => void;
   const connect = t.mock.method(McpAPI, 'connect', () => new Promise<Result<McpConnectionVO>>(resolve => { finish = resolve; }));
   const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const previousDocumentType = Object.getOwnPropertyDescriptor(globalThis, 'Document');
   const previousShadowRootType = Object.getOwnPropertyDescriptor(globalThis, 'ShadowRoot');
-  Object.defineProperty(globalThis, 'document', { value: { activeElement: null }, configurable: true });
+  // 外壳的 LxSelect 在挂载时注册「点外面关闭」的 document / window 监听（pointerdown /
+  // mousedown / keydown / resize / scroll），假环境必须提供这两个入口，否则 onMounted 直接抛错。
+  const noop = () => {};
+  Object.defineProperty(globalThis, 'document', {
+    value: { activeElement: null, addEventListener: noop, removeEventListener: noop }, configurable: true,
+  });
+  Object.defineProperty(globalThis, 'window', {
+    value: { addEventListener: noop, removeEventListener: noop }, configurable: true,
+  });
   Object.defineProperty(globalThis, 'Document', { value: class TestDocument {}, configurable: true });
   Object.defineProperty(globalThis, 'ShadowRoot', { value: class TestShadowRoot {}, configurable: true });
+  // 卸载要用到组件里注册的 document / window 监听，所以清理顺序固定为「先卸载、后还原全局」。
+  let unmountApp: (() => void) | null = null;
   t.after(() => {
+    unmountApp?.();
+    unmountApp = null;
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
     else Reflect.deleteProperty(globalThis, 'document');
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
     if (previousDocumentType) Object.defineProperty(globalThis, 'Document', previousDocumentType);
     else Reflect.deleteProperty(globalThis, 'Document');
     if (previousShadowRootType) Object.defineProperty(globalThis, 'ShadowRoot', previousShadowRootType);
@@ -88,7 +103,7 @@ test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功
   const root = element('root');
   const app = renderer.createApp(component, { isDark: true });
   app.mount(root);
-  t.after(() => app.unmount());
+  unmountApp = () => app.unmount();
   await nextTick();
   await Promise.resolve();
   await nextTick();

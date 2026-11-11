@@ -70,7 +70,8 @@ test('层级契约：details → div.space-y-2.5 → renderer 根元素（不再
 
   const rows = elementChildren(rowsContainer);
   assert.equal(rows.length, 3, '思考 / 协同条 / 工具行各一行，且没有额外包裹层');
-  assert.equal(rows[0].props.class, 'text-[13px] space-y-1', '思考 renderer 根 class 逐字保留');
+  // 字号统一走 `--lx-font-size-lg` 令牌（=13px，随字体缩放），renderer 根的 class 逐字保留。
+  assert.equal(rows[0].props.class, 'text-lx-fs-lg space-y-1', '思考 renderer 根 class 逐字保留');
   const collabClass = 'w-full min-w-0 px-3.5 py-2.5 rounded-2xl border flex items-center '
     + 'justify-between gap-3 text-xs select-none transition-colors overflow-hidden';
   assert.ok(String(rows[1].props.class).startsWith(collabClass),

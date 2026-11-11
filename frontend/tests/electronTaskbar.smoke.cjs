@@ -3,9 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const { createRequire } = require('node:module');
 const electron = require('electron');
 
 const frontendRoot = path.resolve(__dirname, '..');
+// 主进程脚本里的 require 语义以 electron/ 为基准，桩函数必须沿用同一基准。
+const electronRequire = createRequire(path.join(frontendRoot, 'electron', 'main.cjs'));
 let source = fs.readFileSync(path.join(frontendRoot, 'electron/main.cjs'), 'utf8');
 if (process.argv.includes('--omit-taskbar-details')) {
   const original = source;
@@ -84,16 +87,37 @@ function createMainWindow(isPackaged) {
     requestSingleInstanceLock: () => true,
     whenReady: () => ({ then() {} }), on() {},
   };
+  // 主进程自己的模块（经 electronRequire 真加载）同样会 require('electron')，
+  // 所以桩必须挂在「按 electron/ 解析」这条路径上，而不只是 vm 里的 require。
+  const ipcMain = {
+    handle() { return ipcMain; }, on() { return ipcMain; }, once() { return ipcMain; },
+    removeHandler() {}, removeAllListeners() {},
+  };
+  // protocol 的方案特权注册必须在 app ready 之前完成，本冒烟是在 ready 之后才执行主进程脚本，
+  // 真实模块会直接抛错；任务栏用例不关心协议层，桩掉即可。
+  const protocol = {
+    registerSchemesAsPrivileged() {}, handle() {}, unhandle() {},
+    registerBufferProtocol() {}, registerFileProtocol() {}, registerStringProtocol() {},
+  };
+  const electronStub = { ...electron, app, BrowserWindow: ProbeWindow, ipcMain, protocol };
+  const stubRequire = name => name === 'electron' ? electronStub : electronRequire(name);
   const context = vm.createContext({
     require(name) {
-      if (name === 'electron') return { ...electron, app, BrowserWindow: ProbeWindow, ipcMain: { handle() {} } };
+      if (name === 'electron') return electronStub;
       if (name === './backend.cjs') return {};
       if (name === './file-preview.cjs') return { registerFilePreview: () => () => {} };
       if (name === './notification-window.cjs') return { registerNotificationWindow: () => ({}) };
       // 主页背景 IPC（L2）：主进程新增的模块，这里只需桩掉注册入口，本用例不关心它
       if (name === './background-images.cjs') return { registerBackgroundImages: () => ({ close() {} }) };
       if (name === './updater.cjs') return { createUpdater: () => ({}) };
-      return require(name);
+      // lx 自定义协议的特权注册只能在 app ready 之前调用，模块内部自己 require('electron')，
+      // 拿不到本桩的真实模块会在 ready 之后抛错；任务栏用例与协议层无关，桩掉两个注册入口。
+      if (name === './lx-protocol.cjs') {
+        return { registerLxSchemePrivileges() {}, registerLxProtocol() {} };
+      }
+      // 主进程的裸相对 require 必须按 electron/ 目录解析：这里是 vm 里的桩，
+      // 直接调本文件的 require 会把 './x.cjs' 解析成 tests/x.cjs（MODULE_NOT_FOUND）。
+      return stubRequire(name);
     },
     __dirname: path.join(frontendRoot, 'electron'),
     process: { platform: 'win32', execPath: process.execPath, argv: [], env: {} },

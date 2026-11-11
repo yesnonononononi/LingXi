@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const { createRequire } = require('node:module');
 const http = require('node:http');
 const { buildSync, transformSync } = require('esbuild');
 // 路径比较只有一个口径：先把路径规范成长名（见 tests/support/tmp-paths.cjs 文件头）。
@@ -16,9 +17,12 @@ function loadViteConfig() {
   const source = fs.readFileSync(path.join(__dirname, '../vite.config.ts'), 'utf8');
   const code = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
   const module = { exports: {} };
+  // 配置里的裸相对 require（如 './scripts/pet-asset-isolation.mjs'）必须以 vite.config.ts
+  // 所在目录为基准解析；用本文件的 require 会解析成 tests/scripts/*，直接 MODULE_NOT_FOUND。
+  const configRequire = createRequire(path.join(__dirname, '../vite.config.ts'));
   vm.runInNewContext(code, { module, exports: module.exports, __dirname,
     require: name => name === 'vite' ? { defineConfig: value => value }
-      : name === '@vitejs/plugin-vue' ? () => ({}) : require(name) });
+      : name === '@vitejs/plugin-vue' ? () => ({}) : configRequire(name) });
   return module.exports.default;
 }
 
