@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceCommand;
+import com.summit.dp.device.application.model.DeviceCommandAck;
 import com.summit.dp.device.application.model.ObserveRequest;
 import com.summit.dp.device.application.model.ObserveSnapshot;
 import com.summit.dp.device.application.model.StopResult;
 import com.summit.dp.device.application.port.DeviceChannel;
+import com.summit.dp.device.application.port.DeviceCommandHandler;
 import com.summit.dp.device.application.port.DeviceUnavailableException;
 import com.summit.dp.device.domain.Device;
 import com.summit.dp.device.interfaces.ws.DeviceWsProperties;
@@ -23,6 +26,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /**
  * 通过 WSS 与真实 Android 设备通信的通道实现。
@@ -52,6 +56,15 @@ public class WsDeviceChannel implements DeviceChannel {
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean alive = new AtomicBoolean(true);
 
+    /**
+     * 指令处理器的取用方式。
+     *
+     * <p>用 {@link Supplier} 而不是在构造期注入实例：处理器在工作流模块，它依赖整条会话编排，
+     * 构造期强解析会把一条本可以懒加载的依赖链拖进握手路径，也更容易在启动时撞上循环依赖。
+     * 用 Supplier 而不是 ObjectProvider，是为了让这个通道能在测试里直接注入一个 lambda。</p>
+     */
+    private final Supplier<DeviceCommandHandler> commandHandler;
+
     public WsDeviceChannel(WebSocketSession session,
                            ObjectMapper mapper,
                            DevicePayloadMapper payloadMapper,
@@ -59,6 +72,17 @@ public class WsDeviceChannel implements DeviceChannel {
                            SeqGuard seqGuard,
                            DeviceWsProperties properties,
                            Device device) {
+        this(session, mapper, payloadMapper, pending, seqGuard, properties, device, null);
+    }
+
+    public WsDeviceChannel(WebSocketSession session,
+                           ObjectMapper mapper,
+                           DevicePayloadMapper payloadMapper,
+                           PendingResponses pending,
+                           SeqGuard seqGuard,
+                           DeviceWsProperties properties,
+                           Device device,
+                           Supplier<DeviceCommandHandler> commandHandler) {
         this.session = session;
         this.mapper = mapper;
         this.payloadMapper = payloadMapper;
@@ -66,6 +90,7 @@ public class WsDeviceChannel implements DeviceChannel {
         this.seqGuard = seqGuard;
         this.properties = properties;
         this.device = new AtomicReference<>(device);
+        this.commandHandler = commandHandler;
     }
 
     @Override
@@ -188,9 +213,62 @@ public class WsDeviceChannel implements DeviceChannel {
                     pending.complete(relatedId, message);
                 }
             }
+            case "device_command" -> handleDeviceCommand(message);
             default -> log.warn("收到未预期的设备消息类型: type={}, deviceId={}", message.type(), message.deviceId());
         }
         return true;
+    }
+
+    /**
+     * 设备主动指令：交给处理器决定受理与否，然后把回执发回去。
+     *
+     * <p>这里刻意不允许抛到外层：一条畸形指令不该把整条连接打成异常。
+     * 解析失败也要回执——手机在等结果，沉默等于让它超时。</p>
+     */
+    private void handleDeviceCommand(WireMessage message) {
+        DeviceCommand command;
+        try {
+            command = payloadMapper.toCommand(message);
+        } catch (IllegalArgumentException malformed) {
+            log.warn("device_command 解析失败: deviceId={}, reason={}", device.get().deviceId(), malformed.getMessage());
+            sendAck(DeviceCommandAck.rejected(commandIdOrUnknown(message), "指令格式非法: " + malformed.getMessage()));
+            return;
+        }
+        DeviceCommandAck ack;
+        try {
+            DeviceCommandHandler handler = commandHandler == null ? null : commandHandler.get();
+            if (handler == null) {
+                // 没有处理器就是"本进程不支持手机指令"，如实回绝，不要假装受理
+                ack = DeviceCommandAck.rejected(command.commandId(), "桌面端未装配手机指令处理器");
+            } else {
+                ack = handler.handle(device.get().deviceId(), command);
+            }
+        } catch (RuntimeException failure) {
+            log.warn("处理设备指令失败: deviceId={}, commandId={}",
+                    device.get().deviceId(), command.commandId(), failure);
+            ack = DeviceCommandAck.rejected(command.commandId(), "桌面端处理失败: " + failure.getMessage());
+        }
+        if (ack == null) {
+            ack = DeviceCommandAck.rejected(command.commandId(), "处理器未返回回执");
+        }
+        sendAck(ack);
+    }
+
+    private void sendAck(DeviceCommandAck ack) {
+        try {
+            send("device_command_ack", "ack-" + ack.commandId(), payloadMapper.commandAckPayload(ack));
+        } catch (RuntimeException failure) {
+            log.warn("指令回执发送失败: deviceId={}, commandId={}", device.get().deviceId(), ack.commandId(),
+                    failure);
+        }
+    }
+
+    private String commandIdOrUnknown(WireMessage message) {
+        try {
+            return payloadMapper.commandIdOf(message.payload());
+        } catch (RuntimeException ignored) {
+            return "unknown";
+        }
     }
 
     /** 连接关闭：让所有等待者立刻失败，别让线程干等到超时。 */

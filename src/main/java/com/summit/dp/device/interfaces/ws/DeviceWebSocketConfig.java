@@ -3,8 +3,10 @@ package com.summit.dp.device.interfaces.ws;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.device.application.DeviceRegistry;
 import com.summit.dp.device.application.DeviceToolService;
+import com.summit.dp.device.application.port.DeviceCommandHandler;
 import com.summit.dp.device.infrastructure.ws.DevicePayloadMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -47,16 +49,19 @@ public class DeviceWebSocketConfig implements WebSocketConfigurer {
     private final DevicePayloadMapper payloadMapper;
     private final DeviceRegistry registry;
     private final DeviceToolService deviceToolService;
+    private final ObjectProvider<DeviceCommandHandler> deviceCommandHandler;
 
     public DeviceWebSocketConfig(DeviceWsProperties properties,
                                  ObjectMapper objectMapper,
                                  DeviceRegistry registry,
-                                 DeviceToolService deviceToolService) {
+                                 DeviceToolService deviceToolService,
+                                 ObjectProvider<DeviceCommandHandler> deviceCommandHandler) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.payloadMapper = new DevicePayloadMapper(objectMapper);
         this.registry = registry;
         this.deviceToolService = deviceToolService;
+        this.deviceCommandHandler = deviceCommandHandler;
     }
 
     @Override
@@ -64,7 +69,7 @@ public class DeviceWebSocketConfig implements WebSocketConfigurer {
         // 就地创建：本类既是配置类又是 WebSocketConfigurer，构造期注入本类定义的 Bean 会成环；
         // 就地创建也保证「注册表里的设备」与「handler 手里的设备」是同一份
         DeviceWebSocketHandler handler = new DeviceWebSocketHandler(
-                objectMapper, payloadMapper, properties, registry, deviceToolService);
+                objectMapper, payloadMapper, properties, registry, deviceToolService, deviceCommandHandler);
         handlerRegistry.addHandler(handler, properties.getPath())
                 .addInterceptors(tokenInterceptor())
                 // Android 原生客户端不发 Origin，这里放开来源限制；真正的访问控制靠

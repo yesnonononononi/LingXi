@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.DeviceRegistry;
 import com.summit.dp.device.application.DeviceToolService;
+import com.summit.dp.device.application.port.DeviceCommandHandler;
 import com.summit.dp.device.domain.Device;
 import com.summit.dp.device.domain.DeviceCapability;
 import com.summit.dp.device.domain.DeviceScreen;
 import com.summit.dp.device.infrastructure.ws.DevicePayloadMapper;
 import com.summit.dp.device.infrastructure.ws.WsDeviceChannel;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -40,17 +42,28 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final DeviceWsProperties properties;
     private final DeviceRegistry registry;
     private final DeviceToolService deviceToolService;
+    private final ObjectProvider<DeviceCommandHandler> commandHandler;
 
     public DeviceWebSocketHandler(ObjectMapper mapper,
                                   DevicePayloadMapper payloadMapper,
                                   DeviceWsProperties properties,
                                   DeviceRegistry registry,
                                   DeviceToolService deviceToolService) {
+        this(mapper, payloadMapper, properties, registry, deviceToolService, null);
+    }
+
+    public DeviceWebSocketHandler(ObjectMapper mapper,
+                                  DevicePayloadMapper payloadMapper,
+                                  DeviceWsProperties properties,
+                                  DeviceRegistry registry,
+                                  DeviceToolService deviceToolService,
+                                  ObjectProvider<DeviceCommandHandler> commandHandler) {
         this.mapper = mapper;
         this.payloadMapper = payloadMapper;
         this.properties = properties;
         this.registry = registry;
         this.deviceToolService = deviceToolService;
+        this.commandHandler = commandHandler;
     }
 
     @Override
@@ -98,7 +111,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
             WsDeviceChannel channel = new WsDeviceChannel(
                     session, mapper, payloadMapper,
                     new PendingResponses(), new SeqGuard(),
-                    properties, device);
+                    properties, device, commandHandler == null ? null : commandHandler::getIfAvailable);
 
             session.getAttributes().put(ATTR_DEVICE_ID, device.deviceId());
             session.getAttributes().put("channel", channel);

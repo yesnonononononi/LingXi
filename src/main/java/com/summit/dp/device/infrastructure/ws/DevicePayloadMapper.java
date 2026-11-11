@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.dp.device.application.model.ActionOutcome;
 import com.summit.dp.device.application.model.ActionRequest;
+import com.summit.dp.device.application.model.DeviceCommand;
+import com.summit.dp.device.application.model.DeviceCommandAck;
 import com.summit.dp.device.application.model.NormalizedBounds;
 import com.summit.dp.device.application.model.DeviceScreenshot;
 import com.summit.dp.device.application.model.ObserveRequest;
@@ -247,4 +249,51 @@ public class DevicePayloadMapper {
         JsonNode node = payload == null ? null : payload.get("actionId");
         return node == null || node.isNull() ? null : node.asText();
     }
+    /** device_command 里的 commandId；用于解析失败时也能回一条带关联键的回执。 */
+    public String commandIdOf(JsonNode payload) {
+        JsonNode node = payload == null ? null : payload.get("commandId");
+        return node == null || node.isNull() || node.asText().isBlank() ? "unknown" : node.asText();
+    }
+
+    /**
+     * 解析设备指令。
+     *
+     * <p>{@code text} 与 {@code commandId} 缺失一律报错：这两者缺任何一个，
+     * "受理"都会变成一笔糊涂账——要么不知道要不要跑，要么不知道重放时算不算同一条。</p>
+     */
+    public DeviceCommand toCommand(WireMessage message) {
+        JsonNode payload = message == null ? null : message.payload();
+        if (payload == null || !payload.isObject()) {
+            throw new IllegalArgumentException("device_command 缺少 payload");
+        }
+        String commandId = requireText(payload, "commandId");
+        String text = requireText(payload, "text");
+        Long sessionId = null;
+        JsonNode session = payload.get("sessionId");
+        if (session != null && !session.isNull()) {
+            if (!session.canConvertToLong() || session.asLong() <= 0) {
+                throw new IllegalArgumentException("device_command 的 sessionId 非法: " + session);
+            }
+            sessionId = session.asLong();
+        }
+        return new DeviceCommand(commandId, text, sessionId);
+    }
+
+    /** 指令回执载荷。字段语义与 schema 的 deviceCommandAck 一一对应。 */
+    public ObjectNode commandAckPayload(DeviceCommandAck ack) {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("commandId", ack.commandId());
+        payload.put("accepted", ack.accepted());
+        if (ack.sessionId() != null) {
+            payload.put("sessionId", ack.sessionId());
+        }
+        if (ack.pendingId() != null && !ack.pendingId().isBlank()) {
+            payload.put("pendingId", ack.pendingId());
+        }
+        if (ack.reason() != null && !ack.reason().isBlank()) {
+            payload.put("reason", ack.reason());
+        }
+        return payload;
+    }
+
 }

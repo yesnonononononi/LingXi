@@ -92,6 +92,26 @@ public class DeviceWsProperties {
         return Duration.ofMillis(capped);
     }
 
+    /**
+     * 是否允许设备主动发起指令（手机 → 电脑）。
+     *
+     * <p><b>默认关闭是有意的</b>：允许设备发任意 prompt，等于把电脑的命令行交给手机。
+     * 这个端点能不能被外部访问，取决于监听地址与 token；但"能不能遥控电脑跑任务"
+     * 必须是运维者显式打开的第二道闸，不能因为"连上了"就默认成立。</p>
+     *
+     * <p>关闭时回 {@code accepted=false} 并说明原因，绝不静默丢弃——
+     * 否则手机端只会看到转圈。</p>
+     */
+    private boolean commandEnabled = false;
+
+    public boolean isCommandEnabled() {
+        return commandEnabled;
+    }
+
+    public void setCommandEnabled(boolean commandEnabled) {
+        this.commandEnabled = commandEnabled;
+    }
+
     /** 允许接入的设备数上限。当前是 1，为多设备预留。 */
     private int maxDevices = 1;
 
