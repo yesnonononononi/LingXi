@@ -234,7 +234,7 @@ const submit = (): void => {
 /* 输入框 + 内嵌右箭头：箭头绝对定位在输入框末尾，输入框右侧预留同宽内边距，文字不会压到箭头上 */
 .address-field { position: relative; display: flex; flex: 1; min-width: 0; }
 .address-input { flex: 1; min-width: 0; padding: 6px 32px 6px 10px; font-size: var(--lx-font-size-md); font-family: inherit; color: inherit; background: var(--file-tab, #f4f4f5); border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
-.address-input:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: -2px; }
+.address-input:focus-visible { outline: none }
 .address-go { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--file-muted, #71717a); cursor: pointer; transition: background-color .12s, color .12s; }
 .address-go svg { width: 16px; height: 16px; }
 .address-go:hover:not(:disabled) { background: var(--file-line, #e4e4e7); color: var(--file-ink, #18181b); }
