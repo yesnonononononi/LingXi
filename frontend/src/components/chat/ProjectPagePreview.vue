@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{active?: boolean}>(), {active: true});
 const preview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
 const nativeAvailable = typeof window.electronAPI?.projectPage?.command === 'function';
 const frameArea = ref<HTMLElement | null>(null);
+const tabsBar = ref<HTMLElement | null>(null);
 const addressField = ref<HTMLInputElement | null>(null);
 let animationFrame = 0;
 let resizeObserver: ResizeObserver | undefined;
@@ -34,19 +35,27 @@ const syncViewport = (): void => {
   preview.updateLayout(layout);
 };
 
-/** 标签居中只更新容器 scrollLeft，不调用 scrollIntoView 避免祖先窗口横向漂移 */
+/**
+ * 标签居中只更新容器 scrollLeft，不调用 scrollIntoView 避免祖先窗口横向漂移。
+ *
+ * <p>容器必须取标签栏本身：`#page-tab-*` 是标签内的按钮，`parentElement` 只是
+ * `.page-tab`（不可滚动），往它上面写 scrollLeft 等于什么都没做 —— 面板被拖窄后
+ * 当前标签就停在可视区外。位置用两边 getBoundingClientRect 求差，不依赖 offsetParent。</p>
+ */
 const scrollActiveTabIntoView = (): void => {
   const activeId = preview.activeTabId.value;
   if (!activeId) return;
   const tabEl = document.getElementById(`page-tab-${activeId}`);
-  const container = tabEl?.parentElement;
+  const container = tabsBar.value;
   if (!tabEl || !container) return;
-  const tabLeft = tabEl.offsetLeft;
-  const tabRight = tabLeft + tabEl.offsetWidth;
-  if (tabLeft < container.scrollLeft) {
-    container.scrollLeft = tabLeft;
-  } else if (tabRight > container.scrollLeft + container.clientWidth) {
-    container.scrollLeft = tabRight - container.clientWidth;
+  // 关闭按钮与标签同属 .page-tab，取外层标签框保证按钮一起进入可视区。
+  const tabBox = (tabEl.closest('.page-tab') as HTMLElement | null) ?? tabEl;
+  const tabRect = tabBox.getBoundingClientRect();
+  const barRect = container.getBoundingClientRect();
+  if (tabRect.left < barRect.left) {
+    container.scrollLeft -= barRect.left - tabRect.left;
+  } else if (tabRect.right > barRect.right) {
+    container.scrollLeft += tabRect.right - barRect.right;
   }
 };
 
@@ -61,9 +70,12 @@ watch(() => [props.active, preview.open.value, preview.generation.value, preview
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {
     scheduleViewport();
-    scrollActiveTabIntoView();
+    // 面板被拖窄时标签栏自身变窄，但没有任何状态变化会触发重排滚位：
+    // 必须盯住标签栏自己的宽度，并在布局落定后的下一帧再算一次。
+    requestAnimationFrame(scrollActiveTabIntoView);
   });
   if (frameArea.value) resizeObserver.observe(frameArea.value);
+  if (tabsBar.value) resizeObserver.observe(tabsBar.value);
   mutationObserver = new MutationObserver(scheduleViewport);
   mutationObserver.observe(document.body, {subtree: true, childList: true, attributes: true,
     attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-modal']});
@@ -139,7 +151,7 @@ const submit = (): void => {
 <template>
   <div class="project-page-preview">
     <div class="tab-bar">
-      <div class="page-tabs" role="tablist" :aria-label="t('projectPagePreview.tabsLabel')"
+      <div ref="tabsBar" class="page-tabs" role="tablist" :aria-label="t('projectPagePreview.tabsLabel')"
         @keydown.right.prevent="moveTab(1)" @keydown.left.prevent="moveTab(-1)">
         <div v-for="tab in tabs" :key="tab.id" class="page-tab" :class="{'is-active': tab.id === activeTabId}" role="presentation">
           <button :id="`page-tab-${tab.id}`" type="button" role="tab" class="tab-label" :aria-selected="tab.id === activeTabId"
@@ -234,7 +246,7 @@ const submit = (): void => {
 /* 输入框 + 内嵌右箭头：箭头绝对定位在输入框末尾，输入框右侧预留同宽内边距，文字不会压到箭头上 */
 .address-field { position: relative; display: flex; flex: 1; min-width: 0; }
 .address-input { flex: 1; min-width: 0; padding: 6px 32px 6px 10px; font-size: var(--lx-font-size-md); font-family: inherit; color: inherit; background: var(--file-tab, #f4f4f5); border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; }
-.address-input:focus-visible { outline: none }
+.address-input:focus-visible { outline: 1px solid var(--file-focus, #a1a1aa); outline-offset: -1px; }
 .address-go { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--file-muted, #71717a); cursor: pointer; transition: background-color .12s, color .12s; }
 .address-go svg { width: 16px; height: 16px; }
 .address-go:hover:not(:disabled) { background: var(--file-line, #e4e4e7); color: var(--file-ink, #18181b); }

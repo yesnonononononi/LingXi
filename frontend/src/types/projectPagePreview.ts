@@ -41,7 +41,8 @@ export interface ShowWithAgentPayload {
   url: string;
   title?: string;
   selectionText?: string;
-  imageBuffer: Uint8Array;
+  /** 主进程回传的 PNG 字节；必须是 ArrayBuffer 支撑（Blob 构造要求），不是 SharedArrayBuffer。 */
+  imageBuffer: Uint8Array<ArrayBuffer>;
 }
 
 /** 坐标使用主页面 CSS 像素，主进程负责按缩放比例转换。 */
