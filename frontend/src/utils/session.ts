@@ -135,8 +135,18 @@ export interface SessionActiveOptions {
   isGenerating?: boolean;
   /** 当前处于选中态的会话 ID */
   activeSessionId?: string | number | null;
-  /** 权威全局状态字典（可选） */
-  applicationStates?: Map<string, { runStatus?: string | null; renderStatus?: string | null; rootSessionId?: string | number | null }>;
+  /**
+   * 权威全局状态字典（可选）：键是会话 ID，值是投影后的运行态。
+   *
+   * <p>`id` 参与匹配：字典的键与实体 ID 都可能是字符串形态的雪花 ID，
+   * 而调用方（`applicationSessions.states`）的值本身带 `id`，用它兜住「键与实体 id 写法不一致」。</p>
+   */
+  applicationStates?: Map<string, {
+    id?: string | number | null;
+    runStatus?: string | null;
+    renderStatus?: string | null;
+    rootSessionId?: string | number | null;
+  }>;
 }
 
 /**
