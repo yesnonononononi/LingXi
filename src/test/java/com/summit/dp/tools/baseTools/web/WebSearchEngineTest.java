@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.model.application.service.ModelChatGateway;
 import com.summit.dp.workflow.infrastructure.tools.arguments.WebSearchArguments;
 import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
@@ -257,7 +258,9 @@ class WebSearchEngineTest {
     @Test
     @DisplayName("真实摘要器在模型不可用时返回 null（内部把异常转 null，而不是返回原始内容）")
     void realSummarizerReturnsNullInsteadOfRawContent() {
-        WebResultSummarizer summarizer = new WebResultSummarizer(null);
+        ModelChatGateway unavailable = mock(ModelChatGateway.class);
+        when(unavailable.chat(any(), any(), any())).thenThrow(new IllegalStateException("compact model unavailable"));
+        WebResultSummarizer summarizer = new WebResultSummarizer(unavailable, null);
 
         assertNull(summarizer.summary(bodyOfLength(THRESHOLD + 1)));
         assertNull(summarizer.summary(null));

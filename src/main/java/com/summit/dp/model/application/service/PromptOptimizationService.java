@@ -1,15 +1,8 @@
 package com.summit.dp.model.application.service;
 
 import com.summit.core.conf.ModelConfig;
-import com.summit.core.conversation.api.ChatRequestEntity;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.summit.core.conversation.message.SystemMessageEntity;
-import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.model.DefaultModelProviderNames;
-import com.summit.core.model.ModelChatCommand;
-import com.summit.core.model.ModelProviderRouting;
-import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
@@ -18,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.List;
 
 /** 优化只生成待确认的草稿，不进入聊天执行和工具循环。 */
 @Service
@@ -38,7 +30,7 @@ public class PromptOptimizationService {
 
     private final ModelService modelService;
     private final SettingsProvider settingsProvider;
-    private final RequestModelInvokerFactory invokerFactory;
+    private final ModelChatGateway chatGateway;
 
     public String optimize(String prompt, Long modelId) {
         throwIf(prompt == null || prompt.isBlank(), "请输入需要优化的提示词");
@@ -50,22 +42,10 @@ public class PromptOptimizationService {
 
         ModelConfig config = modelService.runtimeConfig(selectedModelId, settings).toBuilder()
                 .returnThinking(false).sendThinking(false).maxTokens(8192).timeout(Duration.ofSeconds(60)).build();
-        String provider = ModelProviderRouting.chatProvider(config.getProvider(), config.getModelName(), false);
-        // 内置流式连接有对应的同步 Provider，优化无需启动流式事件链路。
-        if (DefaultModelProviderNames.DEFAULT_STREAMING.equals(provider)) provider = DefaultModelProviderNames.DEFAULT;
-        if (DefaultModelProviderNames.ANTHROPIC_STREAMING.equals(provider)) provider = DefaultModelProviderNames.ANTHROPIC;
-        config.setProvider(provider);
-        RequestModelInvokerFactory.Selection selection = invokerFactory.select(config);
-        throwIf(selection.streaming(), "所选模型连接仅支持流式调用，请选择支持文本同步调用的模型");
-
-        ChatRequestEntity request = ChatRequestEntity.builder()
-                .messages(List.of(SystemMessageEntity.builder().text(SYSTEM_PROMPT).build(), UserMessageEntity.from(prompt)))
-                .tools(List.of())
-                .build();
         ChatResponseEntity response;
         try {
-            response = selection.invoker().invoke(() -> ModelChatCommand.builder()
-                    .chatRequest(request).streaming(false).thinking(false).build());
+            // 连接名的同步归一化在 gateway 内完成，这里只关心一次文本调用。
+            response = chatGateway.chat(config, SYSTEM_PROMPT, prompt);
         } catch (Exception error) {
             log.warn("优化提示词失败: modelId={}", selectedModelId, error);
             throw new ClientException("提示词优化失败，请检查模型连接后重试");

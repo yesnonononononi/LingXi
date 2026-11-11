@@ -2,10 +2,9 @@ package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conf.ModelConfig;
-import com.summit.core.model.ModelProviderRegistry;
-import com.summit.core.model.chat.ChatModel;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolDefinition;
+import com.summit.dp.model.application.service.ModelChatGateway;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
@@ -80,17 +79,11 @@ public class CommonToolConfiguration {
         );
     }
 
-    /** 压缩模型直接使用框架提供的 compact 配置。 */
+    /** 摘要走通用模型调用点，连接用框架的 compact 配置（无思考、独立输出预算）。 */
     @Bean
-    public ChatModel defaultContextCompactModel(
-            ModelProviderRegistry<ChatModel> chatModelProviderRegistry,
-            @Qualifier("compactContextModelConfig") ModelConfig config) {
-        return chatModelProviderRegistry.create(config);
-    }
-
-    @Bean
-    public WebResultSummarizer resultSummarizer(@Qualifier("defaultContextCompactModel") ChatModel chatModel) {
-        return new WebResultSummarizer(chatModel);
+    public WebResultSummarizer resultSummarizer(ModelChatGateway modelChatGateway,
+                                               @Qualifier("compactContextModelConfig") ModelConfig compactConfig) {
+        return new WebResultSummarizer(modelChatGateway, compactConfig);
     }
 
 }

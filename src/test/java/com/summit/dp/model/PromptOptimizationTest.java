@@ -6,24 +6,19 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.summit.core.conversation.message.SystemMessageEntity;
-import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.model.ModelChatCommand;
-import com.summit.core.model.ModelInvoker;
 import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.ModelProvider;
 import com.summit.core.model.ModelProviderRegistry;
-import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.model.chat.ChatModel;
-import com.summit.core.model.streaming.StreamingChatModel;
+import com.summit.dp.model.Infrastructure.model.RegistryModelChatGateway;
 import com.summit.dp.model.api.controller.PromptOptimizationController;
+import com.summit.dp.model.application.service.ModelChatGateway;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.service.PromptOptimizationService;
 import com.summit.dp.shared.config.GlobalExceptionHandler;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
-import com.summit.runtime.model.DefaultRequestModelInvokerFactory;
 import com.sun.net.httpserver.HttpServer;
 import openAi.DefaultChatModel;
 import openAi.MessageSerializer;
@@ -45,7 +40,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -60,9 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PromptOptimizationTest {
     private final ModelService models = mock(ModelService.class);
     private final SettingsProvider settings = mock(SettingsProvider.class);
-    private final RequestModelInvokerFactory factory = mock(RequestModelInvokerFactory.class);
-    private final ModelInvoker invoker = mock(ModelInvoker.class);
-    private final PromptOptimizationService service = new PromptOptimizationService(models, settings, factory);
+    private final ModelChatGateway gateway = mock(ModelChatGateway.class);
+    private final PromptOptimizationService service = new PromptOptimizationService(models, settings, gateway);
     private final SettingsView current = new SettingsView(null, null, null, null, 7L, 99L, 258000, "medium", null, 10);
 
     @BeforeEach
@@ -70,30 +63,25 @@ class PromptOptimizationTest {
         when(settings.current()).thenReturn(Optional.of(current));
         when(models.runtimeConfig(any(), eq(current))).thenReturn(ModelConfig.builder()
                 .baseUrl("https://example.invalid/v1").apiKey("test-key").modelName("text-model").build());
-        when(factory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection("default", invoker, false));
-        when(invoker.invoke(any())).thenReturn(response("优化后的提示词"));
+        when(gateway.chat(any(), any(), any())).thenReturn(response("优化后的提示词"));
     }
 
     @Test
-    void usesExplicitModelAndOnlyTwoTextMessagesWithNoTools() throws Exception {
+    void usesExplicitModelAndPassesOriginalPromptWithNoThinkingBudget() throws Exception {
         String original = "  先修复问题，再设计方案；Agent=123，team=456，禁止修改 D:/private。\n保留这些约束  ";
         assertEquals("优化后的提示词", service.optimize(original, 9007199254740993L));
         verify(models).runtimeConfig(9007199254740993L, current);
         ArgumentCaptor<ModelConfig> config = ArgumentCaptor.forClass(ModelConfig.class);
-        verify(factory).select(config.capture());
-        assertEquals("default", config.getValue().getProvider());
+        ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(gateway).chat(config.capture(), systemPrompt.capture(), content.capture());
         assertEquals(Duration.ofSeconds(60), config.getValue().getTimeout());
         assertEquals(8192, config.getValue().getMaxTokens());
-        ArgumentCaptor<Supplier<ModelChatCommand>> command = ArgumentCaptor.captor();
-        verify(invoker, times(1)).invoke(command.capture());
-        ModelChatCommand call = command.getValue().get();
-        assertFalse(call.streaming());
-        assertFalse(call.thinking());
-        assertEquals(List.of(), call.chatRequest().getTools());
-        assertEquals(2, call.chatRequest().getMessages().size());
-        assertInstanceOf(SystemMessageEntity.class, call.chatRequest().getMessages().getFirst());
-        assertInstanceOf(UserMessageEntity.class, call.chatRequest().getMessages().getLast());
-        assertEquals(original, call.chatRequest().getMessages().getLast().text());
+        assertFalse(config.getValue().isReturnThinking());
+        assertFalse(config.getValue().isSendThinking());
+        assertEquals(original, content.getValue());
+        // 系统提示必须约束成"只输出正文"，否则模型会回答原文里的任务。
+        assertTrue(systemPrompt.getValue().contains("仅输出优化后的提示词正文"));
     }
 
     @Test
@@ -103,42 +91,27 @@ class PromptOptimizationTest {
     }
 
     @Test
-    void resolvesAnthropicAndBuiltInStreamingConnectionsToSynchronousProviders() {
-        when(models.runtimeConfig(7L, current)).thenReturn(ModelConfig.builder().modelName("claude-test").build());
-        service.optimize("原文", 7L);
-        when(models.runtimeConfig(7L, current)).thenReturn(ModelConfig.builder()
-                .modelName("text-model").provider("default-streaming").build());
-        service.optimize("原文", 7L);
-        ArgumentCaptor<ModelConfig> config = ArgumentCaptor.forClass(ModelConfig.class);
-        verify(factory, times(2)).select(config.capture());
-        assertEquals(List.of("anthropic", "default"), config.getAllValues().stream().map(ModelConfig::getProvider).toList());
-    }
-
-    @Test
     void invalidInputDoesNotInvokeAModel() {
         assertThrows(ClientException.class, () -> service.optimize(null, 7L));
         assertThrows(ClientException.class, () -> service.optimize(" \n ", 7L));
         assertThrows(ClientException.class, () -> service.optimize("x".repeat(20001), 7L));
         assertThrows(ClientException.class, () -> service.optimize("原文", 0L));
-        verifyNoInteractions(models, factory, invoker);
+        verifyNoInteractions(models, gateway);
     }
 
     @Test
-    void missingModelAndStreamingOnlyProviderAreRejected() {
+    void missingModelIsRejectedWithoutTouchingTheGateway() {
         when(settings.current()).thenReturn(Optional.empty());
         assertThrows(ClientException.class, () -> service.optimize("原文", null));
-        when(settings.current()).thenReturn(Optional.of(current));
-        when(factory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection("custom", invoker, true));
-        assertThrows(ClientException.class, () -> service.optimize("原文", 7L));
-        verifyNoInteractions(invoker);
+        verifyNoInteractions(gateway);
     }
 
     @ParameterizedTest
     @MethodSource("unusableResponses")
     void emptyToolCallingAndTruncatedResponsesAreRejected(ChatResponseEntity result) throws Exception {
-        when(invoker.invoke(any())).thenReturn(result);
+        when(gateway.chat(any(), any(), any())).thenReturn(result);
         assertThrows(ClientException.class, () -> service.optimize("原文", 7L));
-        verify(invoker, times(1)).invoke(any());
+        verify(gateway, times(1)).chat(any(), any(), any());
     }
 
     static Stream<ChatResponseEntity> unusableResponses() {
@@ -158,7 +131,7 @@ class PromptOptimizationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(1))
                 .andExpect(jsonPath("$.data").value("优化后的提示词"));
         verify(models).runtimeConfig(9007199254740993L, current);
-        when(invoker.invoke(any())).thenThrow(new IllegalStateException("provider-secret"));
+        when(gateway.chat(any(), any(), any())).thenThrow(new IllegalStateException("provider-secret"));
         mvc.perform(post("/model/optimize-prompt").contentType(APPLICATION_JSON).content("{\"prompt\":\"原文\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.errMsg").value("提示词优化失败，请检查模型连接后重试"));
@@ -185,9 +158,8 @@ class PromptOptimizationTest {
             when(models.runtimeConfig(7L, current)).thenReturn(config);
             ModelProviderRegistry<ChatModel> chats = new ModelProviderRegistry<>();
             chats.register(openAiChatProvider());
-            ModelProviderRegistry<StreamingChatModel> streams = new ModelProviderRegistry<>();
             PromptOptimizationService wired = new PromptOptimizationService(models, settings,
-                    new DefaultRequestModelInvokerFactory("default", config, chats, streams));
+                    new RegistryModelChatGateway(chats));
             assertEquals("优化后的提示词", wired.optimize("原始输入", 7L));
             JsonNode body = captured.get();
             assertNotNull(body);

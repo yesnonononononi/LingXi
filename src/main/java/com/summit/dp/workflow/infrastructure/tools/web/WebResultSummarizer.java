@@ -1,13 +1,9 @@
 package com.summit.dp.workflow.infrastructure.tools.web;
 
-import com.summit.core.conversation.api.ChatRequestEntity;
+import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.api.ChatResponseEntity;
-import com.summit.core.conversation.message.SystemMessageEntity;
-import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.model.chat.ChatModel;
+import com.summit.dp.model.application.service.ModelChatGateway;
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.List;
 
 /**
  * 网页检索结果的摘要器：把原始检索 JSON 交给小模型压缩成可读摘要。
@@ -29,15 +25,17 @@ public class WebResultSummarizer {
             Organize the summary into a well-structured and readable format.
             """;
 
-    private final ChatModel chatModel;
+    private final ModelChatGateway chatGateway;
+    private final ModelConfig modelConfig;
     private final String systemPrompt;
 
-    public WebResultSummarizer(ChatModel chatModel) {
-        this(chatModel, DEFAULT_SUMMARY_SYSTEM_PROMPT);
+    public WebResultSummarizer(ModelChatGateway chatGateway, ModelConfig modelConfig) {
+        this(chatGateway, modelConfig, DEFAULT_SUMMARY_SYSTEM_PROMPT);
     }
 
-    public WebResultSummarizer(ChatModel chatModel, String systemPrompt) {
-        this.chatModel = chatModel;
+    public WebResultSummarizer(ModelChatGateway chatGateway, ModelConfig modelConfig, String systemPrompt) {
+        this.chatGateway = chatGateway;
+        this.modelConfig = modelConfig;
         this.systemPrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : DEFAULT_SUMMARY_SYSTEM_PROMPT;
     }
 
@@ -54,14 +52,8 @@ public class WebResultSummarizer {
             return null;
         }
         try {
-            ChatResponseEntity chatResponse = this.chatModel.chat(ChatRequestEntity.builder()
-                    .messages(List.of(
-                            SystemMessageEntity.builder()
-                                    .text(this.systemPrompt)
-                                    .build(),
-                            UserMessageEntity.from("Web search results to summarize:\n\n" + webSearchResultStr)
-                    ))
-                    .build());
+            ChatResponseEntity chatResponse = this.chatGateway.chat(this.modelConfig, this.systemPrompt,
+                    "Web search results to summarize:\n\n" + webSearchResultStr);
             String summaryText = chatResponse == null || chatResponse.getAiMessageEntity() == null
                     ? null
                     : chatResponse.getAiMessageEntity().text();
