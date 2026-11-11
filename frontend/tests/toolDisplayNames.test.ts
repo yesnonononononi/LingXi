@@ -51,6 +51,15 @@ test('每个固定工具都有完整名与渲染名', async () => {
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '写入' });
   // 「查看队员状态」自带名字，渲染名不再落到泛化的「工具」
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.PeekTeammateState) }, { fullName: '查看队员状态', renderName: '查看队员状态' });
+  // 手机设备四动作各有独立短名：观测 / 操作 / 确认 / 急停不是同一件事
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeviceObserve) }, { fullName: '查看手机界面', renderName: '查看手机界面' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeviceAction) }, { fullName: '操作手机', renderName: '操作手机' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeviceConfirm) }, { fullName: '确认手机操作', renderName: '确认手机操作' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeviceStop) }, { fullName: '停止手机操作', renderName: '停止手机操作' });
+  assert.equal(resolveToolCategory(AgentToolName.DeviceObserve), TOOL_CATEGORY.DEVICE);
+  assert.equal(resolveToolCategory(AgentToolName.DeviceAction), TOOL_CATEGORY.DEVICE);
+  assert.equal(resolveToolCategory(AgentToolName.DeviceConfirm), TOOL_CATEGORY.DEVICE);
+  assert.equal(resolveToolCategory(AgentToolName.DeviceStop), TOOL_CATEGORY.DEVICE);
 });
 
 test('全部固定工具的短渲染名两两不重复（防回归唯一性守卫）', async () => {

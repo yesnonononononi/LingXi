@@ -48,6 +48,11 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.SearchTool, defineToolName('检索工具', 'Search tools', 'tool.category.toolSearch')],
   [AgentToolName.ListMcpTools, defineToolName('列举 MCP 工具', 'List MCP tools', 'tool.category.mcpList')],
   [AgentToolName.ReadSkill, defineToolName('读取技能', 'Read skill', 'tool.category.skill')],
+  // 手机设备四动作短名各自独立：观测 / 操作 / 确认 / 急停是四个不同动作
+  [AgentToolName.DeviceObserve, defineToolName('查看手机界面', 'View phone screen', 'tool.category.deviceObserve')],
+  [AgentToolName.DeviceAction, defineToolName('操作手机', 'Act on phone', 'tool.category.deviceAction')],
+  [AgentToolName.DeviceConfirm, defineToolName('确认手机操作', 'Confirm phone action', 'tool.category.deviceConfirm')],
+  [AgentToolName.DeviceStop, defineToolName('停止手机操作', 'Stop phone action', 'tool.category.deviceStop')],
 ]);
 
 const unknownToolName: ToolDisplayName = {
