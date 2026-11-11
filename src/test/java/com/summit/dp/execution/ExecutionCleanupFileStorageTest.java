@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
+import com.summit.dp.execution.support.NoAssetOrphans;
 import com.summit.dp.execution.support.NoFileRecords;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
@@ -144,7 +145,7 @@ class ExecutionCleanupFileStorageTest {
             LocalCheckpointMaintenance maintenance = new LocalCheckpointMaintenance(store, repository);
             ExecutionReclaimService reclaimer = new ExecutionReclaimService(repository, activity,
                     maintenance, transactionManager);
-            ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords());
+            ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords(), new NoAssetOrphans());
 
             assertEquals(TOTAL_ROWS, service.preview().executionCount());
             ExecutionCleanupService.CleanupResult result = new TransactionTemplate(transactionManager)

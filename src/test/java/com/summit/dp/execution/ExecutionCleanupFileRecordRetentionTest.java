@@ -5,6 +5,7 @@ import com.summit.dp.execution.application.port.FileRecordMaintenance;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.execution.support.NoAssetOrphans;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -44,7 +45,7 @@ class ExecutionCleanupFileRecordRetentionTest {
         when(checkpoints.reclaimUnreferenced(anyInt(), anyInt()))
                 .thenReturn(new ExecutionCheckpointMaintenance.FileReclaimResult(0, 0, 0));
         ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, checkpoints,
-                new RecordingFileRecords(cutoffSeen, 4));
+                new RecordingFileRecords(cutoffSeen, 4), new NoAssetOrphans());
 
         Instant before = Instant.now();
         service.cleanup();
@@ -69,7 +70,7 @@ class ExecutionCleanupFileRecordRetentionTest {
         when(checkpoints.hasUnscannedFiles()).thenReturn(false);
         AtomicReference<Instant> previewCutoff = new AtomicReference<>();
         ExecutionCleanupService service = new ExecutionCleanupService(repository, reclaimer, checkpoints,
-                new RecordingFileRecords(previewCutoff, 0));
+                new RecordingFileRecords(previewCutoff, 0), new NoAssetOrphans());
 
         Instant before = Instant.now();
         ExecutionCleanupService.Preview preview = service.preview();

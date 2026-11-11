@@ -3,6 +3,7 @@ package com.summit.dp.execution.qa;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
+import com.summit.dp.execution.support.NoAssetOrphans;
 import com.summit.dp.execution.support.NoFileRecords;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
@@ -68,7 +69,7 @@ class ExecutionCleanupCursorProbeTest {
             ExecutionCleanupService service = new ExecutionCleanupService(repository,
                     new ExecutionReclaimService(repository, executionId -> false, maintenance,
                             new DataSourceTransactionManager(database)),
-                    maintenance, new NoFileRecords());
+                    maintenance, new NoFileRecords(), new NoAssetOrphans());
 
             int total = ORPHAN_DIRECTORIES;
             // 增长守卫采样：前 1/4 与后 1/4 各记一份逐次耗时（自校准相对增长，不引入绝对秒数）。
@@ -140,7 +141,7 @@ class ExecutionCleanupCursorProbeTest {
             ExecutionCleanupService service = new ExecutionCleanupService(repository,
                     new ExecutionReclaimService(repository, executionId -> false, maintenance,
                             new DataSourceTransactionManager(database)),
-                    maintenance, new NoFileRecords());
+                    maintenance, new NoFileRecords(), new NoAssetOrphans());
 
             String fileId = publish(store, mapper, 800001L);
             ExecutionPO row = new ExecutionPO();

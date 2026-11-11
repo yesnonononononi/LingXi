@@ -5,8 +5,10 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.compact.ContextUsageMetric;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.session.application.port.SessionDeletionGuard;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionAggregateService;
+import com.summit.dp.session.application.service.SessionDataPurger;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionContextRepository;
@@ -27,8 +29,8 @@ import static org.mockito.Mockito.*;
 class SessionExecutionContextUsageTest {
     private final SessionRepository repository = mock(SessionRepository.class);
     private final SessionAggregateService service = new SessionAggregateService(repository,
-            mock(MessageRepository.class), mock(ChatTurnRepository.class), mock(ToolCallRepository.class),
-            mock(ModelContextService.class), mock(ApplicationEventPublisher.class));
+            mock(MessageRepository.class), mock(ChatTurnRepository.class),
+            mock(SessionDeletionGuard.class), mock(SessionDataPurger.class), mock(ApplicationEventPublisher.class));
 
     private final SessionContextUsageProjector projector = new SessionContextUsageProjector(service);
 

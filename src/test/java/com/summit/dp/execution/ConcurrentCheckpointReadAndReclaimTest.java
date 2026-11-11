@@ -10,6 +10,7 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
+import com.summit.dp.execution.support.NoAssetOrphans;
 import com.summit.dp.execution.support.NoFileRecords;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
@@ -73,7 +74,7 @@ class ConcurrentCheckpointReadAndReclaimTest {
             DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(database);
             ExecutionReclaimService reclaimer = new ExecutionReclaimService(repository, idle,
                     maintenance, transactionManager);
-            ExecutionCleanupService cleanup = new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords());
+            ExecutionCleanupService cleanup = new ExecutionCleanupService(repository, reclaimer, maintenance, new NoFileRecords(), new NoAssetOrphans());
             LocalExecutionRepository runtime = ExecutionRepositoryTestFactory.create(executions, mapper, store);
 
             List<String> violations = new ArrayList<>();
