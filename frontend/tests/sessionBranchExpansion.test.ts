@@ -169,6 +169,85 @@ const sidebarProps = (overrides: Record<string, unknown>): Record<string, unknow
 
 const ownerWithSubs = () => makeSession('s1', '父会话', [{id: 'sub-1', name: '子代理-甲'}]);
 
+/** 最小 localStorage 替身：node 里没有 window，composable 必须容忍它的缺席。 */
+function stubStorage(seed: Record<string, unknown> = {}): { entries: Map<string, string>; restore: () => void } {
+  const entries = new Map<string, string>(Object.entries(seed).map(([k, v]) => [k, JSON.stringify(v)]));
+  const previous = (globalThis as { localStorage?: unknown }).localStorage;
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => { entries.set(key, value); },
+    removeItem: (key: string) => { entries.delete(key); }
+  };
+  return { entries, restore: () => { (globalThis as { localStorage?: unknown }).localStorage = previous; } };
+}
+
+const STORAGE_KEY = 'lingxi.sidebar.branchExpansion';
+
+test('SBE-12 手动覆盖跨重启保留：重新创建 composable 后仍按覆盖值展开/折叠', () => {
+  const storage = stubStorage();
+  try {
+    const sources = makeSources(fixture());
+    const first = mount(sources);
+    first.setBranchExpanded('s4', true);
+    first.setBranchExpanded('s1', false);
+    assert.equal(JSON.parse(storage.entries.get(STORAGE_KEY) ?? '{}').s4, true);
+
+    // 「重启」= 新建一份 composable：覆盖表必须从存储恢复，而不是回到默认折叠。
+    const second = mount(makeSources(fixture(), 's1'));
+    assert.equal(second.isBranchExpanded('s4'), true, '手动展开过的不该被重启抹掉');
+    assert.equal(second.isBranchExpanded('s1'), false, '手动折叠当前所在分支后，重启也不该被激活态弹开');
+  } finally {
+    storage.restore();
+  }
+});
+
+test('SBE-13 写入时按存活会话裁剪，会话列表为空时不裁', () => {
+  const storage = stubStorage();
+  try {
+    // 列表为空（尚未加载）时点击：不能把存储裁成空表。
+    const loading = mount(makeSources([]));
+    loading.setBranchExpanded('s1', true);
+    assert.deepEqual(JSON.parse(storage.entries.get(STORAGE_KEY) ?? '{}'), {s1: true});
+
+    // 拿到列表后再点：已删除会话的孤儿键必须在这次写入里被清掉。
+    const loaded = mount(makeSources(fixture()));
+    assert.equal(loaded.isBranchExpanded('s1'), true, '重启后先读到的是上次的覆盖');
+    loaded.setBranchExpanded('s2', true);
+    assert.deepEqual(JSON.parse(storage.entries.get(STORAGE_KEY) ?? '{}'), {s1: true, s2: true});
+
+    // s1 被删掉后再写一次：它的键不再残留。
+    const afterDelete = mount(makeSources(fixture().filter(s => s.id !== 's1')));
+    afterDelete.setBranchExpanded('s4', true);
+    const stored = JSON.parse(storage.entries.get(STORAGE_KEY) ?? '{}');
+    assert.equal(stored.s1, undefined, '已删会话的覆盖必须被裁掉');
+    assert.equal(stored.s4, true);
+  } finally {
+    storage.restore();
+  }
+});
+
+test('SBE-14 存储里的脏数据不能让侧边栏渲染不出来', () => {
+  for (const seed of ['不是 JSON', '[]', 'null', '{broken']) {
+    const storage = stubStorage();
+    try {
+      storage.entries.set(STORAGE_KEY, seed);
+      const sbe = mount(makeSources(fixture()));
+      assert.equal(sbe.isBranchExpanded('s1'), false, `脏数据 ${seed} 应降级为「没有覆盖」`);
+    } finally {
+      storage.restore();
+    }
+  }
+  // 值不是布尔时同样丢弃：只有 true/false 才是有效覆盖。
+  const storage = stubStorage({[STORAGE_KEY]: {s1: 'yes', s2: true}});
+  try {
+    const sbe = mount(makeSources(fixture()));
+    assert.equal(sbe.isBranchExpanded('s1'), false);
+    assert.equal(sbe.isBranchExpanded('s2'), true);
+  } finally {
+    storage.restore();
+  }
+});
+
 for (const mode of ['light', 'dark'] as const) {
   const modeLabel = mode === 'dark' ? '暗色 BranchedMenu 分支' : '亮色列表分支';
 

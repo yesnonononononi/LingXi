@@ -15,9 +15,10 @@ import type {ChatSession} from '../../types/chat';
  * `activeSessionId` 变化（甚至同 id 重算）弹回去，表现为「点了没反应」。因此手动操作写成显式
  * 覆盖记录（`true`/`false`），覆盖存在时不再跟随激活态。</p>
  *
- * <p><b>作用域：</b>与 {@link useWorkspaceExpansion} 一致，只在本次运行内有效，不写盘 ——
- * 跨重启记住展开态属于「侧边栏视图偏好持久化」这个独立议题（需先定：全局一份还是按工作区一份、
- * 用 localStorage 还是设置项、会话被删后残留键怎么清）。本 composable 刻意不掺进来。</p>
+ * <p><b>作用域：</b>手动覆盖会写进本机一份 localStorage（键 `lingxi.sidebar.branchExpansion`），
+ * 所以重启后用户的折叠选择仍在；<b>只存覆盖、不存派生出来的展开态</b> —— 后者每次都要按
+ * 「当前所在分支」重算，存下来就会让上次看的会话在下次启动时仍然展开，与默认折叠的契约打架。
+ * 写入时按「当前还存在的会话」裁剪，会话删了不留孤儿键（列表未加载时先不裁，否则会抹掉刚点的）。</p>
  */
 export interface SessionBranchExpansionSources {
   /** 全量会话（含各组与未分组），用于把激活的子会话反查回它的所属根会话。 */
@@ -38,11 +39,61 @@ export interface SessionBranchExpansion {
   autoExpandedSessionId: ComputedRef<string | null>;
 }
 
+/**
+ * 手动覆盖的持久化键（本机一份，键 = 会话 id）。
+ *
+ * <p><b>为什么只存「覆盖」而不是「全部展开态」</b>：没有覆盖时的展开态是**派生值**
+ * （只展开当前所在分支）。把派生结果也存下来，会让「上次看的会话」在下次启动时仍然展开，
+ * 与「只看当前分支」的契约打架 —— 存的是用户意图，不是计算结果。</p>
+ */
+const STORAGE_KEY = 'lingxi.sidebar.branchExpansion';
+
+/** 读取失败一律当空（隐私模式、配额满、脏数据都不该让侧边栏渲染不出来）。 */
+function readOverrides(): Record<string, boolean> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const result: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'boolean') result[key] = value;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 写入覆盖表，顺手按「当前还存在的会话」裁剪。
+ *
+ * <p>会话删除后它的键不该永远留着 —— 但会话列表还没加载完时（空列表）不能裁，
+ * 那会把用户刚刚的点击全部抹掉。所以只在拿到列表时裁。</p>
+ */
+function writeOverrides(overrides: Record<string, boolean>, sessions: readonly { id: string | number }[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    let payload = overrides;
+    if (sessions.length > 0) {
+      const alive = new Set(sessions.map(session => String(session.id)));
+      payload = {};
+      for (const [key, value] of Object.entries(overrides)) {
+        if (alive.has(key)) payload[key] = value;
+      }
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // 写不进去只是丢一次偏好，不影响任何功能路径。
+  }
+}
+
 export function useSessionBranchExpansion(sources: SessionBranchExpansionSources): SessionBranchExpansion {
   const {sessions, activeSessionId, activeSubSessionId} = sources;
 
   /** 手动覆盖：`undefined` 表示「跟随激活态」，故不能用 Set 记录。 */
-  const overrides = ref<Record<string, boolean>>({});
+  const overrides = ref<Record<string, boolean>>(readOverrides());
 
   const autoExpandedSessionId = computed<string | null>(() => {
     const subId = activeSubSessionId?.value;
@@ -64,6 +115,7 @@ export function useSessionBranchExpansion(sources: SessionBranchExpansionSources
 
   const setBranchExpanded = (sessionId: string | number, open: boolean): void => {
     overrides.value = {...overrides.value, [String(sessionId)]: open};
+    writeOverrides(overrides.value, sessions.value);
   };
 
   const toggleBranch = (sessionId: string | number): void => {
