@@ -45,6 +45,8 @@ public class UserConfigPO {
     private Integer teamSize;
     /** 专用压缩模型（关联 model_config.id；空表示沿用对话模型做摘要） */
     private Long compactModelId;
+    /** 指令预测模型（关联 model_config.id；空表示未启用指令预测） */
+    private Long predicateModelId;
     private Long imageModelId;
     private Integer imageGenerationMaxCalls;
     /** 界面全局字号档位（SMALL/MEDIUM/LARGE/X_LARGE；空表示未设置，读取归一为 MEDIUM） */

@@ -38,6 +38,7 @@ const {
   toggle,
   choose,
   imageSelectedId, imageOptions, imageUnavailable, imageDisabled, imageSaveError, imageLimitDraft, chooseImage, saveImageLimit,
+  predicateSelectedId, predicateOptions, predicateUnavailable, predicateDisabled, predicateSaveError, choosePredicate,
 } = useCompactionTab();
 
 const cardClass = 'rounded-2xl border p-4 space-y-3 transition-colors bg-lx-surface-sunken border-lx-border-subtle';
@@ -125,6 +126,19 @@ const maxTokensFill = computed(() => {
         <p v-if="imageUnavailable" class="text-lx-fs-sm text-lx-warning">{{ t('settings.compaction.imageUnavailable') }}</p>
         <p v-if="imageSaveError" class="text-lx-fs-sm text-lx-danger" role="alert">{{ imageSaveError }}</p>
         <button v-if="imageOptions.length === 1" type="button" :class="ghostBtnClass" @click="emit('openModels')">{{ t('settings.compaction.addModel') }}</button>
+      </section>
+      <!-- 指令预测模型：与压缩模型同口径筛选，但字段与保存完全独立 -->
+      <section :class="cardClass" data-testid="predicate-model-card">
+        <div>
+          <h5 :class="titleClass">{{ t('settings.compaction.predicateTitle') }}</h5>
+          <p :class="hintClass">{{ t('settings.compaction.predicateHelp') }}</p>
+        </div>
+        <SettingsSelect :id="`${id}-predicate-model`" :label="t('settings.compaction.predicateChoose')"
+          :model-value="predicateSelectedId" :options="predicateOptions" :disabled="predicateDisabled"
+          data-testid="predicate-model-select" @update:model-value="choosePredicate" />
+        <p v-if="predicateUnavailable" class="text-lx-fs-sm text-lx-warning">{{ t('settings.compaction.predicateUnavailable') }}</p>
+        <p v-if="predicateSaveError" class="text-lx-fs-sm text-lx-danger" role="alert">{{ predicateSaveError }}</p>
+        <button v-if="predicateOptions.length === 1" type="button" :class="ghostBtnClass" @click="emit('openModels')">{{ t('settings.compaction.addModel') }}</button>
       </section>
       <!-- 压缩模型：开关与「选了哪个模型」是同一件事 -->
       <section :class="cardClass" data-testid="compaction-model-card">

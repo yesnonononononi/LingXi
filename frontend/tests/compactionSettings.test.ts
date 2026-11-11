@@ -10,6 +10,32 @@ import {messages} from '../src/i18n/messages';
 
 test.beforeEach(() => setActivePinia(createPinia()));
 
+test('指令预测模型与压缩模型同口径筛选，但字段独立保存', async (t) => {
+  const writes: unknown[] = [];
+  t.mock.method(UserConfigAPI, 'current', async () => ({code:1,data:{compactModelId:'11',predicateModelId:null}}));
+  t.mock.method(ModelAPI, 'catalog', async () => ({code:1,data:[{providerName:'Models',models:[
+    {id:11,modelName:'text',credentialConfigured:true},
+    {id:12,modelName:'no-key',credentialConfigured:false},
+    {id:21,modelName:'image',provider:'default-image-model',credentialConfigured:true},
+  ]}]}));
+  t.mock.method(CompactionSettingsAPI,'params',async()=>({code:1,data:{modelThreshold:0.8}}));
+  t.mock.method(UserConfigAPI,'updateCurrent',async(payload:unknown)=>{writes.push(payload);return {code:1};});
+
+  const state = useCompactionTab();
+  await state.load();
+
+  // 图片模型与无密钥模型都不得出现在预测下拉里；「关闭」是空值项。
+  assert.deepEqual(state.predicateOptions.value.map(option => option.value), ['','11']);
+  assert.equal(state.predicateSelectedId.value, '');
+
+  await state.choosePredicate('11');
+  assert.deepEqual(writes, [{predicateModelId:'11'}], '只写预测模型字段，不连带压缩模型');
+
+  state.store.applyConfig({compactModelId:'11',predicateModelId:'11'});
+  await state.choosePredicate('');
+  assert.deepEqual(writes[1], {predicateModelId:null}, '选「关闭」必须显式写 null');
+});
+
 test('其它模型配置分别筛选文本和图片模型，持久化生图模型与执行限额', async (t) => {
   const writes: unknown[] = [];
   t.mock.method(UserConfigAPI, 'current', async () => ({code:1,data:{compactModelId:null,imageModelId:'21',imageGenerationMaxCalls:3}}));
@@ -169,6 +195,11 @@ test('参数业务错误局部展示，模型目录业务错误不能伪装为�
 
 test('压缩模型的文案在中英两套里都有真值，没有漏键', () => {
   const keys = [    'title',
+    'predicateTitle',
+    'predicateHelp',
+    'predicateChoose',
+    'predicateDisabled',
+    'predicateUnavailable',
     'subtitle',
     'back',
     'toggleLabel',

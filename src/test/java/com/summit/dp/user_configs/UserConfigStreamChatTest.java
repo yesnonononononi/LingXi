@@ -86,6 +86,6 @@ class UserConfigStreamChatTest {
 
     private UserConfigCommand command(boolean value, boolean present) {
         return new UserConfigCommand(null, null, null, null, null, null, false, null, null, null,
-                null, null, null, null, null, false, null, false, null, false, null, value, present);
+                null, null, null, null, null, false, null, false, null, false, null, false, null, value, present);
     }
 }

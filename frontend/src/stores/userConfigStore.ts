@@ -57,6 +57,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const teamSize = ref<number | null>(null);
   /** 专用压缩模型（关联 model_config.id）；null 表示沿用对话模型做摘要。 */
   const compactModelId = ref<string | number | null>(null);
+  /** 指令预测模型（关联 model_config.id）；null 表示关闭指令预测。与压缩模型独立。 */
+  const predicateModelId = ref<string | number | null>(null);
   const imageModelId = ref<string | number | null>(null);
   const imageGenerationMaxCalls = ref<number | null>(null);
   /** 普通模型请求是否流式输出；后端在缺省时归一为 true。 */
@@ -132,6 +134,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     skillDir.value = config?.skillDir ?? '';
     teamSize.value = config?.teamSize ?? null;
     compactModelId.value = config?.compactModelId ?? null;
+    predicateModelId.value = config?.predicateModelId ?? null;
     imageModelId.value = config?.imageModelId ?? null;
     imageGenerationMaxCalls.value = config?.imageGenerationMaxCalls ?? null;
     streamChat.value = config?.streamChat !== false;
@@ -208,6 +211,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     | 'skillDir'
     | 'teamSize'
     | 'compactModelId'
+    | 'predicateModelId'
     | 'imageModelId'
     | 'imageGenerationMaxCalls'
     | 'streamChat'
@@ -229,6 +233,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'skillDir': return skillDir.value;
       case 'teamSize': return teamSize.value;
       case 'compactModelId': return compactModelId.value;
+      case 'predicateModelId': return predicateModelId.value;
       case 'imageModelId': return imageModelId.value;
       case 'imageGenerationMaxCalls': return imageGenerationMaxCalls.value;
       case 'streamChat': return streamChat.value;
@@ -252,6 +257,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'skillDir': skillDir.value = value as string; break;
       case 'teamSize': teamSize.value = value as number | null; break;
       case 'compactModelId': compactModelId.value = value as string | number | null; break;
+      case 'predicateModelId': predicateModelId.value = value as string | number | null; break;
       case 'imageModelId': imageModelId.value = value as string | number | null; break;
       case 'imageGenerationMaxCalls': imageGenerationMaxCalls.value = value as number | null; break;
       case 'streamChat': streamChat.value = value as boolean; break;
@@ -375,6 +381,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     skillDir,
     teamSize,
     compactModelId,
+    predicateModelId,
     imageModelId,
     imageGenerationMaxCalls,
     streamChat,

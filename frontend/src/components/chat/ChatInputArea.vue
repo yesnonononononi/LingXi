@@ -78,6 +78,13 @@ const props = defineProps<{
   agents?: AgentVO[];
   selectedAgentId?: string | number | null;
   /**
+   * 「下一条指令」建议（后端按终态轮次预测）。
+   *
+   * <p>渲染方式是**占位文本**而不是独立气泡：建议本来就该待在用户要写字的那个位置，
+   * 按 Tab 直接补全。输入框一有内容占位文本自然消失，不需要额外判空。</p>
+   */
+  prediction?: string;
+  /**
    * plan 模式（受控）：宿主是唯一事实源，本组件只镜像并回传变更。
    *
    * <p>历史实现把它做成组件私有 ref，宿主既观察不到也控制不了，`updateMode` 事件发出去
@@ -120,6 +127,10 @@ const emit = defineEmits<{
   (e: 'openSettings'): void;
   /** 直达设置弹窗的指定 tab（如 'mcp'），由宿主透传给 SettingsModal 的 initialTab */
   (e: 'openSettingsTab', tab: string): void;
+  /** 采纳「下一条指令」建议（宿主据此清空建议） */
+  (e: 'applyPrediction', text: string): void;
+  /** 输入框是否已空：宿主据此决定要不要开始预测计时（有草稿就别预测） */
+  (e: 'updateDraftEmpty', empty: boolean): void;
 }>();
 
 defineSlots<{
@@ -141,10 +152,15 @@ const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+/** 有预测且没在听写/plan 模式时，占位文本就是那条建议 + 补全提示。 */
+const predictionHint = computed(() => {
+  const text = (props.prediction ?? '').trim();
+  return text ? `${text} ${t('chat.input.predictionHint')}` : '';
+});
 const inputPlaceholder = computed(() => {
   if (listening.value) return t('chat.input.placeholderListening');
   if (isPlanMode.value) return t('chat.input.placeholderPlan');
-  return t('chat.input.placeholderDefault');
+  return predictionHint.value || t('chat.input.placeholderDefault');
 });
 /**
  * plan 模式的可写视图：读受控 prop，写回 `updateMode` 事件。
@@ -170,6 +186,28 @@ const focusInput = () => {
     inputRef.value.setSelectionRange(inputText.value.length, inputText.value.length);
   });
 };
+
+/**
+ * 采纳「下一条指令」建议：整段替换输入框内容并聚焦。
+ *
+ * <p>不解析命令、不切模式：预测出来的只是一句自然语言，按命令解析等于替用户改主意。</p>
+ */
+const applyPrediction = () => {
+  const text = (props.prediction ?? '').trim();
+  if (!text) return;
+  emit('applyPrediction', text);
+  writeInputText(text);
+  focusInput();
+};
+
+/**
+ * 空态上抛：宿主用它当预测闸门之一（输入框有草稿就不该计时）。
+ *
+ * <p>只上报「空/非空」这一个事实，不把整段草稿传出去 —— 草稿是输入框的私有状态。</p>
+ */
+watch(inputText, () => {
+  emit('updateDraftEmpty', inputText.value.trim() === '');
+}, {immediate: true});
 
 const promptOptimization = usePromptOptimization(inputText, () => props.selectedModelId, focusInput, text => {
   // 草稿回填只是文本替换：不解析命令、不切模式、不改写内容，只收起可能挡视线的浮层。
@@ -1139,6 +1177,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
 
   const isEmpty = !inputText.value;
+
+  // Tab 补全预测指令：占位文本里写的就是这条提示，只在该「空输入框 + 有建议」时生效，
+  // 不抢命令菜单的 Tab（菜单那种情况上面已 return）。
+  if (e.key === 'Tab' && !e.shiftKey && !e.isComposing && isEmpty && predictionHint.value) {
+    e.preventDefault();
+    applyPrediction();
+    return;
+  }
 
   if (e.key === 'Backspace' && isPlanMode.value && isEmpty) {
     e.preventDefault();

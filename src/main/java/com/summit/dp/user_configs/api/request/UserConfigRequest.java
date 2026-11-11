@@ -75,6 +75,22 @@ public class UserConfigRequest {
     private Long compactModelId;
     private boolean compactModelIdPresent;
 
+    /**
+     * 本次请求是否显式带了 {@code predicateModelId} 键。
+     *
+     * <p>与 {@code compactModelId} 同理：显式传 {@code null} 表示「关闭指令预测」，
+     * 不传表示「保持原值」。</p>
+     */
+    @JsonSetter("predicateModelId")
+    public void markPredicateModelIdPresent(Long predicateModelId) {
+        this.predicateModelId = predicateModelId;
+        this.predicateModelIdPresent = true;
+    }
+
+    /** 指令预测模型ID（关联 model_config.id；空表示未启用指令预测） */
+    private Long predicateModelId;
+    private boolean predicateModelIdPresent;
+
     private Long imageModelId;
     private boolean imageModelIdPresent;
     private Integer imageGenerationMaxCalls;

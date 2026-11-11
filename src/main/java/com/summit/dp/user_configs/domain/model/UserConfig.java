@@ -139,9 +139,14 @@ public class UserConfig {
      * 会带上独立的 compactModel，上下文压缩不再借用对话模型。</p>
      */
     private Long compactModelId;
+    /**
+     * 指令预测模型（关联 model_config.id）；空表示未启用指令预测。
+     *
+     * <p>与压缩模型同样是「用户可选的专用模型」，但两者独立：改压缩模型不能影响预测结果。</p>
+     */
+    private Long predicateModelId;
     /** 生图工具使用的独立模型；空表示未启用。 */
-    private Long imageModelId;
-    /** 每次执行的生图工具调用上限，失败调用也占用次数。 */
+    private Long imageModelId;    /** 每次执行的生图工具调用上限，失败调用也占用次数。 */
     private Integer imageGenerationMaxCalls;
 
     /**
@@ -251,6 +256,12 @@ public class UserConfig {
      */
     public void changeCompactModel(Long compactModelId) {
         this.compactModelId = compactModelId;
+        update();
+    }
+
+    /** 切换指令预测模型；{@code predicateModelId} 允许为空，表示关闭指令预测。 */
+    public void changePredicateModel(Long predicateModelId) {
+        this.predicateModelId = predicateModelId;
         update();
     }
 
