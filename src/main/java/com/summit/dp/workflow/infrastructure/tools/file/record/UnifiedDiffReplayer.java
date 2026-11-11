@@ -2,7 +2,6 @@ package com.summit.dp.workflow.infrastructure.tools.file.record;
 
 import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.patch.Patch;
-import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,8 +18,11 @@ import java.util.Optional;
  * <p><b>为什么直接复用 java-diff-utils</b>：差异也是它生成的（{@code UnifiedDiffUtils.generateUnifiedDiff}），
  * 解析与应用的格式口径天然一致；自己写解析器只会在「\ No newline at end of file」「空 hunk」这些
  * 边角上与生成侧悄悄漂移。</p>
+ *
+ * <p><b>为什么这里不打日志</b>：失败原因只有一句 {@code reason}，没有文件名与轮次就定位不到
+ * 是哪条记录断的。定位由调用方补齐（{@code TurnFileEditSummaryService} 知道全部标识），
+ * 这里保持成一个纯函数。</p>
  */
-@Slf4j
 public final class UnifiedDiffReplayer {
 
     private UnifiedDiffReplayer() {
@@ -47,7 +49,6 @@ public final class UnifiedDiffReplayer {
                 lines = new ArrayList<>(patch.applyTo(lines));
             }
         } catch (Exception e) {
-            log.warn("差异重放失败，本条改动无法重建末态: reason={}", e.getMessage());
             return Optional.empty();
         }
         return Optional.of(String.join("\n", lines));

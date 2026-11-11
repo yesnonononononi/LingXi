@@ -33,14 +33,17 @@ public interface FileRecordStore {
     Optional<FileRecord> get(@NonNull Serializable executionId, @NonNull Serializable recordId);
 
     /**
-     * 本轮是否已经为这个文件登记过记录（决定基线还要不要留）。
+     * 本轮这个文件最后一条记录的位置与末态摘要（决定下一条是接在链上还是另起一段）。
      *
-     * <p><b>为什么单独一个方法</b>：登记器每次编辑都要问一次这个问题。用
-     * {@link #listByExecution} 再过滤的写法在持久化实现上会把**每条基线正文都读进内存**，
-     * 一轮里改十次就是十轮全量读 —— 大文件下正是 OOM 的形态。落库实现用一条计数查询回答，
-     * 内存实现退化成一次线性比较，两边都不引入额外状态。</p>
+     * <p><b>为什么单独一个方法</b>：登记器每次编辑都要问一次。用 {@link #listByExecution} 再过滤
+     * 的写法在持久化实现上会把**每条基线正文都读进内存**，一轮里改十次就是十轮全量读 ——
+     * 大文件下正是 OOM 的形态。落库实现只取 {@code id + content_digest} 两列，一条窄查询回答；
+     * 内存实现退化成一次线性扫描，两边都不引入额外状态。</p>
+     *
+     * @return 最后一条记录；本轮还没改过这个文件时为空
      */
-    boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath);
+    Optional<RecordTail> findTurnFileTail(@NonNull Serializable executionId, Serializable turnId,
+                                          @NonNull String filePath);
 
     /**
      * 回收 {@code cutoff} 之前建立的记录（含基线大文本），返回删除条数。

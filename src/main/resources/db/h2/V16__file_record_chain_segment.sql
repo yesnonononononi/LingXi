@@ -1,0 +1,23 @@
+-- ------------------------------------------------------------
+-- V16：file_record 支持「分段」——记录链被工具外的修改打断后仍能重建差异
+--
+-- 为什么需要：记录只存「基线 + 逐条 diff」，前提是上一条的末态就是下一条的开头。这个前提
+--   只有 edit_file 会维持；用 shell / python / Set-Content 直写、或者 del 掉重建都不会留痕。
+--   链一断，后续那条 diff 的上下文就永远对不上（java-diff-utils 报
+--   CONTENT_DOES_NOT_MATCH_TARGET），整份差异静默变成「计算不出来」。
+--
+-- 为什么是这两列：content_digest 记「这次改完之后的全文摘要」，登记下一条时与「本次改之前的
+--   摘要」比一次就知道链还连不连着；segment_start 标记「这条是新的分段起点、自带基线」。
+--   摘要只用来比对，不为它建索引 —— 查询永远按 (execution_id, turn_id, file_path) 倒序取一条。
+--
+-- 可空是刻意的：升级前的老记录没有摘要，链不可验证，登记侧按「已断」处理（多留一份基线是
+--   安全的），segment_start 默认 false，读侧退回「首条带基线即分段起点」的老口径。
+--
+-- 为什么不改 V12：V12 已在用户库里跑过，改它等于对已迁移的库不生效；结构演进一律追加。
+--
+-- TODO(过时待删)：本脚本只服务「V16 之前的既有库」升级。等不再需要兼容旧库（重建基线脚本、
+--   或全量数据复位）时，把 content_digest / segment_start 两列直接并进 V12 的 CREATE TABLE，
+--   然后删除本文件与 schema_version 里对应的登记行。别提前删 —— 删了老库启动即缺列。
+-- ------------------------------------------------------------
+ALTER TABLE file_record ADD COLUMN IF NOT EXISTS content_digest VARCHAR(64) NULL;
+ALTER TABLE file_record ADD COLUMN IF NOT EXISTS segment_start BOOLEAN NOT NULL DEFAULT FALSE;

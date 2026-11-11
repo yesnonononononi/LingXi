@@ -6,6 +6,7 @@ import com.summit.dp.workflow.application.filerecord.FileEditDiff;
 import com.summit.dp.workflow.application.filerecord.FileEditSceneScope;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
+import com.summit.dp.workflow.infrastructure.tools.file.record.ContentDigest;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
@@ -90,11 +91,12 @@ class FileEditRecordControllerTest {
         return new FileEditRecordController(turnEdits);
     }
 
-    /** 差异由真实 differ 生成，避免手搓的 hunk 头与实际内容行数对不上。 */
+    /** 差异由真实 differ 生成，避免手搓的 hunk 头与实际内容行数对不上；摘要按改完的全文算。 */
     private FileRecord draft(String baseline, String newContent) {
         DiffResult diff = differ.diff("demo.txt", baseline, newContent);
         return FileRecord.builder().filePath("demo.txt").baseline(baseline)
-                .diff(diff.unifiedDiff()).plusLines(diff.plusLines()).minusLines(diff.minusLines()).build();
+                .diff(diff.unifiedDiff()).plusLines(diff.plusLines()).minusLines(diff.minusLines())
+                .contentDigest(ContentDigest.compute(newContent)).build();
     }
 
     private FileRecordManager newRecordManager() {

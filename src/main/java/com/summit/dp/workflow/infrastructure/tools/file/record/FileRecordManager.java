@@ -21,8 +21,12 @@ public interface FileRecordManager {
      * <p>{@code turnId} 可以为 {@code null}：轮次来自执行事件元数据，工具在正常链路之外被调用时
      * 拿不到它。<b>这种情况仍要登记</b> —— 丢一条记录就等于丢一段可观测的改动。</p>
      *
-     * <p>{@code draft.baseline()} 只有在「本轮首次修改该文件」时才会被保留，其余情况由本方法丢弃，
-     * 调用方不必自己判断是不是首条。</p>
+     * <p>{@code draft.baseline()} 是「这次改之前该文件的全文」（{@code null} = 文件不存在）。
+     * 它只在**分段起点**被保留：本轮首次修改该文件，或上一条记录的末态与它不一致（链被工具外的
+     * 修改打断）。其余情况由本方法丢弃，调用方不必自己判断。</p>
+     *
+     * <p>{@code draft.contentDigest()} 是「改完之后该文件的全文摘要」，登记下一条时靠它判断链
+     * 是否还连着。<b>不传就等于下一处编辑必然另起分段</b>，所以调用方有义务给。</p>
      */
     Serializable record(@NonNull Serializable executionId, Serializable turnId,
                         @NonNull FileRecord draft) throws FileModificationException;

@@ -42,6 +42,20 @@ public interface FileRecordMapper extends BaseMapper<FileRecordPO> {
     FileRecordPO selectByExecutionAndId(@Param("executionId") String executionId, @Param("id") String id);
 
     /**
+     * 本轮该文件最后一条记录的「标识 + 末态摘要」。
+     *
+     * <p>只投影两列：登记器每次编辑都要问一次，读成整行意味着把 diff 这个 CLOB 也一起拖回来。
+     * {@code turnId} 为 {@code null} 时按 IS NULL 取「无轮次」那一桶。</p>
+     */
+    @Select("SELECT id, content_digest FROM file_record WHERE execution_id = #{executionId}"
+            + " AND (turn_id = #{turnId,jdbcType=VARCHAR}"
+            + " OR (turn_id IS NULL AND #{turnId,jdbcType=VARCHAR} IS NULL))"
+            + " AND file_path = #{filePath} ORDER BY seq DESC LIMIT 1")
+    FileRecordPO selectTurnFileTail(@Param("executionId") String executionId,
+                                    @Param("turnId") String turnId,
+                                    @Param("filePath") String filePath);
+
+    /**
      * 作用域内该文件最新的一条记录（跨轮次视图用来定位）。
      *
      * <p>顺序同样交给 SQL：{@code seq} 是插入顺序，倒序第一条就是「最后一次改这个文件」。

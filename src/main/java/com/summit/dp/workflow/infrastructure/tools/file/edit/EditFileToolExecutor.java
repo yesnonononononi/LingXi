@@ -11,6 +11,7 @@ import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
+import com.summit.dp.workflow.infrastructure.tools.file.record.ContentDigest;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
 import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
@@ -154,11 +155,13 @@ public class EditFileToolExecutor implements ToolExecutor {
             return fileRecordManager.record(toolExecution.getExecutionId(), businessTurnId(toolExecution),
                     FileRecord.builder()
                             .filePath(outcome.path())
-                            // 基线只对本轮首条有效，是否保留由登记器判定；这里如实给出「改之前是什么」。
+                            // 基线只对分段起点有效，是否保留由登记器判定；这里如实给出「改之前是什么」。
                             .baseline(outcome.existed() ? outcome.oldContent() : null)
                             .diff(outcome.diffResult().unifiedDiff())
                             .plusLines(outcome.plusLines())
                             .minusLines(outcome.minusLines())
+                            // 改完之后的摘要：登记下一条时靠它发现链被工具外的修改打断。
+                            .contentDigest(ContentDigest.compute(outcome.newContent()))
                             .build());
         } catch (Exception e) {
             // 文件已经落盘；登记失败仍返回写入结果，只是这一改动事后查不到差异。

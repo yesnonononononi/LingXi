@@ -13,9 +13,15 @@ import java.util.Optional;
 /**
  * 记录登记：只决定「基线是否保留」，其余交给存储。
  *
- * <p><b>基线只留一份</b>：同一 {@code executionId + turnId + filePath} 的首条记录保留
- * {@code baseline}，后续记录一律置空。这样一轮里改同一文件十次，也不再存十份全文 ——
- * 正是这一点把先前「长会话 OOM」的隐患从根上拿掉了。</p>
+ * <p><b>基线只在分段起点保留</b>：同一 {@code executionId + turnId + filePath} 的改动本是一条
+ * 「基线 + 逐条 diff」的链，正常情况下一轮里改同一文件十次也只留一份全文 —— 正是这一点把先前
+ * 「长会话 OOM」的隐患从根上拿掉了。</p>
+ *
+ * <p><b>但链会被打断</b>：只有 {@code edit_file} 会登记记录，用 shell / python 直写、
+ * 或者 {@code del} 掉重建都不留痕。那时链上少一段，后续 diff 的上下文对不上，整份差异就
+ * 再也重建不出来。所以每次登记都拿「上一条记录的末态摘要」和「本次改之前的摘要」比一次：
+ * 对不上就把这条当成新的分段起点、重新保留基线。代价只是一段历史不连续，
+ * 而不是把可观测性全丢掉。</p>
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -60,26 +66,46 @@ public class DefaultFileRecordManager implements FileRecordManager {
         if (draft.filePath() == null || draft.diff() == null) {
             throw new FileModificationException("文件编辑记录缺少路径或差异");
         }
+        // 「改之前是什么」由调用方如实给出（null = 文件不存在），摘要据此算出链上应有的前一段末态。
+        String sourceDigest = ContentDigest.compute(draft.baseline());
+        Optional<RecordTail> tail = this.store.findTurnFileTail(executionId, turnId, draft.filePath());
+        boolean segmentStart = this.startsNewSegment(draft, tail, sourceDigest);
         // 标识和版本由存储分配，调用方不能绕过其顺序约束。
         return FileRecord.builder()
                 .executionId(executionId)
                 .turnId(turnId)
                 .filePath(draft.filePath())
-                .baseline(this.isFirstOfTurnFile(executionId, turnId, draft.filePath()) ? draft.baseline() : null)
+                .baseline(segmentStart ? draft.baseline() : null)
                 .diff(draft.diff())
                 .plusLines(draft.plusLines())
                 .minusLines(draft.minusLines())
+                .contentDigest(draft.contentDigest())
+                .segmentStart(segmentStart)
                 .createAt(Instant.now())
                 .build();
     }
 
     /**
-     * 本轮是否还没改过这个文件。
+     * 这条是不是新分段的起点：本轮首次改这个文件，或者上一次的末态与本次改之前的内容对不上。
      *
-     * <p>交给存储用一次存在性判定回答，<b>不要</b>在这里 list 全量再过滤：持久化实现下
-     * 那是一次「把所有基线大文本读进内存」的操作，而这里每次编辑都会调一次。</p>
+     * <p>老记录没有 {@code contentDigest}（V16 之前落库的），链不可验证，一律当作已断 ——
+     * 多留一份基线是安全的；猜「还连着」会让升级后的第一次编辑把整份差异弄丢。</p>
      */
-    private boolean isFirstOfTurnFile(Serializable executionId, Serializable turnId, String filePath) {
-        return !this.store.existsForTurn(executionId, turnId, filePath);
+    private boolean startsNewSegment(FileRecord draft, Optional<RecordTail> tail, String sourceDigest) {
+        if (tail.isEmpty()) {
+            return true;
+        }
+        RecordTail previous = tail.get();
+        if (previous.contentDigest() == null) {
+            log.warn("编辑链不可验证，另起分段: recordId={}, filePath={}, reason=上一条记录没有内容摘要",
+                    previous.id(), draft.filePath());
+            return true;
+        }
+        if (previous.contentDigest().equals(sourceDigest)) {
+            return false;
+        }
+        log.warn("编辑链断裂，另起分段: recordId={}, filePath={}, reason=上一条记录的末态与本次改之前的内容不一致"
+                + "（多半是绕过 edit_file 的修改）", previous.id(), draft.filePath());
+        return true;
     }
 }

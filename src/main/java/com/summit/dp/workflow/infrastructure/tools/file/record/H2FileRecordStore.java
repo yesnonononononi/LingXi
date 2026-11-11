@@ -21,8 +21,9 @@ import java.util.Optional;
  *
  * <p>换存储只为「活过重启」，重建算法一个字没动。</p>
  *
- * <p>三条约束：顺序由库承担（{@code ORDER BY seq}）；存在性判定必须走计数查询，不能 list 全量
- * 再过滤（那会把每条基线读进内存）；基线读不出来时整条跳过，不当成空文件。</p>
+ * <p>三条约束：顺序由库承担（{@code ORDER BY seq}）；「链是否还连着」的判定只读
+ * {@code id + content_digest} 两列，不 list 全量（那会把每条基线读进内存）、也不拖 CLOB；
+ * 基线读不出来时整条跳过，不当成空文件。</p>
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -50,6 +51,8 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
         po.setDiff(record.diff());
         po.setPlusLines(record.plusLines());
         po.setMinusLines(record.minusLines());
+        po.setContentDigest(record.contentDigest());
+        po.setSegmentStart(record.segmentStart());
         po.setCreateAt(record.createAt() == null ? Instant.now() : record.createAt());
         this.insertWithAllocatedVersion(po);
 
@@ -57,6 +60,7 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
                 .id(id).executionId(record.executionId()).turnId(record.turnId())
                 .version(po.getVersion()).filePath(filePath).baseline(record.baseline())
                 .diff(record.diff()).plusLines(record.plusLines()).minusLines(record.minusLines())
+                .contentDigest(record.contentDigest()).segmentStart(record.segmentStart())
                 .createAt(po.getCreateAt())
                 .build();
     }
@@ -121,23 +125,18 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
     }
 
     /**
-     * 本轮是否已为这个文件登记过记录。
+     * 本轮这个文件最后一条记录的标识与末态摘要。
      *
      * <p>{@code turnId} 为 {@code null} 也要当作「同一轮」去匹配：工具在正常链路之外被调用时
-     * 拿不到轮次元数据，这些记录本身就归在 {@code null} 名下。这里若直接返回 {@code false}，
-     * 同一文件的每次无轮次编辑都会重新保留一份全文基线 —— 正是 P2 消掉的那个放大。</p>
+     * 拿不到轮次元数据，这些记录本身就归在 {@code null} 名下。这里若直接返回空，同一文件在
+     * 之后的编辑就会被当成「第一段」重新保留一份全文基线。</p>
      */
     @Override
-    public boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath) {
-        LambdaQueryWrapper<FileRecordPO> query = new LambdaQueryWrapper<FileRecordPO>()
-                .eq(FileRecordPO::getExecutionId, String.valueOf(executionId))
-                .eq(FileRecordPO::getFilePath, filePath);
-        if (turnId == null) {
-            query.isNull(FileRecordPO::getTurnId);
-        } else {
-            query.eq(FileRecordPO::getTurnId, String.valueOf(turnId));
-        }
-        return this.mapper.selectCount(query) > 0;
+    public Optional<RecordTail> findTurnFileTail(@NonNull Serializable executionId, Serializable turnId,
+                                                 @NonNull String filePath) {
+        FileRecordPO po = this.mapper.selectTurnFileTail(String.valueOf(executionId),
+                turnId == null ? null : String.valueOf(turnId), filePath);
+        return po == null ? Optional.empty() : Optional.of(new RecordTail(po.getId(), po.getContentDigest()));
     }
 
     /** 过期记录条数：预览用，不读 diff 与基线。 */
@@ -182,9 +181,10 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
                 .id(po.getId()).executionId(po.getExecutionId()).turnId(po.getTurnId())
                 .version(po.getVersion()).filePath(po.getFilePath())
                 .baseline(baseline)
-                // 有路径却没内容 = 基线丢了；没有路径才是「本轮新建」。
+                // 有路径却没内容 = 基线丢了；没有路径才是「这一段从空文件开始」。
                 .baselineMissing(po.getBaselinePath() != null && baseline == null)
                 .diff(po.getDiff()).plusLines(po.getPlusLines()).minusLines(po.getMinusLines())
+                .contentDigest(po.getContentDigest()).segmentStart(po.isSegmentStart())
                 .createAt(po.getCreateAt())
                 .build();
     }

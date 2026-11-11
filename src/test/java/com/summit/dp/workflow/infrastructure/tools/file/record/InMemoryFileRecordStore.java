@@ -72,11 +72,18 @@ public class InMemoryFileRecordStore implements FileRecordStore {
     }
 
     @Override
-    public boolean existsForTurn(@NonNull Serializable executionId, Serializable turnId, @NonNull String filePath) {
-        return this.insertionOrder.stream()
-                .filter(record -> executionId.equals(record.executionId()))
-                .anyMatch(record -> Objects.equals(record.turnId(), turnId)
-                        && Objects.equals(record.filePath(), filePath));
+    public Optional<RecordTail> findTurnFileTail(@NonNull Serializable executionId, Serializable turnId,
+                                                 @NonNull String filePath) {
+        RecordTail tail = null;
+        for (FileRecord record : this.insertionOrder) {
+            if (!executionId.equals(record.executionId())
+                    || !Objects.equals(record.turnId(), turnId)
+                    || !Objects.equals(record.filePath(), filePath)) {
+                continue;
+            }
+            tail = new RecordTail(record.id(), record.contentDigest());
+        }
+        return Optional.ofNullable(tail);
     }
 
     @Override
@@ -108,6 +115,8 @@ public class InMemoryFileRecordStore implements FileRecordStore {
                 .createAt(record.createAt())
                 // 缺失标记原样保留：测试靠它造出「基线被回收」的记录，否则这条路径没法覆盖。
                 .baselineMissing(record.baselineMissing())
+                .contentDigest(record.contentDigest())
+                .segmentStart(record.segmentStart())
                 .build();
     }
 }

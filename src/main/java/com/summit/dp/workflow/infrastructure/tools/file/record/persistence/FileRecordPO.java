@@ -17,9 +17,10 @@ import java.time.Instant;
  * 而差异重放依赖写入顺序，所以顺序由库自增列承担，读侧一律 {@code ORDER BY seq}。</p>
  *
  * <p><b>基线只有路径</b>：{@code baseline_path} 指向数据目录下的基线文件（绝对路径），
- * 本表不存基线正文。{@code null} 表示新建文件或基线已过期回收 —— 两种情况在装配时都
- * 解析成 {@code baseline = null}，差异正文不会因此编造出「整份文件都是新增」的假象，
- * 因为过期回收是**整条记录**一起删的（见 {@code H2FileRecordStore#purgeBefore}）。</p>
+ * 本表不存基线正文。{@code null} 表示这一段从空文件开始（新建文件 / 文件在工具之外被删）
+ * 或基线已过期回收 —— 读侧靠 {@code segment_start} 与 {@code baselineMissing} 区分，
+ * 差异正文不会因此编造出「整份文件都是新增」的假象，因为过期回收是**整条记录**一起删的
+ * （见 {@code H2FileRecordStore#purgeBefore}）。</p>
  */
 @Data
 @TableName("file_record")
@@ -39,5 +40,9 @@ public class FileRecordPO {
     /** 增删行数：列是 NOT NULL，用原始类型，省掉读侧的空值兜底。 */
     private int plusLines;
     private int minusLines;
+    /** 本次修改后的全文摘要：登记下一条时比一次就知道链有没有被工具外的修改打断。 */
+    private String contentDigest;
+    /** 本条是否为一个新分段的起点（分段起点才带 {@code baseline_path}）。 */
+    private boolean segmentStart;
     private Instant createAt;
 }

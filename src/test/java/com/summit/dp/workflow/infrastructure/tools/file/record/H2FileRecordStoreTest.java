@@ -151,29 +151,73 @@ class H2FileRecordStoreTest {
         assertEquals(2, listed.get(2).version(), "同文件按写入顺序递增");
     }
 
+    /**
+     * 链尾查询只取「标识 + 末态摘要」两列，并且按执行 / 轮次 / 文件三段定位。
+     *
+     * <p>登记器每次编辑都要问一次，所以它必须是一条窄查询：读成整行会把 diff 这个 CLOB
+     * 也拖回来，退化成 P3 之前的写放大形态。</p>
+     */
     @Test
-    void existsForTurnAnswersFromTheDatabaseNotFromHydratedBaselines() {
-        store.put(draft("demo.txt", "v1\n", "+v2", null));
+    void findTurnFileTailReturnsTheLatestDigestOfThatTurnFile() {
+        store.put(chainDraft("demo.txt", "v1\n", "+v2", TURN, "digest-1", true));
+        store.put(chainDraft("other.txt", "o1\n", "+o2", TURN, "digest-other", true));
+        FileRecord latest = store.put(chainDraft("demo.txt", null, "+v3", TURN, "digest-2", false));
 
-        assertTrue(store.existsForTurn(EXECUTION, TURN, "demo.txt"));
-        assertFalse(store.existsForTurn(EXECUTION, "78", "demo.txt"), "别的轮次不算");
-        assertFalse(store.existsForTurn(EXECUTION, TURN, "other.txt"), "别的文件不算");
-        assertFalse(store.existsForTurn("9002", TURN, "demo.txt"), "别的执行不算");
+        RecordTail tail = store.findTurnFileTail(EXECUTION, TURN, "demo.txt").orElseThrow();
+
+        assertEquals(latest.id(), tail.id(), "取的是最后一条，不是第一条");
+        assertEquals("digest-2", tail.contentDigest());
+        assertEquals(Optional.empty(), store.findTurnFileTail(EXECUTION, "78", "demo.txt"), "别的轮次不算");
+        assertEquals(Optional.empty(), store.findTurnFileTail(EXECUTION, TURN, "never.txt"), "别的文件不算");
+        assertEquals(Optional.empty(), store.findTurnFileTail("9002", TURN, "demo.txt"), "别的执行不算");
     }
 
     /**
      * 没有轮次归属的编辑也算「同一轮」。
      *
      * <p>工具在正常链路之外被调用时拿不到轮次元数据，这类记录本身就归在 {@code null} 名下。
-     * 若这里判成「从未改过」，同一文件的每次无轮次编辑都会重新保留一份全文基线 ——
+     * 若这里判成「查不到」，同一文件的每次无轮次编辑都会重新保留一份全文基线 ——
      * 正是 P2 消掉的那个内存放大。</p>
      */
     @Test
     void recordsWithoutTurnBelongToTheSameBucket() {
-        store.put(draft("demo.txt", "v1\n", "+v2", null, null));
+        store.put(chainDraft("demo.txt", "v1\n", "+v2", null, "digest-null-turn", true));
 
-        assertTrue(store.existsForTurn(EXECUTION, null, "demo.txt"), "无轮次记录也必须被算作已改过");
-        assertFalse(store.existsForTurn(EXECUTION, null, "other.txt"));
+        assertTrue(store.findTurnFileTail(EXECUTION, null, "demo.txt").isPresent(), "无轮次记录也必须被算作已改过");
+        assertEquals(Optional.empty(), store.findTurnFileTail(EXECUTION, null, "other.txt"));
+    }
+
+    /**
+     * 摘要与分段标记必须原样读回。
+     *
+     * <p>漏写 setter 是静默型缺陷：链尾摘要丢了，下一次编辑就会被当成「链断了」重新留一份基线，
+     * 或者更糟 —— 被当成还连着而把一个断掉的链重放一遍。两条断言分别守这两种结局。</p>
+     */
+    @Test
+    void digestAndSegmentFlagRoundTripThroughTheRow() {
+        store.put(chainDraft("demo.txt", "v1\n", "+v2", TURN, "digest-1", true));
+
+        FileRecord reloaded = newStore().listByExecution(EXECUTION).getFirst();
+
+        assertEquals("digest-1", reloaded.contentDigest());
+        assertTrue(reloaded.segmentStart());
+    }
+
+    /**
+     * 分段起点带着自己的基线：链断过一次之后，断点那段仍能重放出来。
+     *
+     * <p>这是本次修复的核心可观测性保证 —— 断链只丢一段历史，不丢整份差异。</p>
+     */
+    @Test
+    void everySegmentStartKeepsItsOwnBaselineFile() {
+        store.put(chainDraft("demo.txt", "v1\n", "+v2", TURN, "digest-1", true));
+        store.put(chainDraft("demo.txt", "手改\n", "+v3", TURN, "digest-2", true));
+
+        List<FileRecord> listed = store.listByExecution(EXECUTION);
+
+        assertEquals("v1\n", listed.get(0).baseline());
+        assertEquals("手改\n", listed.get(1).baseline(), "第二段必须自带基线");
+        assertTrue(listed.get(1).segmentStart());
     }
 
     @Test
@@ -348,6 +392,23 @@ class H2FileRecordStoreTest {
                 .plusLines(1)
                 .minusLines(0)
                 .createAt(createAt)
+                .build();
+    }
+
+    /** 带链信息的记录：摘要与分段标记是链能否重放的关键，单独一个入口免得把参数串错位。 */
+    private FileRecord chainDraft(String path, String baseline, String diff, String turnId,
+                                  String contentDigest, boolean segmentStart) {
+        return FileRecord.builder()
+                .executionId((Serializable) EXECUTION)
+                .turnId(turnId)
+                .filePath(path)
+                .baseline(baseline)
+                .diff(diff)
+                .plusLines(1)
+                .minusLines(0)
+                .contentDigest(contentDigest)
+                .segmentStart(segmentStart)
+                .createAt(Instant.now())
                 .build();
     }
 }
