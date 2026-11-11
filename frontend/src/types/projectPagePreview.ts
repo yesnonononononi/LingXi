@@ -27,12 +27,21 @@ export interface ProjectPageState {
   tabs: ProjectPageTab[];
 }
 
-export type ProjectPageAction = 'sync' | 'create' | 'activate' | 'close-tab' | 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'close';
+export type ProjectPageAction = 'sync' | 'create' | 'activate' | 'close-tab' | 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'close' | 'show-with-agent';
 export interface ProjectPageCommandRequest {
   generation: number;
   action: ProjectPageAction;
   tabId?: string;
   url?: string;
+  selectionText?: string;
+}
+
+export interface ShowWithAgentPayload {
+  tabId: string;
+  url: string;
+  title?: string;
+  selectionText?: string;
+  imageBuffer: Uint8Array;
 }
 
 /** 坐标使用主页面 CSS 像素，主进程负责按缩放比例转换。 */
@@ -65,6 +74,7 @@ export interface ProjectPagePreviewApi {
   goForward: () => void;
   reload: () => void;
   stop: () => void;
+  showWithAgent: (tabId?: string, selectionText?: string) => void;
   /**
    * 收起面板：只让原生视图让位，主进程里的标签、登录态与表单仍在，重开即恢复。
    *

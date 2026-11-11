@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('project-page:event', listener);
       return () => ipcRenderer.removeListener('project-page:event', listener);
     },
+    onShowWithAgent: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('project-page:show-with-agent', listener);
+      return () => ipcRenderer.removeListener('project-page:show-with-agent', listener);
+    },
   },
   /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */
   notify: (options) => ipcRenderer.invoke('notify', options),

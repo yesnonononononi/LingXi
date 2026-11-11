@@ -1,6 +1,11 @@
 /** 标签与网页实例由主进程持有，远程内容不能继承主页面的系统能力。 */
 const {randomUUID} = require('node:crypto');
-const CHANNELS = Object.freeze({command: 'project-page:command', layout: 'project-page:layout', event: 'project-page:event'});
+const CHANNELS = Object.freeze({
+  command: 'project-page:command',
+  layout: 'project-page:layout',
+  event: 'project-page:event',
+  showWithAgent: 'project-page:show-with-agent',
+});
 const PARTITION = 'persist:lingxi-project-pages';
 const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
 
@@ -33,7 +38,7 @@ function normalizeLayout(request) {
   }};
 }
 
-function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
+function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
   let previewSession;
 
@@ -144,6 +149,54 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     const guardNavigation = (event, target) => {
       try { normalizeTargetUrl(target); } catch (error) { event.preventDefault(); fail(-301, error.message); }
     };
+    contents.on('context-menu', (_event, params) => {
+      let menuClass = Menu;
+      if (!menuClass) {
+        try { menuClass = require('electron').Menu; } catch { menuClass = undefined; }
+      }
+      if (!menuClass) return;
+      const hasText = Boolean(params.selectionText && params.selectionText.trim());
+      const template = [
+        {
+          label: hasText ? 'Show with Agent (分析选中文本与页面)' : 'Show with Agent (让 Agent 分析此页面)',
+          click: async () => {
+            try {
+              const image = await contents.capturePage();
+              const buffer = image.toPNG();
+              if (!state.host.isDestroyed()) {
+                state.host.send(CHANNELS.showWithAgent, {
+                  tabId: tab.id,
+                  url: tab.url,
+                  title: tab.title,
+                  selectionText: params.selectionText ? params.selectionText.trim() : '',
+                  imageBuffer: buffer,
+                });
+              }
+            } catch (error) {
+              console.error('Show with Agent capturePage failed:', error);
+            }
+          },
+        },
+        { type: 'separator' },
+        {
+          label: '返回',
+          enabled: !contents.isDestroyed() && contents.navigationHistory && contents.navigationHistory.canGoBack(),
+          click: () => { if (contents.navigationHistory && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack(); },
+        },
+        {
+          label: '前进',
+          enabled: !contents.isDestroyed() && contents.navigationHistory && contents.navigationHistory.canGoForward(),
+          click: () => { if (contents.navigationHistory && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward(); },
+        },
+        {
+          label: '重新加载',
+          enabled: Boolean(tab.url),
+          click: () => contents.reload(),
+        },
+      ];
+      const menu = menuClass.buildFromTemplate(template);
+      menu.popup({ window: state.window });
+    });
     contents.on('will-navigate', guardNavigation);
     contents.on('will-redirect', guardNavigation);
     contents.on('content-bounds-updated', event => event.preventDefault());
@@ -239,6 +292,23 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         if (request.action === 'stop') { clearTimer(tab); contents.stop(); tab.isLoading = false; tab.loadState = 'stopped'; }
         break;
       }
+      case 'show-with-agent': {
+        const tab = request.tabId ? requireTab(state, request.tabId) : (state.tabs.get(state.activeTabId) ?? requireTab(state, ''));
+        return tab.contents.capturePage().then(image => {
+          const buffer = image.toPNG();
+          const payload = {
+            tabId: tab.id,
+            url: tab.url,
+            title: tab.title,
+            selectionText: typeof request.selectionText === 'string' ? request.selectionText.trim() : '',
+            imageBuffer: buffer,
+          };
+          if (!state.host.isDestroyed()) {
+            state.host.send(CHANNELS.showWithAgent, payload);
+          }
+          return payload;
+        });
+      }
       case 'close': destroyTabs(state); state.closed = true; state.layout = null; break;
       default: throw new Error('不支持此网页标签操作');
     }
@@ -254,7 +324,11 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       if (generation > state.generation) {
         destroyTabs(state); state.generation = generation; state.revision = 0; state.closed = false; state.layout = null;
       }
-      return {ok: true, data: action(state, request)};
+      const data = action(state, request);
+      if (data && typeof data.then === 'function') {
+        return data.then(resolved => ({ok: true, data: resolved})).catch(error => ({ok: false, error: error.message}));
+      }
+      return {ok: true, data};
     } catch (error) { return {ok: false, error: error.message}; }
   });
   handle(CHANNELS.command, command);

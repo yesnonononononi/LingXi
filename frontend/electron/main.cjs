@@ -50,7 +50,7 @@ let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
 /** 网页独立于主页面，保留主窗口原有外链策略。 */
-const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session });
+const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu });
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.argv.includes('--dev');

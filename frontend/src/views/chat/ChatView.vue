@@ -512,6 +512,15 @@
         :isDark="displayIsDark"
         @close="isSubSessionDetailOpen = false"
       />
+
+      <!-- 内置浏览器 Show with Agent 交互弹窗 -->
+      <ShowWithAgentModal
+        :open="showWithAgentOpen"
+        :payload="showWithAgentPayload"
+        @close="showWithAgentOpen = false"
+        @send="handleShowWithAgentSend"
+        @insert="handleShowWithAgentInsert"
+      />
     </Teleport>
 
   </div>
@@ -519,7 +528,7 @@
 
 <script setup lang="ts">
 import type {Component} from 'vue';
-import {computed, onMounted, provide, ref, shallowReactive, watch} from 'vue';
+import {computed, onBeforeUnmount, onMounted, provide, ref, shallowReactive, watch} from 'vue';
 import {t} from '../../i18n';
 import {isOk} from '../../utils/api';
 import {LogAPI} from '../../services/log';
@@ -527,8 +536,9 @@ import {useFilePreview} from '../../composables/useFilePreview';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
-import type {PreviewPanelMode} from '../../types/projectPagePreview';
+import type {PreviewPanelMode, ShowWithAgentPayload} from '../../types/projectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
+import ShowWithAgentModal from '../../components/chat/ShowWithAgentModal.vue';
 import {ANSWER_CHOICES_KEY, DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
@@ -595,8 +605,30 @@ provideChatInputFocus(() => inputAreaRef.value?.focusInput?.());
  * <p>为什么放在 `onMounted`：`inputAreaRef` 只有在子组件挂载后才有值，早于 `onMounted`
  * 永远是 null（会得到一条无意义的"目标为空"告警）。只在 DEV 执行，生产零开销。</p>
  */
+const showWithAgentOpen = ref(false);
+const showWithAgentPayload = ref<ShowWithAgentPayload | null>(null);
+
+const handleShowWithAgentSend = (data: { text: string; file: File }) => {
+  showWithAgentOpen.value = false;
+  handleSendMessage(data.text, chatMode.value === 'plan', null, null, [data.file]);
+};
+
+const handleShowWithAgentInsert = (data: { text: string; file: File }) => {
+  showWithAgentOpen.value = false;
+  inputAreaRef.value?.setAttachedImages([data.file]);
+  inputAreaRef.value?.setInputText(data.text);
+  inputAreaRef.value?.focusInput?.();
+};
+
 onMounted(() => {
   assertChatInputCommands(inputAreaRef.value, 'ChatView.onMounted');
+  const offShowWithAgent = window.electronAPI?.projectPage?.onShowWithAgent?.((payload: ShowWithAgentPayload) => {
+    showWithAgentPayload.value = payload;
+    showWithAgentOpen.value = true;
+  });
+  if (offShowWithAgent) {
+    onBeforeUnmount(offShowWithAgent);
+  }
 });
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();

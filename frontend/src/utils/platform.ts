@@ -11,6 +11,7 @@ import type {
   ProjectPageIpcResult,
   ProjectPageCommandRequest,
   ProjectPageLayoutRequest,
+  ShowWithAgentPayload,
 } from '../types/projectPagePreview';
 import type {UpdateActionResult, UpdateLookupResult, UpdateStatePayload} from '../types/update';
 
@@ -83,6 +84,7 @@ export interface ElectronProjectPageAPI {
   command: (request: ProjectPageCommandRequest) => Promise<ProjectPageIpcResult<ProjectPageState>>;
   layout: (request: ProjectPageLayoutRequest) => Promise<ProjectPageIpcResult<{applied: boolean}>>;
   onEvent: (callback: (event: ProjectPageState) => void) => () => void;
+  onShowWithAgent?: (callback: (payload: ShowWithAgentPayload) => void) => () => void;
 }
 
 export interface ElectronAPI {

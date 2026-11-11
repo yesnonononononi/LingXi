@@ -148,6 +148,10 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   const control = (action: 'back' | 'forward' | 'reload' | 'stop'): void => {
     if (activeTabId.value) execute({action, tabId: activeTabId.value});
   };
+  const showWithAgent = (tabId?: string, selectionText?: string): void => {
+    const targetId = tabId || activeTabId.value;
+    if (targetId) execute({action: 'show-with-agent', tabId: targetId, selectionText});
+  };
   /**
    * 收起面板：只让原生视图让位，标签、登录态与表单留在主进程，重开按 sync 快照原样恢复。
    *
@@ -187,5 +191,5 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   if (getCurrentInstance()) onBeforeUnmount(close);
   return {open, tabs, activeTabId, activeTab, addressInput, committedUrl, loadState, generation, addressError, statusText, diagnoseText,
     openAddress, updateAddress, createTab, activateTab, closeTab, goBack: () => control('back'), goForward: () => control('forward'),
-    reload: () => control('reload'), stop: () => control('stop'), hide, close, updateLayout, applyState};
+    reload: () => control('reload'), stop: () => control('stop'), showWithAgent, hide, close, updateLayout, applyState};
 }

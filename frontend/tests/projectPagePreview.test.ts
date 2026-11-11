@@ -78,6 +78,13 @@ function createHarness(timeoutMs = 15000) {
   const events: ProjectPageState[] = [];
   const views: FakeView[] = [];
   const callbacks = new Set<(state: ProjectPageState) => void>();
+  const showWithAgentEvents: any[] = [];
+  let lastBuiltMenu: any = null;
+  class FakeMenu {
+    constructor(readonly template: any[]) { lastBuiltMenu = this; }
+    popup() {}
+    static buildFromTemplate(template: any[]) { return new FakeMenu(template); }
+  }
   class FakeContents extends EventEmitter {
     id = 1;
     mainFrame = {};
@@ -101,6 +108,11 @@ function createHarness(timeoutMs = 15000) {
     getURL() { return this.url; }
     isLoadingMainFrame() { return this.loading; }
     getZoomFactor() { return 2; }
+    capturePage() {
+      return Promise.resolve({
+        toPNG: () => Buffer.from('mock-png-snapshot'),
+      });
+    }
     finish(url: string) {
       this.url = url;
       this.loading = true;
@@ -119,7 +131,10 @@ function createHarness(timeoutMs = 15000) {
     }
     reload() { this.reloads++; this.finish(this.url); }
     stop() { this.loading = false; this.emit('did-stop-loading'); }
-    send(_channel: string, state: ProjectPageState) { events.push(state); callbacks.forEach(callback => callback(state)); }
+    send(channel: string, payload: any) {
+      if (channel === CHANNELS.showWithAgent) showWithAgentEvents.push(payload);
+      else { events.push(payload); callbacks.forEach(callback => callback(payload)); }
+    }
     setWindowOpenHandler(handler: any) { this.open = handler; }
   }
   class FakeView {
@@ -141,7 +156,7 @@ function createHarness(timeoutMs = 15000) {
   partition.setPermissionCheckHandler = (handler: any) => { checkPermission = handler; };
   const registration = registerProjectPagePreview({
     ipcMain: {handle: (channel: string, callback: any) => handlers.set(channel, callback), removeHandler: (channel: string) => handlers.delete(channel)},
-    getWindow: () => window, WebContentsView: FakeView, timeoutMs,
+    getWindow: () => window, WebContentsView: FakeView, timeoutMs, Menu: FakeMenu,
     session: {fromPartition: (name: string) => { assert.equal(name, 'persist:lingxi-project-pages'); return partition; }},
   });
   const sender = {sender: host, senderFrame: host.mainFrame};
@@ -150,6 +165,7 @@ function createHarness(timeoutMs = 15000) {
   const bridge = {command: async (request: any) => invoke(request.action, request), layout: async (request: any) => layout(request),
     onEvent: (callback: (state: ProjectPageState) => void) => { callbacks.add(callback); return () => { callbacks.delete(callback); }; }};
   return {views, events, children, host, sender, invoke, layout, bridge, registration, partition,
+    showWithAgentEvents, getLastBuiltMenu: () => lastBuiltMenu,
     getState: () => events.at(-1)!, checkPermission: () => checkPermission(), requestPermission: (...args: any[]) => requestPermission(...args)};
 }
 
@@ -438,4 +454,48 @@ test('前端不构造临时标签，通道失败可见，后台导航不覆盖�
   listener({generation: preview.generation.value, revision: 2, activeTabId: tab.id, tabs: [{...tab, url: OTHER_ADDRESS}]});
   assert.equal(preview.committedUrl.value, OTHER_ADDRESS);
   assert.equal(preview.addressInput.value, 'https://draft.example/');
+});
+
+test('内置浏览器右键菜单包含 Show with Agent，触发后捕获截图并通过 IPC 发送', async t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  h.invoke('sync');
+  const tabId = h.invoke('navigate', {url: ADDRESS}).data.activeTabId;
+  assert.ok(tabId);
+  const view = h.views[0]!;
+  assert.ok(view);
+
+  // 1. 无选中文本时触发 context-menu
+  view.webContents.emit('context-menu', {}, {selectionText: ''});
+  const menu1 = h.getLastBuiltMenu();
+  assert.ok(menu1);
+  assert.equal(menu1.template[0].label, 'Show with Agent (让 Agent 分析此页面)');
+
+  // 2. 有选中文本时触发 context-menu
+  view.webContents.emit('context-menu', {}, {selectionText: '  表单校验逻辑  '});
+  const menu2 = h.getLastBuiltMenu();
+  assert.ok(menu2);
+  assert.equal(menu2.template[0].label, 'Show with Agent (分析选中文本与页面)');
+
+  // 3. 点击 Show with Agent 项
+  await menu2.template[0].click();
+  assert.equal(h.showWithAgentEvents.length, 1);
+  const event = h.showWithAgentEvents[0];
+  assert.equal(event.tabId, tabId);
+  assert.equal(event.url, ADDRESS);
+  assert.equal(event.selectionText, '表单校验逻辑');
+  assert.equal(event.imageBuffer.toString(), 'mock-png-snapshot');
+});
+
+test('指令调用 show-with-agent 同样触发截图并发送 IPC 事件', async t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  h.invoke('sync');
+  const tabId = h.invoke('navigate', {url: OTHER_ADDRESS}).data.activeTabId;
+
+  const result = await h.invoke('show-with-agent', {tabId, selectionText: '头部导航'});
+  assert.equal(result.ok, true);
+  assert.equal(result.data.selectionText, '头部导航');
+  assert.equal(result.data.url, OTHER_ADDRESS);
+  assert.equal(result.data.imageBuffer.toString(), 'mock-png-snapshot');
+  assert.equal(h.showWithAgentEvents.length, 1);
+  assert.equal(h.showWithAgentEvents[0].selectionText, '头部导航');
 });
