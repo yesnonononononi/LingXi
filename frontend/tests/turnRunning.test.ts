@@ -80,6 +80,15 @@ test('实时标记与明确未完成优先于终态证据', () => {
   assert.equal(resolveTurnRunning(facts({isComplete: false, durationMs: 900})), true);
 });
 
+test('权威活跃状态压过本端终结标记', () => {
+  // 用户点停止 / 前端打了 cancelled·failed 标记，但后端仍报活跃态 ⇒ 轮次没收口，
+  // 终态底栏（用量/耗时）不得提前展示。
+  for (const turnStatus of ['ACCEPTED', 'RUNNING', 'WAITING'] as const) {
+    assert.equal(resolveTurnRunning(facts({cancelled: true}, {turnStatus})), true, `${turnStatus} 下 cancelled 标记不能收口`);
+    assert.equal(resolveTurnRunning(facts({failed: true}, {turnStatus})), true, `${turnStatus} 下 failed 标记不能收口`);
+  }
+});
+
 test('轮次摘要活跃、工具未收尾时仍判在跑', () => {
   assert.equal(resolveTurnRunning(facts({}, {turnStatus: 'RUNNING'})), true);
   assert.equal(resolveTurnRunning(facts({}, {turnStatus: 'WAITING'})), true);

@@ -126,27 +126,35 @@ test('实际消息组件同时展示历史和实时明细，仅在组尾展示',
     assert.ok(!head.includes('Round usage'));
     const { buildBubbleFromTurnView } = await server.ssrLoadModule('/src/views/chat/blockProjection.ts');
     const { AgentToolName } = await server.ssrLoadModule('/src/utils/toolNames.ts');
+    // 气泡状态由视图投影写入，消息级 turnStatus 优先于组绑定摘要，所以「轮次在跑」必须
+    // 用 RUNNING 视图建气泡；拿已终态的气泡配 RUNNING 的轮次摘要，是自相矛盾的夹具。
+    const buildStaleToolBubble = (status: ChatTurn['status'], toolStatus: 'STARTED' | 'PROMISED') =>
+      buildBubbleFromTurnView({
+        sessionId: 'session-1', turnId: 'turn-1', status, viewVersion: '30',
+        blocks: [
+          { blockId: 'body', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: true, text: '回答内容' },
+          { blockId: 'tool:stale', type: 'TOOL', order: 2, status: toolStatus,
+            toolCallId: 'stale', toolName: AgentToolName.ReadFile, arguments: '{}' },
+        ],
+      });
     for (const status of ['COMPLETED', 'FAILED', 'CANCELLED'] as const) {
       for (const toolStatus of ['STARTED', 'PROMISED'] as const) {
-        const bubble = buildBubbleFromTurnView({
-          sessionId: 'session-1', turnId: 'turn-1', status, viewVersion: '30',
-          blocks: [
-            { blockId: 'body', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: true, text: '回答内容' },
-            { blockId: 'tool:stale', type: 'TOOL', order: 2, status: toolStatus,
-              toolCallId: 'stale', toolName: AgentToolName.ReadFile, arguments: '{}' },
-          ],
-        });
+        const bubble = buildStaleToolBubble(status, toolStatus);
         assert.equal(bubble.toolCalls[0].status, toolStatus === 'STARTED' ? 'calling' : 'pending');
         const terminal = await renderToString(createSSRApp(component, {
           ...props, message: bubble, turn: { ...turn, status },
         }));
         assert.ok(terminal.includes('Round usage'), `${status}/${toolStatus} 残留工具不能隐藏底栏`);
         assert.ok(terminal.includes('80 token'), '必须使用已保存的轮次用量');
-        const active = await renderToString(createSSRApp(component, {
-          ...props, message: bubble, turn: { ...turn, status: 'RUNNING' },
-        }));
-        assert.ok(!active.includes('Round usage'), '未决工具仍须阻止运行中的轮次提前展示底栏');
       }
+    }
+    for (const toolStatus of ['STARTED', 'PROMISED'] as const) {
+      const runningBubble = buildStaleToolBubble('RUNNING', toolStatus);
+      assert.equal(runningBubble.turnStatus, 'RUNNING');
+      const active = await renderToString(createSSRApp(component, {
+        ...props, message: runningBubble, turn: { ...turn, status: 'RUNNING' },
+      }));
+      assert.ok(!active.includes('Round usage'), `未决工具仍须阻止运行中的轮次提前展示底栏：${toolStatus}`);
     }
     const staleStream = await renderToString(createSSRApp(component, {
       ...props, turn: { ...turn, status: 'COMPLETED' },

@@ -50,8 +50,8 @@ export function hasPendingTool(toolCalls?: ToolCallTrace[]): boolean {
 /**
  * 轮次是否仍在运行。
  *
- * <p>判定顺序按「最便宜且最强」排：终态优先、然后是只有实时流才有的思考/探索标记，
- * 最后才落到需要推断的兜底判据。</p>
+ * <p>判定顺序按「最便宜且最强」排：权威状态（终态 → 活跃）优先，然后是只有实时流才有的
+ * 思考/探索标记与本端终结标记，最后才落到需要推断的兜底判据。</p>
  *
  * @param facts 全部来自组件 props，函数本身不感知 Vue
  * @returns true = 仍在运行（终态底栏与产物清单必须隐藏）
@@ -62,18 +62,23 @@ export function resolveTurnRunning(facts: TurnRunningFacts): boolean {
   const status = String(message.turnStatus ?? facts.turnStatus ?? '').toUpperCase();
 
   // 1. 轮次终态已落定：历史工具残留与迟到的流状态都不能再隐藏终态底栏。
-  if (isTerminalTurnStatus(status) || message.cancelled === true || message.failed === true) return false;
+  if (isTerminalTurnStatus(status)) return false;
 
-  // 2. 实时流标记：历史消息从存储重建时永远没有这两个标记。
-  if (message.isThinking || message.isExploring) return true;
-
-  // 3. 本端明确收到「未完成」（受理即建的行、被重试打断的行）。
-  if (message.isComplete === false) return true;
-
-  // 4. 轮次摘要仍在活跃态，事实层面这一轮没结束。
+  // 2. 后端说这一轮还在活跃态 ⇒ 仍在运行。本端的 cancelled / failed 标记只是局部观察
+  //    （用户点停止后立刻打的标记、或上一轮的残留），轮次没收口就放行终态底栏，
+  //    等于把中途的用量当成结论摆给用户。权威活跃状态优先于本端标记。
   if (isActiveTurnStatus(status)) return true;
 
-  // 5. 只有**状态未知**时才允许推断，且必须同时满足「没有终态证据」。
+  // 3. 没有权威活跃状态时，本端明确收到的终结标记才算数。
+  if (message.cancelled === true || message.failed === true) return false;
+
+  // 4. 实时流标记：历史消息从存储重建时永远没有这两个标记。
+  if (message.isThinking || message.isExploring) return true;
+
+  // 5. 本端明确收到「未完成」（受理即建的行、被重试打断的行）。
+  if (message.isComplete === false) return true;
+
+  // 6. 只有**状态未知**时才允许推断，且必须同时满足「没有终态证据」。
   //
   //    ⚠️ 这一步以前是无条件的，于是存在待发送消息（pendingChat）时翻车：会话在
   //    「上一轮刚收尾 → 下一轮接管」的窗口里始终是运行态，而末条 assistant 仍是**上一轮**那条
@@ -82,7 +87,7 @@ export function resolveTurnRunning(facts: TurnRunningFacts): boolean {
   //    真拿不到状态时仍靠终态证据兜住，绝不再用会话级 `isSending` 覆盖轮次级事实。
   if (facts.isSending && facts.isLastAssistant && !hasTerminalEvidence(message)) return true;
 
-  // 6. 多轮工具调用期间「守卫真空」的补丁：只要有工具停在调用中/待定，轮次就没结束。
+  // 7. 多轮工具调用期间「守卫真空」的补丁：只要有工具停在调用中/待定，轮次就没结束。
   //    它不依赖任何状态是否及时到位，因此不存在同样的真空。
   return hasPendingTool(message.toolCalls);
 }
