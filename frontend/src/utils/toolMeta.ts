@@ -33,12 +33,15 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.ManageCommand]: TOOL_CATEGORY.COMMAND,
   // 读取
   [AgentToolName.ReadFile]: TOOL_CATEGORY.READ,
+  // 文件检索只读，与终端执行分属两类
+  [AgentToolName.SearchFiles]: TOOL_CATEGORY.READ,
   [AgentToolName.LoadMemory]: TOOL_CATEGORY.READ,
   [AgentToolName.SearchWiki]: TOOL_CATEGORY.READ,
   [AgentToolName.ReadImage]: TOOL_CATEGORY.READ,
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
   [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
+  [AgentToolName.DeleteFile]: TOOL_CATEGORY.WRITE,
   [AgentToolName.GenerateImage]: TOOL_CATEGORY.WRITE,
   // 选择 / 人工确认
   [AgentToolName.RequireChoice]: TOOL_CATEGORY.CHOICE,
@@ -183,12 +186,12 @@ export function unwrapToolResultEnvelope(raw?: string | null): string {
   return null;
 };
 
-/** 未指定的边界按执行器语义显示，避免把未知终点冒充实际行数。 */
+/** 行范围沿用后端的 1 基口径（与输出行号同一基准）；缺省范围明确显示全文。 */
 const readLineRange = (args: Record<string, unknown>): string => {
   const start = intArg(args.startLine);
   const end = intArg(args.endLine);
   if (start === null && end === null) return t('tool.lineRange.all');
-  return `L${start ?? 0}-${end ?? t('tool.lineRange.end')}`;
+  return `L${start ?? 1}-${end ?? t('tool.lineRange.end')}`;
 };
 
 /** 解析工具展示所需的全部元数据 */
@@ -210,6 +213,17 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
       target = field('path');
       description = target;
       lineRange = readLineRange(args);
+      break;
+
+    case AgentToolName.SearchFiles:
+      // 检索行展示「在哪找 + 找什么」：路径可省略（默认整个工作区），正则才是主体。
+      target = field('path') || '.';
+      description = field('pattern');
+      break;
+
+    case AgentToolName.DeleteFile:
+      target = field('path');
+      description = target;
       break;
 
     case AgentToolName.ReadImage:

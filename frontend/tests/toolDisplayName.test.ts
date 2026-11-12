@@ -31,6 +31,8 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
   const expected: Array<[string, string]> = [
     [AgentToolName.ExecuteCommand, '执行命令'],
     [AgentToolName.ReadFile, '读取'],
+    [AgentToolName.SearchFiles, '读取'],
+    [AgentToolName.DeleteFile, '写入'],
     [AgentToolName.ReadImage, '读取'],
     [AgentToolName.WebSearch, '读取'],
     [AgentToolName.EditFile, '写入'],
@@ -72,6 +74,26 @@ test('读图工具以真实路径展示目标', () => {
   assert.equal(meta.category, TOOL_CATEGORY.READ);
   assert.equal(meta.target, 'shots/example.png');
   assert.equal(meta.description, 'shots/example.png');
+});
+
+test('文件检索展示「在哪找 + 找什么」，删除按路径展示', () => {
+  const scoped = resolveToolMeta({
+    toolName: AgentToolName.SearchFiles,
+    args: { pattern: 'class Foo', path: 'src/main' },
+  });
+  assert.equal(scoped.category, TOOL_CATEGORY.READ);
+  assert.equal(scoped.target, 'src/main');
+  assert.equal(scoped.description, 'class Foo');
+
+  // 未指定目录 = 整个工作区，展示成 '.' 而不是空白
+  const wholeWorkspace = resolveToolMeta({ toolName: AgentToolName.SearchFiles, args: { pattern: 'needle' } });
+  assert.equal(wholeWorkspace.target, '.');
+  assert.equal(wholeWorkspace.description, 'needle');
+
+  const deletion = resolveToolMeta({ toolName: AgentToolName.DeleteFile, args: { path: 'docs/old.md' } });
+  assert.equal(deletion.category, TOOL_CATEGORY.WRITE);
+  assert.equal(deletion.target, 'docs/old.md');
+  assert.equal(deletion.description, 'docs/old.md');
 });
 
 test('原生工具名绝不出现在展示名里（全量枚举扫描）', () => {

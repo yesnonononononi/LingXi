@@ -186,6 +186,10 @@ export const messages: MessageSchema = {
         // 读图独立文案：与 read_file 的「读取」区分
         imageRead: '查看图片',
         imageGenerate: '生成图片',
+        // 文件检索独立文案：与记忆检索、工具检索、网页搜索都不重名
+        fileSearch: '检索文件',
+        // 删除是破坏性动作，短名不复用「写入」
+        fileDelete: '删除文件',
         mcpList: '列举可用工具',
         skill: '读取技能',
         default: '工具',
@@ -1601,6 +1605,10 @@ export const messages: MessageSchema = {
         // Image reading gets its own label so it never reads the same as "Read file".
         imageRead: 'View image',
         imageGenerate: 'Generate image',
+        // File search gets its own label so it never reads the same as memory or tool search.
+        fileSearch: 'Search files',
+        // Deletion is destructive, so it never reuses the "Write" label.
+        fileDelete: 'Delete file',
         mcpList: 'List available tools',
         skill: 'Read skill',
         default: 'Tool',

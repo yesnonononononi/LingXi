@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.anno.Tool;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.file.delete.DeleteFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.file.search.SearchFilesToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.image.ReadImageToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.plan.CreatePlanTool;
 import com.summit.dp.workflow.infrastructure.tools.require_choice.RequireChoiceToolExecutor;
@@ -32,7 +34,8 @@ class StaticToolDeclarationContractTest {
                 CommandToolDefinitionExecutor.class, ManageCommandToolExecutor.class,
                 EditFileToolExecutor.class, ReadFileToolExecutor.class, ReadImageToolExecutor.class,
                 RequireChoiceToolExecutor.class, CallSubAgentTool.class, PeekTeammateStateTool.class,
-                SendMailToAgentTool.class, CreatePlanTool.class);
+                SendMailToAgentTool.class, CreatePlanTool.class,
+                SearchFilesToolExecutor.class, DeleteFileToolExecutor.class);
         ArrayNode snapshot = mapper.createArrayNode();
         for (Class<? extends ToolExecutor> executorType : executorTypes) {
             Tool declaration = executorType.getAnnotation(Tool.class);

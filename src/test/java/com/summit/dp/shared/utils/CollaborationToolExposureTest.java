@@ -47,7 +47,7 @@ class CollaborationToolExposureTest {
 
     private static final Set<String> REGISTERED = Set.of(
             ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT, ToolCatalog.CREATE_PLAN,
-            "read_file", "edit_file", "execute_command", "web_search", "require_choice");
+            "read_file", "search_files", "edit_file", "delete_file", "execute_command", "web_search", "require_choice");
 
     // --- 授权边界：名单即授权 ------------------------------------------------------------
 
@@ -139,13 +139,13 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, true);
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
-                        ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
-                        ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
+                        ToolCatalog.EDIT_FILE, ToolCatalog.DELETE_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
                         ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
                 request.getToolList(),
-                "基础工具包含用户确认、执行清单与项目记忆读取/检索，外加两级 MCP 发现入口；协作工具不该出现");
+                "基础工具包含用户确认、执行清单、文件检索删除与项目记忆读取/检索，外加两级 MCP 发现入口；协作工具不该出现");
     }
 
     @Test
@@ -154,8 +154,8 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false);
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
-                        ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
-                        ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
+                        ToolCatalog.EDIT_FILE, ToolCatalog.DELETE_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolList());
@@ -165,12 +165,13 @@ class CollaborationToolExposureTest {
     @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
     void readOnlyModeDisablesEditingAndKeepsTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice",
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "search_files", "web_search", "require_choice",
                         ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST));
 
-        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH,
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
+                        ToolCatalog.SEARCH_FILES, ToolCatalog.WEB_SEARCH,
                         ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST),
-                request.getToolList(), "只读档禁用 edit_file，终端不按并发策略被剔除");
+                request.getToolList(), "只读档禁用 edit_file 与 delete_file，终端不按并发策略被剔除");
     }
 
     // --- 身份剔除：模型看不到它用不了的能力 ----------------------------------------------

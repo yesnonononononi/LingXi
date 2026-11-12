@@ -49,6 +49,16 @@ test('每个固定工具都有完整名与渲染名', async () => {
   // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '写入' });
+  // 文件检索 / 删除各自独立短名，不与「读取」「写入」「检索记忆条目」「检索工具」撞车
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.SearchFiles) },
+      { fullName: '检索文件内容', renderName: '检索文件' });
+  assert.equal(resolveToolCategory(AgentToolName.SearchFiles), TOOL_CATEGORY.READ);
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeleteFile) }, { fullName: '删除文件', renderName: '删除文件' });
+  assert.equal(resolveToolCategory(AgentToolName.DeleteFile), TOOL_CATEGORY.WRITE);
+  assert.notEqual(resolveToolRenderName(AgentToolName.SearchFiles), resolveToolRenderName(AgentToolName.ReadFile));
+  assert.notEqual(resolveToolRenderName(AgentToolName.SearchFiles), resolveToolRenderName(AgentToolName.SearchWiki));
+  assert.notEqual(resolveToolRenderName(AgentToolName.SearchFiles), resolveToolRenderName(AgentToolName.SearchTool));
+  assert.notEqual(resolveToolRenderName(AgentToolName.DeleteFile), resolveToolRenderName(AgentToolName.EditFile));
   // 「查看队员状态」自带名字，渲染名不再落到泛化的「工具」
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.PeekTeammateState) }, { fullName: '查看队员状态', renderName: '查看队员状态' });
 });
@@ -84,6 +94,9 @@ test('同一映射实体跟随语言变化，未知与空标识不裸显机器�
   assert.equal(resolveToolRenderName(AgentToolName.SearchWiki), 'Search memory entries');
   assert.equal(resolveToolRenderName(AgentToolName.ReadImage), 'View image');
   assert.equal(resolveToolRenderName(AgentToolName.SearchTool), 'Search tools');
+  // 英文侧新增的两个短名同样独立
+  assert.equal(resolveToolRenderName(AgentToolName.SearchFiles), 'Search files');
+  assert.equal(resolveToolRenderName(AgentToolName.DeleteFile), 'Delete file');
   setPreference('zh-CN'); await nextTick();
   assert.equal(entry.fullName, '读取文件'); assert.equal(entry.renderName, '读取');
   assert.equal(resolveToolFullName(null), ''); assert.equal(resolveToolRenderName(undefined), '');

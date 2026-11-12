@@ -37,6 +37,9 @@ public interface ToolCatalog {
     /** 读文件工具名 */
     String READ_FILE = "read_file";
 
+    /** 按内容检索工作区文件（只读） */
+    String SEARCH_FILES = "search_files";
+
     String LOAD_MEMORY = "load_memory";
     String SEARCH_WIKI = "search_wiki";
 
@@ -46,6 +49,9 @@ public interface ToolCatalog {
 
     /** 改文件工具名 */
     String EDIT_FILE = "edit_file";
+
+    /** 删除文件工具名 */
+    String DELETE_FILE = "delete_file";
 
     /** 联网检索工具名 */
     String WEB_SEARCH = "web_search";
@@ -66,7 +72,8 @@ public interface ToolCatalog {
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
-            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE,
+            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, SEARCH_FILES, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE,
+                    DELETE_FILE, WEB_SEARCH, REQUIRE_CHOICE,
                     CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, GET_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST,
                     DELETE_CHECKLIST);
 

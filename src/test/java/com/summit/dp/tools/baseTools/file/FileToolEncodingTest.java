@@ -32,16 +32,18 @@ import static org.mockito.Mockito.*;
 class FileToolEncodingTest {
     private static final String ORIGINAL = "中文\r\n\r\n末行🙂";
     private static final String UPDATED = "修改后🚀\r\n\r\n末行🙂";
+    /** 行号换成 1 基后：行号与正文成对输出，模型据此回读同一段。 */
+    private static final String ORIGINAL_NUMBERED = "1: 中文\n2: \n3: 末行🙂";
     private final ObjectMapper mapper = new ObjectMapper();
     private final EditDiffer differ = new EditDiffer();
     @TempDir Path root;
 
     @Test void wholeFileReadUsesUtf8WithGbkTerminal() throws Exception {
-        assertReads(gbkWorkspace(), null, null, ORIGINAL);
+        assertReads(gbkWorkspace(), null, null, ORIGINAL_NUMBERED);
     }
 
     @Test void lineRangeReadUsesUtf8WithGbkTerminal() throws Exception {
-        assertReads(gbkWorkspace(), 1, 2, "\n末行🙂");
+        assertReads(gbkWorkspace(), 1, 2, "1: 中文\n2: ");
     }
 
     @Test void readUsesTheSelectedFileCapabilityWithoutRequiringAHostFile() throws Exception {
@@ -52,16 +54,16 @@ class FileToolEncodingTest {
         when(workspace.resolve("remote-only.txt")).thenReturn(remote);
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.files()).thenReturn(files);
-        when(files.readString(remote, StandardCharsets.UTF_8)).thenReturn(ORIGINAL);
+        when(files.readBytes(remote)).thenReturn(ORIGINAL.getBytes(StandardCharsets.UTF_8));
         ReadFileRequest request = ReadFileRequest.builder().path("remote-only.txt").build();
 
         ToolExecuteResult result = new ReadFileToolExecutor(mapper).execute(ToolExecution.builder()
                 .workspace(workspace).args(mapper.writeValueAsString(request)).build());
 
         assertTrue(result.isSuccess(), result.getToolOutput());
-        assertEquals(ORIGINAL, result.getToolOutput());
+        assertEquals(ORIGINAL_NUMBERED, result.getToolOutput());
         assertFalse(Files.exists(remote));
-        verify(files).readString(remote, StandardCharsets.UTF_8);
+        verify(files).readBytes(remote);
         verify(bridge, never()).commands();
     }
 
@@ -105,6 +107,10 @@ class FileToolEncodingTest {
                 .osType(OsType.WINDOWS).shellType(ShellType.CMD).isolated(true).build());
         when(workspace.bridge()).thenReturn(new LocalWorkspaceBridge(ShellType.CMD));
         when(workspace.resolve(anyString())).thenAnswer(call -> root.resolve((String) call.getArgument(0)));
+        // 边界判定与真实实现的几何一致：不 stub 就只能拿到 false，工作区内的写入会被当成越界。
+        when(workspace.encloses(any(Path.class))).thenAnswer(call ->
+                ((Path) call.getArgument(0)).toAbsolutePath().normalize()
+                        .startsWith(root.toAbsolutePath().normalize()));
         return workspace;
     }
 

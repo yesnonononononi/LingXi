@@ -19,8 +19,10 @@
  * 前端 tsconfig 开了 {@code erasableSyntaxOnly}，enum 语法直接编译不过。</p>
  */
 export const AgentToolName = {
-  /** 读文件（可带 startLine / endLine 行范围） */
+  /** 读文件（可带 1 基的 startLine / endLine 行范围，输出行号: 行内容） */
   ReadFile: 'read_file',
+  /** 按内容检索工作区文件（只读，不经终端） */
+  SearchFiles: 'search_files',
   /** 项目记忆 wiki */
   LoadMemory: 'load_memory',
   /** 搜索项目 wiki */
@@ -30,6 +32,8 @@ export const AgentToolName = {
   GenerateImage: 'generate_image',
   /** 编辑文件（结果携带 plusLines / minusLines） */
   EditFile: 'edit_file',
+  /** 删除单个文件（目录一律拒绝） */
+  DeleteFile: 'delete_file',
   /** 终端命令 */
   ExecuteCommand: 'execute_command',
   /** 后台命令的查询与停止 */

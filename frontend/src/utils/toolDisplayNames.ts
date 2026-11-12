@@ -19,6 +19,8 @@ function defineToolName(chinese: string, english: string, renderKey: string): To
 /** 完整名用于工具配置，短渲染名用于流式调用展示；键始终是后端工具标识。 */
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = new Map([
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
+  // 检索文件内容的短名独立成「检索文件」，避免与记忆检索、工具检索、网页搜索在流式工具行上同文案
+  [AgentToolName.SearchFiles, defineToolName('检索文件内容', 'Search file contents', 'tool.category.fileSearch')],
   // 记忆读取的渲染名独立成「读取记忆条目」，避免与 read_file 的「读取」在流式工具行上同文案
   [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.memoryRead')],
   // 项目记忆检索的渲染名独立成「检索记忆条目」，避免与 search_tool（检索工具）在流式工具行上同文案
@@ -27,6 +29,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.imageRead')],
   [AgentToolName.GenerateImage, defineToolName('生成图片', 'Generate image', 'tool.category.imageGenerate')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
+  // 删除是独立的破坏性动作，短名不复用「写入」
+  [AgentToolName.DeleteFile, defineToolName('删除文件', 'Delete file', 'tool.category.fileDelete')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],
   [AgentToolName.ManageCommand, defineToolName('确认后台任务状态', 'Check background task status', 'tool.category.backgroundCommand')],
   // web_search 的渲染名不再复用 READ 分类文案（「读取」会让人以为是读文件），独立成「检索网络资源」
