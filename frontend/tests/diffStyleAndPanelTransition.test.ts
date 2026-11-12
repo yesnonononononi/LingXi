@@ -8,17 +8,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 test('右上角控制栏与预览面板过渡动画契约', () => {
   const chatViewSrc = fs.readFileSync(path.resolve(__dirname, '../src/views/chat/ChatView.vue'), 'utf8');
+  const panelSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/FilePreviewPanel.vue'), 'utf8');
 
   // 1. 顶部横条：justify-between 两端分布，左会话名、右预览入口（不再是盖在消息上的绝对定位胶囊）
   assert.match(
     chatViewSrc,
-    /<Transition name="panel-entries-fade">\s*<header\s+v-if="!previewPanelVisible"[\s\S]*?justify-between[\s\S]*?headerSessionName[\s\S]*?data-test="chat-project-page-entry"/,
-    '顶部横条必须 justify-between 布局：左侧会话名、右侧预览入口，并保留 panel-entries-fade 过渡'
+    /<header\s+data-test="chat-header-bar"[\s\S]*?justify-between[\s\S]*?headerSessionName[\s\S]*?data-test="chat-project-page-entry"/,
+    '顶部横条必须 justify-between 布局：左侧会话名、右侧预览入口'
   );
   assert.doesNotMatch(
     chatViewSrc,
     /absolute right-4 top-3 z-30 inline-flex/,
     '预览入口不得再退化成悬浮在消息上的绝对定位胶囊'
+  );
+  // 横条常驻：它一旦跟着面板开合消失/出现，消息区高度会跳 44px（正是「不丝滑」的一半来源）。
+  assert.doesNotMatch(
+    chatViewSrc,
+    /<header[\s\S]{0,200}?v-if="!previewPanelVisible"/,
+    '顶部横条不得按预览面板显隐做 v-if，否则开合时消息区会跳一行高度'
   );
 
   // 2. 验证保留了稳定的测试钩子与四个入口
@@ -27,16 +34,44 @@ test('右上角控制栏与预览面板过渡动画契约', () => {
   assert.match(chatViewSrc, /data-test="token-audit-entry"/, '必须保留用量审计测试钩子');
   assert.match(chatViewSrc, /openFilePreviewPanel/, '必须保留文件预览入口');
 
-  // 3. 验证 FilePreviewPanel 被 Transition 抽屉动画包裹，且 v-show 契约完好
+  // 3. 面板显隐只有一条链路：宿主不发 Transition、不改 v-if，显隐由 :visible 交给面板自己过渡
   assert.match(
     chatViewSrc,
-    /<Transition name="preview-panel-slide">\s*<FilePreviewPanel[\s\S]*?v-show="previewPanelVisible"/,
-    'FilePreviewPanel 必须被 preview-panel-slide 平滑过渡包裹并保留 v-show 避免 iframe 销毁'
+    /<FilePreviewPanel\s+v-if="panelMounted"\s+:visible="previewPanelVisible"/,
+    '面板必须以 :visible 驱动显隐（v-if 只管挂载），否则收起动画没有机会播完'
+  );
+  assert.doesNotMatch(chatViewSrc, /<Transition name="preview-panel-slide">/, '滑动过渡归面板自己，宿主不得再包一层 Transition');
+  assert.doesNotMatch(chatViewSrc, /\.preview-panel-slide-enter-active/, '宿主里不得再留 preview-panel-slide 死样式');
+  assert.doesNotMatch(chatViewSrc, /\.panel-entries-fade-enter-active/, '横条常驻后 panel-entries-fade 是死样式，必须删掉');
+
+  // 4. 可见性是单一真源：三个模式内部状态任一为真不再直接等于「面板可见」
+  assert.match(chatViewSrc, /const previewPanelOpen = ref\(false\);/, '面板展开态必须有独立真源');
+  assert.match(
+    chatViewSrc,
+    /const previewPanelVisible = computed<boolean>\(\(\) => previewPanelOpen\.value\);/,
+    '可见性必须只由 previewPanelOpen 派生，不能再 OR 上三个模式状态'
   );
 
-  // 4. 验证 scoped CSS 中声明了对应的过渡动画类
-  assert.match(chatViewSrc, /\.preview-panel-slide-enter-active/, '必须包含 preview-panel-slide 过渡样式');
-  assert.match(chatViewSrc, /\.panel-entries-fade-enter-active/, '必须包含 panel-entries-fade 过渡样式');
+  // 5. 面板侧：宽度过渡 + 固定宽度画布（裁切窗口），内容不随每一帧重排
+  const ruleBody = (code: string, selector: string): string => {
+    const at = code.indexOf(selector);
+    assert.ok(at >= 0, `缺少规则：${selector}`);
+    return code.slice(code.indexOf('{', at) + 1, code.indexOf('}', at));
+  };
+  const shellRule = ruleBody(panelSrc, '.file-preview-panel {');
+  assert.match(shellRule, /width: 0;/, '外壳默认宽度必须是 0（收起态），展开才有起点可插值');
+  assert.match(shellRule, /overflow: hidden;/, '外壳必须裁掉画布溢出的部分，宽度动画才只改裁切窗口');
+  assert.match(shellRule, /transition: width 240ms cubic-bezier\(0\.16, 1, 0\.3, 1\);/, '外壳必须有一次性的宽度过渡');
+  assert.match(ruleBody(panelSrc, '.file-preview-panel.is-resizing {'), /transition: none;/, '拖拽调宽必须没有过渡');
+  assert.match(ruleBody(panelSrc, '.panel-canvas {'), /width: var\(--lx-preview-canvas-w, 540px\)/, '画布必须固定宽度，不能跟随外壳每帧重排');
+  assert.match(panelSrc, /<div class="panel-canvas">/, '内容必须落在固定宽度画布里');
+  assert.doesNotMatch(panelSrc, /position: absolute; inset: 0; z-index: 40; width: 100%;/, '最大化不得再靠绝对定位（无法参与宽度过渡）');
+
+  // 6. 原生网页视图：滑动期间必须停更（它浮在 DOM 上、不参与过渡也不被裁切）
+  assert.match(panelSrc, /:sliding="isSliding \|\| resizing"/, '页面模式必须拿到滑动信号');
+  const pageSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/ProjectPagePreview.vue'), 'utf8');
+  assert.match(pageSrc, /const scheduleViewport = \(\): void => \{\s*if \(props\.sliding\) return;/, '滑动期间必须拦掉逐帧布局同步');
+  assert.match(pageSrc, /watch\(\(\) => props\.sliding, applySliding\)/, '滑动结束必须补一次对位');
 });
 
 test('diff 预览框文字按照代码风格与语法高亮渲染契约', () => {
@@ -69,12 +104,15 @@ test('控制栏关闭防漂移与侧边栏防挤压布局契约', () => {
   const appSrc = fs.readFileSync(path.resolve(__dirname, '../src/App.vue'), 'utf8');
   const previewSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/ProjectPagePreview.vue'), 'utf8');
 
-  // 1. 控制栏入场过渡必须包含延迟，等待右侧面板收起完成，禁止在收缩态中央瞬间闪现
+  // 1. 横条常驻后不再有入场过渡；这里改为钉住「滑动时长是同一份真源」：CSS 与 JS 都必须是 240ms
   assert.match(
     chatViewSrc,
-    /\.panel-entries-fade-enter-active\s*\{[\s\S]*?0\.28s/,
-    '右上角控制栏 enter-active 必须延迟 0.28s 等待抽屉收起完毕再淡入'
+    /<FilePreviewPanel\s+v-if="panelMounted"/,
+    '面板挂载与显隐必须分离（v-if 只管挂载）'
   );
+  const panelSrcForTiming = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/FilePreviewPanel.vue'), 'utf8');
+  assert.match(panelSrcForTiming, /const SLIDE_MS = 240;/, 'JS 侧滑动时长常量必须存在');
+  assert.match(panelSrcForTiming, /transition: width 240ms/, 'CSS 侧滑动时长必须与 SLIDE_MS 一致');
 
   // 2. 聊天主视窗 flex 容器必须具有 min-w-0 约束，防止挤压侧边栏
   assert.match(
@@ -104,10 +142,10 @@ test('控制栏关闭防漂移与侧边栏防挤压布局契约', () => {
     'ProjectPagePreview 禁止对父容器调用 scrollIntoView，应操作容器 scrollLeft'
   );
 
-  // 6. preview-panel-slide 必须基于宽度过渡，避免 flexbox 瞬间扣减宽度挤压左侧正文区
+  // 6. 面板横向让位必须靠「宽度」过渡（transform 只会浮在对话上，右侧不会让出空间）
   assert.match(
-    chatViewSrc,
-    /\.preview-panel-slide-enter-active[\s\S]*?width\s+0\.28s/,
-    'preview-panel-slide 必须基于宽度过渡，避免 flexbox 瞬间扣减宽度挤压左侧正文区'
+    fs.readFileSync(path.resolve(__dirname, '../src/components/chat/FilePreviewPanel.vue'), 'utf8'),
+    /transition: width 240ms cubic-bezier\(0\.16, 1, 0\.3, 1\);/,
+    '面板宽度过渡必须存在，否则 flexbox 会瞬间扣减宽度挤压左侧正文区'
   );
 });

@@ -35,74 +35,72 @@
 
         <!-- 顶部横条：左会话名、右预览类入口。整条在流内占高，不再盖在消息上；
              入口挂在本列内，右缘就不会跑到子代理面板头上（那会盖住面板头部的「收起」）。
+             横条**常驻**：预览面板开合只改右侧列宽，横条若跟着消失/出现，消息区高度会跳 44px。
              有文件标签时出现「文件预览」，页面预览入口始终在（零文件标签也能进）。 -->
-        <Transition name="panel-entries-fade">
-          <header
-            v-if="!previewPanelVisible"
-            data-test="chat-header-bar"
-            :class="['shrink-0 flex h-11 items-center justify-between gap-3 px-4 border-b', displayIsDark ? 'border-zinc-800/70' : 'border-zinc-200/70']"
-          >
-            <h1 class="min-w-0 truncate text-sm font-medium" :title="headerSessionName">{{ headerSessionName }}</h1>
-            <div class="flex shrink-0 items-center gap-0.5">
-              <button
-                v-if="fileTabs.length"
-                type="button"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
-                @click="openFilePreviewPanel"
-              >
-                <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                </svg>
-                <span>{{ t('chat.view.filePreview', { count: fileTabs.length }) }}</span>
-              </button>
-              <button
-                type="button"
-                data-test="chat-project-page-entry"
-                :aria-label="t('chat.view.projectPagePreview')"
-                :title="t('chat.view.projectPagePreview')"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
-                @click="openProjectPagePanel"
-              >
-                <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
-                </svg>
-                <span>{{ t('chat.view.projectPagePreview') }}</span>
-              </button>
-              <button
-                type="button"
-                data-test="chat-design-preview-entry"
-                :aria-label="t('chat.view.designPreview')"
-                :title="t('chat.view.designPreview')"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
-                @click="openDesignPreviewPanel"
-              >
-                <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.39m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" />
-                </svg>
-                <span>{{ t('chat.view.designPreview') }}</span>
-              </button>
-              <!-- 用量审计入口：与上面两个入口并排。面板是绝对定位抽屉，故入口始终留在入口行里，
-                   收起后由它重新打开（面板自带的「收起」按钮只负责关）。 -->
-              <button
-                v-if="currentActiveSession?.id != null"
-                type="button"
-                data-test="token-audit-entry"
-                :aria-label="t('chat.tokenAudit.open')"
-                :title="t('chat.tokenAudit.open')"
-                :aria-expanded="isTokenAuditOpen"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                :class="isTokenAuditOpen ? 'bg-zinc-200/80 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90'"
-                @click="isTokenAuditOpen = !isTokenAuditOpen"
-              >
-                <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z" />
-                </svg>
-                <span>{{ t('chat.tokenAudit.title') }}</span>
-              </button>
-            </div>
-          </header>
-        </Transition>
+        <header
+          data-test="chat-header-bar"
+          :class="['shrink-0 flex h-11 items-center justify-between gap-3 px-4 border-b', displayIsDark ? 'border-zinc-800/70' : 'border-zinc-200/70']"
+        >
+          <h1 class="min-w-0 truncate text-sm font-medium" :title="headerSessionName">{{ headerSessionName }}</h1>
+          <div class="flex shrink-0 items-center gap-0.5">
+            <button
+              v-if="fileTabs.length"
+              type="button"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
+              @click="openFilePreviewPanel"
+            >
+              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+              </svg>
+              <span>{{ t('chat.view.filePreview', { count: fileTabs.length }) }}</span>
+            </button>
+            <button
+              type="button"
+              data-test="chat-project-page-entry"
+              :aria-label="t('chat.view.projectPagePreview')"
+              :title="t('chat.view.projectPagePreview')"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
+              @click="openProjectPagePanel"
+            >
+              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+              </svg>
+              <span>{{ t('chat.view.projectPagePreview') }}</span>
+            </button>
+            <button
+              type="button"
+              data-test="chat-design-preview-entry"
+              :aria-label="t('chat.view.designPreview')"
+              :title="t('chat.view.designPreview')"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
+              @click="openDesignPreviewPanel"
+            >
+              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.39m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" />
+              </svg>
+              <span>{{ t('chat.view.designPreview') }}</span>
+            </button>
+            <!-- 用量审计入口：与上面两个入口并排。面板是绝对定位抽屉，故入口始终留在入口行里，
+                 收起后由它重新打开（面板自带的「收起」按钮只负责关）。 -->
+            <button
+              v-if="currentActiveSession?.id != null"
+              type="button"
+              data-test="token-audit-entry"
+              :aria-label="t('chat.tokenAudit.open')"
+              :title="t('chat.tokenAudit.open')"
+              :aria-expanded="isTokenAuditOpen"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+              :class="isTokenAuditOpen ? 'bg-zinc-200/80 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90'"
+              @click="isTokenAuditOpen = !isTokenAuditOpen"
+            >
+              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z" />
+              </svg>
+              <span>{{ t('chat.tokenAudit.title') }}</span>
+            </button>
+          </div>
+        </header>
 
         <!-- 用量审计浮动面板：贴在消息区容器内做绝对定位（与顶部横条同一坐标系），
              偏移 top-12 是为了落在横条下方不盖住入口；高度由容器剩余空间约束，内部自行滚动。 -->
@@ -422,23 +420,21 @@
 
       </div>
 
-      <Transition name="preview-panel-slide">
-        <FilePreviewPanel
-          v-if="fileTabs.length || pagePreviewOpen || designPreviewOpen"
-          v-show="previewPanelVisible"
-          :tabs="fileTabs"
-          :activeId="activeFileId"
-          :isDark="displayIsDark"
-          :mode="previewMode"
-          @update:mode="handlePreviewModeChange"
-          @activate="activeFileId = $event"
-          @closeTab="closeFileTab"
-          @close="closePreviewPanel"
-          @refresh="refreshFile"
-          @open="runFileAction('open')"
-          @reveal="runFileAction('reveal')"
-        />
-      </Transition>
+      <FilePreviewPanel
+        v-if="panelMounted"
+        :visible="previewPanelVisible"
+        :tabs="fileTabs"
+        :activeId="activeFileId"
+        :isDark="displayIsDark"
+        :mode="previewMode"
+        @update:mode="handlePreviewModeChange"
+        @activate="activeFileId = $event"
+        @closeTab="closeFileTab"
+        @close="closePreviewPanel"
+        @refresh="refreshFile"
+        @open="runFileAction('open')"
+        @reveal="runFileAction('reveal')"
+      />
 
       <!-- 右侧：子 Agent 会话轨迹和标签面板 -->
       <SubAgentSidePanel
@@ -655,30 +651,40 @@ provide(PROJECT_PAGE_PREVIEW_KEY, pagePreview);
 const designPreviewOpen = ref(false);
 
 /**
- * 面板可见性：文件链路（filePreviewOpen）、页面链路（pagePreview.open）与设计模式任一为真即显示。
+ * 面板是否展开：**唯一显隐真源**。
+ *
+ * <p>以前是「文件 / 页面 / 设计三个内部状态任一为真」—— 于是收起面板时页面链路把
+ * `pagePreview.open` 置假，可见性跟着瞬间变假，宿主那层的 `v-if` 同帧把组件卸载，
+ * 离场动画根本没机会播（无文件标签时必现"面板啪一下消失、对话区弹回"）。</p>
  */
-const previewPanelVisible = computed<boolean>(() => filePreviewOpen.value || pagePreview.open.value || designPreviewOpen.value);
+const previewPanelOpen = ref(false);
+/**
+ * 面板是否已挂载：开过一次就保留（收起只是宽度归零），否则没有卸载就没有离场动画。
+ *
+ * <p>显隐归 `visible`，卸载只发生在会话/工作区切换（隔离要求：新会话不许复用旧页面的登录态）。</p>
+ */
+const panelMounted = ref(false);
+const previewPanelVisible = computed<boolean>(() => previewPanelOpen.value);
 /** 顶部横条左侧展示的会话名：空态（未建会话 / 待首次发送）给占位文案，不留一段空白。 */
 const headerSessionName = computed<string>(() => currentActiveSession.value?.title?.trim() || t('chat.sidebar.newSession'));
 
-
-/**
- * 页面模式是否已打开（模板用）。
- *
- * <p>模板里 `pagePreview.open` 拿到的是 Ref 对象（对象里的 ref 不会被自动解包），永远为真，
- * 会退化成「面板一直挂着」；这个顶层 computed 才是模板该读的布尔值。</p>
- */
-const pagePreviewOpen = computed<boolean>(() => pagePreview.open.value);
+/** 展开面板：挂载（幂等）+ 打开。三个入口共用这一处，别各写一份。 */
+const showPreviewPanel = (): void => {
+  panelMounted.value = true;
+  previewPanelOpen.value = true;
+};
 
 /** 打开文件模式（有标签时才有这个入口）。 */
 const openFilePreviewPanel = (): void => {
   previewMode.value = 'file';
   filePreviewOpen.value = true;
+  showPreviewPanel();
 };
 
 /** 打开项目页面模式：即使零个文件标签也能进，不去伪造文件标签。 */
 const openProjectPagePanel = (): void => {
   previewMode.value = 'page';
+  showPreviewPanel();
   pagePreview.open.value = true;
 };
 
@@ -686,6 +692,7 @@ const openProjectPagePanel = (): void => {
 const openDesignPreviewPanel = (): void => {
   previewMode.value = 'design';
   designPreviewOpen.value = true;
+  showPreviewPanel();
 };
 
 /**
@@ -702,6 +709,7 @@ const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
   } else if (fileTabs.value.length) {
     filePreviewOpen.value = true;
   }
+  showPreviewPanel();
 };
 
 /**
@@ -712,6 +720,7 @@ const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
  * 真正的销毁只发生在会话/工作区切换（隔离要求）与宿主卸载。</p>
  */
 const closePreviewPanel = (): void => {
+  previewPanelOpen.value = false;
   filePreviewOpen.value = false;
   designPreviewOpen.value = false;
   pagePreview.hide();
@@ -901,6 +910,8 @@ const isTokenAuditOpen = ref(false);
  */
 watch([localActiveId, localActiveWorkspaceId], () => {
   pagePreview.close();
+  // 页面实例销毁后，面板若只剩「页面模式」这一条理由就跟着收起：不把上一个会话的页面带进新会话。
+  if (!fileTabs.value.length && !designPreviewOpen.value) previewPanelOpen.value = false;
 });
 
 
@@ -974,34 +985,8 @@ provide(SIDEBAR_SLOTS_KEY, {
 </script>
 
 <style scoped>
-/* 预览面板抽屉滑入滑出平滑过渡：宽度协同过渡，杜绝瞬间挤压撞击左侧区域 */
-.preview-panel-slide-enter-active,
-.preview-panel-slide-leave-active {
-  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease-out;
-  overflow: hidden !important;
-}
-.preview-panel-slide-enter-active > *,
-.preview-panel-slide-leave-active > * {
-  min-width: 540px;
-}
-.preview-panel-slide-enter-from,
-.preview-panel-slide-leave-to {
-  width: 0 !important;
-  opacity: 0;
-}
-
-/* 右上角浮动操作栏淡入淡出过渡：进场延迟等待右侧预览面板完全收起，避免在收缩容器中央突兀闪现 */
-.panel-entries-fade-enter-active {
-  transition: opacity 0.2s ease 0.28s, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) 0.28s;
-}
-.panel-entries-fade-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.panel-entries-fade-enter-from,
-.panel-entries-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
+/* 预览面板的开合动画归面板自己（宽度过渡 + 固定宽度画布），宿主不再包 Transition：
+   宿主那层配 v-show 时，v-if 一变元素就被卸载，离场动画永远播不出来。 */
 
 .pending-queue-enter-active,
 .pending-queue-leave-active {

@@ -6,7 +6,7 @@ import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 import type {ProjectPageTab} from '../../types/projectPagePreview';
 
-const props = withDefaults(defineProps<{active?: boolean}>(), {active: true});
+const props = withDefaults(defineProps<{active?: boolean; sliding?: boolean}>(), {active: true, sliding: false});
 const preview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
 const nativeAvailable = typeof window.electronAPI?.projectPage?.command === 'function';
 const frameArea = ref<HTMLElement | null>(null);
@@ -60,8 +60,26 @@ const scrollActiveTabIntoView = (): void => {
 };
 
 const scheduleViewport = (): void => {
+  if (props.sliding) return;
   if (!animationFrame) animationFrame = requestAnimationFrame(syncViewport);
 };
+
+/**
+ * 面板宽度过渡期间**停止同步原生视图**。
+ *
+ * <p>原生网页视图浮在 DOM 之上、按窗口坐标定位，既不参与 CSS 过渡，也不受
+ * `overflow: hidden` 裁切 —— 过渡每一帧都由 ResizeObserver 推一次 IPC，只会看到
+ * 一个跟不上动画、在面板边界外乱跳的黑块。所以滑动期间先让它隐藏，滑完再按最终位置亮出来。</p>
+ */
+const applySliding = (sliding: boolean): void => {
+  if (sliding) {
+    if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = 0; }
+    preview.updateLayout({visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}});
+    return;
+  }
+  scheduleViewport();
+};
+watch(() => props.sliding, applySliding);
 
 watch(() => [props.active, preview.open.value, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], () => {
   scheduleViewport();

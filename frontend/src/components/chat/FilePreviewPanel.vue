@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onBeforeUnmount, ref, watch} from 'vue';
+import {computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch} from 'vue';
 import type {FilePreviewTab} from '../../types/filePreview';
 import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
@@ -25,13 +25,21 @@ import DesignCanvasPreview from './DesignCanvasPreview.vue';
  * 这样既保持既有的独立挂载（filePreview.smoke.cjs 只传 tabs/activeId/isDark）可用，
  * 又不会出现「点了模式按钮但状态没动」的双真源。</p>
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   tabs: FilePreviewTab[];
   activeId: string;
   isDark: boolean;
   /** 内容模式；省略时按 'file' 处理（保持旧调用方行为不变）。 */
   mode?: PreviewPanelMode;
-}>();
+  /**
+   * 面板是否展开。
+   *
+   * <p>展开/收起由这里驱动宽度过渡，**不再由宿主用 Transition 包一层** —— 宿主的
+   * `<Transition>` 配 `v-show` 时，`v-if` 一变（比如页面模式没有文件标签）元素就被卸载，
+   * 离场动画根本播不出来，面板"啪"一下消失、聊天区瞬间弹回。默认 true 保持独立挂载可用。</p>
+   */
+  visible?: boolean;
+}>(), {mode: undefined, visible: true});
 const emit = defineEmits<{
   (e: 'activate', id: string): void;
   (e: 'closeTab', id: string): void;
@@ -94,6 +102,106 @@ const startResize = (event: PointerEvent) => {
   window.addEventListener('pointercancel', stopResize);
 };
 onBeforeUnmount(stopResize);
+
+/* ============================ 展开 / 收起动画 ============================ */
+
+/**
+ * 宽度过渡时长：与下面 `.file-preview-panel` 的 CSS 同源，改一处必须改另一处。
+ *
+ * <p>为什么动画落在**外壳宽度**上：面板是聊天列的弹性兄弟，只有让布局宽度变化，
+ * 左边对话区才会跟着让位；`transform` 那条路只会让面板"浮"在对话上面，右侧不会让出空间。</p>
+ */
+const SLIDE_MS = 240;
+
+const shellRef = ref<HTMLElement | null>(null);
+/** 真正喂给 CSS 的展开态：先以 0 宽度挂载、下一帧再展开，否则首次挂载没有起点可插值。 */
+const slidOpen = ref(false);
+/** 滑动进行中：原生网页视图浮在 DOM 之上、不参与过渡，这段时间必须停更，滑完再对位。 */
+const isSliding = ref(false);
+/** 最大化目标宽度（实测父容器）：px 与 % 之间不能插值，动画必须同一单位。 */
+const maximizedWidth = ref(0);
+/** 滑动期间锁定的画布宽度：内容只在滑完时重排一次，不在过渡的每一帧重排。 */
+const canvasLock = ref(0);
+let slideTimer = 0;
+let hostObserver: ResizeObserver | undefined;
+
+const hostWidth = (): number => Math.round(shellRef.value?.parentElement?.getBoundingClientRect().width ?? 0);
+
+/** 外壳目标宽度（px）：收起为 0，最大化取容器实测宽度，否则取用户拖出来的宽度。 */
+const targetWidth = computed<number>(() => (slidOpen.value ? (maximized.value ? maximizedWidth.value : panelWidth.value) : 0));
+
+/** 面板"自然宽度"：不展开时也按它排版，这样展开的起点没有额外重排。 */
+const settledWidth = computed<number>(() => (maximized.value && maximizedWidth.value ? maximizedWidth.value : panelWidth.value));
+
+/**
+ * 画布宽度：内容按这个宽度排版，超出的部分由外壳 `overflow: hidden` 裁掉。
+ *
+ * <p>取三者的最大值：目标宽度、滑动期间锁定的宽度、自然宽度。锁定值保证最大化/还原时
+ * 内容只在滑完那一刻才重排一次；自然宽度保证收起状态下画布不是 0 宽（0 宽会让代码编辑器
+ * 与 iframe 反复按 0 排版，展开第一帧又要重排回来）。</p>
+ */
+const canvasWidth = computed<number>(() => Math.max(targetWidth.value, canvasLock.value, settledWidth.value));
+const shellStyle = computed<Record<string, string>>(() => ({
+  width: `${targetWidth.value}px`,
+  '--lx-preview-canvas-w': `${canvasWidth.value}px`,
+}));
+
+const startSlide = (): void => {
+  // 锁定宽度取「已渲染出来的那把宽度」而不是新目标：还原时外壳此刻还是最大宽度，
+  // 画布若立刻缩到新目标，会先露出一整片空白再等外壳收回来。
+  const rendered = shellRef.value ? Math.round(shellRef.value.getBoundingClientRect().width) : 0;
+  canvasLock.value = Math.max(canvasWidth.value, rendered) || panelWidth.value;
+  isSliding.value = true;
+  window.clearTimeout(slideTimer);
+  slideTimer = window.setTimeout(finishSlide, SLIDE_MS + 80);
+};
+/** 滑完：解锁画布，让内容按目标宽度重排这一次（此时尺寸已定，重排不可见）。 */
+const finishSlide = (): void => {
+  window.clearTimeout(slideTimer);
+  canvasLock.value = 0;
+  isSliding.value = false;
+};
+const handleSlideEnd = (event: TransitionEvent): void => {
+  if (event.propertyName === 'width' && event.target === shellRef.value) finishSlide();
+};
+
+watch(() => props.visible, async (visible) => {
+  if (visible) {
+    maximizedWidth.value = hostWidth();
+    await nextTick();
+    const shell = shellRef.value;
+    if (!shell) return;
+    // 强制以「0 宽度」这版样式落一次布局，过渡才有起点；只等下一帧是不行的 ——
+    // 窗口被遮挡/节流时 rAF 可能长时间不触发，面板就会一直停在收起态。
+    shell.getBoundingClientRect();
+    startSlide();
+    slidOpen.value = true;
+    return;
+  }
+  if (slidOpen.value) startSlide();
+  slidOpen.value = false;
+}, {immediate: true});
+
+watch(maximized, (on) => {
+  maximizedWidth.value = on ? hostWidth() : 0;
+  hostObserver?.disconnect();
+  hostObserver = undefined;
+  const host = shellRef.value?.parentElement;
+  if (on && host && typeof ResizeObserver !== 'undefined') {
+    // 最大化期间窗口尺寸变化要跟着改宽度；父容器尺寸只受窗口影响，不会被面板自己改变，不会自激。
+    hostObserver = new ResizeObserver(() => { maximizedWidth.value = hostWidth(); });
+    hostObserver.observe(host);
+  }
+  if (slidOpen.value) startSlide();
+});
+
+// 拖动调宽是实时输入，画布必须跟着走，不能锁。
+watch(panelWidth, () => { if (resizing.value) canvasLock.value = 0; });
+
+onBeforeUnmount(() => {
+  window.clearTimeout(slideTimer);
+  hostObserver?.disconnect();
+});
 
 /* ============================ 编辑差异与撤销 ============================ */
 
@@ -271,12 +379,17 @@ watch(() => props.activeId, () => {
 
 <template>
   <aside
+    ref="shellRef"
     class="file-preview-panel"
-    :class="{ 'is-dark': isDark, 'is-maximized': maximized }"
-    :style="{ width: maximized ? undefined : `${panelWidth}px` }"
+    :class="{ 'is-dark': isDark, 'is-maximized': maximized, 'is-resizing': resizing, 'is-closed': !slidOpen }"
+    :style="shellStyle"
     :aria-label="panelTitle"
+    :aria-hidden="!slidOpen"
+    @transitionend="handleSlideEnd"
     @keydown.esc="!$event.defaultPrevented && (maximized ? maximized = false : emit('close'))"
   >
+  <!-- 画布：宽度固定，内容按最终宽度排版；外壳宽度变化只改裁切窗口，内容不逐帧重排 -->
+  <div class="panel-canvas">
     <div v-if="!maximized" class="resize-handle" role="separator" :aria-label="t('filePreview.resizeAria')" aria-orientation="vertical" tabindex="0"
       @pointerdown="startResize" @keydown.left.prevent="panelWidth = Math.min(panelWidth + 32, 1000)" @keydown.right.prevent="panelWidth = Math.max(panelWidth - 32, 320)" />
     <header class="preview-topbar">
@@ -380,8 +493,8 @@ watch(() => props.activeId, () => {
       </footer>
       <div v-if="active?.data?.truncated" class="preview-truncated">{{ t('filePreview.truncated') }}</div>
     </template>
-    <!-- 隐藏只暂停显示，页面状态由主进程保留；拖拽时让指针事件留在主页面。 -->
-    <ProjectPagePreview v-show="isPageMode" :active="isPageMode && !resizing" class="page-preview-frame" />
+    <!-- 隐藏只暂停显示，页面状态由主进程保留；拖拽时让指针事件留在主页面。滑动期间由 panel 停更原生视图。 -->
+    <ProjectPagePreview v-show="isPageMode" :active="isPageMode && !resizing" :sliding="isSliding || resizing" class="page-preview-frame" />
     <DesignCanvasPreview
       v-if="isDesignMode"
       :active="isDesignMode"
@@ -389,6 +502,7 @@ watch(() => props.activeId, () => {
       :initialFileName="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.name : undefined"
       class="design-preview-frame"
     />
+  </div>
   </aside>
 </template>
 
@@ -401,10 +515,17 @@ watch(() => props.activeId, () => {
  *  - `--file-focus`：键盘焦点环，取中性灰（历史上这里曾是 indigo，与面板中性色语言冲突）
  * 子视图挂在面板外时（独立挂载 / 冒烟）用 var() 的第二参数兜底亮色值。
  */
-.file-preview-panel { --file-bg: #fff; --file-muted: #71717a; --file-line: #e4e4e7; --file-tab: #f4f4f5; --file-ink: #18181b; --file-ink-hover: #27272a; --file-ink-contrast: #ffffff; --file-focus: #a1a1aa; position: relative; flex: none; display: flex; flex-direction: column; height: 100%; min-width: 0; max-width: calc(100vw - 360px); color: #27272a; background: var(--file-bg); border-left: 1px solid var(--file-line); }
+.file-preview-panel { --file-bg: #fff; --file-muted: #71717a; --file-line: #e4e4e7; --file-tab: #f4f4f5; --file-ink: #18181b; --file-ink-hover: #27272a; --file-ink-contrast: #ffffff; --file-focus: #a1a1aa; position: relative; flex: none; height: 100%; width: 0; min-width: 0; max-width: calc(100vw - 360px); overflow: hidden; color: #27272a; background: var(--file-bg); border-left: 1px solid var(--file-line); transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+/* 拖动调宽是实时输入，不能有过渡；滑动结束后面板也可能立刻再拖，所以过渡只在非拖动态生效。 */
+.file-preview-panel.is-resizing { transition: none; }
+/* 收起时总宽度为 0：边框宽度也得归零，否则左侧会留一条 1px 的布局占位。 */
+.file-preview-panel.is-closed { border-left-width: 0; }
+/* 画布固定宽度：内容的排版宽度与"外壳当前宽度"解耦，宽度动画只推进裁切窗口。 */
+.panel-canvas { position: absolute; top: 0; right: 0; bottom: 0; width: var(--lx-preview-canvas-w, 540px); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .file-preview-panel.is-dark { --file-bg: #0c0e13; --file-muted: #8b92a1; --file-line: #252933; --file-tab: #1b1f29; --file-ink: #f5f5f5; --file-ink-hover: #e4e4e7; --file-ink-contrast: #18181b; --file-focus: #6b7280; color: #e4e4e7; }
-.file-preview-panel.is-maximized { position: absolute; inset: 0; z-index: 40; width: 100%; max-width: none; }
-.resize-handle { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; z-index: 5; touch-action: none; }
+/* 最大化不再切 position: absolute —— 绝对定位没法参与宽度过渡（会瞬间跳位），只保留层级与描边。 */
+.file-preview-panel.is-maximized { z-index: 40; max-width: none; }
+.resize-handle { position: absolute; top: 0; bottom: 0; left: 0; width: 8px; cursor: col-resize; z-index: 5; touch-action: none; }
 .resize-handle:hover, .resize-handle:focus-visible { background: var(--file-line); }
 .preview-topbar, .preview-toolbar, .preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
 .mode-switch { display: flex; gap: 2px; padding: 2px; margin-right: 4px; border: 1px solid var(--file-line); border-radius: 8px; }
@@ -508,5 +629,5 @@ button:disabled { opacity: .4; cursor: default; }
 .file-preview-panel.is-dark .diff-preview :deep(.hljs-quote) { color: #8b949e; font-style: italic; }
 .file-preview-panel.is-dark .diff-preview :deep(.hljs-number),
 .file-preview-panel.is-dark .diff-preview :deep(.hljs-literal) { color: #79c0ff; }
-@media (max-width: 900px) { .file-preview-panel { position: absolute; inset: 0; z-index: 40; width: 100% !important; max-width: none; } .resize-handle { display: none; } }
+@media (max-width: 900px) { .file-preview-panel { position: absolute; inset: 0; z-index: 40; width: 100% !important; max-width: none; } .panel-canvas { width: 100%; } .resize-handle { display: none; } }
 </style>
