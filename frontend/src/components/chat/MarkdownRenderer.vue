@@ -5,7 +5,6 @@ import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {useTheme} from '../../composables/useTheme';
 import {useThinkingText} from '../../composables/useThinkingText';
 import {t} from '../../i18n';
-import GradientText from '../common/GradientText.vue';
 import MarkdownContent from './MarkdownContent';
 
 const props = withDefaults(
@@ -109,12 +108,7 @@ const handleContainerClick = async (event: MouseEvent) => {
       class="flex items-center select-none"
       role="status"
     >
-      <GradientText
-        :colors="['#3b82f6', '#6366f1', '#a855f7', '#38bdf8', '#3b82f6']"
-        :animation-speed="2.5"
-        :show-border="false"
-        class="text-sm font-medium tracking-wide !mx-0 !ml-0"
-      >{{ t('chat.message.exploringShort') }}</GradientText>
+      <span class="text-sm font-medium tracking-wide lx-sweep-text">{{ t('chat.message.awaitModelResponse') }}</span>
     </div>
   </div>
 </template>

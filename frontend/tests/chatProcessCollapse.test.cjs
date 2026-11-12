@@ -964,15 +964,13 @@ test('工具执行提示：仅显示静态灰字，结束后替换为真实输�
   assert.match(text(root), /执行完成/);
 });
 
-test('深度思考标题：只在运行时加载渐变，结束后静态标题仍可折叠正文', async t => {
+test('深度思考标题：只在运行时加载扫光，结束后静态标题仍可折叠正文', async t => {
   const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
     { id: 'thinking-gradient', title: '思考', content: '思考正文', status: 'running', order: 0 },
   ] });
   const root = await mountExpanded(t, answer);
-  const title = find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考');
-  assert.ok(title, '思考标题应使用 GradientText 组件');
-  assert.equal(title.props.animationSpeed, 3);
-  assert.equal(title.props.showBorder, false);
+  const title = find(root, node => text(node) === '深度思考' && String(node.props.class ?? '').includes('lx-sweep-text'));
+  assert.ok(title, '思考标题应使用 lx-sweep-text 扫光');
   const header = find(root, node => node.tag === 'button' && text(node).includes('深度思考'));
   assert.equal(Boolean(find(header, node => String(node.props.class ?? '').includes('animate-ping'))), false);
   assert.match(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
@@ -985,7 +983,7 @@ test('深度思考标题：只在运行时加载渐变，结束后静态标题�
   toggle.props.onClick();
   await nextTick();
   assert.match(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
-  assert.equal(Boolean(find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考')), false);
+  assert.equal(Boolean(find(root, node => text(node) === '深度思考' && String(node.props.class ?? '').includes('lx-sweep-text'))), false);
   toggle.props.onClick();
   await nextTick();
   assert.doesNotMatch(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
@@ -998,9 +996,9 @@ test('深度思考动效：挂起、终态和历史不加载，运行中的对�
   ] });
   const turn = reactive({ status: 'RUNNING' });
   const root = await mountExpanded(t, answer, { turn });
-  const resolveAnimation = () => find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考');
+  const resolveAnimation = () => find(root, node => text(node) === '深度思考' && String(node.props.class ?? '').includes('lx-sweep-text'));
   assert.ok(resolveAnimation());
-  assert.equal(Boolean(find(root, node => node.tag === 'gradient-text' && text(node) === '旧思考')), false);
+  assert.equal(Boolean(find(root, node => text(node) === '旧思考' && String(node.props.class ?? '').includes('lx-sweep-text'))), false);
 
   answer.isSuspended = true;
   await nextTick();

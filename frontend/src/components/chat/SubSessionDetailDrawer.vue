@@ -15,7 +15,6 @@ import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import SessionContextUsage from './SessionContextUsage.vue';
-import GradientText from '../common/GradientText.vue';
 import {useTheme} from '../../composables/useTheme';
 import {useChatScroll} from '../../views/chat/useChatScroll';
 import {useI18n} from '../../i18n';
@@ -333,14 +332,9 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                   <svg :class="['w-3 h-3 text-zinc-300 transition-transform duration-200', expandedThoughtMsgIds[msg.id] ? 'rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                   </svg>
-                  <GradientText
-                    v-if="!msg.isComplete && !msg.isSuspended && msg.thoughtSteps.some(step => step.status === 'running')"
-                    :colors="['#40ffaa', '#4079ff', '#40ffaa', '#4079ff', '#40ffaa']"
-                    :animation-speed="3"
-                    :show-border="false"
-                                        class="!p-0"
-                  >{{ t('chat.subSession.deepThinking') }}</GradientText>
-                  <span v-else>{{ t('chat.subSession.deepThinking') }}</span>
+                  <span
+                    :class="{ 'lx-sweep-text': !msg.isComplete && !msg.isSuspended && msg.thoughtSteps.some(step => step.status === 'running') }"
+                  >{{ t('chat.subSession.deepThinking') }}</span>
                 </button>
                 <div
                   v-if="expandedThoughtMsgIds[msg.id]"

@@ -13,7 +13,6 @@ import type {ThoughtStep} from '../../../types/chat';
 import {formatThoughtTitle} from '../../../utils/toolRowUi';
 import {PROCESS_SEGMENT_SCROLL_KEY} from '../../../types/processScroll';
 import {t} from '../../../i18n';
-import GradientText from '../../common/GradientText.vue';
 import CollapseTransition from '../../common/CollapseTransition.vue';
 import MarkdownRenderer from '../MarkdownRenderer.vue';
 import type {ThinkingScrollApi} from './processRenderers';
@@ -41,7 +40,7 @@ const defaultExpanded = computed(() => !!step.value && step.value.status === 'ru
 
 const isExpanded = computed(() => userExpanded.value ?? defaultExpanded.value);
 
-/** 标题动画（GradientText）只在「跑步中 + 未挂起 + 轮次在跑」时开启。 */
+/** 标题动效（扫光）只在「跑步中 + 未挂起 + 轮次在跑」时开启。 */
 const isAnimating = computed(() => !!step.value && step.value.status === 'running'
   && !props.messageIsSuspended && props.isRunningTurn);
 
@@ -71,14 +70,10 @@ const toggle = (): void => {
       >
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
       </svg>
-      <GradientText
-        v-if="isAnimating"
-        :colors="['#40ffaa', '#4079ff', '#40ffaa', '#4079ff', '#40ffaa']"
-        :animation-speed="3"
-        :show-border="false"
-        class="tracking-wide !p-0"
-      >{{ formatThoughtTitle(step.title) }}</GradientText>
-      <span v-else class="tracking-wide">{{ formatThoughtTitle(step.title) }}</span>
+      <span
+        class="tracking-wide"
+        :class="{ 'lx-sweep-text': isAnimating }"
+      >{{ formatThoughtTitle(step.title) }}</span>
     </button>
 
     <!-- 长思考保留滚动上限，避免撑满会话。 -->

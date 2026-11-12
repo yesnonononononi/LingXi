@@ -71,11 +71,11 @@ test('2. MarkdownRenderer.vue 仅在尚未产出正文时显示思考占位提�
   const placeholderBlock = /<div\s+v-if="props\.isThinking\s*&&\s*!renderedHtml"[^>]*>([\s\S]*?)<\/div>/g
     .exec(vueContent);
   assert.notEqual(placeholderBlock, null, '未解析到受 !renderedHtml 门控的占位容器（选择器变了？）');
-  assert.match(placeholderBlock![1], /<GradientText/, '占位提示必须是 GradientText 组件');
+  assert.match(placeholderBlock![1], /lx-sweep-text/, '占位提示必须是 lx-sweep-text 扫光');
   assert.match(
     placeholderBlock![1],
-    /t\('chat\.message\.exploringShort'\)/,
-    '占位提示文案必须走 i18n key chat.message.exploringShort'
+    /t\('chat\.message\.awaitModelResponse'\)/,
+    '占位提示文案必须走 i18n key chat.message.awaitModelResponse'
   );
 
   // ── 真实意图 3：占位与正文容器互斥（正文容器同样用 renderedHtml 门控）─────────
