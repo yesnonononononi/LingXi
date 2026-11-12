@@ -393,7 +393,19 @@ public class Checklist {
     private ChecklistStep requireStep(long stepId) {
         Optional<ChecklistStep> found = steps.stream().filter(step -> step.getId() != null
                 && step.getId() == stepId).findFirst();
-        return found.orElseThrow(() -> new ClientException("步骤 " + stepId + " 不属于该清单"));
+        return found.orElseThrow(() -> rejectUnknownStep(stepId));
+    }
+
+    /**
+     * 拒绝未知步骤时必须带回清单标识与权威步骤标识。
+     *
+     * <p>步骤标识是十九位雪花号，调用方一旦抄错一位就无从自查：只说「不属于该清单」，
+     * 拿到的信息量为零，只能再查一次或者干出更糟的事。把该清单的真实标识回给它，一次就能改对。</p>
+     */
+    private ClientException rejectUnknownStep(long stepId) {
+        List<Long> available = steps.stream().map(ChecklistStep::getId).toList();
+        return new ClientException("步骤 " + stepId + " 不属于清单 " + id
+                + "；该清单现有步骤标识为 " + available + "，请按权威标识重试");
     }
 
     /** 按调用方给出的完整标识序列重排候选集合；必须恰好覆盖，否则拒绝。 */
@@ -407,7 +419,7 @@ public class Checklist {
             ChecklistStep step = candidates.stream()
                     .filter(candidate -> candidate.getId() != null && candidate.getId().equals(stepId))
                     .findFirst()
-                    .orElseThrow(() -> new ClientException("重排序里的步骤 " + stepId + " 不属于该清单"));
+                    .orElseThrow(() -> rejectUnknownStep(stepId));
             ordered.add(step);
         }
         return ordered;

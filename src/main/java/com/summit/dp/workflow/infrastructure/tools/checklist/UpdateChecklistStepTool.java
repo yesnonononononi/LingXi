@@ -39,6 +39,7 @@ import org.springframework.stereotype.Component;
         自动跳过终态步骤；没有后续步骤时只更新当前结果。默认 false；回退状态时不能启用。
         同状态重试不会启动其他步骤；只返回状态统计、本步骤及后续步骤的标识与状态，不回传完整正文。
         需要完整清单或步骤内容时调用 get_current_checklist。
+        stepId 是十九位标识，必须从权威快照原样复制，不要缩写成更短的数字。
         本工具只维护执行清单；create_plan 才会创建审批卡片。
         """,
     parametersJsonSchema = """

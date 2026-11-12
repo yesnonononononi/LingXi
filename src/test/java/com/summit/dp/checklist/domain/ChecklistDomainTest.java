@@ -345,6 +345,36 @@ class ChecklistDomainTest {
         assertThrows(ClientException.class, () -> ChecklistRules.parseStepStatus(null));
     }
 
+    @Test
+    @DisplayName("拒绝未知步骤要带回清单标识与权威步骤标识，调用方才能自查")
+    void rejectingUnknownStepEchoesAuthoritativeIdentifiers() {
+        // 步骤标识是十九位雪花号：这里故意用一个抄短三位的近似号，模拟真实误报
+        long checklistId = 2120928704433774592L;
+        long firstStepId = 2120928704433774593L;
+        long mistypedStepId = 2120928704434598L;
+        Checklist checklist = Checklist.create(checklistId, SESSION_ID, 42L, "执行清单",
+                List.of(ChecklistStep.pending(firstStepId, checklistId, 1, "一", Instant.now()),
+                        ChecklistStep.pending(firstStepId + 1, checklistId, 2, "二", Instant.now())),
+                Instant.now());
+
+        ClientException single = assertThrows(ClientException.class,
+                () -> checklist.changeStepStatus(mistypedStepId, ChecklistStepStatus.COMPLETED));
+        assertTrue(single.getMessage().contains("清单 " + checklistId), single.getMessage());
+        assertTrue(single.getMessage().contains("[" + firstStepId + ", " + (firstStepId + 1) + "]"),
+                single.getMessage());
+
+        ClientException batch = assertThrows(ClientException.class,
+                () -> checklist.changeStepStatuses(Map.of(mistypedStepId, ChecklistStepStatus.FAILED)));
+        assertTrue(batch.getMessage().contains("[" + firstStepId + ", " + (firstStepId + 1) + "]"),
+                batch.getMessage());
+
+        ClientException reorder = assertThrows(ClientException.class,
+                () -> checklist.applyModification(new ChecklistModification(null, Map.of(), List.of(), List.of(),
+                        List.of(firstStepId, mistypedStepId))));
+        assertTrue(reorder.getMessage().contains("[" + firstStepId + ", " + (firstStepId + 1) + "]"),
+                reorder.getMessage());
+    }
+
     private Checklist checklist(String... contents) {
         long checklistId = CHECKLIST_ID;
         List<ChecklistStep> steps = new ArrayList<>();
