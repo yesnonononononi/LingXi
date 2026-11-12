@@ -10,6 +10,7 @@ import com.summit.core.tool.*;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
 import com.summit.dp.workflow.infrastructure.tools.file.record.ContentDigest;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
@@ -50,7 +51,7 @@ import java.util.Map;
                                 description = "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file")),
                         @ToolProperty(key = "path", value = @Value(
                                 type = ValueType.STRING,
-                                description = "File path relative to the workspace root. Do not use absolute paths it is a required parameter")),
+                                description = "File path: a relative path resolves against the workspace root. A path outside the workspace is rejected unless the session runs with full access")),
                         @ToolProperty(key = "oldText", value = @Value(
                                 type = ValueType.STRING,
                                 description = "Exact original text, required for REPLACE and DELETE. Must match exactly once.")),
@@ -77,14 +78,20 @@ public class EditFileToolExecutor implements ToolExecutor {
             throwIf(request.getPath() == null || request.getPath().isBlank(), "编辑文件路径不能为空");
             throwIf(request.getType() == null || request.getType().isBlank(), "文件编辑类型不能为空");
             EditType type = EditType.fromString(request.getType());
+            // 与 FileUpdater/FileInsertor 的校验同义，但入口这层必须保留：模型最常漏的就是 newText，
+            // 这里才给得出「DELETE 不必传」的引导，下沉之后就只剩「替换文件时必须提供 newText」。
             throwIf(type != EditType.DELETE && request.getNewText() == null,
                     "编辑文件时必须提供 newText，删除文本请显式传空字符串或使用 DELETE");
             log.info("编辑文件: path={}, type={}", request.getPath(), type);
 
             Workspace workspace = toolExecution.getWorkspace();
+            Path target = workspace.resolve(request.getPath());
+            // 与生图/读图同一口径，且必须在读旧内容之前拦：越界读本身就是信息泄露。
+            throwIf(!AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+                            && !workspace.encloses(target),
+                    "编辑文件只能在工作区内进行，修改项目外文件请切换到完全访问档位");
             WorkspaceFiles files = workspace.bridge().files();
             Charset charset = StandardCharsets.UTF_8;
-            Path target = workspace.resolve(request.getPath());
             boolean existed = files.exists(target);
             String oldContent = existed ? files.readString(target, charset) : null;
 

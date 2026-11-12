@@ -25,6 +25,16 @@ public enum AgentAccessMode {
         return this != READ_ONLY_IN_WORKSPACE;
     }
 
+    /**
+     * 是否允许文件工具改动工作区之外的路径。
+     *
+     * <p>只有完全访问档放行：本档的名字就是承诺，普通修改档若也放行，
+     * 用户选「仅本项目」时目录围栏就没人兜底了。</p>
+     */
+    public boolean allowsOutsideWorkspace() {
+        return this == OUT_OF_WORKSPACE;
+    }
+
     public static Map<String, Object> toAttributes(AgentAccessMode mode) {
         AgentAccessMode effective = mode == null ? DEFAULT : mode;
         return Map.of(ATTRIBUTE_KEY, effective.name());
