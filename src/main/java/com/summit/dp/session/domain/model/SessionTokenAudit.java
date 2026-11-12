@@ -57,9 +57,9 @@ public class SessionTokenAudit {
     /**
      * 记忆正文 token（框架 {@code e9c6ec6} 的 {@code OtherTokens.memoryTokens}）。
      *
-     * <p><b>归因明细，不是独立开销</b>：框架已把它并入 {@code SYSTEM} 分项，因此
+     * <p><b>归因明细，不是独立开销</b>：框架已把它并入每轮背景块（{@code DYNAMIC_CONTEXT} 分项），因此
      * <b>绝不能加到 {@link #messagesTokens}、{@link #requestOverheadTokens} 或 {@link #totalTokens} 上</b>，
-     * 也不能参与任何恒等式。它只回答「SYSTEM 里有多少是记忆正文」。</p>
+     * 也不能参与任何恒等式。它只回答「动态上下文里有多少是记忆正文」。</p>
      *
      * <p>null 表示「未知」（框架未给出 / 该元素审计失败），不用 0 顶替。</p>
      */

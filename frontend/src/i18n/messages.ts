@@ -698,6 +698,7 @@ export const messages: MessageSchema = {
         noSession: '当前没有可审计的会话',
         category: {
           system: '系统消息',
+          dynamicContext: '动态上下文',
           user: '用户消息',
           attachment: '用户附件',
           ai: '模型消息',
@@ -716,8 +717,8 @@ export const messages: MessageSchema = {
         },
         attribution: {
           memory: '记忆正文',
-          memoryHint: '记忆正文（项目规范与 wiki 索引）已包含在系统消息内，不重复计入合计',
-          systemComposition: '系统消息构成',
+          memoryHint: '记忆正文（项目规范与 wiki 索引）是动态上下文的一部分，不重复计入合计',
+          dynamicContextComposition: '动态上下文构成',
         },
       },
       subSessions: {
@@ -2106,6 +2107,7 @@ export const messages: MessageSchema = {
         noSession: 'No auditable session right now',
         category: {
           system: 'System messages',
+          dynamicContext: 'Dynamic context',
           user: 'User messages',
           attachment: 'User attachments',
           ai: 'Model messages',
@@ -2124,8 +2126,8 @@ export const messages: MessageSchema = {
         },
         attribution: {
           memory: 'Memory text',
-          memoryHint: 'Memory text (project rules and wiki index) is already included in system messages, so it is not counted twice',
-          systemComposition: 'System message composition',
+          memoryHint: 'Memory text (project rules and wiki index) is part of the dynamic context, so it is not counted twice',
+          dynamicContextComposition: 'Dynamic context composition',
         },
       },
       subSessions: {

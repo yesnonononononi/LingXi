@@ -24,7 +24,7 @@ import {
   resolveContextSummary,
   resolveMessageRows,
   resolveOverheadSummary,
-  resolveSystemAttributionRows,
+  resolveDynamicContextAttributionRows,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   resolveOrdinaryToolRows,
@@ -72,6 +72,8 @@ const collectedAudit = (): SessionTokenAuditSnapshot => ({
   capturedAt: '2026-11-08T05:00:00.000Z',
   messages: [
     {type: 'SYSTEM', tokens: 12400, ratio: 0.087, expandable: false},
+    // 每轮背景块：框架单列上报，既不是系统提示词也不是用户原话
+    {type: 'DYNAMIC_CONTEXT', tokens: 9000, ratio: 0.063, expandable: false},
     {type: 'USER', tokens: 18920, ratio: 0.132, expandable: false},
     {type: 'AI', tokens: 38450, ratio: 0.269, expandable: false},
     {type: 'TOOL', tokens: 73080, ratio: 0.512, expandable: true},
@@ -82,7 +84,7 @@ const collectedAudit = (): SessionTokenAuditSnapshot => ({
     toolDefinition: {tokens: 10400, ratio: 0.684},
     mcpToolDefinition: {tokens: 4800, ratio: 0.316},
   },
-  // 记忆正文已含在 SYSTEM 的 12,400 内，只作归因说明
+  // 记忆正文已含在 DYNAMIC_CONTEXT 的 9,000 内，只作归因说明
   contextAttribution: {memoryTokens: 6400},
 });
 
@@ -147,13 +149,28 @@ test('resolveContextSummary：空 VO 全为 null（绝不补 0）', () => {
 
 // ─────────────────────────── 消息构成 ───────────────────────────
 
-test('resolveMessageRows：按 SYSTEM/USER/AI/TOOL 定序并保留后端占比', () => {
+test('resolveMessageRows：按 SYSTEM/DYNAMIC_CONTEXT/USER/AI/TOOL 定序并保留后端占比', () => {
   const rows = resolveMessageRows(collectedAudit().messages);
-  assert.deepEqual(rows.map((row) => row.type), ['SYSTEM', 'USER', 'AI', 'TOOL']);
-  assert.equal(rows[3]!.tokens, 73080);
-  assert.equal(rows[3]!.ratio, 0.512);
-  assert.equal(rows[3]!.expandable, true);
+  assert.deepEqual(rows.map((row) => row.type),
+    ['SYSTEM', 'DYNAMIC_CONTEXT', 'USER', 'AI', 'TOOL'],
+    '动态上下文紧贴系统提示词，排在用户原话之前');
+  const tool = rows.find((row) => row.type === 'TOOL')!;
+  assert.equal(tool.tokens, 73080);
+  assert.equal(tool.ratio, 0.512);
+  assert.equal(tool.expandable, true);
   assert.equal(rows[0]!.labelKey, 'chat.tokenAudit.category.system');
+  assert.equal(rows[1]!.labelKey, 'chat.tokenAudit.category.dynamicContext');
+});
+
+test('normalizeTokenAuditSnapshot：DYNAMIC_CONTEXT 在已知类型白名单内，不会被丢弃', () => {
+  const snapshot = normalizeTokenAuditSnapshot({
+    ...collectedAudit(),
+    messages: [{type: 'DYNAMIC_CONTEXT', tokens: '9000', ratio: '0.063', expandable: false}],
+  }, null);
+  const rows = resolveMessageRows(snapshot?.messages);
+  assert.deepEqual(rows.map((row) => row.type), ['DYNAMIC_CONTEXT'], '已知类型不能被白名单丢掉');
+  assert.equal(rows[0]!.tokens, 9000, '字符串数字要收敛成数值');
+  assert.equal(rows[0]!.labelKey, 'chat.tokenAudit.category.dynamicContext');
 });
 
 test('附件作为独立消息分项显示，保留框架比例', () => {
@@ -277,8 +294,8 @@ test('残差为 0 或未知时不渲染「其它」行：两项已精确解释�
   assert.deepEqual(unknown.map(row => row.key), ['kernel', 'mcp'], '未知不猜 0，也不渲染');
 });
 
-test('resolveSystemAttributionRows：记忆正文作为系统消息的归因明细，不参与合计', () => {
-  const rows = resolveSystemAttributionRows(collectedAudit());
+test('resolveDynamicContextAttributionRows：记忆正文作为动态上下文的归因明细，不参与合计', () => {
+  const rows = resolveDynamicContextAttributionRows(collectedAudit());
   assert.deepEqual(rows, [{
     key: 'memory',
     labelKey: 'chat.tokenAudit.attribution.memory',
@@ -287,19 +304,22 @@ test('resolveSystemAttributionRows：记忆正文作为系统消息的归因明�
   }], '记忆归因只有一个金额行，占比恒为 null（后端不给，前端不补算）');
 
   const messages = resolveMessageRows(collectedAudit().messages);
-  assert.deepEqual(messages.map(row => row.type), ['SYSTEM', 'USER', 'AI', 'TOOL'],
-    '记忆不是第五个消息分项');
+  assert.deepEqual(messages.map(row => row.type),
+    ['SYSTEM', 'DYNAMIC_CONTEXT', 'USER', 'AI', 'TOOL'],
+    '记忆不是独立的消息分项');
+  assert.equal(messages.find(row => row.type === 'DYNAMIC_CONTEXT')!.tokens, 9000,
+    '记忆已含在动态上下文内，不得被重复加进消息构成');
   assert.equal(messages.find(row => row.type === 'SYSTEM')!.tokens, 12400,
-    '记忆已含在 SYSTEM 内，不得被重复加进消息构成');
+    '系统提示词只剩稳定部分，动态内容不再算进来');
 });
 
-test('resolveSystemAttributionRows：0 与未知都不渲染（0 是噪声，null 是不知道）', () => {
+test('resolveDynamicContextAttributionRows：0 与未知都不渲染（0 是噪声，null 是不知道）', () => {
   const zero = {...collectedAudit(), contextAttribution: {memoryTokens: 0}};
-  assert.deepEqual(resolveSystemAttributionRows(zero), [], '这一轮没注入记忆正文时不占位');
+  assert.deepEqual(resolveDynamicContextAttributionRows(zero), [], '这一轮没注入记忆正文时不占位');
   const unknown = {...collectedAudit(), contextAttribution: {memoryTokens: null}};
-  assert.deepEqual(resolveSystemAttributionRows(unknown), [], '未知不猜 0');
+  assert.deepEqual(resolveDynamicContextAttributionRows(unknown), [], '未知不猜 0');
   const missing = {...collectedAudit(), contextAttribution: null};
-  assert.deepEqual(resolveSystemAttributionRows(missing), [], '整节缺失时不渲染');
+  assert.deepEqual(resolveDynamicContextAttributionRows(missing), [], '整节缺失时不渲染');
 });
 
 test('normalizeTokenAuditSnapshot：记忆归因按字符串数字收敛，非数字串为 null', () => {

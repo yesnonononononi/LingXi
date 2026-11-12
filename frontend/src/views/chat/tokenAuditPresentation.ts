@@ -20,8 +20,19 @@ import type {
  * <p>标签一律返回 i18n **键**，由组件 `t()` 翻译：纯函数保持与语言无关，测试不依赖字典。</p>
  */
 
-/** 消息分项的固定展示顺序（后端顺序不作保证，前端按业务语义定序）。 */
-export const CATEGORY_ORDER: readonly TokenAuditCategoryType[] = ['SYSTEM', 'USER', 'ATTACHMENT', 'AI', 'TOOL'];
+/**
+ * 消息分项的固定展示顺序（后端顺序不作保证，前端按业务语义定序）。
+ *
+ * <p>动态上下文紧贴系统提示词后面：两者都是「框架/应用替模型准备的背景」，用户原话排在它们之后。</p>
+ */
+export const CATEGORY_ORDER: readonly TokenAuditCategoryType[] = [
+  'SYSTEM',
+  'DYNAMIC_CONTEXT',
+  'USER',
+  'ATTACHMENT',
+  'AI',
+  'TOOL',
+];
 
 /** 工具来源分组的固定展示顺序：普通工具 → MCP → Skill。 */
 export const TOOL_GROUP_ORDER: readonly TokenAuditToolGroupKind[] = ['ORDINARY', 'MCP', 'SKILL'];
@@ -29,6 +40,7 @@ export const TOOL_GROUP_ORDER: readonly TokenAuditToolGroupKind[] = ['ORDINARY',
 /** 消息分项标签的 i18n 键。 */
 export const CATEGORY_LABEL_KEY: Readonly<Record<TokenAuditCategoryType, string>> = {
   SYSTEM: 'chat.tokenAudit.category.system',
+  DYNAMIC_CONTEXT: 'chat.tokenAudit.category.dynamicContext',
   USER: 'chat.tokenAudit.category.user',
   ATTACHMENT: 'chat.tokenAudit.category.attachment',
   AI: 'chat.tokenAudit.category.ai',
@@ -244,11 +256,12 @@ export function resolveMessageRows(messages?: TokenAuditCategory[] | null): Toke
 }
 
 /**
- * 「系统消息」下的归因明细行：记忆正文（AGENTS.md 正文 + 项目 wiki 索引）。
+ * 「动态上下文」下的归因明细行：记忆正文（AGENTS.md 正文 + 项目 wiki 索引）。
  *
- * <p><b>为什么是子行而不是消息分项</b>：框架已把记忆正文并入 {@code SYSTEM} 分项，
- * 平铺成第五类会让「消息构成合计」比快照总量多出一份记忆，恒等式当场破。
- * 因此它只作为系统消息内部的构成说明存在，不参与任何合计。</p>
+ * <p><b>为什么是子行而不是消息分项</b>：框架把记忆正文算进了每轮背景块
+ * （{@code DYNAMIC_CONTEXT}），它只是那块内容的一部分 —— 平铺成独立分项会让
+ * 「消息构成合计」比快照总量多出一份记忆，恒等式当场破。因此它只作为动态上下文内部的
+ * 构成说明存在，不参与任何合计。</p>
  *
  * <p>渲染规则（与「其它」残差行同口径）：</p>
  * <ol>
@@ -260,7 +273,7 @@ export function resolveMessageRows(messages?: TokenAuditCategory[] | null): Toke
  * @param audit 已归一快照
  * @returns 可渲染的归因明细行；不可渲染时返回空数组
  */
-export function resolveSystemAttributionRows(
+export function resolveDynamicContextAttributionRows(
   audit?: SessionTokenAuditSnapshot | null
 ): TokenAuditAttributionRow[] {
   const memory = audit?.contextAttribution?.memoryTokens;

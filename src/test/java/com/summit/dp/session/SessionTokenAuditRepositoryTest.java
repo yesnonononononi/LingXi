@@ -330,7 +330,7 @@ class SessionTokenAuditRepositoryTest {
                         new GroupMeasurement(TokenAuditGroupKind.SKILL, 14200, 800, 13000, 3,
                                 List.of()),
                         ordinaryGroup),
-                8200, 3100, memoryTokens, attachmentTokens);
+                8200, 3100, memoryTokens, attachmentTokens, null);
         Result result = TokenAuditReconciler.reconcile(measurement);
         return SessionTokenAudit.capture(SESSION_ID, executionId, result, capturedAt);
     }

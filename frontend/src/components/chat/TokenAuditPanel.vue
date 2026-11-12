@@ -3,7 +3,9 @@
  * 用量审计浮动面板。
  *
  * <p>右侧浮动抽屉，展示一次「上下文快照」口径的 token 构成：当前上下文占用、
- * 消息构成（系统 / 用户 / 模型 / 工具返回）、工具来源二级拆解，以及其他消息（请求开销）。</p>
+ * 消息构成（系统 / 动态上下文 / 用户 / 附件 / 模型 / 工具返回）、工具来源二级拆解，
+ * 以及其他消息（请求开销）。<b>动态上下文是框架每轮插入的背景块</b>（MCP 摘要、技能、记忆正文、
+ * 任务清单），既不是系统提示词也不是用户原话 —— 记忆归因挂在它自己的下拉里，系统消息不再有下拉框。</p>
  *
  * <p><b>数据来源两条，解析/渲染只有一条</b>：</p>
  * <ol>
@@ -50,7 +52,7 @@ import {
   resolveContextSummary,
   resolveMessageRows,
   resolveOverheadSummary,
-  resolveSystemAttributionRows,
+  resolveDynamicContextAttributionRows,
   resolveToolDefinitionRows,
   resolveToolGroupRows,
   countToolGroupKinds,
@@ -78,6 +80,7 @@ const emit = defineEmits<{
 /** 用户消息和附件沿用同一色系。 */
 const CATEGORY_DOT_CLASS: Readonly<Record<TokenAuditCategoryType, string>> = {
   SYSTEM: 'bg-lx-muted',
+  DYNAMIC_CONTEXT: 'bg-lx-faint',
   USER: 'bg-lx-accent',
   ATTACHMENT: 'bg-lx-accent',
   AI: 'bg-lx-success',
@@ -123,12 +126,12 @@ const toolRowExpanded = ref(false);
 /** 「其他消息」二级拆解是否展开。 */
 const overheadExpanded = ref(false);
 /**
- * 「系统消息」归因明细是否展开。
+ * 「动态上下文」归因明细是否展开。
  *
- * <p>默认展开（与其他两个下拉相反）：记忆正文用量是这次要展示的信息本身，
- * 收起来等于又回到「面板看不到记忆占用」。</p>
+ * <p>默认收起：这条下拉只是「记忆正文占了多少」的二级说明，展开它会把下面的
+ * 用户 / 模型 / 工具行整体推走。想看的人自己点，面板打开时先给一眼看得完的构成。</p>
  */
-const systemRowExpanded = ref(true);
+const dynamicContextRowExpanded = ref(false);
 /** 采集状态；无数据时按「未采集」处理，绝不臆造 COLLECTED。 */
 const displayState = computed<string>(() => displayed.value?.displayState ?? 'NOT_COLLECTED');
 const isFailed = computed<boolean>(() => displayState.value === 'FAILED');
@@ -145,8 +148,8 @@ const messageRows = computed(() => resolveMessageRows(displayed.value?.messages)
 const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools));
 const ordinaryToolRows = computed(() => resolveOrdinaryToolRows(displayed.value?.tools));
 const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
-/** 系统消息的归因明细（记忆正文）：只做说明，不进消息构成合计。 */
-const systemAttributionRows = computed(() => resolveSystemAttributionRows(displayed.value));
+/** 动态上下文的归因明细（记忆正文）：只做说明，不进消息构成合计。 */
+const dynamicContextAttributionRows = computed(() => resolveDynamicContextAttributionRows(displayed.value));
 const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
 
 const showOverhead = computed<boolean>(() => hasOverheadSection(displayed.value?.requestOverhead));
@@ -168,7 +171,7 @@ const failText = computed<string>(() => {
 const resetExpansion = (): void => {
   toolRowExpanded.value = false;
   overheadExpanded.value = false;
-  systemRowExpanded.value = true;
+  dynamicContextRowExpanded.value = false;
 };
 
 /**
@@ -223,9 +226,9 @@ const toggleOverhead = (): void => {
   overheadExpanded.value = !overheadExpanded.value;
 };
 
-/** 切换「系统消息」归因明细。 */
-const toggleSystemRow = (): void => {
-  systemRowExpanded.value = !systemRowExpanded.value;
+/** 切换「动态上下文」归因明细。 */
+const toggleDynamicContextRow = (): void => {
+  dynamicContextRowExpanded.value = !dynamicContextRowExpanded.value;
 };
 
 /** 文本形式的占比；空串表示「不知道」，模板据此不渲染该列。 */
@@ -440,20 +443,21 @@ watch(
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
-                    <!-- 系统消息：记忆正文的归因明细可展开 -->
+                    <!-- 动态上下文：记忆正文的归因明细可展开。
+                         系统消息不再有下拉框 —— 记忆正文已挪到每轮背景块，挂在系统消息下是错的口径。 -->
                     <button
-                      v-else-if="row.type === 'SYSTEM' && systemAttributionRows.length > 0"
+                      v-else-if="row.type === 'DYNAMIC_CONTEXT' && dynamicContextAttributionRows.length > 0"
                       type="button"
-                      data-testid="token-audit-system-row"
-                      :aria-expanded="systemRowExpanded"
+                      data-testid="token-audit-dynamic-context-row"
+                      :aria-expanded="dynamicContextRowExpanded"
                       class="flex min-w-0 items-center gap-1 text-left"
-                      @click="toggleSystemRow"
+                      @click="toggleDynamicContextRow"
                     >
                       <span :class="['inline-block h-1.5 w-1.5 shrink-0 rounded-lx-full', CATEGORY_DOT_CLASS[row.type]]"></span>
                       <span class="shrink-0 text-lx-fs-sm font-medium text-lx-primary">{{ t(row.labelKey) }}</span>
                       <svg
                         class="h-2.5 w-2.5 shrink-0 text-lx-faint transition-transform"
-                        :class="systemRowExpanded ? 'rotate-180' : ''"
+                        :class="dynamicContextRowExpanded ? 'rotate-180' : ''"
                         fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
                       >
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -479,21 +483,21 @@ watch(
                     ></div>
                   </div>
 
-                  <!-- 系统消息的归因明细：记忆正文已并入系统提示词，这里只说「其中有多少是记忆」。
+                  <!-- 动态上下文的归因明细：记忆正文已并入每轮背景块，这里只说「其中有多少是记忆」。
                        不做成独立消息分项 —— 那会让消息构成合计多算一份记忆，和快照总量对不上。 -->
                   <CollapseTransition>
                     <div
-                      v-if="row.type === 'SYSTEM' && systemRowExpanded && systemAttributionRows.length"
-                      data-testid="token-audit-system-attribution"
+                      v-if="row.type === 'DYNAMIC_CONTEXT' && dynamicContextRowExpanded && dynamicContextAttributionRows.length"
+                      data-testid="token-audit-dynamic-context-attribution"
                       class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
                     >
                       <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
-                        <span>{{ t('chat.tokenAudit.attribution.systemComposition') }}</span>
+                        <span>{{ t('chat.tokenAudit.attribution.dynamicContextComposition') }}</span>
                         <span>{{ t('chat.tokenAudit.tokenUnit') }}</span>
                       </div>
                       <div class="mt-1.5 space-y-1">
                         <div
-                          v-for="item in systemAttributionRows"
+                          v-for="item in dynamicContextAttributionRows"
                           :key="item.key"
                           class="flex items-center justify-between gap-2"
                         >

@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * 转换器对 {@code OtherTokens} 两个新归因字段的读取规则。
+ * 转换器对 {@code OtherTokens} 三个归因字段（动态上下文 / 记忆 / 附件）的读取规则。
  *
  * <p>核心承诺只有一条：<b>「未知」必须保持 {@code null}，绝不能用 0 冒充</b>。
  * 0 会让前端画出一条「记忆 / 附件零开销」的假项，而 null 才能让它整块隐藏。</p>
@@ -27,6 +27,7 @@ class TokenAuditConverterTest {
     void missingOtherTokensYieldsNull() {
         Measurement measurement = converter.toMeasurement(documentWithOther(null), null);
 
+        assertNull(measurement.dynamicContextTokens());
         assertNull(measurement.memoryTokens());
         assertNull(measurement.attachmentTokens());
     }
@@ -34,7 +35,7 @@ class TokenAuditConverterTest {
     @Test
     @DisplayName("元素为 null：两项归因一律 null")
     void nullElementYieldsNull() {
-        OtherTokens other = new OtherTokens(null, null, null, null);
+        OtherTokens other = new OtherTokens(null, null, null, null, null);
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
         assertNull(measurement.memoryTokens());
@@ -47,10 +48,12 @@ class TokenAuditConverterTest {
         OtherTokens other = new OtherTokens(
                 element(100, AuditStatus.FAILED),
                 element(200, AuditStatus.FAILED),
+                element(555, AuditStatus.NO_DATA),
                 element(777, AuditStatus.NO_DATA),
                 element(889, AuditStatus.FAILED));
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
+        assertNull(measurement.dynamicContextTokens(), "NO_DATA 表示框架没给出，必须是未知");
         assertNull(measurement.memoryTokens(), "NO_DATA 表示框架没给出，必须是未知");
         assertNull(measurement.attachmentTokens(), "FAILED 表示该项审计失败，必须是未知");
     }
@@ -61,10 +64,12 @@ class TokenAuditConverterTest {
         OtherTokens other = new OtherTokens(
                 element(8200, AuditStatus.SUCCESS),
                 element(3100, AuditStatus.SUCCESS),
+                element(4500, AuditStatus.SUCCESS),
                 element(0, AuditStatus.SUCCESS),
                 element(889, AuditStatus.SUCCESS));
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
+        assertEquals(4500, measurement.dynamicContextTokens());
         assertEquals(0, measurement.memoryTokens(), "0 是「确实没有记忆正文」，必须保留为 0");
         assertEquals(889, measurement.attachmentTokens());
         assertEquals(8200, measurement.toolDefinitionTokens());
@@ -74,12 +79,24 @@ class TokenAuditConverterTest {
     @Test
     @DisplayName("框架给出负数：按未知处理，不夹成 0 也不抛错")
     void negativeValueTreatedAsUnknown() {
-        OtherTokens other = new OtherTokens(null, null,
+        OtherTokens other = new OtherTokens(null, null, element(-3, AuditStatus.SUCCESS),
                 element(-5, AuditStatus.SUCCESS), element(-1, AuditStatus.SUCCESS));
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
+        assertNull(measurement.dynamicContextTokens());
         assertNull(measurement.memoryTokens());
         assertNull(measurement.attachmentTokens());
+    }
+
+    @Test
+    @DisplayName("动态上下文：成功值原样透传，缺失时保持未知（不是 0）")
+    void dynamicContextPassesThrough() {
+        OtherTokens other = new OtherTokens(null, null, element(4500, AuditStatus.SUCCESS),
+                element(777, AuditStatus.SUCCESS), element(889, AuditStatus.SUCCESS));
+
+        assertEquals(4500, converter.toMeasurement(documentWithOther(other), null).dynamicContextTokens());
+        assertNull(converter.toMeasurement(documentWithOther(null), null).dynamicContextTokens(),
+                "otherTokens 缺失时动态上下文是未知，写 0 会画出一条不存在的背景块");
     }
 
     private static DocumentElement<Integer> element(int tokens, AuditStatus status) {

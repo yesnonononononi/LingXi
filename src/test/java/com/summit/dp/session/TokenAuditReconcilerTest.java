@@ -50,6 +50,8 @@ class TokenAuditReconcilerTest {
      */
     private static final int MEMORY = 777;
     private static final int ATTACHMENT = 889;
+    /** 每轮背景块（MCP 摘要 / 技能 / 记忆 / 任务清单）：计入消息合计，不是请求开销。 */
+    private static final int DYNAMIC_CONTEXT = 4500;
 
     @Test
     @DisplayName("恒等式 1：四类分项之和等于 messagesTokens，且四行顺序固定")
@@ -332,7 +334,7 @@ class TokenAuditReconcilerTest {
     }
 
     @Test
-    @DisplayName("附件单列计入消息合计，记忆正文随系统消息计入一次")
+    @DisplayName("附件单列计入消息合计，记忆正文只作归因明细")
     void attachmentsJoinTheTotalAndMemoryRemainsAttribution() {
         Result without = TokenAuditReconciler.reconcile(measurementWithDefinitions());
         Result with = TokenAuditReconciler.reconcile(measurementWithAttribution());
@@ -354,17 +356,38 @@ class TokenAuditReconcilerTest {
     }
 
     @Test
+    @DisplayName("动态上下文：计入消息合计并自成 DYNAMIC_CONTEXT 行，不落进请求开销")
+    void dynamicContextJoinsMessagesInsteadOfOverhead() {
+        Result without = TokenAuditReconciler.reconcile(measurementWithAttribution());
+        Result with = TokenAuditReconciler.reconcile(measurementWithDynamicContext());
+
+        assertEquals(DYNAMIC_CONTEXT,
+                categoryRow(with, TokenAuditCategory.DYNAMIC_CONTEXT).resultTokens(),
+                "背景块必须自成一行，混进系统或用户都会让构成图说错话");
+        assertEquals(without.messagesTokens() + DYNAMIC_CONTEXT, with.messagesTokens(),
+                "背景块是发出去的正文，必须计入消息合计");
+        assertEquals(without.requestOverheadTokens() - DYNAMIC_CONTEXT, with.requestOverheadTokens(),
+                "不并入消息就会掉进请求开销，把工具定义开销挤成负数");
+        assertEquals(with.messagesTokens(),
+                messageRows(with).stream().mapToInt(SessionTokenAuditItem::resultTokens).sum(),
+                "消息行之和必须仍等于 messagesTokens");
+    }
+
+    @Test
     @DisplayName("归因明细：负数按入参非法拒绝（未知只能用 null 表达）")
     void attributionRejectsNegative() {
         assertThrows(ClientException.class, () -> new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT,
                 ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION,
-                -1, ATTACHMENT));
+                -1, ATTACHMENT, null));
         assertThrows(ClientException.class, () -> new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT,
                 ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION,
-                MEMORY, -1));
+                MEMORY, -1, null));
+        assertThrows(ClientException.class, () -> new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT,
+                ARGUMENTS, LIVE_TOTAL, MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION,
+                MEMORY, ATTACHMENT, -1));
         // 0 是合法测量值（确实没有记忆正文 / 附件），必须与「未知」区分开。
         Measurement zero = new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL,
-                MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, 0, 0);
+                MAX_TOKENS, groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, 0, 0, null);
         Result result = TokenAuditReconciler.reconcile(zero);
         assertEquals(0, result.memoryTokens());
         assertEquals(0, result.attachmentTokens());
@@ -385,7 +408,13 @@ class TokenAuditReconcilerTest {
     /** 带「归因明细」两项的测量值（其余与 {@link #measurementWithDefinitions()} 完全一致）。 */
     private static Measurement measurementWithAttribution() {
         return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
-                groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, MEMORY, ATTACHMENT);
+                groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, MEMORY, ATTACHMENT, null);
+    }
+
+    /** 带每轮背景块的测量值（其余与 {@link #measurementWithAttribution()} 完全一致）。 */
+    private static Measurement measurementWithDynamicContext() {
+        return new Measurement(SYSTEM, USER, AI, TOOL_DOCUMENT, ARGUMENTS, LIVE_TOTAL, MAX_TOKENS,
+                groups(), TOOL_DEFINITION, MCP_TOOL_DEFINITION, MEMORY, ATTACHMENT, DYNAMIC_CONTEXT);
     }
 
     private static List<GroupMeasurement> groups() {

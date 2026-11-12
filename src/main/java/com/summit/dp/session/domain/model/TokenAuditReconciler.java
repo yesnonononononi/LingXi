@@ -28,6 +28,8 @@ public final class TokenAuditReconciler {
     private static final int AI_ORDER = 3;
     private static final int TOOL_ORDER = 4;
     private static final int ATTACHMENT_ORDER = 5;
+    /** 每轮背景块：既不是系统提示词也不是用户原话，单独成项才能与框架口径闭合。 */
+    private static final int DYNAMIC_CONTEXT_ORDER = 6;
 
     private TokenAuditReconciler() {
         // 纯静态领域服务，不允许实例化
@@ -99,12 +101,15 @@ public final class TokenAuditReconciler {
      *                                （元素缺失、{@code NO_DATA} 或 {@code FAILED}），
      *                                <b>绝不允许用 0 顶替</b>
      * @param mcpToolDefinitionTokens 随请求下发的 MCP 工具定义 token；null 同义
+     * @param dynamicContextTokens    每轮背景块（标题、MCP 摘要、技能、记忆、任务清单）token；
+     *                                <b>null 表示「框架未给出」</b>
      */
     public record Measurement(int systemTokens, int userTokens, int assistantTokens,
                               int toolDocumentTokens, int argumentOverlapTokens,
                               int totalTokens, int maxTokens, List<GroupMeasurement> groups,
                               Integer toolDefinitionTokens, Integer mcpToolDefinitionTokens,
-                              Integer memoryTokens, Integer attachmentTokens) {
+                              Integer memoryTokens, Integer attachmentTokens,
+                              Integer dynamicContextTokens) {
 
         public Measurement {
             requireNonNegative(systemTokens, "系统提示词 token");
@@ -120,6 +125,7 @@ public final class TokenAuditReconciler {
             requireNonNegativeOrNull(mcpToolDefinitionTokens, "MCP 工具定义 token");
             requireNonNegativeOrNull(memoryTokens, "记忆正文 token");
             requireNonNegativeOrNull(attachmentTokens, "附件 token");
+            requireNonNegativeOrNull(dynamicContextTokens, "动态上下文 token");
             groups = groups == null ? List.of() : List.copyOf(groups);
         }
 
@@ -139,7 +145,7 @@ public final class TokenAuditReconciler {
                            int toolDocumentTokens, int argumentOverlapTokens,
                            int totalTokens, int maxTokens, List<GroupMeasurement> groups) {
             this(systemTokens, userTokens, assistantTokens, toolDocumentTokens, argumentOverlapTokens,
-                    totalTokens, maxTokens, groups, null, null, null, null);
+                    totalTokens, maxTokens, groups, null, null, null, null, null);
         }
 
         /**
@@ -162,7 +168,7 @@ public final class TokenAuditReconciler {
                            Integer toolDefinitionTokens, Integer mcpToolDefinitionTokens) {
             this(systemTokens, userTokens, assistantTokens, toolDocumentTokens, argumentOverlapTokens,
                     totalTokens, maxTokens, groups, toolDefinitionTokens, mcpToolDefinitionTokens,
-                    null, null);
+                    null, null, null);
         }
     }
 
@@ -261,8 +267,15 @@ public final class TokenAuditReconciler {
         // 无返回结果的调用可能只进入父项。
         int toolGroupingDrift = items.isEmpty() ? 0 : toolTokens - toolGroupTokens;
         Integer attachmentTokens = measurement.attachmentTokens();
+        // 框架把每轮背景块从 userTokens 里摘出来单独报了（OtherTokens.dynamicContextTokens），
+        // 它仍然是发出去的上下文正文，必须计进消息合计：漏掉这一项，动态上下文会整块掉进
+        // 「请求开销」这个减法残差里，把工具定义开销挤成负数，恒等式 5 当场破。
+        Integer dynamicContextTokens = measurement.dynamicContextTokens();
         int messagesTokens = measurement.systemTokens() + measurement.userTokens()
                 + measurement.assistantTokens() + toolTokens;
+        if (dynamicContextTokens != null) {
+            messagesTokens += dynamicContextTokens;
+        }
         if (attachmentTokens != null) {
             messagesTokens += attachmentTokens;
         }
@@ -294,6 +307,10 @@ public final class TokenAuditReconciler {
         if (attachmentTokens != null) {
             messageRows.add(SessionTokenAuditItem.message(TokenAuditCategory.ATTACHMENT,
                     attachmentTokens, 0, ATTACHMENT_ORDER));
+        }
+        if (dynamicContextTokens != null) {
+            messageRows.add(SessionTokenAuditItem.message(TokenAuditCategory.DYNAMIC_CONTEXT,
+                    dynamicContextTokens, 0, DYNAMIC_CONTEXT_ORDER));
         }
         messageRows.addAll(items);
 

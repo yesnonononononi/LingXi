@@ -14,7 +14,14 @@ public enum TokenAuditCategory {
     /** 工具调用参数与结果消息。 */
     TOOL,
     /** 用户消息中的非文本附件。 */
-    ATTACHMENT;
+    ATTACHMENT,
+    /**
+     * 每轮背景块：MCP 摘要、技能、记忆正文与任务清单，由框架作为一条 user 消息插入。
+     *
+     * <p>它既不是系统提示词，也不是用户打出来的字，因此<b>不能</b>并进 {@link #SYSTEM}
+     * 或 {@link #USER}；单独成项才能让「消息构成合计」与框架快照总量闭合。</p>
+     */
+    DYNAMIC_CONTEXT;
 
     /**
      * 按持久化名还原枚举（PO 里存的是 {@link #name()}）。

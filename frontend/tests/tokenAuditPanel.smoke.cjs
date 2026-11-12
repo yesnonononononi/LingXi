@@ -8,8 +8,8 @@
  *   <li>MCP / Skill 合计与逐项列表之间真的有间距（拿两个 `getBoundingClientRect()` 相减），
  *       且它们**不在**滚动容器里（否则滚动时合计会被滚出视野）。</li>
  *   <li>token 单位文案是 `token` 不是 `tok`（`\btok\b` 不会误伤 `token`，用词边界精确判定）。</li>
- *   <li>系统消息的归因明细（记忆正文）是「系统消息」下拉框里的项：默认展开、可折叠、与下方工具框左右对齐、
- *       展开走 collapse-transition 过渡；0 与未知时整块不渲染。</li>
+ *   <li>记忆正文归因挂在「动态上下文」下拉框里（系统消息不再有下拉框）：默认收起、可折叠、
+ *       与下方工具框左右对齐，展开走 collapse-transition 过渡；0 与未知时整块不渲染。</li>
  *   <li>滚动条出现/消失不得改变内容可用宽度（`scrollbar-gutter: stable`），否则展开下拉时整块结构横向抖一下。</li>
  * </ol>
  *
@@ -41,7 +41,9 @@ const SNAPSHOT = {
   totalTokens: 148200,
   capturedAt: '2026-11-09T12:00:00Z',
   messages: [
-    {type: 'SYSTEM', tokens: 20000, ratio: 0.135, expandable: false},
+    {type: 'SYSTEM', tokens: 8000, ratio: 0.054, expandable: false},
+    // 每轮背景块：记忆正文属于它，框架已从 userTokens 摘出单列
+    {type: 'DYNAMIC_CONTEXT', tokens: 12000, ratio: 0.081, expandable: false},
     {type: 'USER', tokens: 12000, ratio: 0.081, expandable: false},
     {type: 'AI', tokens: 11000, ratio: 0.074, expandable: false},
     {type: 'TOOL', tokens: 105200, ratio: 0.71, expandable: true},
@@ -69,7 +71,7 @@ const SNAPSHOT = {
     mcpToolDefinition: {tokens: 2100, ratio: 0.014},
     framingResidualTokens: -50,
   },
-  // 归因明细：记忆正文已含在 SYSTEM 的 20,000 里，只做说明、不参与合计
+  // 归因明细：记忆正文已含在 DYNAMIC_CONTEXT 的 12,000 里，只做说明、不参与合计
   contextAttribution: {memoryTokens: 6400},
 };
 
@@ -279,35 +281,50 @@ window.ready = true;`);
   assert(/占上下文上限/.test(ratioScope),
     '「消息构成」旁应标明占比分母是上下文上限，实际: ' + JSON.stringify(ratioScope));
 
-  // ④''' 系统消息的归因明细（记忆正文）：挂在系统消息下方，且不新增一个消息分项
+  // ④'' 默认必须是收起：面板一打开就摊开记忆明细，会把下面几行整体推走
+  const initial = await evaluate(`(() => {
+    const button = document.querySelector('[data-testid="token-audit-dynamic-context-row"]');
+    return {
+      hasButton: !!button,
+      expanded: button ? button.getAttribute('aria-expanded') : null,
+      attr: !!document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]'),
+    };
+  })()`);
+  assert(initial.hasButton, '动态上下文行应变成可展开按钮（记忆项是下拉框里的项）');
+  assert(initial.expanded === 'false', '记忆明细默认收起（先给一眼看得完的构成）');
+  assert(initial.attr === false, '默认收起时记忆项不应在 DOM 中');
+  // 展开一次，后续断言都基于展开态
+  await run(`window.clickSelector('[data-testid="token-audit-dynamic-context-row"]')`);
+
+  // ④''' 动态上下文的归因明细（记忆正文）：挂在动态上下文下方，且不新增一个消息分项
   const attribution = await evaluate(`(() => {
-    const root = document.querySelector('[data-testid="token-audit-system-attribution"]');
+    const root = document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]');
     const hint = document.querySelector('[data-testid="token-audit-attribution-hint"]');
-    const systemRow = document.querySelector('[data-testid="token-audit-message-row"][data-category="SYSTEM"]');
+    const dynamicRow = document.querySelector('[data-testid="token-audit-message-row"][data-category="DYNAMIC_CONTEXT"]');
     const toolSources = document.querySelector('[data-testid="token-audit-tool-sources"]');
     return {
       text: root ? root.innerText : null,
       title: hint ? hint.getAttribute('title') : null,
       rowCount: document.querySelectorAll('[data-testid="token-audit-message-row"]').length,
-      insideSystemRow: !!(root && systemRow && systemRow.contains(root)),
+      insideDynamicRow: !!(root && dynamicRow && dynamicRow.contains(root)),
       insideToolSources: !!(root && toolSources && toolSources.contains(root)),
     };
   })()`);
-  assert(attribution.text !== null, '系统消息下方应渲染记忆正文归因行');
+  assert(attribution.text !== null, '动态上下文下方应渲染记忆正文归因行');
   assert(/记忆正文/.test(attribution.text) && /6,400/.test(attribution.text),
     '记忆归因行应显示「记忆正文」与金额，实际: ' + JSON.stringify(attribution.text));
   assert(!/%/.test(attribution.text), '记忆归因行不得出现百分比（后端不给占比，前端不许补算）');
-  assert(attribution.insideSystemRow, '记忆归因行必须挂在系统消息行内');
+  assert(attribution.insideDynamicRow, '记忆归因行必须挂在动态上下文行内');
   assert(attribution.insideToolSources === false, '记忆归因行不得混进工具来源小节');
-  assert(attribution.rowCount === 4,
-    '记忆归因不得新增消息分项（应仍是系统/用户/模型/工具返回四行），实际: ' + attribution.rowCount);
-  assert(!!attribution.title && /系统消息/.test(attribution.title),
-    '记忆归因旁应有提示，说明已含在系统消息内，实际: ' + JSON.stringify(attribution.title));
+  assert(attribution.rowCount === 5,
+    '记忆归因不得新增消息分项（应是系统/动态上下文/用户/模型/工具返回五行），实际: ' + attribution.rowCount);
+  assert(!!attribution.title && /动态上下文/.test(attribution.title),
+    '记忆归因旁应有提示，说明已含在动态上下文内，实际: ' + JSON.stringify(attribution.title));
 
-  // ④'''' 记忆项是「系统消息」下拉框里的项：可折叠、默认展开、容器与下方工具框左右对齐
-  const alignment = await evaluate(`(() => {
-    const button = document.querySelector('[data-testid="token-audit-system-row"]');
-    const attr = document.querySelector('[data-testid="token-audit-system-attribution"]');
+  // ④'''' 记忆项是「动态上下文」下拉框里的项：可折叠、默认收起、容器与下方工具框左右对齐
+  const readAttribution = () => evaluate(`(() => {
+    const button = document.querySelector('[data-testid="token-audit-dynamic-context-row"]');
+    const attr = document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]');
     const sources = document.querySelector('[data-testid="token-audit-tool-sources"]');
     const rect = el => { const r = el.getBoundingClientRect(); return {left: Math.round(r.left), right: Math.round(r.right)}; };
     return {
@@ -318,47 +335,50 @@ window.ready = true;`);
       header: attr ? (attr.firstElementChild ? attr.firstElementChild.innerText.replace(/\\s+/g, ' ').trim() : '') : '',
     };
   })()`);
-  assert(alignment.hasButton, '系统消息行应变成可展开按钮（记忆项是下拉框里的项）');
-  assert(alignment.expanded === 'true', '记忆明细默认展开（否则等于又看不到记忆用量）');
-  assert(alignment.attr !== null, '默认展开时记忆项应在 DOM 中');
-  assert(/系统消息构成/.test(alignment.header) && /token/.test(alignment.header),
+
+  // 已展开：比对表头与对齐
+  const alignment = await readAttribution();
+  assert(alignment.expanded === 'true', '点击后 aria-expanded 应为 true');
+  assert(/动态上下文构成/.test(alignment.header) && /token/.test(alignment.header),
     '记忆下拉框应有与工具来源同款的表头，实际: ' + JSON.stringify(alignment.header));
+  assert(alignment.attr !== null && alignment.sources !== null,
+    '展开后记忆框与工具来源框都应出现在 DOM 中');
   assert(alignment.attr.left === alignment.sources.left && alignment.attr.right === alignment.sources.right,
     '记忆下拉框必须与下方工具来源框左右对齐，实测 ' + JSON.stringify([alignment.attr, alignment.sources]));
 
-  // 折叠：点一次收起（记忆块消失、aria-expanded 翻转），再点恢复
-  await run(`window.clickSelector('[data-testid="token-audit-system-row"]')`);
+  // 折叠：点一次收起（记忆块消失、aria-expanded 翻转）
+  await run(`window.clickSelector('[data-testid="token-audit-dynamic-context-row"]')`);
   const collapsed = await evaluate(`(() => {
-    const button = document.querySelector('[data-testid="token-audit-system-row"]');
+    const button = document.querySelector('[data-testid="token-audit-dynamic-context-row"]');
     return {
       expanded: button ? button.getAttribute('aria-expanded') : null,
-      attr: !!document.querySelector('[data-testid="token-audit-system-attribution"]'),
+      attr: !!document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]'),
     };
   })()`);
   assert(collapsed.expanded === 'false', '点击后 aria-expanded 应为 false');
   assert(collapsed.attr === false, '收起后记忆块应离开 DOM（不是只改高度）');
   // 展开第一帧就取样：run() 会等到动画结束，那时 Transition 的 enter class 已经摘掉
-  await evaluate(`window.clickSelector('[data-testid="token-audit-system-row"]')`);
+  await evaluate(`window.clickSelector('[data-testid="token-audit-dynamic-context-row"]')`);
   await evaluate('window.nextTickOnly()');
   const entering = await evaluate(`(() => {
-    const el = document.querySelector('[data-testid="token-audit-system-attribution"]');
+    const el = document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]');
     return el ? el.className : null;
   })()`);
   await evaluate('window.flush()');
-  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-system-attribution"]')`),
+  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]')`),
     '再次点击应重新展开记忆块');
   assert(entering !== null && /collapse-transition-enter-active/.test(entering),
     '记忆下拉框展开应有折叠过渡（缺少 collapse-transition-enter-active），实际 class: ' + JSON.stringify(entering));
 
   // 记忆为 0（这一轮没注入记忆正文）或未知时整行不渲染：0 是噪声、null 是不知道
   await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: {memoryTokens: 0}})})`);
-  assert(await evaluate(`document.querySelector('[data-testid="token-audit-system-attribution"]') === null`),
+  assert(await evaluate(`document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]') === null`),
     '记忆为 0 时不应渲染归因行');
   await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: null})})`);
-  assert(await evaluate(`document.querySelector('[data-testid="token-audit-system-attribution"]') === null`),
+  assert(await evaluate(`document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]') === null`),
     '后端未给归因明细时不应渲染归因行（不得猜 0）');
   await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
-  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-system-attribution"]')`),
+  assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]')`),
     '恢复完整快照后归因行应重新出现');
 
   // ④''''' 滚动条不得挤窄内容：展开下拉让内容变高、滚动条出现时，整块不能横向抖一下

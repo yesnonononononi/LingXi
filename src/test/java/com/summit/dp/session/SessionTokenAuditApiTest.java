@@ -61,16 +61,19 @@ class SessionTokenAuditApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.sessionId").isString())
                 .andExpect(jsonPath("$.data.liveTotalTokens").isNumber())
-                .andExpect(jsonPath("$.data.messages.length()").value(5))
+                .andExpect(jsonPath("$.data.messages.length()").value(6))
                 .andExpect(jsonPath("$.data.messages[0].tokens").value(12300))
                 .andExpect(jsonPath("$.data.messages[0].ratio").value(0.0612345))
-                .andExpect(jsonPath("$.data.messages[1].ratio").value(0.0923456))
-                .andExpect(jsonPath("$.data.messages[2].type").value("ATTACHMENT"))
-                .andExpect(jsonPath("$.data.messages[2].tokens").value(889))
-                .andExpect(jsonPath("$.data.messages[2].ratio").value(0.004))
-                .andExpect(jsonPath("$.data.messages[3].ratio").value(0.1951234))
-                .andExpect(jsonPath("$.data.messages[4].tokens").value(63614))
-                .andExpect(jsonPath("$.data.messages[4].ratio").value(0.3181234))
+                .andExpect(jsonPath("$.data.messages[1].type").value("DYNAMIC_CONTEXT"))
+                .andExpect(jsonPath("$.data.messages[1].tokens").value(4500))
+                .andExpect(jsonPath("$.data.messages[1].ratio").value(0.0225))
+                .andExpect(jsonPath("$.data.messages[2].ratio").value(0.0923456))
+                .andExpect(jsonPath("$.data.messages[3].type").value("ATTACHMENT"))
+                .andExpect(jsonPath("$.data.messages[3].tokens").value(889))
+                .andExpect(jsonPath("$.data.messages[3].ratio").value(0.004))
+                .andExpect(jsonPath("$.data.messages[4].ratio").value(0.1951234))
+                .andExpect(jsonPath("$.data.messages[5].tokens").value(63614))
+                .andExpect(jsonPath("$.data.messages[5].ratio").value(0.3181234))
                 .andExpect(jsonPath("$.data.tools.tokens").value(63614))
                 .andExpect(jsonPath("$.data.tools.ratio").value(0.3181234))
                 .andExpect(jsonPath("$.data.tools.mcp.tokens").value(34700))
@@ -140,7 +143,7 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.requestOverhead.tokens").value(audit.getRequestOverheadTokens()))
                 .andExpect(jsonPath("$.data.requestOverhead.toolDefinition").doesNotExist())
                 .andExpect(jsonPath("$.data.requestOverhead.mcpToolDefinition").doesNotExist())
-                .andExpect(jsonPath("$.data.messages.length()").value(5));
+                .andExpect(jsonPath("$.data.messages.length()").value(6));
     }
 
     @Test
@@ -156,10 +159,11 @@ class SessionTokenAuditApiTest {
         when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(audit));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(Session.builder().id(SESSION_ID).build()));
         createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
-                .andExpect(jsonPath("$.data.messages.length()").value(3))
-                .andExpect(jsonPath("$.data.messages[0].type").value("USER"))
-                .andExpect(jsonPath("$.data.messages[0].tokens").value(0))
-                .andExpect(jsonPath("$.data.messages[0].ratio").value(0))
+                .andExpect(jsonPath("$.data.messages.length()").value(4))
+                .andExpect(jsonPath("$.data.messages[0].type").value("DYNAMIC_CONTEXT"))
+                .andExpect(jsonPath("$.data.messages[1].type").value("USER"))
+                .andExpect(jsonPath("$.data.messages[1].tokens").value(0))
+                .andExpect(jsonPath("$.data.messages[1].ratio").value(0))
                 .andExpect(jsonPath("$.data.requestOverhead.itemCount").value(1))
                 .andExpect(jsonPath("$.data.requestOverhead.toolDefinition").doesNotExist());
     }
@@ -283,7 +287,7 @@ class SessionTokenAuditApiTest {
                                 ordinary - 560, 5, List.of(
                                 new ItemMeasurement("search_web", 9420, 2100, 8700, 3),
                                 new ItemMeasurement("read_file", 5300, 900, 4600, 2)))),
-                8200, 3100, 777, 889);
+                8200, 3100, 777, 889, 4500);
         Result result = TokenAuditReconciler.reconcile(measurement);
         SessionTokenAudit audit = SessionTokenAudit.capture(SESSION_ID, 1L, result, CAPTURED_AT);
         audit.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(frameworkDocument()));
@@ -298,7 +302,7 @@ class SessionTokenAuditApiTest {
                                 Map.of("search_web", new ToolElement(2100, 8700, 9420)))).build(),
                 amount(12300, 0.0612345),
                 new OtherTokens(amount(8200, 0.0412345), amount(3100, 0.0156789),
-                        amount(777, 0.003), amount(889, 0.004)));
+                        amount(4500, 0.0225), amount(777, 0.003), amount(889, 0.004)));
     }
 
     private static DocumentElement<Integer> amount(int tokens, double ratio) {

@@ -226,8 +226,10 @@ class ChecklistLoopIntegrationTest {
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
         ContextUsageReporter usage = new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1);
         return new AgentLoopStepRunner(RuntimeContext.builder()
-                .conversationManager(new DefaultConversationManager((id, ai, results) -> transcripts.incrementAndGet(),
-                        ContextAttachmentProvider.NONE))
+                .conversationManager(DefaultConversationManager.builder()
+                        .conversationTranscriptSink((id, ai, results) -> transcripts.incrementAndGet())
+                        .contextAttachmentProvider(ContextAttachmentProvider.NONE)
+                        .build())
                 .runtimeBoundaryChecker(boundary).toolExecutionManager(tools)
                 .runtimeEventPublisher(events).usage(usage)
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(interceptors))

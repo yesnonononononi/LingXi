@@ -36,8 +36,20 @@ export type TokenAuditNumeric = number | string | null | undefined;
 /** `CAPTURING` 表示已采集快照与当前上下文总量有差额。 */
 export type TokenAuditDisplayState = 'NOT_COLLECTED' | 'CAPTURING' | 'COLLECTED' | 'FAILED';
 
-/** 消息分项类型：系统 / 用户 / 模型 / 工具返回。 */
-export type TokenAuditCategoryType = 'SYSTEM' | 'USER' | 'ATTACHMENT' | 'AI' | 'TOOL';
+/**
+ * 消息分项类型：系统 / 动态上下文 / 用户 / 附件 / 模型 / 工具返回。
+ *
+ * <p>`DYNAMIC_CONTEXT` 是框架每轮插入的那条背景消息（MCP 摘要、技能、记忆正文、任务清单）。
+ * 它既不是系统提示词也不是用户原话，框架已把它从 `userTokens` 里摘出来单列 ——
+ * 前端必须当成独立分项渲染，混进系统或用户都会让消息构成合计与快照总量对不上。</p>
+ */
+export type TokenAuditCategoryType =
+  | 'SYSTEM'
+  | 'DYNAMIC_CONTEXT'
+  | 'USER'
+  | 'ATTACHMENT'
+  | 'AI'
+  | 'TOOL';
 
 /** 工具来源分组：普通工具 / MCP / Skill。 */
 export type TokenAuditToolGroupKind = 'MCP' | 'SKILL' | 'ORDINARY';
@@ -103,7 +115,7 @@ export interface TokenAuditRequestOverheadVO {
 /**
  * 归因明细：**已包含在某个消息分项内部**的二级说明。**原始载荷**。
  *
- * <p>这里的数值不允许参与任何合计：`memoryTokens` 已经算在 SYSTEM 分项里，
+ * <p>这里的数值不允许参与任何合计：`memoryTokens` 已经算在 DYNAMIC_CONTEXT 分项里，
  * 再加一次就会让「消息构成合计」与快照总量对不上（恒等式当场破）。</p>
  */
 export interface TokenAuditContextAttributionVO {
@@ -228,8 +240,8 @@ export interface TokenAuditRequestOverhead {
 /**
  * 归因明细（**已归一**）。
  *
- * <p>它是「某个分项内部的构成说明」，不是独立开销：`memoryTokens` 已含在 SYSTEM 分项内，
- * 既不加进消息构成合计，也不参与 `total = messages + requestOverhead`。</p>
+ * <p>它是「某个分项内部的构成说明」，不是独立开销：`memoryTokens` 已含在 DYNAMIC_CONTEXT
+ * 分项内，既不加进消息构成合计，也不参与 `total = messages + requestOverhead`。</p>
  */
 export interface TokenAuditContextAttribution {
   /** 记忆正文 token；null = 不知道（不是 0）。 */

@@ -97,8 +97,10 @@ class SessionTokenAuditCollectorTest {
         ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
         verify(auditRepository).replaceSnapshot(captor.capture());
         SessionTokenAudit stored = captor.getValue();
-        assertEquals(134639, stored.getMessagesTokens());
-        assertEquals(13561, stored.getRequestOverheadTokens());
+        // 系统 12300 + 动态上下文 4500 + 用户 18450 + AI 39000 + 工具 64000 + 附件 889
+        assertEquals(139139, stored.getMessagesTokens());
+        assertEquals(148200 - 139139, stored.getRequestOverheadTokens(),
+                "背景块必须留在消息合计里，不能被挤进请求开销");
         assertEquals(148200, stored.getTotalTokens());
         assertEquals(64000, stored.toolTokens());
     }

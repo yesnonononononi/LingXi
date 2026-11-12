@@ -56,6 +56,10 @@ public final class TokenAuditFrameworkViewConverter {
         DocumentElement<Integer> attachment = other == null ? null : other.attachmentTokens();
         Integer attachmentTokens = value(attachment);
         addMessage(messages, "SYSTEM", document.systemTokens(), value(document.systemTokens()));
+        // 每轮背景块框架已从 userTokens 摘出单列：它既不是系统提示词也不是用户原话，
+        // 必须自成一项，否则消息构成合计会与快照总量对不上、差额全被算进「其他消息」。
+        DocumentElement<Integer> dynamicContext = other == null ? null : other.dynamicContextTokens();
+        addMessage(messages, "DYNAMIC_CONTEXT", dynamicContext, value(dynamicContext));
         addMessage(messages, "USER", document.userTokens(), value(document.userTokens()));
         if (attachmentTokens != null && attachmentTokens >= 0) {
             addMessage(messages, "ATTACHMENT", attachment, attachmentTokens);
