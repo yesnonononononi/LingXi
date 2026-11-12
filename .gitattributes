@@ -8,3 +8,9 @@
 # 建库脚本的换行符必须钉死成 LF：Windows 工作区（core.autocrlf=true）一旦把 V*.sql 写成 CRLF，
 # 建库指纹就会与登记值不一致，表现为「脚本被偷偷改过」而拒绝启动（2026-11 实际事故）。
 *.sql text eol=lf
+
+# 桌宠美术资产一律按二进制口径存取：PNG 本身是二进制，manifest.json 则是 sha256 锚点
+# （provenance.manifestSha256 记的是文件字节）。Windows runner 一旦按 CRLF 检出，摘要立刻变化，
+# 表现为 gate:pet:poses 在 ubuntu 通过、在 windows 发布流水线失败（2026-11 实际事故：
+# 期望值 c5d77aa3… 正是同一份 manifest 由 LF 转成 CRLF 后的摘要）。
+docs/assets/desktop-pet/** -text
