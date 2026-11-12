@@ -9,11 +9,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 test('右上角控制栏与预览面板过渡动画契约', () => {
   const chatViewSrc = fs.readFileSync(path.resolve(__dirname, '../src/views/chat/ChatView.vue'), 'utf8');
 
-  // 1. 验证右上角多功能入口使用了 Transition 胶囊浮动栏
+  // 1. 顶部横条：justify-between 两端分布，左会话名、右预览入口（不再是盖在消息上的绝对定位胶囊）
   assert.match(
     chatViewSrc,
-    /<Transition name="panel-entries-fade">\s*<div\s+v-if="!previewPanelVisible"[\s\S]*?backdrop-blur-md/,
-    '右上角控制栏必须使用 panel-entries-fade 过渡并呈现一体化毛玻璃胶囊形态'
+    /<Transition name="panel-entries-fade">\s*<header\s+v-if="!previewPanelVisible"[\s\S]*?justify-between[\s\S]*?headerSessionName[\s\S]*?data-test="chat-project-page-entry"/,
+    '顶部横条必须 justify-between 布局：左侧会话名、右侧预览入口，并保留 panel-entries-fade 过渡'
+  );
+  assert.doesNotMatch(
+    chatViewSrc,
+    /absolute right-4 top-3 z-30 inline-flex/,
+    '预览入口不得再退化成悬浮在消息上的绝对定位胶囊'
   );
 
   // 2. 验证保留了稳定的测试钩子与四个入口
