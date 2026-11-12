@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.session.application.port.PendingInputProbe;
 import com.summit.dp.shared.exception.ClientException;
 import org.springframework.stereotype.Component;
 
@@ -12,7 +13,7 @@ import java.util.UUID;
 
 /** 单进程队列按会话隔离，优先级由服务端受理顺序决定。 */
 @Component
-public class PendingChatQueue {
+public class PendingChatQueue implements PendingInputProbe {
     public record Ticket(String id, long sequence, ChatCommand command) {}
 
     public record Entry(String id, String input, boolean dispatching) {}
@@ -69,6 +70,7 @@ public class PendingChatQueue {
         return ticket.id();
     }
 
+    @Override
     public synchronized boolean hasPending(long sessionId) {
         return queues.containsKey(sessionId);
     }
