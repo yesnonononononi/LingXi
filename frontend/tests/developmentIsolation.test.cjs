@@ -75,9 +75,9 @@ test('绝对路径预览在开发版走页面代理，安装版使用后端地�
       },
     });
     const { openFilePreview } = module.exports.useFilePreview();
-    openFilePreview('101', path.join(__dirname, 'first.java'));
+    openFilePreview({ sessionId: '101', path: path.join(__dirname, 'first.java') });
     storedUrl = '';
-    openFilePreview('101', path.join(__dirname, 'second.java'));
+    openFilePreview({ sessionId: '101', path: path.join(__dirname, 'second.java') });
     assert.deepEqual(baseUrls, development ? [origin, origin] : [configured, 'http://localhost:8088']);
   }
 });

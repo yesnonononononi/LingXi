@@ -28,6 +28,12 @@ app.whenReady().then(async () => {
   const content = await fs.readFile(path.resolve(__dirname, '../../src/main/java/com/summit/dp/shared/config/MybatisPlusConfig.java'), 'utf8');
   await fs.writeFile(path.join(workspace, 'MybatisPlusConfig.java'), content);
   await fs.writeFile(path.join(workspace, 'docker-compose.yml'), 'services:\n  app:\n    image: lingxi:latest\n');
+  // 行定位验证需要「一屏放不下」的文件，否则滚不滚都看不出差别。
+  const longFile = path.join(workspace, 'long-file.ts');
+  await fs.writeFile(longFile, Array.from({ length: 200 }, (_, index) => `const line${index + 1} = ${index + 1};`).join('\n') + '\n');
+  // 模型在正文里给本机绝对路径链接：前导斜杠那种写法（`/D:/...`）必须能被还原。
+  const longFileHref = '/' + longFile.replace(/\\/g, '/');
+  const linkContent = `代码在 [预览长文件](${longFileHref}:150)，外链 [示例站点](https://example.com/demo)。`;
   server = http.createServer((request, response) => {
     const data = request.url === '/config/current' ? { type: 'LOCAL' }
       : request.url.startsWith('/session/') ? { workspaceId: '100' }
@@ -55,12 +61,14 @@ window.previewDemo = { ...state, setDark: value => dark.value = value };
 window.previewMonaco = () => loader.__getMonacoInstance();
 window.previewEditor = () => window.previewMonaco()?.editor.getEditors()[0];
 const message = { id: 'demo-message', role: 'assistant', content: '', timestamp: Date.now(), isComplete: false, toolCalls: [{ id: 'demo-tool', toolName: AgentToolName.ReadFile, args: { path: 'MybatisPlusConfig.java' }, status: 'success', timestamp: Date.now() }] };
+const linkMessage = { id: 'link-message', role: 'assistant', content: ${JSON.stringify(linkContent)}, timestamp: Date.now(), isComplete: true, toolCalls: [] };
 </script>
 <template>
   <main :class="{ dark }" style="display:flex;height:100vh;background:#f7f7f9">
     <section style="flex:1;min-width:0;padding:48px 32px">
       <h1 style="font-size:22px;margin-bottom:28px;color:#6366f1">LX · 文件预览</h1>
       <ChatMessageItem :message="message" sessionId="101" :isDark="dark" />
+      <ChatMessageItem :message="linkMessage" sessionId="101" :isDark="dark" />
     </section>
     <FilePreviewPanel v-if="fileTabs.length" v-show="filePreviewOpen" :tabs="fileTabs" :activeId="activeFileId" :isDark="dark"
       @activate="activeFileId = $event" @closeTab="closeFileTab" @close="filePreviewOpen = false"
@@ -69,7 +77,9 @@ const message = { id: 'demo-message', role: 'assistant', content: '', timestamp:
 </template>`;
   await fs.writeFile(path.join(output, 'App.vue'), source);
   await fs.writeFile(path.join(output, 'entry.js'), "import { createApp } from 'vue'; import App from './App.vue'; createApp(App).mount('#app');");
-  await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
+  // 语言偏好必须在模块求值前落到 localStorage：i18n 在 import 期就读它，写在 App.vue 里已经太晚。
+  // 不钉住的话断言用的中文 title 取决于这台机器的 navigator.language，测试会随机器红绿。
+  await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"><script>localStorage.setItem("lingxi-locale","zh-CN");</script></head><body style="margin:0"><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
   const { build } = await import('vite');
   const { default: vue } = await import('@vitejs/plugin-vue');
   await build({ configFile: false, root: output, base: './', plugins: [vue()], logLevel: 'error', build: { outDir: path.join(output, 'dist'), emptyOutDir: true } });
@@ -84,6 +94,9 @@ const message = { id: 'demo-message', role: 'assistant', content: '', timestamp:
   stop = registerFilePreview({ ipcMain, shell, getWindow: () => window });
   ipcMain.handle('window:set-titlebar-theme', () => {});
   await window.loadFile(path.join(output, 'dist/index.html'));
+  // 过程段默认折叠，工具行连渲染都没有；要先展开才能点「预览文件」。
+  await waitFor('!!document.querySelector(\'[data-testid="process-segment-toggle"]\')');
+  await window.webContents.executeJavaScript('document.querySelector(\'[data-testid="process-segment-toggle"]\').click()');
   await waitFor('!!document.querySelector(\'button[title="预览文件"]\')');
   await window.webContents.executeJavaScript('document.querySelector(\'button[title="预览文件"]\').click()');
   await waitFor('window.previewEditor()?.getValue().includes("MybatisPlusConfig")');
@@ -96,9 +109,9 @@ const message = { id: 'demo-message', role: 'assistant', content: '', timestamp:
   assert.equal(initial.readonly, true);
   assert.equal(initial.find, true);
   assert.equal(initial.folding, true);
-  await window.webContents.executeJavaScript('window.previewDemo.openFilePreview("101", "MybatisPlusConfig.java")');
+  await window.webContents.executeJavaScript('window.previewDemo.openFilePreview({ sessionId: "101", path: "MybatisPlusConfig.java" })');
   assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll("[role=tab]").length'), 1);
-  await window.webContents.executeJavaScript('window.previewDemo.openFilePreview("101", "docker-compose.yml")');
+  await window.webContents.executeJavaScript('window.previewDemo.openFilePreview({ sessionId: "101", path: "docker-compose.yml" })');
   await waitFor('window.previewEditor()?.getValue().includes("services:")');
   assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll("[role=tab]").length'), 2);
   await fs.writeFile(path.join(workspace, 'docker-compose.yml'), 'services:\n  refreshed:\n    image: lingxi:updated\n');
@@ -126,6 +139,61 @@ const message = { id: 'demo-message', role: 'assistant', content: '', timestamp:
   await waitFor('window.previewMonaco().editor.getModels().length === 0');
   assert.deepEqual(remoteRequests, []);
   console.log('Monaco 预览验证通过: 离线加载、只读、行号、查找、折叠、多标签、自动刷新、主题、模型释放');
+
+  /* ---------------- 正文里的本地文件链接：样式、点击、行定位 ---------------- */
+  await waitFor('!!document.querySelector(".lx-local-file")');
+  const localLink = await window.webContents.executeJavaScript(`(() => {
+    const link = document.querySelector('.lx-local-file');
+    const external = [...document.querySelectorAll('.markdown-body a')].find(node => node.textContent.includes('示例站点'));
+    return {
+      href: link.getAttribute('href'),
+      target: link.getAttribute('target'),
+      text: link.textContent.trim(),
+      title: link.getAttribute('title'),
+      path: link.getAttribute('data-local-file-path'),
+      line: link.getAttribute('data-local-file-line'),
+      icon: !!link.querySelector('.lx-local-file-icon'),
+      decoration: getComputedStyle(link).textDecorationLine,
+      externalHref: external?.getAttribute('href') ?? null,
+    };
+  })()`);
+  // 本地文件链接不能带 href/target：带了中键与 Ctrl+点击就会另开一个 Electron 窗口。
+  assert.equal(localLink.href, null);
+  assert.equal(localLink.target, null);
+  assert.equal(localLink.text, '预览长文件');
+  assert.equal(localLink.icon, true);
+  assert.equal(localLink.decoration, 'none');
+  assert.equal(localLink.path, longFile.replace(/\\/g, '/'));
+  assert.equal(localLink.line, '150');
+  assert.equal(localLink.title, longFile.replace(/\\/g, '/') + ':150');
+  // 非本地链接保持原样：外链仍然可跳转。
+  assert.equal(localLink.externalHref, 'https://example.com/demo');
+
+  assert.equal(await window.webContents.executeJavaScript('window.previewDemo.filePreviewOpen.value'), false);
+  await window.webContents.executeJavaScript('document.querySelector(".lx-local-file").click()');
+  // 同一个文件只应有一个标签：链接被点击多次不能越开越多。
+  assert.equal(await window.webContents.executeJavaScript('document.querySelectorAll("[role=tab]").length'), 1);
+  await waitFor('window.previewEditor()?.getPosition().lineNumber === 150');
+  // 定位必须真的把视图滚过去，而不是只改光标：150 行在首屏之外。
+  assert.equal(await window.webContents.executeJavaScript('window.previewEditor().getScrollTop() > 0'), true);
+  await waitFor('!!document.querySelector(".lx-preview-line-flash")');
+
+  // 再点一次同一个链接：滚动位置先归零，仍要能回到那一行（行定位请求必须可重入）。
+  await window.webContents.executeJavaScript('window.previewEditor().setScrollTop(0)');
+  await waitFor('window.previewEditor().getScrollTop() === 0');
+  await window.webContents.executeJavaScript('document.querySelector(".lx-local-file").click()');
+  await waitFor('window.previewEditor().getScrollTop() > 0');
+
+  // 键盘：链接自身可聚焦，Enter 走同一条通路。
+  await window.webContents.executeJavaScript(`(() => {
+    window.previewEditor().setScrollTop(0);
+    const link = document.querySelector('.lx-local-file');
+    link.focus();
+    link.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  })()`);
+  await waitFor('window.previewEditor().getScrollTop() > 0');
+  assert.deepEqual(remoteRequests, []);
+  console.log('本地文件链接验证通过: 文件图标、无 href/下划线、tooltip 全路径、点击与键盘唤起预览并定位 150 行、重复点击可重定位');
   console.log('预览截图: ' + output);
 }).then(() => {
   clearTimeout(deadline);
