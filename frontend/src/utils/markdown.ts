@@ -1,12 +1,15 @@
 import MarkdownIt from 'markdown-it';
+import type {Token} from 'markdown-it';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import {t} from '../i18n';
 import {
   LOCAL_FILE_LINE_ATTR,
+  LOCAL_FILE_LINE_BADGE_ATTR,
   LOCAL_FILE_LINK_CLASS,
   LOCAL_FILE_PATH_ATTR,
   formatLocalFileLocation,
+  mentionsLine,
   parseLocalFileLink,
   type LocalFileLinkTarget
 } from './localFileLink';
@@ -121,17 +124,48 @@ const defaultLinkOpen = md.renderer.rules.link_open || function (tokens: any[], 
  * <p>没有 href 就不会被浏览器当成需要跳转的链接 —— 中键、Ctrl+点击、键盘激活都不会另开一个
  * Electron 窗口，行为只剩 MarkdownRenderer 的点击委托。少了 href 也意味着必须自己补
  * `role`/`tabindex`，否则键盘用户永远点不到它。</p>
+ *
+ * <p>行号徽标走 CSS `::after` + 属性，而不是塞进标签内容：`link_close` 才是链接文本的收尾，
+ * 在这里加节点会跑到文字前面。徽标文案由渲染期决定（见 {@link resolveLineBadge}）。</p>
  */
-function renderLocalFileLinkOpen(target: LocalFileLinkTarget): string {
+function renderLocalFileLinkOpen(target: LocalFileLinkTarget, linkText: string): string {
   const line = target.line ? ` ${LOCAL_FILE_LINE_ATTR}="${target.line}"` : '';
+  const badge = resolveLineBadge(target, linkText);
+  const badgeAttr = badge ? ` ${LOCAL_FILE_LINE_BADGE_ATTR}="${md.utils.escapeHtml(badge)}"` : '';
   return `<a class="${LOCAL_FILE_LINK_CLASS}" role="link" tabindex="0"`
-    + ` ${LOCAL_FILE_PATH_ATTR}="${md.utils.escapeHtml(target.path)}"${line}`
+    + ` ${LOCAL_FILE_PATH_ATTR}="${md.utils.escapeHtml(target.path)}"${line}${badgeAttr}`
     + ` title="${md.utils.escapeHtml(formatLocalFileLocation(target))}">${LOCAL_FILE_ICON}`;
+}
+
+/**
+ * 行号徽标文案；不该显示时返回空串。
+ *
+ * <p>模型写链接时经常自己带上「(line 34)」，此时再补徽标就是同一件事说两遍。</p>
+ */
+function resolveLineBadge(target: LocalFileLinkTarget, linkText: string): string {
+  if (!target.line || mentionsLine(linkText, target.line)) return '';
+  return t('markdown.localFileLine', {line: target.line});
+}
+
+/**
+ * 链接可见文本：从 `link_open` 之后扫到配对的 `link_close`。
+ *
+ * <p>规则拿不到渲染结果，只能这样回看 token；嵌套链接在 Markdown 里不成立，因此遇到第一个
+ * `link_close` 就是本链接的结尾。</p>
+ */
+function resolveLinkText(tokens: Token[], index: number): string {
+  let text = '';
+  for (let cursor = index + 1; cursor < tokens.length; cursor++) {
+    const token = tokens[cursor]!;
+    if (token.type === 'link_close') break;
+    if (token.type === 'text' || token.type === 'code_inline') text += token.content;
+  }
+  return text;
 }
 
 md.renderer.rules.link_open = function (tokens: any[], idx: number, options: any, env: any, self: any) {
   const localFile = parseLocalFileLink(tokens[idx].attrGet('href'));
-  if (localFile) return renderLocalFileLinkOpen(localFile);
+  if (localFile) return renderLocalFileLinkOpen(localFile, resolveLinkText(tokens, idx));
 
   const aIndex = tokens[idx].attrIndex('target');
   if (aIndex < 0) {
@@ -152,7 +186,7 @@ export function renderMarkdown(content: string): string {
   if (!content) return '';
   const rawHtml = md.render(content);
   return DOMPurify.sanitize(rawHtml, {
-    ADD_ATTR: ['target', 'rel', 'data-code', LOCAL_FILE_PATH_ATTR, LOCAL_FILE_LINE_ATTR],
+    ADD_ATTR: ['target', 'rel', 'data-code', LOCAL_FILE_PATH_ATTR, LOCAL_FILE_LINE_ATTR, LOCAL_FILE_LINE_BADGE_ATTR],
     ADD_TAGS: ['button', 'svg', 'path', 'span']
   });
 }
@@ -160,7 +194,7 @@ export function renderMarkdown(content: string): string {
 export function renderMarkdownDocument(content: string, streaming: boolean): MarkdownDocument {
   const env: DiagramEnvironment = { diagrams: [], lines: content.replace(/\r\n?/g, '\n').split('\n'), streaming };
   const html = DOMPurify.sanitize(md.render(content, env), {
-    ADD_ATTR: ['target', 'rel', 'data-code', 'data-mermaid-index', LOCAL_FILE_PATH_ATTR, LOCAL_FILE_LINE_ATTR],
+    ADD_ATTR: ['target', 'rel', 'data-code', 'data-mermaid-index', LOCAL_FILE_PATH_ATTR, LOCAL_FILE_LINE_ATTR, LOCAL_FILE_LINE_BADGE_ATTR],
     ADD_TAGS: ['button', 'svg', 'path', 'span'],
   });
   return { html, diagrams: env.diagrams };

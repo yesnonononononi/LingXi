@@ -227,6 +227,16 @@ html.light .markdown-body a.lx-local-file:hover {
   width: 0.95em;
   height: 0.95em;
 }
+/*
+ * 行号徽标：文案由渲染期的 data 属性给出（见 markdown.ts 的 resolveLineBadge），
+ * 链接文本里已经写了行号时该属性不存在，::after 自然为空。
+ */
+.markdown-body a.lx-local-file[data-local-file-line-badge]::after {
+  content: attr(data-local-file-line-badge);
+  margin-left: 0.25em;
+  font-size: 0.9em;
+  opacity: 0.75;
+}
 
 /* Content Block：内容块通用容器（代码块、图表共用外观，不再靠"借用别人的类"） */
 .markdown-body .content-block {

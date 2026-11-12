@@ -33,7 +33,8 @@ app.whenReady().then(async () => {
   await fs.writeFile(longFile, Array.from({ length: 200 }, (_, index) => `const line${index + 1} = ${index + 1};`).join('\n') + '\n');
   // 模型在正文里给本机绝对路径链接：前导斜杠那种写法（`/D:/...`）必须能被还原。
   const longFileHref = '/' + longFile.replace(/\\/g, '/');
-  const linkContent = `代码在 [预览长文件](${longFileHref}:150)，外链 [示例站点](https://example.com/demo)。`;
+  const linkContent = `代码在 [预览长文件](${longFileHref}:150)，也已经提过 [改到第 150 行](${longFileHref}:150)，`
+    + `外链 [示例站点](https://example.com/demo)。`;
   server = http.createServer((request, response) => {
     const data = request.url === '/config/current' ? { type: 'LOCAL' }
       : request.url.startsWith('/session/') ? { workspaceId: '100' }
@@ -143,7 +144,9 @@ const linkMessage = { id: 'link-message', role: 'assistant', content: ${JSON.str
   /* ---------------- 正文里的本地文件链接：样式、点击、行定位 ---------------- */
   await waitFor('!!document.querySelector(".lx-local-file")');
   const localLink = await window.webContents.executeJavaScript(`(() => {
-    const link = document.querySelector('.lx-local-file');
+    const links = [...document.querySelectorAll('.lx-local-file')];
+    const link = links[0];
+    const mentioned = links[1];
     const external = [...document.querySelectorAll('.markdown-body a')].find(node => node.textContent.includes('示例站点'));
     return {
       href: link.getAttribute('href'),
@@ -154,6 +157,9 @@ const linkMessage = { id: 'link-message', role: 'assistant', content: ${JSON.str
       line: link.getAttribute('data-local-file-line'),
       icon: !!link.querySelector('.lx-local-file-icon'),
       decoration: getComputedStyle(link).textDecorationLine,
+      badge: getComputedStyle(link, '::after').content,
+      mentionedBadge: mentioned.getAttribute('data-local-file-line-badge'),
+      mentionedAfter: getComputedStyle(mentioned, '::after').content,
       externalHref: external?.getAttribute('href') ?? null,
     };
   })()`);
@@ -166,6 +172,10 @@ const linkMessage = { id: 'link-message', role: 'assistant', content: ${JSON.str
   assert.equal(localLink.path, longFile.replace(/\\/g, '/'));
   assert.equal(localLink.line, '150');
   assert.equal(localLink.title, longFile.replace(/\\/g, '/') + ':150');
+  // 链接文本没写行号 → 界面补徽标；已经写了 → 不重复显示（文案随语言，只断言含行号数字）。
+  assert.match(localLink.badge, /150/);
+  assert.equal(localLink.mentionedBadge, null);
+  assert.equal(localLink.mentionedAfter, 'none');
   // 非本地链接保持原样：外链仍然可跳转。
   assert.equal(localLink.externalHref, 'https://example.com/demo');
 

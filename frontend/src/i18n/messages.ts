@@ -242,6 +242,7 @@ export const messages: MessageSchema = {
       diagram: 'Mermaid 图表',
       diagramLoading: '正在绘制图表…',
       diagramFailed: '图表渲染失败，请检查 Mermaid 源码。',
+      localFileLine: '第 {line} 行',
     },
     chatExport: {
       defaultTitle: '灵犀会话记录',
@@ -1649,6 +1650,7 @@ export const messages: MessageSchema = {
       diagram: 'Mermaid diagram',
       diagramLoading: 'Rendering diagram…',
       diagramFailed: 'Unable to render the diagram. Please check the Mermaid source.',
+      localFileLine: 'line {line}',
     },
     chatExport: {
       defaultTitle: 'LingXi Conversation Transcript',

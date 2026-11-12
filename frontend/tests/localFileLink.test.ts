@@ -2,9 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LOCAL_FILE_LINE_ATTR,
+  LOCAL_FILE_LINE_BADGE_ATTR,
   LOCAL_FILE_LINK_CLASS,
   LOCAL_FILE_PATH_ATTR,
   formatLocalFileLocation,
+  mentionsLine,
   parseLocalFileLink
 } from '../src/utils/localFileLink';
 
@@ -45,4 +47,15 @@ test('展示位置与渲染共用同一份类名/属性名，避免两边对不�
   assert.equal(LOCAL_FILE_LINK_CLASS, 'lx-local-file');
   assert.equal(LOCAL_FILE_PATH_ATTR, 'data-local-file-path');
   assert.equal(LOCAL_FILE_LINE_ATTR, 'data-local-file-line');
+  assert.equal(LOCAL_FILE_LINE_BADGE_ATTR, 'data-local-file-line-badge');
+});
+
+test('行号徽标：链接文本里已经写了行号就不再补', () => {
+  // 模型常见的几种自带写法，都必须算作「已经说了」。
+  for (const text of ['预览主进程代码 (line 34)', '第 34 行', '修复位置: 34', 'file.cjs:34']) {
+    assert.equal(mentionsLine(text, 34), true, text);
+  }
+  for (const text of ['预览主进程代码', '第 342 行', '第 3 行', 'line 340']) {
+    assert.equal(mentionsLine(text, 34), false, text);
+  }
 });

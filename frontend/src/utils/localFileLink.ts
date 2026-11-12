@@ -10,6 +10,8 @@
 export const LOCAL_FILE_LINK_CLASS = 'lx-local-file';
 export const LOCAL_FILE_PATH_ATTR = 'data-local-file-path';
 export const LOCAL_FILE_LINE_ATTR = 'data-local-file-line';
+/** 行号徽标文案：有值才渲染（链接文本里已经写了行号时留空，避免同一件事显示两遍）。 */
+export const LOCAL_FILE_LINE_BADGE_ATTR = 'data-local-file-line-badge';
 
 const WINDOWS_ABSOLUTE = /^[a-zA-Z]:[\\/]/;
 const TRAILING_LINE = /:(\d+)$/;
@@ -49,6 +51,20 @@ export function parseLocalFileLink(href: string | null | undefined): LocalFileLi
  */
 export function formatLocalFileLocation(target: LocalFileLinkTarget): string {
   return target.line ? `${target.path}:${target.line}` : target.path;
+}
+
+/**
+ * 判断一段可见文本里是否已经写了这个行号。
+ *
+ * <p>链接文本常常自带「(line 34)」「第 34 行」，界面再补一个徽标就是同一件事说两遍。
+ * 用 `\D` 而不是 `\b` 围栏，`342` 才不会被 `34` 误判成命中。</p>
+ *
+ * @param text 链接可见文本。
+ * @param line 行号。
+ * @returns 文本里已有该行号时为 true。
+ */
+export function mentionsLine(text: string, line: number): boolean {
+  return new RegExp(`(^|\\D)${line}(\\D|$)`).test(text);
 }
 
 /** 还原 markdown-it 的百分号编码；带裸 `%` 的路径解码会抛错，此时原样使用比丢掉链接更合适。 */
