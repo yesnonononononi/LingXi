@@ -173,15 +173,6 @@ export function useChatScroll(options: ChatScrollOptions) {
     });
   };
 
-  // 保持 scrollToBottom 向后兼容别名，默认走条件吸底
-  const scrollToBottom = (force = false) => {
-    if (force) {
-      scrollToBottomForce();
-    } else {
-      scrollToBottomIfAuto();
-    }
-  };
-
   const handleScrollToBottomClick = () => {
     scrollToBottomForce('smooth');
   };
@@ -235,7 +226,6 @@ export function useChatScroll(options: ChatScrollOptions) {
     performScrollToBottom,
     scrollToBottomForce,
     scrollToBottomIfAuto,
-    scrollToBottom,
     handleScrollToBottomClick,
     cleanupScroll,
   };

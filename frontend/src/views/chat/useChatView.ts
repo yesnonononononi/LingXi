@@ -146,7 +146,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleTouchMove,
     scrollToBottomForce,
     scrollToBottomIfAuto,
-    scrollToBottom,
     handleScrollToBottomClick,
   } = useChatScroll({ messagesContainerRef });
 
@@ -405,7 +404,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     reconnectStream: handleReconnectStream,
     reconcileSessionAfterStream: (sessionId) =>
       reconcileSessionAfterStream(sessionId),
-    scrollToBottom,
+    // 发送链路只接强制贴底：条件吸底留给流式增量的 onScrollFollow。
+    scrollToBottomForce,
     // 受理被拒时必须回读权威 runStatus：受理失败后本地无从得知真实状态，
     // 不回读就会让界面停留在错误的执行态（卡在「生成中」或误显示空闲）。
     onSendFailure: (sessionId) => {
@@ -604,6 +604,10 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
         && !pendingQueue.snapshot.value?.entries.length;
       const optimistic = showOptimistic ? streamRouter.pushUserMessage(text, imageUrls) : undefined;
       hasOptimisticSend = !!optimistic;
+      // 「用户刚发了消息」是明确意图，必须在这里贴底：乐观气泡是原地 push，messages 数组引用不变，
+      // 下面那段 watch(displayedMessages) 收不到这次变化（它连「最后一条是 user」都判断不到）。
+      // 在发送动作上强制贴底，顺带把 shouldAutoScroll 打开，后续运行骨架与流式增量才会继续跟随。
+      if (optimistic) scrollToBottomForce();
 
       // 2. 同步受理：先等该根会话订阅就绪（READY），再 POST /a/completion/commands。
       //    受理返回的 sessionId / turnId 是权威值，后续事件与历史都按 turnId 对齐。
@@ -791,6 +795,11 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   });
 
   // 消息数组变化时的滚动跟随（触顶前置插入不滚到底）。
+  //
+  // 注意这条 watch 只能覆盖「数组被整体替换」的情形：displayedMessages 在无运行骨架时直接返回
+  // session.messages 本体，乐观提问用 push 原地追加，引用不变 ⇒ 这里一次都不会触发。
+  // 所以「用户发消息后必须贴底」由发送链路自己调 scrollToBottomForce() 负责，
+  // 下面 role === 'user' 那一支只兜历史/对账这类整体替换进来的提问。
   watch(displayedMessages, (newMsgs) => {
     if (isLoadingMoreHistory.value) return;
     if (!newMsgs || newMsgs.length === 0) return;

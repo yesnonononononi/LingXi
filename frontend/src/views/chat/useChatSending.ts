@@ -25,8 +25,15 @@ export interface ChatSendingOptions {
   /** 一轮结束后的历史对账：把服务端落库结果按分轮规则刷回会话实体。 */
   reconcileSessionAfterStream: (sessionId: string) => Promise<void> | void;
 
-  /** 滚动到底部。 */
-  scrollToBottom: () => void;
+  /**
+   * 强制滚动到底部。
+   *
+   * <p><b>发送链路上必须用强制版本</b>：受理回执到手意味着这一轮一定会有新内容，
+   * 与「用户此刻正在别处看历史」无关。条件吸底（仅在跟随模式才滚）属于流式增量，
+   * 由订阅侧的 onScrollFollow 负责，不能混进发送路径 —— 混进来就会出现
+   * 「上翻历史后发消息、视图停在原处」。</p>
+   */
+  scrollToBottomForce: () => void;
 
   /** 发送失败提示文案出口。 */
   onSendFailure?: (sessionId: string, message: string) => void;
@@ -39,7 +46,7 @@ export function useChatSending(options: ChatSendingOptions) {
     ensureSubscribed,
     reconnectStream,
     reconcileSessionAfterStream,
-    scrollToBottom,
+    scrollToBottomForce,
     onSendFailure,
   } = options;
 
@@ -178,7 +185,7 @@ export function useChatSending(options: ChatSendingOptions) {
         const stopped = await requestServerStop(acceptance.sessionId);
         if (!stopped) reportStopFailure(acceptance.sessionId);
         // 不回写 RUNNING：本轮已被要求停止，界面不该闪一下「生成中」再变取消。
-        scrollToBottom();
+        scrollToBottomForce();
         return acceptance;
       }
 
@@ -187,7 +194,7 @@ export function useChatSending(options: ChatSendingOptions) {
       if (session && String(session.id) === acceptance.sessionId) {
         session.runStatus = 'RUNNING';
       }
-      scrollToBottom();
+      scrollToBottomForce();
       return acceptance;
     } catch (error) {
       // 用户点「停止生成」导致的 abort 是预期行为，不弹提示。

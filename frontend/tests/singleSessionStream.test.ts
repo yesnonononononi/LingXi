@@ -589,7 +589,7 @@ test('4. isSubmitting 在受理 POST 未返回期间为 true（禁重复点击�
     ensureSubscribed: async () => streamReady,
     reconnectStream: () => {},
     reconcileSessionAfterStream: async () => {},
-    scrollToBottom: () => {},
+    scrollToBottomForce: () => {},
   });
 
   const command = { input: '你好', sessionId: ROOT, workDir: '', modelId: 1, workspaceId: 1, agentId: 1, requirePlan: false };
@@ -638,7 +638,7 @@ test('4b. 订阅不就绪时先重挂再重试；仍不就绪则显式失败（�
     ensureSubscribed: async () => { ensureCalls += 1; return false; },
     reconnectStream: () => { reconnectCalls += 1; },
     reconcileSessionAfterStream: async () => {},
-    scrollToBottom: () => {},
+    scrollToBottomForce: () => {},
   });
 
   const result = await sending.handleSendMessage({ input: '你好', sessionId: ROOT, workDir: '', modelId: 1, workspaceId: 1, agentId: 1, requirePlan: false });
@@ -665,7 +665,7 @@ test('活跃会话接受待发送回执且保持原运行状态', async t => {
     ensureSubscribed: async () => true,
     reconnectStream: () => {},
     reconcileSessionAfterStream: async () => {},
-    scrollToBottom: () => {},
+    scrollToBottomForce: () => {},
   });
 
   const receipt = await sending.handleSendMessage({

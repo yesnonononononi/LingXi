@@ -73,7 +73,8 @@ function mkSending(session: Ref<ChatSession>, ensureSubscribed: () => Promise<bo
     ensureSubscribed,
     reconnectStream: () => {},
     reconcileSessionAfterStream: async () => {},
-    scrollToBottom: () => {},
+    // 发送链路接的是强制贴底（选项名即契约，见 tests/chatSendScrollFollow.test.cjs）。
+    scrollToBottomForce: () => {},
   });
 }
 
