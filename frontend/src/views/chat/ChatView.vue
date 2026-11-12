@@ -727,7 +727,7 @@ const openErrorLog = async (): Promise<void> => {
   try {
     const result = await LogAPI.location();
     if (!isOk(result.code) || !result.data?.warnError) return;
-    openFilePreview(sessionId, result.data.warnError);
+    openFilePreview({ sessionId, path: result.data.warnError });
   } finally {
     logOpening.value = false;
   }

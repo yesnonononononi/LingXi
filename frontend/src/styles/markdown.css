@@ -192,6 +192,42 @@ html.light .markdown-body hr {
   color: #7dd3fc;
 }
 
+/*
+ * 本地文件链接：模型给的是「本机绝对路径 + 行号」，点了在右侧预览面板打开，
+ * 所以不做普通外链的蓝下划线 —— 用文件图标 + hover 底色表达「这是个可打开的文件」。
+ */
+.markdown-body a.lx-local-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  color: #38bdf8;
+  text-decoration: none;
+  cursor: pointer;
+  padding: 0 0.15em;
+  border-radius: 0.25rem;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.markdown-body a.lx-local-file:hover {
+  color: #7dd3fc;
+  background-color: rgba(56, 189, 248, 0.12);
+}
+.markdown-body a.lx-local-file:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 1px;
+}
+html.light .markdown-body a.lx-local-file {
+  color: #0369a1;
+}
+html.light .markdown-body a.lx-local-file:hover {
+  color: #075985;
+  background-color: rgba(3, 105, 161, 0.1);
+}
+.markdown-body .lx-local-file-icon {
+  flex: none;
+  width: 0.95em;
+  height: 0.95em;
+}
+
 /* Content Block：内容块通用容器（代码块、图表共用外观，不再靠"借用别人的类"） */
 .markdown-body .content-block {
   margin: 0.75rem 0;

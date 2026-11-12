@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {computed, watch} from 'vue';
+import {computed, inject, watch} from 'vue';
 import {renderMarkdownDocument} from '../../utils/markdown';
+import {LOCAL_FILE_LINE_ATTR, LOCAL_FILE_LINK_CLASS, LOCAL_FILE_PATH_ATTR} from '../../utils/localFileLink';
+import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {useTheme} from '../../composables/useTheme';
 import {useThinkingText} from '../../composables/useThinkingText';
@@ -53,8 +55,42 @@ const renderedHtml = computed(() => markdownDocument.value.html);
 // 普通代码块由 Markdown 生成，事件委托可以复用同一套复制反馈。
 const { copy: copyRaw } = useCopyFeedback();
 
+/** 预览通道由宿主（ChatView）provide；独立挂载（组件单测、导出预览）时没有，点击就只是无操作。 */
+const openFilePreview = inject(FILE_PREVIEW_KEY, null);
+const localFileLinkSelector = `.${LOCAL_FILE_LINK_CLASS}`;
+
+/**
+ * 本地文件链接：唤起右侧预览面板并定位到行。
+ *
+ * <p>不传 sessionId —— 能走到这里的只有绝对路径（见 utils/localFileLink.ts 的判定），
+ * 主进程直接读盘，不需要会话与工作区上下文。</p>
+ */
+const openLocalFileLink = (element: Element): void => {
+  const path = element.getAttribute(LOCAL_FILE_PATH_ATTR);
+  if (!path || !openFilePreview) return;
+  const line = Number(element.getAttribute(LOCAL_FILE_LINE_ATTR) ?? '');
+  openFilePreview({ path, line: Number.isFinite(line) && line >= 1 ? line : undefined });
+};
+
+/** 没有 href 的链接浏览器不会自己激活，键盘 Enter/空格得自己补上。 */
+const handleContainerKeydown = (event: KeyboardEvent): void => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const target = event.target instanceof Element ? event.target.closest(localFileLinkSelector) : null;
+  if (!target) return;
+  event.preventDefault();
+  openLocalFileLink(target);
+};
+
 const handleContainerClick = async (event: MouseEvent) => {
   const target = event.target as HTMLElement;
+  const localFile = target.closest(localFileLinkSelector);
+  if (localFile) {
+    // 拦下来交给预览面板，别让外层再按「打开链接」处理一次。
+    event.preventDefault();
+    event.stopPropagation();
+    openLocalFileLink(localFile);
+    return;
+  }
   const btn = target.closest('.copy-code-btn') as HTMLElement;
   if (!btn) return;
 
@@ -93,6 +129,7 @@ const handleContainerClick = async (event: MouseEvent) => {
       { 'is-streaming': props.isThinking }
     ]"
     @click="handleContainerClick"
+    @keydown="handleContainerKeydown"
   >
     <div
       v-if="renderedHtml"

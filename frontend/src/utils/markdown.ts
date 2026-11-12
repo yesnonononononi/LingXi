@@ -2,6 +2,14 @@ import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import {t} from '../i18n';
+import {
+  LOCAL_FILE_LINE_ATTR,
+  LOCAL_FILE_LINK_CLASS,
+  LOCAL_FILE_PATH_ATTR,
+  formatLocalFileLocation,
+  parseLocalFileLink,
+  type LocalFileLinkTarget
+} from './localFileLink';
 
 const MAX_HIGHLIGHT_CACHE = 128;
 const highlightCache = new Map<string, string>();
@@ -92,12 +100,39 @@ md.renderer.rules.fence = (tokens, index, options, environment, renderer) => {
   return `<div data-mermaid-index="${diagramIndex}"></div>\n`;
 };
 
+/**
+ * 本地文件图标：与预览面板标签页同一造型，让「这里能点开」和「面板里那个标签」看起来是同一类东西。
+ *
+ * <p>行内 SVG 而不是 emoji：颜色跟随 currentColor，深浅两个主题都不用另配资源。</p>
+ */
+const LOCAL_FILE_ICON = '<svg class="lx-local-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.8" aria-hidden="true" focusable="false">'
+  + '<path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />'
+  + '</svg>';
+
 // Configure external links to open in a new tab safely
 const defaultLinkOpen = md.renderer.rules.link_open || function (tokens: any[], idx: number, options: any, _env: any, self: any) {
   return self.renderToken(tokens, idx, options);
 };
 
+/**
+ * 本地文件链接开标签：不写 href 与 target。
+ *
+ * <p>没有 href 就不会被浏览器当成需要跳转的链接 —— 中键、Ctrl+点击、键盘激活都不会另开一个
+ * Electron 窗口，行为只剩 MarkdownRenderer 的点击委托。少了 href 也意味着必须自己补
+ * `role`/`tabindex`，否则键盘用户永远点不到它。</p>
+ */
+function renderLocalFileLinkOpen(target: LocalFileLinkTarget): string {
+  const line = target.line ? ` ${LOCAL_FILE_LINE_ATTR}="${target.line}"` : '';
+  return `<a class="${LOCAL_FILE_LINK_CLASS}" role="link" tabindex="0"`
+    + ` ${LOCAL_FILE_PATH_ATTR}="${md.utils.escapeHtml(target.path)}"${line}`
+    + ` title="${md.utils.escapeHtml(formatLocalFileLocation(target))}">${LOCAL_FILE_ICON}`;
+}
+
 md.renderer.rules.link_open = function (tokens: any[], idx: number, options: any, env: any, self: any) {
+  const localFile = parseLocalFileLink(tokens[idx].attrGet('href'));
+  if (localFile) return renderLocalFileLinkOpen(localFile);
+
   const aIndex = tokens[idx].attrIndex('target');
   if (aIndex < 0) {
     tokens[idx].attrPush(['target', '_blank']);
@@ -117,7 +152,7 @@ export function renderMarkdown(content: string): string {
   if (!content) return '';
   const rawHtml = md.render(content);
   return DOMPurify.sanitize(rawHtml, {
-    ADD_ATTR: ['target', 'rel', 'data-code'],
+    ADD_ATTR: ['target', 'rel', 'data-code', LOCAL_FILE_PATH_ATTR, LOCAL_FILE_LINE_ATTR],
     ADD_TAGS: ['button', 'svg', 'path', 'span']
   });
 }
@@ -125,7 +160,7 @@ export function renderMarkdown(content: string): string {
 export function renderMarkdownDocument(content: string, streaming: boolean): MarkdownDocument {
   const env: DiagramEnvironment = { diagrams: [], lines: content.replace(/\r\n?/g, '\n').split('\n'), streaming };
   const html = DOMPurify.sanitize(md.render(content, env), {
-    ADD_ATTR: ['target', 'rel', 'data-code', 'data-mermaid-index'],
+    ADD_ATTR: ['target', 'rel', 'data-code', 'data-mermaid-index', LOCAL_FILE_PATH_ATTR, LOCAL_FILE_LINE_ATTR],
     ADD_TAGS: ['button', 'svg', 'path', 'span'],
   });
   return { html, diagrams: env.diagrams };

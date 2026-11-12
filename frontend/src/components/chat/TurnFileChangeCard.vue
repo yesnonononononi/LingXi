@@ -99,6 +99,6 @@ const chipClass = (tone: 'ok' | 'muted'): string => {
 /** 点行打开差异；历史轮次没有差异正文，行本身不可点。 */
 const openDiff = (row: TurnFileChangeRow): void => {
   if (!row.edit) return;
-  openFilePreview?.(props.sessionId, row.filePath, row.edit);
+  openFilePreview?.({ sessionId: props.sessionId, path: row.filePath, edit: row.edit });
 };
 </script>

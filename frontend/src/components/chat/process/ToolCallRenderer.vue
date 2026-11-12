@@ -38,7 +38,7 @@ import CollapseTransition from '../../common/CollapseTransition.vue';
 const props = defineProps<{
   item: ImageProcessItem;
   isDark: boolean;
-  /** 文件预览要用的会话 id（`openFilePreview(sessionId, path)` 的入参）。 */
+  /** 文件预览要用的会话 id（`openFilePreview({ sessionId, path })` 的入参）。 */
   sessionId?: string | number;
   /** `getToolDiffStat` 唯一用到的消息字段（权威编辑记录）。 */
   fileEdits?: ChatMessage['fileEdits'];
@@ -76,7 +76,11 @@ const previewTarget = (): void => {
   const edit = isEditFileTool(tool.value.toolName) && executionId && recordId
     ? {executionId, recordId}
     : undefined;
-  openFilePreview?.(props.sessionId, meta.value?.target ?? '', edit);
+  openFilePreview?.({
+    sessionId: props.sessionId,
+    path: meta.value?.target ?? '',
+    edit,
+  });
 };
 
 // 复制反馈：每个工具行一个实例，键仍是 `tool.id`（语义与原来单一实例 + copiedKey 等价）。

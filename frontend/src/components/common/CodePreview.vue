@@ -22,6 +22,53 @@ loader.config({ monaco });
 const props = defineProps<{ tabs: FilePreviewTab[]; activeId: string; isDark: boolean }>();
 const active = computed(() => props.tabs.find(tab => tab.id === props.activeId));
 const editor = shallowRef<monaco.editor.IStandaloneCodeEditor>();
+/** 当前标签的行定位请求（本地文件链接带过来的）。 */
+const lineAnchor = computed(() => active.value?.lineAnchor);
+/** 已经定位过的请求序号：后台刷新会换掉 `data`，不能因此把用户又拽回那一行。 */
+let revealedSeq = 0;
+let flashDecorations: string[] = [];
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * 把视图滚到 anchor 指定的行并短暂高亮。
+ *
+ * <p>面板可能是刚被唤起（`v-show` 由隐藏切到可见），首帧布局高度是 0，此时算出来的滚动位置不可靠。
+ * 高度为 0 就等下一帧重试，而不是先滚一个错位置再指望 automaticLayout 事后纠正。</p>
+ */
+const revealAnchorLine = (attempt = 0): void => {
+  const instance = editor.value;
+  const anchor = lineAnchor.value;
+  if (!instance || !anchor) return;
+  const model = instance.getModel();
+  if (!model) return;
+  if (instance.getLayoutInfo().height <= 0 && attempt < 10) {
+    requestAnimationFrame(() => revealAnchorLine(attempt + 1));
+    return;
+  }
+  // 行号来自 Markdown 文本，可能指到文件末尾之外（文件刚被改短），一律夹到有效范围。
+  const line = Math.min(Math.max(1, anchor.line), model.getLineCount());
+  instance.revealLineInCenter(line);
+  instance.setPosition({lineNumber: line, column: 1});
+  flashDecorations = instance.deltaDecorations(flashDecorations, [{
+    range: new monaco.Range(line, 1, line, 1),
+    options: { isWholeLine: true, className: 'lx-preview-line-flash' }
+  }]);
+  clearTimeout(flashTimer);
+  // 高亮只是「看这里」的一次性提示，停留够久就撤掉，别把只读视图染成常驻底色。
+  flashTimer = setTimeout(() => {
+    flashTimer = undefined;
+    flashDecorations = editor.value?.deltaDecorations(flashDecorations, []) ?? [];
+  }, 1800);
+};
+
+/** 内容与编辑器都到位后才定位；同一个请求序号只定位一次。 */
+const revealIfReady = (): void => {
+  const seq = lineAnchor.value?.seq;
+  if (!seq || seq === revealedSeq || !editor.value || !active.value?.data) return;
+  revealedSeq = seq;
+  revealAnchorLine();
+};
+
 const buildModelPath = (tab: FilePreviewTab) => `lingxi-preview:///${tab.request.watchKey}/${encodeURIComponent(tab.name)}`;
 const modelPaths = computed(() => props.tabs.map(buildModelPath));
 const ownedModels = new Set(modelPaths.value);
@@ -66,7 +113,16 @@ watch(modelPaths, (paths, previous) => {
     ownedModels.delete(path);
   }
 }, { flush: 'post' });
-onUnmounted(() => ownedModels.forEach(disposeModel));
+// 定位时机有三个：编辑器挂载、新的行定位请求、目标内容到位。三者谁后到都能补上这一次定位。
+watch(
+  [editor, lineAnchor, () => active.value?.data],
+  () => revealIfReady(),
+  { flush: 'post' }
+);
+onUnmounted(() => {
+  clearTimeout(flashTimer);
+  ownedModels.forEach(disposeModel);
+});
 </script>
 
 <template>
@@ -84,3 +140,13 @@ onUnmounted(() => ownedModels.forEach(disposeModel));
     <template #failure>{{ t('filePreview.loadFailed') }}</template>
   </VueMonacoEditor>
 </template>
+
+<style>
+/*
+ * 行定位高亮：装饰的类名挂在 Monaco 自己生成的 DOM 上，scoped 样式够不到，只能全局声明。
+ * 只影响带这个类名的整行装饰，不碰编辑器其他部分。
+ */
+.monaco-editor .lx-preview-line-flash {
+  background-color: rgba(56, 189, 248, 0.18);
+}
+</style>

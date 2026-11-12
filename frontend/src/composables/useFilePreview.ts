@@ -3,7 +3,7 @@ import {getApiBaseUrl} from '../utils/apiConfig';
 import {createLocalId} from '../utils/ids';
 import {t} from '../i18n';
 import {toFilePreviewIpcRequest} from '../types/filePreview';
-import type {FilePreviewEditRef, FilePreviewTab} from '../types/filePreview';
+import type {FilePreviewOpenRequest, FilePreviewTab} from '../types/filePreview';
 
 export function useFilePreview() {
   const fileTabs = ref<FilePreviewTab[]>([]);
@@ -12,6 +12,8 @@ export function useFilePreview() {
   const activeFile = computed(() => fileTabs.value.find(tab => tab.id === activeFileId.value));
   let unsubscribe: (() => void) | undefined;
   const pendingRefreshes = new Set<string>();
+  /** 行定位请求的序号：单调递增，保证「再点一次同一个链接」仍是一次新的定位请求。 */
+  let lineAnchorSeq = 0;
 
   const refreshFile = async (tab: FilePreviewTab) => {
     if (tab.loading) {
@@ -40,8 +42,8 @@ export function useFilePreview() {
     }
   };
 
-  const openFilePreview = (sessionId: string | number | undefined, path: string,
-                           edit?: FilePreviewEditRef) => {
+  const openFilePreview = (target: FilePreviewOpenRequest) => {
+    const {sessionId, path, edit, line} = target;
     // 主进程需要完整地址，才能和开发页面走同一个 Vite 代理。
     const baseUrl = getApiBaseUrl() || window.location.origin;
     const normalizedPath = path.replace(/\\/g, '/');
@@ -61,6 +63,10 @@ export function useFilePreview() {
     } else {
       // 同一文件可能被多次编辑：以最后一次打开的编辑上下文为准，传空即回到「只看文件」。
       tab.request.edit = edit;
+    }
+    if (line && line >= 1) {
+      // 序号自增：同一个链接连点两次也要重新滚回那一行，不能因为「值没变」被 watch 忽略。
+      tab.lineAnchor = {line: Math.floor(line), seq: ++lineAnchorSeq};
     }
     activeFileId.value = id;
     filePreviewOpen.value = true;
