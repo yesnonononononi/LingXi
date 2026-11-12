@@ -34,12 +34,13 @@ import static org.mockito.Mockito.mock;
 import com.summit.core.agent.ContextSpec;
 
 /**
- * 等待子代理门禁：真 H2 + 真仓储。
+ * 「还有没有未完成的子执行」的两级证据判定：真 H2 + 真仓储。
  *
- * <p>守的是「自动唤醒不能冲破等待子代理」，以及两级证据的顺序：进程内登记表命中就不再查库，
- * 登记表为空（重启后）才走会话树 + 未终结执行。</p>
+ * <p>这个问题仍然只该有一个答案：收尾时要靠它决定「继续等」还是「可以收尾」，通道体系也要靠它
+ * 回答「有没有未完结的异步依赖」。恢复准入不再问这个问题 —— 子代理终态本身就是唤醒理由，
+ * 用「兄弟子会话还在跑」去拦唤醒，只会把已到位的交付压到最后一个子会话结束。</p>
  */
-class SubAgentWaitSuspensionGateH2Test {
+class SubExecutionDependencyH2Test {
 
     private static final long ROOT_SESSION_ID = 700L;
     private static final long CHILD_SESSION_ID = 701L;
@@ -51,11 +52,11 @@ class SubAgentWaitSuspensionGateH2Test {
     private SessionMapper sessionMapper;
     private ExecutionMapper executionMapper;
     private SessionExecutionRegistry registry;
-    private SubAgentWaitSuspensionGate gate;
+    private SubExecutionDependency dependency;
 
     @BeforeEach
     void setup() throws Exception {
-        database = H2TestDatabase.create("SubAgentWaitSuspensionGateH2Test");
+        database = H2TestDatabase.create("SubExecutionDependencyH2Test");
         capture = new SqlCaptureInterceptor();
         SqlSessionFactory factory = database.sessionFactory(SessionMapper.class, ExecutionMapper.class);
         factory.getConfiguration().addInterceptor(capture);
@@ -65,7 +66,7 @@ class SubAgentWaitSuspensionGateH2Test {
         SessionRepositoryImpl sessions = new SessionRepositoryImpl(sessionMapper);
         ExecutionRepository executions = new ExecutionRepositoryImpl(executionMapper);
         registry = new SessionExecutionRegistry();
-        gate = new SubAgentWaitSuspensionGate(new SubExecutionDependency(registry, sessions, executions));
+        dependency = new SubExecutionDependency(registry, sessions, executions);
 
         insertSession(ROOT_SESSION_ID, Session.ROOT_SESSION_ID);
         insertSession(CHILD_SESSION_ID, ROOT_SESSION_ID);
@@ -80,35 +81,31 @@ class SubAgentWaitSuspensionGateH2Test {
     }
 
     @Test
-    @DisplayName("子执行未终结：自动唤醒被拦，手动恢复放行")
-    void unfinishedChildBlocksAutomaticOnly() {
+    @DisplayName("子执行未终结：判定还有依赖，收尾必须继续等")
+    void unfinishedChildIsStillADependency() {
         insertExecution(CHILD_EXECUTION_ID, CHILD_SESSION_ID, ExecutionStatusCodes.RUNNING);
 
-        GateCheckResult automatic = gate.checkResumeReadiness(execution(null), ResumeTriggerType.AUTO_INPUT_WAKEUP);
-        assertFalse(automatic.allowed(), "子代理还在跑时自动唤醒必须被拦住");
-        assertEquals("等待子代理返回结果", automatic.reason());
-
-        assertTrue(gate.checkResumeReadiness(execution(null), ResumeTriggerType.MANUAL_USER_RESUME).allowed(),
-                "用户显式恢复是唯一的人工出路，不能被等待门禁堵死");
+        assertTrue(dependency.hasUnfinishedSubExecution(execution(null)),
+                "子代理还在跑时，根执行收尾必须继续等待");
     }
 
     @Test
-    @DisplayName("子执行已终结：自动唤醒放行")
-    void finishedChildNoLongerBlocks() {
+    @DisplayName("子执行已终结：不再算依赖，根执行可以收尾")
+    void finishedChildIsNoLongerADependency() {
         insertExecution(CHILD_EXECUTION_ID, CHILD_SESSION_ID, ExecutionStatusCodes.COMPLETED);
 
-        assertTrue(gate.checkResumeReadiness(execution(null), ResumeTriggerType.AUTO_INPUT_WAKEUP).allowed(),
-                "子代理交付完成后根执行必须能被唤醒");
+        assertFalse(dependency.hasUnfinishedSubExecution(execution(null)),
+                "子代理交付完成后根执行必须能收尾");
     }
 
     @Test
-    @DisplayName("进程内登记表命中即拦，不再查库（失序会导致每次唤醒都多两次查询）")
+    @DisplayName("进程内登记表命中即判定，不再查库（失序会让每次收尾都多两次查询）")
     void registryHitShortCircuitsDatabase() {
         // 排队登记（尚无父槽位）：注册表命中后不得再查库。
         registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID, String.valueOf(CHILD_EXECUTION_ID), null);
         capture.clear();
 
-        assertFalse(gate.checkResumeReadiness(execution(null), ResumeTriggerType.AUTO_INPUT_WAKEUP).allowed());
+        assertTrue(dependency.hasUnfinishedSubExecution(execution(null)));
         assertTrue(capture.queries().isEmpty(), "登记表已给出答案，不该再查会话树: " + capture.queries());
     }
 
@@ -118,7 +115,7 @@ class SubAgentWaitSuspensionGateH2Test {
         insertExecution(CHILD_EXECUTION_ID, CHILD_SESSION_ID, ExecutionStatusCodes.CREATED);
         capture.clear();
 
-        assertFalse(gate.checkResumeReadiness(execution(null), ResumeTriggerType.AUTO_INPUT_WAKEUP).allowed());
+        assertTrue(dependency.hasUnfinishedSubExecution(execution(null)));
         String sql = String.join(" | ", capture.queries().stream().map(SqlCaptureInterceptor::normalize).toList());
         assertTrue(sql.contains("session"), "必须先取会话树: " + sql);
         assertTrue(sql.contains("execution"), "再按未终结执行判定: " + sql);
@@ -133,8 +130,8 @@ class SubAgentWaitSuspensionGateH2Test {
         attributes.put(ExecutionAttributes.ROOT_EXECUTION_ID, ROOT_EXECUTION_ID);
         Execution child = execution(attributes);
 
-        assertTrue(gate.checkResumeReadiness(child, ResumeTriggerType.AUTO_INPUT_WAKEUP).allowed(),
-                "子执行等的是自己的父，不是别人，否则永远恢复不了");
+        assertFalse(dependency.hasUnfinishedSubExecution(child),
+                "子执行等的是自己的父，不是别人，否则永远收不了尾");
     }
 
     private void insertSession(long id, long rootSessionId) {

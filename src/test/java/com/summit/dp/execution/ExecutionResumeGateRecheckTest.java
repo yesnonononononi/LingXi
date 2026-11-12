@@ -11,9 +11,7 @@ import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
-import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -24,8 +22,6 @@ import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepo
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
@@ -93,10 +89,7 @@ class ExecutionResumeGateRecheckTest {
 
         SuspensionGateChain gates = new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
-                new UnresolvedToolSuspensionGate(toolCalls),
-                new SubAgentWaitSuspensionGate(new SubExecutionDependency(
-                        mock(com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry.class),
-                        mock(SessionRepository.class), mock(ExecutionRepositoryImpl.class)))));
+                new UnresolvedToolSuspensionGate(toolCalls)));
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(
                 mock(SessionAttributeRestorer.class), modelContextService, provider(ExecutionControl.class, executionControl));
         coordinator = new ExecutionResumeCoordinator(tasks, summaries, resumer, executionControl, gates,

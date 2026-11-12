@@ -9,6 +9,13 @@ export interface StreamSessionRouterOptions {
   onScrollFollow?: () => void;
   onContextUsageUpdate?: (sessionId: string, usage: ContextUsageData) => void;
   onSubSessionDiscovered?: (subSession: SubSessionVO) => void;
+  /**
+   * 子会话进入终态（完成 / 失败 / 取消）后的定点刷新入口。
+   *
+   * <p><b>为什么必须有</b>：事件只带会话级状态，轮次摘要（`turns`）与块视图只由历史接口下发。
+   * 不刷新就会留下「外层已完成、组尾工具条还写着执行中」的矛盾画面 —— 后者读的是轮次状态。</p>
+   */
+  onSubSessionTerminated?: (subSessionId: string) => void;
   /** 按 toolCallId 拉取权威 ToolCallVO（PROMISE 卡片实时建卡用）；语义见 TurnStreamReducerOptions。 */
   onResolveCard?: (toolCallId: string) => Promise<ToolCallVO | null>;
   /** 卡片就绪有界重试调度器（宿主注入，便于统一取消）；语义见 TurnStreamReducerOptions。 */
@@ -271,12 +278,22 @@ export class StreamSessionRouter {
         subVO.lastOutcome = 'COMPLETED';
       }
       this.updateRootSubAgentToolStatus(subSessionId, 'success');
+      this.options.onSubSessionTerminated?.(subSessionId);
     } else if (event.type === 'EXECUTION_FAILED') {
       if (subVO) {
         subVO.runStatus = 'IDLE';
         subVO.lastOutcome = 'FAILED';
       }
       this.updateRootSubAgentToolStatus(subSessionId, 'failed');
+      this.options.onSubSessionTerminated?.(subSessionId);
+    } else if (event.type === 'EXECUTION_CANCELLED') {
+      // 取消同样是终态：不更新就永远停在「执行中」，协作者的卡片也会一直转。
+      if (subVO) {
+        subVO.runStatus = 'IDLE';
+        subVO.lastOutcome = 'CANCELLED';
+      }
+      this.updateRootSubAgentToolStatus(subSessionId, 'unknown');
+      this.options.onSubSessionTerminated?.(subSessionId);
     } else if (event.type === 'EXECUTION_SUSPENDED') {
       if (subVO) subVO.runStatus = 'SUSPENDED';
       this.updateRootSubAgentToolStatus(subSessionId, 'pending');
@@ -287,7 +304,7 @@ export class StreamSessionRouter {
   }
 
   /** 同步主会话中 call_sub_agent 工具调用的指示状态 */
-  private updateRootSubAgentToolStatus(subSessionId: string, status: 'calling' | 'success' | 'failed' | 'pending'): void {
+  private updateRootSubAgentToolStatus(subSessionId: string, status: 'calling' | 'success' | 'failed' | 'pending' | 'unknown'): void {
     if (!this.currentRootSession) return;
     for (const msg of this.currentRootSession.messages) {
       if (!msg.toolCalls) continue;

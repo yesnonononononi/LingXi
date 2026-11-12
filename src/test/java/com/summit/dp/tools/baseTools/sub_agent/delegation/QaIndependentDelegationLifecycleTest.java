@@ -62,8 +62,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -530,9 +528,6 @@ class QaIndependentDelegationLifecycleTest {
     private static SuspensionGateChain lifecycleGates(ToolCallRepository toolCalls) {
         return new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
-                new UnresolvedToolSuspensionGate(toolCalls),
-                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                        mock(SessionRepository.class),
-                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
+                new UnresolvedToolSuspensionGate(toolCalls)));
     }
 }

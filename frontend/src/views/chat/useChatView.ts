@@ -224,6 +224,11 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     onSubSessionDiscovered: (subVO) => {
       console.info('动态发现并挂载子代理会话:', subVO.id, subVO.name);
     },
+    // 子会话终态后立刻把它的轮次摘要拉回权威状态：事件只带会话级状态，
+    // 组尾工具条读的是轮次状态，不刷新就会出现「外层已完成、里面还执行中」。
+    onSubSessionTerminated: (subId) => {
+      void subSession.handleSubSessionTerminated(subId);
+    },
     // 实时卡片建卡：收到 PROMISE 类工具调用 / 挂起事件时按 toolCallId 拉权威 ToolCallVO
     onResolveCard: (toolCallId) => chatApi.fetchToolCall(toolCallId),
     // 卡片就绪前的有界重试（安全网）：框架已保证 PREPARING→PENDING 先于挂起事件，

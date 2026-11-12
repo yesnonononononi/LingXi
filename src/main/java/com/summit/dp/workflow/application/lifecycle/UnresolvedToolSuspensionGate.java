@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class UnresolvedToolSuspensionGate implements SuspensionGate {
 
-    /** 槽位状态是恢复的前提，排在暂停判定之后、子代理等待之前。 */
+    /** 槽位状态是恢复的前提，排在暂停判定之后。 */
     @Override
     public int order() {
         return 200;

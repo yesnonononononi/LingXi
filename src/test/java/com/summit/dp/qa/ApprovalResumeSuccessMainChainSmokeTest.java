@@ -62,15 +62,12 @@ import com.summit.dp.workflow.application.decision.VersionedToolCallDecisionServ
 import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.runtime.agent.AgentConfig;
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
@@ -170,9 +167,8 @@ class ApprovalResumeSuccessMainChainSmokeTest {
                 new ExecutionResumeTaskRepositoryImpl(session.getMapper(ExecutionResumeTaskMapper.class)),
                 resumeExecutions, resumer, executionControl,
                 new SuspensionGateChain(List.of(new UserPauseSuspensionGate(),
-                        new UnresolvedToolSuspensionGate(tools),
-                        new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                                mock(SessionRepository.class), resumeExecutions)))),
+                        new UnresolvedToolSuspensionGate(tools)
+                        )),
                 new UnresolvedToolSuspensionGate(tools),
                 ExecutionRepositoryTestFactory.provider(executions),
                 ExecutionRepositoryTestFactory.provider(mock(ExecutionActivity.class)),

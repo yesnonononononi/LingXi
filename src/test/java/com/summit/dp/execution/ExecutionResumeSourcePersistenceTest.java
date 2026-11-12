@@ -25,21 +25,17 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -136,9 +132,7 @@ class ExecutionResumeSourcePersistenceTest {
         // 这正是缺陷窗口 —— 来源必须已经在库上。
         SuspensionGateChain gates = new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
-                new UnresolvedToolSuspensionGate(toolCallRepository),
-                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                        mock(SessionRepository.class), executions))));
+                new UnresolvedToolSuspensionGate(toolCallRepository)));
         coordinator = newCoordinator(tasks, executions, gates);
 
         coordinatorLogger = (Logger) LoggerFactory.getLogger(ExecutionResumeCoordinator.class);
@@ -270,12 +264,7 @@ class ExecutionResumeSourcePersistenceTest {
                         .getMapper(ExecutionMapper.class)),
                 new SuspensionGateChain(List.of(
                         new UserPauseSuspensionGate(),
-                        new UnresolvedToolSuspensionGate(toolCallRepository),
-                        new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                                mock(SessionRepository.class),
-                                new ExecutionRepositoryImpl(H2TestDatabase
-                                        .sqlSession(database.sessionFactory(ExecutionMapper.class))
-                                        .getMapper(ExecutionMapper.class)))))));
+                        new UnresolvedToolSuspensionGate(toolCallRepository))));
     }
 
     private ExecutionResumeCoordinator newCoordinator(

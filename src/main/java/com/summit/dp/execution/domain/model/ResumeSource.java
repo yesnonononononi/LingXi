@@ -23,6 +23,9 @@ public enum ResumeSource {
     /** 外部输入（邮件 / 后台任务 / 子代理结果）到位的自动唤醒。 */
     AUTO_INPUT_WAKEUP("AUTO_INPUT_WAKEUP", false),
 
+    /** 用户补充要求后的继续：人发起，但不等于撤销暂停。 */
+    USER_SUPPLEMENT("USER_SUPPLEMENT", true),
+
     /** 进程启动时对遗留请求的收口。 */
     STARTUP_RECOVERY("STARTUP_RECOVERY", false);
 

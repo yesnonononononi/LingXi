@@ -460,7 +460,7 @@ public class ExecutionResumeCoordinator {
      * 门禁未放行：置为 {@code DEFERRED} 留待下一次唤醒。
      *
      * <p><b>刻意不作废</b>：作废是「这次恢复永久没机会了」，而门禁不通过往往只是「此刻还不行」
-     * （自动轮次到顶、用户暂停、等待子代理）。烧成作废会让用户点完批准就彻底失去重试入口，
+     * （自动轮次到顶、用户暂停、未决卡片）。烧成作废会让用户点完批准就彻底失去重试入口，
      * 而回执当时说的是「已受理」。</p>
      */
     private void markDeferred(ExecutionResumeTask task, String reason) {

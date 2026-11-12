@@ -71,10 +71,7 @@ import java.util.function.Consumer;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -450,9 +447,6 @@ class ToolCallDecisionTest {
     private static SuspensionGateChain lifecycleGates(ToolCallRepository toolCalls) {
         return new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
-                new UnresolvedToolSuspensionGate(toolCalls),
-                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                        mock(SessionRepository.class),
-                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
+                new UnresolvedToolSuspensionGate(toolCalls)));
     }
 }

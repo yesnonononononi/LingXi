@@ -119,7 +119,7 @@ class ResumeSupplementTest {
         ChatTurn turn = ChatTurn.builder().id(TURN_ID).sessionId(SESSION_ID).executionId(900L).build();
         when(turns.findByIds(List.of(TURN_ID))).thenReturn(Map.of(TURN_ID, turn));
         when(turns.findByExecutionId(900L)).thenReturn(Optional.of(turn));
-        when(coordinator.accept(900L, ResumeTriggerType.AUTO_INPUT_WAKEUP)).thenAnswer(invocation -> {
+        when(coordinator.accept(900L, ResumeTriggerType.USER_SUPPLEMENT)).thenAnswer(invocation -> {
             tasks.enqueue(900L, 1L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
             return ResumeDisposition.QUEUED;
         });
@@ -166,7 +166,7 @@ class ResumeSupplementTest {
         doAnswer(invocation -> {
             tasks.enqueue(900L, 1L, Instant.now(), ResumeSource.AUTO_INPUT_WAKEUP);
             throw new IllegalStateException("模拟受理失败");
-        }).when(coordinator).accept(900L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
+        }).when(coordinator).accept(900L, ResumeTriggerType.USER_SUPPLEMENT);
         assertThrows(IllegalStateException.class, () -> service.accept(SESSION_ID, command("不要提交")));
         assertTrue(messages.findBySessionId(SESSION_ID).isEmpty());
         assertTrue(tasks.findByExecutionId(900L).isEmpty());
@@ -186,7 +186,7 @@ class ResumeSupplementTest {
             for (Future<String> future : futures) assertEquals(id, future.get(10, TimeUnit.SECONDS));
         }
         assertEquals(1, messages.findResumeSupplements(SESSION_ID, TURN_ID).size());
-        verify(coordinator, times(1)).accept(900L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
+        verify(coordinator, times(1)).accept(900L, ResumeTriggerType.USER_SUPPLEMENT);
         ExecutionControlSignal signal = executions.register(EXECUTION_ID);
         try {
             assertDoesNotThrow(() -> service.accept(SESSION_ID, command("保留输入")));
@@ -218,7 +218,7 @@ class ResumeSupplementTest {
                 }
             });
             return ResumeDisposition.QUEUED;
-        }).when(coordinator).accept(900L, ResumeTriggerType.AUTO_INPUT_WAKEUP);
+        }).when(coordinator).accept(900L, ResumeTriggerType.USER_SUPPLEMENT);
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
             Future<String> accepted = pool.submit(() -> service.accept(SESSION_ID, command("提交之前不可恢复")));
             assertTrue(beforeCommit.await(5, TimeUnit.SECONDS));

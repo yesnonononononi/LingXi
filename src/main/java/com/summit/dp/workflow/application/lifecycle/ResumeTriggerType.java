@@ -19,6 +19,17 @@ public enum ResumeTriggerType {
     /** 外部输入（邮件 / 后台任务 / 子代理结果）到位的自动唤醒：走队列。 */
     AUTO_INPUT_WAKEUP(false, false),
 
+    /**
+     * 用户在主会话补充要求并请求继续：走队列。
+     *
+     * <p><b>为什么它算人工发起</b>：补充是人在推进这件事，不是机器自转 —— 自动轮次上限约束的是
+     * 「机器自己接续」，拿它拦住人的补充，会让用户明明补充了要求却看不到任何反应。</p>
+     *
+     * <p><b>但它不清暂停标记</b>：{@code USER_PAUSED} 是「先别跑」的明确意图，补充内容已经落库，
+     * 人随后手动恢复即可；替人解暂停就是「按了暂停它自己又跑起来」。</p>
+     */
+    USER_SUPPLEMENT(false, true),
+
     /** 进程启动时对遗留请求的收口：只失败收口，不重投。 */
     STARTUP_RECOVERY(false, false);
 
@@ -59,6 +70,7 @@ public enum ResumeTriggerType {
             case MANUAL_USER_RESUME -> ResumeSource.MANUAL_USER_RESUME;
             case APPROVAL_DECISION -> ResumeSource.APPROVAL_DECISION;
             case AUTO_INPUT_WAKEUP -> ResumeSource.AUTO_INPUT_WAKEUP;
+            case USER_SUPPLEMENT -> ResumeSource.USER_SUPPLEMENT;
             case STARTUP_RECOVERY -> ResumeSource.STARTUP_RECOVERY;
         };
     }
@@ -72,6 +84,7 @@ public enum ResumeTriggerType {
             case MANUAL_USER_RESUME -> MANUAL_USER_RESUME;
             case APPROVAL_DECISION -> APPROVAL_DECISION;
             case AUTO_INPUT_WAKEUP -> AUTO_INPUT_WAKEUP;
+            case USER_SUPPLEMENT -> USER_SUPPLEMENT;
             case STARTUP_RECOVERY -> STARTUP_RECOVERY;
         };
     }

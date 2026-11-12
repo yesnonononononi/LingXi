@@ -55,8 +55,6 @@ import com.summit.dp.workflow.application.decision.ReactiveDecisionContract;
 import com.summit.dp.workflow.application.decision.TwoPhaseCommandResolutionStrategy;
 import com.summit.dp.workflow.application.decision.VersionedDecisionContract;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
@@ -65,7 +63,6 @@ import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.AfterEach;
@@ -230,10 +227,8 @@ class CommandTwoPhaseGuardTest {
                                 com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper.class)),
                 resumer, executionControl,
                 new SuspensionGateChain(List.of(new UserPauseSuspensionGate(),
-                        new UnresolvedToolSuspensionGate(tools),
-                        new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                                mock(SessionRepository.class),
-                                mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class))))),
+                        new UnresolvedToolSuspensionGate(tools)
+                        )),
                 new UnresolvedToolSuspensionGate(tools), provider(executions), provider(activity),
                 new StartupFailureCloser(executionControl));
         coordinators.add(coordinator);

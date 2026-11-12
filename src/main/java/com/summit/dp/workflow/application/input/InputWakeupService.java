@@ -65,7 +65,7 @@ public class InputWakeupService {
                     notices.report(execution, batchKey, reason);
                     return;
                 }
-                // 终态语义之后再过挂起门禁：用户暂停 / 自动轮次上限 / 等待子代理三门禁都拦住自动唤醒。
+                // 终态语义之后再过挂起门禁：用户暂停 / 自动轮次上限 / 未决卡片都拦住自动唤醒。
                 GateCheckResult readiness = gates.checkReadiness(execution, ResumeTriggerType.AUTO_INPUT_WAKEUP);
                 if (!readiness.allowed()) {
                     notices.report(execution, batchKey, readiness.reason());

@@ -17,8 +17,6 @@ import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
@@ -79,9 +77,7 @@ class ChatResumeTeamAttributeTest {
                 provider(ExecutionControl.class, executionControl));
         SuspensionGateChain gates = new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
-                new UnresolvedToolSuspensionGate(toolCallRepository),
-                new SubAgentWaitSuspensionGate(new SubExecutionDependency(sessionExecutionRegistry,
-                        sessionRepository, mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
+                new UnresolvedToolSuspensionGate(toolCallRepository)));
         ExecutionLifecycleOrchestratorImpl lifecycle = new ExecutionLifecycleOrchestratorImpl(
                 executionRepository, executionControl, executionIdentity, gates, resumer,
                 mock(ExecutionResumeCoordinator.class));

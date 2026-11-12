@@ -15,14 +15,10 @@ import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
@@ -92,10 +88,7 @@ class ExecutionResumeCoordinatorTest {
                 sessionAttributeRestorer, modelContextService, provider(executionControl));
         SuspensionGateChain gates = new SuspensionGateChain(List.of(
                 new UserPauseSuspensionGate(),
-                new UnresolvedToolSuspensionGate(toolCallRepository),
-                new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                        mock(SessionRepository.class),
-                        mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class)))));
+                new UnresolvedToolSuspensionGate(toolCallRepository)));
         coordinator = new ExecutionResumeCoordinator(tasks, executions, resumer, executionControl, gates,
                 new UnresolvedToolSuspensionGate(toolCallRepository),
                 provider(frameworkExecutions), provider(activity),

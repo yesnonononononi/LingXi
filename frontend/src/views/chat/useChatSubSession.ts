@@ -226,6 +226,24 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
     if (subId !== null) await handleSelectSubSessionOption(subId, true);
   };
 
+  /**
+   * 子会话进入终态（完成 / 失败 / 取消）后的定点刷新。
+   *
+   * <p><b>为什么要作废分页缓存</b>：缓存命中的判据是「消息数组与历史版本没变」，
+   * 而轮次摘要（`turns`）不算在里面 —— 子会话跑完时消息数组可能一字未变，
+   * 于是下次点开命中缓存、继续拿运行中的轮次状态渲染组尾工具条：外层写着「完成」，
+   * 里面还写着「执行中」。</p>
+   *
+   * <p>正在查看的那一个立即回查权威历史（不等下次点击）；其余只作废缓存，
+   * 避免终态瞬间为所有子会话各发一次请求。</p>
+   */
+  const handleSubSessionTerminated = async (subId: string) => {
+    const key = String(subId);
+    delete subSessionPaginationMap.value[key];
+    if (String(activeViewingSubSessionId.value) !== key) return;
+    await handleSelectSubSessionOption(subId, true);
+  };
+
   /** 切走会话时重置子会话查看态。 */
   const resetSubSessionView = () => {
     messagesRequestVersion += 1;
@@ -261,6 +279,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
     handleLoadMoreSubSessionHistory,
     handleRetrySubSessionMessages,
     refreshViewedSubSessionHistory,
+    handleSubSessionTerminated,
     resetSubSessionView,
   };
 }

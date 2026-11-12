@@ -87,9 +87,9 @@ public class ResumeSupplementService {
                 // 拦截器据此判断「需不需要查库」。事务还没提交就记早一点只会多查一次库，
                 // 绝不会少查，所以这里放在提交前也安全；但按纪律仍在提交后记。
                 noteAppendedAfterCommit(turn.getExecutionId(), message.getId());
-                // 补充要求是「外部输入到位」，不是人撤销暂停：按自动唤醒处理 —— 该被暂停与轮次上限
-                // 拦住时保持挂起（内容已落库，用户仍可手动恢复），避免一条补充把中断意图顶回去。
-                resumeAcceptance.accept(turn.getExecutionId(), ResumeTriggerType.AUTO_INPUT_WAKEUP);
+                // 补充要求是「人要求继续」，按人工来源唤醒：自动轮次上限不得吞掉人的补充；
+                // 但它不清 USER_PAUSED —— 人暂停了就保持挂起（内容已落库，可手动恢复）。
+                resumeAcceptance.accept(turn.getExecutionId(), ResumeTriggerType.USER_SUPPLEMENT);
                 return String.valueOf(message.getId());
             });
         }

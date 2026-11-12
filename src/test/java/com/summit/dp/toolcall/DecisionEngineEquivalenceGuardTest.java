@@ -61,15 +61,12 @@ import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SubAgentWaitSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
 import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -599,9 +596,8 @@ class DecisionEngineEquivalenceGuardTest {
                 new ExecutionResumeTaskRepositoryImpl(session.getMapper(ExecutionResumeTaskMapper.class)),
                 resumeExecutions, resumer, executionControl,
                 new SuspensionGateChain(List.of(new UserPauseSuspensionGate(),
-                        new UnresolvedToolSuspensionGate(tools),
-                        new SubAgentWaitSuspensionGate(new SubExecutionDependency(new SessionExecutionRegistry(),
-                                mock(SessionRepository.class), resumeExecutions)))),
+                        new UnresolvedToolSuspensionGate(tools)
+                        )),
                 new UnresolvedToolSuspensionGate(tools), provider(executions), provider(activity),
                 new StartupFailureCloser(executionControl));
         coordinators.add(coordinator);
