@@ -2,6 +2,7 @@
 import {onBeforeUnmount, onMounted} from 'vue'
 import {useApplicationSessionStore} from './stores/applicationSessionStore'
 import ConfirmModal from './components/common/ConfirmModal.vue'
+import ContextMenu from './components/common/ContextMenu.vue'
 import DesktopTitleBar from './components/common/DesktopTitleBar.vue'
 import {isElectron} from './utils/platform'
 import {useSettingsSync} from './composables/useSettingsSync'
@@ -22,6 +23,7 @@ onBeforeUnmount(() => applicationSessions.close())
       <router-view />
     </main>
     <ConfirmModal />
+    <ContextMenu />
   </div>
 </template>
 

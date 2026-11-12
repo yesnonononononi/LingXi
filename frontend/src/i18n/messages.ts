@@ -129,6 +129,13 @@ export const messages: MessageSchema = {
       loading: '加载中...',
       noData: '暂无数据',
     },
+    // 右键菜单：命令名与主进程 `edit:command` 的白名单一一对应
+    contextMenu: {
+      cut: '剪切',
+      copy: '复制',
+      paste: '粘贴',
+      selectAll: '全选',
+    },
     format: {
       oneSecond: '1秒',
       seconds: '{n}秒',
@@ -1537,6 +1544,12 @@ export const messages: MessageSchema = {
       noOptions: 'No matching options',
       loading: 'Loading...',
       noData: 'No data',
+    },
+    contextMenu: {
+      cut: 'Cut',
+      copy: 'Copy',
+      paste: 'Paste',
+      selectAll: 'Select all',
     },
     format: {
       oneSecond: '1s',

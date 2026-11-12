@@ -14,6 +14,7 @@ import type {
   ShowWithAgentPayload,
 } from '../types/projectPagePreview';
 import type {UpdateActionResult, UpdateLookupResult, UpdateStatePayload} from '../types/update';
+import type {TextEditCommand} from './contextMenu';
 
 /** 通知类别：决定通知卡片的图标与配色。 */
 export type NotifyKind = 'completed' | 'failed' | 'cancelled' | 'suspended';
@@ -111,6 +112,14 @@ export interface ElectronAPI {
   projectPage?: ElectronProjectPageAPI;
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
   updater?: ElectronUpdaterAPI;
+  /**
+   * 文本编辑命令（右键菜单的剪切/复制/粘贴/全选）。
+   *
+   * <p>为什么必须走主进程：渲染层的 `document.execCommand('paste')` 被 Chromium 禁用，
+   * 只有 `webContents.paste()` 能把系统剪贴板内容落进焦点输入框（也才进撤销栈）。
+   * 四条命令在主进程按白名单校验，渲染层给不了别的动作。</p>
+   */
+  edit?: (command: TextEditCommand) => Promise<boolean>;
 }
 
 /**
@@ -233,6 +242,41 @@ export function onNotificationActivate(handler: (payload: NotifyActivation) => v
     return () => {};
   }
   return window.electronAPI.onNotificationActivate(handler);
+}
+
+/**
+ * 执行一条文本编辑命令（右键菜单的剪切 / 复制 / 粘贴 / 全选）。
+ *
+ * <p>桌面端恒走主进程：`document.execCommand('paste')` 在 Chromium 里被禁用，
+ * 只有 `webContents.paste()` 能读系统剪贴板且保留撤销栈。Web 端（`vite dev` 直接开浏览器）
+ * 退回 `execCommand`，粘贴则读剪贴板后手动插入。</p>
+ *
+ * @param command 命令 id
+ * @returns 命令是否真的派发出去（失败时返回 false，调用方无需额外提示）
+ */
+export async function runTextEditCommand(command: TextEditCommand): Promise<boolean> {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+  const bridge = isElectron() ? window.electronAPI?.edit : undefined;
+  if (bridge) {
+    try {
+      return await bridge(command);
+    } catch (err) {
+      console.error('执行文本命令失败:', err);
+      return false;
+    }
+  }
+  if (command !== 'paste') {
+    return document.execCommand(command);
+  }
+  try {
+    const text = await navigator.clipboard.readText();
+    return text ? document.execCommand('insertText', false, text) : true;
+  } catch (err) {
+    console.error('执行文本命令失败:', err);
+    return false;
+  }
 }
 
 

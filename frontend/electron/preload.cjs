@@ -55,6 +55,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   setTitleBarTheme: (isDark) => ipcRenderer.invoke('window:set-titlebar-theme', isDark),
+  /**
+   * 文本编辑命令（右键菜单）。渲染层的 execCommand('paste') 被 Chromium 禁用，
+   * 剪切/复制/粘贴/全选一律交主进程按白名单派发。
+   */
+  edit: (command) => ipcRenderer.invoke('edit:command', command),
   // 窗口创建参数不会随页面热更新，不能凭接口存在就展示第二层标题栏。
   customTitleBar: process.argv.includes('--lingxi-custom-titlebar'),
   /** 当前宿主系统平台 (win32 / darwin / linux) */

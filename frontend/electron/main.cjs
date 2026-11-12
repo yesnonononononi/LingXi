@@ -498,6 +498,24 @@ ipcMain.handle('window:set-titlebar-theme', (event, isDark) => {
   });
 });
 
+/**
+ * 右键菜单的文本编辑命令白名单。
+ *
+ * <p>四个名字同时是 `webContents` 上的方法名（cut / copy / paste / selectAll），
+ * 白名单就是「渲染层只能调这四个」的唯一闸门 —— 不做白名单等于把 webContents
+ * 的方法表暴露给页面。</p>
+ */
+const EDIT_COMMANDS = new Set(['cut', 'copy', 'paste', 'selectAll']);
+
+// IPC 处理器：执行文本编辑命令（右键菜单用）
+ipcMain.handle('edit:command', (event, command) => {
+  if (!assertTrustedSender(event)) return false;
+  if (!EDIT_COMMANDS.has(command)) return false;
+  // 用 event.sender 而非 mainWindow.webContents：这里的调用方就是被右键的那个页面
+  event.sender[command]();
+  return true;
+});
+
 // IPC 处理器：系统原生文件夹选择器
 ipcMain.handle('dialog:select-directory', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
