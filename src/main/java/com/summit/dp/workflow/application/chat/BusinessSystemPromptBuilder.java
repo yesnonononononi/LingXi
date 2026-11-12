@@ -22,16 +22,24 @@ public class BusinessSystemPromptBuilder {
 
     private final String globalPrompt;
     private final ProjectMemoryPrompt projectMemoryPrompt;
+    private final RenderSyntaxPrompt renderSyntaxPrompt;
 
     public BusinessSystemPromptBuilder(String globalPrompt) {
-        this(globalPrompt, workspace -> "");
+        this(globalPrompt, workspace -> "", new RenderSyntaxPrompt());
+    }
+
+    /** 记忆段可替换、渲染语法取产品默认实现：委派链路只关心成员提示词，不需要装配渲染语法。 */
+    public BusinessSystemPromptBuilder(String globalPrompt, ProjectMemoryPrompt projectMemoryPrompt) {
+        this(globalPrompt, projectMemoryPrompt, new RenderSyntaxPrompt());
     }
 
     @Autowired
     public BusinessSystemPromptBuilder(@Value("${lingxi.system-prompt:}") String globalPrompt,
-                                       ProjectMemoryPrompt projectMemoryPrompt) {
+                                       ProjectMemoryPrompt projectMemoryPrompt,
+                                       RenderSyntaxPrompt renderSyntaxPrompt) {
         this.globalPrompt = globalPrompt == null ? "" : globalPrompt.trim();
         this.projectMemoryPrompt = projectMemoryPrompt;
+        this.renderSyntaxPrompt = renderSyntaxPrompt;
     }
 
     /** 空段不产生分隔符，未配置偏好时保持原有提示词。 */
@@ -44,8 +52,14 @@ public class BusinessSystemPromptBuilder {
         return buildRootPrompt(agentPrompt, personalization, null);
     }
 
+    /**
+     * 根提示词：全局规则 → 产品渲染语法 → 用户偏好 → 角色职责 → 项目记忆。
+     *
+     * <p>渲染语法紧跟全局规则：两者都是「平台怎么用」的规则，排在用户偏好之前，
+     * 用户改自己的偏好时不会碰掉产品能力说明。</p>
+     */
     public String buildRootPrompt(String agentPrompt, PersonalizationVO personalization, WorkspaceSpec workspace) {
-        return String.join("\n\n", Stream.of(globalPrompt, customPrompt(personalization),
+        return String.join("\n\n", Stream.of(globalPrompt, renderSyntaxPrompt.load(), customPrompt(personalization),
                 Objects.toString(agentPrompt, "").trim(), projectMemoryPrompt.load(workspace))
                 .filter(section -> !section.isEmpty()).toList());
     }
@@ -79,6 +93,12 @@ public class BusinessSystemPromptBuilder {
         return buildMemberPrompt(agent, team, callerPrompt, null);
     }
 
+    /**
+     * 成员提示词：职责与名单 → 委派上下文 → 项目记忆。
+     *
+     * <p>刻意不带渲染语法段：成员产出是给主理人的报告，不是直接呈现给用户的正文，
+     * 把产品的渲染契约塞进去只会挤占成员自己的上下文。</p>
+     */
     public String buildMemberPrompt(AgentVO agent, TeamVO team, String callerPrompt, WorkspaceSpec workspace) {
         String rolePrompt = TeamPromptComposer.memberPrompt(
                 agent.getPrompt(),

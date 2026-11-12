@@ -65,7 +65,8 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(chatAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertEquals("全局规则\n\n# 用户个性化偏好\n\n## 用户偏好与自定义指令\n先给结论",
+        assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION
+                        + "\n\n# 用户个性化偏好\n\n## 用户偏好与自定义指令\n先给结论",
                 request.getContextSpec().getSystemPrompt());
         assertEquals(context.messageList(), request.getContextSpec().getContext());
         assertSame(context.pendingUserMessage(), request.getContextSpec().getContext().getLast());
@@ -93,7 +94,8 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(subAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertEquals("全局规则\n\n代码审查助手", request.getContextSpec().getSystemPrompt());
+        assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n代码审查助手",
+                request.getContextSpec().getSystemPrompt());
         assertEquals(context.messageList(), request.getContextSpec().getContext());
         assertEquals(selected.getToolList(), request.getToolList());
         verifyNoInteractions(chatAgent, teamService);
@@ -120,7 +122,8 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(subAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertTrue(request.getContextSpec().getSystemPrompt().startsWith("全局规则\n\n开发团队主理人\n"));
+        assertTrue(request.getContextSpec().getSystemPrompt()
+                .startsWith("全局规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n开发团队主理人\n"));
         assertTrue(request.getContextSpec().getSystemPrompt().contains("- id: 6"));
         assertTrue(request.getContextSpec().getSystemPrompt().contains("验证回归用例"));
         assertEquals(context.messageList(), request.getContextSpec().getContext());

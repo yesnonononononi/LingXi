@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.memory;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.application.chat.RenderSyntaxPrompt;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class MemoryWikiPromptTest {
 
         String prompt = builder().buildRootPrompt("角色规则", null, spec(project));
 
-        assertTrue(prompt.startsWith("固定全局规则\n\n角色规则\n\n"), prompt);
+        assertTrue(prompt.startsWith("固定全局规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n角色规则\n\n"), prompt);
         assertTrue(prompt.contains("## 三层记忆与项目 wiki"), prompt);
         assertTrue(prompt.contains("三层记忆规则"), prompt);
         assertFalse(prompt.contains("module.md"), "目录已搬到 memory，系统提示词里不能再出现: " + prompt);
