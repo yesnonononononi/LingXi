@@ -7,7 +7,9 @@ const output = path.resolve(__dirname, '../node_modules/.tmp/chat-images');
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
 let window;
-const deadline = setTimeout(() => { console.error('多图组件验证超时'); app.exit(1); }, 90000);
+// 死线只防「卡住不返回」，不是性能预算：整链含 vite 构建 + 真渲染 + 截图，本机约 100s，
+// 卡在 90s 会让用例因机器快慢忽红忽绿。真要抓挂死，180s 照样抓得住。
+const deadline = setTimeout(() => { console.error('多图组件验证超时'); app.exit(1); }, 180000);
 
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
@@ -25,7 +27,7 @@ window.reloadImages = urls => { messages.value = []; upsertTurnViewIntoMessages(
   { sessionId:'42', turnId:'43', status:'COMPLETED', viewVersion:1, userMessage:'历史提问', userImageUrls:urls, blocks:[] }, new Map()); };
 window.setText = text => input.value.setInputText(text);
 async function send(text, plan, team, agent, images) {
-  window.sent = { text, names:images.map(file => file.name) };
+  window.sent = { text, plan, names:images.map(file => file.name) };
   const previews = await readImagePreviews(images);
   messages.value = [{id:'42', role:'user', content:text, timestamp:0, imageUrls:previews}];
   await AgentAPI.acceptCommand({ input:text, sessionId:'42', modelId:1, workspaceId:1, agentId:1, workDir:'', requirePlan:plan, image:images });
@@ -105,12 +107,22 @@ await window.flush(); window.ready = true;`);
   assert.equal(await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", shiftKey:true, bubbles:true, cancelable:true }))'), true);
   assert.equal(await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", isComposing:true, bubbles:true, cancelable:true }))'), true);
   assert.equal(await evaluate('document.querySelector("textarea").value'), '**仍在编辑**');
+  // 程序回填不改写文本：命令副作用只允许发生在「显式选中菜单项」与 submit 两个时机
+  //（见 utils/chatCommand.ts）。回填的 "/plan" 必须原样躺在框里，被剥掉就是把历史消息吞了。
   await evaluate('window.setText("/plan **计划正文**"); window.flush()');
-  assert.equal(await evaluate('document.querySelector("textarea").value'), '**计划正文**');
+  assert.equal(await evaluate('document.querySelector("textarea").value'), '/plan **计划正文**',
+    '程序回填绝不能被当成用户敲命令：命令 token 与正文都要原样保留');
+  // 剥离发生在 submit：发给模型的正文不带命令 token，plan 语义单独传达。
+  await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", bubbles:true, cancelable:true })); window.flush()');
+  assert.equal(await evaluate('window.sent.text'), '**计划正文**', '/plan 前缀不得当成正文发给模型');
+  assert.equal(await evaluate('window.sent.plan'), true, '/plan 提交必须带 plan 语义');
   await evaluate('window.setText(""); window.flush(); document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Backspace", bubbles:true, cancelable:true })); window.flush()');
 
   assert.equal(await evaluate('document.querySelector("input[type=file]").multiple'), true);
-  assert.equal(await evaluate('document.querySelector("button[title=\\"正在读取图片数量限制\\"]").disabled'), true);
+  // 上限没读到时，用户必须看得到原因与重试入口；「不得自行猜数字」由 tests/chatImages.test.ts
+  // 的 canAttach 单测守着，这里守的是输入区真正渲染出来的信号（读取中的入口已收进 + 菜单）。
+  assert.match(await evaluate('document.querySelector("[aria-live=polite]").textContent'), /限制读取失败/);
+  assert.equal(await evaluate('document.querySelector("[aria-live=polite] button").textContent.trim()'), '重试');
   await evaluate('window.limitsFail=false; [...document.querySelectorAll("button")].find(button => button.textContent.trim() === "重试").click(); window.flush()');
   await evaluate('window.selectImages(["first.png", "second.png"])');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=image-attachments] img").length'), 2);
