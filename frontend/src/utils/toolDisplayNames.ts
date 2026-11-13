@@ -29,6 +29,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.imageRead')],
   [AgentToolName.GenerateImage, defineToolName('生成图片', 'Generate image', 'tool.category.imageGenerate')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
+  // 整文件写入单独成行：与 edit_file 的局部改动在流式工具行上必须能分辨
+  [AgentToolName.WriteFile, defineToolName('写入文件', 'Write file', 'tool.category.fileWrite')],
   // 删除是独立的破坏性动作，短名不复用「写入」
   [AgentToolName.DeleteFile, defineToolName('删除文件', 'Delete file', 'tool.category.fileDelete')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],

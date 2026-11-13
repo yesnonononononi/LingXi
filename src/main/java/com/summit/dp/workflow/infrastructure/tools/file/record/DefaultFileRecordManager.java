@@ -17,7 +17,7 @@ import java.util.Optional;
  * 「基线 + 逐条 diff」的链，正常情况下一轮里改同一文件十次也只留一份全文 —— 正是这一点把先前
  * 「长会话 OOM」的隐患从根上拿掉了。</p>
  *
- * <p><b>但链会被打断</b>：只有 {@code edit_file} 会登记记录，用 shell / python 直写、
+ * <p><b>但链会被打断</b>：只有 {@code edit_file} / {@code write_file} 会登记记录，用 shell / python 直写、
  * 或者 {@code del} 掉重建都不留痕。那时链上少一段，后续 diff 的上下文对不上，整份差异就
  * 再也重建不出来。所以每次登记都拿「上一条记录的末态摘要」和「本次改之前的摘要」比一次：
  * 对不上就把这条当成新的分段起点、重新保留基线。代价只是一段历史不连续，
@@ -105,7 +105,7 @@ public class DefaultFileRecordManager implements FileRecordManager {
             return false;
         }
         log.warn("编辑链断裂，另起分段: recordId={}, filePath={}, reason=上一条记录的末态与本次改之前的内容不一致"
-                + "（多半是绕过 edit_file 的修改）", previous.id(), draft.filePath());
+                + "（多半是绕过 edit_file / write_file 的修改）", previous.id(), draft.filePath());
         return true;
     }
 }

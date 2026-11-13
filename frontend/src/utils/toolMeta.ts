@@ -41,6 +41,7 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
   [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
+  [AgentToolName.WriteFile]: TOOL_CATEGORY.WRITE,
   [AgentToolName.DeleteFile]: TOOL_CATEGORY.WRITE,
   [AgentToolName.GenerateImage]: TOOL_CATEGORY.WRITE,
   // 选择 / 人工确认
@@ -137,9 +138,15 @@ export function isSubAgentTool(toolName?: string | null, _category?: string | nu
   return normalizeToolName(toolName) === AgentToolName.CallSubAgent;
 }
 
-/** 是否为文件编辑工具（后端固定名称见枚举） */
-export function isEditFileTool(toolName?: string | null): boolean {
-  return normalizeToolName(toolName) === AgentToolName.EditFile;
+/**
+ * 是否为文件写入类工具（{@code edit_file} 局部改、{@code write_file} 整文件写）。
+ *
+ * <p>两者都落盘并登记差异记录，行级 diff、文件预览与参数展开都按这一组判定，
+ * 不能只认 edit_file —— 否则 write_file 的结果只剩一段摘要 JSON。</p>
+ */
+export function isFileMutationTool(toolName?: string | null): boolean {
+  const name = normalizeToolName(toolName);
+  return name === AgentToolName.EditFile || name === AgentToolName.WriteFile;
 }
 
 /**
@@ -152,9 +159,9 @@ export function isReadFileTool(toolName?: string | null): boolean {
   return normalizeToolName(toolName) === AgentToolName.ReadFile;
 }
 
-/** 仅命令和文件编辑工具展示原始参数，其他工具保留摘要与执行结果。 */
+/** 仅命令和文件写入工具展示原始参数，其他工具保留摘要与执行结果。 */
 export function shouldShowToolArguments(toolName?: string | null): boolean {
-  return normalizeToolName(toolName) === AgentToolName.ExecuteCommand || isEditFileTool(toolName);
+  return normalizeToolName(toolName) === AgentToolName.ExecuteCommand || isFileMutationTool(toolName);
 }
 
 /**
@@ -216,8 +223,8 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
       break;
 
     case AgentToolName.SearchFiles:
-      // 检索行展示「在哪找 + 找什么」：路径可省略（默认整个工作区），正则才是主体。
-      target = field('path') || '.';
+      // 行头展示搜索关键词：用户关心找什么，不在哪找；path 可省略（默认整个工作区）。
+      target = field('pattern');
       description = field('pattern');
       break;
 
@@ -229,6 +236,7 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
     case AgentToolName.ReadImage:
     case AgentToolName.GenerateImage:
     case AgentToolName.EditFile:
+    case AgentToolName.WriteFile:
       target = field('path');
       description = target;
       break;

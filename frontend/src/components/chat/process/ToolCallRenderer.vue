@@ -12,13 +12,14 @@ import {computed, inject, ref} from 'vue';
 import type {ImageProcessItem} from '../../../utils/readImageTools';
 import type {ChatMessage} from '../../../types/chat';
 import {
-  isEditFileTool,
+  isFileMutationTool,
   isReadFileTool,
   shouldShowToolArguments,
   TOOL_CATEGORY,
   unwrapToolResultEnvelope
 } from '../../../utils/toolMeta';
 import {resolveToolRenderName} from '../../../utils/toolDisplayNames';
+import {AgentToolName} from '../../../utils/toolNames';
 import {
   buildEditDiffLines,
   canExpandToolRow,
@@ -67,13 +68,13 @@ const toggle = (): void => {
 
 const openFilePreview = inject(FILE_PREVIEW_KEY);
 const canPreviewFile = computed(() => !!openFilePreview && !!tool.value
-  && (isReadFileTool(tool.value.toolName) || isEditFileTool(tool.value.toolName)));
+  && (isReadFileTool(tool.value.toolName) || isFileMutationTool(tool.value.toolName)));
 
 const previewTarget = (): void => {
   if (!tool.value || !canPreviewFile.value) return;
   const {executionId, recordId} = tool.value;
-  // 只有编辑工具且两个标识齐全时才带差异上下文；读文件保持「只看文件」的原行为。
-  const edit = isEditFileTool(tool.value.toolName) && executionId && recordId
+  // 只有文件写入工具且两个标识齐全时才带差异上下文；读文件保持「只看文件」的原行为。
+  const edit = isFileMutationTool(tool.value.toolName) && executionId && recordId
     ? {executionId, recordId}
     : undefined;
   openFilePreview?.({
@@ -116,7 +117,13 @@ const copyResult = (): void => {
         </button>
         <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
         <div class="flex-shrink-0 flex items-center">
-          <svg v-if="meta?.category === TOOL_CATEGORY.READ || meta?.category === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <!-- 检索文件：单独的检索图标，与读写的文件图标区分开 -->
+          <svg v-if="tool.toolName === AgentToolName.SearchFiles" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+            <path d="M373.077333 921.6H102.4V125.155556h757.76v210.147555H807.822222V177.493333H154.737778v691.768889h218.339555V921.6z" />
+            <path d="M253.724444 589.596444h159.288889v52.337778h-159.288889zM253.724444 436.906667h238.933334V489.244444h-238.933334zM253.724444 282.965333h455.111112v52.337778h-455.111112zM673.564444 876.088889A201.841778 201.841778 0 1 1 876.088889 674.247111 202.410667 202.410667 0 0 1 673.564444 876.088889z m0-351.459556a149.617778 149.617778 0 1 0 150.186667 149.617778 150.072889 150.072889 0 0 0-150.186667-149.617778z" />
+            <path d="M790.994489 828.2112l36.943644-37.091556L921.6 884.451556l-36.932267 37.080177z" />
+          </svg>
+          <svg v-else-if="meta?.category === TOOL_CATEGORY.READ || meta?.category === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <rect x="4" y="3" width="16" height="18" rx="2" />
             <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
           </svg>
@@ -230,11 +237,11 @@ const copyResult = (): void => {
             </div>
 
             <div class="p-4">
-              <!-- edit_file 行级 diff：单滚动框，行号列垂直对齐。
+              <!-- 文件写入行级 diff：单滚动框，行号列垂直对齐。
                    文字统一走中性前景色，增删只靠淡色底纹区分 —— 整行染红绿会让代码难读，
                    也让色弱用户分不出增删。 -->
               <div
-                v-if="isEditFileTool(tool.toolName) && diffLines"
+                v-if="isFileMutationTool(tool.toolName) && diffLines"
                 class="rounded-xl border overflow-hidden"
                 :class="isDark ? 'border-zinc-800/80 bg-[#0e1118]' : 'border-zinc-200 bg-zinc-50/60'"
               >

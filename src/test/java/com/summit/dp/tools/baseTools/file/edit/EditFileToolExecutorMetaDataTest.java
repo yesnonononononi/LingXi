@@ -9,6 +9,7 @@ import com.summit.core.runtime.workspace.WorkspaceBridge;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
+import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.record.*;
@@ -39,7 +40,7 @@ class EditFileToolExecutorMetaDataTest {
         ObjectMapper mapper = new ObjectMapper();
         FileRecordManager records = fileRecordManager();
         EditFileToolExecutor executor = new EditFileToolExecutor(
-                mapper, differ(), records);
+                mapper, new FileEditRecorder(differ(), records));
         ToolExecution toolExecution = execution(executor, tempDir, """
                 {"type":"REPLACE","path":"demo.txt","oldText":"beta","newText":"BETA"}""");
         ToolExecuteResult result = executor.execute(toolExecution);
@@ -82,7 +83,7 @@ class EditFileToolExecutorMetaDataTest {
         Files.writeString(first, "before");
         Files.writeString(second, "before");
         FileRecordManager records = fileRecordManager();
-        EditFileToolExecutor executor = new EditFileToolExecutor(new ObjectMapper(), differ(), records);
+        EditFileToolExecutor executor = new EditFileToolExecutor(new ObjectMapper(), new FileEditRecorder(differ(), records));
         ToolExecution firstExecution = execution(executor, tempDir, """
                 {"type":"REPLACE","path":"nested/./first.txt","oldText":"before","newText":"after"}""");
         ToolExecution secondExecution = execution(executor, tempDir, """
@@ -117,7 +118,7 @@ class EditFileToolExecutorMetaDataTest {
         Path target = tempDir.resolve("turn.txt");
         Files.writeString(target, "one\n");
         FileRecordManager records = fileRecordManager();
-        EditFileToolExecutor executor = new EditFileToolExecutor(new ObjectMapper(), differ(), records);
+        EditFileToolExecutor executor = new EditFileToolExecutor(new ObjectMapper(), new FileEditRecorder(differ(), records));
         ToolExecution toolExecution = execution(executor, tempDir, """
                 {"type":"REPLACE","path":"turn.txt","oldText":"one","newText":"two"}""",
                 Map.of("turnId", "9527"));

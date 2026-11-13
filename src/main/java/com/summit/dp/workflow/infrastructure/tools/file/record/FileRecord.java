@@ -13,7 +13,7 @@ import java.time.Instant;
  * {@code baseline} 为 {@code null}。每条都携带自己那一次的 unified diff、增删行数与
  * {@link #contentDigest}（改完之后的全文摘要）。把 diff 依次重放回基线，就得到该文件在本轮结束时的内容。</p>
  *
- * <p><b>为什么要分段</b>：链只有在「改动都经过 {@code edit_file}」时才连续。用 shell / python
+ * <p><b>为什么要分段</b>：链只有在「改动都经过 {@code edit_file} 或 {@code write_file}」时才连续。用 shell / python
  * 直写、甚至删了重建，都不会留下记录，链就断在中间，后续 diff 的上下文对不上。
  * 登记时比对 {@link #contentDigest} 与下次编辑的「改之前摘要」，一比不一致就把这条当成新的
  * 分段起点、重新保留一份基线 —— 代价只是一段历史不连续，而不是整份差异都重建不出来。</p>

@@ -15,8 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 文件编辑记录的读侧接口：按需拉取差异文本。
  *
- * <p>差异不进 SSE 事件（全文会击穿单帧预算），前端只在需要时现取；记录由 {@code edit_file}
- * 落盘后登记，这里是唯一暴露口。</p>
+ * <p>差异不进 SSE 事件（全文会击穿单帧预算），前端只在需要时现取；记录由 {@code edit_file} /
+ * {@code write_file} 落盘后登记，这里是唯一暴露口。</p>
  *
  * <p><b>没有「按轮次汇总」端点</b>：改动清单随轮次视图（{@code TurnViewVO.fileChanges}）下发，
  * 避免卡片挂载后再请求一次导致列表高度二次增长。本类只有两个读入口：某条记录的差异、

@@ -23,6 +23,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -117,7 +118,7 @@ public class SearchFilesToolExecutor implements ToolExecutor {
             WorkspaceFiles files = workspace.bridge().files();
             PathMatcher nameMatcher = globMatcher(request.getGlob());
             List<WorkspaceFiles.Entry> candidates = files.walk(root, this::isSkippedDirectory);
-            candidates.sort((left, right) -> left.path().toString().compareTo(right.path().toString()));
+            candidates.sort(Comparator.comparing(left -> left.path().toString()));
 
             List<String> hits = new ArrayList<>();
             boolean limitReached = false;

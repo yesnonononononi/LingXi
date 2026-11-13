@@ -5,7 +5,7 @@
 | 工具 | 声明方式 | 理由 |
 | --- | --- | --- |
 | `execute_command`、`manage_command` | 执行器注解 | 名称、schema、输出上限和工具超时固定；终端运行属性仍通过构造器注入。 |
-| `read_file`、`edit_file`、`read_image` | 执行器注解 | 文件与图像契约固定；共享记录、缓存和图像依赖继续由容器装配。 |
+| `read_file`、`edit_file`、`write_file`、`read_image` | 执行器注解 | 文件与图像契约固定；共享记录、缓存和图像依赖继续由容器装配。 |
 | `require_choice`、`create_plan` | 执行器注解 | 声明与执行行为一起变化，无配置插值。 |
 | `create_checklist`、`update_checklist_step`、`delete_checklist` | 执行器注解 | 参数是扁平标量/标量数组，契约固定；会话归属与 Agent 身份来自每次工具调用。 |
 | `modify_checklist` | 执行器注解 + `parametersJsonSchema` | 补丁参数是「对象数组 + 嵌套对象」，注解只表达标量与标量数组，必须写显式 schema。 |

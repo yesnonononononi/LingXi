@@ -6,6 +6,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
+import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
@@ -30,7 +31,7 @@ class FileToolContractRegressionTest {
     @TempDir Path root;
     private final ObjectMapper mapper = new ObjectMapper();
     private final DefaultFileRecordManager records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
-    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(), records);
+    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new FileEditRecorder(new EditDiffer(), records));
 
     @Test
     void missingReplacementTextCannotDeleteContent() throws Exception {
@@ -86,12 +87,13 @@ class FileToolContractRegressionTest {
     }
 
     @Test
-    void lineRangeRemainsZeroBasedAndInclusive() throws Exception {
+    void lineRangeIsOneBasedAndInclusive() throws Exception {
         Files.writeString(root.resolve("demo.txt"), "first\nsecond\nthird\n");
         ToolExecuteResult result = new ReadFileToolExecutor(mapper).execute(execution(
                 Map.of("path", "demo.txt", "startLine", 1, "endLine", 2)));
         assertTrue(result.isSuccess(), result.getToolOutput());
-        assertEquals("second\nthird", result.getToolOutput());
+        // 行参 1 基、行号也是 1 基：两处口径必须一致，否则回读会整体错一行。
+        assertEquals("1: first\n2: second", result.getToolOutput());
     }
 
     @Test
@@ -122,7 +124,7 @@ class FileToolContractRegressionTest {
     @Test
     void toolSchemasDeclareRequiredFieldsAndLineBounds() throws Exception {
         JsonNode read = mapper.readTree(AnnotatedToolTestDefinitions.create(ReadFileToolExecutor.class, new ReadFileToolExecutor(mapper)).parametersJsonSchema());
-        JsonNode edit = mapper.readTree(AnnotatedToolTestDefinitions.create(EditFileToolExecutor.class, new EditFileToolExecutor(mapper, new EditDiffer(), records))
+        JsonNode edit = mapper.readTree(AnnotatedToolTestDefinitions.create(EditFileToolExecutor.class, new EditFileToolExecutor(mapper, new FileEditRecorder(new EditDiffer(), records)))
                 .parametersJsonSchema());
         assertEquals(List.of("path"), mapper.convertValue(read.path("required"), List.class));
         assertEquals(List.of("type", "path"), mapper.convertValue(edit.path("required"), List.class));

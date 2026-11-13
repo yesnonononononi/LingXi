@@ -21,8 +21,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -169,14 +170,15 @@ class FileToolContractTest {
 
     /** 边界判定按真实几何实现：stub 成常量会让越界用例假绿。 */
     private Workspace workspace() {
-        Workspace workspace = mock(Workspace.class);
+        // 必须走真实的默认方法：resolveInside / enclosesReal 的边界判定就在接口默认实现里，
+        // 用普通 mock 会把它们打成 null，越界用例变假绿、正常用例直接 NPE。
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         when(workspace.workDir()).thenReturn(root.toAbsolutePath().normalize().toString());
         when(workspace.resolve(anyString())).thenAnswer(call ->
                 root.resolve((String) call.getArgument(0)).normalize());
-        when(workspace.bridge()).thenReturn(new LocalWorkspaceBridge(ShellType.CMD));
-        when(workspace.encloses(any(Path.class))).thenAnswer(call ->
-                ((Path) call.getArgument(0)).toAbsolutePath().normalize()
-                        .startsWith(root.toAbsolutePath().normalize()));
+        // doReturn 才绕得开真实默认实现：when(...) 会先把 bridge() 真跑一遍，
+        // 而 mock 的 runtimeEnvironment() 是 null，直接在打桩阶段 NPE。
+        doReturn(new LocalWorkspaceBridge(ShellType.CMD)).when(workspace).bridge();
         return workspace;
     }
 }

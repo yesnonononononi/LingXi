@@ -36,6 +36,7 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
     [AgentToolName.ReadImage, '读取'],
     [AgentToolName.WebSearch, '读取'],
     [AgentToolName.EditFile, '写入'],
+    [AgentToolName.WriteFile, '写入'],
     [AgentToolName.RequireChoice, '选择'],
     [AgentToolName.CreatePlan, '计划'],
     [AgentToolName.CallSubAgent, '子代理'],
@@ -76,24 +77,37 @@ test('读图工具以真实路径展示目标', () => {
   assert.equal(meta.description, 'shots/example.png');
 });
 
-test('文件检索展示「在哪找 + 找什么」，删除按路径展示', () => {
+test('文件检索展示搜索关键词（路径不顶替关键词），删除按路径展示', () => {
   const scoped = resolveToolMeta({
     toolName: AgentToolName.SearchFiles,
     args: { pattern: 'class Foo', path: 'src/main' },
   });
   assert.equal(scoped.category, TOOL_CATEGORY.READ);
-  assert.equal(scoped.target, 'src/main');
+  assert.equal(scoped.target, 'class Foo');
+  assert.ok(!scoped.target.includes('src/main'), '路径不得顶替搜索关键词');
   assert.equal(scoped.description, 'class Foo');
 
-  // 未指定目录 = 整个工作区，展示成 '.' 而不是空白
+  // 没给目录也不影响展示：行头只认搜索关键词
   const wholeWorkspace = resolveToolMeta({ toolName: AgentToolName.SearchFiles, args: { pattern: 'needle' } });
-  assert.equal(wholeWorkspace.target, '.');
+  assert.equal(wholeWorkspace.target, 'needle');
   assert.equal(wholeWorkspace.description, 'needle');
 
   const deletion = resolveToolMeta({ toolName: AgentToolName.DeleteFile, args: { path: 'docs/old.md' } });
   assert.equal(deletion.category, TOOL_CATEGORY.WRITE);
   assert.equal(deletion.target, 'docs/old.md');
   assert.equal(deletion.description, 'docs/old.md');
+});
+
+test('整文件写入按路径展示，且与 edit_file 同属写入分类', () => {
+  const created = resolveToolMeta({
+    toolName: AgentToolName.WriteFile,
+    args: { type: 'CREATE', path: 'docs/new.md', content: '正文' },
+  });
+  assert.equal(created.category, TOOL_CATEGORY.WRITE);
+  assert.equal(created.target, 'docs/new.md');
+  assert.equal(created.description, 'docs/new.md');
+  // 该工具确实产生差异记录：分类必须是写入，否则行级 diff 与预览都不会出现。
+  assert.equal(resolveToolCategory(AgentToolName.WriteFile), resolveToolCategory(AgentToolName.EditFile));
 });
 
 test('原生工具名绝不出现在展示名里（全量枚举扫描）', () => {

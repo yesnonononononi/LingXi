@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
 import com.summit.runtime.workspace.LocalWorkspace;
@@ -30,7 +31,7 @@ class EditFileWorkspaceScopeTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final DefaultFileRecordManager records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
-    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(), records);
+    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new FileEditRecorder(new EditDiffer(), records));
 
     @ParameterizedTest
     @EnumSource(AgentAccessMode.class)
@@ -76,12 +77,14 @@ class EditFileWorkspaceScopeTest {
     void fullAccessModeWritesOutsideTheWorkspace() throws Exception {
         workspaceRoot();
         Path outside = container.resolve("outside.txt");
+        // edit_file 只改已有文件：越界写的能力用「已存在的文件」来验。
+        Files.writeString(outside, "原本");
 
         ToolExecuteResult result = editor.execute(execution(AgentAccessMode.OUT_OF_WORKSPACE,
-                Map.of("type", "INSERT_BEFORE", "path", outside.toString(), "anchor", "", "newText", "越界")));
+                Map.of("type", "INSERT_BEFORE", "path", outside.toString(), "anchor", "原本", "newText", "越界")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
-        assertEquals("越界", Files.readString(outside));
+        assertEquals("越界原本", Files.readString(outside));
     }
 
     private Path workspaceRoot() throws Exception {

@@ -10,6 +10,7 @@ import com.summit.dp.workflow.infrastructure.tools.file.delete.DeleteFileToolExe
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.search.SearchFilesToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.file.write.WriteFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.image.ReadImageToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.plan.CreatePlanTool;
 import com.summit.dp.workflow.infrastructure.tools.require_choice.RequireChoiceToolExecutor;
@@ -32,7 +33,8 @@ class StaticToolDeclarationContractTest {
         ObjectMapper mapper = new ObjectMapper();
         List<Class<? extends ToolExecutor>> executorTypes = List.of(
                 CommandToolDefinitionExecutor.class, ManageCommandToolExecutor.class,
-                EditFileToolExecutor.class, ReadFileToolExecutor.class, ReadImageToolExecutor.class,
+                EditFileToolExecutor.class, WriteFileToolExecutor.class, ReadFileToolExecutor.class,
+                ReadImageToolExecutor.class,
                 RequireChoiceToolExecutor.class, CallSubAgentTool.class, PeekTeammateStateTool.class,
                 SendMailToAgentTool.class, CreatePlanTool.class,
                 SearchFilesToolExecutor.class, DeleteFileToolExecutor.class);

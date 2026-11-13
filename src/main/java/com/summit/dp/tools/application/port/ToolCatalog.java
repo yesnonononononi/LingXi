@@ -50,6 +50,9 @@ public interface ToolCatalog {
     /** 改文件工具名 */
     String EDIT_FILE = "edit_file";
 
+    /** 整文件写入工具名：新建、全文替换、头插、追加，都不需要锚点 */
+    String WRITE_FILE = "write_file";
+
     /** 删除文件工具名 */
     String DELETE_FILE = "delete_file";
 
@@ -72,7 +75,7 @@ public interface ToolCatalog {
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
-            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, SEARCH_FILES, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE,
+            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, SEARCH_FILES, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE, WRITE_FILE,
                     DELETE_FILE, WEB_SEARCH, REQUIRE_CHOICE,
                     CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, GET_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST,
                     DELETE_CHECKLIST);

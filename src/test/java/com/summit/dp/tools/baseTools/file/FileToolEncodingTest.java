@@ -7,10 +7,13 @@ import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadFileRequest;
+import com.summit.dp.workflow.infrastructure.tools.arguments.WriteFileRequest;
+import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.record.*;
+import com.summit.dp.workflow.infrastructure.tools.file.write.WriteFileToolExecutor;
 import com.summit.sandbox.mxc.MxcRuntime;
 import com.summit.sandbox.mxc.MxcWorkspaceProvider;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
@@ -21,6 +24,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -48,11 +52,14 @@ class FileToolEncodingTest {
 
     @Test void readUsesTheSelectedFileCapabilityWithoutRequiringAHostFile() throws Exception {
         Path remote = root.resolve("remote-only.txt");
-        Workspace workspace = mock(Workspace.class);
+        // 边界复核走接口默认实现（resolveInside），普通 mock 会把它打成 null，
+        // 于是 readBytes 收到 null、断言只剩一句「读取文件失败」。
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
         WorkspaceFiles files = mock(WorkspaceFiles.class);
+        when(workspace.workDir()).thenReturn(root.toAbsolutePath().normalize().toString());
         when(workspace.resolve("remote-only.txt")).thenReturn(remote);
-        when(workspace.bridge()).thenReturn(bridge);
+        doReturn(bridge).when(workspace).bridge();
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(remote)).thenReturn(ORIGINAL.getBytes(StandardCharsets.UTF_8));
         ReadFileRequest request = ReadFileRequest.builder().path("remote-only.txt").build();
@@ -68,11 +75,11 @@ class FileToolEncodingTest {
     }
 
     @Test void editingExistingFileKeepsUtf8Bytes() throws Exception {
-        assertEdits(gbkWorkspace(), true);
+        assertEdits(gbkWorkspace());
     }
 
     @Test void creatingFileKeepsCharactersOutsideGbk() throws Exception {
-        assertEdits(gbkWorkspace(), false);
+        assertCreates(gbkWorkspace());
     }
 
     @Test void recordedDiffReplaysBackToUtf8Content() throws Exception {
@@ -95,22 +102,22 @@ class FileToolEncodingTest {
                     10, TimeUnit.SECONDS, 4096).output().contains("中文"));
         }
         assertReads(workspace, null, null, ORIGINAL);
-        assertReads(workspace, 1, 2, "\n末行🙂");
-        assertEdits(workspace, true);
-        assertEdits(workspace, false);
+        assertReads(workspace, 2, 3, "2: \n3: 末行🙂");
+        assertEdits(workspace);
+        assertCreates(workspace);
         assertDiffReplayKeepsUtf8();
     }
 
     private Workspace gbkWorkspace() {
-        Workspace workspace = mock(Workspace.class);
+        // 边界判定就在接口默认方法里（resolveInside → enclosesReal）：普通 mock 会把它们打成 null，
+        // 工作区内的写入直接 NPE；bridge() 用 doReturn 打桩，避免 when() 先把真实默认实现跑一遍。
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().charset(Charset.forName("GBK"))
                 .osType(OsType.WINDOWS).shellType(ShellType.CMD).isolated(true).build());
-        when(workspace.bridge()).thenReturn(new LocalWorkspaceBridge(ShellType.CMD));
-        when(workspace.resolve(anyString())).thenAnswer(call -> root.resolve((String) call.getArgument(0)));
-        // 边界判定与真实实现的几何一致：不 stub 就只能拿到 false，工作区内的写入会被当成越界。
-        when(workspace.encloses(any(Path.class))).thenAnswer(call ->
-                ((Path) call.getArgument(0)).toAbsolutePath().normalize()
-                        .startsWith(root.toAbsolutePath().normalize()));
+        when(workspace.workDir()).thenReturn(root.toAbsolutePath().normalize().toString());
+        doReturn(new LocalWorkspaceBridge(ShellType.CMD)).when(workspace).bridge();
+        when(workspace.resolve(anyString())).thenAnswer(call ->
+                root.resolve((String) call.getArgument(0)).normalize());
         return workspace;
     }
 
@@ -124,24 +131,42 @@ class FileToolEncodingTest {
         assertEquals(expected, result.getToolOutput());
     }
 
-    private void assertEdits(Workspace workspace, boolean existing) throws Exception {
-        String name = existing ? "existing.txt" : "created.txt";
-        Path file = workspace.resolve(name);
-        if (existing) Files.writeString(file, ORIGINAL);
+    private void assertEdits(Workspace workspace) throws Exception {
+        Path file = workspace.resolve("existing.txt");
+        Files.writeString(file, ORIGINAL);
         DefaultFileRecordManager manager = new DefaultFileRecordManager(new InMemoryFileRecordStore());
-        EditFileToolExecutor executor = new EditFileToolExecutor(mapper, new EditDiffer(), manager);
-        EditFileRequest request = EditFileRequest.builder().path(name).type(existing ? "REPLACE" : "INSERT_AFTER")
-                .oldText(existing ? "中文" : "").newText(existing ? "修改后🚀" : UPDATED).build();
+        EditFileToolExecutor executor = new EditFileToolExecutor(mapper, new FileEditRecorder(new EditDiffer(), manager));
+        EditFileRequest request = EditFileRequest.builder().path("existing.txt").type("REPLACE")
+                .oldText("中文").newText("修改后🚀").build();
         ToolExecuteResult result = executor.execute(ToolExecution.builder().workspace(workspace).executionId("encoding")
                 .turnId("turn").args(mapper.writeValueAsString(request)).build());
         assertTrue(result.isSuccess(), result.getToolOutput());
         assertArrayEquals(UPDATED.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(file));
+        assertRecorded(manager, ORIGINAL);
+    }
+
+    /** 新建归 write_file：编码同样不能在进程 GBK 终端下损坏。 */
+    private void assertCreates(Workspace workspace) throws Exception {
+        Path file = workspace.resolve("created.txt");
+        DefaultFileRecordManager manager = new DefaultFileRecordManager(new InMemoryFileRecordStore());
+        WriteFileToolExecutor executor = new WriteFileToolExecutor(mapper,
+                new FileEditRecorder(new EditDiffer(), manager));
+        WriteFileRequest request = WriteFileRequest.builder().path("created.txt").type("CREATE")
+                .content(UPDATED).build();
+        ToolExecuteResult result = executor.execute(ToolExecution.builder().workspace(workspace).executionId("encoding")
+                .turnId("turn").args(mapper.writeValueAsString(request)).build());
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        assertArrayEquals(UPDATED.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(file));
+        assertRecorded(manager, null);
+    }
+
+    private void assertRecorded(DefaultFileRecordManager manager, String expectedBaseline) {
         FileRecord record = manager.listRecords("encoding").getFirst();
-        // 记录只留基线与差异：基线必须还是编辑前的原文，差异重放后要能还原出编辑后的原文。
+        // 记录只留基线与差异：基线必须还是改动前的原文，差异重放后要能还原出改动后的原文。
         // 重放按行拼接（换行统一成 \n），与差异生成侧的行切分口径一致，所以这里也按归一化后比较。
-        assertEquals(existing ? ORIGINAL : null, record.baseline());
+        assertEquals(expectedBaseline, record.baseline());
         assertEquals(UPDATED.replace("\r\n", "\n"),
-                UnifiedDiffReplayer.replay(record.baseline(), java.util.List.of(record.diff())).orElseThrow());
+                UnifiedDiffReplayer.replay(record.baseline(), List.of(record.diff())).orElseThrow());
     }
 
     /** 差异重放是纯文本操作：只要两侧内容按 UTF-8 读入，GBK 环境不会影响重建结果。 */

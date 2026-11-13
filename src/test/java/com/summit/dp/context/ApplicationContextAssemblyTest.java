@@ -175,7 +175,8 @@ class ApplicationContextAssemblyTest {
                 "模型侧工具名必须与工具定义一一对应，不允许重名或丢失，实际=" + names);
 
         assertTrue(names.containsAll(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
-                        ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
+                        ToolCatalog.READ_FILE, ToolCatalog.SEARCH_FILES, ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE,
+                        ToolCatalog.DELETE_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
                         ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT,
                         ToolCatalog.CREATE_PLAN,
@@ -186,11 +187,13 @@ class ApplicationContextAssemblyTest {
         // 注解工具的「精确集合」白名单：名字取自 ToolCatalog 常量（编译期即可发现改名/删除），
         // 数量由白名单自身推导，不再写裸数字 18/19——新增一个 @Tool 执行器时，
         // 这条断言会立刻指出来「你加的工具没进白名单」，而不是只报一句 expected:<19> but was:<20>。
-        // 清单分三组，与 @Tool 的实际落点一一对应：
-        //   基础工具 11 件（含 generate_image）、执行清单 6 件、项目记忆 2 件（load_memory / search_wiki），合计 19。
+        // 清单分六组，与 @Tool 的实际落点一一对应：
+        //   基础工具 9 件（read/search/edit/write/delete/image 两件 + 终端两件）、执行清单 6 件、
+        //   项目记忆 2 件（load_memory / search_wiki）、人工确认 1 件、协作 3 件、计划书 1 件，合计 22。
         // 注：web_search 不在其中——它是配置驱动的 ToolDefinition Bean，不是注解工具。
         Set<String> expectedAnnotationTools = Set.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
-                ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
+                ToolCatalog.READ_FILE, ToolCatalog.SEARCH_FILES, ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE,
+                ToolCatalog.DELETE_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
                 ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.REQUIRE_CHOICE,
                 ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT,
                 ToolCatalog.CREATE_PLAN,

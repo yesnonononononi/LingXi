@@ -1,362 +1,330 @@
-[
-    {
-        "id":  "execute_command",
-        "name":  "execute_command",
-        "description":  "Execute a terminal command in the assigned workspace environment.\nBefore writing command, explicitly set shell on every call, including calls in the same batch. Each call starts a fresh process: it does not inherit shell selection or directory changes from previous calls. Repeat shell and any needed directory change in each call.\nOn Windows, prefer shell=pwsh for PowerShell scripts; use shell=powershell for Windows PowerShell. PowerShell statement separators (;), $variables, Set-Location and PowerShell pipelines require one of these shells. Use shell=cmd for CMD syntax such as cd /d, %VARIABLE% and CMD command chains. Do not mix CMD and PowerShell syntax: ; is not a CMD statement separator.\nSet shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux. If shell is omitted, the workspace default applies (cmd on Windows, bash on Linux), NOT the shell from the previous call or your interactive terminal; explicitly select shell for new calls. The runtime does not infer the interpreter from command text. JavaScript inside a quoted node -e argument does not select the outer shell; choose shell for the surrounding cd, separators and quoting.\nIf parsing or path syntax fails, first check shell on the failing call before changing paths or embedded JavaScript.\nPowerShell example:\n```json\n{\"shell\":\"pwsh\",\"command\":\"Set-Location -LiteralPath \u0027D:/repo\u0027; node -e \\\"console.log(process.cwd())\\\"\",\"intention\":\"Inspect the repository working directory\"}\n```\nCMD example:\n```json\n{\"shell\":\"cmd\",\"command\":\"cd /d \\\"D:/repo\\\" \u0026\u0026 node -e \\\"console.log(process.cwd())\\\"\",\"intention\":\"Inspect the repository working directory\"}\n```\nThe command is handed as-is to the chosen shell inside the same sandbox under the same approvals, timeout, cancellation and permission limits. An unsupported, missing or denied shell fails explicitly; it is never replaced by another shell. Output is decoded as UTF-8 and may be truncated according to the configured maximum.\nSet background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.\nAlways state in intention what the command is for; it is displayed to the user in the UI, so make it specific and human-readable.\n",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "command":  {
-                                                          "type":  "string",
-                                                          "description":  "Raw command text for the explicitly selected shell. The runtime does not detect script languages. Match the outer script syntax to shell: PowerShell uses Set-Location and ; while CMD uses cd /d and \u0026\u0026. Quote embedded node -e JavaScript for that shell; semicolons inside its quoted argument are not outer shell separators. Directory changes last only for this call."
-                                                      },
-                                          "shell":  {
-                                                        "type":  "string",
-                                                        "description":  "Explicitly set shell on every call; it is not remembered between calls, including calls in the same batch. Choose pwsh or powershell for PowerShell syntax, cmd for CMD, or bash/sh for POSIX scripts on Linux. Omission uses the workspace default (cmd on Windows, bash on Linux), not the previously selected shell. Unsupported, missing or denied shells fail without fallback.",
-                                                        "enum":  [
-                                                                     "cmd",
-                                                                     "pwsh",
-                                                                     "powershell",
-                                                                     "bash",
-                                                                     "sh",
-                                                                     "zsh"
-                                                                 ]
-                                                    },
-                                          "intention":  {
-                                                            "type":  "string",
-                                                            "description":  "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."
-                                                        },
-                                          "background":  {
-                                                             "type":  "boolean",
-                                                             "description":  "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution\u0027s tasks. The configured background timeout and the same output limit apply.",
-                                                             "default":  false
-                                                         }
-                                      },
-                       "required":  [
-                                        "command",
-                                        "intention"
-                                    ]
-                   },
-        "timeout":  240,
-        "maxOutput":  5000,
-        "concurrentPolicy":  "SERIAL_MUTATION"
+[ {
+  "id" : "execute_command",
+  "name" : "execute_command",
+  "description" : "Execute a terminal command in the assigned workspace environment.\nBefore writing command, explicitly set shell on every call, including calls in the same batch. Each call starts a fresh process: it does not inherit shell selection or directory changes from previous calls. Repeat shell and any needed directory change in each call.\nOn Windows, prefer shell=pwsh for PowerShell scripts; use shell=powershell for Windows PowerShell. PowerShell statement separators (;), $variables, Set-Location and PowerShell pipelines require one of these shells. Use shell=cmd for CMD syntax such as cd /d, %VARIABLE% and CMD command chains. Do not mix CMD and PowerShell syntax: ; is not a CMD statement separator.\nSet shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux. If shell is omitted, the workspace default applies (cmd on Windows, bash on Linux), NOT the shell from the previous call or your interactive terminal; explicitly select shell for new calls. The runtime does not infer the interpreter from command text. JavaScript inside a quoted node -e argument does not select the outer shell; choose shell for the surrounding cd, separators and quoting.\nIf parsing or path syntax fails, first check shell on the failing call before changing paths or embedded JavaScript.\nPowerShell example:\n```json\n{\"shell\":\"pwsh\",\"command\":\"Set-Location -LiteralPath 'D:/repo'; node -e \\\"console.log(process.cwd())\\\"\",\"intention\":\"Inspect the repository working directory\"}\n```\nCMD example:\n```json\n{\"shell\":\"cmd\",\"command\":\"cd /d \\\"D:/repo\\\" && node -e \\\"console.log(process.cwd())\\\"\",\"intention\":\"Inspect the repository working directory\"}\n```\nThe command is handed as-is to the chosen shell inside the same sandbox under the same approvals, timeout, cancellation and permission limits. An unsupported, missing or denied shell fails explicitly; it is never replaced by another shell. Output is decoded as UTF-8 and may be truncated according to the configured maximum.\nSet background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.\nAlways state in intention what the command is for; it is displayed to the user in the UI, so make it specific and human-readable.\n",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "command" : {
+        "type" : "string",
+        "description" : "Raw command text for the explicitly selected shell. The runtime does not detect script languages. Match the outer script syntax to shell: PowerShell uses Set-Location and ; while CMD uses cd /d and &&. Quote embedded node -e JavaScript for that shell; semicolons inside its quoted argument are not outer shell separators. Directory changes last only for this call."
+      },
+      "shell" : {
+        "type" : "string",
+        "description" : "Explicitly set shell on every call; it is not remembered between calls, including calls in the same batch. Choose pwsh or powershell for PowerShell syntax, cmd for CMD, or bash/sh for POSIX scripts on Linux. Omission uses the workspace default (cmd on Windows, bash on Linux), not the previously selected shell. Unsupported, missing or denied shells fail without fallback.",
+        "enum" : [ "cmd", "pwsh", "powershell", "bash", "sh", "zsh" ]
+      },
+      "intention" : {
+        "type" : "string",
+        "description" : "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."
+      },
+      "background" : {
+        "type" : "boolean",
+        "description" : "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply.",
+        "default" : false
+      }
     },
-    {
-        "id":  "manage_command",
-        "name":  "manage_command",
-        "description":  "Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination.",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "action":  {
-                                                         "type":  "string",
-                                                         "enum":  [
-                                                                      "list",
-                                                                      "read",
-                                                                      "stop",
-                                                                      "snapshot"
-                                                                  ]
-                                                     },
-                                          "taskId":  {
-                                                         "type":  "string",
-                                                         "description":  "Exact taskId returned by execute_command; required for read, snapshot and stop."
-                                                     }
-                                      },
-                       "required":  [
-                                        "action"
-                                    ]
-                   },
-        "timeout":  300,
-        "maxOutput":  55000,
-        "concurrentPolicy":  "SERIAL_MUTATION"
+    "required" : [ "command", "intention" ]
+  },
+  "timeout" : 240,
+  "maxOutput" : 5000,
+  "concurrentPolicy" : "SERIAL_MUTATION"
+}, {
+  "id" : "manage_command",
+  "name" : "manage_command",
+  "description" : "Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "action" : {
+        "type" : "string",
+        "enum" : [ "list", "read", "stop", "snapshot" ]
+      },
+      "taskId" : {
+        "type" : "string",
+        "description" : "Exact taskId returned by execute_command; required for read, snapshot and stop."
+      }
     },
-    {
-        "id":  "edit_file",
-        "name":  "edit_file",
-        "description":  "Edit UTF-8 text using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. `anchor` and `oldText` match a text fragment, not a whole line: INSERT_* place `newText` immediately before/after the matched fragment and add no line break, so include the newline in `newText` yourself when inserting a whole line. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "type":  {
-                                                       "type":  "string",
-                                                       "description":  "INSERT_BEFORE or INSERT_AFTER insert newText right before/after the anchor fragment with no line break added; REPLACE swaps oldText for newText; DELETE removes oldText.",
-                                                       "enum":  [
-                                                                    "INSERT_BEFORE",
-                                                                    "INSERT_AFTER",
-                                                                    "REPLACE",
-                                                                    "DELETE"
-                                                                ]
-                                                   },
-                                          "anchor":  {
-                                                         "type":  "string",
-                                                         "description":  "The text fragment an INSERT_* operation anchors on: the insert point sits immediately before or after this fragment with no line break added. Required unless creating an empty file."
-                                                     },
-                                          "path":  {
-                                                       "type":  "string",
-                                                       "description":  "File path: a relative path resolves against the workspace root. A path outside the workspace is rejected unless the session runs with full access"
-                                                   },
-                                          "oldText":  {
-                                                          "type":  "string",
-                                                          "description":  "Exact original text, required for REPLACE and DELETE. Must match exactly once."
-                                                      },
-                                          "newText":  {
-                                                          "type":  "string",
-                                                          "description":  "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."
-                                                      }
-                                      },
-                       "required":  [
-                                        "type",
-                                        "path"
-                                    ]
-                   },
-        "timeout":  30,
-        "maxOutput":  200,
-        "concurrentPolicy":  "SERIAL_MUTATION"
+    "required" : [ "action" ]
+  },
+  "timeout" : 300,
+  "maxOutput" : 55000,
+  "concurrentPolicy" : "SERIAL_MUTATION"
+}, {
+  "id" : "edit_file",
+  "name" : "edit_file",
+  "description" : "Edit an existing UTF-8 text file using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. `anchor` and `oldText` match a text fragment, not a whole line: INSERT_* place `newText` immediately before/after the matched fragment and add no line break, so include the newline in `newText` yourself when inserting a whole line. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE. The file must already exist and is never created here: use write_file for a new file, a full-content replacement, or a prepend/append without an anchor. Returns an edit summary.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "type" : {
+        "type" : "string",
+        "description" : "INSERT_BEFORE or INSERT_AFTER insert newText right before/after the anchor fragment with no line break added; REPLACE swaps oldText for newText; DELETE removes oldText.",
+        "enum" : [ "INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE" ]
+      },
+      "anchor" : {
+        "type" : "string",
+        "description" : "The text fragment an INSERT_* operation anchors on: the insert point sits immediately before or after this fragment with no line break added. Required for INSERT_* unless the target file is empty."
+      },
+      "path" : {
+        "type" : "string",
+        "description" : "File path: a relative path resolves against the workspace root. A path outside the workspace is rejected unless the session runs with full access"
+      },
+      "oldText" : {
+        "type" : "string",
+        "description" : "Exact original text, required for REPLACE and DELETE. Must match exactly once."
+      },
+      "newText" : {
+        "type" : "string",
+        "description" : "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."
+      }
     },
-    {
-        "id":  "read_file",
-        "name":  "read_file",
-        "description":  "Read a UTF-8 text file. Each returned line is prefixed with its 1-based line number as `N: content`, and those numbers are what startLine/endLine accept, so the output can be re-read by range. Binary files are rejected fast (use read_image for pictures); when the result ends with `...[OUTPUT_TRUNCATED]...`, continue from the last visible line number with a startLine argument.",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "path":  {
-                                                       "type":  "string",
-                                                       "description":  "File path it is a required parameter"
-                                                   },
-                                          "startLine":  {
-                                                            "type":  "integer",
-                                                            "description":  "1-based first line to return, inclusive. Defaults to 1. Omit both bounds to read the entire file.",
-                                                            "minimum":  0
-                                                        },
-                                          "endLine":  {
-                                                          "type":  "integer",
-                                                          "description":  "1-based last line to return, inclusive. Must not precede startLine. Defaults to the last line.",
-                                                          "minimum":  0
-                                                      }
-                                      },
-                       "required":  [
-                                        "path"
-                                    ]
-                   },
-        "timeout":  30,
-        "maxOutput":  3000,
-        "concurrentPolicy":  "READ_ONLY"
+    "required" : [ "type", "path" ]
+  },
+  "timeout" : 30,
+  "maxOutput" : 200,
+  "concurrentPolicy" : "SERIAL_MUTATION"
+}, {
+  "id" : "write_file",
+  "name" : "write_file",
+  "description" : "Write a UTF-8 text file without any match anchor. CREATE writes a new file and fails when the path already exists; OVERRIDE replaces the whole content of an existing file; PREPEND puts `content` before the existing content; APPEND puts it after. PREPEND and APPEND insert `content` verbatim and add no line break, so include the leading or trailing newline yourself when the text must start on its own line. Missing parent directories are created. Use edit_file for partial edits inside a file. Returns a write summary.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "type" : {
+        "type" : "string",
+        "description" : "CREATE writes a new file at the given path and fails if it already exists; OVERRIDE replaces the whole content of an existing file; PREPEND inserts content at the very beginning; APPEND inserts content at the very end.",
+        "enum" : [ "CREATE", "OVERRIDE", "PREPEND", "APPEND" ]
+      },
+      "path" : {
+        "type" : "string",
+        "description" : "File path: a relative path resolves against the workspace root. A path outside the workspace is rejected unless the session runs with full access"
+      },
+      "content" : {
+        "type" : "string",
+        "description" : "The full text to write, or the fragment to prepend/append. An explicit empty string is allowed for CREATE (empty file) and OVERRIDE (truncate); PREPEND and APPEND require non-empty content."
+      }
     },
-    {
-        "id":  "read_image",
-        "name":  "read_image",
-        "description":  "Load one image from the workspace into your context so you can actually see it.\nThe pixels are not inside this result: you get image metadata now, and the image itself\narrives as a separate user message on your next turn, still within this same task.\nImages consume model input tokens.\nOnly PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.\n",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "path":  {
-                                                       "type":  "string",
-                                                       "description":  "Image path inside the workspace. Relative paths are resolved against the workspace root."
-                                                   }
-                                      },
-                       "required":  [
-                                        "path"
-                                    ]
-                   },
-        "timeout":  20,
-        "maxOutput":  400,
-        "concurrentPolicy":  "READ_ONLY"
+    "required" : [ "type", "path", "content" ]
+  },
+  "timeout" : 30,
+  "maxOutput" : 200,
+  "concurrentPolicy" : "SERIAL_MUTATION"
+}, {
+  "id" : "read_file",
+  "name" : "read_file",
+  "description" : "Read a UTF-8 text file. Each returned line is prefixed with its 1-based line number as `N: content`, and those numbers are what startLine/endLine accept, so the output can be re-read by range. Binary files are rejected fast (use read_image for pictures); when the result ends with `...[OUTPUT_TRUNCATED]...`, continue from the last visible line number with a startLine argument.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "path" : {
+        "type" : "string",
+        "description" : "File path it is a required parameter"
+      },
+      "startLine" : {
+        "type" : "integer",
+        "description" : "1-based first line to return, inclusive. Defaults to 1. Omit both bounds to read the entire file.",
+        "minimum" : 0
+      },
+      "endLine" : {
+        "type" : "integer",
+        "description" : "1-based last line to return, inclusive. Must not precede startLine. Defaults to the last line.",
+        "minimum" : 0
+      }
     },
-    {
-        "id":  "require_choice",
-        "name":  "require_choice",
-        "description":  "Ask the user a question and wait for an explicit answer. When several independent questions are needed, call this tool multiple times in the SAME response. The user can answer all questions together before execution resumes.",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "question":  {
-                                                           "type":  "string"
-                                                       },
-                                          "options":  {
-                                                          "type":  "array",
-                                                          "items":  {
-                                                                        "type":  "string"
-                                                                    }
-                                                      }
-                                      },
-                       "required":  [
-                                        "question"
-                                    ]
-                   },
-        "timeout":  30000,
-        "maxOutput":  1000,
-        "concurrentPolicy":  "READ_ONLY"
+    "required" : [ "path" ]
+  },
+  "timeout" : 30,
+  "maxOutput" : 3000,
+  "concurrentPolicy" : "READ_ONLY"
+}, {
+  "id" : "read_image",
+  "name" : "read_image",
+  "description" : "Load one image from the workspace into your context so you can actually see it.\nThe pixels are not inside this result: you get image metadata now, and the image itself\narrives as a separate user message on your next turn, still within this same task.\nImages consume model input tokens.\nOnly PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.\n",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "path" : {
+        "type" : "string",
+        "description" : "Image path inside the workspace. Relative paths are resolved against the workspace root."
+      }
     },
-    {
-        "id":  "call_sub_agent",
-        "name":  "call_sub_agent",
-        "description":  "Delegate one well-scoped task to a configured teammate.\nThe delegation is accepted immediately; the teammate runs asynchronously so you keep working on the rest of the round. Verify workspace artifacts and validation records yourself; email (send_mail_to_agent) is supplementary and is not the basis for acceptance.\nRequire a changed-file list, actual validation commands and results, and unresolved items. If delivery is empty or unclear, inspect files and run checks yourself; if there is no usable output or the teammate fails, complete the work or re-delegate with this explicit format. Handle these internal failures yourself.\nOf course, you can terminate this turn, and you will be notified(the notification will be put into your context as the system message) when the teammate completed his task\n",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "agentId":  {
-                                                          "type":  "integer",
-                                                          "description":  "Agent id from the commander\u0027s teammate list."
-                                                      },
-                                          "task":  {
-                                                       "type":  "string",
-                                                       "description":  "A concrete, self-contained task for the teammate."
-                                                   },
-                                          "prompt":  {
-                                                         "type":  "string",
-                                                         "description":  "Relevant context, constraints and expected output format."
-                                                     },
-                                          "workDir":  {
-                                                          "type":  "string",
-                                                          "description":  "Current workspace directory."
-                                                      },
-                                          "agentName":  {
-                                                            "type":  "string",
-                                                            "description":  "The name of the target agent."
-                                                        }
-                                      },
-                       "required":  [
-                                        "agentId",
-                                        "task"
-                                    ],
-                       "additionalProperties":  false
-                   },
-        "timeout":  36000,
-        "maxOutput":  20000,
-        "concurrentPolicy":  "ISOLATED_MUTATION"
+    "required" : [ "path" ]
+  },
+  "timeout" : 20,
+  "maxOutput" : 400,
+  "concurrentPolicy" : "READ_ONLY"
+}, {
+  "id" : "require_choice",
+  "name" : "require_choice",
+  "description" : "Ask the user a question and wait for an explicit answer. When several independent questions are needed, call this tool multiple times in the SAME response. The user can answer all questions together before execution resumes.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "question" : {
+        "type" : "string"
+      },
+      "options" : {
+        "type" : "array",
+        "items" : {
+          "type" : "string"
+        }
+      }
     },
-    {
-        "id":  "peek_teammate_state",
-        "name":  "peek_teammate_state",
-        "description":  "Read one teammate\u0027s current run state in this collaboration session. Commander only: members cannot see each other.\nReturns RUNNING / SUSPENDED / IDLE plus the last outcome, or reports that the teammate has not been woken yet.\nThis is read-only observation: it never wakes, resumes or delegates. Use call_sub_agent to give a teammate work.\n`最近状态`: the target state of the last turn, it cannot be considered unable to continue working now\n",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "agentId":  {
-                                                          "type":  "integer",
-                                                          "description":  "Agent id from the commander\u0027s teammate list."
-                                                      },
-                                          "agentName":  {
-                                                            "type":  "string",
-                                                            "description":  "That teammate\u0027s name from the same list. Display only: it never affects which agent is read."
-                                                        }
-                                      },
-                       "required":  [
-                                        "agentId"
-                                    ],
-                       "additionalProperties":  false
-                   },
-        "timeout":  10,
-        "maxOutput":  2000,
-        "concurrentPolicy":  "READ_ONLY"
+    "required" : [ "question" ]
+  },
+  "timeout" : 30000,
+  "maxOutput" : 1000,
+  "concurrentPolicy" : "READ_ONLY"
+}, {
+  "id" : "call_sub_agent",
+  "name" : "call_sub_agent",
+  "description" : "Delegate one well-scoped task to a configured teammate.\nThe delegation is accepted immediately; the teammate runs asynchronously so you keep working on the rest of the round. Verify workspace artifacts and validation records yourself; email (send_mail_to_agent) is supplementary and is not the basis for acceptance.\nRequire a changed-file list, actual validation commands and results, and unresolved items. If delivery is empty or unclear, inspect files and run checks yourself; if there is no usable output or the teammate fails, complete the work or re-delegate with this explicit format. Handle these internal failures yourself.\nOf course, you can terminate this turn, and you will be notified(the notification will be put into your context as the system message) when the teammate completed his task\n",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "agentId" : {
+        "type" : "integer",
+        "description" : "Agent id from the commander's teammate list."
+      },
+      "task" : {
+        "type" : "string",
+        "description" : "A concrete, self-contained task for the teammate."
+      },
+      "prompt" : {
+        "type" : "string",
+        "description" : "Relevant context, constraints and expected output format."
+      },
+      "workDir" : {
+        "type" : "string",
+        "description" : "Current workspace directory."
+      },
+      "agentName" : {
+        "type" : "string",
+        "description" : "The name of the target agent."
+      }
     },
-    {
-        "id":  "send_mail_to_agent",
-        "name":  "send_mail_to_agent",
-        "description":  "Send an asynchronous mail to a teammate agent or to the commander.\nUse it to coordinate shared files or workspaces directly with teammates: agree on edit scope, order, and hand-offs without notifying the commander.\nThe commander can mail running teammates supplementary requirements, constraints, or findings.\nEscalate only unresolved conflicts, task-scope changes, or blockers that require the commander\u0027s decision.\nThe commander assesses workspace artifacts and validation records even without email; delivery notifications are supplementary.\nDelivery is asynchronous: the recipient reads this mail at the start of ITS next model round,\nnot immediately. There is no reply channel on this call, so sending does not return an answer.\nAfter a successful send, continue with your own work, or if you have nothing left to do,\nend your turn; never resend the same content because no reply arrived yet.\nMail does not start or resume a teammate. If a shared edit requires agreement, work on independent items until agreement arrives; do not assume silence grants permission to overwrite changes.\nOnly mail addressed to the commander may wake the root execution; teammate mail does not notify or wake the commander.\nIntended for code-collaboration hand-offs, not for real-time back-and-forth chat.\nThe target agent must belong to your team.\n",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "toAgentId":  {
-                                                            "type":  "integer",
-                                                            "description":  "Agent id from the team roster: a teammate for coordination or supplementary information, or the commander for required decisions or delivery notifications."
-                                                        },
-                                          "mailContent":  {
-                                                              "type":  "string",
-                                                              "description":  "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."
-                                                          }
-                                      },
-                       "required":  [
-                                        "toAgentId",
-                                        "mailContent"
-                                    ],
-                       "additionalProperties":  false
-                   },
-        "timeout":  60,
-        "maxOutput":  20000,
-        "concurrentPolicy":  "ISOLATED_MUTATION"
+    "required" : [ "agentId", "task" ],
+    "additionalProperties" : false
+  },
+  "timeout" : 36000,
+  "maxOutput" : 20000,
+  "concurrentPolicy" : "ISOLATED_MUTATION"
+}, {
+  "id" : "peek_teammate_state",
+  "name" : "peek_teammate_state",
+  "description" : "Read one teammate's current run state in this collaboration session. Commander only: members cannot see each other.\nReturns RUNNING / SUSPENDED / IDLE plus the last outcome, or reports that the teammate has not been woken yet.\nThis is read-only observation: it never wakes, resumes or delegates. Use call_sub_agent to give a teammate work.\n`最近状态`: the target state of the last turn, it cannot be considered unable to continue working now\n",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "agentId" : {
+        "type" : "integer",
+        "description" : "Agent id from the commander's teammate list."
+      },
+      "agentName" : {
+        "type" : "string",
+        "description" : "That teammate's name from the same list. Display only: it never affects which agent is read."
+      }
     },
-    {
-        "id":  "create_plan",
-        "name":  "create_plan",
-        "description":  "Create a plan for the given task.\nThe user may have embedded some tips in your plan so it is common if you see other text that differs from the original plan text.\nHowever, you don\u0027t ignore them.\n",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "title":  {
-                                                        "type":  "string",
-                                                        "description":  "The title of the plan to create."
-                                                    },
-                                          "text":  {
-                                                       "type":  "string",
-                                                       "description":  "The text of the plan to create. it is displayed by the format of MARKDOWN"
-                                                   }
-                                      },
-                       "required":  [
-                                        "title"
-                                    ],
-                       "additionalProperties":  false
-                   },
-        "timeout":  6000,
-        "maxOutput":  5000,
-        "concurrentPolicy":  "READ_ONLY"
+    "required" : [ "agentId" ],
+    "additionalProperties" : false
+  },
+  "timeout" : 10,
+  "maxOutput" : 2000,
+  "concurrentPolicy" : "READ_ONLY"
+}, {
+  "id" : "send_mail_to_agent",
+  "name" : "send_mail_to_agent",
+  "description" : "Send an asynchronous mail to a teammate agent or to the commander.\nUse it to coordinate shared files or workspaces directly with teammates: agree on edit scope, order, and hand-offs without notifying the commander.\nThe commander can mail running teammates supplementary requirements, constraints, or findings.\nEscalate only unresolved conflicts, task-scope changes, or blockers that require the commander's decision.\nThe commander assesses workspace artifacts and validation records even without email; delivery notifications are supplementary.\nDelivery is asynchronous: the recipient reads this mail at the start of ITS next model round,\nnot immediately. There is no reply channel on this call, so sending does not return an answer.\nAfter a successful send, continue with your own work, or if you have nothing left to do,\nend your turn; never resend the same content because no reply arrived yet.\nMail does not start or resume a teammate. If a shared edit requires agreement, work on independent items until agreement arrives; do not assume silence grants permission to overwrite changes.\nOnly mail addressed to the commander may wake the root execution; teammate mail does not notify or wake the commander.\nIntended for code-collaboration hand-offs, not for real-time back-and-forth chat.\nThe target agent must belong to your team.\n",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "toAgentId" : {
+        "type" : "integer",
+        "description" : "Agent id from the team roster: a teammate for coordination or supplementary information, or the commander for required decisions or delivery notifications."
+      },
+      "mailContent" : {
+        "type" : "string",
+        "description" : "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."
+      }
     },
-    {
-        "id":  "search_files",
-        "name":  "search_files",
-        "description":  "Search file contents inside the workspace by regular expression and return `path:line: content` hits. Read-only and independent of the shell, so it also works in read-only sessions. Skips VCS, dependency and build directories; `glob` matches the file name only (e.g. `*.java`). When the result reports that the limit was reached, narrow `path` or `glob` instead of raising maxResults.",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "pattern":  {
-                                                          "type":  "string",
-                                                          "description":  "Java regular expression matched against each line"
-                                                      },
-                                          "path":  {
-                                                       "type":  "string",
-                                                       "description":  "Directory to search, relative to the workspace root; defaults to the whole workspace"
-                                                   },
-                                          "glob":  {
-                                                       "type":  "string",
-                                                       "description":  "Optional file name glob such as `*.java`; matched against the name, not the path"
-                                                   },
-                                          "ignoreCase":  {
-                                                             "type":  "boolean",
-                                                             "description":  "Match case-insensitively; defaults to false"
-                                                         },
-                                          "maxResults":  {
-                                                             "type":  "integer",
-                                                             "description":  "Maximum hits to return, 1-500; defaults to 100",
-                                                             "minimum":  1
-                                                         }
-                                      },
-                       "required":  [
-                                        "pattern"
-                                    ]
-                   },
-        "timeout":  60,
-        "maxOutput":  4000,
-        "concurrentPolicy":  "READ_ONLY"
+    "required" : [ "toAgentId", "mailContent" ],
+    "additionalProperties" : false
+  },
+  "timeout" : 60,
+  "maxOutput" : 20000,
+  "concurrentPolicy" : "ISOLATED_MUTATION"
+}, {
+  "id" : "create_plan",
+  "name" : "create_plan",
+  "description" : "Create a plan for the given task.\nThe user may have embedded some tips in your plan so it is common if you see other text that differs from the original plan text.\nHowever, you don't ignore them.\n",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "title" : {
+        "type" : "string",
+        "description" : "The title of the plan to create."
+      },
+      "text" : {
+        "type" : "string",
+        "description" : "The text of the plan to create. it is displayed by the format of MARKDOWN"
+      }
     },
-    {
-        "id":  "delete_file",
-        "name":  "delete_file",
-        "description":  "Delete one file from the workspace. Directories are rejected: empty directories would be removed as a side effect of the file delete. Fails when the path does not exist, so a typo never reports success.",
-        "schema":  {
-                       "type":  "object",
-                       "properties":  {
-                                          "path":  {
-                                                       "type":  "string",
-                                                       "description":  "File path: a relative path resolves against the workspace root"
-                                                   }
-                                      },
-                       "required":  [
-                                        "path"
-                                    ]
-                   },
-        "timeout":  30,
-        "maxOutput":  200,
-        "concurrentPolicy":  "SERIAL_MUTATION"
-    }
-]
+    "required" : [ "title" ],
+    "additionalProperties" : false
+  },
+  "timeout" : 6000,
+  "maxOutput" : 5000,
+  "concurrentPolicy" : "READ_ONLY"
+}, {
+  "id" : "search_files",
+  "name" : "search_files",
+  "description" : "Search file contents inside the workspace by regular expression and return `path:line: content` hits. Read-only and independent of the shell, so it also works in read-only sessions. Skips VCS, dependency and build directories; `glob` matches the file name only (e.g. `*.java`). When the result reports that the limit was reached, narrow `path` or `glob` instead of raising maxResults.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "pattern" : {
+        "type" : "string",
+        "description" : "Java regular expression matched against each line"
+      },
+      "path" : {
+        "type" : "string",
+        "description" : "Directory to search, relative to the workspace root; defaults to the whole workspace"
+      },
+      "glob" : {
+        "type" : "string",
+        "description" : "Optional file name glob such as `*.java`; matched against the name, not the path"
+      },
+      "ignoreCase" : {
+        "type" : "boolean",
+        "description" : "Match case-insensitively; defaults to false"
+      },
+      "maxResults" : {
+        "type" : "integer",
+        "description" : "Maximum hits to return, 1-500; defaults to 100",
+        "minimum" : 1
+      }
+    },
+    "required" : [ "pattern" ]
+  },
+  "timeout" : 60,
+  "maxOutput" : 4000,
+  "concurrentPolicy" : "READ_ONLY"
+}, {
+  "id" : "delete_file",
+  "name" : "delete_file",
+  "description" : "Delete one file from the workspace. Directories are rejected: empty directories would be removed as a side effect of the file delete. Fails when the path does not exist, so a typo never reports success.",
+  "schema" : {
+    "type" : "object",
+    "properties" : {
+      "path" : {
+        "type" : "string",
+        "description" : "File path: a relative path resolves against the workspace root"
+      }
+    },
+    "required" : [ "path" ]
+  },
+  "timeout" : 30,
+  "maxOutput" : 200,
+  "concurrentPolicy" : "SERIAL_MUTATION"
+} ]

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
+import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import com.summit.runtime.workspace.LocalWorkspace;
@@ -28,7 +29,7 @@ class EditFileLineEndingRegressionTest {
     @TempDir Path root;
     private final ObjectMapper mapper = new ObjectMapper();
     private final DefaultFileRecordManager records = new DefaultFileRecordManager(new InMemoryFileRecordStore());
-    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(), records);
+    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new FileEditRecorder(new EditDiffer(), records));
 
     @ParameterizedTest
     @MethodSource("editVariants")
@@ -85,14 +86,15 @@ class EditFileLineEndingRegressionTest {
     }
 
     @Test
-    void lineRangeReadCanBeUsedDirectlyAsMultilineOldText() throws Exception {
+    void lineRangeReadSelectsTheSameOneBasedLinesAsTheEditArguments() throws Exception {
         writeOriginal("header\r\nfirst\r\nsecond\r\ntail");
         ToolExecuteResult read = new ReadFileToolExecutor(mapper).execute(ToolExecution.builder().workspace(workspace())
-                .args(mapper.writeValueAsString(Map.of("path", "demo.txt", "startLine", 1, "endLine", 2))).build());
+                .args(mapper.writeValueAsString(Map.of("path", "demo.txt", "startLine", 2, "endLine", 3))).build());
         assertTrue(read.isSuccess(), read.getToolOutput());
-        assertEquals("first\nsecond", read.getToolOutput());
+        // 输出带 1 基行号：模型据此定位，再按同一口径的片段去改。
+        assertEquals("2: first\n3: second", read.getToolOutput());
 
-        ToolExecuteResult result = edit("REPLACE", read.getToolOutput(), "new\ntext");
+        ToolExecuteResult result = edit("REPLACE", "first\nsecond", "new\ntext");
         assertTrue(result.isSuccess(), result.getToolOutput());
         assertBytes("header\r\nnew\r\ntext\r\ntail");
     }

@@ -202,7 +202,7 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
      * 从最近的分段起点重放这一段的差异。
      *
      * <p>链断过一次就只重放断点之后那一段：少一截历史的差异仍然能看，比整份差异报废有用。
-     * 断链的成因是「有修改没经过 {@code edit_file}」（shell 直写、删了重建），那一段的上下文
+     * 断链的成因是「有修改没经过 {@code edit_file} / {@code write_file}」（shell 直写、删了重建），那一段的上下文
      * 永远不会再对上，重试也没有意义。</p>
      */
     private Optional<String> replaySegment(String executionKey, String turnKey, String path,

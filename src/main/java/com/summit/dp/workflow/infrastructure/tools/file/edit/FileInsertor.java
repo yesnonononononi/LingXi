@@ -53,7 +53,8 @@ public class FileInsertor  {
                                 .build()
                 );
             } else {
-                if (newText.isEmpty()) return FileEditorResult.err("文件和待插入内容不能同时为空");
+                // 只可能是已存在的空文件：新建文件归 write_file，插入点固定为开头。
+                if (newText.isEmpty()) return FileEditorResult.err("空文件里没有可插入的位置，newText 不能为空");
 
                 return FileEditorResult.success(
                         FileEditorResult.ContentInfo.builder()

@@ -3,6 +3,7 @@ package com.summit.dp.tools.baseTools.file.edit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
+import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
@@ -27,8 +28,8 @@ class EditFileArgumentGuardTest {
     Path root;
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper, new EditDiffer(),
-            new DefaultFileRecordManager(new InMemoryFileRecordStore()));
+    private final EditFileToolExecutor editor = new EditFileToolExecutor(mapper,
+            new FileEditRecorder(new EditDiffer(), new DefaultFileRecordManager(new InMemoryFileRecordStore())));
 
     @ParameterizedTest
     @MethodSource("rejectedArguments")
@@ -53,12 +54,14 @@ class EditFileArgumentGuardTest {
     }
 
     @Test
-    void missingParentDirectoriesAreCreatedBeforeWriting() throws Exception {
+    void missingFileIsRejectedInsteadOfBeingCreated() throws Exception {
+        // 新建归 write_file：edit_file 不能再把「路径打错」变成「悄悄建一个文件」。
         ToolExecuteResult result = editor.execute(execution(
-                "{\"type\":\"INSERT_BEFORE\",\"path\":\"nested/deep/demo.txt\",\"anchor\":\"\",\"newText\":\"新建\"}"));
+                "{\"type\":\"INSERT_AFTER\",\"path\":\"nested/deep/demo.txt\",\"anchor\":\"\",\"newText\":\"新建\"}"));
 
-        assertTrue(result.isSuccess(), result.getToolOutput());
-        assertEquals("新建", Files.readString(root.resolve("nested/deep/demo.txt")));
+        assertFalse(result.isSuccess(), result.getToolOutput());
+        assertTrue(result.getToolOutput().contains("write_file"), result.getToolOutput());
+        assertFalse(Files.exists(root.resolve("nested/deep/demo.txt")));
     }
 
     static Stream<Arguments> rejectedArguments() {

@@ -30,8 +30,10 @@ export const AgentToolName = {
   /** 读取工作区图片 */
   ReadImage: 'read_image',
   GenerateImage: 'generate_image',
-  /** 编辑文件（结果携带 plusLines / minusLines） */
+  /** 编辑文件（按锚点局部改动，结果携带 plusLines / minusLines） */
   EditFile: 'edit_file',
+  /** 整文件写入（新建 / 全文替换 / 头插 / 追加，不需要锚点） */
+  WriteFile: 'write_file',
   /** 删除单个文件（目录一律拒绝） */
   DeleteFile: 'delete_file',
   /** 终端命令 */

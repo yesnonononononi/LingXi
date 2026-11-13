@@ -63,7 +63,7 @@ public class ToolCallExecutionListener implements RuntimeListener {
     /**
      * 从工具结束事件元数据里取出编辑区间。
      *
-     * <p>只在 {@code edit_file} 这类会带来 {@code fileEdit} 的工具上出现；其余工具返回 {@code null}，
+     * <p>只在 {@code edit_file} / {@code write_file} 这类会带来 {@code fileEdit} 的工具上出现；其余工具返回 {@code null}，
      * 登记器据此不改动元数据。</p>
      */
     @SuppressWarnings("unchecked")

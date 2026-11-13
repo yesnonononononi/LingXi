@@ -33,7 +33,7 @@ public  class FileEditor {
         return String.format(DUPLICATE_AREA_FORMAT, strBuilder);
     }
 
-    static int findLineNumber(String content, int index) {
+    public static int findLineNumber(String content, int index) {
         int line = 1;
         for (int i = 0; i < index; i++) {
             if (content.charAt(i) == '\n') {
@@ -50,7 +50,7 @@ public  class FileEditor {
      * 调用方保证 {@code startLine >= 1} 且文本非空（插入空字符串是无操作编辑，直接沿用起始行）；
      * 行号 0 表示「该侧不存在」，不进入本方法。</p>
      */
-    static int endLineOf(int startLine, String text) {
+    public static int endLineOf(int startLine, String text) {
         if (text.isEmpty()) {
             return startLine;
         }

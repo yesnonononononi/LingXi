@@ -25,7 +25,7 @@
  *   interface ToolDiffStat { plusLines: number | null; minusLines: number | null }
  *
  *   interface ToolDiffInput {
- *     toolName?: string;        // 工具名（用于 isEditFileTool 判定）
+ *     toolName?: string;        // 工具名（用于 isFileMutationTool 判定）
  *     category?: string;        // 后端分类（'写入' 视为可能含 diff）
  *     plusLines?: number;       // 结构化直出字段（优先级最高）
  *     minusLines?: number;
@@ -50,7 +50,7 @@
  * ============================================================================
  */
 
-import {isEditFileTool, TOOL_CATEGORY} from './toolMeta';
+import {isFileMutationTool, TOOL_CATEGORY} from './toolMeta';
 import {parseJsonSafe} from './json';
 import type {FileEditRecord} from '../types/chat';
 
@@ -109,7 +109,7 @@ export function parseToolDiff(input: ToolDiffInput): ToolDiffStat | null {
   const { toolName, category, plusLines, minusLines, result, description, target, fileEdits, context } = input;
 
   // 仅文件编辑工具，或后端显式标注为「写入」分类的工具，才可能有 diff。
-  if (!isEditFileTool(toolName) && category !== TOOL_CATEGORY.WRITE) {
+  if (!isFileMutationTool(toolName) && category !== TOOL_CATEGORY.WRITE) {
     return null;
   }
 
