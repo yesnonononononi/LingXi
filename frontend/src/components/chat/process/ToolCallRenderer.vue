@@ -15,11 +15,9 @@ import {
   isFileMutationTool,
   isReadFileTool,
   shouldShowToolArguments,
-  TOOL_CATEGORY,
   unwrapToolResultEnvelope
 } from '../../../utils/toolMeta';
 import {resolveToolRenderName} from '../../../utils/toolDisplayNames';
-import {AgentToolName} from '../../../utils/toolNames';
 import {
   buildEditDiffLines,
   canExpandToolRow,
@@ -35,6 +33,7 @@ import {FILE_PREVIEW_KEY} from '../../../types/filePreview';
 import {PROCESS_SEGMENT_SCROLL_KEY} from '../../../types/processScroll';
 import {t} from '../../../i18n';
 import CollapseTransition from '../../common/CollapseTransition.vue';
+import ToolRowIcon from './ToolRowIcon.vue';
 
 const props = defineProps<{
   item: ImageProcessItem;
@@ -116,32 +115,7 @@ const copyResult = (): void => {
         </svg>
         </button>
         <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
-        <div class="flex-shrink-0 flex items-center">
-          <!-- 检索文件：单独的检索图标，与读写的文件图标区分开 -->
-          <svg v-if="tool.toolName === AgentToolName.SearchFiles" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
-            <path d="M373.077333 921.6H102.4V125.155556h757.76v210.147555H807.822222V177.493333H154.737778v691.768889h218.339555V921.6z" />
-            <path d="M253.724444 589.596444h159.288889v52.337778h-159.288889zM253.724444 436.906667h238.933334V489.244444h-238.933334zM253.724444 282.965333h455.111112v52.337778h-455.111112zM673.564444 876.088889A201.841778 201.841778 0 1 1 876.088889 674.247111 202.410667 202.410667 0 0 1 673.564444 876.088889z m0-351.459556a149.617778 149.617778 0 1 0 150.186667 149.617778 150.072889 150.072889 0 0 0-150.186667-149.617778z" />
-            <path d="M790.994489 828.2112l36.943644-37.091556L921.6 884.451556l-36.932267 37.080177z" />
-          </svg>
-          <svg v-else-if="meta?.category === TOOL_CATEGORY.READ || meta?.category === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <rect x="4" y="3" width="16" height="18" rx="2" />
-            <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
-          </svg>
-          <svg v-else-if="meta?.category === TOOL_CATEGORY.COMMAND" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <rect x="3" y="4" width="18" height="16" rx="3" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
-          </svg>
-          <svg v-else-if="meta?.category === TOOL_CATEGORY.THINK" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <circle cx="9" cy="9" r="3.5" />
-            <circle cx="15" cy="9" r="3.5" />
-            <circle cx="9" cy="15" r="3.5" />
-            <circle cx="15" cy="15" r="3.5" />
-          </svg>
-          <svg v-else class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </div>
+        <ToolRowIcon :tool-name="tool.toolName" :category="meta?.category" :is-dark="isDark" />
         <!-- 有目标路径/对象时（如读取/写入）：分类名 + 目标路径（读文件附行范围） -->
         <template v-if="meta?.target">
           <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-zinc-700'">{{ resolveToolRenderName(tool.toolName) }}</span>
