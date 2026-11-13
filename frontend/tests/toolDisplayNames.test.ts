@@ -19,7 +19,8 @@ test('每个固定工具都有完整名与渲染名', async () => {
     assert.ok(entry); assert.ok(entry.fullName); assert.ok(entry.renderName);
     assert.notEqual(entry.fullName, name);
   }
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadFile) }, { fullName: '读取文件', renderName: '读取' });
+  // read_file 短名定稿为「读取文件」：READ 分类文案「读取」看不出在读什么
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadFile) }, { fullName: '读取文件', renderName: '读取文件' });
   // load_memory 短名独立成「读取记忆」，不再复用 read_file 的「读取」
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.LoadMemory) }, { fullName: '读取项目记忆', renderName: '读取记忆' });
   assert.equal(resolveToolCategory(AgentToolName.LoadMemory), TOOL_CATEGORY.READ);
@@ -88,7 +89,9 @@ test('全部固定工具的短渲染名两两不重复（防回归唯一性守�
 test('同一映射实体跟随语言变化，未知与空标识不裸显机器名', async () => {
   const entry = resolveToolDisplayName(AgentToolName.ReadFile);
   setPreference('en-US'); await nextTick();
-  assert.equal(entry.fullName, 'Read file'); assert.equal(entry.renderName, 'Read');
+  assert.equal(entry.fullName, 'Read file'); assert.equal(entry.renderName, 'Read file');
+  // 读技能的短名独立成「加载技能」，与「读取文件」靠动词分开
+  assert.equal(resolveToolRenderName(AgentToolName.ReadSkill), 'Load skill');
   // 英文块也要有独立的记忆读取 / 记忆检索 / 读图文案，且与文件读取、工具检索不同
   assert.equal(resolveToolRenderName(AgentToolName.LoadMemory), 'Read memory');
   assert.equal(resolveToolRenderName(AgentToolName.SearchWiki), 'Search memory');
@@ -104,7 +107,8 @@ test('同一映射实体跟随语言变化，未知与空标识不裸显机器�
   assert.equal(resolveToolRenderName(AgentToolName.GetChecklist), 'Checklist history');
   assert.equal(resolveToolRenderName(AgentToolName.ListMcpTools), 'List MCP tools');
   setPreference('zh-CN'); await nextTick();
-  assert.equal(entry.fullName, '读取文件'); assert.equal(entry.renderName, '读取');
+  assert.equal(entry.fullName, '读取文件'); assert.equal(entry.renderName, '读取文件');
+  assert.equal(resolveToolRenderName(AgentToolName.ReadSkill), '加载技能');
   assert.equal(resolveToolFullName(null), ''); assert.equal(resolveToolRenderName(undefined), '');
 });
 

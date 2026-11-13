@@ -18,10 +18,11 @@ function defineToolName(chinese: string, english: string, renderKey: string): To
 
 /** 完整名用于工具配置，短渲染名用于流式调用展示；键始终是后端工具标识。 */
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = new Map([
-  [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
+  // read_file 短名独立成「读取文件」：READ 分类文案只有「读取」，光看动词分不出在读什么
+  [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.fileRead')],
   // 检索文件内容的短名独立成「检索文件」，避免与记忆检索、工具检索、网页搜索在流式工具行上同文案
   [AgentToolName.SearchFiles, defineToolName('检索文件内容', 'Search file contents', 'tool.category.fileSearch')],
-  // 记忆读取的渲染名独立成「读取记忆」，避免与 read_file 的「读取」在流式工具行上同文案
+  // 记忆读取的渲染名独立成「读取记忆」，避免与 read_file 的「读取文件」只差宾语
   [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.memoryRead')],
   // 项目记忆检索的渲染名独立成「检索记忆」，避免与 search_tool（检索工具）在流式工具行上同文案
   [AgentToolName.SearchWiki, defineToolName('检索项目记忆', 'Search project memory', 'tool.category.memorySearch')],
@@ -54,7 +55,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.CompactContext, defineToolName('压缩上下文', 'Compact context', 'tool.category.compact')],
   [AgentToolName.SearchTool, defineToolName('检索工具', 'Search tools', 'tool.category.toolSearch')],
   [AgentToolName.ListMcpTools, defineToolName('列举 MCP 工具', 'List MCP tools', 'tool.category.mcpList')],
-  [AgentToolName.ReadSkill, defineToolName('读取技能', 'Read skill', 'tool.category.skill')],
+  // 读技能的短名独立成「加载技能」：与「读取文件」靠动词分开，且不占用 SKILL 分类标签
+  [AgentToolName.ReadSkill, defineToolName('读取技能', 'Read skill', 'tool.category.skillRead')],
 ]);
 
 const unknownToolName: ToolDisplayName = {

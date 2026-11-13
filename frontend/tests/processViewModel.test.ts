@@ -108,7 +108,7 @@ test('判定表 8/8 接线：live 段用最新一步，summary 段用整段概�
     toolItem('b', 1, 'success', AgentToolName.EditFile),
   ], true), true)[0];
   assert.equal(summary.mode, 'summary');
-  assert.equal(summary.headline.title, '读取、编辑', 'summary 标题列出整段类别');
+  assert.equal(summary.headline.title, '读取文件、编辑', 'summary 标题列出整段类别');
   assert.equal(summary.headline.preview, 'a.md、b.md', 'summary 预览列出整段目标');
 });
 

@@ -161,6 +161,8 @@ export const messages: MessageSchema = {
         command: '执行命令',
         backgroundCommand: '确认后台任务状态',
         read: '读取',
+        // read_file 短名独立成「读取文件」：read 是 READ 分类标签，工具行借它只会读成「读取」
+        fileRead: '读取文件',
         write: '写入',
         // edit_file 的短名独立成「编辑」：write 是分类标签，工具行不能借它，否则与 write_file 的「写入」只差两个字
         fileEdit: '编辑',
@@ -197,6 +199,8 @@ export const messages: MessageSchema = {
         fileDelete: '删除文件',
         mcpList: '列举 MCP 工具',
         skill: '读取技能',
+        // 读技能的短名独立成「加载技能」：skill 是 SKILL 分类标签，且要与「读取文件」靠动词分开
+        skillRead: '加载技能',
         default: '工具',
       },
       /** 查看队员状态的工具行标题：队员名缺失时用 peekMember 兜底。 */
@@ -1682,6 +1686,8 @@ export const messages: MessageSchema = {
         command: 'Command',
         backgroundCommand: 'Check background task status',
         read: 'Read',
+        // read_file gets its own label: "read" is the READ category label and reads as a bare verb.
+        fileRead: 'Read file',
         write: 'Write',
         webSearch: 'Search the web',
         choice: 'Choice',
@@ -1718,6 +1724,8 @@ export const messages: MessageSchema = {
         fileDelete: 'Delete file',
         mcpList: 'List MCP tools',
         skill: 'Read skill',
+        // Skill reading gets its own label so the verb tells it apart from "Read file".
+        skillRead: 'Load skill',
         default: 'Tool',
       },
       /** Tool-row title for the teammate-state tool; falls back to peekMember without a name. */
