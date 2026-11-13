@@ -12,6 +12,24 @@ export interface DesignQuickBlock {
   html: string;
 }
 
+export interface DesignAnimationPreset {
+  id:
+    | 'none'
+    | 'fade-in'
+    | 'fade-in-out'
+    | 'zoom-in'
+    | 'zoom-out'
+    | 'drawer-left'
+    | 'drawer-right'
+    | 'drawer-top'
+    | 'drawer-bottom'
+    | 'bounce-in';
+  labelKey: string;
+  keyframeName: string;
+  timing: string;
+  iterationCount?: string;
+}
+
 export interface DesignBreadcrumbNode {
   tag: string;
   label: string;
@@ -270,6 +288,79 @@ export const DESIGN_AI_SUGGESTIONS: string[] = [
   '增加卡片阴影与悬停交互',
   '优化移动端响应式排版',
 ];
+
+export const DESIGN_ANIMATION_STYLE_ID = 'lx-design-animations';
+
+export const DESIGN_ANIMATION_PRESETS: DesignAnimationPreset[] = [
+  { id: 'none', labelKey: 'designPreview.animNone', keyframeName: '', timing: 'ease' },
+  { id: 'fade-in', labelKey: 'designPreview.animFadeIn', keyframeName: 'lx-fade-in', timing: 'ease-out' },
+  {
+    id: 'fade-in-out',
+    labelKey: 'designPreview.animFadeInOut',
+    keyframeName: 'lx-fade-in-out',
+    timing: 'ease-in-out',
+  },
+  { id: 'zoom-in', labelKey: 'designPreview.animZoomIn', keyframeName: 'lx-zoom-in', timing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+  { id: 'zoom-out', labelKey: 'designPreview.animZoomOut', keyframeName: 'lx-zoom-out', timing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+  { id: 'drawer-left', labelKey: 'designPreview.animDrawerLeft', keyframeName: 'lx-drawer-left', timing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+  { id: 'drawer-right', labelKey: 'designPreview.animDrawerRight', keyframeName: 'lx-drawer-right', timing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+  { id: 'drawer-top', labelKey: 'designPreview.animDrawerTop', keyframeName: 'lx-drawer-top', timing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+  { id: 'drawer-bottom', labelKey: 'designPreview.animDrawerBottom', keyframeName: 'lx-drawer-bottom', timing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+  { id: 'bounce-in', labelKey: 'designPreview.animBounceIn', keyframeName: 'lx-bounce-in', timing: 'cubic-bezier(0.34, 1.56, 0.64, 1)' },
+];
+
+export const buildDesignAnimationCss = (): string => `
+@keyframes lx-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes lx-fade-in-out {
+  0% { opacity: 0; }
+  45% { opacity: 1; }
+  75% { opacity: 0.2; }
+  100% { opacity: 1; }
+}
+@keyframes lx-zoom-in {
+  from { opacity: 0; transform: scale(0.88); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes lx-zoom-out {
+  from { opacity: 0; transform: scale(1.12); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes lx-drawer-left {
+  from { opacity: 0; transform: translateX(-36px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes lx-drawer-right {
+  from { opacity: 0; transform: translateX(36px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes lx-drawer-top {
+  from { opacity: 0; transform: translateY(-28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lx-drawer-bottom {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lx-bounce-in {
+  0% { opacity: 0; transform: scale(0.82); }
+  65% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+`.trim();
+
+export const resolveAnimationCssValue = (
+  presetId: DesignAnimationPreset['id'],
+  durationMs: number = 400
+): string => {
+  const preset = DESIGN_ANIMATION_PRESETS.find(item => item.id === presetId);
+  if (!preset || !preset.keyframeName) return 'none';
+  const safeDuration = Math.max(100, Math.min(5000, Math.round(durationMs)));
+  const count = preset.iterationCount || '1';
+  return `${preset.keyframeName} ${safeDuration}ms ${preset.timing} 0ms ${count} backwards`;
+};
 
 const readClassText = (el: ElementLike): string => {
   if (typeof el.className === 'string') return el.className;

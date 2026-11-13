@@ -2,14 +2,21 @@
 import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import Moveable from 'moveable';
 import {t} from '../../i18n';
+import LxSelect from '../common/LxSelect.vue';
+import type {SelectOption} from '../../types/ui';
 import {
   buildDesignAiPrompt,
+  buildDesignAnimationCss,
   DESIGN_AI_SUGGESTIONS,
+  DESIGN_ANIMATION_PRESETS,
+  DESIGN_ANIMATION_STYLE_ID,
   DESIGN_QUICK_BLOCKS,
   DESIGN_STARTER_TEMPLATES,
+  type DesignAnimationPreset,
   type DesignBreadcrumbNode,
   type DesignQuickBlock,
   type DesignStarterTemplate,
+  resolveAnimationCssValue,
   resolveElementBreadcrumb,
   resolveElementLabel,
   resolveElementSelector,
@@ -168,6 +175,8 @@ const currentStyles = ref({
   padding: 0,
   opacity: 1,
   boxShadow: 'none',
+  animationPreset: 'none' as DesignAnimationPreset['id'],
+  animationDuration: 400,
 });
 
 // rgb/rgba 转 hex 辅助函数
@@ -188,6 +197,9 @@ const syncElementStyles = (el: HTMLElement) => {
   const win = iframeDoc?.defaultView || window;
   const computed = win.getComputedStyle(el);
 
+  const rawAnim = el.getAttribute('data-lx-animation') as DesignAnimationPreset['id'] | null;
+  const rawDuration = Number(el.getAttribute('data-lx-animation-duration'));
+
   currentStyles.value = {
     color: rgbToHex(computed.color),
     backgroundColor: rgbToHex(computed.backgroundColor),
@@ -198,7 +210,65 @@ const syncElementStyles = (el: HTMLElement) => {
     padding: parseInt(computed.paddingTop, 10) || 0,
     opacity: Number(parseFloat(computed.opacity || '1').toFixed(2)),
     boxShadow: computed.boxShadow && computed.boxShadow !== 'none' ? computed.boxShadow : 'none',
+    animationPreset: rawAnim || 'none',
+    animationDuration: Number.isFinite(rawDuration) && rawDuration >= 100 ? rawDuration : 400,
   };
+};
+
+const ensureAnimationStylesheet = (doc: Document): void => {
+  if (!doc.head) return;
+  let styleEl = doc.getElementById(DESIGN_ANIMATION_STYLE_ID) as HTMLStyleElement | null;
+  if (!styleEl) {
+    styleEl = doc.createElement('style');
+    styleEl.id = DESIGN_ANIMATION_STYLE_ID;
+    styleEl.textContent = buildDesignAnimationCss();
+    doc.head.appendChild(styleEl);
+  }
+};
+
+const applyAnimationPreset = (
+  presetId: DesignAnimationPreset['id'],
+  durationMs: number = currentStyles.value.animationDuration
+): void => {
+  const el = selectedElement.value;
+  const doc = iframeRef.value?.contentDocument;
+  if (!el || !doc) return;
+
+  recordSnapshot();
+  currentStyles.value.animationPreset = presetId;
+  currentStyles.value.animationDuration = durationMs;
+
+  if (presetId === 'none') {
+    el.removeAttribute('data-lx-animation');
+    el.removeAttribute('data-lx-animation-duration');
+    el.style.removeProperty('animation');
+    nextTick(() => moveableInstance?.updateRect());
+    return;
+  }
+
+  ensureAnimationStylesheet(doc);
+  const cssValue = resolveAnimationCssValue(presetId, durationMs);
+  el.setAttribute('data-lx-animation', presetId);
+  el.setAttribute('data-lx-animation-duration', String(durationMs));
+  el.style.setProperty('animation', 'none', 'important');
+  void el.offsetWidth;
+  el.style.setProperty('animation', cssValue, 'important');
+  nextTick(() => moveableInstance?.updateRect());
+};
+
+const replaySelectedAnimation = (): void => {
+  const el = selectedElement.value;
+  const doc = iframeRef.value?.contentDocument;
+  if (!el || !doc || currentStyles.value.animationPreset === 'none') return;
+
+  ensureAnimationStylesheet(doc);
+  const cssValue = resolveAnimationCssValue(
+    currentStyles.value.animationPreset,
+    currentStyles.value.animationDuration
+  );
+  el.style.setProperty('animation', 'none', 'important');
+  void el.offsetWidth;
+  el.style.setProperty('animation', cssValue, 'important');
 };
 
 type StyleKey =
@@ -297,6 +367,12 @@ const duplicateSelectedElement = (): void => {
   selectedInfo.value = t('designPreview.duplicatedFeedback') || '已复制选中组件';
 };
 
+const isHtmlElementNode = (node: unknown): node is HTMLElement => {
+  if (!node || typeof node !== 'object') return false;
+  const candidate = node as { nodeType?: number; tagName?: unknown; style?: unknown };
+  return candidate.nodeType === 1 && typeof candidate.tagName === 'string' && typeof candidate.style === 'object';
+};
+
 const moveSelectedLayer = (direction: 'up' | 'down'): void => {
   if (canvasMode.value !== 'design') return;
   const el = selectedElement.value;
@@ -304,7 +380,7 @@ const moveSelectedLayer = (direction: 'up' | 'down'): void => {
 
   const parent = el.parentElement;
   const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
-  if (!sibling || (sibling instanceof HTMLElement && isProtectedNode(sibling))) return;
+  if (!sibling || (isHtmlElementNode(sibling) && isProtectedNode(sibling))) return;
 
   recordSnapshot();
   if (direction === 'up') {
@@ -385,7 +461,7 @@ const triggerFileInput = () => {
 const syncMoveableGuidelines = (doc: Document) => {
   if (!moveableInstance || !doc.body) return;
   moveableInstance.elementGuidelines = Array.from(doc.body.querySelectorAll('*')).filter(
-    node => !(node instanceof HTMLElement && node.hasAttribute('data-lx-hover-box'))
+    node => !(isHtmlElementNode(node) && node.hasAttribute('data-lx-hover-box'))
   );
 };
 
@@ -718,7 +794,7 @@ const clearLoadedHtml = () => {
 };
 
 const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
-  if (!target || !(target instanceof HTMLElement)) {
+  if (!isHtmlElementNode(target)) {
     isSelected.value = false;
     selectedElement.value = null;
     breadcrumb.value = [];
@@ -765,6 +841,20 @@ const exportHtml = () => {
   a.click();
   URL.revokeObjectURL(url);
 };
+
+const animationPresetOptions = computed<SelectOption<DesignAnimationPreset['id']>[]>(() =>
+  DESIGN_ANIMATION_PRESETS.map(preset => ({
+    value: preset.id,
+    label: t(preset.labelKey) || preset.id,
+  }))
+);
+
+const animationDurationOptions: SelectOption<number>[] = [
+  { value: 200, label: '0.2s' },
+  { value: 400, label: '0.4s' },
+  { value: 700, label: '0.7s' },
+  { value: 1200, label: '1.2s' },
+];
 
 const aiTargetLabel = computed(() => {
   if (selectedElement.value) {
@@ -975,6 +1065,9 @@ onBeforeUnmount(() => {
             title="选择自定义背景色"
           />
           <div class="color-presets">
+            <button type="button" class="option-pill" @click="applyStyle('backgroundColor', 'transparent')" :title="t('designPreview.transparentBg') || '透明'">
+              {{ t('designPreview.transparentBg') || '透明' }}
+            </button>
             <button type="button" class="preset-btn bg-white" @click="applyStyle('backgroundColor', '#ffffff')" title="纯白"></button>
             <button type="button" class="preset-btn bg-slate-900" @click="applyStyle('backgroundColor', '#0f172a')" title="暗黑"></button>
             <button type="button" class="preset-btn bg-blue-600" @click="applyStyle('backgroundColor', '#2563eb')" title="蓝色"></button>
@@ -1038,11 +1131,20 @@ onBeforeUnmount(() => {
       <div class="inspector-group">
         <span class="inspector-label">字号</span>
         <div class="flex items-center gap-1">
-          <button type="button" class="option-pill" title="减小字号 2px" @click="applyStyle('fontSize', Math.max(10, currentStyles.fontSize - 2))">A-</button>
+          <button type="button" class="option-pill" title="减小字号 2px" @click="applyStyle('fontSize', Math.max(8, currentStyles.fontSize - 2))">A-</button>
+          <input
+            type="number"
+            min="8"
+            max="144"
+            class="font-size-input"
+            :value="currentStyles.fontSize"
+            :title="t('designPreview.fontSizeInput') || '自定义字号 (px)'"
+            @change="applyStyle('fontSize', Math.max(8, Math.min(144, Number(($event.target as HTMLInputElement).value) || 14)))"
+          />
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 14 }" @click="applyStyle('fontSize', 14)">14</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 18 }" @click="applyStyle('fontSize', 18)">18</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 24 }" @click="applyStyle('fontSize', 24)">24</button>
-          <button type="button" class="option-pill" title="增大字号 2px" @click="applyStyle('fontSize', currentStyles.fontSize + 2)">A+</button>
+          <button type="button" class="option-pill" title="增大字号 2px" @click="applyStyle('fontSize', Math.min(144, currentStyles.fontSize + 2))">A+</button>
         </div>
         <button
           type="button"
@@ -1068,6 +1170,40 @@ onBeforeUnmount(() => {
           <button type="button" class="option-pill" @click="applyStyle('boxShadow', '0 4px 12px rgba(0, 0, 0, 0.08)')">轻</button>
           <button type="button" class="option-pill" @click="applyStyle('boxShadow', '0 14px 32px rgba(0, 0, 0, 0.14)')">强</button>
         </div>
+      </div>
+
+      <div class="inspector-divider"></div>
+
+      <!-- 内置过渡动画样式选择框 -->
+      <div class="inspector-group animation-picker-group">
+        <span class="inspector-label">{{ t('designPreview.animation') || '过渡动画' }}</span>
+        <LxSelect
+          :modelValue="currentStyles.animationPreset"
+          :options="animationPresetOptions"
+          variant="popup"
+          size="sm"
+          panelWidth="content"
+          :label="t('designPreview.animation') || '过渡动画'"
+          @update:modelValue="applyAnimationPreset($event)"
+        />
+        <LxSelect
+          v-if="currentStyles.animationPreset !== 'none'"
+          :modelValue="currentStyles.animationDuration"
+          :options="animationDurationOptions"
+          variant="popup"
+          size="sm"
+          panelWidth="content"
+          :label="t('designPreview.animDuration') || '动画时长'"
+          @update:modelValue="applyAnimationPreset(currentStyles.animationPreset, Number($event))"
+        />
+        <button
+          v-if="currentStyles.animationPreset !== 'none'"
+          type="button"
+          class="option-pill"
+          @click="replaySelectedAnimation"
+        >
+          {{ t('designPreview.animReplay') || '预览动画' }}
+        </button>
       </div>
 
       <div class="inspector-divider"></div>
@@ -1347,6 +1483,22 @@ onBeforeUnmount(() => {
   border-color: var(--file-ink, #18181b);
   color: var(--file-ink-contrast, #ffffff);
   font-weight: 600;
+}
+
+.font-size-input {
+  width: 44px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-bg, #ffffff);
+  color: inherit;
+  text-align: center;
+  outline: none;
+}
+
+.font-size-input:focus-visible {
+  border-color: var(--file-focus, #a1a1aa);
 }
 
 .inspector-divider {

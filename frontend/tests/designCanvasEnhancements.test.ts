@@ -5,9 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildDesignAiPrompt,
+  buildDesignAnimationCss,
+  DESIGN_ANIMATION_PRESETS,
   DESIGN_QUICK_BLOCKS,
   DESIGN_STARTER_TEMPLATES,
   type ElementLike,
+  resolveAnimationCssValue,
   resolveElementBreadcrumb,
   resolveElementLabel,
   resolveElementSelector,
@@ -94,6 +97,29 @@ test('DesignCanvasPreview -> FilePreviewPanel -> ChatView 对话桥接与样式�
   assert.match(designCode, /key === 'textAlign'/);
   assert.match(designCode, /duplicateSelectedElement/);
   assert.match(designCode, /toggleCodeView/);
+  assert.match(designCode, /class="font-size-input"/);
+  assert.match(designCode, /<LxSelect\b/);
+  assert.doesNotMatch(designCode, /<select\b/, '动画下拉框应统一使用全局 LxSelect 组件');
+  assert.match(designCode, /applyAnimationPreset/);
+  assert.match(designCode, /replaySelectedAnimation/);
+  assert.doesNotMatch(designCode, /instanceof\s+HTMLElement/, 'iframe 跨 realm 元素禁止使用 instanceof HTMLElement');
   assert.match(panelCode, /@sendToChat="emit\('sendToChat', \$event\)"/);
   assert.match(chatCode, /@sendToChat="handleDesignSendToChat"/);
+});
+
+test('内置过渡动画预设、keyframes 生成与 CSS 值解析', () => {
+  const ids = DESIGN_ANIMATION_PRESETS.map(item => item.id);
+  for (const required of ['none', 'fade-in', 'fade-in-out', 'zoom-in', 'zoom-out', 'drawer-left', 'drawer-right', 'drawer-top', 'drawer-bottom', 'bounce-in']) {
+    assert.ok(ids.includes(required as typeof ids[number]), `缺少内置动画预设: ${required}`);
+  }
+
+  const css = buildDesignAnimationCss();
+  for (const preset of DESIGN_ANIMATION_PRESETS) {
+    if (preset.id === 'none') continue;
+    assert.match(css, new RegExp(`@keyframes\\s+${preset.keyframeName}\\b`), `缺少 @keyframes ${preset.keyframeName}`);
+  }
+
+  assert.equal(resolveAnimationCssValue('none', 400), 'none');
+  assert.match(resolveAnimationCssValue('drawer-left', 50), /^lx-drawer-left 100ms /);
+  assert.match(resolveAnimationCssValue('fade-in-out', 700), /^lx-fade-in-out 700ms .* 1 backwards$/);
 });
