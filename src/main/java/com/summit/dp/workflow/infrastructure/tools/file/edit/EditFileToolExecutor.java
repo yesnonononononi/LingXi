@@ -39,16 +39,16 @@ import java.util.Map;
         id = ToolCatalog.EDIT_FILE,
         name = ToolCatalog.EDIT_FILE,
         executor = EditFileToolExecutor.class,
-        description = "Edit UTF-8 text using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
+        description = "Edit UTF-8 text using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. `anchor` and `oldText` match a text fragment, not a whole line: INSERT_* place `newText` immediately before/after the matched fragment and add no line break, so include the newline in `newText` yourself when inserting a whole line. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
         parameters = @ObjectValue(
                 properties = {
                         @ToolProperty(key = "type", value = @Value(
                                 type = ValueType.STRING,
-                                description = "INSERT_* : insert content behind or in front of anchor. ",
+                                description = "INSERT_BEFORE or INSERT_AFTER insert newText right before/after the anchor fragment with no line break added; REPLACE swaps oldText for newText; DELETE removes oldText.",
                                 stringValue = @StringValue(enums = {"INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE"}))),
                         @ToolProperty(key = "anchor", value = @Value(
                                 type = ValueType.STRING,
-                                description = "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file")),
+                                description = "The text fragment an INSERT_* operation anchors on: the insert point sits immediately before or after this fragment with no line break added. Required unless creating an empty file.")),
                         @ToolProperty(key = "path", value = @Value(
                                 type = ValueType.STRING,
                                 description = "File path: a relative path resolves against the workspace root. A path outside the workspace is rejected unless the session runs with full access")),
