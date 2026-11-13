@@ -29,7 +29,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   // 读图不再复用 READ 的「读取」（用户看不出是在读图片）
   [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.imageRead')],
   [AgentToolName.GenerateImage, defineToolName('生成图片', 'Generate image', 'tool.category.imageGenerate')],
-  // edit_file 的短名借分类文案会读成「写入」，与整文件写入只差两个字；独立成「编辑」靠动词区分
+  // edit_file 的短名专属成「编辑文件」：write 是 WRITE 分类标签，工具行不能借它；短名统一 4 字
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.fileEdit')],
   // 整文件写入单独成行：与 edit_file 的局部改动在流式工具行上必须能分辨
   [AgentToolName.WriteFile, defineToolName('写入文件', 'Write file', 'tool.category.fileWrite')],
@@ -39,8 +39,9 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.ManageCommand, defineToolName('确认后台任务状态', 'Check background task status', 'tool.category.backgroundCommand')],
   // web_search 的渲染名不再复用 READ 分类文案（「读取」会让人以为是读文件），独立成「检索网络资源」
   [AgentToolName.WebSearch, defineToolName('网页搜索', 'Web search', 'tool.category.webSearch')],
-  [AgentToolName.RequireChoice, defineToolName('请求用户选择', 'Request user choice', 'tool.category.choice')],
-  [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.plan')],
+  // 工具行短名统一 4 字：CHOICE / PLAN 分类标签只有「选择」「计划」，工具行各取专属 key
+  [AgentToolName.RequireChoice, defineToolName('请求用户选择', 'Request user choice', 'tool.category.choiceRequest')],
+  [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.planCreate')],
   // 执行清单工具与 create_plan 分类不同：它们是执行期可维护的待办，不产生审批卡片
   // 六个动作各自独立短名：流式工具行短名不得两两重名（同分类码仍由 toolMeta 保持稳定）
   [AgentToolName.CreateChecklist, defineToolName('创建执行清单', 'Create checklist', 'tool.category.checklistCreate')],

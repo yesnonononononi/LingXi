@@ -98,7 +98,7 @@ test('判定表 8/8 接线：live 段用最新一步，summary 段用整段概�
     toolItem('b', 1, 'calling', AgentToolName.EditFile),
   ], false), true)[0];
   assert.equal(live.mode, 'live');
-  assert.equal(live.headline.title, '编辑', 'live 标题取最新一步的工具名（编辑），不是整段类别集合');
+  assert.equal(live.headline.title, '编辑文件', 'live 标题取最新一步的工具名（编辑文件），不是整段类别集合');
   assert.equal(live.headline.preview, 'b.md', 'live 预览取最新一步的目标，不是整段目标列表');
   assert.equal(live.headline.previewKind, 'value');
 
@@ -108,7 +108,7 @@ test('判定表 8/8 接线：live 段用最新一步，summary 段用整段概�
     toolItem('b', 1, 'success', AgentToolName.EditFile),
   ], true), true)[0];
   assert.equal(summary.mode, 'summary');
-  assert.equal(summary.headline.title, '读取文件、编辑', 'summary 标题列出整段类别');
+  assert.equal(summary.headline.title, '读取文件、编辑文件', 'summary 标题列出整段类别');
   assert.equal(summary.headline.preview, 'a.md、b.md', 'summary 预览列出整段目标');
 });
 

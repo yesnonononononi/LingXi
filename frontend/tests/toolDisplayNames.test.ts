@@ -49,7 +49,10 @@ test('每个固定工具都有完整名与渲染名', async () => {
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeleteChecklist) }, { fullName: '删除执行清单', renderName: '删除清单' });
   // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '编辑' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '编辑文件' });
+  // 工具行短名统一 4 字：CHOICE / PLAN 的短名各自独立于分类标签
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.RequireChoice) }, { fullName: '请求用户选择', renderName: '请求选择' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.CreatePlan) }, { fullName: '创建计划', renderName: '创建计划' });
   // 文件检索 / 删除各自独立短名，不与「读取」「写入」「检索记忆」「检索工具」撞车
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.SearchFiles) },
       { fullName: '检索文件内容', renderName: '检索文件' });
@@ -101,8 +104,10 @@ test('同一映射实体跟随语言变化，未知与空标识不裸显机器�
   assert.equal(resolveToolRenderName(AgentToolName.SearchFiles), 'Search files');
   assert.equal(resolveToolRenderName(AgentToolName.DeleteFile), 'Delete file');
   // 用户拍板的口径：编辑/写入靠动词区分，清单两个查看接口用作用域词区分，MCP 清单点名带 MCP
-  assert.equal(resolveToolRenderName(AgentToolName.EditFile), 'Edit');
-  assert.equal(resolveToolRenderName(AgentToolName.WriteFile), 'Write');
+  assert.equal(resolveToolRenderName(AgentToolName.EditFile), 'Edit file');
+  assert.equal(resolveToolRenderName(AgentToolName.WriteFile), 'Write file');
+  assert.equal(resolveToolRenderName(AgentToolName.RequireChoice), 'Request choice');
+  assert.equal(resolveToolRenderName(AgentToolName.CreatePlan), 'Create plan');
   assert.equal(resolveToolRenderName(AgentToolName.GetCurrentChecklist), 'Current checklist');
   assert.equal(resolveToolRenderName(AgentToolName.GetChecklist), 'Checklist history');
   assert.equal(resolveToolRenderName(AgentToolName.ListMcpTools), 'List MCP tools');

@@ -754,7 +754,7 @@ test('分段呈现：摘要行两段都在，运行段展示最新一步，收�
   assert.deepEqual(findAll(root, node => node.props?.['data-testid'] === 'process-segment')
     .map(node => node.props['data-process-mode']), ['live', 'summary']);
   assert.match(text(headers[0]), /详情正文/, '运行段展示最新一步正文');
-  assert.match(text(headers[1]), /编辑.*mcp\.json/);
+  assert.match(text(headers[1]), /编辑文件.*mcp\.json/);
   assert.doesNotMatch(text(root), /C:\\project/);
   headers[0].props.onClick();
   await nextTick();
@@ -857,14 +857,14 @@ test('历史摘要使用原操作名和目标，待确认与未知状态保留�
   const root = mount(t, answer);
   const header = () => find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
   const title = () => find(root, node => node.props?.['data-testid'] === 'process-segment-title');
-  assert.equal(text(title()), '读取文件、编辑、执行命令');
+  assert.equal(text(title()), '读取文件、编辑文件、执行命令');
   assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-status')), '1 项待确认、1 项状态未知');
   assert.equal(answer.toolCalls[0].status, 'failed', '工具自身的失败状态保留');
   assert.ok(find(root, node => node.tag === 'prompt-card'), '审批卡片不进入过程折叠');
   assert.equal(header().props['aria-expanded'], false);
   answer.toolCalls.push({ id: 'search', toolName: AgentToolName.WebSearch, order: 3, status: 'success' });
   await nextTick();
-  assert.equal(text(title()), '读取文件、编辑、执行命令等 4 类操作');
+  assert.equal(text(title()), '读取文件、编辑文件、执行命令等 4 类操作');
   assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-preview')), 'mcp.json');
 });
 

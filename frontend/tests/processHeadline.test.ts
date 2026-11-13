@@ -39,7 +39,7 @@ test('四类工具收敛成「等 4 类操作」，目标按出现顺序列出',
     toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.WebSearch],
     targets: ['markdown.ts', 'MarkdownRenderer.vue'],
   }));
-  assert.equal(headline.title, '执行命令、编辑、读取文件等 4 类操作');
+  assert.equal(headline.title, '执行命令、编辑文件、读取文件等 4 类操作');
   assert.equal(headline.preview, 'markdown.ts、MarkdownRenderer.vue');
   assert.equal(headline.previewKind, 'value');
   assert.equal(headline.status, '');
@@ -48,9 +48,9 @@ test('四类工具收敛成「等 4 类操作」，目标按出现顺序列出',
 test('重复工具名只算一类，恰好到阈值时不出现「等」', async () => {
   await useLocale('zh-CN');
   const repeated = summary({ toolNames: [AgentToolName.ReadFile, AgentToolName.ReadFile, AgentToolName.EditFile] });
-  assert.equal(formatProcessHeadline(repeated).title, '读取文件、编辑');
+  assert.equal(formatProcessHeadline(repeated).title, '读取文件、编辑文件');
   const exact = summary({ toolNames: [AgentToolName.ExecuteCommand, AgentToolName.ReadFile, AgentToolName.EditFile] });
-  assert.equal(formatProcessHeadline(exact).title, '执行命令、读取文件、编辑');
+  assert.equal(formatProcessHeadline(exact).title, '执行命令、读取文件、编辑文件');
 });
 
 test('空摘要退到「思考」，预览与状态为空', async () => {
@@ -130,7 +130,7 @@ test('英文语言下阈值文案与分隔符同步切换', async () => {
     toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.WebSearch],
     targets: ['a.ts', 'b.ts', 'c.ts', 'd.ts'],
   });
-  assert.equal(formatProcessHeadline(full).title, 'Command, Edit, Read file (4 operation types)');
+  assert.equal(formatProcessHeadline(full).title, 'Command, Edit file, Read file (4 operation types)');
   assert.equal(formatProcessHeadline(full).preview, 'a.ts, b.ts, c.ts (4 targets)');
   assert.equal(formatProcessStatus(summary({ pendingCount: 2 })), '2 awaiting input');
   await useLocale('zh-CN');
@@ -147,7 +147,7 @@ test('与 summarizeProcess 串联：标题、目标与最新活动均来自同�
   const facts = summarizeProcess(items);
   assert.deepEqual(facts.targets, ['processHeadline.ts', 'MarkdownRenderer.vue']);
   const overview = formatProcessHeadline(facts);
-  assert.equal(overview.title, '执行命令、编辑、读取文件等 4 类操作');
+  assert.equal(overview.title, '执行命令、编辑文件、读取文件等 4 类操作');
   assert.equal(overview.preview, 'processHeadline.ts、MarkdownRenderer.vue');
   assert.equal(overview.previewKind, 'value');
   const live = formatProcessHeadline(facts, { active: true });

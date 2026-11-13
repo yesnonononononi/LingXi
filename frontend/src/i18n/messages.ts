@@ -164,14 +164,18 @@ export const messages: MessageSchema = {
         // read_file 短名独立成「读取文件」：read 是 READ 分类标签，工具行借它只会读成「读取」
         fileRead: '读取文件',
         write: '写入',
-        // edit_file 的短名独立成「编辑」：write 是分类标签，工具行不能借它，否则与 write_file 的「写入」只差两个字
-        fileEdit: '编辑',
+        // edit_file 的短名独立成「编辑文件」：write 是分类标签，工具行不能借它；短名统一 4 字
+        fileEdit: '编辑文件',
         webSearch: '检索网络资源',
         choice: '选择',
+        // 工具行短名统一 4 字：CHOICE 分类标签只有「选择」，工具行另取「请求选择」
+        choiceRequest: '请求选择',
         subAgent: '子代理',
         peek: '查看队员状态',
         think: '思考',
         plan: '计划',
+        // 同上：PLAN 分类标签只有「计划」，工具行另取「创建计划」
+        planCreate: '创建计划',
         checklist: '执行清单',
         // 执行清单六个动作各自独立文案：流式工具行短名不得两两重名
         checklistCreate: '创建清单',
@@ -193,8 +197,8 @@ export const messages: MessageSchema = {
         imageGenerate: '生成图片',
         // 文件检索独立文案：与记忆检索、工具检索、网页搜索都不重名
         fileSearch: '检索文件',
-        // 整文件写入的短名是「写入」，与 edit_file 的「编辑」靠动词区分（两个都短，不会占满工具行）
-        fileWrite: '写入',
+        // 整文件写入的短名是「写入文件」，与 edit_file 的「编辑文件」靠动词区分
+        fileWrite: '写入文件',
         // 删除是破坏性动作，短名不复用「写入」
         fileDelete: '删除文件',
         mcpList: '列举 MCP 工具',
@@ -1691,10 +1695,14 @@ export const messages: MessageSchema = {
         write: 'Write',
         webSearch: 'Search the web',
         choice: 'Choice',
+        // Tool rows use their own label: the CHOICE category label is just "Choice".
+        choiceRequest: 'Request choice',
         subAgent: 'Sub-agent',
         peek: 'View teammate state',
         think: 'Thinking',
         plan: 'Plan',
+        // Same reason: the PLAN category label is just "Plan".
+        planCreate: 'Create plan',
         checklist: 'Execution checklist',
         // One label per checklist action so no two streaming tool rows read alike.
         checklistCreate: 'Create checklist',
@@ -1705,8 +1713,8 @@ export const messages: MessageSchema = {
         checklistModify: 'Modify checklist',
         checklistDelete: 'Delete checklist',
         mail: 'Send mail',
-        // edit_file gets its own label: "write" is the category label and would collide with write_file's "Write"
-        fileEdit: 'Edit',
+        // edit_file gets its own label: "write" is the category label; tool rows keep 4-word names.
+        fileEdit: 'Edit file',
         compact: 'Compact context',
         toolSearch: 'Search tools',
         // Project-memory search gets its own label so it never reads the same as tool search.
@@ -1718,8 +1726,8 @@ export const messages: MessageSchema = {
         imageGenerate: 'Generate image',
         // File search gets its own label so it never reads the same as memory or tool search.
         fileSearch: 'Search files',
-        // Whole-file write reads as "Write"; edit_file reads as "Edit", so the verb alone tells them apart.
-        fileWrite: 'Write',
+        // Whole-file write reads as "Write file"; edit_file reads as "Edit file", so the verb tells them apart.
+        fileWrite: 'Write file',
         // Deletion is destructive, so it never reuses the "Write" label.
         fileDelete: 'Delete file',
         mcpList: 'List MCP tools',
