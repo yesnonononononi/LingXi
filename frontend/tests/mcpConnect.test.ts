@@ -4,6 +4,7 @@ import {effectScope} from 'vue';
 import {McpAPI} from '../src/services/mcp';
 import http, {ApiError} from '../src/services/interceptor';
 import {useMcpTab} from '../src/views/settings/tabs/useMcpTab';
+import {t as translate} from '../src/i18n';
 import type {Result} from '../src/services/types';
 import type {McpConnectionVO, McpRequest} from '../src/types/chat';
 
@@ -209,4 +210,38 @@ test('批量查询共享连接状态并支持重新连接已启用服务', async
     assert.equal(value.mcpStates.value['7']?.toolCount, 4);
     assert.equal(value.mcpToast.value, '已重新连接');
   } finally { scope.stop(); }
+});
+
+/**
+ * 列表内启停：方向与 toast 必须出自同一个判定。
+ *
+ * <p>方向曾在 handler 里算两次（`nextEnabled` 一次、提交时再算一次），两处写法一改就
+ * 会出现「提示已启用、实际下发 0」的自相矛盾。这里同时钉住下发值与 toast 文案。</p>
+ */
+test('列表内启停：停用下 1 提示已启用，启用下 0 提示已停用，且只提交 id/status', async (t) => {
+  const update = t.mock.method(McpAPI, 'update', async () => ({ code: 1 }));
+  t.mock.method(McpAPI, 'list', async () => ({
+    code: 1, data: { records: [], total: 0, current: 1, size: 100 },
+  }));
+  const { value, scope } = state();
+  try {
+    await value.handleToggleMcp({ id: '81', name: 'github', status: 0 });
+    assert.equal(update.mock.calls[0]!.arguments[0].status, 1, '停用的服务必须下发 1');
+    assert.equal(value.mcpToast.value, translate('settings.mcp.toastEnabled'),
+      'toast 必须与下发的 status 一致：下发 1 就说「已启用」');
+    const firstKeys = Object.keys(update.mock.calls[0]!.arguments[0]).sort();
+    assert.deepEqual(firstKeys, ['id', 'status'], `启停只能提交 id 与 status，实际 ${JSON.stringify(firstKeys)}`);
+
+    await value.handleToggleMcp({ id: '82', name: 'context7', status: 1 });
+    assert.equal(update.mock.calls[1]!.arguments[0].status, 0, '启用的服务必须下发 0');
+    assert.equal(value.mcpToast.value, translate('settings.mcp.toastDisabled'),
+      'toast 必须与下发的 status 一致：下发 0 就说「已停用」');
+
+    await value.handleToggleMcp({ id: '83', name: 'legacy' });
+    assert.equal(update.mock.calls[2]!.arguments[0].status, 0,
+      'status 缺省按已启用处理，下发 0，不得回写 1');
+    assert.equal(value.mcpToast.value, translate('settings.mcp.toastDisabled'));
+  } finally {
+    scope.stop();
+  }
 });

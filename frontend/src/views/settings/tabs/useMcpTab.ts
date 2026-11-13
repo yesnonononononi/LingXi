@@ -4,6 +4,7 @@ import {ApiError} from '../../../services/interceptor';
 import type {McpConnectionStateVO, McpConnectionVO, McpRequest, McpVO} from '../../../types/chat';
 import {MCP_PROTOCOL_VERSION_MAX_LENGTH, MCP_PROTOCOL_VERSION_PATTERN,} from '../../../types/chat';
 import {isOk} from '../../../utils/api';
+import {nextMcpStatus} from '../../../utils/mcpStatus';
 import {useConfirm} from '../../../composables/useConfirm';
 import {useI18n} from '../../../i18n';
 
@@ -539,14 +540,16 @@ export function useMcpTab() {
    * 连接参数（url/command）误传回库。
    */
   const handleToggleMcp = async (item: McpVO) => {
-    const nextEnabled = item.status === 0;
+    // 方向只由 nextMcpStatus 决定，toast 也读同一个值：两处各判一次迟早会出现
+    // 「提示已启用、实际下发 0」这种自相矛盾。
+    const nextStatus = nextMcpStatus(item.status);
     try {
       const res = await McpAPI.update({
         id: item.id,
-        status: nextEnabled ? 1 : 0,
+        status: nextStatus,
       });
-            if (isOk(res.code)) {
-        showMcpToast(nextEnabled ? t('settings.mcp.toastEnabled') : t('settings.mcp.toastDisabled'));
+      if (isOk(res.code)) {
+        showMcpToast(nextStatus === 1 ? t('settings.mcp.toastEnabled') : t('settings.mcp.toastDisabled'));
         await loadMcp();
       } else {
         showMcpToast(res.errMsg || t('settings.mcp.toastStatusFailed'));

@@ -351,3 +351,40 @@ test('宿主接线：启停只提交 {id,status}，不整体重载面板，失�
   assert.match(source, /const mcpBusy = ref<Record<string, boolean>>\(\{\}\)/,
     '宿主必须持有按 id 的 mcpBusy，否则动作进行中按钮无法置灰');
 });
+
+/**
+ * 宿主 busy 入口守卫（QA 变异「删掉 in-flight 早退」曾存活）。
+ *
+ * <p>`handlePlusToggleMcp` / `handlePlusReconnectMcp` 都靠 `mcpBusy[key]` 早退挡住连点：
+ * 守卫只存在源码里，界面层即便按钮置灰也可能被键盘/脚本再触发一次，两次请求会让
+ * 状态写入互相覆盖。这里按顺序断言「先早退、再置忙」，删掉任一句都会红。</p>
+ */
+test('宿主 busy 入口守卫：两个 handler 都必须先早退再置忙，finally 必须清 busy', () => {
+  const source = harness.readSource('../src/components/chat/ChatInputArea.vue');
+  const handlers: Array<{name: string; body: string}> = [
+    {name: 'handlePlusToggleMcp', body: captureBody(source, 'handlePlusToggleMcp')},
+    {name: 'handlePlusReconnectMcp', body: captureBody(source, 'handlePlusReconnectMcp')},
+  ];
+
+  for (const handler of handlers) {
+    const guardIndex = handler.body.indexOf('if (mcpBusy.value[key]) return;');
+    const busyOnIndex = handler.body.indexOf('markMcpBusy(key, true)');
+    const busyOffIndex = handler.body.indexOf('markMcpBusy(key, false)');
+
+    assert.notEqual(guardIndex, -1,
+      `${handler.name} 缺少 in-flight 早退守卫：连点会发出两次请求，两次写入互相覆盖`);
+    assert.notEqual(busyOnIndex, -1, `${handler.name} 进入时必须置 busy，否则按钮永远不会置灰`);
+    assert.ok(guardIndex < busyOnIndex,
+      `${handler.name} 的早退守卫必须在置忙之前，顺序反了就挡不住第二次进入`);
+    assert.notEqual(busyOffIndex, -1, `${handler.name} 的 finally 必须清 busy，否则该行按钮永久置灰`);
+    assert.match(handler.body, /finally \{[\s\S]*markMcpBusy\(key, false\);/,
+      `${handler.name} 清理 busy 必须落在 finally 里：异常路径同样要解锁`);
+  }
+});
+
+/** 取一个 handler 的函数体，截到同缩进的 `};` 为止。 */
+function captureBody(source: string, handlerName: string): string {
+  const matched = new RegExp(`const ${handlerName} = async \\(server: McpVO\\) => \\{([\\s\\S]*?)\\n\\};`).exec(source);
+  assert.ok(matched, `找不到 ${handlerName} 实现`);
+  return matched![1];
+}
