@@ -292,3 +292,62 @@ test('MCP 服务行结构：行容器是 div + justify-between，左侧打开设
   await nextTick();
   assert.equal(settingsOpened.length, 1, '点服务名仍要打开 MCP 设置');
 });
+
+test('优先级矩阵：配置态压过运行态 —— status=0 且 state=CONNECTED 时仍只能「启用」', async t => {
+  const {root, toggled, reconnected} = mountMcpMenu(t, [{
+    server: {id: 71, name: 'github', status: 0},
+    state: {id: 71, state: 'CONNECTED', toolCount: 12, error: null}
+  }]);
+  await nextTick();
+
+  const labels = harness.findAll(root, item => item.tag === 'button'
+    && String(item.props['data-testid'] ?? '').startsWith('plus-mcp-action-'))
+    .map(item => text(item).trim());
+  assert.deepEqual(labels, ['启用'],
+    `停用的服务即使连接表残留 CONNECTED，也只能给「启用」；若按运行态判成「停用」，用户就再也打不开它。实际 ${JSON.stringify(labels)}`);
+
+  (actionButton(root, '启用').props.onClick as () => void)();
+  await nextTick();
+  assert.deepEqual(toggled.map(item => item.id), [71], `该行点击必须走 toggleMcp，实际 ${JSON.stringify(toggled)}`);
+  assert.equal(reconnected.length, 0, '该行不得走 reconnectMcp');
+});
+
+/**
+ * 宿主 handler 的源码级守护。
+ *
+ * <p>行内动作一旦把整包 McpVO 回传，后端会把另一路传输方式的 url / command 写空；
+ * 一旦改成调 `loadMcpServers`，面板又会闪回加载占位。这两条都只在源码上看得出来，用挂载用例盖不住。</p>
+ */
+test('宿主接线：启停只提交 {id,status}，不整体重载面板，失败写 mcpError', () => {
+  const source = harness.readSource('../src/components/chat/ChatInputArea.vue');
+
+  const toggleHandler = /const handlePlusToggleMcp = async \(server: McpVO\) => \{([\s\S]*?)\n\};/.exec(source);
+  assert.ok(toggleHandler, '找不到 handlePlusToggleMcp 实现');
+  const toggleBody = toggleHandler![1];
+  assert.match(toggleBody, /nextMcpStatus\(server\.status\)/,
+    '启停方向必须走纯函数 nextMcpStatus，不要在 handler 里就地写三元');
+  const updateCall = /McpAPI\.update\(\{([^}]*)\}\)/.exec(toggleBody);
+  assert.ok(updateCall, '启停必须调用 McpAPI.update');
+  const payloadKeys = updateCall![1].split(',').map(part => part.split(':')[0].trim()).filter(Boolean).sort();
+  assert.deepEqual(payloadKeys, ['id', 'status'],
+    `启停只能提交 id 与 status（后端按缺省字段保持原值），实际 ${JSON.stringify(payloadKeys)}`);
+  assert.doesNotMatch(toggleBody, /\.\.\.server|url:|command:/,
+    '不得把整包 McpVO 或 url / command 回传：另一种传输方式的连接参数会被写空');
+  assert.doesNotMatch(toggleBody, /loadMcpServers/,
+    '行内动作不得整体重载面板：整块置 loading 会把面板切回「正在加载 MCP 服务…」');
+  assert.match(toggleBody, /mcpError\.value = res\.errMsg/,
+    '后端失败必须落到 mcpError，不能静默失败');
+
+  const reconnectHandler = /const handlePlusReconnectMcp = async \(server: McpVO\) => \{([\s\S]*?)\n\};/.exec(source);
+  assert.ok(reconnectHandler, '找不到 handlePlusReconnectMcp 实现');
+  const reconnectBody = reconnectHandler![1];
+  assert.match(reconnectBody, /McpAPI\.reconnect\(server\)/, '重新连接必须走 McpAPI.reconnect');
+  assert.doesNotMatch(reconnectBody, /loadMcpServers/,
+    '重新连接同样不得整体重载面板');
+  assert.match(reconnectBody, /mcpError\.value = res\.errMsg/,
+    '后端失败必须落到 mcpError，不能静默失败');
+
+  // 反过来证明上面这些断言不是「怎么写都过」：把 busy 关键字去掉就得红
+  assert.match(source, /const mcpBusy = ref<Record<string, boolean>>\(\{\}\)/,
+    '宿主必须持有按 id 的 mcpBusy，否则动作进行中按钮无法置灰');
+});

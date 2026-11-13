@@ -32,6 +32,7 @@ import {TeamAPI} from '../../services/team';
 import {McpAPI} from '../../services/mcp';
 import {AgentAPI} from '../../services/agent';
 import {isOk} from '../../utils/api';
+import {nextMcpStatus} from '../../utils/mcpStatus';
 import {useChatImageAttachments} from '../../composables/useChatImageAttachments';
 import {useSkillList} from '../../composables/useSkillList';
 import {isPromptOptimizationCommand, usePromptOptimization} from '../../composables/usePromptOptimization';
@@ -1070,7 +1071,7 @@ const handlePlusToggleMcp = async (server: McpVO) => {
   if (mcpBusy.value[key]) return;
   markMcpBusy(key, true);
   mcpError.value = '';
-  const nextStatus = server.status === 0 ? 1 : 0;
+  const nextStatus = nextMcpStatus(server.status);
   try {
     const res = await McpAPI.update({id: server.id, status: nextStatus});
     if (!isOk(res.code)) {
