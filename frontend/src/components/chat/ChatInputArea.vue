@@ -596,6 +596,24 @@ const clearSelectedAgent = () => {
   selectedAgent.value = '';
 };
 
+/**
+ * 协作模式（选中团队）在输入行里的徽标文案。
+ *
+ * <p>找名字只用两份数据源：宿主注入的 `teams`（权威）和挂载时自己拉的那页 `localTeams`。
+ * 都还没到就显示 `团队 #id` —— 徽标必须让用户看见「现在是协作模式」，不能因为列表没回来就凭空消失。</p>
+ */
+const currentTeamName = computed(() => {
+  if (!localSelectedTeamId.value) return '';
+  const list = props.teams && props.teams.length > 0 ? props.teams : localTeams.value;
+  const found = list.find(item => String(item.id) === String(localSelectedTeamId.value));
+  return found?.name || t('chat.input.teamFallback', { id: localSelectedTeamId.value });
+});
+
+/** 徽标上的 × 与 Plan 徽标对称：只清协作，不动模式与草稿。 */
+const clearSelectedTeam = () => {
+  selectedTeam.value = '';
+};
+
 // ====== /agent 触发的上拉浮层菜单 ======
 const isAgentMenuOpen = ref(false);
 const agentMenuRef = ref<HTMLElement | null>(null);
@@ -1825,13 +1843,31 @@ defineExpose({
 
       <!-- 文本输入区 -->
       <div class="flex items-start gap-1.5 w-full min-w-0">
+        <!-- 模式徽标与协作徽标同一套蓝色底色：两者都是「这一轮带什么意图」的标记，
+             用两种颜色反而要用户去记哪块是模式、哪块是团队 -->
         <span
           v-if="isPlanMode"
-          class="text-amber-500 font-medium text-xs leading-[22px] shrink-0 select-none cursor-pointer hover:opacity-80 px-1.5 rounded bg-amber-500/10 whitespace-nowrap"
+          data-testid="chat-input-plan-badge"
+          class="text-blue-400 font-medium text-xs leading-[22px] shrink-0 select-none cursor-pointer hover:opacity-80 px-1.5 rounded bg-blue-500/15 whitespace-nowrap"
           :title="t('chat.input.exitPlanTip')"
           @click.stop="isPlanMode = false"
         >
           /plan
+        </span>
+
+        <span
+          v-if="currentTeamName"
+          data-testid="chat-input-team-badge"
+          class="inline-flex items-center gap-1 px-1.5 rounded bg-blue-500/15 text-blue-400 font-medium text-xs leading-[22px] shrink-0 select-none cursor-pointer hover:opacity-80 whitespace-nowrap"
+          :title="t('chat.input.switchTeamTip')"
+          @click.stop="openPlusMenu('teams')"
+        >
+          <span class="max-w-[10rem] truncate">👥 {{ currentTeamName }}</span>
+          <span
+            class="hover:text-red-400 hover:bg-black/10 dark:hover:bg-white/10 rounded-full w-3.5 h-3.5 flex items-center justify-center text-xs leading-none transition"
+            :title="t('chat.input.exitTeamTip')"
+            @click.stop="clearSelectedTeam"
+          >×</span>
         </span>
 
         <span
