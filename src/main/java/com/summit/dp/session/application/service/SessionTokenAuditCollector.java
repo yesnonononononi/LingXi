@@ -9,6 +9,7 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionTokenAudit;
 import com.summit.dp.session.domain.model.TokenAuditPersistedState;
 import com.summit.dp.session.domain.model.TokenAuditReconciler;
+import com.summit.dp.session.domain.model.TokenAuditReconciler.Measurement;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.session.application.port.TokenAuditBroadcaster;
@@ -82,8 +83,9 @@ public class SessionTokenAuditCollector {
             return;
         }
         Session session = sessionRepository.findById(sessionId).orElse(null);
-        TokenAuditReconciler.Result result =
-                TokenAuditReconciler.reconcile(converter.toMeasurement(document, session));
+        Measurement measurement = converter.toMeasurement(document, session);
+        TokenAuditReconciler.Result result = TokenAuditReconciler.reconcile(measurement);
+        warnWhenMemoryExceedsDynamicContext(sessionId, measurement);
         SessionTokenAudit incoming = SessionTokenAudit.capture(sessionId, numericExecutionId(executionId),
                 result, capturedAt);
         incoming.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(document));
@@ -130,6 +132,23 @@ public class SessionTokenAuditCollector {
         }
         auditRepository.markFailed(sessionId, numericExecutionId(executionId), reason);
         broadcast(resolveRootSessionId(sessionId, eventMetaData), sessionId);
+    }
+
+    /**
+     * 记忆正文不该大过它归属的动态上下文：倒挂说明框架的分词或归因口径漂移了。
+     *
+     * <p>只记告警，不改数、不拦采集 —— 面板上「子项比父项大」是事实，替它修数只会掩盖漂移。</p>
+     *
+     * @param sessionId   快照所属会话
+     * @param measurement 换算前的扁平测量值
+     */
+    private void warnWhenMemoryExceedsDynamicContext(Long sessionId, Measurement measurement) {
+        if (!TokenAuditReconciler.exceedsDynamicContext(measurement.memoryTokens(),
+                measurement.dynamicContextTokens())) {
+            return;
+        }
+        log.warn("记忆归因超出动态上下文: sessionId={}, memoryTokens={}, dynamicContextTokens={}",
+                sessionId, measurement.memoryTokens(), measurement.dynamicContextTokens());
     }
 
     /**

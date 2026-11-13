@@ -1,5 +1,8 @@
 package com.summit.dp.session;
 
+import com.summit.core.audit.AuditStatus;
+import com.summit.core.audit.DocumentElement;
+import com.summit.core.audit.token.OtherTokens;
 import com.summit.core.audit.token.TokenAuditDocument;
 import com.summit.core.audit.token.tool.ToolAuditDocument;
 import com.summit.dp.execution.ExecutionEventMetadata;
@@ -16,11 +19,16 @@ import com.summit.dp.session.domain.model.TokenAuditPersistedState;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
 import com.summit.dp.shared.vo.SessionTokenAuditVO;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
@@ -30,7 +38,9 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -200,6 +210,71 @@ class SessionTokenAuditCollectorTest {
         collector.collect("1", null, metadata(), Instant.now());
 
         verify(auditRepository).replaceSnapshot(any());
+    }
+
+    @Test
+    @DisplayName("记忆正文大于动态上下文：只记告警，快照照常落库且数值不被改写")
+    void memoryExceedingDynamicContextWarnsWithoutTouchingNumbers() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
+        ListAppender<ILoggingEvent> appender = attachCollectorAppender();
+        try {
+            collector.collect("1", documentWithAttribution(200, 100), metadata(), Instant.now());
+        } finally {
+            detachCollectorAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().anyMatch(event -> event.getLevel() == Level.WARN
+                        && event.getFormattedMessage().contains("记忆归因超出动态上下文")),
+                "倒挂必须留下告警：否则口径漂移只能等用户自己发现「子项比父项大」");
+        ArgumentCaptor<SessionTokenAudit> captor = ArgumentCaptor.forClass(SessionTokenAudit.class);
+        verify(auditRepository).replaceSnapshot(captor.capture());
+        assertEquals(200, captor.getValue().getMemoryTokens(), "告警不改数，落库仍是框架原值");
+    }
+
+    @Test
+    @DisplayName("记忆正文小于动态上下文：不告警（常态不得刷日志）")
+    void memoryInsideDynamicContextDoesNotWarn() {
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session()));
+        ListAppender<ILoggingEvent> appender = attachCollectorAppender();
+        try {
+            collector.collect("1", documentWithAttribution(100, 200), metadata(), Instant.now());
+        } finally {
+            detachCollectorAppender(appender);
+        }
+
+        assertFalse(appender.list.stream().anyMatch(event -> event.getFormattedMessage()
+                        .contains("记忆归因超出动态上下文")),
+                "记忆是动态上下文的一部分，正常情况下不该出现这条告警");
+        verify(auditRepository).replaceSnapshot(any());
+    }
+
+    private static ListAppender<ILoggingEvent> attachCollectorAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(SessionTokenAuditCollector.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private static void detachCollectorAppender(ListAppender<ILoggingEvent> appender) {
+        ((Logger) LoggerFactory.getLogger(SessionTokenAuditCollector.class)).detachAppender(appender);
+    }
+
+    /** 只构造归因两项：其余角色给 0，避免干扰告警判定。 */
+    private static TokenAuditDocument documentWithAttribution(int memoryTokens, int dynamicContextTokens) {
+        DocumentElement<Integer> zero = auditElement(0);
+        return new TokenAuditDocument(zero, zero, null, zero,
+                new OtherTokens(auditElement(0), auditElement(0), auditElement(dynamicContextTokens),
+                        auditElement(memoryTokens), auditElement(0)));
+    }
+
+    private static DocumentElement<Integer> auditElement(int tokens) {
+        return DocumentElement.<Integer>builder()
+                .tokenMeta(tokens)
+                .status(AuditStatus.SUCCESS)
+                .type("int")
+                .ratio(0.0)
+                .build();
     }
 
     private static Session session() {

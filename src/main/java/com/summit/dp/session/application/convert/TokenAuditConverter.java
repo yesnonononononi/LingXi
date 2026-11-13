@@ -30,7 +30,7 @@ import java.util.Map;
  * <p><b>本类只做「读取 + 兜底」，不做任何口径换算</b>：消息合计与请求开销减法由 {@code TokenAuditReconciler}（Pitest 扫描区）里。
  * 这里出现算术就意味着质量门禁扫不到，属于设计禁止的做法。</p>
  *
- * <p>工具总量已含调用参数。用户附件单列，记忆正文仍随系统消息结算。</p>
+ * <p>工具总量已含调用参数。用户附件与每轮背景块各单列一项，记忆正文的归因随背景块结算。</p>
  *
  * <p><b>模型输入总量（U1 决策）</b>：取 {@code Session.contextTokenCount} —— 它与框架终态时的
  * {@code Execution.getContextUsageMetric()} 同源（由 {@code SessionContextUsageProjector} 写入），

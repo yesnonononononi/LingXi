@@ -10,9 +10,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 会话审计按框架分项结算。工具父项、用户附件各计一次，记忆正文随系统消息结算。
+ * 会话审计按框架分项结算。消息合计 = 系统 + 动态上下文 + 用户 + 附件 + AI + 工具，每一项只计一次。
  *
- * 工具分组用于下钻，分组和与父项的差额单独记录。
+ * <p>记忆正文只是动态上下文内部的归因明细，不单独结算。工具分组用于下钻，分组和与父项的差额单独记录。</p>
  */
 public final class TokenAuditReconciler {
 
@@ -341,6 +341,24 @@ public final class TokenAuditReconciler {
             return null;
         }
         return requestOverhead - toolDefinitionTokens - mcpToolDefinitionTokens;
+    }
+
+    /**
+     * 归因明细是否倒挂：记忆正文大于它所属的动态上下文。
+     *
+     * <p>正常不会倒挂 —— 记忆正文就是动态上下文的一部分。但两处分词口径不同（整块按单条消息计，
+     * 归因按正文拼接计），真倒挂一次就说明其中一侧已经漂移，面板会画出「子项比父项大」。
+     * 这里只做判定：不改数、不夹值，记日志由调用方负责。</p>
+     *
+     * @param memoryTokens         记忆正文 token；null 表示未知
+     * @param dynamicContextTokens 动态上下文 token；null 表示未知
+     * @return 两者都已知且记忆更大时为 true
+     */
+    public static boolean exceedsDynamicContext(Integer memoryTokens, Integer dynamicContextTokens) {
+        if (memoryTokens == null || dynamicContextTokens == null) {
+            return false;
+        }
+        return memoryTokens > dynamicContextTokens;
     }
 
     /**

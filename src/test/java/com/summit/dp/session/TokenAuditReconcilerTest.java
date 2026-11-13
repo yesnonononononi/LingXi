@@ -17,6 +17,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -392,6 +393,22 @@ class TokenAuditReconcilerTest {
         assertEquals(0, result.memoryTokens());
         assertEquals(0, result.attachmentTokens());
         assertEquals(MESSAGES, result.messagesTokens(), "0 也不得改变合计");
+    }
+
+    @Test
+    @DisplayName("归因倒挂判定：只有两侧都已知且记忆更大时才算倒挂")
+    void attributionExceedsDynamicContextOnlyWhenBothKnownAndLarger() {
+        assertFalse(TokenAuditReconciler.exceedsDynamicContext(null, DYNAMIC_CONTEXT),
+                "记忆未知时不能判倒挂：未知不是「比父项大」");
+        assertFalse(TokenAuditReconciler.exceedsDynamicContext(MEMORY, null),
+                "父项未知时同样不判倒挂");
+        assertFalse(TokenAuditReconciler.exceedsDynamicContext(null, null));
+        assertFalse(TokenAuditReconciler.exceedsDynamicContext(DYNAMIC_CONTEXT, DYNAMIC_CONTEXT),
+                "相等不算倒挂：边界必须是严格大于");
+        assertFalse(TokenAuditReconciler.exceedsDynamicContext(DYNAMIC_CONTEXT - 1, DYNAMIC_CONTEXT),
+                "记忆小于父项是常态");
+        assertTrue(TokenAuditReconciler.exceedsDynamicContext(DYNAMIC_CONTEXT + 1, DYNAMIC_CONTEXT),
+                "记忆大于父项说明分词口径漂移，必须报出来");
     }
 
     private static Measurement measurementWithGroups() {
