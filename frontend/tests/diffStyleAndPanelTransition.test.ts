@@ -74,6 +74,39 @@ test('右上角控制栏与预览面板过渡动画契约', () => {
   assert.match(pageSrc, /watch\(\(\) => props\.sliding, applySliding\)/, '滑动结束必须补一次对位');
 });
 
+test('正文文件链接点开后预览面板必须自动展开', () => {
+  const chatViewSrc = fs.readFileSync(path.resolve(__dirname, '../src/views/chat/ChatView.vue'), 'utf8');
+
+  // 1. 注入给 MarkdownRenderer / ToolCallRenderer / TurnFileChangeCard 的必须是包装过的入口。
+  //    裸露的 composable openFilePreview 只加标签、不动 previewPanelOpen（显隐唯一真源），
+  //    面板收起时点文件链接就是「标签加好了、面板没反应」。
+  assert.doesNotMatch(
+    chatViewSrc,
+    /provide\(FILE_PREVIEW_KEY, openFilePreview\)/,
+    '不得把 useFilePreview 的 openFilePreview 直接 provide：它不展开面板'
+  );
+  assert.match(
+    chatViewSrc,
+    /provide\(FILE_PREVIEW_KEY, openFilePreviewInPanel\)/,
+    'FILE_PREVIEW_KEY 必须注入会同时展开面板的包装入口'
+  );
+
+  // 2. 包装入口必须三件事齐全：切回文件模式、开标签、展开面板。
+  const start = chatViewSrc.indexOf('const openFilePreviewInPanel = ');
+  assert.ok(start >= 0, '缺少 openFilePreviewInPanel 实现');
+  const body = chatViewSrc.slice(start, chatViewSrc.indexOf('\n};', start));
+  assert.match(body, /previewMode\.value = 'file';/, '打开文件预览必须切回文件模式，否则面板停在页面/设计模式上看不到文件');
+  assert.match(body, /openFilePreview\(request\);/, '包装入口必须先开标签');
+  assert.match(body, /showPreviewPanel\(\);/, '包装入口必须展开面板（唯一展开入口 showPreviewPanel）');
+
+  // 3. 宿主自己的打开路径也不许绕过包装入口（日志跳转曾直接调裸函数）。
+  assert.doesNotMatch(
+    chatViewSrc,
+    /openFilePreview\(\{/,
+    '宿主内所有打开文件的调用都必须走 openFilePreviewInPanel，不得直呼裸 openFilePreview'
+  );
+});
+
 test('diff 预览框文字按照代码风格与语法高亮渲染契约', () => {
   const panelSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/FilePreviewPanel.vue'), 'utf8');
 

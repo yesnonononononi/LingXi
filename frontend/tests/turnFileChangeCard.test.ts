@@ -91,7 +91,7 @@ async function mountCard(t: test.TestContext, items: any[] | null = ITEMS): Prom
 
   const opened: {path: string; edit: any}[] = [];
   const app = renderer().createApp(component, {items, sessionId: 's1', isDark: true});
-  app.provide(FILE_PREVIEW_KEY, (_sessionId: any, path: string, edit: any) => opened.push({path, edit}));
+  app.provide(FILE_PREVIEW_KEY, (request: {sessionId?: string; path: string; edit?: any}) => opened.push({path: request.path, edit: request.edit}));
   const root = element('root');
   app.mount(root);
   t.after(() => app.unmount());

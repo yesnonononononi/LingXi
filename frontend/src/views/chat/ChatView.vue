@@ -538,6 +538,7 @@ import {useFilePreview} from '../../composables/useFilePreview';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
+import type {FilePreviewOpenRequest} from '../../types/filePreview';
 import type {PreviewPanelMode, ShowWithAgentPayload} from '../../types/projectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 import ShowWithAgentModal from '../../components/chat/ShowWithAgentModal.vue';
@@ -637,7 +638,6 @@ onMounted(() => {
 });
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
-provide(FILE_PREVIEW_KEY, openFilePreview);
 
 /**
  * 预览面板的内容模式 + 项目页面预览状态。
@@ -680,6 +680,21 @@ const openFilePreviewPanel = (): void => {
   filePreviewOpen.value = true;
   showPreviewPanel();
 };
+
+/**
+ * 正文链接 / 工具调用 / 本轮改动卡片共用的打开入口：**先开标签，再把面板展开**。
+ *
+ * <p>不能直接把 `useFilePreview.openFilePreview` provide 出去 —— 它只加标签、置
+ * `filePreviewOpen`，而面板显隐的唯一真源是 `previewPanelOpen`。面板处于收起态时点文件链接，
+ * 结果是「标签加好了，面板毫无反应」，用户得自己再去点一次顶部入口才看得到内容。
+ * 同理要顺手把模式切回文件：面板可能停在页面/设计模式上。</p>
+ */
+const openFilePreviewInPanel = (request: FilePreviewOpenRequest): void => {
+  previewMode.value = 'file';
+  openFilePreview(request);
+  showPreviewPanel();
+};
+provide(FILE_PREVIEW_KEY, openFilePreviewInPanel);
 
 /** 打开项目页面模式：即使零个文件标签也能进，不去伪造文件标签。 */
 const openProjectPagePanel = (): void => {
@@ -742,7 +757,7 @@ const openErrorLog = async (): Promise<void> => {
   try {
     const result = await LogAPI.location();
     if (!isOk(result.code) || !result.data?.warnError) return;
-    openFilePreview({ sessionId, path: result.data.warnError });
+    openFilePreviewInPanel({ sessionId, path: result.data.warnError });
   } finally {
     logOpening.value = false;
   }
