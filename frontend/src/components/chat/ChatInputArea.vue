@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {computed, type CSSProperties, inject, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {
-  Attachment01Icon,
   Cancel01Icon,
   HelpCircleIcon,
   Mic01Icon,
@@ -1745,54 +1744,6 @@ defineExpose({
         </div>
       </div>
 
-      <!-- Effort 思考强度调节弹层 -->
-      <div
-        v-if="effortOpen"
-        class="bottom-[calc(100%+8px)] z-40 absolute left-2 sm:left-6 shadow-[0_12px_40px_-10px_rgba(0,0,0,0.7),0_1px_2px_rgba(0,0,0,0.08)] p-1 px-3.5 pt-3 pb-3.5 [background:var(--pb-menu)] rounded-xl w-[248px] origin-bottom-left border border-white/[0.08] backdrop-blur-md [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both] motion-reduce:[animation:none]"
-        role="dialog"
-        aria-label="Effort"
-      >
-        <div class="flex items-center gap-2 text-lx-fs-lg leading-[18px]">
-                    <span :class="MUTED">{{ t('chat.input.reasoningEffort') }}</span>
-          <span class="font-medium">{{ level }}</span>
-          <span v-if="reasoningEffortPending" role="status" class="text-xs" :class="MUTED">{{ t('chat.input.syncing') }}</span>
-          <span class="inline-flex ml-auto cursor-help" :class="MUTED" :title="t('chat.input.effortTip')">
-            <HugeiconsIcon :icon="HelpCircleIcon as IconArray" :size="14" :stroke-width="1.8" />
-          </span>
-        </div>
-        <div class="flex justify-between mt-3 text-lx-fs-md leading-4" :class="MUTED">
-          <span>Faster</span>
-          <span>Smarter</span>
-        </div>
-        <div
-          class="relative mt-2 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] rounded-[11px] outline-none h-[22px] touch-none cursor-pointer select-none"
-          role="slider"
-          tabindex="0"
-          aria-label="Effort"
-          :aria-valuemin="0"
-          :aria-valuemax="effortList.length - 1"
-          :aria-valuenow="effortIndex"
-          :aria-valuetext="level"
-          :style="effortStyle"
-          @pointerdown="onEffortDown"
-          @pointermove="onEffortMove"
-          @keydown="onEffortKey"
-        >
-          <span
-            class="left-0 absolute inset-y-0 [background:color-mix(in_srgb,var(--pb-ink)_18%,transparent)] [width:var(--pb-effort-fill)] group-data-[max]:[background:color-mix(in_srgb,var(--pb-spark)_35%,transparent)] rounded-[11px] motion-reduce:[transition:background-color_300ms_ease] [transition:width_220ms_cubic-bezier(0.23,1,0.32,1),background-color_300ms_ease]"
-          />
-          <i
-            v-for="(name, i) in effortList"
-            :key="name"
-            class="top-1/2 absolute -mt-0.5 -ml-0.5 [background:color-mix(in_srgb,var(--pb-ink)_30%,transparent)] rounded-full w-1 h-1"
-            :style="{ left: stepAt(i) }"
-          />
-          <span
-            class="-top-[3px] absolute shadow-[0_2px_6px_rgba(0,0,0,0.25)] -ml-[7px] [background:var(--pb-ink)] [left:var(--pb-effort-x)] group-data-[max]:[background:var(--pb-spark)] rounded-[7px] w-3.5 h-7 motion-reduce:[transition:background-color_300ms_ease] [transition:left_220ms_cubic-bezier(0.23,1,0.32,1),background-color_300ms_ease]"
-          />
-        </div>
-      </div>
-
       <p v-if="reasoningEffortError" role="alert" class="text-xs text-red-500">
         {{ reasoningEffortError }}
       </p>
@@ -1969,35 +1920,75 @@ defineExpose({
             class="hidden"
             @change="handleFileChange"
           />
-          <button
-            type="button"
-            :class="ICON_BTN"
-            :data-on="attachments.length ? '' : undefined"
-            :disabled="!canAttach"
-            :title="maxImages ? t('chat.input.uploadImageTip', { max: maxImages }) : t('chat.input.readingImageLimitShort')"
-            @mousedown.prevent
-            @click="triggerUpload"
-          >
-            <HugeiconsIcon :icon="Attachment01Icon as IconArray" :size="15" :stroke-width="2" />
-          </button>
 
           <!-- 团队选择已收进 + 菜单的「协作」分组：输入区不再常驻一个下拉，给写作留出宽度 -->
 
-          <!-- Effort 思考强度按钮 -->
-          <button
-            type="button"
-            :class="TOOL_BTN"
-            :aria-label="t('chat.input.selectEffort')"
-            :aria-expanded="effortOpen"
-            :data-on="effortOpen ? '' : undefined"
-            :data-max="maxed ? '' : undefined"
-            :title="t('chat.input.selectEffortTip')"
-            @mousedown.prevent
-            @click="toggleEffort"
-          >
-            <HugeiconsIcon :icon="SparklesIcon as IconArray" :size="13" :stroke-width="2" />
-            <span>{{ level }}</span>
-          </button>
+          <!-- Effort 思考强度：弹层锚在这个 wrapper 上（bottom-full 紧贴按钮上沿），
+               配色/圆角与「+」分组菜单同一套，不再挂在卡片容器上偏移 8px -->
+          <span class="relative inline-flex shrink-0">
+            <button
+              type="button"
+              :class="TOOL_BTN"
+              :aria-label="t('chat.input.selectEffort')"
+              :aria-expanded="effortOpen"
+              :data-on="effortOpen ? '' : undefined"
+              :data-max="maxed ? '' : undefined"
+              :title="t('chat.input.selectEffortTip')"
+              @mousedown.prevent
+              @click="toggleEffort"
+            >
+              <HugeiconsIcon :icon="SparklesIcon as IconArray" :size="13" :stroke-width="2" />
+              <span>{{ level }}</span>
+            </button>
+
+            <div
+              v-if="effortOpen"
+              class="bottom-full z-50 absolute left-0 w-[236px] p-3 origin-bottom-left rounded-[14px] border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both] motion-reduce:[animation:none]"
+              :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-zinc-800'"
+              role="dialog"
+              aria-label="Effort"
+            >
+              <div class="flex items-center gap-2 text-lx-fs-lg leading-[18px]">
+                <span :class="MUTED">{{ t('chat.input.reasoningEffort') }}</span>
+                <span class="font-medium">{{ level }}</span>
+                <span v-if="reasoningEffortPending" role="status" class="text-xs" :class="MUTED">{{ t('chat.input.syncing') }}</span>
+                <span class="inline-flex ml-auto cursor-help" :class="MUTED" :title="t('chat.input.effortTip')">
+                  <HugeiconsIcon :icon="HelpCircleIcon as IconArray" :size="14" :stroke-width="1.8" />
+                </span>
+              </div>
+              <div class="flex justify-between mt-3 text-lx-fs-md leading-4" :class="MUTED">
+                <span>Faster</span>
+                <span>Smarter</span>
+              </div>
+              <div
+                class="relative mt-2 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] rounded-[11px] outline-none h-[22px] touch-none cursor-pointer select-none"
+                role="slider"
+                tabindex="0"
+                aria-label="Effort"
+                :aria-valuemin="0"
+                :aria-valuemax="effortList.length - 1"
+                :aria-valuenow="effortIndex"
+                :aria-valuetext="level"
+                :style="effortStyle"
+                @pointerdown="onEffortDown"
+                @pointermove="onEffortMove"
+                @keydown="onEffortKey"
+              >
+                <span
+                  class="left-0 absolute inset-y-0 [background:color-mix(in_srgb,var(--pb-ink)_18%,transparent)] [width:var(--pb-effort-fill)] group-data-[max]:[background:color-mix(in_srgb,var(--pb-spark)_35%,transparent)] rounded-[11px] motion-reduce:[transition:background-color_300ms_ease] [transition:width_220ms_cubic-bezier(0.23,1,0.32,1),background-color_300ms_ease]"
+                />
+                <i
+                  v-for="(name, i) in effortList"
+                  :key="name"
+                  class="top-1/2 absolute -mt-0.5 -ml-0.5 [background:color-mix(in_srgb,var(--pb-ink)_30%,transparent)] rounded-full w-1 h-1"
+                  :style="{ left: stepAt(i) }"
+                />
+                <span
+                  class="-top-[3px] absolute shadow-[0_2px_6px_rgba(0,0,0,0.25)] -ml-[7px] [background:var(--pb-ink)] [left:var(--pb-effort-x)] group-data-[max]:[background:var(--pb-spark)] rounded-[7px] w-3.5 h-7 motion-reduce:[transition:background-color_300ms_ease] [transition:left_220ms_cubic-bezier(0.23,1,0.32,1),background-color_300ms_ease]"
+                />
+              </div>
+            </div>
+          </span>
 
           <!-- 当前访问档位：边界必须常驻可见，不能只藏在安全中心里；
                本地+只读是唯一会让人误以为「已被保护」的组合，单独染色警示。

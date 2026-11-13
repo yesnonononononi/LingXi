@@ -3,7 +3,7 @@
  * 输入区「工作区权限」上拉框。
  *
  * <p>档位文案与警示判据全部读 `accessModePresentation`，与安全中心共用同一份真源：
- * 本地环境没有沙箱，只读档只剩「文件工具被禁用」，这里也必须照实说，不能只写「只读」。</p>
+ * 本地环境没有沙箱，只读档只剩「文件工具被禁用」，这里也必须照实说，不能只写「只读模式」。</p>
  *
  * <p>本组件不写配置：选中只是 emit 意图，由宿主落到 userConfig。档位是全局安全策略，
  * 输入区自己缓存一份就会和安全中心分叉。</p>
@@ -49,12 +49,13 @@ const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, 
 </script>
 
 <template>
+  <!-- 面板贴合徽标上沿（bottom-full），宽度按「短标签 + 一行效果说明」定：档位名不再带环境后缀长句 -->
   <div
-    class="bottom-[calc(100%+8px)] z-50 absolute left-0 w-[300px] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both] motion-reduce:[animation:none]"
+    class="bottom-full z-50 absolute left-0 w-[228px] p-1 rounded-[14px] border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both] motion-reduce:[animation:none]"
     :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-zinc-800'"
     role="menu"
   >
-    <div class="px-2.5 pt-1 pb-1.5 text-xs font-medium select-none" :class="MUTED">
+    <div class="px-2 pt-1 pb-1 text-lx-fs-xs font-medium select-none" :class="MUTED">
       {{ t('chat.input.accessMenuTitle') }}
     </div>
 
@@ -62,7 +63,7 @@ const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, 
       v-for="mode in MODES"
       :key="mode"
       type="button"
-      class="flex items-start gap-2.5 w-full px-2 py-1.5 rounded-lg text-lx-fs-lg leading-[18px] text-left bg-transparent border-0 outline-none cursor-pointer transition-colors hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
+      class="flex items-start gap-2 w-full px-2 py-1 rounded-lg text-lx-fs-lg leading-[18px] text-left bg-transparent border-0 outline-none cursor-pointer transition-colors hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
       :aria-checked="isSelected(mode)"
       role="menuitemradio"
       @click="emit('select', mode)"
@@ -70,14 +71,14 @@ const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, 
       <span class="flex-1 min-w-0">
         <span class="block truncate [color:var(--pb-ink)]">{{ modeLabel(mode) }}</span>
         <span
-          class="block text-xs leading-relaxed mt-0.5"
+          class="block text-lx-fs-xs leading-snug mt-0.5"
           :class="modeWarn(mode) ? 'text-amber-500' : MUTED"
         >{{ modeImpact(mode) }}</span>
       </span>
       <HugeiconsIcon
         v-if="isSelected(mode)"
         :icon="Tick02Icon as IconArray"
-        :size="14"
+        :size="13"
         :stroke-width="2.5"
         class="shrink-0 mt-0.5 [color:var(--pb-ink)]"
       />
@@ -86,10 +87,10 @@ const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, 
     <div class="mt-1 pt-1 border-t border-black/5 dark:border-white/5">
       <button
         type="button"
-        class="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg text-lx-fs-lg leading-[18px] text-left bg-transparent border-0 outline-none cursor-pointer transition-colors hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
+        class="flex items-center w-full px-2 py-1 rounded-lg text-lx-fs-md leading-[18px] text-left bg-transparent border-0 outline-none cursor-pointer transition-colors [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
         @click="emit('openSecurity')"
       >
-        <span class="truncate [color:var(--pb-ink)]">{{ t('chat.input.accessMenuSecurity') }}</span>
+        <span class="truncate">{{ t('chat.input.accessMenuSecurity') }}</span>
       </button>
     </div>
   </div>
