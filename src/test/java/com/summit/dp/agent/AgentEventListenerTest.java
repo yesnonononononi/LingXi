@@ -550,6 +550,36 @@ class AgentEventListenerTest {
         verifyNoInteractions(identity);
     }
 
+    /** 工具准备事件透传到根会话，并按工具请求序号补齐展示位置。 */
+    @Test
+    @DisplayName("工具准备事件：透传至根会话并写入 BlockOrder")
+    void toolCallPrepareRoutesToRootSessionWithBlockOrder() {
+        resolveSession();
+        ToolCallPrepareEvent event = ToolCallPrepareEvent.builder()
+                .executionId(EXECUTION_ID)
+                .responseId(RESPONSE_ID)
+                .agentId("agent")
+                .toolCallId("call-prepare-1")
+                .toolName("edit_file")
+                .index(2)
+                .partialArguments("{\"path\":")
+                .metaData(Map.of("turnId", Long.toString(TURN_ID)))
+                .build();
+
+        listener.onToolCallPrepare(event);
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("TOOL_CALL_PREPARE"), payload.capture());
+        ObjectNode body = payload.getValue();
+        assertEquals("TOOL_CALL_PREPARE", body.get("type").asText());
+        assertEquals(BlockOrder.tool(2), body.get("order").asInt());
+        assertEquals(RESPONSE_ID, body.get("responseId").asText());
+        assertEquals("call-prepare-1", body.get("toolCallId").asText());
+        assertEquals("edit_file", body.get("toolName").asText());
+        assertEquals(Long.toString(TURN_ID), body.path("metaData").path("turnId").asText());
+        verifySingleIdentityResolution();
+    }
+
     private void resolveSession() {
         when(identity.sessionId(EXECUTION_ID)).thenReturn(SESSION_ID);
         when(identity.resolveRootSessionId(SESSION_ID)).thenReturn(ROOT_SESSION_ID);

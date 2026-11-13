@@ -61,6 +61,11 @@ public class AgentEventListener implements RuntimeListener {
     }
 
     @Override
+    public void onToolCallPrepare(ToolCallPrepareEvent event) {
+        broadcastRenderEvent(event);
+    }
+
+    @Override
     public void onToolCall(ToolCallStartEvent event) {
         broadcastRenderEvent(event);
     }
@@ -202,6 +207,7 @@ public class AgentEventListener implements RuntimeListener {
             case AgentPartialThinkingEvent thought -> thought.responseId();
             case AgentCompleteTextEvent text -> text.responseId();
             case AgentMessageEvent message -> message.getResponseId();
+            case ToolCallPrepareEvent tool -> tool.getResponseId();
             case ToolCallStartEvent tool -> tool.getResponseId();
             case ToolCallEndEvent tool -> tool.getResponseId();
             default -> null;
@@ -225,6 +231,8 @@ public class AgentEventListener implements RuntimeListener {
                 payload.put("isBody", false);
                 payload.put("order", BlockOrder.text());
                 payload.put("thinkingOrder", BlockOrder.thinking());
+            } else if (event instanceof ToolCallPrepareEvent tool) {
+                payload.put("order", BlockOrder.tool(tool.getIndex()));
             } else if (event instanceof ToolCallStartEvent tool) {
                 payload.put("order", BlockOrder.tool(tool.getRequestIndex()));
             } else if (event instanceof ToolCallEndEvent tool) {
