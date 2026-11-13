@@ -11,8 +11,12 @@ import {TOOL_CATEGORY} from './toolMeta';
 export const TOOL_ROW_ICON = {
   /** 检索：检索文件内容 / 网页搜索 / 检索工具 / 检索记忆 */
   FILE_SEARCH: 'FILE_SEARCH',
-  /** 文档：读文件 / 读图 / 读技能 */
+  /** 文档：读文件 */
   FILE_DOC: 'FILE_DOC',
+  /** 画框：读取图片（与「生成图片」的星芒区分） */
+  IMAGE_READ: 'IMAGE_READ',
+  /** 拼图块：读取技能（技能是可插拔能力，不是普通文档） */
+  SKILL: 'SKILL',
   /** 文档 + 笔：编辑文件（按锚点局部改动） */
   FILE_EDIT: 'FILE_EDIT',
   /** 文档 + 铅笔：整文件写入 */
@@ -62,6 +66,10 @@ const TOOL_ICON_BY_NAME: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.WriteFile]: TOOL_ROW_ICON.FILE_WRITE,
   [AgentToolName.EditFile]: TOOL_ROW_ICON.FILE_EDIT,
   [AgentToolName.DeleteFile]: TOOL_ROW_ICON.FILE_DELETE,
+  // 读图不再共用文档图标：读文件与读图片在工具行上必须能分辨
+  [AgentToolName.ReadImage]: TOOL_ROW_ICON.IMAGE_READ,
+  // 读技能同样独立：拼图块表示可插拔能力
+  [AgentToolName.ReadSkill]: TOOL_ROW_ICON.SKILL,
   [AgentToolName.LoadMemory]: TOOL_ROW_ICON.MEMORY_READ,
   [AgentToolName.GenerateImage]: TOOL_ROW_ICON.IMAGE_GENERATE,
   [AgentToolName.ManageCommand]: TOOL_ROW_ICON.MANAGE_COMMAND,

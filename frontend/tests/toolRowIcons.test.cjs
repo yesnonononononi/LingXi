@@ -50,6 +50,8 @@ function signature(svg) {
 const SAMPLES = [
   ['search_files', ICON.FILE_SEARCH],
   ['read_file', ICON.FILE_DOC],
+  ['read_image', ICON.IMAGE_READ],
+  ['read_skill', ICON.SKILL],
   ['edit_file', ICON.FILE_EDIT],
   ['write_file', ICON.FILE_WRITE],
   ['delete_file', ICON.FILE_DELETE],
@@ -84,9 +86,9 @@ test('图标判别：记忆、图片、邮件各归各位', () => {
   assert.equal(expectIcon('load_memory'), ICON.MEMORY_READ, '读记忆不再复用文档图标');
   assert.equal(expectIcon('search_wiki'), ICON.FILE_SEARCH);
   assert.equal(expectIcon('generate_image'), ICON.IMAGE_GENERATE, '生图是写类动作，不能画成文档');
-  assert.equal(expectIcon('read_image'), ICON.FILE_DOC);
+  assert.equal(expectIcon('read_image'), ICON.IMAGE_READ, '读图不能与读文件同一个文档图标');
   assert.equal(expectIcon('send_mail_to_agent'), ICON.MAIL);
-  assert.equal(expectIcon('read_skill'), ICON.FILE_DOC);
+  assert.equal(expectIcon('read_skill'), ICON.SKILL, '读技能是可插拔能力，不用文档图标');
 });
 
 test('图标判别：清单六件套与 MCP 工具清单共用清单图标', () => {
