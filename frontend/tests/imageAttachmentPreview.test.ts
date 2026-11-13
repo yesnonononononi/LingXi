@@ -284,6 +284,20 @@ test('预览中删除该附件：先关预览再释放对象 URL，不残留裂�
   assert.equal(previewButtons(root).length, 1, '剩余附件仍保留自己的预览入口');
 });
 
+test('第三处消费方：用户历史消息图片也复用 ImageLightbox，禁止 window.open 开白窗', () => {
+  const itemSource = harness.readSource('../src/components/chat/ChatMessageItem.vue');
+  assert.match(itemSource, /import ImageLightbox from '\.\.\/common\/ImageLightbox\.vue';/,
+    '用户消息图片必须复用同一份预览组件，不要再写第二套');
+  assert.doesNotMatch(itemSource, /<dialog/, '用户消息不得自建 dialog 预览');
+  // 缺陷回归：`window.open` 把 data:/blob: 图片交给 Electron，主进程只放行 http(s) 外链，
+  // 其余落到 action:'allow'，开出一个没有 preload 的空白窗口。
+  assert.doesNotMatch(itemSource, /window\.open\(/,
+    '用户图片放大不得走 window.open：Electron 里只会得到一个白窗');
+  assert.match(itemSource, /@click="openImagePreview\(imageUrl, index\)"/,
+    '缩略图点击必须切到受控预览状态');
+  assert.match(itemSource, /test-id="user-image-lightbox"/, '预览 dialog 要有稳定选择器供真 DOM 用例锚定');
+});
+
 test('单一实现与顺序契约：两处消费方共用 ImageLightbox，删除路径先关预览再 revoke', () => {
   const inputSource = harness.readSource('../src/components/chat/ChatInputArea.vue');
   assert.match(inputSource, /import ImageLightbox from '\.\.\/common\/ImageLightbox\.vue';/,

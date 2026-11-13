@@ -29,7 +29,7 @@
               :alt="t('chat.message.userUploadIndex', { index: index + 1 })"
               :class="userImageUrls.length > 1 ? 'h-28 w-28' : 'max-h-64 w-auto'"
               class="object-contain rounded-xl border border-black/10 dark:border-white/10 cursor-pointer hover:opacity-95 transition"
-              @click="handleImageClick(imageUrl)"
+              @click="openImagePreview(imageUrl, index)"
             />
           </div>
           <div :class="userImageUrls.length ? 'px-2 pb-1' : ''" data-testid="user-message-text">
@@ -37,6 +37,16 @@
           </div>
         </div>
       </div>
+
+      <!-- 放大查看复用全站唯一的 ImageLightbox：绝不能再 window.open，Electron 主进程只放行
+           http(s) 外链，data:/blob: 图片会落到 action:'allow'，开出一个没有 preload 的白窗。 -->
+      <ImageLightbox
+        :open="previewImage !== null"
+        :src="previewImage?.url ?? ''"
+        :name="previewImage?.name ?? ''"
+        test-id="user-image-lightbox"
+        @close="closeImagePreview"
+      />
 
       <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
       <div class="flex items-center gap-2 mt-1.5 text-xs text-lx-faint pr-1 select-none">
@@ -212,6 +222,7 @@ import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import InteractionCards from './InteractionCards.vue';
 import type {PromptCardEntry} from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
+import ImageLightbox from '../common/ImageLightbox.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
 
 const props = defineProps<{
@@ -549,10 +560,20 @@ const actionsSlotProps = computed<ChatMessageActionsSlotProps>(() => ({
 }));
 
 
-const handleImageClick = (url?: string) => {
-  if (url) {
-    window.open(url, '_blank');
-  }
+/**
+ * 用户消息图片的放大预览状态：null = 未打开。
+ *
+ * <p>受控状态归本组件，{@code ImageLightbox} 只发 `close`。这里不用 `window.open`：
+ * Electron 里 data:/blob: 图片会新开一个没有 preload 的空白窗口。</p>
+ */
+const previewImage = ref<{url: string; name: string} | null>(null);
+
+const openImagePreview = (url: string, index: number): void => {
+  previewImage.value = {url, name: t('chat.message.userUploadIndex', {index: index + 1})};
+};
+
+const closeImagePreview = (): void => {
+  previewImage.value = null;
 };
 </script>
 
