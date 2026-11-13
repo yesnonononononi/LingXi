@@ -33,7 +33,7 @@ import {McpAPI} from '../../services/mcp';
 import {AgentAPI} from '../../services/agent';
 import {isOk} from '../../utils/api';
 import {useChatImageAttachments} from '../../composables/useChatImageAttachments';
-import {useSkillMenu} from '../../composables/useSkillMenu';
+import {useSkillList} from '../../composables/useSkillList';
 import {isPromptOptimizationCommand, usePromptOptimization} from '../../composables/usePromptOptimization';
 import {useConfirm} from '../../composables/useConfirm';
 import {isImageAvatar} from '../../utils/avatar';
@@ -453,7 +453,6 @@ const toggleEffort = () => {
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
-  skillMenu.close();
   effortOpen.value = !effortOpen.value;
 };
 
@@ -607,7 +606,6 @@ const openAgentMenu = () => {
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
   effortOpen.value = false;
-  skillMenu.close();
   agentSearchQuery.value = '';
   const currentIdx = filteredAgentList.value.findIndex(a => String(a.id) === String(selectedAgent.value));
   activeAgentIndex.value = currentIdx >= 0 ? currentIdx : 0;
@@ -643,27 +641,8 @@ const selectAgentItem = (agent: AgentItem) => {
   closeAgentMenu();
 };
 
-// ====== /skill 触发的本地 Skill 清单浮层（点击清单项把「使用{skill}完成工作」填进输入框） ======
-const skillMenu = useSkillMenu();
-const isSkillMenuOpen = skillMenu.isOpen;
-const skillSearchInputRef = ref<HTMLInputElement | null>(null);
-
-const openSkillMenu = () => {
-  isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
-  isAgentMenuOpen.value = false;
-  effortOpen.value = false;
-  skillMenu.open();
-  nextTick(() => {
-    skillSearchInputRef.value?.focus();
-  });
-};
-
-const closeSkillMenu = () => {
-  if (!isSkillMenuOpen.value) return;
-  skillMenu.close();
-  focusInput();
-};
+// ====== Skill 清单：`/skill` 与「+」菜单的技能分组共用这一份数据，只有一处渲染 ======
+const skillList = useSkillList();
 
 /**
  * 点击清单项：把「使用{skill}完成工作」填进输入框。
@@ -675,7 +654,6 @@ const selectSkill = (skill: { name: string }) => {
   const sentence = t('chat.input.skillFillTemplate', { name: skill.name });
   const existing = inputText.value.trim();
   writeInputText(existing ? `${existing} ${sentence}` : sentence);
-  skillMenu.close();
   focusInput();
 };
 
@@ -854,7 +832,7 @@ const allCommands = computed<CommandItem[]>(() => [
     name: 'skill',
     desc: t('chat.command.skill'),
     action: () => {
-      openSkillMenu();
+      openPlusMenu('skills');
     }
   },
   {
@@ -960,7 +938,6 @@ const openPlusMenu = (group?: string) => {
   isAgentMenuOpen.value = false;
   isAccessMenuOpen.value = false;
   effortOpen.value = false;
-  skillMenu.close();
   plusMenuInitialGroup.value = group ?? null;
   isPlusMenuOpen.value = true;
   if (group) void loadPlusGroup(group);
@@ -973,7 +950,7 @@ const openPlusMenu = (group?: string) => {
  * 里按参数猜 —— 用户从「+」进去再点分组，走的是这条同一个入口，否则 MCP 面板永远是空的。</p>
  */
 const loadPlusGroup = async (group: string) => {
-  if (group === 'skills') await skillMenu.open();
+  if (group === 'skills') await skillList.load();
   if (group === 'mcp' && !mcpLoading.value) await loadMcpServers();
   if (group === 'teams' && !plusMenuTeams.value.length) await fetchTeams();
 };
@@ -981,7 +958,6 @@ const loadPlusGroup = async (group: string) => {
 const handlePlusClick = () => {
   effortOpen.value = false;
   isAgentMenuOpen.value = false;
-  skillMenu.close();
   if (isPlusMenuOpen.value) {
     closePlusMenu();
     return;
@@ -1027,7 +1003,6 @@ const toggleAccessMenu = () => {
   isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
   effortOpen.value = false;
-  skillMenu.close();
   isAccessMenuOpen.value = willOpen;
 };
 
@@ -1069,8 +1044,7 @@ const handleClickOutside = (event: MouseEvent) => {
     isCommandMenuClickedOpen.value = false;
     isAgentMenuOpen.value = false;
     effortOpen.value = false;
-    skillMenu.close();
-    closePlusMenu();
+      closePlusMenu();
     isAccessMenuOpen.value = false;
   } else if (agentMenuRef.value && !agentMenuRef.value.contains(target) && inputContainerRef.value?.contains(target)) {
     isAgentMenuOpen.value = false;
@@ -1271,13 +1245,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') e.preventDefault();
     return;
   }
-  if (isSkillMenuOpen.value) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      closeSkillMenu();
-      return;
-    }
-  }
+
   if (isAgentMenuOpen.value) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -1489,7 +1457,6 @@ defineExpose({
     emit('updateAgent', id ?? null);
   },
   openAgentMenu,
-  openSkillMenu,
   addPastedDocument,
   clearPastedDocuments
 });
@@ -1546,29 +1513,6 @@ defineExpose({
         class="-z-10 absolute inset-0 rounded-[inherit]"
       />
 
-      <!-- 「+」分组菜单：添加文件 / 模式 / 协作 / 技能 / MCP；二级浮层由子组件贴合各自分组行 -->
-      <ChatInputPlusMenu
-        v-if="isPlusMenuOpen"
-        :is-dark="isDark"
-        :is-plan-mode="isPlanMode"
-        :teams="plusMenuTeams"
-        :selected-team-id="localSelectedTeamId"
-        :skills="skillMenu.skills.value"
-        :skills-loading="skillMenu.isLoading.value"
-        :skills-error="skillMenu.loadError.value"
-        :mcp-servers="mcpServers"
-        :mcp-states="mcpStates"
-        :mcp-loading="mcpLoading"
-        :mcp-error="mcpError"
-        :initial-group="plusMenuInitialGroup"
-        @upload-image="triggerUpload"
-        @update-plan-mode="handlePlusUpdatePlanMode"
-        @select-team="handlePlusSelectTeam"
-        @create-team="handlePlusCreateTeam"
-        @select-skill="handlePlusSelectSkill"
-        @open-mcp-settings="handleOpenMcpSettings"
-        @open-group="loadPlusGroup"
-      />
 
       <!-- 快捷指令菜单（只由输入框打 / 触发）：底边紧贴输入卡片上沿，去掉阴影 -->
       <div
@@ -1677,65 +1621,6 @@ defineExpose({
                 class="shrink-0 [color:var(--pb-ink)]"
               />
             </div>
-          </button>
-        </div>
-      </div>
-
-      <!-- Skill 清单菜单 (/skill 触发，点击清单项自动填充指令句) -->
-      <div
-        v-if="isSkillMenuOpen"
-        class="bottom-[calc(100%+8px)] z-50 absolute inset-x-0 shadow-[0_16px_40px_rgba(0,0,0,0.7)] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
-        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-zinc-800'"
-      >
-        <div class="px-2.5 pt-1.5 pb-1.5 shrink-0 border-b border-black/5 dark:border-white/5">
-          <input
-            ref="skillSearchInputRef"
-            v-model="skillMenu.searchQuery.value"
-            type="text"
-            :placeholder="t('chat.input.searchSkill')"
-            class="w-full px-1 py-0.5 text-xs bg-transparent border-none outline-none focus:outline-none focus:ring-0 select-text [color:var(--pb-ink)] placeholder:[color:color-mix(in_srgb,var(--pb-ink)_45%,transparent)]"
-            @keydown.esc.prevent="closeSkillMenu"
-          />
-        </div>
-
-        <div class="relative max-h-60 overflow-y-auto scrollbar-thin space-y-0.5 pt-1">
-          <div
-            v-if="skillMenu.isLoading.value"
-            class="px-3 py-3 text-xs text-center"
-            :class="MUTED"
-          >
-            {{ t('chat.input.skillLoading') }}
-          </div>
-          <div
-            v-else-if="skillMenu.loadError.value"
-            class="px-3 py-3 text-xs text-center"
-            :class="MUTED"
-          >
-            <span class="text-red-500">{{ t('chat.input.skillLoadFailed') }}</span>
-            <button type="button" class="ml-2 underline" @click="skillMenu.open()">{{ t('common.retry') }}</button>
-          </div>
-          <div
-            v-else-if="skillMenu.filteredSkills.value.length === 0"
-            class="px-3 py-3 text-xs text-center"
-            :class="MUTED"
-          >
-            {{ skillMenu.skills.value.length === 0 ? t('chat.input.skillEmpty') : t('chat.input.noMatchedSkill') }}
-          </div>
-
-          <button
-            v-for="skill in skillMenu.filteredSkills.value"
-            :key="skill.name"
-            type="button"
-            class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs select-none w-full text-left bg-transparent border-0 outline-none cursor-pointer transition-colors hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
-            :title="t('chat.input.skillFillTemplate', { name: skill.name })"
-            @click="selectSkill(skill)"
-          >
-            <span class="font-medium truncate shrink-0 max-w-[45%] [color:var(--pb-ink)]">
-              {{ skill.name }}
-            </span>
-            <span class="text-xs truncate text-right flex-1 min-w-0" :class="MUTED">
-              {{ skill.description }}
-            </span>
           </button>
         </div>
       </div>
@@ -1890,18 +1775,45 @@ defineExpose({
         <!-- 左侧工具组：+ 分组菜单（添加文件 / 模式 / 协作 / 技能 / MCP）、图片附件、Effort 强度 -->
         <div class="flex items-center gap-1 flex-nowrap shrink min-w-0">
           <!-- + 按钮 -->
-          <button
-            type="button"
-            :class="ICON_BTN"
-                        :aria-label="t('chat.input.quickCommandsTip')"
-            :aria-expanded="isPlusMenuOpen"
-            :data-on="isPlusMenuOpen ? '' : undefined"
-            :title="t('chat.input.quickCommandsTip')"
-            @mousedown.prevent
-            @click="handlePlusClick"
-          >
-            <HugeiconsIcon :icon="PlusSignIcon as IconArray" :size="16" :stroke-width="2" />
-          </button>
+          <!-- 菜单锚在这个容器上：底边与「+」按钮上沿齐平，而不是贴输入卡片的上沿 -->
+          <div class="relative inline-flex shrink-0">
+            <button
+              type="button"
+              :class="ICON_BTN"
+              :aria-label="t('chat.input.quickCommandsTip')"
+              :aria-expanded="isPlusMenuOpen"
+              :data-on="isPlusMenuOpen ? '' : undefined"
+              :title="t('chat.input.quickCommandsTip')"
+              @mousedown.prevent
+              @click="handlePlusClick"
+            >
+              <HugeiconsIcon :icon="PlusSignIcon as IconArray" :size="16" :stroke-width="2" />
+            </button>
+
+            <!-- 「+」分组菜单：添加文件 / 模式 / 协作 / 技能 / MCP；二级浮层由子组件贴合各自分组行 -->
+            <ChatInputPlusMenu
+              v-if="isPlusMenuOpen"
+              :is-dark="isDark"
+              :is-plan-mode="isPlanMode"
+              :teams="plusMenuTeams"
+              :selected-team-id="localSelectedTeamId"
+              :skills="skillList.skills.value"
+              :skills-loading="skillList.isLoading.value"
+              :skills-error="skillList.loadError.value"
+              :mcp-servers="mcpServers"
+              :mcp-states="mcpStates"
+              :mcp-loading="mcpLoading"
+              :mcp-error="mcpError"
+              :initial-group="plusMenuInitialGroup"
+              @upload-image="triggerUpload"
+              @update-plan-mode="handlePlusUpdatePlanMode"
+              @select-team="handlePlusSelectTeam"
+              @create-team="handlePlusCreateTeam"
+              @select-skill="handlePlusSelectSkill"
+              @open-mcp-settings="handleOpenMcpSettings"
+              @open-group="loadPlusGroup"
+            />
+          </div>
 
           <!-- 图片附件上传按钮与隐藏文件输入 -->
           <input

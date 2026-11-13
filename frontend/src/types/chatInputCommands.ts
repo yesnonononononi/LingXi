@@ -1,7 +1,7 @@
 /**
  * ChatInputArea 的**命令面契约**（B-5 阶段 1a）。
  *
- * <p><b>为什么需要这个文件：</b>`ChatInputArea` 通过 `defineExpose` 对外暴露 11 项命令，
+ * <p><b>为什么需要这个文件：</b>`ChatInputArea` 通过 `defineExpose` 对外暴露 10 项命令，
  * 但历史调用方（`ChatView` / `useChatView`）一直用 `InstanceType<typeof ChatInputArea>` 取类型。
  * 那是"结构上依赖组件内部形状"的写法：组件内任何一个非 expose 成员的增删、甚至 `defineExpose`
  * 里某个函数签名的收紧，都可能让调用方在别处莫名报错或（更糟）静默变宽 —— 命令面是**隐式约定**。</p>
@@ -39,8 +39,6 @@ export interface ChatInputCommands {
   selectAgent: (id: string | number | null) => void;
   /** 打开 Agent 选择菜单。 */
   openAgentMenu: () => void;
-  /** 打开技能选择菜单。 */
-  openSkillMenu: () => void;
 }
 
 /** 命令面的全部键名（运行时断言与类型契约共用一份来源，避免两边漂移）。 */
@@ -55,5 +53,4 @@ export const CHAT_INPUT_COMMAND_KEYS = [
   'fetchAgents',
   'selectAgent',
   'openAgentMenu',
-  'openSkillMenu',
 ] as const;

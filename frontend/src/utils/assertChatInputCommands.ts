@@ -18,7 +18,7 @@ import type ChatInputArea from '../components/chat/ChatInputArea.vue';
  * 两条同时成立 ⇒ 每一项签名与实现**互为赋值**，任何一侧改动都会在 `vue-tsc` 阶段报错。</p>
  */
 type ExposedInstance = InstanceType<typeof ChatInputArea>;
-/** 只取契约里出现的那 11 个键，避免把 `$props` / `$emit` 等内置成员卷进比较。 */
+/** 只取契约里出现的那些键，避免把 `$props` / `$emit` 等内置成员卷进比较。 */
 type ExposedCommands = Pick<ExposedInstance, keyof ChatInputCommands>;
 /** `true` 约束：条件不成立时 `Assert<false>` 会因不满足 `extends true` 而报错。 */
 type Assert<T extends true> = T;
@@ -29,7 +29,7 @@ export type _CommandsSatisfiedByComponent = Assert<ExposedCommands extends ChatI
 export type _CommandsNotWiderThanComponent = Assert<ChatInputCommands extends ExposedCommands ? true : false>;
 
 /**
- * 校验目标对象是否提供了命令面的全部 11 项，且每项都是函数。
+ * 校验目标对象是否提供了命令面的全部 10 项，且每项都是函数。
  *
  * @param target 待校验对象（通常是 `inputAreaRef.value`，未挂载时为 null/undefined）
  * @param where 调用点标识（写进日志，便于在多处调用时定位）
