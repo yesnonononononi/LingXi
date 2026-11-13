@@ -55,7 +55,7 @@ public class SessionAggregateService {
     /** 终结执行未采集用量时保留旧值，不能把缺失数据写成零。 */
     @Transactional
     public void saveContextUsage(Long sessionId, Long tokenCount, Integer maxTokens, Double ratio) {
-        Session session = sessionRepository.findById(sessionId).orElseThrow(ClientException::new);
+        Session session = sessionRepository.findById(sessionId).orElseThrow(SessionNoFoundException::new);
         session.changeContextUsage(tokenCount, maxTokens, ratio);
         sessionRepository.updateById(session);
     }
