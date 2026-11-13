@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import Moveable from 'moveable';
+import {t} from '../../i18n';
 
 const props = defineProps<{
   active?: boolean;
@@ -13,6 +14,9 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 
 let moveableInstance: Moveable | null = null;
 
+export type CanvasMode = 'design' | 'interactive';
+const canvasMode = ref<CanvasMode>('design');
+
 const selectedInfo = ref<string>('未选中元素（点击 iframe 内任意组件进行设计）');
 const isSelected = ref(false);
 const selectedElement = ref<HTMLElement | null>(null);
@@ -22,6 +26,87 @@ const loadedFileName = ref<string>('');
 const isFileLoaded = ref(false);
 const isDraggingOver = ref(false);
 const currentViewportWidth = ref<string>('100%');
+
+// 撤销 / 重做快照栈
+const undoStack = ref<string[]>([]);
+const redoStack = ref<string[]>([]);
+const MAX_HISTORY = 30;
+
+const recordSnapshot = (): void => {
+  const doc = iframeRef.value?.contentDocument;
+  if (!doc?.body) return;
+  const cloned = doc.body.cloneNode(true) as HTMLElement;
+  cloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
+  undoStack.value.push(cloned.innerHTML);
+  if (undoStack.value.length > MAX_HISTORY) {
+    undoStack.value.shift();
+  }
+  redoStack.value = [];
+};
+
+const undo = (): void => {
+  if (undoStack.value.length === 0) return;
+  const doc = iframeRef.value?.contentDocument;
+  if (!doc?.body) return;
+
+  const currentCloned = doc.body.cloneNode(true) as HTMLElement;
+  currentCloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
+  redoStack.value.push(currentCloned.innerHTML);
+
+  const previousHtml = undoStack.value.pop()!;
+  doc.body.innerHTML = previousHtml;
+
+  selectedElement.value = null;
+  isSelected.value = false;
+  selectedInfo.value = t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
+
+  if (moveableInstance) {
+    moveableInstance.target = [];
+    moveableInstance.updateRect();
+  }
+};
+
+const redo = (): void => {
+  if (redoStack.value.length === 0) return;
+  const doc = iframeRef.value?.contentDocument;
+  if (!doc?.body) return;
+
+  const currentCloned = doc.body.cloneNode(true) as HTMLElement;
+  currentCloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
+  undoStack.value.push(currentCloned.innerHTML);
+
+  const nextHtml = redoStack.value.pop()!;
+  doc.body.innerHTML = nextHtml;
+
+  selectedElement.value = null;
+  isSelected.value = false;
+  selectedInfo.value = t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
+
+  if (moveableInstance) {
+    moveableInstance.target = [];
+    moveableInstance.updateRect();
+  }
+};
+
+// 模式手动切换：设计模式 ⇄ 交互模式
+const setCanvasMode = (mode: CanvasMode): void => {
+  if (canvasMode.value === mode) return;
+  canvasMode.value = mode;
+
+  if (mode === 'interactive') {
+    if (moveableInstance) {
+      moveableInstance.target = [];
+      moveableInstance.updateRect();
+    }
+    selectedElement.value = null;
+    isSelected.value = false;
+    selectedInfo.value = t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互';
+  } else {
+    selectedInfo.value = isFileLoaded.value
+      ? (t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除')
+      : '请先选择 HTML 文件';
+  }
+};
 
 // 提取当前选中元素的实际计算样式
 const currentStyles = ref({
@@ -64,6 +149,7 @@ const syncElementStyles = (el: HTMLElement) => {
 const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSize' | 'fontWeight' | 'textAlign', val: string | number) => {
   if (!selectedElement.value) return;
   const el = selectedElement.value;
+  recordSnapshot();
 
   if (key === 'borderRadius') {
     el.style.setProperty('border-radius', `${val}px`, 'important');
@@ -93,6 +179,65 @@ const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSiz
   nextTick(() => {
     moveableInstance?.updateRect();
   });
+};
+
+/** 删除当前选中的元素（避开根节点，记录快照，并清理选中状态）。 */
+const deleteSelectedElement = (): void => {
+  if (canvasMode.value !== 'design') return;
+  const el = selectedElement.value;
+  if (!el) return;
+
+  const tag = el.tagName?.toUpperCase();
+  if (['HTML', 'BODY', 'HEAD', 'STYLE', 'SCRIPT', 'TITLE', 'META', 'LINK'].includes(tag)) {
+    return;
+  }
+  if (el.closest('.moveable-control-box') || moveableInstance?.isMoveableElement(el)) {
+    return;
+  }
+
+  recordSnapshot();
+  el.remove();
+
+  selectedElement.value = null;
+  isSelected.value = false;
+  selectedInfo.value = t('designPreview.deletedFeedback') || '已删除选中元素';
+
+  if (moveableInstance) {
+    moveableInstance.target = [];
+    moveableInstance.updateRect();
+  }
+};
+
+const handleCanvasKeyDown = (e: KeyboardEvent): void => {
+  if (isEditingText.value) return;
+
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) {
+      redo();
+    } else {
+      undo();
+    }
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redo();
+    return;
+  }
+
+  if (canvasMode.value === 'design' && selectedElement.value) {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      deleteSelectedElement();
+    }
+  }
 };
 
 const triggerFileInput = () => {
@@ -134,6 +279,10 @@ const setupIframeInteraction = (doc: Document) => {
     elementGuidelines: Array.from(doc.body.querySelectorAll('*')),
   });
 
+  moveableInstance.on('dragStart', () => recordSnapshot());
+  moveableInstance.on('resizeStart', () => recordSnapshot());
+  moveableInstance.on('rotateStart', () => recordSnapshot());
+
   moveableInstance.on('drag', ({ target, transform }) => {
     target.style.transform = transform;
     updateSelectionInfo(target);
@@ -151,8 +300,9 @@ const setupIframeInteraction = (doc: Document) => {
     updateSelectionInfo(target);
   });
 
-  // 2. 监听点击以选中任意目标元素
+  // 2. 监听点击以选中任意目标元素（交互模式下直接放行原生点击）
   doc.addEventListener('click', (e: MouseEvent) => {
+    if (canvasMode.value !== 'design') return;
     if (isEditingText.value) return;
     const target = e.target as HTMLElement;
     if (!target || target === doc.body || target === doc.documentElement) return;
@@ -165,14 +315,18 @@ const setupIframeInteraction = (doc: Document) => {
     selectElement(target);
   }, true);
 
-  // 3. 监听双击就地文字编辑
+  // 3. 监听双击就地文字编辑（交互模式下直接放行）
   doc.addEventListener('dblclick', (e: MouseEvent) => {
+    if (canvasMode.value !== 'design') return;
     const target = e.target as HTMLElement;
     if (!target || target === doc.body || target === doc.documentElement) return;
     e.preventDefault();
     e.stopPropagation();
     startInlineEdit(target);
   }, true);
+
+  // 4. 监听键盘快捷键（删除元素、撤销重做）
+  doc.addEventListener('keydown', handleCanvasKeyDown);
 };
 
 const selectElement = (target: HTMLElement) => {
@@ -184,6 +338,7 @@ const selectElement = (target: HTMLElement) => {
 
 const startInlineEdit = (target: HTMLElement) => {
   isEditingText.value = true;
+  recordSnapshot();
   target.contentEditable = 'true';
   target.focus();
 
@@ -238,7 +393,10 @@ const parseAndMountHtml = (content: string, name: string) => {
   isFileLoaded.value = true;
   selectedElement.value = null;
   isSelected.value = false;
-  selectedInfo.value = '已加载 HTML，点击任意组件进行设计';
+  undoStack.value = [];
+  redoStack.value = [];
+  canvasMode.value = 'design';
+  selectedInfo.value = t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
 
   nextTick(() => {
     const iframe = iframeRef.value;
@@ -296,6 +454,9 @@ const clearLoadedHtml = () => {
   loadedFileName.value = '';
   selectedElement.value = null;
   isSelected.value = false;
+  undoStack.value = [];
+  redoStack.value = [];
+  canvasMode.value = 'design';
   selectedInfo.value = '未加载 HTML 文件';
 
   if (moveableInstance) {
@@ -318,7 +479,13 @@ const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
   if (!target || !(target instanceof HTMLElement)) {
     isSelected.value = false;
     selectedElement.value = null;
-    selectedInfo.value = isFileLoaded.value ? '已加载 HTML，点击组件可拖拽、缩放、改样式' : '请先选择 HTML 文件';
+    if (canvasMode.value === 'interactive') {
+      selectedInfo.value = t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互';
+    } else {
+      selectedInfo.value = isFileLoaded.value
+        ? (t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除')
+        : '请先选择 HTML 文件';
+    }
     return;
   }
   isSelected.value = true;
@@ -350,6 +517,7 @@ const exportHtml = () => {
 };
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleCanvasKeyDown);
   await nextTick();
   if (props.initialContent) {
     parseAndMountHtml(props.initialContent, props.initialFileName || 'preview.html');
@@ -363,6 +531,7 @@ watch(() => props.initialContent, newContent => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleCanvasKeyDown);
   moveableInstance?.destroy();
   moveableInstance = null;
 });
@@ -387,6 +556,54 @@ onBeforeUnmount(() => {
         <span class="status-text">{{ selectedInfo }}</span>
       </div>
       <div class="design-actions">
+        <!-- 模式切换：设计模式 vs 交互模式 -->
+        <div v-if="isFileLoaded" class="mode-switch" role="group">
+          <button
+            type="button"
+            :class="{ 'is-selected': canvasMode === 'design' }"
+            @click="setCanvasMode('design')"
+            :title="t('designPreview.modeDesignHint') || '设计模式：可点击选中组件、调整尺寸样式与删除'"
+          >
+            <span class="mode-icon">🎨</span>
+            {{ t('designPreview.modeDesign') || '设计模式' }}
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-selected': canvasMode === 'interactive' }"
+            @click="setCanvasMode('interactive')"
+            :title="t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互'"
+          >
+            <span class="mode-icon">👆</span>
+            {{ t('designPreview.modeInteractive') || '交互模式' }}
+          </button>
+        </div>
+
+        <!-- 撤销 / 重做操作 -->
+        <div v-if="isFileLoaded && canvasMode === 'design'" class="undo-redo-group" role="group">
+          <button
+            type="button"
+            class="undo-redo-btn"
+            :disabled="undoStack.length === 0"
+            @click="undo"
+            :title="`${t('designPreview.undo') || '撤销'} (Ctrl+Z)`"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2m0 0l-4-4m4 4l4-4M3 10l4-4m-4 4l4 4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="undo-redo-btn"
+            :disabled="redoStack.length === 0"
+            @click="redo"
+            :title="`${t('designPreview.redo') || '重做'} (Ctrl+Shift+Z / Ctrl+Y)`"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m0 0l4-4m-4 4l-4-4m14-6l-4-4m4 4l-4 4" />
+            </svg>
+          </button>
+        </div>
+
         <!-- 视口尺寸切换器 -->
         <div v-if="isFileLoaded" class="device-switch" role="group">
           <button type="button" :class="{ 'is-selected': currentViewportWidth === '100%' }" @click="currentViewportWidth = '100%'" title="自适应 100% 宽度">桌面自适应</button>
@@ -430,7 +647,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 选中元素的实时样式属性面板（Style Inspector） -->
-    <div v-if="selectedElement" class="design-inspector-bar">
+    <div v-if="canvasMode === 'design' && selectedElement" class="design-inspector-bar">
       <!-- 背景色调节 -->
       <div class="inspector-group">
         <span class="inspector-label">背景</span>
@@ -511,6 +728,21 @@ onBeforeUnmount(() => {
           B
         </button>
       </div>
+
+      <div class="inspector-divider"></div>
+
+      <!-- 删除当前选中元素 -->
+      <button
+        type="button"
+        class="btn-delete-element"
+        @click="deleteSelectedElement"
+        :title="`${t('designPreview.deleteElement') || '删除元素'} (Del / Backspace)`"
+      >
+        <svg class="w-3.5 h-3.5 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+        {{ t('designPreview.deleteElement') || '删除元素' }}
+      </button>
     </div>
 
     <!-- 可视化设计画布主区域（带现代点阵背景） -->
@@ -699,6 +931,89 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.mode-switch {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--file-line, #e4e4e7);
+  border-radius: 6px;
+  padding: 1px;
+  background: var(--file-tab, #f4f4f5);
+  margin-right: 2px;
+}
+
+.mode-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  color: var(--file-muted, #71717a);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-switch button.is-selected {
+  background: var(--file-bg, #ffffff);
+  color: var(--file-ink, #18181b);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.undo-redo-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 2px;
+}
+
+.undo-redo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-bg, #ffffff);
+  color: var(--file-muted, #71717a);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.undo-redo-btn:hover:not(:disabled) {
+  color: var(--file-ink, #18181b);
+  border-color: var(--file-focus, #a1a1aa);
+}
+
+.undo-redo-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-delete-element {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+  margin-left: auto;
+}
+
+.btn-delete-element:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .device-switch {

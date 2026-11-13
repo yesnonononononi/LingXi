@@ -351,6 +351,15 @@ export const messages: MessageSchema = {
     },
     designPreview: {
       title: '设计原型预览',
+      modeDesign: '设计模式',
+      modeInteractive: '交互模式',
+      modeDesignHint: '点击组件可选中拖拽、调整尺寸、改样式与删除',
+      modeInteractiveHint: '交互模式：支持正常点击、输入与网页原生交互',
+      deleteElement: '删除元素',
+      deleteShortcut: 'Del',
+      deletedFeedback: '已删除选中元素',
+      undo: '撤销',
+      redo: '重做',
     },
     projectPagePreview: {
       title: '项目页面预览',
@@ -1788,6 +1797,15 @@ export const messages: MessageSchema = {
     },
     designPreview: {
       title: 'Design Prototype Preview',
+      modeDesign: 'Design',
+      modeInteractive: 'Interactive',
+      modeDesignHint: 'Click components to drag, resize, restyle and delete',
+      modeInteractiveHint: 'Interactive mode: click, input and interact normally',
+      deleteElement: 'Delete element',
+      deleteShortcut: 'Del',
+      deletedFeedback: 'Element deleted',
+      undo: 'Undo',
+      redo: 'Redo',
     },
     projectPagePreview: {
       title: 'Project page preview',
