@@ -153,3 +153,142 @@ test('宿主接线：ChatInputArea 绑 open-group 且三个分组各有加载落
     '旧的 /skill 浮层已删除：残留任何一处都会让两个技能框同时展开');
   assert.match(handler![1], /group === 'teams'[\s\S]*fetchTeams/, 'teams 分组必须触发 fetchTeams');
 });
+
+/**
+ * MCP 行内动作（启用 / 停用 / 重新连接）。
+ *
+ * <p>需求核心是「按状态给出唯一那个动作」：动作映射写反（CONNECTED 给「启用」）、
+ * 或动作按钮点下去不发对应事件，都必须让这里的用例变红。</p>
+ */
+interface McpRowFixture {
+  server: Record<string, unknown>;
+  state?: Record<string, unknown>;
+}
+
+function mountMcpMenu(t: unknown, rows: McpRowFixture[], overrides: Record<string, unknown> = {}) {
+  const toggled: Array<Record<string, unknown>> = [];
+  const reconnected: Array<Record<string, unknown>> = [];
+  const settingsOpened: number[] = [];
+  const {root} = mountMenu(t, {
+    mcpServers: rows.map(row => row.server),
+    mcpStates: rows.map(row => row.state).filter(state => state != null),
+    onToggleMcp: (server: Record<string, unknown>) => { toggled.push(server); },
+    onReconnectMcp: (server: Record<string, unknown>) => { reconnected.push(server); },
+    onOpenMcpSettings: () => { settingsOpened.push(1); },
+    ...overrides
+  });
+  (groupButton(root, 'MCP').props.onClick as () => void)();
+  return {root, toggled, reconnected, settingsOpened};
+}
+
+/** 动作按钮按「文本完全相等」定位：状态文案里有「已启用」，用 includes 会选中错误的节点。 */
+const actionButton = (root: MemoryNode, label: string): MemoryNode => {
+  const node = harness.find(root, item => item.tag === 'button' && text(item).trim() === label);
+  assert.ok(node, `找不到动作按钮「${label}」，面板文本=${JSON.stringify(text(root).trim())}`);
+  return node;
+};
+
+test('连接成功的服务行给「停用」，点击 emit toggleMcp 且不改动「打开设置」入口', async t => {
+  const server = {id: 11, name: 'github', status: 1};
+  const {root, toggled, reconnected, settingsOpened} = mountMcpMenu(t, [{
+    server,
+    state: {id: 11, state: 'CONNECTED', toolCount: 46, error: null}
+  }]);
+  await nextTick();
+
+  assert.ok(!harness.find(root, item => item.tag === 'button' && text(item).trim() === '启用'),
+    'CONNECTED 不得同时出现「启用」按钮：一行只有一个动作');
+  const button = actionButton(root, '停用');
+  assert.notEqual(button.props.disabled, true, '空闲状态下动作按钮必须可点');
+  (button.props.onClick as () => void)();
+  await nextTick();
+
+  assert.deepEqual(toggled.map(item => item.id), [11], `点击「停用」必须 emit toggleMcp，实际 ${JSON.stringify(toggled)}`);
+  assert.equal(reconnected.length, 0, '「停用」不得走 reconnectMcp');
+  assert.equal(settingsOpened.length, 0, '点动作按钮不得顺带打开 MCP 设置（那是左侧区域的动作）');
+});
+
+test('已停用的服务行给「启用」，status=0 与 DISABLED 两条判据都认', async t => {
+  const {root, toggled} = mountMcpMenu(t, [{
+    server: {id: 21, name: 'context7', status: 0},
+    state: {id: 21, state: 'DISABLED', toolCount: null, error: null}
+  }]);
+  await nextTick();
+
+  assert.ok(!harness.find(root, item => item.tag === 'button' && text(item).trim() === '停用'),
+    '停用的服务不得给出「停用」按钮');
+  const button = actionButton(root, '启用');
+  (button.props.onClick as () => void)();
+  await nextTick();
+  assert.deepEqual(toggled.map(item => item.id), [21], `已停用的行点击也必须 emit toggleMcp，实际 ${JSON.stringify(toggled)}`);
+});
+
+test('连接失败的服务行给「重新连接」，点击 emit reconnectMcp 而不是 toggleMcp', async t => {
+  const {root, toggled, reconnected} = mountMcpMenu(t, [{
+    server: {id: 31, name: 'playwright', status: 1},
+    state: {id: 31, state: 'FAILED', toolCount: null, error: '握手超时'}
+  }]);
+  await nextTick();
+
+  const button = actionButton(root, '重新连接');
+  (button.props.onClick as () => void)();
+  await nextTick();
+  assert.deepEqual(reconnected.map(item => item.id), [31], `点击「重新连接」必须 emit reconnectMcp，实际 ${JSON.stringify(reconnected)}`);
+  assert.equal(toggled.length, 0, '「重新连接」不得复用 toggleMcp');
+});
+
+test('状态缺失（未连接）与 DISCONNECTED 复用「重新连接」，不新增第四种按钮', async t => {
+  const {root, reconnected} = mountMcpMenu(t, [
+    {server: {id: 41, name: 'windows_mcp', status: 1}},
+    {server: {id: 42, name: 'filesystem', status: 1}, state: {id: 42, state: 'DISCONNECTED', toolCount: null, error: null}}
+  ]);
+  await nextTick();
+
+  const labels = harness.findAll(root, item => item.tag === 'button' && String(item.props['data-testid'] ?? '').startsWith('plus-mcp-action-'))
+    .map(item => text(item).trim());
+  assert.deepEqual(labels, ['重新连接', '重新连接'], `无连接的两行都应是「重新连接」，实际 ${JSON.stringify(labels)}`);
+  for (const button of harness.findAll(root, item => item.tag === 'button' && text(item).trim() === '重新连接')) {
+    (button.props.onClick as () => void)();
+  }
+  await nextTick();
+  assert.deepEqual(reconnected.map(item => item.id), [41, 42], `两行点击都应 emit reconnectMcp，实际 ${JSON.stringify(reconnected)}`);
+});
+
+test('mcpBusy 命中该 id 时动作按钮 disabled + aria-busy，点击不再发第二次请求', async t => {
+  const {root, toggled} = mountMcpMenu(t, [{
+    server: {id: 51, name: 'github', status: 1},
+    state: {id: 51, state: 'CONNECTED', toolCount: 3, error: null}
+  }], {mcpBusy: {'51': true}});
+  await nextTick();
+
+  const button = actionButton(root, '停用');
+  assert.equal(button.props.disabled, true, '进行中的行必须 disabled，否则连点会发两次请求');
+  assert.equal(button.props['aria-busy'], 'true', '进行中要给出 aria-busy');
+  (button.props.onClick as () => void)();
+  await nextTick();
+  assert.equal(toggled.length, 0, '进行中再点不得再次 emit');
+});
+
+test('MCP 服务行结构：行容器是 div + justify-between，左侧打开设置、右侧独立动作按钮', async t => {
+  const {root, settingsOpened} = mountMcpMenu(t, [{
+    server: {id: 61, name: 'github', status: 1},
+    state: {id: 61, state: 'CONNECTED', toolCount: 46, error: null}
+  }]);
+  await nextTick();
+
+  const row = harness.find(root, item => item.props['data-testid'] === 'plus-mcp-row-61');
+  assert.ok(row, '服务行必须带可定位的行容器');
+  assert.equal(row!.tag, 'div', 'button 不能嵌套 button，行容器必须是 div');
+  assert.match(String(row!.props.class), /justify-between/, `行容器必须 justify-between，实际 class=${String(row!.props.class)}`);
+  assert.equal(
+    harness.findAll(row!, item => item.tag === 'button').length,
+    2,
+    '行内应只有两个 button：左侧打开设置 + 右侧动作，嵌套结构会违反 HTML 约束'
+  );
+
+  const nameButton = harness.find(row!, item => item.tag === 'button' && text(item).includes('github'));
+  assert.ok(nameButton, '左侧服务名必须是可点按钮');
+  (nameButton!.props.onClick as () => void)();
+  await nextTick();
+  assert.equal(settingsOpened.length, 1, '点服务名仍要打开 MCP 设置');
+});

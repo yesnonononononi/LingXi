@@ -932,6 +932,12 @@ const mcpServers = ref<McpVO[]>([]);
 const mcpStates = ref<McpConnectionStateVO[]>([]);
 const mcpLoading = ref(false);
 const mcpError = ref('');
+/** 行内动作进行中标记（按 `String(server.id)`）：按钮置灰挡连点，面板本身不切回加载占位。 */
+const mcpBusy = ref<Record<string, boolean>>({});
+
+const markMcpBusy = (key: string, busy: boolean): void => {
+  mcpBusy.value = {...mcpBusy.value, [key]: busy};
+};
 
 /**
  * 按需拉取 MCP 服务与共享连接状态。
@@ -1030,6 +1036,81 @@ const handlePlusSelectSkill = (skill: { name: string; description: string }) => 
 const handleOpenMcpSettings = () => {
   closePlusMenu();
   emit('openSettingsTab', 'mcp');
+};
+
+/**
+ * 只刷新单个服务的共享连接状态。
+ *
+ * <p>行内动作后不能走 `loadMcpServers`：整块置 loading 会把面板切回「正在加载 MCP 服务…」，
+ * 用户眼前闪一下、服务行也消失片刻。</p>
+ */
+const applyMcpState = (key: string, state: McpConnectionStateVO): void => {
+  mcpStates.value = [...mcpStates.value.filter(item => String(item.id) !== key), state];
+};
+
+const refreshMcpState = async (server: McpVO): Promise<void> => {
+  const key = String(server.id);
+  try {
+    const res = await McpAPI.listStates([server.id]);
+    if (!isOk(res.code) || !res.data) return;
+    const latest = res.data.find(item => String(item.id) === key);
+    if (latest) applyMcpState(key, latest);
+  } catch {
+    // 状态刷新失败不动已有状态：动作本身已经成功，不能因为刷新把徽标清空。
+  }
+};
+
+/**
+ * 行内启用 / 停用。
+ *
+ * <p>只提交 `{id, status}`：后端按缺省字段保持原值，把 url / command 一起回传等于另一种
+ * 传输方式的连接参数被写空（与设置页 `handleToggleMcp` 同一语义）。</p>
+ */
+const handlePlusToggleMcp = async (server: McpVO) => {
+  const key = String(server.id);
+  if (mcpBusy.value[key]) return;
+  markMcpBusy(key, true);
+  mcpError.value = '';
+  const nextStatus = server.status === 0 ? 1 : 0;
+  try {
+    const res = await McpAPI.update({id: server.id, status: nextStatus});
+    if (!isOk(res.code)) {
+      mcpError.value = res.errMsg || t('chat.input.plusMcpActionFailed');
+      return;
+    }
+    mcpServers.value = mcpServers.value.map(item =>
+      String(item.id) === key ? {...item, status: nextStatus} : item);
+    // 启用后后端会立刻建连，状态表才有新值；不刷新会一直显示「未连接」。
+    await refreshMcpState(server);
+  } catch (err) {
+    mcpError.value = err instanceof Error ? err.message : t('chat.input.plusMcpActionFailed');
+  } finally {
+    markMcpBusy(key, false);
+  }
+};
+
+/** 行内重新连接：返回的 `McpConnectionStateVO` 就是最新状态，失败原因由后端记进状态表。 */
+const handlePlusReconnectMcp = async (server: McpVO) => {
+  const key = String(server.id);
+  if (mcpBusy.value[key]) return;
+  markMcpBusy(key, true);
+  mcpError.value = '';
+  let applied = false;
+  try {
+    const res = await McpAPI.reconnect(server);
+    if (isOk(res.code) && res.data) {
+      applyMcpState(key, res.data);
+      applied = true;
+    } else {
+      mcpError.value = res.errMsg || t('chat.input.plusMcpActionFailed');
+    }
+  } catch (err) {
+    mcpError.value = err instanceof Error ? err.message : t('chat.input.plusMcpActionFailed');
+  } finally {
+    // 失败时后端把原因写进了状态表，拉一次才看得见；成功时已有权威返回值，不必再问一次。
+    if (!applied) await refreshMcpState(server);
+    markMcpBusy(key, false);
+  }
 };
 
 // ====== 工作区权限上拉框（常驻触发器，菜单里切档） ======
@@ -1865,6 +1946,7 @@ defineExpose({
               :mcp-states="mcpStates"
               :mcp-loading="mcpLoading"
               :mcp-error="mcpError"
+              :mcp-busy="mcpBusy"
               :initial-group="plusMenuInitialGroup"
               @upload-image="triggerUpload"
               @update-plan-mode="handlePlusUpdatePlanMode"
@@ -1872,11 +1954,13 @@ defineExpose({
               @create-team="handlePlusCreateTeam"
               @select-skill="handlePlusSelectSkill"
               @open-mcp-settings="handleOpenMcpSettings"
+              @toggle-mcp="handlePlusToggleMcp"
+              @reconnect-mcp="handlePlusReconnectMcp"
               @open-group="loadPlusGroup"
             />
           </div>
 
-          <!-- 图片附件上传按钮与隐藏文件输入 -->
+          <!-- 隐藏的文件输入：入口只剩「+」菜单的「添加文件」，工具栏不再挂第二个上传按钮 -->
           <input
             ref="fileInputRef"
             type="file"

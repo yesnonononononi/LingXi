@@ -39,6 +39,8 @@ const props = defineProps<{
   mcpStates: McpConnectionStateVO[];
   mcpLoading: boolean;
   mcpError: string;
+  /** 按 `String(server.id)` 标记该行动作进行中；进行中禁用按钮，避免连点发出两次请求。 */
+  mcpBusy?: Record<string, boolean>;
   /** 打开时要直接展开的分组（`/team` 之类命令直达协作面板，不必再点一次）。 */
   initialGroup?: string | null;
 }>();
@@ -50,6 +52,9 @@ const emit = defineEmits<{
   (e: 'createTeam'): void;
   (e: 'selectSkill', skill: SkillVO): void;
   (e: 'openMcpSettings'): void;
+  /** 行内启停 / 重连同样只报告意图：请求与状态写入都在宿主，菜单不自己发请求。 */
+  (e: 'toggleMcp', server: McpVO): void;
+  (e: 'reconnectMcp', server: McpVO): void;
   /** 某个分组被展开：数据加载在宿主，菜单只报告意图（否则点开的永远是一张空面板）。 */
   (e: 'openGroup', group: PlusGroup): void;
 }>();
@@ -95,9 +100,15 @@ const filteredSkills = computed<SkillVO[]>(() => {
   );
 });
 
+/** 行内动作按钮：浮层只有 280px 宽，按钮固定不换行、不参与 flex 收缩，状态文案先让位。 */
+const MCP_ACTION_BTN = 'shrink-0 px-1.5 py-0.5 rounded-md border-0 outline-none cursor-pointer whitespace-nowrap text-lx-fs-xs leading-[16px] transition-colors [background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)] [color:var(--pb-ink)] hover:[background:color-mix(in_srgb,var(--pb-ink)_16%,transparent)] disabled:opacity-50 disabled:cursor-not-allowed';
+
 /** MCP 服务可能已配置但从未连过：状态缺失就只说「未连接」，不编造工具数。加载中整块只渲染占位，所以这里不必再判 loading。 */
+const findMcpState = (server: McpVO): McpConnectionStateVO | undefined =>
+  props.mcpStates.find(item => String(item.id) === String(server.id));
+
 const mcpStatusText = (server: McpVO): string => {
-  const state = props.mcpStates.find(item => String(item.id) === String(server.id));
+  const state = findMcpState(server);
   if (!state) return t('chat.input.plusMcpDisconnected');
   switch (state.state) {
     case 'CONNECTED':
@@ -114,7 +125,7 @@ const mcpStatusText = (server: McpVO): string => {
 };
 
 const mcpStatusDot = (server: McpVO): string => {
-  const state = props.mcpStates.find(item => String(item.id) === String(server.id));
+  const state = findMcpState(server);
   if (!state) return 'bg-zinc-400';
   switch (state.state) {
     case 'CONNECTED':
@@ -124,6 +135,43 @@ const mcpStatusDot = (server: McpVO): string => {
     default:
       return 'bg-zinc-400';
   }
+};
+
+type McpRowAction = 'ENABLE' | 'DISABLE' | 'RECONNECT';
+
+/**
+ * 一行只给一个动作，收敛成单一函数（模板里不写多重条件）。
+ *
+ * <p>配置态优先于运行态：`status === 0` 或状态表说 DISABLED 时，连接表里的残留值没有意义，
+ * 只能「启用」；其余没有连接（缺失 / DISCONNECTED）与连接失败一样靠重建连接恢复，不另设按钮。</p>
+ */
+const resolveMcpAction = (server: McpVO): McpRowAction => {
+  const state = findMcpState(server);
+  if (server.status === 0 || state?.state === 'DISABLED') return 'ENABLE';
+  if (state?.state === 'CONNECTED') return 'DISABLE';
+  return 'RECONNECT';
+};
+
+const mcpActionLabel = (server: McpVO): string => {
+  switch (resolveMcpAction(server)) {
+    case 'ENABLE':
+      return t('chat.input.plusMcpEnable');
+    case 'DISABLE':
+      return t('chat.input.plusMcpDisable');
+    default:
+      return t('chat.input.plusMcpReconnect');
+  }
+};
+
+const isMcpBusy = (server: McpVO): boolean => props.mcpBusy?.[String(server.id)] === true;
+
+const runMcpAction = (server: McpVO): void => {
+  if (isMcpBusy(server)) return;
+  if (resolveMcpAction(server) === 'RECONNECT') {
+    emit('reconnectMcp', server);
+    return;
+  }
+  emit('toggleMcp', server);
 };
 </script>
 
@@ -288,19 +336,36 @@ const mcpStatusDot = (server: McpVO): string => {
             <!-- 同上：加载中只有占位。每行右侧不再各自复读「正在加载」，那是同一件事说五遍 -->
             <p v-if="mcpLoading" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.plusMcpLoading') }}</p>
             <template v-else>
-              <p v-if="mcpError" class="px-2 py-2 text-xs text-center text-red-500">{{ t('chat.input.plusMcpFailed') }}</p>
+              <p v-if="mcpError" class="px-2 py-2 text-xs text-center text-red-500 break-all">{{ mcpError }}</p>
               <p v-else-if="!mcpServers.length" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.plusMcpEmpty') }}</p>
-              <button
+              <!-- 行容器必须是 div：HTML 不允许 button 嵌套 button，左侧「打开设置」与右侧动作各是一个 button -->
+              <div
                 v-for="server in mcpServers"
                 :key="server.id"
-                type="button"
-                :class="ROW"
-                @click="emit('openMcpSettings')"
+                class="flex items-center justify-between gap-2 w-full px-2 py-1.5 rounded-lg text-lx-fs-lg leading-[18px] transition-colors hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
+                :data-testid="`plus-mcp-row-${server.id}`"
               >
-                <span class="w-2 h-2 rounded-full shrink-0" :class="mcpStatusDot(server)" />
-                <span class="flex-1 min-w-0 truncate [color:var(--pb-ink)]">{{ server.name }}</span>
-                <span class="shrink-0 text-xs" :class="MUTED">{{ mcpStatusText(server) }}</span>
-              </button>
+                <button
+                  type="button"
+                  class="flex items-center gap-2 flex-1 min-w-0 px-0 py-0 text-left bg-transparent border-0 outline-none cursor-pointer"
+                  @click="emit('openMcpSettings')"
+                >
+                  <span class="w-2 h-2 rounded-full shrink-0" :class="mcpStatusDot(server)" />
+                  <span class="min-w-0 truncate [color:var(--pb-ink)]">{{ server.name }}</span>
+                </button>
+                <div class="flex items-center gap-1.5 min-w-0 justify-end">
+                  <span class="min-w-0 truncate text-xs" :class="MUTED">{{ mcpStatusText(server) }}</span>
+                  <button
+                    type="button"
+                    :class="MCP_ACTION_BTN"
+                    :disabled="isMcpBusy(server)"
+                    :aria-busy="isMcpBusy(server) ? 'true' : undefined"
+                    :aria-label="`${mcpActionLabel(server)} ${server.name}`"
+                    :data-testid="`plus-mcp-action-${server.id}`"
+                    @click="runMcpAction(server)"
+                  >{{ mcpActionLabel(server) }}</button>
+                </div>
+              </div>
             </template>
           </div>
           <div class="mt-1 pt-1 border-t border-black/5 dark:border-white/5">
