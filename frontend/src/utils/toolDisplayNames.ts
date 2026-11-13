@@ -21,14 +21,15 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
   // 检索文件内容的短名独立成「检索文件」，避免与记忆检索、工具检索、网页搜索在流式工具行上同文案
   [AgentToolName.SearchFiles, defineToolName('检索文件内容', 'Search file contents', 'tool.category.fileSearch')],
-  // 记忆读取的渲染名独立成「读取记忆条目」，避免与 read_file 的「读取」在流式工具行上同文案
+  // 记忆读取的渲染名独立成「读取记忆」，避免与 read_file 的「读取」在流式工具行上同文案
   [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.memoryRead')],
-  // 项目记忆检索的渲染名独立成「检索记忆条目」，避免与 search_tool（检索工具）在流式工具行上同文案
+  // 项目记忆检索的渲染名独立成「检索记忆」，避免与 search_tool（检索工具）在流式工具行上同文案
   [AgentToolName.SearchWiki, defineToolName('检索项目记忆', 'Search project memory', 'tool.category.memorySearch')],
   // 读图不再复用 READ 的「读取」（用户看不出是在读图片）
   [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.imageRead')],
   [AgentToolName.GenerateImage, defineToolName('生成图片', 'Generate image', 'tool.category.imageGenerate')],
-  [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
+  // edit_file 的短名借分类文案会读成「写入」，与整文件写入只差两个字；独立成「编辑」靠动词区分
+  [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.fileEdit')],
   // 整文件写入单独成行：与 edit_file 的局部改动在流式工具行上必须能分辨
   [AgentToolName.WriteFile, defineToolName('写入文件', 'Write file', 'tool.category.fileWrite')],
   // 删除是独立的破坏性动作，短名不复用「写入」

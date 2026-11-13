@@ -44,7 +44,7 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
     [AgentToolName.PeekTeammateState, '查看队员状态'],
     [AgentToolName.CompactContext, '压缩上下文'],
     [AgentToolName.SearchTool, '检索工具'],
-    [AgentToolName.ListMcpTools, '列举可用工具'],
+    [AgentToolName.ListMcpTools, '列举 MCP 工具'],
     [AgentToolName.ReadSkill, '读取技能'],
   ];
   for (const [tool, expectedLabel] of expected) {
@@ -167,7 +167,7 @@ test('分类常量为稳定机器码，展示名经 toolCategoryLabel 取用', (
   // 分类码不再等同于中文文案：展示一律走 toolCategoryLabel
   assert.equal(TOOL_CATEGORY.MCP_LIST, 'MCP_LIST');
   assert.equal(TOOL_CATEGORY.COMMAND, 'COMMAND');
-  // 锁住「列举可用工具」这条用户明确点名要的中文名
-  assert.equal(toolCategoryLabel(TOOL_CATEGORY.MCP_LIST), '列举可用工具');
+  // 锁住「列举 MCP 工具」这条用户明确点名要的中文名
+  assert.equal(toolCategoryLabel(TOOL_CATEGORY.MCP_LIST), '列举 MCP 工具');
   assert.equal(toolCategoryLabel(TOOL_CATEGORY.COMMAND), '执行命令');
 });

@@ -63,7 +63,7 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.SendMailToAgent]: TOOL_CATEGORY.MAIL,
   // 上下文压缩
   [AgentToolName.CompactContext]: TOOL_CATEGORY.COMPACT,
-  // 渐进披露：检索工具 / 列举可用工具
+  // 渐进披露：检索工具 / 列举 MCP 工具
   [AgentToolName.SearchTool]: TOOL_CATEGORY.TOOL_SEARCH,
   [AgentToolName.ListMcpTools]: TOOL_CATEGORY.MCP_LIST,
   // Skill 正文读取

@@ -20,18 +20,18 @@ test('每个固定工具都有完整名与渲染名', async () => {
     assert.notEqual(entry.fullName, name);
   }
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadFile) }, { fullName: '读取文件', renderName: '读取' });
-  // load_memory 短名独立成「读取记忆条目」，不再复用 read_file 的「读取」
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.LoadMemory) }, { fullName: '读取项目记忆', renderName: '读取记忆条目' });
+  // load_memory 短名独立成「读取记忆」，不再复用 read_file 的「读取」
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.LoadMemory) }, { fullName: '读取项目记忆', renderName: '读取记忆' });
   assert.equal(resolveToolCategory(AgentToolName.LoadMemory), TOOL_CATEGORY.READ);
-  // search_wiki 的短渲染名独立成「检索记忆条目」，不再复用 search_tool 的「检索工具」
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.SearchWiki) }, { fullName: '检索项目记忆', renderName: '检索记忆条目' });
+  // search_wiki 的短渲染名独立成「检索记忆」，不再复用 search_tool 的「检索工具」
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.SearchWiki) }, { fullName: '检索项目记忆', renderName: '检索记忆' });
   assert.equal(resolveToolCategory(AgentToolName.SearchWiki), TOOL_CATEGORY.READ);
   // 两者必须真实可区分：搜记忆 ≠ 搜工具
-  assert.equal(resolveToolRenderName(AgentToolName.SearchWiki), '检索记忆条目');
+  assert.equal(resolveToolRenderName(AgentToolName.SearchWiki), '检索记忆');
   assert.equal(resolveToolRenderName(AgentToolName.SearchTool), '检索工具');
   assert.notEqual(resolveToolRenderName(AgentToolName.SearchWiki), resolveToolRenderName(AgentToolName.SearchTool));
   // 记忆读与记忆搜也互不相同，且都不等于 read_file / search_tool 的短名
-  assert.equal(resolveToolRenderName(AgentToolName.LoadMemory), '读取记忆条目');
+  assert.equal(resolveToolRenderName(AgentToolName.LoadMemory), '读取记忆');
   assert.notEqual(resolveToolRenderName(AgentToolName.LoadMemory), resolveToolRenderName(AgentToolName.SearchWiki));
   assert.notEqual(resolveToolRenderName(AgentToolName.LoadMemory), resolveToolRenderName(AgentToolName.ReadFile));
   assert.notEqual(resolveToolRenderName(AgentToolName.SearchWiki), resolveToolRenderName(AgentToolName.SearchTool));
@@ -41,15 +41,15 @@ test('每个固定工具都有完整名与渲染名', async () => {
   // 执行清单六个动作各自独立短名（分类码仍统一为 CHECKLIST，本次只改展示文案）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.CreateChecklist) }, { fullName: '创建执行清单', renderName: '创建清单' });
   assert.equal(resolveToolCategory(AgentToolName.CreateChecklist), TOOL_CATEGORY.CHECKLIST);
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.GetCurrentChecklist) }, { fullName: '查看当前执行清单', renderName: '查看当前清单' });
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.GetChecklist) }, { fullName: '按标识查看执行清单', renderName: '按标识查看清单' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.GetCurrentChecklist) }, { fullName: '查看当前执行清单', renderName: '当前清单' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.GetChecklist) }, { fullName: '按标识查看执行清单', renderName: '历史清单' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.UpdateChecklistStep) }, { fullName: '更新清单步骤', renderName: '更新清单步骤' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ModifyChecklist) }, { fullName: '修改执行清单', renderName: '修改清单' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeleteChecklist) }, { fullName: '删除执行清单', renderName: '删除清单' });
   // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '写入' });
-  // 文件检索 / 删除各自独立短名，不与「读取」「写入」「检索记忆条目」「检索工具」撞车
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '编辑' });
+  // 文件检索 / 删除各自独立短名，不与「读取」「写入」「检索记忆」「检索工具」撞车
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.SearchFiles) },
       { fullName: '检索文件内容', renderName: '检索文件' });
   assert.equal(resolveToolCategory(AgentToolName.SearchFiles), TOOL_CATEGORY.READ);
@@ -90,13 +90,19 @@ test('同一映射实体跟随语言变化，未知与空标识不裸显机器�
   setPreference('en-US'); await nextTick();
   assert.equal(entry.fullName, 'Read file'); assert.equal(entry.renderName, 'Read');
   // 英文块也要有独立的记忆读取 / 记忆检索 / 读图文案，且与文件读取、工具检索不同
-  assert.equal(resolveToolRenderName(AgentToolName.LoadMemory), 'Read memory entries');
-  assert.equal(resolveToolRenderName(AgentToolName.SearchWiki), 'Search memory entries');
+  assert.equal(resolveToolRenderName(AgentToolName.LoadMemory), 'Read memory');
+  assert.equal(resolveToolRenderName(AgentToolName.SearchWiki), 'Search memory');
   assert.equal(resolveToolRenderName(AgentToolName.ReadImage), 'View image');
   assert.equal(resolveToolRenderName(AgentToolName.SearchTool), 'Search tools');
   // 英文侧新增的两个短名同样独立
   assert.equal(resolveToolRenderName(AgentToolName.SearchFiles), 'Search files');
   assert.equal(resolveToolRenderName(AgentToolName.DeleteFile), 'Delete file');
+  // 用户拍板的口径：编辑/写入靠动词区分，清单两个查看接口用作用域词区分，MCP 清单点名带 MCP
+  assert.equal(resolveToolRenderName(AgentToolName.EditFile), 'Edit');
+  assert.equal(resolveToolRenderName(AgentToolName.WriteFile), 'Write');
+  assert.equal(resolveToolRenderName(AgentToolName.GetCurrentChecklist), 'Current checklist');
+  assert.equal(resolveToolRenderName(AgentToolName.GetChecklist), 'Checklist history');
+  assert.equal(resolveToolRenderName(AgentToolName.ListMcpTools), 'List MCP tools');
   setPreference('zh-CN'); await nextTick();
   assert.equal(entry.fullName, '读取文件'); assert.equal(entry.renderName, '读取');
   assert.equal(resolveToolFullName(null), ''); assert.equal(resolveToolRenderName(undefined), '');

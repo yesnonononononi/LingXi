@@ -9,7 +9,7 @@ import {TOOL_CATEGORY} from './toolMeta';
 
 /** 图标种类（稳定判别码，不是展示文案）。 */
 export const TOOL_ROW_ICON = {
-  /** 检索：检索文件内容 / 网页搜索 / 检索工具 / 检索记忆条目 */
+  /** 检索：检索文件内容 / 网页搜索 / 检索工具 / 检索记忆 */
   FILE_SEARCH: 'FILE_SEARCH',
   /** 文档：读文件 / 读图 / 读技能 */
   FILE_DOC: 'FILE_DOC',

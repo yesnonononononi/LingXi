@@ -162,6 +162,8 @@ export const messages: MessageSchema = {
         backgroundCommand: '确认后台任务状态',
         read: '读取',
         write: '写入',
+        // edit_file 的短名独立成「编辑」：write 是分类标签，工具行不能借它，否则与 write_file 的「写入」只差两个字
+        fileEdit: '编辑',
         webSearch: '检索网络资源',
         choice: '选择',
         subAgent: '子代理',
@@ -171,8 +173,9 @@ export const messages: MessageSchema = {
         checklist: '执行清单',
         // 执行清单六个动作各自独立文案：流式工具行短名不得两两重名
         checklistCreate: '创建清单',
-        checklistCurrent: '查看当前清单',
-        checklistById: '按标识查看清单',
+        // 「当前清单」与「历史清单」按作用域区分：两者都要带宾语就又会撞成「查看…清单」
+        checklistCurrent: '当前清单',
+        checklistById: '历史清单',
         checklistStep: '更新清单步骤',
         checklistModify: '修改清单',
         checklistDelete: '删除清单',
@@ -180,19 +183,19 @@ export const messages: MessageSchema = {
         compact: '压缩上下文',
         toolSearch: '检索工具',
         // 项目记忆检索独立文案：与「检索工具」（MCP 工具检索）区分，避免流式工具行同文案
-        memorySearch: '检索记忆条目',
+        memorySearch: '检索记忆',
         // 项目记忆读取独立文案：与 read_file 的「读取」区分
-        memoryRead: '读取记忆条目',
+        memoryRead: '读取记忆',
         // 读图独立文案：与 read_file 的「读取」区分
         imageRead: '查看图片',
         imageGenerate: '生成图片',
         // 文件检索独立文案：与记忆检索、工具检索、网页搜索都不重名
         fileSearch: '检索文件',
-        // 整文件写入独立文案：与 edit_file 的「编辑文件」区分
-        fileWrite: '写入文件',
+        // 整文件写入的短名是「写入」，与 edit_file 的「编辑」靠动词区分（两个都短，不会占满工具行）
+        fileWrite: '写入',
         // 删除是破坏性动作，短名不复用「写入」
         fileDelete: '删除文件',
-        mcpList: '列举可用工具',
+        mcpList: '列举 MCP 工具',
         skill: '读取技能',
         default: '工具',
       },
@@ -1689,28 +1692,31 @@ export const messages: MessageSchema = {
         checklist: 'Execution checklist',
         // One label per checklist action so no two streaming tool rows read alike.
         checklistCreate: 'Create checklist',
-        checklistCurrent: 'View current checklist',
-        checklistById: 'View checklist by ID',
+        // Scope words instead of "View ... checklist": both verbs would collide again.
+        checklistCurrent: 'Current checklist',
+        checklistById: 'Checklist history',
         checklistStep: 'Update checklist step',
         checklistModify: 'Modify checklist',
         checklistDelete: 'Delete checklist',
         mail: 'Send mail',
+        // edit_file gets its own label: "write" is the category label and would collide with write_file's "Write"
+        fileEdit: 'Edit',
         compact: 'Compact context',
         toolSearch: 'Search tools',
         // Project-memory search gets its own label so it never reads the same as tool search.
-        memorySearch: 'Search memory entries',
+        memorySearch: 'Search memory',
         // Project-memory read gets its own label so it never reads the same as "Read file".
-        memoryRead: 'Read memory entries',
+        memoryRead: 'Read memory',
         // Image reading gets its own label so it never reads the same as "Read file".
         imageRead: 'View image',
         imageGenerate: 'Generate image',
         // File search gets its own label so it never reads the same as memory or tool search.
         fileSearch: 'Search files',
-        // Whole-file writing gets its own label so it never reads the same as "Edit file".
-        fileWrite: 'Write file',
+        // Whole-file write reads as "Write"; edit_file reads as "Edit", so the verb alone tells them apart.
+        fileWrite: 'Write',
         // Deletion is destructive, so it never reuses the "Write" label.
         fileDelete: 'Delete file',
-        mcpList: 'List available tools',
+        mcpList: 'List MCP tools',
         skill: 'Read skill',
         default: 'Tool',
       },
