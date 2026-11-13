@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import {nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import Moveable from 'moveable';
 import {t} from '../../i18n';
+import {
+  buildDesignAiPrompt,
+  DESIGN_AI_SUGGESTIONS,
+  DESIGN_QUICK_BLOCKS,
+  DESIGN_STARTER_TEMPLATES,
+  type DesignBreadcrumbNode,
+  type DesignQuickBlock,
+  type DesignStarterTemplate,
+  resolveElementBreadcrumb,
+  resolveElementLabel,
+  resolveElementSelector,
+} from '../../utils/designCanvasHelpers';
 
 const props = defineProps<{
   active?: boolean;
@@ -9,34 +21,63 @@ const props = defineProps<{
   initialFileName?: string;
 }>();
 
+const emit = defineEmits<{
+  (e: 'sendToChat', payload: { prompt: string }): void;
+}>();
+
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 let moveableInstance: Moveable | null = null;
+let hoverBoxEl: HTMLElement | null = null;
+let breadcrumbNodes: HTMLElement[] = [];
 
 export type CanvasMode = 'design' | 'interactive';
 const canvasMode = ref<CanvasMode>('design');
+const isCodeView = ref(false);
+const codeDraft = ref('');
 
 const selectedInfo = ref<string>('未选中元素（点击 iframe 内任意组件进行设计）');
 const isSelected = ref(false);
 const selectedElement = ref<HTMLElement | null>(null);
 const isEditingText = ref(false);
+const breadcrumb = ref<DesignBreadcrumbNode[]>([]);
 
 const loadedFileName = ref<string>('');
 const isFileLoaded = ref(false);
 const isDraggingOver = ref(false);
 const currentViewportWidth = ref<string>('100%');
+const canvasZoom = ref<number>(1);
+
+const showPasteModal = ref(false);
+const pasteHtmlDraft = ref('');
+const showInsertMenu = ref(false);
+const aiInstruction = ref('');
+const copyFeedback = ref(false);
 
 // 撤销 / 重做快照栈
 const undoStack = ref<string[]>([]);
 const redoStack = ref<string[]>([]);
 const MAX_HISTORY = 30;
 
+const cleanCloneBody = (doc: Document): HTMLElement => {
+  const cloned = doc.body.cloneNode(true) as HTMLElement;
+  cloned.querySelectorAll('.moveable-control-box, [data-lx-hover-box]').forEach(el => el.remove());
+  return cloned;
+};
+
+const serializeDocumentHtml = (): string => {
+  const doc = iframeRef.value?.contentDocument;
+  if (!doc) return '';
+  const cloned = doc.documentElement.cloneNode(true) as HTMLElement;
+  cloned.querySelectorAll('.moveable-control-box, [data-lx-hover-box]').forEach(el => el.remove());
+  return `<!DOCTYPE html>\n${cloned.outerHTML}`;
+};
+
 const recordSnapshot = (): void => {
   const doc = iframeRef.value?.contentDocument;
   if (!doc?.body) return;
-  const cloned = doc.body.cloneNode(true) as HTMLElement;
-  cloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
+  const cloned = cleanCloneBody(doc);
   undoStack.value.push(cloned.innerHTML);
   if (undoStack.value.length > MAX_HISTORY) {
     undoStack.value.shift();
@@ -44,26 +85,30 @@ const recordSnapshot = (): void => {
   redoStack.value = [];
 };
 
+const clearSelectionState = (hint?: string): void => {
+  selectedElement.value = null;
+  isSelected.value = false;
+  breadcrumb.value = [];
+  breadcrumbNodes = [];
+  selectedInfo.value = hint || t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
+  if (moveableInstance) {
+    moveableInstance.target = [];
+    moveableInstance.updateRect();
+  }
+};
+
 const undo = (): void => {
   if (undoStack.value.length === 0) return;
   const doc = iframeRef.value?.contentDocument;
   if (!doc?.body) return;
 
-  const currentCloned = doc.body.cloneNode(true) as HTMLElement;
-  currentCloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
+  const currentCloned = cleanCloneBody(doc);
   redoStack.value.push(currentCloned.innerHTML);
 
   const previousHtml = undoStack.value.pop()!;
   doc.body.innerHTML = previousHtml;
-
-  selectedElement.value = null;
-  isSelected.value = false;
-  selectedInfo.value = t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
-
-  if (moveableInstance) {
-    moveableInstance.target = [];
-    moveableInstance.updateRect();
-  }
+  clearSelectionState();
+  syncMoveableGuidelines(doc);
 };
 
 const redo = (): void => {
@@ -71,41 +116,45 @@ const redo = (): void => {
   const doc = iframeRef.value?.contentDocument;
   if (!doc?.body) return;
 
-  const currentCloned = doc.body.cloneNode(true) as HTMLElement;
-  currentCloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
+  const currentCloned = cleanCloneBody(doc);
   undoStack.value.push(currentCloned.innerHTML);
 
   const nextHtml = redoStack.value.pop()!;
   doc.body.innerHTML = nextHtml;
-
-  selectedElement.value = null;
-  isSelected.value = false;
-  selectedInfo.value = t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
-
-  if (moveableInstance) {
-    moveableInstance.target = [];
-    moveableInstance.updateRect();
-  }
+  clearSelectionState();
+  syncMoveableGuidelines(doc);
 };
 
 // 模式手动切换：设计模式 ⇄ 交互模式
 const setCanvasMode = (mode: CanvasMode): void => {
+  isCodeView.value = false;
   if (canvasMode.value === mode) return;
   canvasMode.value = mode;
 
   if (mode === 'interactive') {
-    if (moveableInstance) {
-      moveableInstance.target = [];
-      moveableInstance.updateRect();
-    }
-    selectedElement.value = null;
-    isSelected.value = false;
-    selectedInfo.value = t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互';
+    hideHoverBox();
+    clearSelectionState(t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互');
   } else {
     selectedInfo.value = isFileLoaded.value
       ? (t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除')
       : '请先选择 HTML 文件';
   }
+};
+
+const toggleCodeView = (): void => {
+  if (!isFileLoaded.value) return;
+  if (!isCodeView.value) {
+    codeDraft.value = serializeDocumentHtml();
+    isCodeView.value = true;
+  } else {
+    isCodeView.value = false;
+  }
+};
+
+const applyCodeDraft = (): void => {
+  if (!codeDraft.value.trim()) return;
+  parseAndMountHtml(codeDraft.value, loadedFileName.value || 'design-prototype.html');
+  isCodeView.value = false;
 };
 
 // 提取当前选中元素的实际计算样式
@@ -116,6 +165,9 @@ const currentStyles = ref({
   fontSize: 14,
   fontWeight: '400',
   textAlign: 'left',
+  padding: 0,
+  opacity: 1,
+  boxShadow: 'none',
 });
 
 // rgb/rgba 转 hex 辅助函数
@@ -143,10 +195,24 @@ const syncElementStyles = (el: HTMLElement) => {
     fontSize: parseInt(computed.fontSize, 10) || 14,
     fontWeight: computed.fontWeight || '400',
     textAlign: computed.textAlign || 'left',
+    padding: parseInt(computed.paddingTop, 10) || 0,
+    opacity: Number(parseFloat(computed.opacity || '1').toFixed(2)),
+    boxShadow: computed.boxShadow && computed.boxShadow !== 'none' ? computed.boxShadow : 'none',
   };
 };
 
-const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSize' | 'fontWeight' | 'textAlign', val: string | number) => {
+type StyleKey =
+  | 'color'
+  | 'backgroundColor'
+  | 'borderRadius'
+  | 'fontSize'
+  | 'fontWeight'
+  | 'textAlign'
+  | 'padding'
+  | 'opacity'
+  | 'boxShadow';
+
+const applyStyle = (key: StyleKey, val: string | number) => {
   if (!selectedElement.value) return;
   const el = selectedElement.value;
   recordSnapshot();
@@ -156,7 +222,6 @@ const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSiz
     currentStyles.value.borderRadius = Number(val);
   } else if (key === 'fontSize') {
     el.style.setProperty('font-size', `${val}px`, 'important');
-    // 如果选中的是包含多层子文本的容器，同步下发到所有文本子级
     el.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6,p,span,a,button,label,li').forEach(child => {
       child.style.setProperty('font-size', `${val}px`, 'important');
     });
@@ -164,6 +229,18 @@ const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSiz
   } else if (key === 'fontWeight') {
     el.style.setProperty('font-weight', String(val), 'important');
     currentStyles.value.fontWeight = String(val);
+  } else if (key === 'textAlign') {
+    el.style.setProperty('text-align', String(val), 'important');
+    currentStyles.value.textAlign = String(val);
+  } else if (key === 'padding') {
+    el.style.setProperty('padding', `${val}px`, 'important');
+    currentStyles.value.padding = Number(val);
+  } else if (key === 'opacity') {
+    el.style.setProperty('opacity', String(val), 'important');
+    currentStyles.value.opacity = Number(val);
+  } else if (key === 'boxShadow') {
+    el.style.setProperty('box-shadow', String(val), 'important');
+    currentStyles.value.boxShadow = String(val);
   } else if (key === 'backgroundColor') {
     el.style.setProperty('background-color', String(val), 'important');
     currentStyles.value.backgroundColor = String(val);
@@ -175,10 +252,21 @@ const applyStyle = (key: 'color' | 'backgroundColor' | 'borderRadius' | 'fontSiz
     currentStyles.value.color = String(val);
   }
 
-  // 变更后立即更新 Moveable 边界框
   nextTick(() => {
     moveableInstance?.updateRect();
   });
+};
+
+const isProtectedNode = (el: HTMLElement): boolean => {
+  const tag = el.tagName?.toUpperCase();
+  if (['HTML', 'BODY', 'HEAD', 'STYLE', 'SCRIPT', 'TITLE', 'META', 'LINK'].includes(tag)) {
+    return true;
+  }
+  return Boolean(
+    el.hasAttribute('data-lx-hover-box') ||
+    el.closest('.moveable-control-box') ||
+    moveableInstance?.isMoveableElement(el)
+  );
 };
 
 /** 删除当前选中的元素（避开根节点，记录快照，并清理选中状态）。 */
@@ -186,30 +274,72 @@ const deleteSelectedElement = (): void => {
   if (canvasMode.value !== 'design') return;
   const el = selectedElement.value;
   if (!el) return;
-
-  const tag = el.tagName?.toUpperCase();
-  if (['HTML', 'BODY', 'HEAD', 'STYLE', 'SCRIPT', 'TITLE', 'META', 'LINK'].includes(tag)) {
-    return;
-  }
-  if (el.closest('.moveable-control-box') || moveableInstance?.isMoveableElement(el)) {
-    return;
-  }
+  if (isProtectedNode(el)) return;
 
   recordSnapshot();
   el.remove();
+  clearSelectionState(t('designPreview.deletedFeedback') || '已删除选中元素');
+  const doc = iframeRef.value?.contentDocument;
+  if (doc) syncMoveableGuidelines(doc);
+};
 
-  selectedElement.value = null;
-  isSelected.value = false;
-  selectedInfo.value = t('designPreview.deletedFeedback') || '已删除选中元素';
+const duplicateSelectedElement = (): void => {
+  if (canvasMode.value !== 'design') return;
+  const el = selectedElement.value;
+  if (!el || isProtectedNode(el) || !el.parentElement) return;
 
-  if (moveableInstance) {
-    moveableInstance.target = [];
-    moveableInstance.updateRect();
+  recordSnapshot();
+  const clone = el.cloneNode(true) as HTMLElement;
+  el.parentElement.insertBefore(clone, el.nextSibling);
+  const doc = iframeRef.value?.contentDocument;
+  if (doc) syncMoveableGuidelines(doc);
+  selectElement(clone);
+  selectedInfo.value = t('designPreview.duplicatedFeedback') || '已复制选中组件';
+};
+
+const moveSelectedLayer = (direction: 'up' | 'down'): void => {
+  if (canvasMode.value !== 'design') return;
+  const el = selectedElement.value;
+  if (!el || isProtectedNode(el) || !el.parentElement) return;
+
+  const parent = el.parentElement;
+  const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
+  if (!sibling || (sibling instanceof HTMLElement && isProtectedNode(sibling))) return;
+
+  recordSnapshot();
+  if (direction === 'up') {
+    parent.insertBefore(el, sibling);
+  } else {
+    parent.insertBefore(sibling, el);
   }
+  nextTick(() => moveableInstance?.updateRect());
+};
+
+const insertQuickBlock = (block: DesignQuickBlock): void => {
+  const doc = iframeRef.value?.contentDocument;
+  if (!doc?.body) return;
+  if (canvasMode.value !== 'design') {
+    setCanvasMode('design');
+  }
+  recordSnapshot();
+
+  const temp = doc.createElement('div');
+  temp.innerHTML = block.html.trim();
+  const inserted = temp.firstElementChild as HTMLElement | null;
+  if (!inserted) return;
+
+  const targetContainer =
+    selectedElement.value && !['IMG', 'INPUT', 'HR', 'BR', 'BUTTON'].includes(selectedElement.value.tagName)
+      ? selectedElement.value
+      : doc.body;
+  targetContainer.appendChild(inserted);
+  showInsertMenu.value = false;
+  syncMoveableGuidelines(doc);
+  selectElement(inserted);
 };
 
 const handleCanvasKeyDown = (e: KeyboardEvent): void => {
-  if (isEditingText.value) return;
+  if (isEditingText.value || isCodeView.value) return;
 
   const target = e.target as HTMLElement | null;
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -232,6 +362,14 @@ const handleCanvasKeyDown = (e: KeyboardEvent): void => {
     return;
   }
 
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    if (canvasMode.value === 'design' && selectedElement.value) {
+      e.preventDefault();
+      duplicateSelectedElement();
+    }
+    return;
+  }
+
   if (canvasMode.value === 'design' && selectedElement.value) {
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
@@ -244,14 +382,45 @@ const triggerFileInput = () => {
   fileInputRef.value?.click();
 };
 
+const syncMoveableGuidelines = (doc: Document) => {
+  if (!moveableInstance || !doc.body) return;
+  moveableInstance.elementGuidelines = Array.from(doc.body.querySelectorAll('*')).filter(
+    node => !(node instanceof HTMLElement && node.hasAttribute('data-lx-hover-box'))
+  );
+};
+
+const ensureHoverBox = (doc: Document): HTMLElement => {
+  if (hoverBoxEl && doc.body.contains(hoverBoxEl)) {
+    return hoverBoxEl;
+  }
+  const box = doc.createElement('div');
+  box.setAttribute('data-lx-hover-box', 'true');
+  box.style.position = 'fixed';
+  box.style.pointerEvents = 'none';
+  box.style.zIndex = '2147483640';
+  box.style.border = '1.5px dashed #71717a';
+  box.style.background = 'rgba(24, 24, 27, 0.03)';
+  box.style.borderRadius = '3px';
+  box.style.display = 'none';
+  doc.body.appendChild(box);
+  hoverBoxEl = box;
+  return box;
+};
+
+const hideHoverBox = () => {
+  if (hoverBoxEl) {
+    hoverBoxEl.style.display = 'none';
+  }
+};
+
 const setupIframeInteraction = (doc: Document) => {
   if (!doc.body) return;
 
-  // 1. 初始化或更新 Moveable 引擎（直接挂载到 iframe 内部以获得 100% 精确坐标）
   if (moveableInstance) {
     moveableInstance.destroy();
     moveableInstance = null;
   }
+  hoverBoxEl = null;
 
   moveableInstance = new Moveable(doc.body, {
     target: [],
@@ -268,7 +437,6 @@ const setupIframeInteraction = (doc: Document) => {
     throttleDrag: 0,
     throttleResize: 0,
     throttleRotate: 0,
-    // 智能吸附与对齐参考线配置
     snappable: true,
     snapThreshold: 5,
     isDisplaySnapDigit: true,
@@ -300,6 +468,37 @@ const setupIframeInteraction = (doc: Document) => {
     updateSelectionInfo(target);
   });
 
+  doc.addEventListener('mousemove', (e: MouseEvent) => {
+    if (canvasMode.value !== 'design' || isEditingText.value) {
+      hideHoverBox();
+      return;
+    }
+    const target = e.target as HTMLElement | null;
+    if (
+      !target ||
+      target === doc.body ||
+      target === doc.documentElement ||
+      target === selectedElement.value ||
+      isProtectedNode(target)
+    ) {
+      hideHoverBox();
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      hideHoverBox();
+      return;
+    }
+    const box = ensureHoverBox(doc);
+    box.style.display = 'block';
+    box.style.left = `${rect.left}px`;
+    box.style.top = `${rect.top}px`;
+    box.style.width = `${rect.width}px`;
+    box.style.height = `${rect.height}px`;
+  });
+
+  doc.addEventListener('mouseleave', hideHoverBox);
+
   // 2. 监听点击以选中任意目标元素（交互模式下直接放行原生点击）
   doc.addEventListener('click', (e: MouseEvent) => {
     if (canvasMode.value !== 'design') return;
@@ -308,10 +507,10 @@ const setupIframeInteraction = (doc: Document) => {
     if (!target || target === doc.body || target === doc.documentElement) return;
     if (target.closest('.moveable-control-box') || moveableInstance?.isMoveableElement(target)) return;
 
-    // 阻止原生链接跳转或表单提交
     e.preventDefault();
     e.stopPropagation();
 
+    hideHoverBox();
     selectElement(target);
   }, true);
 
@@ -322,11 +521,38 @@ const setupIframeInteraction = (doc: Document) => {
     if (!target || target === doc.body || target === doc.documentElement) return;
     e.preventDefault();
     e.stopPropagation();
+    hideHoverBox();
     startInlineEdit(target);
   }, true);
 
-  // 4. 监听键盘快捷键（删除元素、撤销重做）
+  // 4. 监听键盘快捷键（删除元素、撤销重做、复制组件）
   doc.addEventListener('keydown', handleCanvasKeyDown);
+};
+
+const rebuildBreadcrumbChain = (target: HTMLElement) => {
+  const nodes: HTMLElement[] = [];
+  let cursor: HTMLElement | null = target;
+  let guard = 0;
+  while (cursor && guard < 16) {
+    guard += 1;
+    const tag = cursor.tagName.toLowerCase();
+    if (tag === 'html') break;
+    nodes.unshift(cursor);
+    if (tag === 'body') break;
+    cursor = cursor.parentElement;
+  }
+  breadcrumbNodes = nodes;
+  breadcrumb.value = resolveElementBreadcrumb(target);
+};
+
+const selectBreadcrumbAt = (index: number): void => {
+  const node = breadcrumbNodes[index];
+  if (!node) return;
+  if (node.tagName.toLowerCase() === 'body') {
+    clearSelectionState();
+    return;
+  }
+  selectElement(node);
 };
 
 const selectElement = (target: HTMLElement) => {
@@ -334,6 +560,7 @@ const selectElement = (target: HTMLElement) => {
   moveableInstance.target = [target];
   moveableInstance.updateRect();
   updateSelectionInfo(target);
+  rebuildBreadcrumbChain(target);
 };
 
 const startInlineEdit = (target: HTMLElement) => {
@@ -349,7 +576,6 @@ const startInlineEdit = (target: HTMLElement) => {
   sel?.removeAllRanges();
   if (range) sel?.addRange(range);
 
-  // 编辑期间暂时收回 Moveable 控制盒，防止遮挡光标
   if (moveableInstance) {
     moveableInstance.target = [];
   }
@@ -391,8 +617,11 @@ const docRange = (doc: Document, el: HTMLElement) => {
 const parseAndMountHtml = (content: string, name: string) => {
   loadedFileName.value = name;
   isFileLoaded.value = true;
+  isCodeView.value = false;
   selectedElement.value = null;
   isSelected.value = false;
+  breadcrumb.value = [];
+  breadcrumbNodes = [];
   undoStack.value = [];
   redoStack.value = [];
   canvasMode.value = 'design';
@@ -402,7 +631,6 @@ const parseAndMountHtml = (content: string, name: string) => {
     const iframe = iframeRef.value;
     if (!iframe) return;
 
-    // 清理旧 moveable
     if (moveableInstance) {
       moveableInstance.target = [];
     }
@@ -414,11 +642,25 @@ const parseAndMountHtml = (content: string, name: string) => {
     doc.write(content);
     doc.close();
 
-    // 等待 iframe 渲染完成后绑定交互
     setTimeout(() => {
       setupIframeInteraction(doc);
     }, 150);
   });
+};
+
+const loadTemplate = (tpl: DesignStarterTemplate) => {
+  parseAndMountHtml(tpl.html, tpl.fileName);
+};
+
+const confirmPasteHtml = () => {
+  const raw = pasteHtmlDraft.value.trim();
+  if (!raw) return;
+  const normalized = /<html[\s>]/i.test(raw)
+    ? raw
+    : `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:24px;}</style></head><body>${raw}</body></html>`;
+  parseAndMountHtml(normalized, 'pasted-prototype.html');
+  pasteHtmlDraft.value = '';
+  showPasteModal.value = false;
 };
 
 const handleFileChange = (e: Event) => {
@@ -451,18 +693,18 @@ const handleDrop = (e: DragEvent) => {
 
 const clearLoadedHtml = () => {
   isFileLoaded.value = false;
+  isCodeView.value = false;
   loadedFileName.value = '';
-  selectedElement.value = null;
-  isSelected.value = false;
+  clearSelectionState('未加载 HTML 文件');
   undoStack.value = [];
   redoStack.value = [];
   canvasMode.value = 'design';
-  selectedInfo.value = '未加载 HTML 文件';
 
   if (moveableInstance) {
     moveableInstance.destroy();
     moveableInstance = null;
   }
+  hoverBoxEl = null;
 
   const iframe = iframeRef.value;
   if (iframe) {
@@ -479,6 +721,8 @@ const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
   if (!target || !(target instanceof HTMLElement)) {
     isSelected.value = false;
     selectedElement.value = null;
+    breadcrumb.value = [];
+    breadcrumbNodes = [];
     if (canvasMode.value === 'interactive') {
       selectedInfo.value = t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互';
     } else {
@@ -490,23 +734,29 @@ const updateSelectionInfo = (target: HTMLElement | SVGElement | undefined) => {
   }
   isSelected.value = true;
   syncElementStyles(target);
-  const tag = target.tagName.toLowerCase();
-  const label = target.getAttribute('data-label') || target.className?.toString().split(' ')[0] || tag;
+  const label = resolveElementLabel(target);
   const rect = target.getBoundingClientRect();
-  selectedInfo.value = `选中: <${label}> · 宽 ${Math.round(rect.width)}px · 高 ${Math.round(rect.height)}px`;
+  selectedInfo.value = `<${label}> · ${Math.round(rect.width)} × ${Math.round(rect.height)}`;
+};
+
+const copyFullHtml = async () => {
+  const fullHtml = isCodeView.value ? codeDraft.value : serializeDocumentHtml();
+  if (!fullHtml) return;
+  try {
+    await navigator.clipboard.writeText(fullHtml);
+    copyFeedback.value = true;
+    setTimeout(() => {
+      copyFeedback.value = false;
+    }, 1600);
+  } catch {
+    // 忽略无剪贴板权限时的错误
+  }
 };
 
 // 导出调整后的完整 HTML
 const exportHtml = () => {
-  const iframe = iframeRef.value;
-  const doc = iframe?.contentDocument;
-  if (!doc) return;
-
-  // 临时克隆并清理内部 moveable 控制盒残留
-  const cloned = doc.documentElement.cloneNode(true) as HTMLElement;
-  cloned.querySelectorAll('.moveable-control-box').forEach(el => el.remove());
-
-  const fullHtml = `<!DOCTYPE html>\n${cloned.outerHTML}`;
+  const fullHtml = isCodeView.value ? codeDraft.value : serializeDocumentHtml();
+  if (!fullHtml) return;
   const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -514,6 +764,32 @@ const exportHtml = () => {
   a.download = loadedFileName.value ? `modified-${loadedFileName.value}` : 'modified-page.html';
   a.click();
   URL.revokeObjectURL(url);
+};
+
+const aiTargetLabel = computed(() => {
+  if (selectedElement.value) {
+    return `<${resolveElementLabel(selectedElement.value)}>`;
+  }
+  return loadedFileName.value || '当前画布';
+});
+
+const sendDesignPrompt = (presetText?: string) => {
+  const text = (presetText ?? aiInstruction.value).trim();
+  if (!text) return;
+
+  const selected = selectedElement.value;
+  const prompt = buildDesignAiPrompt({
+    instruction: text,
+    fileName: loadedFileName.value,
+    selector: selected ? resolveElementSelector(selected) : undefined,
+    elementHtml: selected ? selected.outerHTML : undefined,
+    fullHtml: selected ? undefined : serializeDocumentHtml(),
+  });
+
+  emit('sendToChat', { prompt });
+  if (!presetText) {
+    aiInstruction.value = '';
+  }
 };
 
 onMounted(async () => {
@@ -524,9 +800,9 @@ onMounted(async () => {
   }
 });
 
-watch(() => props.initialContent, newContent => {
-  if (newContent && !isFileLoaded.value) {
-    parseAndMountHtml(newContent, props.initialFileName || 'preview.html');
+watch(() => [props.initialContent, props.initialFileName] as const, ([newContent, newName]) => {
+  if (newContent && (!isFileLoaded.value || newName !== loadedFileName.value)) {
+    parseAndMountHtml(newContent, newName || 'preview.html');
   }
 });
 
@@ -534,12 +810,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleCanvasKeyDown);
   moveableInstance?.destroy();
   moveableInstance = null;
+  hoverBoxEl = null;
 });
 </script>
 
 <template>
   <div class="design-canvas-container">
-    <!-- 隐藏的原生文件输入框 -->
     <input
       ref="fileInputRef"
       type="file"
@@ -549,37 +825,44 @@ onBeforeUnmount(() => {
       @change="handleFileChange"
     />
 
-    <!-- 顶部状态栏与文件操作 -->
+    <!-- 顶部主控制栏 -->
     <div class="design-top-bar">
       <div class="selection-status" :class="{ 'is-active': isSelected }">
         <span class="status-dot"></span>
-        <span class="status-text">{{ selectedInfo }}</span>
+        <span class="status-text" :title="selectedInfo">{{ selectedInfo }}</span>
       </div>
+
       <div class="design-actions">
-        <!-- 模式切换：设计模式 vs 交互模式 -->
+        <!-- 模式切换：设计模式 vs 交互模式 vs 源码 -->
         <div v-if="isFileLoaded" class="mode-switch" role="group">
           <button
             type="button"
-            :class="{ 'is-selected': canvasMode === 'design' }"
+            :class="{ 'is-selected': !isCodeView && canvasMode === 'design' }"
             @click="setCanvasMode('design')"
             :title="t('designPreview.modeDesignHint') || '设计模式：可点击选中组件、调整尺寸样式与删除'"
           >
-            <span class="mode-icon">🎨</span>
             {{ t('designPreview.modeDesign') || '设计模式' }}
           </button>
           <button
             type="button"
-            :class="{ 'is-selected': canvasMode === 'interactive' }"
+            :class="{ 'is-selected': !isCodeView && canvasMode === 'interactive' }"
             @click="setCanvasMode('interactive')"
             :title="t('designPreview.modeInteractiveHint') || '交互模式：支持正常点击、输入与网页原生交互'"
           >
-            <span class="mode-icon">👆</span>
             {{ t('designPreview.modeInteractive') || '交互模式' }}
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-selected': isCodeView }"
+            @click="toggleCodeView"
+            :title="t('designPreview.modeCodeHint') || '查看并编辑当前画布 HTML 源码'"
+          >
+            {{ t('designPreview.modeCode') || '源码' }}
           </button>
         </div>
 
         <!-- 撤销 / 重做操作 -->
-        <div v-if="isFileLoaded && canvasMode === 'design'" class="undo-redo-group" role="group">
+        <div v-if="isFileLoaded && !isCodeView && canvasMode === 'design'" class="undo-redo-group" role="group">
           <button
             type="button"
             class="undo-redo-btn"
@@ -604,24 +887,58 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <!-- 快速插入组件 -->
+        <div v-if="isFileLoaded && !isCodeView && canvasMode === 'design'" class="insert-dropdown">
+          <button
+            type="button"
+            class="btn-secondary-action"
+            @click="showInsertMenu = !showInsertMenu"
+          >
+            + {{ t('designPreview.insertBlock') || '插入组件' }}
+          </button>
+          <div v-if="showInsertMenu" class="insert-menu">
+            <button
+              v-for="block in DESIGN_QUICK_BLOCKS"
+              :key="block.id"
+              type="button"
+              class="insert-menu-item"
+              @click="insertQuickBlock(block)"
+            >
+              {{ t(block.labelKey) || block.id }}
+            </button>
+          </div>
+        </div>
+
         <!-- 视口尺寸切换器 -->
-        <div v-if="isFileLoaded" class="device-switch" role="group">
-          <button type="button" :class="{ 'is-selected': currentViewportWidth === '100%' }" @click="currentViewportWidth = '100%'" title="自适应 100% 宽度">桌面自适应</button>
+        <div v-if="isFileLoaded && !isCodeView" class="device-switch" role="group">
+          <button type="button" :class="{ 'is-selected': currentViewportWidth === '100%' }" @click="currentViewportWidth = '100%'" title="桌面自适应">桌面</button>
           <button type="button" :class="{ 'is-selected': currentViewportWidth === '768px' }" @click="currentViewportWidth = '768px'" title="平板 768px">平板</button>
           <button type="button" :class="{ 'is-selected': currentViewportWidth === '390px' }" @click="currentViewportWidth = '390px'" title="手机 390px">手机</button>
         </div>
 
-        <!-- 文件操作 -->
+        <!-- 缩放倍率 -->
+        <div v-if="isFileLoaded && !isCodeView" class="device-switch" role="group" :title="t('designPreview.zoomLabel') || '缩放'">
+          <button type="button" :class="{ 'is-selected': canvasZoom === 0.75 }" @click="canvasZoom = 0.75">75%</button>
+          <button type="button" :class="{ 'is-selected': canvasZoom === 1 }" @click="canvasZoom = 1">100%</button>
+          <button type="button" :class="{ 'is-selected': canvasZoom === 1.25 }" @click="canvasZoom = 1.25">125%</button>
+        </div>
+
         <button
           type="button"
           class="btn-primary-action"
           @click="triggerFileInput"
           title="选择本地 HTML 文件并渲染到画布"
         >
-          <svg class="w-3.5 h-3.5 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-          {{ isFileLoaded ? '更换文件' : '选择 HTML 文件' }}
+          {{ isFileLoaded ? (t('designPreview.replaceFile') || '更换文件') : (t('designPreview.openFile') || '选择 HTML 文件') }}
+        </button>
+
+        <button
+          v-if="isFileLoaded"
+          type="button"
+          class="btn-secondary-action"
+          @click="copyFullHtml"
+        >
+          {{ copyFeedback ? (t('designPreview.copiedHtml') || '已复制 HTML') : (t('designPreview.copyHtml') || '复制 HTML') }}
         </button>
 
         <button
@@ -629,25 +946,23 @@ onBeforeUnmount(() => {
           type="button"
           class="btn-secondary-action"
           @click="exportHtml"
-          title="导出调整后的 HTML 代码文件"
         >
-          导出 HTML
+          {{ t('designPreview.exportHtml') || '导出 HTML' }}
         </button>
 
         <button
           v-if="isFileLoaded"
           type="button"
           class="btn-reset"
-          title="清除当前画布"
           @click="clearLoadedHtml"
         >
-          清空
+          {{ t('designPreview.clearCanvas') || '清空' }}
         </button>
       </div>
     </div>
 
     <!-- 选中元素的实时样式属性面板（Style Inspector） -->
-    <div v-if="canvasMode === 'design' && selectedElement" class="design-inspector-bar">
+    <div v-if="!isCodeView && canvasMode === 'design' && selectedElement" class="design-inspector-bar">
       <!-- 背景色调节 -->
       <div class="inspector-group">
         <span class="inspector-label">背景</span>
@@ -698,24 +1013,35 @@ onBeforeUnmount(() => {
         <span class="inspector-label">圆角</span>
         <div class="flex items-center gap-1">
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 0 }" @click="applyStyle('borderRadius', 0)">0</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 8 }" @click="applyStyle('borderRadius', 8)">8px</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 16 }" @click="applyStyle('borderRadius', 16)">16px</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 8 }" @click="applyStyle('borderRadius', 8)">8</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius === 16 }" @click="applyStyle('borderRadius', 16)">16</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.borderRadius >= 999 }" @click="applyStyle('borderRadius', 9999)">全圆</button>
         </div>
       </div>
 
       <div class="inspector-divider"></div>
 
-      <!-- 字体与大小调节（强制覆盖 + A-/A+ 步进） -->
+      <!-- 内边距调节 -->
+      <div class="inspector-group">
+        <span class="inspector-label">边距</span>
+        <div class="flex items-center gap-1">
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.padding === 0 }" @click="applyStyle('padding', 0)">0</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.padding === 8 }" @click="applyStyle('padding', 8)">8</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.padding === 16 }" @click="applyStyle('padding', 16)">16</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.padding === 24 }" @click="applyStyle('padding', 24)">24</button>
+        </div>
+      </div>
+
+      <div class="inspector-divider"></div>
+
+      <!-- 字号与对齐 -->
       <div class="inspector-group">
         <span class="inspector-label">字号</span>
         <div class="flex items-center gap-1">
           <button type="button" class="option-pill" title="减小字号 2px" @click="applyStyle('fontSize', Math.max(10, currentStyles.fontSize - 2))">A-</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize <= 12 }" @click="applyStyle('fontSize', 12)">12</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 14 }" @click="applyStyle('fontSize', 14)">14</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 18 }" @click="applyStyle('fontSize', 18)">18</button>
           <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize === 24 }" @click="applyStyle('fontSize', 24)">24</button>
-          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.fontSize >= 32 }" @click="applyStyle('fontSize', 32)">32</button>
           <button type="button" class="option-pill" title="增大字号 2px" @click="applyStyle('fontSize', currentStyles.fontSize + 2)">A+</button>
         </div>
         <button
@@ -727,54 +1053,117 @@ onBeforeUnmount(() => {
         >
           B
         </button>
+        <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.textAlign === 'left' }" @click="applyStyle('textAlign', 'left')" :title="t('designPreview.alignLeft') || '左对齐'">左</button>
+        <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.textAlign === 'center' }" @click="applyStyle('textAlign', 'center')" :title="t('designPreview.alignCenter') || '居中对齐'">中</button>
+        <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.textAlign === 'right' }" @click="applyStyle('textAlign', 'right')" :title="t('designPreview.alignRight') || '右对齐'">右</button>
       </div>
 
       <div class="inspector-divider"></div>
 
-      <!-- 删除当前选中元素 -->
-      <button
-        type="button"
-        class="btn-delete-element"
-        @click="deleteSelectedElement"
-        :title="`${t('designPreview.deleteElement') || '删除元素'} (Del / Backspace)`"
-      >
-        <svg class="w-3.5 h-3.5 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
-        {{ t('designPreview.deleteElement') || '删除元素' }}
-      </button>
+      <!-- 阴影与透明度 -->
+      <div class="inspector-group">
+        <span class="inspector-label">阴影</span>
+        <div class="flex items-center gap-1">
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.boxShadow === 'none' }" @click="applyStyle('boxShadow', 'none')">无</button>
+          <button type="button" class="option-pill" @click="applyStyle('boxShadow', '0 4px 12px rgba(0, 0, 0, 0.08)')">轻</button>
+          <button type="button" class="option-pill" @click="applyStyle('boxShadow', '0 14px 32px rgba(0, 0, 0, 0.14)')">强</button>
+        </div>
+      </div>
+
+      <div class="inspector-divider"></div>
+
+      <!-- 图层与元素操作 -->
+      <div class="inspector-group ml-auto">
+        <button type="button" class="option-pill" @click="moveSelectedLayer('up')" :title="t('designPreview.moveLayerUp') || '上移一层'">↑</button>
+        <button type="button" class="option-pill" @click="moveSelectedLayer('down')" :title="t('designPreview.moveLayerDown') || '下移一层'">↓</button>
+        <button type="button" class="option-pill" @click="duplicateSelectedElement" :title="`${t('designPreview.duplicateElement') || '复制组件'} (Ctrl+D)`">
+          {{ t('designPreview.duplicateElement') || '复制' }}
+        </button>
+        <button
+          type="button"
+          class="btn-delete-element"
+          @click="deleteSelectedElement"
+          :title="`${t('designPreview.deleteElement') || '删除元素'} (Del / Backspace)`"
+        >
+          {{ t('designPreview.deleteElement') || '删除元素' }}
+        </button>
+      </div>
     </div>
 
-    <!-- 可视化设计画布主区域（带现代点阵背景） -->
+    <!-- 源码视图 -->
+    <div v-if="isFileLoaded && isCodeView" class="code-editor-pane">
+      <textarea
+        v-model="codeDraft"
+        class="code-editor-textarea"
+        spellcheck="false"
+      ></textarea>
+      <div class="code-editor-footer">
+        <button type="button" class="btn-secondary-action" @click="isCodeView = false">
+          {{ t('designPreview.cancel') || '取消' }}
+        </button>
+        <button type="button" class="btn-primary-action" @click="applyCodeDraft">
+          {{ t('designPreview.applyCode') || '应用到画布' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 可视化设计画布主区域 -->
     <div
+      v-show="!isCodeView"
       class="canvas-viewport"
       :class="{ 'is-dragging-over': isDraggingOver }"
       @dragover.prevent="isDraggingOver = true"
       @dragleave.prevent="isDraggingOver = false"
       @drop.prevent="handleDrop"
     >
-      <!-- 空状态：文件选择与拖拽引导卡片 -->
-      <div v-show="!isFileLoaded" class="empty-upload-card" @click="triggerFileInput">
-        <div class="upload-icon-circle">
-          <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+      <!-- 空状态：文件选择 + 预设模板 + 粘贴 HTML -->
+      <div v-show="!isFileLoaded" class="empty-workspace">
+        <div class="empty-upload-card" @click="triggerFileInput">
+          <div class="upload-icon-circle">
+            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h3 class="text-base font-bold mt-3">{{ t('designPreview.emptyTitle') || '开始你的可视化设计原型' }}</h3>
+          <p class="text-xs opacity-70 mt-1.5 text-center max-w-sm leading-relaxed">
+            {{ t('designPreview.emptyDesc') || '拖入或选择本地 .html 文件，或直接从下方预设模板 / 粘贴代码起步' }}
+          </p>
+          <div class="flex items-center gap-2 mt-4">
+            <button type="button" class="upload-cta-btn">
+              {{ t('designPreview.openFile') || '选择 HTML 文件' }}
+            </button>
+            <button type="button" class="btn-secondary-action" @click.stop="showPasteModal = true">
+              {{ t('designPreview.pasteHtml') || '粘贴 HTML' }}
+            </button>
+          </div>
         </div>
-        <h3 class="text-base font-bold text-slate-800 dark:text-slate-100 mt-3">选择本地 HTML 文件并渲染</h3>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 text-center max-w-xs leading-relaxed">
-          点击此处选择本地 HTML 文件，或直接将 <span class="font-semibold text-slate-700 dark:text-slate-200">.html</span> 拖入画布中
-        </p>
-        <button type="button" class="upload-cta-btn mt-4">
-          选择 HTML 文件
-        </button>
-        <span class="text-[11px] text-slate-400 mt-2">支持独立完整样式的网页沙箱渲染与设计</span>
+
+        <div class="starter-templates-section">
+          <div class="starter-templates-title">{{ t('designPreview.startFromTemplate') || '从预设模板起步' }}</div>
+          <div class="starter-templates-grid">
+            <button
+              v-for="tpl in DESIGN_STARTER_TEMPLATES"
+              :key="tpl.id"
+              type="button"
+              class="starter-template-card"
+              @click="loadTemplate(tpl)"
+            >
+              <span class="starter-template-name">{{ t(tpl.titleKey) || tpl.id }}</span>
+              <span class="starter-template-desc">{{ t(tpl.descKey) || '' }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <!-- Iframe 沙箱画板：100% 隔离还原原网页的完整 CSS 与排版 -->
+      <!-- Iframe 沙箱画板 -->
       <div
         v-show="isFileLoaded"
         class="artboard-iframe-wrapper"
-        :style="{ width: currentViewportWidth }"
+        :style="{
+          width: currentViewportWidth,
+          transform: canvasZoom !== 1 ? `scale(${canvasZoom})` : undefined,
+          transformOrigin: 'top center',
+        }"
       >
         <iframe
           ref="iframeRef"
@@ -784,11 +1173,80 @@ onBeforeUnmount(() => {
         />
       </div>
     </div>
+
+    <!-- 底部 DOM 面包屑与 AI 协同设计指令栏 -->
+    <div v-if="isFileLoaded && !isCodeView" class="design-bottom-dock">
+      <div v-if="breadcrumb.length > 0" class="breadcrumb-bar">
+        <template v-for="(node, idx) in breadcrumb" :key="`${node.label}-${idx}`">
+          <span v-if="idx > 0" class="breadcrumb-sep">›</span>
+          <button
+            type="button"
+            class="breadcrumb-node"
+            :class="{ 'is-current': idx === breadcrumb.length - 1 }"
+            @click="selectBreadcrumbAt(idx)"
+          >
+            {{ node.label }}
+          </button>
+        </template>
+      </div>
+
+      <div class="ai-prompt-bar">
+        <span class="ai-target-badge">{{ aiTargetLabel }}</span>
+        <input
+          v-model="aiInstruction"
+          type="text"
+          class="ai-prompt-input"
+          :placeholder="t('designPreview.aiPromptPlaceholder') || '向 AI 描述设计修改...'"
+          @keydown.enter.prevent="sendDesignPrompt()"
+        />
+        <button
+          type="button"
+          class="btn-primary-action"
+          :disabled="!aiInstruction.trim()"
+          @click="sendDesignPrompt()"
+        >
+          {{ t('designPreview.aiSendToChat') || '发送到对话' }}
+        </button>
+      </div>
+
+      <div class="ai-suggestion-row">
+        <button
+          v-for="chip in DESIGN_AI_SUGGESTIONS"
+          :key="chip"
+          type="button"
+          class="ai-suggestion-chip"
+          @click="sendDesignPrompt(chip)"
+        >
+          {{ chip }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 粘贴 HTML 弹窗 -->
+    <div v-if="showPasteModal" class="paste-modal-backdrop" @click.self="showPasteModal = false">
+      <div class="paste-modal-card">
+        <div class="paste-modal-header">{{ t('designPreview.pasteHtml') || '粘贴 HTML' }}</div>
+        <textarea
+          v-model="pasteHtmlDraft"
+          class="paste-modal-textarea"
+          :placeholder="t('designPreview.pasteHtmlPlaceholder') || '在此粘贴完整 HTML 或页面片段...'"
+        ></textarea>
+        <div class="paste-modal-actions">
+          <button type="button" class="btn-secondary-action" @click="showPasteModal = false">
+            {{ t('designPreview.cancel') || '取消' }}
+          </button>
+          <button type="button" class="btn-primary-action" :disabled="!pasteHtmlDraft.trim()" @click="confirmPasteHtml">
+            {{ t('designPreview.applyCode') || '应用到画布' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .design-canvas-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -801,28 +1259,23 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
   font-size: 12px;
   border-bottom: 1px solid var(--file-line, #e4e4e7);
   background: var(--file-bg, #ffffff);
 }
 
-.is-dark .design-top-bar {
-  background: #0c0e13;
-  border-color: #252933;
-}
-
-/* 顶部悬浮属性检查面板（Inspector Bar）：表面/描边/字色全走面板令牌，暗色由 --file-* 自动切换 */
 .design-inspector-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 14px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 6px 12px;
   font-size: 12px;
   border-bottom: 1px solid var(--file-line, #e4e4e7);
   background: var(--file-tab, #f4f4f5);
-  overflow-x: auto;
   animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -834,7 +1287,7 @@ onBeforeUnmount(() => {
 .inspector-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
@@ -845,8 +1298,8 @@ onBeforeUnmount(() => {
 }
 
 .color-picker {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: 0;
   padding: 0;
   border-radius: 4px;
@@ -861,8 +1314,8 @@ onBeforeUnmount(() => {
 }
 
 .preset-btn {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 9999px;
   border: 1px solid rgba(0, 0, 0, 0.15);
   cursor: pointer;
@@ -875,7 +1328,7 @@ onBeforeUnmount(() => {
 
 .option-pill {
   font-size: 11px;
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 6px;
   background: var(--file-bg, #ffffff);
   color: var(--file-muted, #71717a);
@@ -898,7 +1351,7 @@ onBeforeUnmount(() => {
 
 .inspector-divider {
   width: 1px;
-  height: 16px;
+  height: 14px;
   background: var(--file-line, #e4e4e7);
 }
 
@@ -906,8 +1359,16 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 240px;
   color: var(--file-muted, #71717a);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .selection-status.is-active {
@@ -918,19 +1379,20 @@ onBeforeUnmount(() => {
 .status-dot {
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: 9999px;
   background: #cbd5e1;
 }
 
 .selection-status.is-active .status-dot {
   background: var(--file-ink, #18181b);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--file-ink, #18181b) 45%, transparent);
 }
 
 .design-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .mode-switch {
@@ -940,14 +1402,13 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   padding: 1px;
   background: var(--file-tab, #f4f4f5);
-  margin-right: 2px;
 }
 
 .mode-switch button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   font-size: 11px;
   font-weight: 500;
   border: 0;
@@ -955,21 +1416,18 @@ onBeforeUnmount(() => {
   color: var(--file-muted, #71717a);
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s;
 }
 
 .mode-switch button.is-selected {
   background: var(--file-bg, #ffffff);
   color: var(--file-ink, #18181b);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .undo-redo-group {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-right: 2px;
 }
 
 .undo-redo-btn {
@@ -983,7 +1441,6 @@ onBeforeUnmount(() => {
   background: var(--file-bg, #ffffff);
   color: var(--file-muted, #71717a);
   cursor: pointer;
-  transition: all 0.15s;
 }
 
 .undo-redo-btn:hover:not(:disabled) {
@@ -994,6 +1451,41 @@ onBeforeUnmount(() => {
 .undo-redo-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.insert-dropdown {
+  position: relative;
+}
+
+.insert-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 112px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-bg, #ffffff);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.insert-menu-item {
+  text-align: left;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.insert-menu-item:hover {
+  background: var(--file-tab, #f4f4f5);
 }
 
 .btn-delete-element {
@@ -1007,13 +1499,10 @@ onBeforeUnmount(() => {
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s;
-  margin-left: auto;
 }
 
 .btn-delete-element:hover {
   background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .device-switch {
@@ -1022,11 +1511,10 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   padding: 1px;
   background: var(--file-tab, #f4f4f5);
-  margin-right: 4px;
 }
 
 .device-switch button {
-  padding: 2px 7px;
+  padding: 2px 6px;
   font-size: 11px;
   border: 0;
   background: transparent;
@@ -1036,10 +1524,9 @@ onBeforeUnmount(() => {
 }
 
 .device-switch button.is-selected {
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--file-bg, #ffffff);
+  color: var(--file-ink, #18181b);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .btn-primary-action {
@@ -1047,29 +1534,30 @@ onBeforeUnmount(() => {
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 6px;
+  border: 0;
   background: var(--file-ink, #18181b);
   color: var(--file-ink-contrast, #ffffff);
   cursor: pointer;
-  transition: background-color 0.15s;
 }
 
-.btn-primary-action:hover {
+.btn-primary-action:hover:not(:disabled) {
   background: var(--file-ink-hover, #27272a);
+}
+
+.btn-primary-action:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .btn-secondary-action {
   font-size: 11px;
   font-weight: 500;
-  padding: 4px 9px;
+  padding: 4px 8px;
   border-radius: 6px;
-  background: #f1f5f9;
-  color: #334155;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-tab, #f4f4f5);
+  color: inherit;
   cursor: pointer;
-}
-
-.is-dark .btn-secondary-action {
-  background: #1e222d;
-  color: #cbd5e1;
 }
 
 .btn-reset {
@@ -1077,77 +1565,57 @@ onBeforeUnmount(() => {
   font-weight: 500;
   padding: 4px 8px;
   border-radius: 6px;
+  border: 0;
   background: transparent;
   color: #ef4444;
   cursor: pointer;
 }
 
-.btn-reset:hover {
-  background: #ef444415;
-}
-
-/* 画布背景：类似 Figma / Stitch 的点阵网格 */
 .canvas-viewport {
   position: relative;
   flex: 1;
   width: 100%;
-  height: 100%;
+  min-height: 0;
   overflow: auto;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   justify-content: center;
-  align-items: stretch;
-  background-color: #f8fafc;
-  background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+  align-items: flex-start;
+  background-color: var(--file-tab, #f8fafc);
+  background-image: radial-gradient(var(--file-line, #cbd5e1) 1px, transparent 1px);
   background-size: 18px 18px;
   user-select: none;
-  transition: background-color 0.2s;
-}
-
-.is-dark .canvas-viewport {
-  background-color: #0b0d13;
-  background-image: radial-gradient(#1f2430 1px, transparent 1px);
 }
 
 .canvas-viewport.is-dragging-over {
   background-color: var(--file-line, #e4e4e7);
 }
 
-/* 空状态卡片 */
+.empty-workspace {
+  width: 100%;
+  max-width: 460px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .empty-upload-card {
-  align-self: center;
-  width: 380px;
-  min-height: 280px;
-  border-radius: 20px;
-  border: 2px dashed #cbd5e1;
-  background: #ffffff;
+  width: 100%;
+  border-radius: 16px;
+  border: 1.5px dashed var(--file-focus, #cbd5e1);
+  background: var(--file-bg, #ffffff);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px 24px;
+  padding: 26px 20px;
   cursor: pointer;
-  transition: all 0.2s;
-}
-
-.is-dark .empty-upload-card {
-  background: #13161f;
-  border-color: #2e3547;
-}
-
-.empty-upload-card:hover {
-  border-color: var(--file-focus, #a1a1aa);
-  box-shadow: 0 12px 30px -10px rgba(15, 23, 42, 0.18);
-  transform: translateY(-2px);
-}
-
-.is-dark .empty-upload-card:hover {
-  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
 }
 
 .upload-icon-circle {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 9999px;
   background: var(--file-tab, #f4f4f5);
   color: var(--file-muted, #71717a);
@@ -1159,35 +1627,74 @@ onBeforeUnmount(() => {
 .upload-cta-btn {
   font-size: 12px;
   font-weight: 600;
-  padding: 7px 18px;
+  padding: 6px 14px;
   border-radius: 8px;
+  border: 0;
   background: var(--file-ink, #18181b);
   color: var(--file-ink-contrast, #ffffff);
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
-  transition: background-color 0.15s;
 }
 
 .upload-cta-btn:hover {
   background: var(--file-ink-hover, #27272a);
 }
 
-/* Iframe 设备画板外壳 */
+.starter-templates-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.starter-templates-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--file-muted, #71717a);
+}
+
+.starter-templates-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.starter-template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-bg, #ffffff);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.starter-template-card:hover {
+  border-color: var(--file-focus, #a1a1aa);
+}
+
+.starter-template-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.starter-template-desc {
+  font-size: 11px;
+  color: var(--file-muted, #71717a);
+}
+
 .artboard-iframe-wrapper {
   position: relative;
   height: 100%;
-  min-height: 600px;
+  min-height: 540px;
   border-radius: 12px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--file-line, #e2e8f0);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.is-dark .artboard-iframe-wrapper {
-  border-color: #262b38;
-  box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.6);
 }
 
 .artboard-iframe {
@@ -1196,5 +1703,185 @@ onBeforeUnmount(() => {
   border: 0;
   display: block;
   background: #ffffff;
+}
+
+.code-editor-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--file-bg, #ffffff);
+}
+
+.code-editor-textarea {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  padding: 12px 14px;
+  resize: none;
+  outline: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  background: transparent;
+  color: inherit;
+}
+
+.code-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--file-line, #e4e4e7);
+}
+
+.design-bottom-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-bg, #ffffff);
+}
+
+.breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.breadcrumb-sep {
+  color: var(--file-muted, #71717a);
+}
+
+.breadcrumb-node {
+  border: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--file-muted, #71717a);
+  cursor: pointer;
+}
+
+.breadcrumb-node:hover {
+  background: var(--file-tab, #f4f4f5);
+  color: var(--file-ink, #18181b);
+}
+
+.breadcrumb-node.is-current {
+  background: var(--file-tab, #f4f4f5);
+  color: var(--file-ink, #18181b);
+  font-weight: 600;
+}
+
+.ai-prompt-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-target-badge {
+  flex-shrink: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--file-tab, #f4f4f5);
+  color: var(--file-ink, #18181b);
+  border: 1px solid var(--file-line, #e4e4e7);
+}
+
+.ai-prompt-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-tab, #f4f4f5);
+  color: inherit;
+  outline: none;
+}
+
+.ai-prompt-input:focus-visible {
+  border-color: var(--file-focus, #a1a1aa);
+}
+
+.ai-suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+}
+
+.ai-suggestion-chip {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: transparent;
+  color: var(--file-muted, #71717a);
+  cursor: pointer;
+}
+
+.ai-suggestion-chip:hover {
+  background: var(--file-tab, #f4f4f5);
+  color: var(--file-ink, #18181b);
+}
+
+.paste-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.paste-modal-card {
+  width: 100%;
+  max-width: 440px;
+  border-radius: 12px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-bg, #ffffff);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.paste-modal-header {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.paste-modal-textarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  background: var(--file-tab, #f4f4f5);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.paste-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

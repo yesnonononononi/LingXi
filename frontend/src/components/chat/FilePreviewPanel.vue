@@ -48,6 +48,7 @@ const emit = defineEmits<{
   (e: 'open'): void;
   (e: 'reveal'): void;
   (e: 'update:mode', mode: PreviewPanelMode): void;
+  (e: 'sendToChat', payload: { prompt: string }): void;
 }>();
 
 /** 未受控时的兜底模式（受控时以 props.mode 为准）。 */
@@ -501,6 +502,7 @@ watch(() => props.activeId, () => {
       :initialContent="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.data?.content : undefined"
       :initialFileName="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.name : undefined"
       class="design-preview-frame"
+      @sendToChat="emit('sendToChat', $event)"
     />
   </div>
   </aside>
