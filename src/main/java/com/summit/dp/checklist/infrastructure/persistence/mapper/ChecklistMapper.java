@@ -22,10 +22,10 @@ public interface ChecklistMapper extends BaseMapper<ChecklistPO> {
     ChecklistPO selectActiveBySessionIdForUpdate(@Param("sessionId") long sessionId);
 
     /** 条件变化时返回 0，调用方必须重查，不能据此认定提醒已经送达。 */
-    @Update("UPDATE checklist SET remind_status = 1, remind_execution_id = #{executionId,jdbcType=BIGINT}, "
+    @Update("UPDATE checklist SET remind_status = TRUE, remind_execution_id = #{executionId,jdbcType=BIGINT}, "
             + "reminded_progress_version = progress_version, update_at = #{updateAt,jdbcType=TIMESTAMP} "
             + "WHERE id = #{id} AND session_id = #{sessionId} AND status = 'ACTIVE' "
-            + "AND progress_version = #{progressVersion} AND remind_status = 0")
+            + "AND progress_version = #{progressVersion} AND remind_status = FALSE")
     int claimReminder(@Param("id") long id, @Param("sessionId") long sessionId,
                       @Param("progressVersion") long progressVersion, @Param("executionId") long executionId,
                       @Param("updateAt") Instant updateAt);

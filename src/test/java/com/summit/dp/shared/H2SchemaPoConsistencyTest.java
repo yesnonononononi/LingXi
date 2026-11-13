@@ -208,6 +208,43 @@ class H2SchemaPoConsistencyTest {
     }
 
     @Test
+    @DisplayName("PO 布尔字段在真实 H2 库上必须对应 BOOLEAN 列（防止 DDL 重编译触发 90110 类型不可比）")
+    void booleanPoFieldsMapToBooleanColumns() {
+        H2TestDatabase database = newDatabase("boolean-columns");
+        Map<String, String> columnTypes = new LinkedHashMap<>();
+        for (String row : database.queryColumn(
+                "SELECT LOWER(TABLE_NAME) || '.' || LOWER(COLUMN_NAME) || '=' || DATA_TYPE"
+                        + " FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC'")) {
+            int separator = row.indexOf('=');
+            columnTypes.put(row.substring(0, separator), row.substring(separator + 1));
+        }
+
+        List<String> violations = new ArrayList<>();
+        for (Class<?> po : PO_CLASSES) {
+            String table = tableNameOf(po);
+            Map<String, String> columns = persistentColumns(po);
+            for (Field field : po.getDeclaredFields()) {
+                Class<?> type = field.getType();
+                if (type != Boolean.class && type != boolean.class) {
+                    continue;
+                }
+                String column = columns.get(field.getName());
+                if (column == null) {
+                    continue;
+                }
+                String key = table + "." + column.toLowerCase(Locale.ROOT);
+                String dataType = columnTypes.get(key);
+                if (!"BOOLEAN".equals(dataType)) {
+                    violations.add(po.getSimpleName() + "." + field.getName()
+                            + " -> " + key + " 实际列类型为 " + dataType);
+                }
+            }
+        }
+        assertTrue(violations.isEmpty(),
+                "PO 布尔字段必须落在 H2 BOOLEAN 列上（INTEGER 列会在 DDL 重编译时触发 90110），不符项=" + violations);
+    }
+
+    @Test
     @DisplayName("context_ratio 走 PO + Mapper 往返：0.09512015503875969 逐字不变（NUMERIC(6,4) 会截成 0.0951）")
     void contextRatioSurvivesPoRoundTripWithoutTruncation() {
         H2TestDatabase database = newDatabase("ratio");
