@@ -115,12 +115,12 @@ class ReadImageToolExecutorTest {
     void checksTheActualBridgePayloadSizeAsWellAsTheHostSize() throws Exception {
         Path image = workspaceRoot.resolve("growing.png");
         Files.write(image, png(8, 8));
-        Workspace workspace = mock(Workspace.class);
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
         WorkspaceFiles files = mock(WorkspaceFiles.class);
         when(workspace.resolve("growing.png")).thenReturn(image);
         when(workspace.encloses(any())).thenReturn(true);
-        when(workspace.bridge()).thenReturn(bridge);
+        doReturn(bridge).when(workspace).bridge();
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(image)).thenReturn(new byte[(int) ReadImageToolExecutor.MAX_BYTES + 1]);
         assertEquals("FILE_TOO_LARGE", reason(executor().execute(execution(workspace, "growing.png", true))));
@@ -158,7 +158,7 @@ class ReadImageToolExecutorTest {
 
     @Test
     void rejectsPathOutsideWorkspace() throws Exception {
-        Workspace workspace = mock(Workspace.class);
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         Path outside = workspaceRoot.getParent().resolve("outside.png");
         when(workspace.resolve("../outside.png")).thenReturn(outside);
         when(workspace.encloses(outside)).thenReturn(false);
@@ -222,14 +222,14 @@ class ReadImageToolExecutorTest {
         // 宿主上文件存在（size 判得出来），但桥接读取失败 —— 这才是沙箱路径映射失配的真实形态。
         Path image = workspaceRoot.resolve("remote.png");
         Files.write(image, png(8, 8));
-        Workspace workspace = mock(Workspace.class);
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
         WorkspaceFiles files = mock(WorkspaceFiles.class);
         when(workspace.resolve("remote.png")).thenReturn(image);
         // CI 的临时目录常带 8.3 短名（RUNNER~1），toRealPath 展开后与这里的 Path 不相等，
         // 用精确参数打桩会在 CI 上假红；本用例只关心「桥接读不动」，归属判定一律放行。
         when(workspace.encloses(any())).thenReturn(true);
-        when(workspace.bridge()).thenReturn(bridge);
+        doReturn(bridge).when(workspace).bridge();
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(image)).thenThrow(new IOException("MXC file operation failed"));
 

@@ -8,6 +8,7 @@ import com.summit.core.anno.type.ObjectValue;
 import com.summit.core.anno.type.ToolProperty;
 import com.summit.core.anno.type.Value;
 import com.summit.core.anno.type.ValueType;
+import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
@@ -119,16 +120,14 @@ public class ReadImageToolExecutor implements ToolExecutor {
 
     /** 只认工作区内路径：读图不需要越界能力，越界读还会绕开沙箱的文件策略。 */
     private Path resolveInsideWorkspace(Workspace workspace, String displayPath) {
-        Path target;
         try {
-            target = workspace.resolve(displayPath);
+            // 边界与链接复核都由框架完成，这里只把拒绝翻译成读图自己的失败原因。
+            return workspace.resolveInside(displayPath);
         } catch (InvalidPathException invalid) {
             throw new ReadRejected("READ_FAILED", "图片路径格式不正确");
-        }
-        if (!workspace.encloses(target)) {
+        } catch (OutWorkSpaceException outside) {
             throw new ReadRejected("OUTSIDE_WORKSPACE", "只能读取工作区内的图片: " + displayPath);
         }
-        return target;
     }
 
     /** 缺少视觉能力或会话标识时无需读取文件。 */
@@ -148,15 +147,6 @@ public class ReadImageToolExecutor implements ToolExecutor {
         try {
             if (!Files.isRegularFile(target)) {
                 throw new ReadRejected("READ_FAILED", "不是可读的图片文件: " + displayPath);
-            }
-            // 几何包含关系挡不住目录链接，读取前还要核对真实文件的归属。
-            if (!workspace.encloses(target.toRealPath())) {
-                String workDir = workspace.workDir();
-                // 工作区根目录本身也可能是链接，按它的真实根目录判断归属。
-                if (workDir == null || workDir.isBlank()
-                        || !target.toRealPath().startsWith(Path.of(workDir).toRealPath())) {
-                    throw new ReadRejected("OUTSIDE_WORKSPACE", "只能读取工作区内的图片: " + displayPath);
-                }
             }
             if (Files.size(target) > MAX_BYTES) {
                 throw new ReadRejected("FILE_TOO_LARGE", "图片超过 " + (MAX_BYTES / 1024 / 1024) + "MB");

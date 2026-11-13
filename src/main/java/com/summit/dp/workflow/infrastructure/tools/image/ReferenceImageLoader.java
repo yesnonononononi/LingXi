@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.summit.core.agent.Image;
+import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.LocalWorkspaceBridge;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.dp.shared.exception.ClientException;
@@ -69,16 +70,15 @@ public class ReferenceImageLoader {
         String path = value.asText().trim();
         Path target;
         try {
-            target = workspace.resolve(path);
+            // 越界与链接逃逸都由框架拒绝，参考图不需要任何越界能力。
+            target = workspace.resolveInside(path);
         } catch (InvalidPathException invalid) {
             throw new ClientException("参考图路径格式不正确，请提供工作区内的图片文件路径");
+        } catch (OutWorkSpaceException outside) {
+            throw new ClientException("参考图只能读取工作区内的图片");
         }
-        ImageToolChecks.rejectIf(!workspace.encloses(target), "参考图只能读取工作区内的图片");
         if (workspace.bridge() instanceof LocalWorkspaceBridge) {
             ImageToolChecks.rejectIf(!Files.isRegularFile(target), "参考图文件不存在或不是普通文件");
-            // 几何包含关系挡不住目录链接，必须再核对真实文件归属。
-            ImageToolChecks.rejectIf(!target.toRealPath().startsWith(Path.of(workspace.workDir()).toRealPath()),
-                    "参考图的真实文件位于工作区之外");
             ImageToolChecks.rejectIf(Files.size(target) > MAX_BYTES, "参考图不能超过 16MB");
         }
         byte[] bytes = workspace.bridge().files().readBytes(target);

@@ -18,6 +18,7 @@ import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.image.ImageModel;
 import com.summit.core.model.image.ImageGenerationOptions;
+import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ConcurrentPolicy;
@@ -27,6 +28,7 @@ import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolResultType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
@@ -124,8 +126,13 @@ public class GenerateImageToolExecutor implements ToolExecutor {
         ImageToolChecks.rejectIf(workspace == null, "生图需要先配置工作区");
         String relativePath = args.path("path").asText().trim();
         ImageToolChecks.rejectIf(Path.of(relativePath).isAbsolute(), "生图文件路径必须相对于工作区");
-        Path target = workspace.resolve(relativePath);
-        ImageToolChecks.rejectIf(!workspace.encloses(target), "生图文件只能保存在工作区内");
+        Path target;
+        try {
+            // 目标还不存在，框架按几何判定；父目录链接由 writer 的真实目录复核兜住。
+            target = workspace.resolveInside(relativePath);
+        } catch (OutWorkSpaceException outside) {
+            throw new ClientException("生图文件只能保存在工作区内");
+        }
         String lower = relativePath.toLowerCase(Locale.ROOT);
         ImageToolChecks.rejectIf(!(lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")),
                 "生图文件扩展名必须是 png、jpg 或 jpeg");

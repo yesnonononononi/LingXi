@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.delete;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
 import com.summit.core.anno.type.*;
+import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ConcurrentPolicy;
@@ -57,11 +58,10 @@ public class DeleteFileToolExecutor implements ToolExecutor {
             throwIf(request.getPath() == null || request.getPath().isBlank(), "删除文件路径不能为空");
 
             Workspace workspace = toolExecution.getWorkspace();
-            Path target = workspace.resolve(request.getPath()).normalize();
-            // 与 edit_file 同一判据：越界写要先过访问档位，不能各写一套。
-            throwIf(!AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
-                            && !workspace.encloses(target),
-                    "删除文件只能在工作区内进行，删除项目外文件请切换到完全访问档位");
+            // 边界与链接复核交给框架，与 edit/search 同一判据，不能各写一套。
+            Path target = AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+                    ? workspace.resolve(request.getPath())
+                    : workspace.resolveInside(request.getPath());
             WorkspaceFiles files = workspace.bridge().files();
             throwIf(!files.exists(target), "要删除的文件不存在: " + request.getPath());
             
@@ -71,6 +71,8 @@ public class DeleteFileToolExecutor implements ToolExecutor {
             files.deleteFile(target);
             return ToolExecuteResult.success(objectMapper.writeValueAsString(
                     Map.of("path", target.toAbsolutePath().normalize().toString(), "deleted", true)));
+        } catch (OutWorkSpaceException outsideWorkspace) {
+            return ToolExecuteResult.err("删除文件只能在工作区内进行，删除项目外文件请切换到完全访问档位");
         } catch (Exception e) {
             return ToolExecuteResult.err("删除文件失败: " + e.getMessage());
         }

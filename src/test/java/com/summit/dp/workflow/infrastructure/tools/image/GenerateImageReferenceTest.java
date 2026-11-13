@@ -253,14 +253,14 @@ class GenerateImageReferenceTest {
 
     @Test
     void remoteWorkspacesReadBytesThroughTheirBridge() throws Exception {
-        Workspace workspace = mock(Workspace.class);
+        Workspace workspace = mock(Workspace.class, CALLS_REAL_METHODS);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
         WorkspaceFiles files = mock(WorkspaceFiles.class);
         Path path = Path.of("/remote/ref.png");
         byte[] original = image("png", 3);
         when(workspace.resolve("ref.png")).thenReturn(path);
         when(workspace.encloses(path)).thenReturn(true);
-        when(workspace.bridge()).thenReturn(bridge);
+        doReturn(bridge).when(workspace).bridge();
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(path)).thenReturn(original);
         Image reference = new ReferenceImageLoader()

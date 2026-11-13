@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.search;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
 import com.summit.core.anno.type.*;
+import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ConcurrentPolicy;
@@ -109,11 +110,8 @@ public class SearchFilesToolExecutor implements ToolExecutor {
 
             Pattern pattern = compile(request);
             Workspace workspace = toolExecution.getWorkspace();
-            Path root = resolveRoot(workspace, request.getPath());
-            // 与 edit_file 同一口径：越界读本身就是信息泄露，必须在遍历前拦。
-            throwIf(!AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
-                            && !workspace.encloses(root),
-                    "检索文件只能在工作区内进行，检索项目外目录请切换到完全访问档位");
+            // 边界与链接复核交给框架，必须在遍历前拦：越界读本身就是信息泄露。
+            Path root = resolveRoot(toolExecution, workspace, request.getPath());
             log.info("检索文件: root={}, pattern={}, glob={}, maxResults={}", root, request.getPattern(), request.getGlob(), maxResults);
 
             WorkspaceFiles files = workspace.bridge().files();
@@ -144,6 +142,8 @@ public class SearchFilesToolExecutor implements ToolExecutor {
                     new ScanSummary(hits, limitReached, skippedBinary, skippedOversize)));
         } catch (PatternSyntaxException e) {
             return ToolExecuteResult.err("检索文件的正则不合法: " + e.getMessage());
+        } catch (OutWorkSpaceException outsideWorkspace) {
+            return ToolExecuteResult.err("检索文件只能在工作区内进行，检索项目外目录请切换到完全访问档位");
         } catch (Exception e) {
             return ToolExecuteResult.err("检索文件失败: " + e.getMessage());
         }
@@ -208,10 +208,14 @@ public class SearchFilesToolExecutor implements ToolExecutor {
         return reasons.isEmpty() ? "" : "另跳过 " + String.join("、", reasons);
     }
 
-    private Path resolveRoot(Workspace workspace, String path) {
-        return path == null || path.isBlank()
-                ? Path.of(workspace.workDir()).toAbsolutePath().normalize()
-                : workspace.resolve(path).normalize();
+    /** 空路径即工作区根；其余按访问档位解析，非完全访问档由框架拒绝越界。 */
+    private Path resolveRoot(ToolExecution toolExecution, Workspace workspace, String path) {
+        if (path == null || path.isBlank()) {
+            return Path.of(workspace.workDir()).toAbsolutePath().normalize();
+        }
+        return AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+                ? workspace.resolve(path).normalize()
+                : workspace.resolveInside(path).normalize();
     }
 
     private Pattern compile(SearchFilesRequest request) {

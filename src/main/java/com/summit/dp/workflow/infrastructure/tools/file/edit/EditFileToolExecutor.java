@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
 import com.summit.core.anno.type.*;
+import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
@@ -85,11 +86,10 @@ public class EditFileToolExecutor implements ToolExecutor {
             log.info("编辑文件: path={}, type={}", request.getPath(), type);
 
             Workspace workspace = toolExecution.getWorkspace();
-            Path target = workspace.resolve(request.getPath());
-            // 与生图/读图同一口径，且必须在读旧内容之前拦：越界读本身就是信息泄露。
-            throwIf(!AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
-                            && !workspace.encloses(target),
-                    "编辑文件只能在工作区内进行，修改项目外文件请切换到完全访问档位");
+            // 边界与链接复核交给框架；必须在读旧内容之前拦，越界读本身就是信息泄露。
+            Path target = AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+                    ? workspace.resolve(request.getPath())
+                    : workspace.resolveInside(request.getPath());
             WorkspaceFiles files = workspace.bridge().files();
             Charset charset = StandardCharsets.UTF_8;
             boolean existed = files.exists(target);
@@ -127,6 +127,8 @@ public class EditFileToolExecutor implements ToolExecutor {
             return ToolExecuteResult.success(objectMapper.writeValueAsString(outcome.toSummary()),
                     ToolResultType.NORMAL, buildMetadata(outcome, recordId));
 
+        } catch (OutWorkSpaceException outsideWorkspace) {
+            return ToolExecuteResult.err("编辑文件只能在工作区内进行，修改项目外文件请切换到完全访问档位");
         } catch (Exception e) {
             return ToolExecuteResult.err("编辑文件失败: " + e.getMessage());
         }
