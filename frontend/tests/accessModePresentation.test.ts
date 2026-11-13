@@ -28,6 +28,7 @@ const tabSource = readFileSync(resolve(process.cwd(), 'src/views/settings/tabs/S
 const inputSource = readFileSync(resolve(process.cwd(), 'src/components/chat/ChatInputArea.vue'), 'utf8');
 const viewSource = readFileSync(resolve(process.cwd(), 'src/views/chat/ChatView.vue'), 'utf8');
 const workspaceSource = readFileSync(resolve(process.cwd(), 'src/views/chat/useChatWorkspace.ts'), 'utf8');
+const viewModelSource = readFileSync(resolve(process.cwd(), 'src/views/chat/useChatView.ts'), 'utf8');
 
 test('执行环境三态：NONE 不得被折叠成已关闭', () => {
   assert.equal(resolveSandboxState('SAND_BOX'), 'ON');
@@ -93,8 +94,18 @@ test('安全中心与输入区消费同一份真源，不得各自硬编码档�
   assert.match(inputSource, /data-testid="chat-access-mode"/, '缺少输入区档位徽标');
 });
 
-test('聊天页档位事件死代码不得回流', () => {
-  assert.doesNotMatch(inputSource, /updateAccessMode/, '发出去却无人监听的事件不允许回来');
-  assert.doesNotMatch(viewSource, /handleUpdateAccessMode/, 'ChatView 不应再绑定不存在的处理函数');
-  assert.doesNotMatch(workspaceSource, /handleUpdateAccessMode/, '未使用的事件处理函数应删除');
+/**
+ * 档位切换必须端到端接通：声明事件 → 真的发出 → ChatView 绑定 → 落到 userConfig。
+ *
+ * <p>历史缺陷是「发出去却无人监听」的死事件（`updateMode` 的翻版），因此这条用例改成
+ * 链路正对照：任何一环断掉都必须变红，同时禁止回到「只改本地状态」的假切换。</p>
+ */
+test('输入区档位切换必须端到端接通，不得再出现死事件', () => {
+  assert.match(inputSource, /\(e: 'updateAccessMode'/, '输入区必须声明档位事件');
+  assert.match(inputSource, /emit\('updateAccessMode'/, '输入区必须真的发出档位事件');
+  assert.match(inputSource, /@select="handleSelectAccessMode"/, '权限上拉框的选中必须接到处理器上');
+  assert.match(viewSource, /@updateAccessMode="handleUpdateAccessMode"/, 'ChatView 必须绑定档位处理函数');
+  assert.match(viewSource, /handleUpdateAccessMode,/, 'ChatView 必须从 useChatView 取到该处理函数');
+  assert.match(viewModelSource, /userConfig\.patch\('accessMode'/, '切档必须写 userConfig，不得只改本地状态');
+  assert.doesNotMatch(workspaceSource, /handleUpdateAccessMode/, '档位切换不属于工作空间模块');
 });

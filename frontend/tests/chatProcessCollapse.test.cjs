@@ -1247,7 +1247,9 @@ test('读取摘要：缺省范围显示全文，单边范围按后端默认边�
   const rendered = text(root);
   assert.match(rendered, /whole\.json\s*全文/);
   assert.match(rendered, /range\.json\s*L2-5/);
-  assert.match(rendered, /head\.json\s*L0-3/);
+  // 后端 ReadFileToolExecutor 缺省 startLine = 1（工具说明写死 "Defaults to 1"），
+  // 只给 endLine 时前端按同一边界展示 L1-3，不能显示不存在的 L0。
+  assert.match(rendered, /head\.json\s*L1-3/);
   assert.match(rendered, /tail\.json\s*L4-末尾/);
 });
 

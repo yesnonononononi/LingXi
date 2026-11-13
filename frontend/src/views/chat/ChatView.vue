@@ -406,6 +406,7 @@
               @exportSession="handleExportSession"
               @openSettings="handleOpenSettings"
               @openSettingsTab="handleOpenSettingsTab"
+              @updateAccessMode="handleUpdateAccessMode"
             />
           </div>
         </div>
@@ -434,6 +435,7 @@
         @refresh="refreshFile"
         @open="runFileAction('open')"
         @reveal="runFileAction('reveal')"
+        @sendToChat="handleDesignSendToChat"
       />
 
       <!-- 右侧：子 Agent 会话轨迹和标签面板 -->
@@ -727,6 +729,13 @@ const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
   showPreviewPanel();
 };
 
+/** 将设计原型画布生成的 AI 协同修改指令填入聊天输入区并聚焦。 */
+const handleDesignSendToChat = (payload: { prompt: string }): void => {
+  if (!payload.prompt?.trim()) return;
+  inputAreaRef.value?.setInputText(payload.prompt);
+  inputAreaRef.value?.focusInput?.();
+};
+
 /**
  * 收起右侧预览面板。
  *
@@ -842,6 +851,7 @@ const {
   handleUpdateModel,
   handleUpdateAgent,
   handleUpdateReasoningEffort,
+  handleUpdateAccessMode,
   handleOpenSettings,
   handleOpenSettingsTab,
   handleCloseSettings,

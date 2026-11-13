@@ -10,15 +10,17 @@ import {
   Tick02Icon
 } from '@hugeicons/core-free-icons';
 import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
-import DropUpSelect from '../common/DropUpSelect.vue';
 import BorderGlow from '../common/BorderGlow.vue';
 import SparkTrail from '../common/SparkTrail.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
-import type {SelectOption} from '../../types/ui';
+import ChatInputPlusMenu from './ChatInputPlusMenu.vue';
+import ChatInputAccessMenu from './ChatInputAccessMenu.vue';
 import type {
   AgentAccessMode,
   AgentVO,
   ChatMode,
+  McpConnectionStateVO,
+  McpVO,
   ModelConfig,
   ReasoningEffort,
   TeamVO,
@@ -27,6 +29,7 @@ import type {
 } from '../../types/chat';
 import {reasoningEffortOptions} from '../../composables/useReasoningEffort';
 import {TeamAPI} from '../../services/team';
+import {McpAPI} from '../../services/mcp';
 import {AgentAPI} from '../../services/agent';
 import {isOk} from '../../utils/api';
 import {useChatImageAttachments} from '../../composables/useChatImageAttachments';
@@ -139,6 +142,8 @@ const emit = defineEmits<{
   (e: 'applyPrediction', text: string): void;
   /** 输入框是否已空：宿主据此决定要不要开始预测计时（有草稿就别预测） */
   (e: 'updateDraftEmpty', empty: boolean): void;
+  /** 工作区权限档位变更（去向必须是 userConfig，与安全中心同一处真源） */
+  (e: 'updateAccessMode', mode: AgentAccessMode): void;
 }>();
 
 defineSlots<{
@@ -452,8 +457,7 @@ const toggleEffort = () => {
   effortOpen.value = !effortOpen.value;
 };
 
-// ====== Team 团队选择与后端分页获取 ======
-const teamSelectRef = ref<{ open: () => void; close: () => void } | null>(null);
+// ====== Team 团队列表（数据源在 + 菜单的「协作」分组里消费） ======
 const localTeams = ref<TeamVO[]>([]);
 const isLoadingTeams = ref(false);
 const teamPage = ref(1);
@@ -485,15 +489,9 @@ watch(
   { immediate: true }
 );
 
-const ADD_TEAM_OPTION = '__add_team__';
-
 const selectedTeam = computed<string | number>({
   get: () => localSelectedTeamId.value,
   set: (val) => {
-    if (val === ADD_TEAM_OPTION) {
-      emit('openTeamModal');
-      return;
-    }
     localSelectedTeamId.value = val;
     // 团队与单 Agent 互斥：选了团队就退回"未指定 Agent"
     if (val) {
@@ -698,18 +696,7 @@ watch(
   { flush: 'post' }
 );
 
-const teamOptions = computed<SelectOption<string | number>[]>(() => {
-  const list = props.teams && props.teams.length > 0 ? props.teams : localTeams.value;
-    return [
-    { label: t('chat.input.teamUnspecified'), value: '' },
-    ...list.map(team => ({
-      label: team.name || t('chat.input.teamFallback', { id: team.id }),
-      value: team.id,
-      avatar: team.avatar,
-    })),
-    { label: t('chat.input.addTeam'), value: ADD_TEAM_OPTION }
-  ];
-});
+
 
 // 基座模型的下拉选项与选中值已随模型选择器搬进 `ChatInputModelSelector.vue`
 // （连同 `+ 添加自定义模型` 的哨兵值路由：哨兵 → onOpenModelEditor，其余 → onUpdateModel）。
@@ -827,7 +814,7 @@ const allCommands = computed<CommandItem[]>(() => [
     name: 'team',
     desc: t('chat.command.team'),
     action: () => {
-      teamSelectRef.value?.open();
+      openPlusMenu('teams');
     }
   },
   {
@@ -916,18 +903,135 @@ watch(
   { flush: 'post' }
 );
 
+// ====== 「+」分组菜单：一级分组 + 右侧二级浮层（/ 指令清单不再由 + 触发） ======
+const isPlusMenuOpen = ref(false);
+/** 打开时要直接展开的分组；`/team` 这类命令直达协作面板，不再绕一层点击。 */
+const plusMenuInitialGroup = ref<string | null>(null);
+
+const plusMenuTeams = computed<TeamVO[]>(() =>
+  (props.teams && props.teams.length > 0 ? props.teams : localTeams.value));
+
+const mcpServers = ref<McpVO[]>([]);
+const mcpStates = ref<McpConnectionStateVO[]>([]);
+const mcpLoading = ref(false);
+const mcpError = ref('');
+
+/**
+ * 按需拉取 MCP 服务与共享连接状态。
+ *
+ * <p>只在菜单打开时请求：MCP 是全局配置，输入区每次挂载都拉一遍等于白烧一次往返。
+ * 连接状态拿不到时保持空数组，由菜单自己说「未连接」，绝不编造工具数。</p>
+ */
+const loadMcpServers = async () => {
+  mcpLoading.value = true;
+  mcpError.value = '';
+  try {
+    const res = await McpAPI.list(1, 50);
+    if (!isOk(res.code) || !res.data) {
+      mcpServers.value = [];
+      mcpStates.value = [];
+      mcpError.value = res.errMsg || t('chat.input.plusMcpFailed');
+      return;
+    }
+    mcpServers.value = res.data.records ?? [];
+    if (!mcpServers.value.length) {
+      mcpStates.value = [];
+      return;
+    }
+    const states = await McpAPI.listStates(mcpServers.value.map(item => item.id));
+    mcpStates.value = isOk(states.code) && states.data ? states.data : [];
+  } catch (err) {
+    mcpServers.value = [];
+    mcpStates.value = [];
+    mcpError.value = err instanceof Error ? err.message : t('chat.input.plusMcpFailed');
+  } finally {
+    mcpLoading.value = false;
+  }
+};
+
+const closePlusMenu = () => {
+  isPlusMenuOpen.value = false;
+  plusMenuInitialGroup.value = null;
+};
+
+const openPlusMenu = (group?: string) => {
+  isCommandMenuOpen.value = false;
+  isCommandMenuClickedOpen.value = false;
+  isAgentMenuOpen.value = false;
+  isAccessMenuOpen.value = false;
+  effortOpen.value = false;
+  skillMenu.close();
+  plusMenuInitialGroup.value = group ?? null;
+  isPlusMenuOpen.value = true;
+  if (group === 'skills') void skillMenu.open();
+  if (group === 'mcp') void loadMcpServers();
+  if (group === 'teams' && !plusMenuTeams.value.length) void fetchTeams();
+};
+
 const handlePlusClick = () => {
   effortOpen.value = false;
   isAgentMenuOpen.value = false;
   skillMenu.close();
-  isCommandMenuOpen.value = !isCommandMenuOpen.value;
-  if (isCommandMenuOpen.value) {
-    isCommandMenuClickedOpen.value = true;
-    activeCommandIndex.value = 0;
-  } else {
-    isCommandMenuClickedOpen.value = false;
+  if (isPlusMenuOpen.value) {
+    closePlusMenu();
+    return;
   }
+  openPlusMenu();
 };
+
+/** 协作面板选团队：复用 `selectedTeam` 的 setter（与单 Agent 互斥、回传宿主都只有一份实现）。 */
+const handlePlusSelectTeam = (teamId: string | number | null) => {
+  selectedTeam.value = teamId ?? '';
+  closePlusMenu();
+  focusInput();
+};
+
+const handlePlusCreateTeam = () => {
+  closePlusMenu();
+  emit('openTeamModal');
+};
+
+const handlePlusUpdatePlanMode = (planMode: boolean) => {
+  isPlanMode.value = planMode;
+  closePlusMenu();
+  focusInput();
+};
+
+const handlePlusSelectSkill = (skill: { name: string; description: string }) => {
+  closePlusMenu();
+  selectSkill(skill);
+};
+
+const handleOpenMcpSettings = () => {
+  closePlusMenu();
+  emit('openSettingsTab', 'mcp');
+};
+
+// ====== 工作区权限上拉框（常驻触发器，菜单里切档） ======
+const isAccessMenuOpen = ref(false);
+
+const toggleAccessMenu = () => {
+  const willOpen = !isAccessMenuOpen.value;
+  closePlusMenu();
+  isCommandMenuOpen.value = false;
+  isCommandMenuClickedOpen.value = false;
+  isAgentMenuOpen.value = false;
+  effortOpen.value = false;
+  skillMenu.close();
+  isAccessMenuOpen.value = willOpen;
+};
+
+const handleSelectAccessMode = (mode: AgentAccessMode) => {
+  isAccessMenuOpen.value = false;
+  emit('updateAccessMode', mode);
+  focusInput();
+};
+
+const handleOpenSecurity = () => {
+  isAccessMenuOpen.value = false;
+  emit('openSettingsTab', 'security');
+};
+
 
 /**
  * 选中菜单项。
@@ -956,6 +1060,8 @@ const handleClickOutside = (event: MouseEvent) => {
     isAgentMenuOpen.value = false;
     effortOpen.value = false;
     skillMenu.close();
+    closePlusMenu();
+    isAccessMenuOpen.value = false;
   } else if (agentMenuRef.value && !agentMenuRef.value.contains(target) && inputContainerRef.value?.contains(target)) {
     isAgentMenuOpen.value = false;
   }
@@ -1430,10 +1536,34 @@ defineExpose({
         class="-z-10 absolute inset-0 rounded-[inherit]"
       />
 
-      <!-- 快捷指令菜单 (/ 或 + 触发) -->
+      <!-- 「+」分组菜单：添加文件 / 模式 / 协作 / 技能 / MCP；二级浮层由子组件贴合各自分组行 -->
+      <ChatInputPlusMenu
+        v-if="isPlusMenuOpen"
+        :is-dark="isDark"
+        :is-plan-mode="isPlanMode"
+        :teams="plusMenuTeams"
+        :selected-team-id="localSelectedTeamId"
+        :skills="skillMenu.skills.value"
+        :skills-loading="skillMenu.isLoading.value"
+        :skills-error="skillMenu.loadError.value"
+        :mcp-servers="mcpServers"
+        :mcp-states="mcpStates"
+        :mcp-loading="mcpLoading"
+        :mcp-error="mcpError"
+        :initial-group="plusMenuInitialGroup"
+        @upload-image="triggerUpload"
+        @update-plan-mode="handlePlusUpdatePlanMode"
+        @select-team="handlePlusSelectTeam"
+        @create-team="handlePlusCreateTeam"
+        @select-skill="handlePlusSelectSkill"
+        @open-mcp-settings="handleOpenMcpSettings"
+      />
+
+      <!-- 快捷指令菜单（只由输入框打 / 触发）：底边紧贴输入卡片上沿，去掉阴影 -->
       <div
         v-if="isCommandMenuOpen && filteredCommands.length > 0"
-        class="bottom-[calc(100%+8px)] z-40 absolute inset-x-0 shadow-[0_12px_40px_-10px_rgba(0,0,0,0.7),0_1px_2px_rgba(0,0,0,0.08)] p-1.5 [background:var(--pb-menu)] rounded-xl border border-white/[0.08] backdrop-blur-md [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
+        data-testid="chat-command-menu"
+        class="bottom-full z-40 absolute inset-x-0 p-1.5 [background:var(--pb-menu)] rounded-xl border border-white/[0.08] backdrop-blur-md [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
       >
         <div class="px-2.5 pt-1 pb-1.5 text-xs font-medium select-none" :class="MUTED">
                     {{ t('chat.input.quickCommands') }}
@@ -1746,15 +1876,15 @@ defineExpose({
 
       <!-- 底部工具栏行 -->
       <div class="flex items-center justify-between pt-1 flex-nowrap gap-2 min-w-0">
-        <!-- 左侧工具组：+ 按钮、图片附件、团队下拉、Effort 强度、预览按钮 -->
+        <!-- 左侧工具组：+ 分组菜单（添加文件 / 模式 / 协作 / 技能 / MCP）、图片附件、Effort 强度 -->
         <div class="flex items-center gap-1 flex-nowrap shrink min-w-0">
           <!-- + 按钮 -->
           <button
             type="button"
             :class="ICON_BTN"
                         :aria-label="t('chat.input.quickCommandsTip')"
-            :aria-expanded="isCommandMenuOpen"
-            :data-on="isCommandMenuOpen ? '' : undefined"
+            :aria-expanded="isPlusMenuOpen"
+            :data-on="isPlusMenuOpen ? '' : undefined"
             :title="t('chat.input.quickCommandsTip')"
             @mousedown.prevent
             @click="handlePlusClick"
@@ -1783,16 +1913,7 @@ defineExpose({
             <HugeiconsIcon :icon="Attachment01Icon as IconArray" :size="15" :stroke-width="2" />
           </button>
 
-          <!-- 团队选择下拉 -->
-          <DropUpSelect
-            ref="teamSelectRef"
-            v-model="selectedTeam"
-            :options="teamOptions"
-            :isDark="isDark"
-            size="sm"
-            :placeholder="t('chat.input.selectTeam')"
-            trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-lx-fs-md font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
-          />
+          <!-- 团队选择已收进 + 菜单的「协作」分组：输入区不再常驻一个下拉，给写作留出宽度 -->
 
           <!-- Effort 思考强度按钮 -->
           <button
@@ -1811,23 +1932,50 @@ defineExpose({
           </button>
 
           <!-- 当前访问档位：边界必须常驻可见，不能只藏在安全中心里；
-               本地+只读是唯一会让人误以为「已被保护」的组合，单独染色警示 -->
-          <button
-            type="button"
-            class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-lx-fs-md font-medium outline-none select-none whitespace-nowrap [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease]"
-            :class="accessBadge.warn
-              ? 'text-amber-500 bg-amber-500/10'
-              : 'text-lx-muted [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]'"
-            data-testid="chat-access-mode"
-            :data-mode="props.accessMode ?? ''"
-            :data-warn="accessBadge.warn ? '' : undefined"
-            :aria-label="accessBadge.label"
-            :title="accessBadge.tip"
-            @mousedown.prevent
-            @click="emit('openSettingsTab', 'security')"
-          >
-            <span>{{ accessBadge.label }}</span>
-          </button>
+               本地+只读是唯一会让人误以为「已被保护」的组合，单独染色警示。
+               点击展开三档上拉框，选中即落到 userConfig（与安全中心同一处真源）。 -->
+          <span class="relative inline-flex">
+            <button
+              type="button"
+              class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-lx-fs-md font-medium outline-none select-none whitespace-nowrap [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease]"
+              :class="[
+                accessBadge.warn
+                  ? 'text-amber-500 bg-amber-500/10'
+                  : 'text-lx-muted [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]',
+                isAccessMenuOpen ? '[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [color:var(--pb-ink)]' : ''
+              ]"
+              data-testid="chat-access-mode"
+              :data-mode="props.accessMode ?? ''"
+              :data-warn="accessBadge.warn ? '' : undefined"
+              :aria-label="accessBadge.label"
+              :aria-expanded="isAccessMenuOpen"
+              :title="accessBadge.tip"
+              @mousedown.prevent
+              @click="toggleAccessMenu"
+            >
+              <span>{{ accessBadge.label }}</span>
+              <svg
+                class="w-3 h-3 shrink-0 opacity-70 transition-transform duration-200"
+                :class="isAccessMenuOpen ? 'rotate-180' : ''"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 15l6-6 6 6" />
+              </svg>
+            </button>
+
+            <ChatInputAccessMenu
+              v-if="isAccessMenuOpen"
+              :is-dark="isDark"
+              :access-mode="accessMode"
+              :env-type="envType"
+              @select="handleSelectAccessMode"
+              @open-security="handleOpenSecurity"
+            />
+          </span>
         </div>
 
         <!-- 右侧工具组：上下文用量环、模型选择、语音听写、Morphing 发送按钮 -->

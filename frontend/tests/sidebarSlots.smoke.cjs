@@ -639,6 +639,9 @@ app.whenReady().then(async () => {
       for (const theme of ['light', 'dark']) {
         // 每轮重新挂载：分支展开态是组件内状态，跨主题复用实例会把上一轮的手动展开带过来，
         // 让「默认折叠」断言在第二轮变成假绿。
+        // 手动覆盖还会写进 localStorage（键 lingxi.sidebar.branchExpansion）并跨进程留存，
+        // 上一轮点开的 s9 分支会让下一轮的「默认折叠」断言变成假红，所以每轮都从干净状态开始。
+        await evaluate(`localStorage.removeItem('lingxi.sidebar.branchExpansion')`);
         await evaluate('window.__render("production", "subSessions")');
         await evaluate('window.__subView.isSubPanelOpen.value = false; window.__setTheme(' + JSON.stringify(theme) + ')');
         await wait(450);

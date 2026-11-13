@@ -2,7 +2,7 @@ import {computed, nextTick, onBeforeUnmount, ref, type Ref, watch} from 'vue';
 import {SessionAPI} from '../../services/session';
 import {useApplicationSessionState} from './useApplicationSessionState';
 import {chatApi} from '../../services/chat';
-import type {ChatMessage, ChatSession, ModelConfig, ToolCallDecisionReceipt, WorkspaceVO} from '../../types/chat';
+import type {AgentAccessMode, ChatMessage, ChatSession, ModelConfig, ToolCallDecisionReceipt, WorkspaceVO} from '../../types/chat';
 import type {AgentEvent} from '../../types/Event';
 import type {ChoiceAnswersHandler, ToolDecisionHandler} from '../../types/toolDecision';
 import {buildMessageTurnMap, isSessionRunning, resolveRootSessionId} from '../../utils/session';
@@ -898,6 +898,16 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   // 档位含义随执行环境变化，输入区徽标必须一起拿到（同样不能读成取值快照）
   const envType = computed(() => userConfig.envType);
 
+  /**
+   * 输入区权限上拉框切档。
+   *
+   * <p>与安全中心写同一处（`userConfig.patch`）：档位是全局安全策略，输入区只发意图，
+   * 不本地先改再等后端，否则界面与真正生效的边界会短暂分叉。</p>
+   */
+  const handleUpdateAccessMode = async (mode: AgentAccessMode): Promise<void> => {
+    await userConfig.patch('accessMode', mode, { accessMode: mode });
+  };
+
   return {
     // 布局与设置
     isSidebarCollapsed: workspace.isSidebarCollapsed,
@@ -955,6 +965,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     accessMode,
     envType,
     selectedAgentId,
+    handleUpdateAccessMode,
     reasoningEffort,
     reasoningEffortPending,
     reasoningEffortError,

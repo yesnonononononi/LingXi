@@ -228,18 +228,10 @@ async function typeInto(textarea: MemoryNode, next: string): Promise<void> {
   await nextTick();
 }
 
-/** 快捷指令菜单是否展开（`+` 按钮的 aria-expanded 就是它）。 */
+/** 快捷指令菜单是否展开（/ 菜单容器是否真的渲染出来）。 */
 function commandMenuOpen(root: MemoryNode): boolean {
-  const trigger = harness.find(root, node => node.tag === 'button'
-    && String(node.props['aria-expanded'] ?? '') !== '' && String(node.props['aria-label'] ?? '').includes('指令'));
-  if (!trigger) {
-    // 兜底：按 title 找同一个按钮（文案本地化后 aria-label 可能变）
-    const byTitle = harness.find(root, node => node.tag === 'button'
-      && String(node.props['aria-expanded'] ?? '') !== '');
-    assert.ok(byTitle, '未找到快捷指令触发按钮，断言不成立');
-    return byTitle.props['aria-expanded'] === true;
-  }
-  return trigger.props['aria-expanded'] === true;
+  return harness.find(root, node =>
+    String(node.props['data-testid'] ?? '') === 'chat-command-menu') !== undefined;
 }
 
 test('运行时按 Enter 进入待发送队列，后端确认前保留草稿', async t => {
