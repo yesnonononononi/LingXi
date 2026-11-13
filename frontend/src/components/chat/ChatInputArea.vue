@@ -963,9 +963,19 @@ const openPlusMenu = (group?: string) => {
   skillMenu.close();
   plusMenuInitialGroup.value = group ?? null;
   isPlusMenuOpen.value = true;
-  if (group === 'skills') void skillMenu.open();
-  if (group === 'mcp') void loadMcpServers();
-  if (group === 'teams' && !plusMenuTeams.value.length) void fetchTeams();
+  if (group) void loadPlusGroup(group);
+};
+
+/**
+ * 分组展开时才去取数据。
+ *
+ * <p>菜单里的分组是点开才渲染面板，数据不在菜单挂载时全量预取；也不在 `openPlusMenu`
+ * 里按参数猜 —— 用户从「+」进去再点分组，走的是这条同一个入口，否则 MCP 面板永远是空的。</p>
+ */
+const loadPlusGroup = async (group: string) => {
+  if (group === 'skills') await skillMenu.open();
+  if (group === 'mcp' && !mcpLoading.value) await loadMcpServers();
+  if (group === 'teams' && !plusMenuTeams.value.length) await fetchTeams();
 };
 
 const handlePlusClick = () => {
@@ -1557,6 +1567,7 @@ defineExpose({
         @create-team="handlePlusCreateTeam"
         @select-skill="handlePlusSelectSkill"
         @open-mcp-settings="handleOpenMcpSettings"
+        @open-group="loadPlusGroup"
       />
 
       <!-- 快捷指令菜单（只由输入框打 / 触发）：底边紧贴输入卡片上沿，去掉阴影 -->
