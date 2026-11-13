@@ -155,6 +155,10 @@ function loadModule(filename, options = {}) {
       source = compileScript(descriptor, {
         id: settings.compileId,
         inlineTemplate: true,
+        // 内存渲染器没有 `insertStaticContent`：模板一大，编译器会把静态子树提升成 HTML 字符串，
+        // 挂载时直接抛 `hostInsertStaticContent is not a function`。测试只关心节点结构，
+        // 关掉静态提升即可（不影响运行时行为，只少一层优化）。
+        templateOptions: {compilerOptions: {hoistStatic: false}},
         // defineProps<T>() 的导入类型需要 fs 才能解析（如 types/chatMessageSlots.ts）。
         fs: {
           fileExists: target => fs.existsSync(target),
