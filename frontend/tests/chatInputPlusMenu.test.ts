@@ -93,14 +93,22 @@ test('再次点击同一分组只收起面板，不重复请求数据', async t 
     '收起后二级浮层必须消失');
 });
 
-test('技能/MCP/协作列表有高度上限：不再用 240px 顶着窗口底边', async t => {
+test('二级浮层顶对齐菜单顶、滚动区高度不超过菜单：靠 CSS 而不是脚本测量', async t => {
   const {root} = mountMenu(t);
   (groupButton(root, '技能').props.onClick as () => void)();
   await nextTick();
   const scroller = harness.find(root, node => String(node.props.class ?? '').includes('overflow-y-auto'));
   assert.ok(scroller, '技能面板必须有可滚动容器');
-  const className = String(scroller!.props.class);
-  assert.match(className, /max-h-44/, `滚动容器高度上限应为 max-h-44（176px），实际 class=${className}`);
+  assert.match(String(scroller!.props.class), /max-h-32/,
+    `滚动区上限应为 max-h-32（128px，与菜单高度相当），实际 class=${String(scroller!.props.class)}`);
+
+  // 浮层位置全交给 CSS：包含块必须是「菜单根」（分组行不再 relative），位置一写脚本就会在
+  // 数据到位、窗口尺寸变化时各算一次，正是被任务栏盖住的来源
+  const source = harness.readSource('../src/components/chat/ChatInputPlusMenu.vue');
+  assert.match(source, /<div v-for="group in GROUPS" :key="group\.key">/,
+    '分组行不得再是 relative：否则浮层锚回各自行顶，越靠下的分组越低，底部就钻到任务栏底下');
+  assert.doesNotMatch(source, /panelLift|fitPanel|getBoundingClientRect/,
+    '浮层定位不得由脚本测量决定');
 });
 
 test('菜单位置：底边锚在「+」按钮上沿，而不是输入卡片上沿', () => {

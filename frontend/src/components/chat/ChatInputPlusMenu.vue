@@ -9,7 +9,7 @@
  * <p>本组件只做展示与交互，数据一律由宿主注入、动作一律 emit 回宿主：
  * 团队 / 技能 / MCP 的加载与写入都在宿主，菜单不自己发请求，避免两处状态各自为政。</p>
  */
-import {computed, nextTick, ref, watch} from 'vue';
+import {computed, ref, watch} from 'vue';
 import {Tick02Icon} from '@hugeicons/core-free-icons';
 import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
 import type {McpConnectionStateVO, McpVO, SkillVO, TeamVO} from '../../types/chat';
@@ -62,17 +62,6 @@ const PANEL_SHELL = 'absolute left-full top-0 ml-2 w-[280px] p-2 rounded-[14px] 
 const activeGroup = ref<PlusGroup | null>(null);
 const teamQuery = ref('');
 const skillQuery = ref('');
-/** 当前展开的二级浮层（同一时刻只有一个渲染，五处复用同一个 setter）。 */
-const panelEl = ref<HTMLElement | null>(null);
-/** 浮层向上偏移量：窗口太矮时把浮层整体抬起，避免被任务栏/窗口底边切掉。 */
-const panelLift = ref(0);
-
-const PANEL_VIEWPORT_MARGIN = 12;
-
-/** `ref` 写在 v-for 里会被收集成数组，用函数 ref 只保留当前展开的那个面板。 */
-const setPanelRef = (el: unknown): void => {
-  if (el) panelEl.value = el as HTMLElement;
-};
 
 // 宿主每次打开菜单都可能指定默认分组，跟着 prop 走而不是只在初始化时读一次
 watch(
@@ -87,29 +76,10 @@ const toggleGroup = (key: PlusGroup): void => {
   if (next) emit('openGroup', next);
 };
 
+/** 浮层只换边框色，位置与高度全交给 CSS：测量 + 抬升那套会把布局正确性押在脚本时序上。 */
 const panelStyle = computed<Record<string, string>>(() => ({
-  borderColor: props.isDark !== false ? 'rgba(255,255,255,0.08)' : '#e4e4e7',
-  marginTop: panelLift.value ? `${panelLift.value}px` : '0px'
+  borderColor: props.isDark !== false ? 'rgba(255,255,255,0.08)' : '#e4e4e7'
 }));
-
-/**
- * 浮层按「分组行顶端对齐」定位，行越靠下、窗口越矮，底部越容易被裁。
- *
- * <p>这里只做一次渲染后测量，把超出视口底部的部分抬回来；不测量就该裁，
- * 改成「固定向上展开」又会让上排分组跑出顶部。</p>
- */
-watch(activeGroup, async (group) => {
-  panelLift.value = 0;
-  if (!group) return;
-  await nextTick();
-  const panel = panelEl.value;
-  // 内存渲染器（组件用例）没有布局信息：量不到就保持原位
-  if (!panel || typeof panel.getBoundingClientRect !== 'function') return;
-  const viewportHeight = window.innerHeight;
-  if (!viewportHeight) return;
-  const overflow = panel.getBoundingClientRect().bottom - (viewportHeight - PANEL_VIEWPORT_MARGIN);
-  if (overflow > 0) panelLift.value = -Math.ceil(overflow);
-});
 
 const filteredTeams = computed<TeamVO[]>(() => {
   const query = teamQuery.value.trim().toLowerCase();
@@ -164,7 +134,7 @@ const mcpStatusDot = (server: McpVO): string => {
     role="menu"
   >
     <div class="w-[188px]">
-      <div v-for="group in GROUPS" :key="group.key" class="relative">
+      <div v-for="group in GROUPS" :key="group.key">
         <button
           type="button"
           class="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-lx-fs-lg leading-[18px] text-left bg-transparent border-0 outline-none cursor-pointer transition-colors"
@@ -205,7 +175,6 @@ const mcpStatusDot = (server: McpVO): string => {
         <div
           v-if="activeGroup === group.key && group.key === 'files'"
           :class="PANEL_SHELL"
-          :ref="setPanelRef"
           :style="panelStyle"
           role="menu"
         >
@@ -219,7 +188,6 @@ const mcpStatusDot = (server: McpVO): string => {
         <div
           v-else-if="activeGroup === group.key && group.key === 'mode'"
           :class="PANEL_SHELL"
-          :ref="setPanelRef"
           :style="panelStyle"
           role="menu"
         >
@@ -238,12 +206,11 @@ const mcpStatusDot = (server: McpVO): string => {
         <div
           v-else-if="activeGroup === group.key && group.key === 'teams'"
           :class="PANEL_SHELL"
-          :ref="setPanelRef"
           :style="panelStyle"
           role="menu"
         >
           <input v-model="teamQuery" type="text" :class="SEARCH_INPUT" :placeholder="t('chat.input.plusTeamSearch')" />
-          <div class="max-h-44 overflow-y-auto scrollbar-thin mt-1">
+            <div class="max-h-32 overflow-y-auto scrollbar-thin mt-1">
             <button type="button" :class="ROW" @click="emit('selectTeam', null)">
               <span class="flex-1 min-w-0 truncate [color:var(--pb-ink)]">{{ t('chat.input.teamUnspecified') }}</span>
               <HugeiconsIcon v-if="!selectedTeamId" :icon="Tick02Icon as IconArray" :size="14" :stroke-width="2.5" class="shrink-0 [color:var(--pb-ink)]" />
@@ -283,12 +250,11 @@ const mcpStatusDot = (server: McpVO): string => {
         <div
           v-else-if="activeGroup === group.key && group.key === 'skills'"
           :class="PANEL_SHELL"
-          :ref="setPanelRef"
           :style="panelStyle"
           role="menu"
         >
           <input v-model="skillQuery" type="text" :class="SEARCH_INPUT" :placeholder="t('chat.input.searchSkill')" />
-          <div class="max-h-44 overflow-y-auto scrollbar-thin mt-1">
+            <div class="max-h-32 overflow-y-auto scrollbar-thin mt-1">
             <!-- 加载中只留占位：占位和列表并存过一次，列表渲染后占位消失会把滚动框顶得一跳 -->
             <p v-if="skillsLoading" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.skillLoading') }}</p>
             <template v-else>
@@ -315,11 +281,10 @@ const mcpStatusDot = (server: McpVO): string => {
         <div
           v-else-if="activeGroup === group.key && group.key === 'mcp'"
           :class="PANEL_SHELL"
-          :ref="setPanelRef"
           :style="panelStyle"
           role="menu"
         >
-          <div class="max-h-44 overflow-y-auto scrollbar-thin">
+            <div class="max-h-32 overflow-y-auto scrollbar-thin">
             <!-- 同上：加载中只有占位。每行右侧不再各自复读「正在加载」，那是同一件事说五遍 -->
             <p v-if="mcpLoading" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.plusMcpLoading') }}</p>
             <template v-else>
