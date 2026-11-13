@@ -104,6 +104,8 @@ public class SearchFilesToolExecutor implements ToolExecutor {
 
             List<String> hits = new ArrayList<>();
             boolean limitReached = false;
+            int skippedBinary = 0;
+            int skippedOversize = 0;
             for (WorkspaceFiles.Entry candidate : candidates) {
                 if (hits.size() >= maxResults) {
                     limitReached = true;
@@ -112,9 +114,15 @@ public class SearchFilesToolExecutor implements ToolExecutor {
                 if (nameMatcher != null && !nameMatcher.matches(candidate.path().getFileName())) {
                     continue;
                 }
-                collectHits(files, root, candidate.path(), pattern, maxResults, hits);
+                ScanOutcome outcome = collectHits(files, root, candidate.path(), pattern, maxResults, hits);
+                if (outcome == ScanOutcome.SKIPPED_BINARY) {
+                    skippedBinary++;
+                } else if (outcome == ScanOutcome.SKIPPED_OVERSIZE) {
+                    skippedOversize++;
+                }
             }
-            return ToolExecuteResult.success(render(root, request, hits, maxResults, limitReached));
+            return ToolExecuteResult.success(render(root, request, maxResults,
+                    new ScanSummary(hits, limitReached, skippedBinary, skippedOversize)));
         } catch (PatternSyntaxException e) {
             return ToolExecuteResult.err("检索文件的正则不合法: " + e.getMessage());
         } catch (Exception e) {
@@ -122,12 +130,20 @@ public class SearchFilesToolExecutor implements ToolExecutor {
         }
     }
 
-    /** 逐个文件扫行，命中即收：命中数由外层的 maxResults 兜住，不必在这里再判上限。 */
-    private void collectHits(WorkspaceFiles files, Path root, Path file, Pattern pattern,
-                             int maxResults, List<String> hits) throws Exception {
+    /**
+     * 逐个文件扫行，命中即收：命中数由外层的 maxResults 兜住，不必在这里再判上限。
+     *
+     * <p>跳过原因必须回传：静默跳过会让「未找到」同时代表「真的没有」和「压根没扫」，
+     * 模型据此下的结论无法自证。超限优先于二进制判定，免得大文件被误报成含 NUL。</p>
+     */
+    private ScanOutcome collectHits(WorkspaceFiles files, Path root, Path file, Pattern pattern,
+                                    int maxResults, List<String> hits) throws Exception {
         byte[] bytes = files.readBytes(file);
-        if (bytes.length > MAX_FILE_BYTES || isBinary(bytes)) {
-            return;
+        if (bytes.length > MAX_FILE_BYTES) {
+            return ScanOutcome.SKIPPED_OVERSIZE;
+        }
+        if (isBinary(bytes)) {
+            return ScanOutcome.SKIPPED_BINARY;
         }
         // 检索用宽松解码：单个非 UTF-8 文件不该让整次检索失败，替换符也不会命中正常正则。
         String content = new String(bytes, StandardCharsets.UTF_8);
@@ -139,19 +155,38 @@ public class SearchFilesToolExecutor implements ToolExecutor {
                 hits.add(name + ":" + (index + 1) + ": " + abbreviate(line));
             }
         }
+        return ScanOutcome.SCANNED;
     }
 
-    private String render(Path root, SearchFilesRequest request, List<String> hits,
-                          int maxResults, boolean limitReached) {
-        if (hits.isEmpty()) {
-            return "未找到匹配内容: pattern=" + request.getPattern() + ", scope=" + relativize(root, root) + ".";
+    private String render(Path root, SearchFilesRequest request, int maxResults, ScanSummary summary) {
+        String skipped = describeSkipped(summary);
+        if (summary.hits().isEmpty()) {
+            return "未找到匹配内容: pattern=" + request.getPattern()
+                    + ", scope=" + relativize(root, root) + "."
+                    + (skipped.isEmpty() ? "" : " " + skipped);
         }
-        StringBuilder output = new StringBuilder(String.join("\n", hits));
-        if (limitReached) {
+        StringBuilder output = new StringBuilder(String.join("\n", summary.hits()));
+        if (summary.limitReached()) {
             // 明确说出截断：静默截断会被当成「就这么多」。
             output.append("\n已达返回上限 ").append(maxResults).append(" 条，可能仍有匹配，请收窄 path 或 glob");
         }
+        if (!skipped.isEmpty()) {
+            // 有命中也要说：否则模型会以为范围内的文件全扫过了，据此下的「只有这些」结论是错的。
+            output.append("\n").append(skipped);
+        }
         return output.toString();
+    }
+
+    /** 跳过说明供模型判读「没找到」的可信度；没跳过时返回空串，不污染正常输出。 */
+    private String describeSkipped(ScanSummary summary) {
+        List<String> reasons = new ArrayList<>();
+        if (summary.skippedBinary() > 0) {
+            reasons.add(summary.skippedBinary() + " 个含 NUL 的文件");
+        }
+        if (summary.skippedOversize() > 0) {
+            reasons.add(summary.skippedOversize() + " 个超 " + MAX_FILE_BYTES / 1024 / 1024 + "MB 的文件");
+        }
+        return reasons.isEmpty() ? "" : "另跳过 " + String.join("、", reasons);
     }
 
     private Path resolveRoot(Workspace workspace, String path) {
@@ -202,6 +237,16 @@ public class SearchFilesToolExecutor implements ToolExecutor {
         if (condition) {
             throw new ClientException(err);
         }
+    }
+
+    /** 单文件扫描结果：跳过原因要计数，不能和「扫过但没命中」混为一谈。 */
+    private enum ScanOutcome {
+        SCANNED, SKIPPED_BINARY, SKIPPED_OVERSIZE
+    }
+
+    /** 一次检索的汇总；把计数与命中一起传给渲染，避免 render 参数膨胀。 */
+    private record ScanSummary(List<String> hits, boolean limitReached,
+                               int skippedBinary, int skippedOversize) {
     }
 
 }
