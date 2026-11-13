@@ -42,8 +42,6 @@ const FONT_SIZE_DECLARATION_PATTERN = /font-size\s*:\s*(\d+(?:\.\d+)?)px/g;
 const HARDCODED_FONT_SIZE_WHITELIST: readonly string[] = [
   // 小数档：15px 比 14px(xl) 大、比 16px(2xl) 小，无对应令牌
   'components/chat/DelegatedTaskMessage.vue::text-[15px]',
-  // 小数档：13.5px 介于 lg(13px) 与 xl(14px) 之间
-  'components/chat/PlanCard.vue::text-[13.5px]',
   // 小数档：过程流工具行的 12.5px / 11.5px
   'components/chat/process/ToolCallRenderer.vue::text-[11.5px]',
   'components/chat/process/ToolCallRenderer.vue::text-[12.5px]',

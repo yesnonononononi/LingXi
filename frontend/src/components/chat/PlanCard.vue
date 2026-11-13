@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import {computed, inject, ref} from 'vue';
 import type {PromptCardData} from '../../types/chat';
+import {PLAN_PREVIEW_KEY} from '../../types/previewPanel';
 import {DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
-import {useChatInputFocus} from '../../composables/useChatInputFocus';
 import {
-  CARD_BODY_CLASS,
   CARD_ERROR_TEXT_CLASS,
   CARD_SHELL_CLASS,
   type CardTone,
   cardToneClass
 } from '../../utils/cardUi';
 import {canDecideCard} from '../../utils/toolCallCard';
-import CardHeader from './CardHeader.vue';
-import CardActionButton from './CardActionButton.vue';
-import MarkdownRenderer from './MarkdownRenderer.vue';
-import PlanPreviewModal from './PlanPreviewModal.vue';
 import {useI18n} from '../../i18n';
 
 const props = defineProps<{
@@ -27,47 +22,30 @@ const props = defineProps<{
 
 const { t } = useI18n();
 
-/**
- * 由视图层注入的决策提交：走 JSON 回执，**不再消费请求级流**。
- * 恢复期的实时内容由会话级 v3 流渲染；本回调只负责提交并回执结果。
- * 缺省（组件树外独立使用本卡片时）降级为不可提交，仅提示。
- */
 const decideToolCall = inject(DECIDE_TOOL_CALL_KEY, null);
-
-/**
- * 「去聊天里说」：聚焦聊天输入框的能力，由 ChatView 通过 CHAT_INPUT_FOCUS_KEY 类型化注入。
- * 无 provider 时为 null，按钮不渲染（杜绝「点了没反应的死按钮」）。
- */
-const focusChatInput = useChatInputFocus();
-const goToChatInput = () => {
-  focusChatInput?.();
-};
+const openPlanPreview = inject(PLAN_PREVIEW_KEY, null);
 
 const isSubmitting = ref(false);
 const errorMsg = ref('');
-const isAddingTip = ref(false);
-const tipText = ref('');
-const isPreviewOpen = ref(false);
 
-/**
- * 是否可操作：**叠加权威 `pending`**（= type==='PROMISE' && status==='pending'），
- * 再要求后端动作集合含 APPROVE。只判 allowedActions 会被「已决但残留动作」的脏数据骗过，
- * 从而在已决卡上渲染出可点按钮。
- */
 const isPending = computed(() => canDecideCard(props.promptCard, 'APPROVE'));
-
-/** 计划书正文：Markdown 正文 */
-const planBody = computed(() => props.promptCard.content || '');
 const planTitle = computed(() => props.promptCard.title || t('chat.plan.defaultTitle'));
-
-/** 结论：raw_output.outcome（APPROVED / REJECTED / ...） */
+const planExcerpt = computed(() => {
+  const raw = props.promptCard.content || '';
+  if (!raw.trim()) return '';
+  return raw
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#>*`|_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+});
 const outcome = computed(() => String(props.promptCard.outcome ?? '').trim().toUpperCase());
 
 const statusTone = computed<CardTone>(() => {
   if (outcome.value === 'APPROVED') return 'approved';
   if (outcome.value === 'REJECTED') return 'rejected';
   if (isPending.value) return 'pending';
-  // 契约 §3：结论缺失/无法识别 = 状态未知，不得默认成功。
   return 'unknown';
 });
 
@@ -81,25 +59,32 @@ const statusLabel = computed(() => {
   return t('chat.plan.statusUnknown');
 });
 
-const toggleTipInput = () => {
-  isAddingTip.value = !isAddingTip.value;
+const planTabId = computed(() => {
+  return String(props.promptCard.toolCallId || planTitle.value);
+});
+
+const handleOpenPlan = () => {
+  openPlanPreview?.({
+    id: planTabId.value,
+    title: planTitle.value,
+    promptCard: props.promptCard,
+    sessionId: props.sessionId
+  });
 };
 
-/** 提交审批决定；后端负责恢复 loop，这里只负责调用与就地更新卡片 */
+/** 提交审批决定；后端负责恢复 loop */
 const decide = async (approved: boolean) => {
   if (isSubmitting.value || !isPending.value) return;
 
   const conversationId = props.promptCard.conversationId
     ?? (props.sessionId != null && props.sessionId !== '' ? String(props.sessionId) : '');
-    if (!conversationId) {
+  if (!conversationId) {
     errorMsg.value = t('chat.plan.missingConversation');
     return;
   }
 
-  // 决策锚点是 toolCallId：历史卡片由 TOOL 行 toolCall 提供、实时卡片由 CARD_PENDING 拉取，
-  // 两条路径都落在同一个字段上。
   const toolCallId = props.promptCard.toolCallId;
-    if (!toolCallId) {
+  if (!toolCallId) {
     errorMsg.value = t('chat.plan.missingToolCallId');
     return;
   }
@@ -115,11 +100,11 @@ const decide = async (approved: boolean) => {
       conversationId: String(conversationId),
       toolCallId: String(toolCallId),
       action: approved ? 'APPROVE' : 'REJECT',
-      text: tipText.value.trim(),
+      text: '',
       expectedVersion: props.promptCard.version ?? null
     });
-  } catch (err: any) {
-    errorMsg.value = err?.message || (approved ? t('chat.plan.approveFailed') : t('chat.plan.rejectFailed'));
+  } catch (err: unknown) {
+    errorMsg.value = (err instanceof Error ? err.message : '') || (approved ? t('chat.plan.approveFailed') : t('chat.plan.rejectFailed'));
   } finally {
     isSubmitting.value = false;
   }
@@ -127,156 +112,50 @@ const decide = async (approved: boolean) => {
 </script>
 
 <template>
-  <div :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-zinc-800' : 'bg-white border-zinc-200/90']">
-    <div :class="CARD_BODY_CLASS">
-
-      <!-- 1. 统一 header：状态点 + 类型标签 + 标题 -->
-      <CardHeader :tone="statusTone" :type-label="t('chat.plan.typeLabel')" :title="planTitle" :is-dark="isDark" />
-
-      <!-- 2. 计划书正文（Markdown；长文限高可滚动） -->
-      <div
-        v-if="planBody"
-        class="text-[13.5px] leading-relaxed max-h-[420px] overflow-y-auto scrollbar-thin pr-1"
-      >
-        <MarkdownRenderer :content="planBody" :is-dark="isDark" />
+  <div
+    data-testid="plan-card"
+    :class="[
+      CARD_SHELL_CLASS,
+      'w-full cursor-pointer transition-colors',
+      isDark ? 'bg-[#161b26] border-zinc-800 hover:border-zinc-700' : 'bg-white border-zinc-200/90 hover:border-zinc-300'
+    ]"
+    @click="handleOpenPlan"
+  >
+    <div class="flex flex-col gap-2.5 p-4">
+      <div class="flex flex-col gap-1 min-w-0">
+        <span class="text-sm font-semibold truncate" :class="isDark ? 'text-zinc-100' : 'text-zinc-900'">
+          {{ planTitle }}
+        </span>
+        <p
+          v-if="planExcerpt"
+          class="m-0 text-xs truncate"
+          :class="isDark ? 'text-zinc-400' : 'text-zinc-500'"
+        >
+          {{ planExcerpt }}
+        </p>
       </div>
 
-      <!-- 3. 补充 Tip 输入区（可折叠） -->
-      <div
-        v-if="isPending && isAddingTip"
-        class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80"
-      >
-        <div class="flex items-center justify-between mb-1.5 text-xs text-lx-muted">
-          <div class="flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            <span class="font-medium text-zinc-700 dark:text-zinc-300">{{ t('chat.plan.tipHeader') }}</span>
-          </div>
-          <button
-            type="button"
-            @click="isAddingTip = false"
-            class="text-lx-fs-sm text-lx-muted hover:text-lx-secondary cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
-          >
-                        {{ t('common.collapse') }}
-          </button>
-        </div>
-        <textarea
-          v-model="tipText"
-          rows="2"
-          :placeholder="t('chat.plan.tipPlaceholder')"
-          :class="[
-            'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
-            isDark
-              ? 'bg-[#1a2130] border-zinc-700 text-zinc-200 placeholder-zinc-500 focus:border-blue-500'
-              : 'bg-zinc-50 border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-          ]"
-        ></textarea>
-      </div>
-
-      <!-- 错误反馈 -->
       <div v-if="errorMsg" :class="['text-xs', CARD_ERROR_TEXT_CLASS]">
         {{ errorMsg }}
       </div>
 
-      <!-- 4. 底部操作栏 -->
-      <div class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
+      <button
+        v-if="isPending"
+        type="button"
+        data-testid="plan-execute-button"
+        :disabled="isSubmitting"
+        class="self-start px-5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+        @click.stop="decide(true)"
+      >
+        {{ t('chat.plan.executeAction') }}
+      </button>
 
-        <div class="flex items-center gap-3 flex-wrap">
-          <button
-            v-if="planBody"
-            type="button"
-            data-testid="plan-preview-open"
-            class="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs sm:text-sm text-lx-secondary hover:text-lx-primary cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
-            aria-haspopup="dialog"
-            @click="isPreviewOpen = true"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6l-6 6M3 21l6-6m12 6l-6-6" />
-            </svg>
-            {{ t('chat.plan.previewAction') }}
-          </button>
-
-          <button
-            v-if="isPending && focusChatInput"
-            type="button"
-            @click="goToChatInput"
-            :class="[
-              'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
-              isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-600 hover:text-zinc-900'
-            ]"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-            <span>{{ t('chat.plan.goToChat') }}</span>
-          </button>
-        </div>
-
-        <!-- 待审：决策按钮组 -->
-        <div v-if="isPending" class="flex items-center gap-2.5">
-          <button
-            type="button"
-            @click="toggleTipInput"
-            :class="[
-              'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
-              isAddingTip
-                ? (isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-amber-400 bg-amber-50 text-amber-700')
-                : (isDark ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-200 text-zinc-700 hover:bg-zinc-50')
-            ]"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            <span>{{ isAddingTip ? t('chat.plan.collapseTip') : t('chat.plan.addTip') }}</span>
-          </button>
-
-          <CardActionButton
-            tone="danger"
-            variant="outline"
-            :disabled="isSubmitting"
-            :is-dark="isDark"
-            @click="decide(false)"
-          >
-            <template #icon>
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </template>
-                        {{ t('chat.plan.rejectAction') }}
-          </CardActionButton>
-
-          <CardActionButton
-            tone="emerald"
-            :loading="isSubmitting"
-            :is-dark="isDark"
-            @click="decide(true)"
-          >
-            <template #icon>
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-            </template>
-                        {{ t('chat.plan.approveAction') }}
-          </CardActionButton>
-        </div>
-
-        <!-- 已决：状态横幅（二级信息） -->
-        <div
-          v-else
-          :class="['text-xs px-3 py-1.5 rounded-xl font-medium', cardToneClass(statusTone, isDark)]"
-        >
-          {{ statusLabel }}
-        </div>
-
+      <div
+        v-else
+        :class="['self-start text-xs px-3 py-1.5 rounded-lg font-medium', cardToneClass(statusTone, isDark)]"
+      >
+        {{ statusLabel }}
       </div>
     </div>
   </div>
-  <PlanPreviewModal
-    :open="isPreviewOpen"
-    :title="planTitle"
-    :content="planBody"
-    :is-dark="isDark"
-    @close="isPreviewOpen = false"
-  />
 </template>

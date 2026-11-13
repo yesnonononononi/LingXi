@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import {computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch} from 'vue';
 import type {FilePreviewTab} from '../../types/filePreview';
-import type {PreviewPanelMode} from '../../types/projectPagePreview';
+import type {
+  DesignPreviewTab,
+  PlanPreviewTab,
+  PreviewTabKind,
+  UnifiedPreviewTab,
+} from '../../types/previewPanel';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {useSidePanelWidthGuard} from '../../composables/useSidePanelWidthGuard';
 import {getApiBaseUrl} from '../../utils/apiConfig';
@@ -16,55 +21,104 @@ import hljs from 'highlight.js';
 import {t} from '../../i18n';
 import ProjectPagePreview from './ProjectPagePreview.vue';
 import DesignCanvasPreview from './DesignCanvasPreview.vue';
+import PlanPreviewView from './PlanPreviewView.vue';
+import NewPreviewTabView from './NewPreviewTabView.vue';
 
 /**
- * 预览面板外壳：顶栏（标题 / 模式切换 / 最大化 / 关闭）、拖拽调宽、最大化。
- *
- * <p>外壳与内容分离：文件模式渲染原有的标签 + 工具栏 + 代码区，页面模式只渲染
- * {@code ProjectPagePreview}，**不渲染**标签与代码区。`mode` 是可选的受控属性：
- * 父级绑定时走父级状态（v-model:mode），未绑定时用组件内部兜底状态，
- * 这样既保持既有的独立挂载（filePreview.smoke.cjs 只传 tabs/activeId/isDark）可用，
- * 又不会出现「点了模式按钮但状态没动」的双真源。</p>
+ * 预览面板外壳：统一胶囊 Tab 栏（文件 / 页面 / 设计原型 / 实现计划 / 新标签页）、拖拽调宽、最大化。
  */
 const props = withDefaults(defineProps<{
   tabs: FilePreviewTab[];
   activeId: string;
   isDark: boolean;
-  /** 内容模式；省略时按 'file' 处理（保持旧调用方行为不变）。 */
-  mode?: PreviewPanelMode;
-  /**
-   * 面板是否展开。
-   *
-   * <p>展开/收起由这里驱动宽度过渡，**不再由宿主用 Transition 包一层** —— 宿主的
-   * `<Transition>` 配 `v-show` 时，`v-if` 一变（比如页面模式没有文件标签）元素就被卸载，
-   * 离场动画根本播不出来，面板"啪"一下消失、聊天区瞬间弹回。默认 true 保持独立挂载可用。</p>
-   */
+  /** 统一标签列表；缺省时由文件标签自动合成（兼容独立挂载测试）。 */
+  unifiedTabs?: UnifiedPreviewTab[];
+  /** 当前激活的统一标签键（`<kind>:<targetId>`）。 */
+  activeTabKey?: string;
+  /** 已打开的设计原型标签列表（支持多开）。 */
+  designTabs?: DesignPreviewTab[];
+  /** 已打开的实现计划标签列表（支持多开）。 */
+  planTabs?: PlanPreviewTab[];
   visible?: boolean;
-}>(), {mode: undefined, visible: true});
+}>(), {
+  unifiedTabs: undefined,
+  activeTabKey: undefined,
+  designTabs: () => [],
+  planTabs: () => [],
+  visible: true,
+});
 const emit = defineEmits<{
   (e: 'activate', id: string): void;
   (e: 'closeTab', id: string): void;
+  (e: 'activateTab', key: string): void;
+  (e: 'closeUnifiedTab', tab: UnifiedPreviewTab): void;
+  (e: 'createNewTab'): void;
+  (e: 'newTabAction', payload: { type: 'url' | 'page' | 'design'; tabId: string; url?: string }): void;
   (e: 'close'): void;
   (e: 'refresh', tab: FilePreviewTab): void;
   (e: 'open'): void;
   (e: 'reveal'): void;
-  (e: 'update:mode', mode: PreviewPanelMode): void;
   (e: 'sendToChat', payload: { prompt: string }): void;
 }>();
 
-/** 未受控时的兜底模式（受控时以 props.mode 为准）。 */
-const internalMode = ref<PreviewPanelMode>('file');
-const currentMode = computed<PreviewPanelMode>(() => props.mode ?? internalMode.value);
-const isPageMode = computed<boolean>(() => currentMode.value === 'page');
-const isDesignMode = computed<boolean>(() => currentMode.value === 'design');
-const isFileMode = computed<boolean>(() => currentMode.value === 'file');
+const effectiveTabs = computed<UnifiedPreviewTab[]>(() => {
+  if (props.unifiedTabs) return props.unifiedTabs;
+  return props.tabs.map(tab => ({
+    key: `file:${tab.id}`,
+    kind: 'file' as PreviewTabKind,
+    targetId: tab.id,
+    title: tab.name,
+  }));
+});
 
-const active = computed(() => props.tabs.find(tab => tab.id === props.activeId));
+const effectiveActiveKey = computed<string>(() => {
+  if (props.activeTabKey !== undefined && props.activeTabKey !== '') {
+    return props.activeTabKey;
+  }
+  if (props.activeId) return `file:${props.activeId}`;
+  return effectiveTabs.value[0]?.key ?? '';
+});
+
+const activeUnifiedTab = computed<UnifiedPreviewTab | undefined>(() =>
+  effectiveTabs.value.find(tab => tab.key === effectiveActiveKey.value)
+);
+const activeKind = computed<PreviewTabKind>(() => activeUnifiedTab.value?.kind ?? 'new');
+const activeTargetId = computed<string>(() => activeUnifiedTab.value?.targetId ?? '');
+const isFileMode = computed<boolean>(() => activeKind.value === 'file');
+const isPageMode = computed<boolean>(() => activeKind.value === 'page');
+const isDesignMode = computed<boolean>(() => activeKind.value === 'design');
+const isPlanMode = computed<boolean>(() => activeKind.value === 'plan');
+const isNewMode = computed<boolean>(() => activeKind.value === 'new' || effectiveTabs.value.length === 0);
+
+const activeFileIdResolved = computed<string>(() =>
+  isFileMode.value ? activeTargetId.value : props.activeId
+);
+const active = computed(() => props.tabs.find(tab => tab.id === activeFileIdResolved.value));
+const activePlanTab = computed<PlanPreviewTab | undefined>(() =>
+  isPlanMode.value ? props.planTabs.find(tab => tab.id === activeTargetId.value) : undefined
+);
+
 const panelTitle = computed(() => {
-  if (isDesignMode.value) return t('designPreview.title') || '设计原型预览';
+  if (isPlanMode.value) return t('chat.plan.implementPlanTab');
+  if (isDesignMode.value) return t('designPreview.title');
   if (isPageMode.value) return t('projectPagePreview.title');
   return t('filePreview.title');
 });
+
+const selectUnifiedTab = (tab: UnifiedPreviewTab): void => {
+  emit('activateTab', tab.key);
+  if (tab.kind === 'file' && !props.unifiedTabs) {
+    emit('activate', tab.targetId);
+  }
+};
+
+const closeUnifiedTab = (tab: UnifiedPreviewTab): void => {
+  emit('closeUnifiedTab', tab);
+  if (tab.kind === 'file' && !props.unifiedTabs) {
+    emit('closeTab', tab.targetId);
+  }
+};
+
 const CodePreview = defineAsyncComponent(() => import('../common/CodePreview.vue'));
 const maximized = ref(false);
 const panelWidth = ref(540);
@@ -76,18 +130,26 @@ let dragStart: { x: number; width: number } | undefined;
 
 /** 面板根元素：宽度守卫要拿它的父元素（弹性行）实测宽度。 */
 const shellRef = ref<HTMLElement | null>(null);
+const unifiedTabsScrollRef = ref<HTMLElement | null>(null);
 const { clampWidth } = useSidePanelWidthGuard(shellRef, panelWidth, MIN_PANEL_WIDTH);
 
-/**
- * 切换内容模式：内部状态先跟上，再通知父级（受控时父级会回写 props.mode）。
- *
- * @param mode 目标模式。
- */
-const setMode = (mode: PreviewPanelMode): void => {
-  if (mode !== 'file' && mode !== 'page' && mode !== 'design') return;
-  if (internalMode.value !== mode) internalMode.value = mode;
-  if (props.mode !== mode) emit('update:mode', mode);
+const scrollActiveTabIntoView = (): void => {
+  const container = unifiedTabsScrollRef.value;
+  if (!container || !effectiveActiveKey.value) return;
+  const tabBox = container.querySelector<HTMLElement>('.unified-tab.is-active');
+  if (!tabBox) return;
+  const tabRect = tabBox.getBoundingClientRect();
+  const barRect = container.getBoundingClientRect();
+  if (tabRect.left < barRect.left) {
+    container.scrollLeft -= barRect.left - tabRect.left;
+  } else if (tabRect.right > barRect.right) {
+    container.scrollLeft += tabRect.right - barRect.right;
+  }
 };
+
+watch([effectiveActiveKey, panelWidth, maximized], () => {
+  void nextTick(scrollActiveTabIntoView);
+});
 
 const moveResize = (event: PointerEvent) => {
   if (!dragStart) return;
@@ -372,8 +434,8 @@ const revertEdit = async (): Promise<void> => {
   }
 };
 
-/** 切换标签时把三档状态清干净再按新标签取数；默认回到「本次改动」。 */
-watch(() => props.activeId, () => {
+/** 切换文件标签时把三档状态清干净再按新标签取数；默认回到「本次改动」。 */
+watch(activeFileIdResolved, () => {
   turnDiff.value = emptyDiffState();
   latestDiff.value = emptyDiffState();
   latestIsCurrent.value = false;
@@ -400,28 +462,94 @@ watch(() => props.activeId, () => {
     <div v-if="!maximized" class="resize-handle" role="separator" :aria-label="t('filePreview.resizeAria')" aria-orientation="vertical" tabindex="0"
       @pointerdown="startResize" @keydown.left.prevent="panelWidth = clampWidth(panelWidth + 32)" @keydown.right.prevent="panelWidth = clampWidth(panelWidth - 32)" />
     <header class="preview-topbar">
-      <span class="panel-title">{{ panelTitle }}</span>
-      <div class="topbar-actions">
-        <!-- 模式切换：用 aria-pressed 双按钮而不是 role=tab（文件标签已占用 role=tab，语义不能混） -->
-        <div class="mode-switch" role="group" :aria-label="t('filePreview.modeLabel')">
-          <button type="button" :aria-pressed="isFileMode" :title="t('filePreview.modeFile')" @click="setMode('file')">{{ t('filePreview.modeFile') }}</button>
-          <button type="button" :aria-pressed="isPageMode" :title="t('filePreview.modePage')" @click="setMode('page')">{{ t('filePreview.modePage') }}</button>
-          <button type="button" :aria-pressed="isDesignMode" :title="t('filePreview.modeDesign')" @click="setMode('design')">{{ t('filePreview.modeDesign') }}</button>
+      <div ref="unifiedTabsScrollRef" class="unified-tabs-scroll" role="tablist" :aria-label="t('filePreview.modeLabel')">
+        <div
+          v-for="tab in effectiveTabs"
+          :key="tab.key"
+          :data-tab-key="tab.key"
+          class="unified-tab"
+          :class="{ 'is-active': tab.key === effectiveActiveKey }"
+          role="presentation"
+        >
+          <button
+            type="button"
+            role="tab"
+            class="unified-tab-btn"
+            :aria-selected="tab.key === effectiveActiveKey"
+            :title="tab.url || tab.title"
+            @click="selectUnifiedTab(tab)"
+            @auxclick.middle.prevent="closeUnifiedTab(tab)"
+          >
+            <span v-if="tab.isLoading" class="unified-tab-spinner" aria-hidden="true"></span>
+            <img
+              v-else-if="tab.kind === 'page' && tab.favicon"
+              :src="tab.favicon"
+              alt=""
+              class="unified-tab-favicon"
+              referrerpolicy="no-referrer"
+              @error="($event.target as HTMLImageElement).hidden = true"
+            />
+            <svg v-else-if="tab.kind === 'file'" class="unified-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" />
+            </svg>
+            <svg v-else-if="tab.kind === 'design'" class="unified-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.39m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" />
+            </svg>
+            <svg v-else-if="tab.kind === 'plan'" class="unified-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z" />
+            </svg>
+            <svg v-else class="unified-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18" />
+            </svg>
+            <span class="unified-tab-title">{{ tab.title }}</span>
+          </button>
+          <button
+            type="button"
+            class="unified-tab-close"
+            :aria-label="t('filePreview.closeNamed', { name: tab.title })"
+            @click.stop="closeUnifiedTab(tab)"
+          >×</button>
         </div>
-        <button type="button" :title="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" :aria-label="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" @click="maximized = !maximized">{{ maximized ? t('filePreview.restore') : t('common.expand') }}</button>
-        <button type="button" :aria-label="t('filePreview.closePreview')" :title="t('filePreview.closePreview')" @click="emit('close')">✕</button>
+        <button
+          type="button"
+          class="new-tab-btn"
+          data-testid="preview-new-tab-btn"
+          :title="t('filePreview.newTab')"
+          :aria-label="t('filePreview.newTab')"
+          @click="emit('createNewTab')"
+        >+</button>
+      </div>
+      <div class="topbar-actions">
+        <button
+          type="button"
+          class="topbar-icon-btn"
+          :title="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')"
+          :aria-label="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')"
+          @click="maximized = !maximized"
+        >
+          <svg v-if="!maximized" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="topbar-icon-btn"
+          :aria-label="t('filePreview.closePreview')"
+          :title="t('filePreview.closePreview')"
+          @click="emit('close')"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="3" />
+            <line x1="15" y1="4" x2="15" y2="20" />
+          </svg>
+        </button>
       </div>
     </header>
     <template v-if="isFileMode">
-      <div class="file-tabs" role="tablist" :aria-label="t('filePreview.openedFiles')">
-        <div v-for="tab in tabs" :key="tab.id" class="file-tab" :class="{ selected: tab.id === activeId }">
-          <button type="button" role="tab" :aria-selected="tab.id === activeId" :title="tab.request.path" @click="emit('activate', tab.id)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" /></svg>
-            <span>{{ tab.name }}</span>
-          </button>
-          <button type="button" :aria-label="t('filePreview.closeNamed', { name: tab.name })" @click="emit('closeTab', tab.id)">×</button>
-        </div>
-      </div>
       <!-- 文件正文自身判空（不再用 v-if="active" 包住整块）：页面模式没有 active 也必须能渲染别的内容 -->
       <div v-if="active" class="preview-toolbar">
         <div class="file-heading" :title="active.data?.path ?? active.request.path">
@@ -486,7 +614,7 @@ watch(() => props.activeId, () => {
           </div>
           <CodePreview
             v-show="!!active.data && !(hasEdit && isDiffMode)"
-            :tabs="tabs" :activeId="activeId" :isDark="isDark"
+            :tabs="tabs" :activeId="activeFileIdResolved" :isDark="isDark"
           />
           <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
           <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
@@ -501,14 +629,42 @@ watch(() => props.activeId, () => {
       <div v-if="active?.data?.truncated" class="preview-truncated">{{ t('filePreview.truncated') }}</div>
     </template>
     <!-- 隐藏只暂停显示，页面状态由主进程保留；拖拽时让指针事件留在主页面。滑动期间由 panel 停更原生视图。 -->
-    <ProjectPagePreview v-show="isPageMode" :active="isPageMode && !resizing" :sliding="isSliding || resizing" class="page-preview-frame" />
+    <ProjectPagePreview
+      v-show="isPageMode"
+      :active="isPageMode && !resizing"
+      :sliding="isSliding || resizing"
+      :hideTabBar="true"
+      class="page-preview-frame"
+    />
     <DesignCanvasPreview
-      v-if="isDesignMode"
-      :active="isDesignMode"
-      :initialContent="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.data?.content : undefined"
-      :initialFileName="active?.name.endsWith('.html') || active?.name.endsWith('.htm') ? active.name : undefined"
+      v-for="dtab in designTabs"
+      v-show="isDesignMode && activeTargetId === dtab.id"
+      :key="dtab.id"
+      :active="isDesignMode && activeTargetId === dtab.id"
+      :initialContent="dtab.initialContent"
+      :initialFileName="dtab.initialFileName"
       class="design-preview-frame"
       @sendToChat="emit('sendToChat', $event)"
+    />
+    <PlanPreviewView
+      v-if="isPlanMode && activePlanTab"
+      :key="activePlanTab.id"
+      :tab="activePlanTab"
+      :isDark="isDark"
+      class="plan-preview-frame"
+      @insertTip="emit('sendToChat', { prompt: $event })"
+    />
+    <NewPreviewTabView
+      v-if="isNewMode"
+      :fileTabs="tabs"
+      :planTabs="planTabs ?? []"
+      :isDark="isDark"
+      class="new-tab-frame"
+      @openUrl="emit('newTabAction', { type: 'url', tabId: activeTargetId, url: $event })"
+      @openPage="emit('newTabAction', { type: 'page', tabId: activeTargetId })"
+      @openDesign="emit('newTabAction', { type: 'design', tabId: activeTargetId })"
+      @activateFile="emit('activateTab', `file:${$event}`)"
+      @activatePlan="emit('activateTab', `plan:${$event}`)"
     />
   </div>
   </aside>
@@ -535,25 +691,35 @@ watch(() => props.activeId, () => {
 .file-preview-panel.is-maximized { z-index: 40; }
 .resize-handle { position: absolute; top: 0; bottom: 0; left: 0; width: 8px; cursor: col-resize; z-index: 5; touch-action: none; }
 .resize-handle:hover, .resize-handle:focus-visible { background: var(--file-line); }
-.preview-topbar, .preview-toolbar, .preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.preview-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--file-line); min-height: 44px; box-sizing: border-box; }
+.preview-toolbar, .preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
 .mode-switch { display: flex; gap: 2px; padding: 2px; margin-right: 4px; border: 1px solid var(--file-line); border-radius: 8px; }
 .mode-switch button[aria-pressed='true'] { background: var(--file-tab); font-weight: 600; }
-/* 页面正文根元素：占满面板剩余高度，内部布局归 ProjectPagePreview 自己（显式选择器，不用通配符） */
-.page-preview-frame { flex: 1 1 0%; min-height: 0; min-width: 0; }
-.design-preview-frame { flex: 1 1 0%; min-height: 0; min-width: 0; }
-.preview-topbar { border-bottom: 1px solid var(--file-line); }
-.panel-title { font-size: var(--lx-font-size-lg); font-weight: 600; }
+.unified-tabs-scroll { display: flex; align-items: center; gap: 6px; flex: 1 1 0%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.unified-tabs-scroll::-webkit-scrollbar { display: none; }
+.unified-tab { display: inline-flex; align-items: center; gap: 2px; max-width: 170px; flex-shrink: 0; border-radius: 9999px; padding: 2px 4px 2px 6px; color: var(--file-muted); border: 1px solid transparent; transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease; }
+.unified-tab:hover { background: var(--file-tab); color: inherit; }
+.unified-tab.is-active { background: var(--file-tab); color: inherit; border-color: var(--file-line); font-weight: 500; }
+.unified-tab-btn { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 4px; border-radius: 9999px; font-size: var(--lx-font-size-sm, 12.5px); }
+.unified-tab-btn:hover { background: transparent; }
+.unified-tab-icon, .unified-tab-favicon { width: 14px; height: 14px; flex-shrink: 0; }
+.unified-tab-favicon { border-radius: 3px; object-fit: contain; }
+.unified-tab-spinner { width: 13px; height: 13px; flex-shrink: 0; border-radius: 9999px; border: 1.5px solid var(--file-line); border-top-color: var(--file-ink); animation: lx-tab-spin 0.8s linear infinite; }
+@keyframes lx-tab-spin { to { transform: rotate(360deg); } }
+.unified-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unified-tab-close { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border-radius: 9999px; font-size: var(--lx-font-size-md, 13px); line-height: 1; color: var(--file-muted); flex-shrink: 0; }
+.unified-tab-close:hover { background: var(--file-line); color: inherit; }
+.new-tab-btn { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: 9999px; font-size: var(--lx-font-size-2xl, 16px); line-height: 1; color: var(--file-muted); flex-shrink: 0; }
+.new-tab-btn:hover { background: var(--file-tab); color: inherit; }
+.topbar-icon-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 8px; color: var(--file-muted); }
+.topbar-icon-btn:hover { background: var(--file-tab); color: inherit; }
+/* 页面/设计/计划/新标签页正文根元素：占满面板剩余高度 */
+.page-preview-frame, .design-preview-frame, .plan-preview-frame, .new-tab-frame { flex: 1 1 0%; min-height: 0; min-width: 0; }
 .topbar-actions, .toolbar-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 button { cursor: pointer; color: inherit; background: transparent; border: 0; border-radius: 6px; padding: 5px 7px; font-size: var(--lx-font-size-md); }
 button:hover { background: var(--file-tab); }
 button:focus-visible { outline: 2px solid var(--file-focus); outline-offset: -2px; }
 button:disabled { opacity: .4; cursor: default; }
-.file-tabs { display: flex; flex-shrink: 0; gap: 4px; padding: 8px 10px; overflow-x: auto; border-bottom: 1px solid var(--file-line); }
-.file-tab { display: flex; align-items: center; border-radius: 8px; color: var(--file-muted); flex-shrink: 0; }
-.file-tab.selected { background: var(--file-tab); color: inherit; }
-.file-tab [role=tab] { display: flex; align-items: center; gap: 7px; max-width: 180px; padding: 7px 8px; }
-.file-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-tab > button:last-child { font-size: var(--lx-font-size-3xl); padding: 2px 7px; }
 .preview-toolbar { align-items: flex-start; flex-wrap: wrap; padding-bottom: 14px; }
 .file-heading { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 .file-heading strong { font-size: var(--lx-font-size-xl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

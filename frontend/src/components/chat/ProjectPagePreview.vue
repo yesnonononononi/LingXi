@@ -2,12 +2,16 @@
 /** 原生视图不参与 DOM 排版，面板只同步占位区域与可见性。 */
 import {computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {t} from '../../i18n';
+import {useBrowserBookmarks} from '../../composables/useBrowserBookmarks';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 import type {ProjectPageTab} from '../../types/projectPagePreview';
 
-const props = withDefaults(defineProps<{active?: boolean; sliding?: boolean}>(), {active: true, sliding: false});
+const props = withDefaults(defineProps<{active?: boolean; sliding?: boolean; hideTabBar?: boolean}>(), {active: true, sliding: false, hideTabBar: false});
 const preview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
+const { bookmarks, isBookmarked, toggleBookmark, removeBookmark } = useBrowserBookmarks();
+const bookmarksOpen = ref(false);
+const bookmarkControlRef = ref<HTMLElement | null>(null);
 const nativeAvailable = typeof window.electronAPI?.projectPage?.command === 'function';
 const frameArea = ref<HTMLElement | null>(null);
 const tabsBar = ref<HTMLElement | null>(null);
@@ -22,11 +26,11 @@ const syncViewport = (): void => {
   const element = frameArea.value;
   if (!element) return;
   const rect = element.getBoundingClientRect();
-  // 原生视图位于 DOM 上方；弹窗显示期间隐藏，避免遮挡确认按钮。
+  // 原生视图位于 DOM 上方；弹窗或收藏列表显示期间隐藏，避免遮挡交互元素。
   const modalOpen = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"], dialog[open]'))
     .some(modal => modal.getClientRects().length > 0 && getComputedStyle(modal).visibility !== 'hidden');
   const layout = {
-    visible: props.active && rect.width > 2 && rect.height > 2 && !modalOpen && getComputedStyle(element).visibility !== 'hidden',
+    visible: props.active && !bookmarksOpen.value && rect.width > 2 && rect.height > 2 && !modalOpen && getComputedStyle(element).visibility !== 'hidden',
     bounds: {x: rect.x + 1, y: rect.y + 1, width: Math.max(0, rect.width - 2), height: Math.max(0, rect.height - 2)},
   };
   const signature = JSON.stringify([preview.generation.value, layout]);
@@ -164,11 +168,47 @@ const onAddressInput = (event: Event): void => {
 const submit = (): void => {
   openAddress(addressInput.value);
 };
+
+const currentBookmarked = computed<boolean>(() => isBookmarked(committedUrl.value));
+
+const toggleCurrentBookmark = (): void => {
+  if (!committedUrl.value) return;
+  toggleBookmark({
+    url: committedUrl.value,
+    title: activeTab.value?.title,
+    favicon: activeTab.value?.favicon,
+  });
+};
+
+const openBookmarkedUrl = (url: string): void => {
+  bookmarksOpen.value = false;
+  openAddress(url);
+};
+
+const handleOutsidePointerDown = (event: PointerEvent): void => {
+  if (!bookmarksOpen.value) return;
+  const target = event.target as Node | null;
+  if (target && bookmarkControlRef.value?.contains(target)) return;
+  bookmarksOpen.value = false;
+};
+
+watch(bookmarksOpen, (isOpen) => {
+  scheduleViewport();
+  if (isOpen) {
+    window.addEventListener('pointerdown', handleOutsidePointerDown);
+  } else {
+    window.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointerdown', handleOutsidePointerDown);
+});
 </script>
 
 <template>
   <div class="project-page-preview">
-    <div class="tab-bar">
+    <div v-if="!hideTabBar" class="tab-bar">
       <div ref="tabsBar" class="page-tabs" role="tablist" :aria-label="t('projectPagePreview.tabsLabel')"
         @keydown.right.prevent="moveTab(1)" @keydown.left.prevent="moveTab(-1)">
         <div v-for="tab in tabs" :key="tab.id" class="page-tab" :class="{'is-active': tab.id === activeTabId}" role="presentation">
@@ -219,6 +259,84 @@ const submit = (): void => {
           :aria-label="t('projectPagePreview.openAddress')" :title="t('projectPagePreview.openAddress')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
         </button>
+      </div>
+      <div ref="bookmarkControlRef" class="bookmark-controls">
+        <button
+          type="button"
+          class="bookmark-icon-btn"
+          :class="{ 'is-bookmarked': currentBookmarked }"
+          data-testid="page-bookmark-toggle"
+          :disabled="!committedUrl"
+          :aria-pressed="currentBookmarked"
+          :aria-label="currentBookmarked ? t('projectPagePreview.removeBookmark') : t('projectPagePreview.addBookmark')"
+          :title="currentBookmarked ? t('projectPagePreview.removeBookmark') : t('projectPagePreview.addBookmark')"
+          @click="toggleCurrentBookmark"
+        >
+          <svg viewBox="0 0 24 24" :fill="currentBookmarked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="bookmark-icon-btn"
+          :class="{ 'is-open': bookmarksOpen }"
+          data-testid="page-bookmarks-menu-btn"
+          :aria-expanded="bookmarksOpen"
+          :aria-label="t('projectPagePreview.bookmarksLabel')"
+          :title="t('projectPagePreview.bookmarksLabel')"
+          @click="bookmarksOpen = !bookmarksOpen"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
+          </svg>
+        </button>
+        <div
+          v-if="bookmarksOpen"
+          class="bookmarks-popover"
+          data-testid="page-bookmarks-popover"
+          role="region"
+          :aria-label="t('projectPagePreview.bookmarksLabel')"
+          @keydown.esc.stop="bookmarksOpen = false"
+        >
+          <div class="bookmarks-popover-header">
+            <span>{{ t('projectPagePreview.bookmarksLabel') }}</span>
+            <span class="bookmarks-count">{{ bookmarks.length }}</span>
+          </div>
+          <div v-if="bookmarks.length" class="bookmarks-scroll-list">
+            <div v-for="item in bookmarks" :key="item.url" class="bookmark-row">
+              <button
+                type="button"
+                class="bookmark-row-open"
+                :title="item.url"
+                @click="openBookmarkedUrl(item.url)"
+              >
+                <img
+                  v-if="item.favicon"
+                  :src="item.favicon"
+                  alt=""
+                  class="bookmark-row-favicon"
+                  referrerpolicy="no-referrer"
+                  @error="($event.target as HTMLImageElement).hidden = true"
+                />
+                <svg v-else class="bookmark-row-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18" />
+                </svg>
+                <span class="bookmark-row-meta">
+                  <span class="bookmark-row-title">{{ item.title }}</span>
+                  <span class="bookmark-row-url">{{ item.url }}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="bookmark-row-remove"
+                :aria-label="t('projectPagePreview.removeNamedBookmark', { name: item.title })"
+                @click.stop="removeBookmark(item.url)"
+              >×</button>
+            </div>
+          </div>
+          <div v-else class="bookmarks-empty">{{ t('projectPagePreview.bookmarksEmpty') }}</div>
+        </div>
       </div>
     </form>
 
@@ -274,6 +392,29 @@ const submit = (): void => {
 .address-bar > button:hover:not(:disabled) { background: var(--file-tab, #f4f4f5); }
 .address-bar > button:disabled { opacity: .45; cursor: default; }
 .address-bar > button:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: 1px; }
+.bookmark-controls { position: relative; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.bookmark-icon-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--file-line, #e4e4e7); border-radius: 8px; background: transparent; color: var(--file-muted, #71717a); cursor: pointer; transition: background-color .12s, color .12s; }
+.bookmark-icon-btn svg { width: 15px; height: 15px; }
+.bookmark-icon-btn:hover:not(:disabled) { background: var(--file-tab, #f4f4f5); color: var(--file-ink, #18181b); }
+.bookmark-icon-btn.is-bookmarked, .bookmark-icon-btn.is-open { color: var(--file-ink, #18181b); background: var(--file-tab, #f4f4f5); }
+.bookmark-icon-btn:disabled { opacity: .4; cursor: default; }
+.bookmark-icon-btn:focus-visible { outline: 2px solid var(--file-focus, #a1a1aa); outline-offset: 1px; }
+.bookmarks-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 268px; max-width: calc(100vw - 32px); border: 1px solid var(--file-line, #e4e4e7); border-radius: 10px; background: var(--file-bg, #fff); box-shadow: 0 10px 26px rgba(0, 0, 0, .14); overflow: hidden; }
+.bookmarks-popover-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: var(--lx-font-size-sm); font-weight: 600; color: var(--file-muted, #71717a); border-bottom: 1px solid var(--file-line, #e4e4e7); }
+.bookmarks-count { font-weight: 500; }
+.bookmarks-scroll-list { max-height: 220px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+.bookmark-row { display: flex; align-items: center; gap: 4px; border-radius: 7px; padding-right: 4px; }
+.bookmark-row:hover { background: var(--file-tab, #f4f4f5); }
+.bookmark-row-open { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 6px 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.bookmark-row-favicon, .bookmark-row-globe { width: 15px; height: 15px; flex-shrink: 0; }
+.bookmark-row-favicon { border-radius: 3px; object-fit: contain; }
+.bookmark-row-globe { color: var(--file-muted, #71717a); }
+.bookmark-row-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.bookmark-row-title { font-size: var(--lx-font-size-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-row-url { font-size: var(--lx-font-size-xs); color: var(--file-muted, #71717a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-row-remove { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--file-muted, #71717a); cursor: pointer; font-size: var(--lx-font-size-lg); line-height: 1; flex-shrink: 0; }
+.bookmark-row-remove:hover { background: var(--file-line, #e4e4e7); color: inherit; }
+.bookmarks-empty { padding: 18px 12px; text-align: center; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
 .address-error { margin: 0; font-size: var(--lx-font-size-md); color: #dc2626; }
 .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
 .status-text.state-timeout { color: #b45309; }

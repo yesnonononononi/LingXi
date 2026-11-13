@@ -75,16 +75,12 @@ function restrictNetwork(targetSession, localOrigins) {
 }
 async function assertChatViewWiring() {
   const source = await fs.readFile(path.resolve(__dirname, '../src/views/chat/ChatView.vue'), 'utf8');
-  // 选择器必须是稳定的 data-test：中文文案会随语言切换，不能拿来当选择器
-  assert.match(source, /data-test="chat-project-page-entry"/, 'ChatView 的页面预览入口必须带稳定 data-test');
-  assert.match(source, /:aria-label="t\('chat\.view\.projectPagePreview'\)"/, '入口 aria-label 必须走 i18n，不写死中文');
-  assert.doesNotMatch(source, /aria-label="项目页面预览"/, '入口不应再出现写死的中文 aria-label');
-  // 挂载与显隐彻底分离：v-if 只管「开过一次就保留」，显隐交给 :visible（面板自己做宽度过渡）。
-  // 收起不再卸载组件 —— 否则收起动画没有落点，且页面实例的 DOM 状态会被丢掉。
+  assert.match(source, /data-test="chat-preview-toggle"/, 'ChatView 的预览入口必须带稳定 data-test');
+  assert.match(source, /:aria-label="t\('filePreview\.togglePanel'\)"/, '入口 aria-label 必须走 i18n，不写死中文');
   assert.match(source, /<FilePreviewPanel\s+v-if="panelMounted"[\s\S]{0,120}?:visible="previewPanelVisible"/,
     '面板必须由 :visible 驱动显隐（v-if 只负责挂载）');
   assert.doesNotMatch(source, /<Transition name="preview-panel-slide">/, '滑动过渡归面板自己，宿主不得再包一层 Transition');
-  assert.match(source, /watch\(\[localActiveId, localActiveWorkspaceId\][\s\S]{0,80}pagePreview\.close\(\)/, '切换会话/工作区必须销毁页面实例');
+  assert.match(source, /watch\(\[localActiveId, localActiveWorkspaceId\][\s\S]{0,80}resetSessionPages\(\)/, '切换会话/工作区必须销毁页面实例');
 }
 
 app.whenReady().then(async () => {
@@ -116,7 +112,7 @@ app.whenReady().then(async () => {
   restrictNetwork(previewSession, [origin, redirectOrigin, hangOrigin, deadOrigin]);
   restrictNetwork(session.defaultSession, [origin, redirectOrigin, hangOrigin, deadOrigin]);
   const source = `<script setup>
-import {provide, ref} from 'vue';
+import {computed, provide, ref, watch} from 'vue';
 import FilePreviewPanel from '../../../src/components/chat/FilePreviewPanel.vue';
 import LxModal from '../../../src/components/common/LxModal.vue';
 import {useProjectPagePreview} from '../../../src/composables/useProjectPagePreview';
@@ -124,12 +120,23 @@ import {PROJECT_PAGE_PREVIEW_KEY} from '../../../src/types/projectPagePreview';
 import '../../../src/style.css';
 const page = useProjectPagePreview();
 provide(PROJECT_PAGE_PREVIEW_KEY, page);
-const mode = ref('page'); const visible = ref(true); const modal = ref(false);
-window.__demo = {page, mode, visible, modal};
+const activeTabKey = ref('page:init'); const visible = ref(true); const modal = ref(false);
+const pageTabs = computed(() => [
+  {key: 'file:f1', kind: 'file', targetId: 'f1', title: 'demo.ts'},
+  ...page.tabs.value.map(tab => ({key: 'page:' + tab.id, kind: 'page', targetId: tab.id, title: tab.title || tab.url || '新标签页', url: tab.url, favicon: tab.favicon, isLoading: tab.isLoading})),
+]);
+watch(() => page.activeTabId.value, id => {
+  if (id && !activeTabKey.value.startsWith('file:')) activeTabKey.value = 'page:' + id;
+}, {immediate: true});
+window.__demo = {page, activeTabKey, visible, modal};
 </script><template>
 <main style="display:flex;height:100vh;margin:0"><section style="flex:1;min-width:0">LX · 原生网页预览</section>
-<FilePreviewPanel v-if="page.open.value" v-show="visible" :tabs="[]" activeId="" :isDark="false" :mode="mode"
- @update:mode="mode = $event" @close="page.hide()" />
+<FilePreviewPanel v-if="page.open.value" v-show="visible" :tabs="[]" activeId="" :isDark="false"
+ :unifiedTabs="pageTabs" :activeTabKey="activeTabKey"
+ @activateTab="key => { activeTabKey = key; if (key.startsWith('page:')) page.activateTab(key.slice(5)); }"
+ @closeUnifiedTab="tab => { if (tab.kind === 'page') page.closeTab(tab.targetId); }"
+ @createNewTab="page.createTab()"
+ @close="page.hide()" />
 <LxModal :open="modal" overlay-class="z-50 bg-black/50" panel-class="bg-white p-8" aria-label="验证弹窗" @close="modal=false">确认操作</LxModal>
 </main></template>`;
   await fs.writeFile(path.join(output, 'App.vue'), source);
@@ -188,11 +195,11 @@ window.__demo = {page, mode, visible, modal};
   await run("document.querySelector('.address-bar button[aria-label=前进]').click()");
   await waitFor(() => run(`window.__demo.page.committedUrl.value === ${JSON.stringify(origin + '/next')}`), '前进恢复页面');
 
-  await run("document.querySelector('.mode-switch button[title=文件]').click()");
+  await run("window.__demo.activeTabKey.value = 'file:f1'");
   await waitFor(() => !getView().getVisible(), '文件模式隐藏原生视图');
   assert.equal(getView(), initialView);
   assert.equal(initialView.webContents.isDestroyed(), false);
-  await run("document.querySelector('.mode-switch button[title=项目页面]').click()");
+  await run("window.__demo.activeTabKey.value = 'page:' + window.__demo.page.activeTabId.value");
   await waitFor(() => getView().getVisible(), '恢复页面模式');
   assert.equal(await runPage("document.getElementById('name').value"), 'kept');
   assert.equal(await runPage("document.getElementById('count').textContent"), '2');
@@ -227,7 +234,7 @@ window.__demo = {page, mode, visible, modal};
   await delay(300);
   await assertBounds();
   await runPage("sessionStorage.setItem('tab-marker','first')");
-  await run("document.querySelector('.new-page-tab').click()");
+  await run("document.querySelector('[data-testid=preview-new-tab-btn]').click()");
   await waitFor(() => run('window.__demo.page.tabs.value.length === 2'), '新建标签');
   const secondTabId = await run('window.__demo.page.activeTabId.value');
   assert.notEqual(secondTabId, firstTabId);
@@ -244,7 +251,7 @@ window.__demo = {page, mode, visible, modal};
   await run("(() => { const handle=document.querySelector('.resize-handle'); for(let i=0;i<12;i++) handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})); })()");
   await delay(150);
   await assertBounds();
-  assert.equal(await run("(() => { const active=document.querySelector('.page-tab.is-active').getBoundingClientRect(); const list=document.querySelector('.page-tabs').getBoundingClientRect(); return active.left >= list.left-1 && active.right <= list.right+1; })()"), true, '缩窄后当前标签和关闭按钮必须保持可见');
+  assert.equal(await run("(() => { const active=document.querySelector('.unified-tab.is-active').getBoundingClientRect(); const list=document.querySelector('.unified-tabs-scroll').getBoundingClientRect(); return active.left >= list.left-1 && active.right <= list.right+1; })()"), true, '缩窄后当前标签和关闭按钮必须保持可见');
   assert.equal(await run("(() => { const bar=document.querySelector('.address-bar'); return bar.scrollWidth <= bar.clientWidth + 1; })()"), true, '320px 地址栏不应横向溢出');
   window.showInactive(); await delay(250);
   await fs.writeFile(path.join(output, 'browser-tabs-narrow.png'), (await window.webContents.capturePage()).toPNG());
@@ -252,18 +259,18 @@ window.__demo = {page, mode, visible, modal};
   await run("(() => { const handle=document.querySelector('.resize-handle'); for(let i=0;i<10;i++) handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true})); })()");
   await delay(150); await assertBounds();
 
-  await run(`document.getElementById('page-tab-' + ${JSON.stringify(firstTabId)}).click()`);
+  await run(`document.querySelector('[data-tab-key="page:' + ${JSON.stringify(firstTabId)} + '"] .unified-tab-btn').click()`);
   await waitFor(() => initialView.getVisible(), '切回第一个标签');
   assert.equal(await runPage("document.getElementById('name').value"), 'kept');
   assert.equal(await runPage("document.getElementById('count').textContent"), '2');
   assert.equal(await runPage("sessionStorage.getItem('tab-marker')"), 'first');
   assert.ok(await runPage('window.scrollY > 0'));
-  await run(`document.getElementById('page-tab-' + ${JSON.stringify(secondTabId)}).click()`);
+  await run(`document.querySelector('[data-tab-key="page:' + ${JSON.stringify(secondTabId)} + '"] .unified-tab-btn').click()`);
   await waitFor(() => secondView.getVisible(), '切回第二个标签');
   assert.equal(await runPage("document.getElementById('name').value"), 'second-kept');
   assert.equal(await runPage("sessionStorage.getItem('tab-marker')"), 'second');
   const secondContents = secondView.webContents;
-  await run(`document.getElementById('page-tab-' + ${JSON.stringify(secondTabId)}).parentElement.querySelector('.close-page-tab').click()`);
+  await run(`document.querySelector('[data-tab-key="page:' + ${JSON.stringify(secondTabId)} + '"] .unified-tab-close').click()`);
   await waitFor(() => secondContents.isDestroyed(), '关闭单个标签释放实例');
   assert.equal(initialView.webContents.isDestroyed(), false);
   await waitFor(() => initialView.getVisible(), '关闭当前标签后选择相邻标签');
@@ -318,7 +325,7 @@ window.__demo = {page, mode, visible, modal};
   await enter(remoteOrigin + '/after-host-reload');
   await waitState('loaded');
   const beforeLastTabClose = getView().webContents;
-  await run("document.querySelector('.close-page-tab').click()");
+  await run("document.querySelector('.unified-tab[data-tab-key^=\"page:\"] .unified-tab-close').click()");
   await waitFor(() => beforeLastTabClose.isDestroyed(), '关闭最后标签释放实例');
   await waitFor(() => run("window.__demo.page.tabs.value.length === 1 && window.__demo.page.committedUrl.value === ''"), '最后标签关闭后创建权威空白标签');
   await enter(remoteOrigin + '/final');
@@ -335,7 +342,7 @@ window.__demo = {page, mode, visible, modal};
   assert.equal(await run('window.__demo.page.loadState.value'), 'loaded');
   // 隐藏窗口不产帧（Chromium 会暂停 rAF），先让窗口可见再验证恢复链路。
   window.showInactive(); await delay(250);
-  await run("window.__demo.mode.value = 'page'; window.__demo.page.open.value = true");
+  await run("window.__demo.activeTabKey.value = 'page:' + window.__demo.page.activeTabId.value; window.__demo.page.open.value = true");
   await waitFor(() => run('!!window.__demo.page.open.value'), '重新打开面板');
   // 重开必须复现「收起前的原位」：不能依赖下一帧重新量尺寸（窗口隐藏 / rAF 被节流时会失效）。
   await waitFor(() => last.getVisible(), '重开后原生视图回到原位');

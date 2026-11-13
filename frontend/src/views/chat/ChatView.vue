@@ -44,41 +44,23 @@
           <h1 class="min-w-0 truncate text-sm font-medium" :title="headerSessionName">{{ headerSessionName }}</h1>
           <div class="flex shrink-0 items-center gap-0.5">
             <button
-              v-if="fileTabs.length"
               type="button"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
-              @click="openFilePreviewPanel"
+              data-test="chat-preview-toggle"
+              :aria-label="t('filePreview.togglePanel')"
+              :title="t('filePreview.togglePanel')"
+              :aria-pressed="previewPanelVisible"
+              :class="[
+                'inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors cursor-pointer',
+                previewPanelVisible
+                  ? 'bg-zinc-200/80 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                  : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90'
+              ]"
+              @click="togglePreviewPanel"
             >
-              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="3" />
+                <line x1="15" y1="4" x2="15" y2="20" />
               </svg>
-              <span>{{ t('chat.view.filePreview', { count: fileTabs.length }) }}</span>
-            </button>
-            <button
-              type="button"
-              data-test="chat-project-page-entry"
-              :aria-label="t('chat.view.projectPagePreview')"
-              :title="t('chat.view.projectPagePreview')"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
-              @click="openProjectPagePanel"
-            >
-              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
-              </svg>
-              <span>{{ t('chat.view.projectPagePreview') }}</span>
-            </button>
-            <button
-              type="button"
-              data-test="chat-design-preview-entry"
-              :aria-label="t('chat.view.designPreview')"
-              :title="t('chat.view.designPreview')"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/90 transition-colors cursor-pointer"
-              @click="openDesignPreviewPanel"
-            >
-              <svg class="w-3.5 h-3.5 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.39m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" />
-              </svg>
-              <span>{{ t('chat.view.designPreview') }}</span>
             </button>
             <!-- 用量审计入口：与上面两个入口并排。面板是绝对定位抽屉，故入口始终留在入口行里，
                  收起后由它重新打开（面板自带的「收起」按钮只负责关）。 -->
@@ -426,11 +408,17 @@
         :visible="previewPanelVisible"
         :tabs="fileTabs"
         :activeId="activeFileId"
+        :unifiedTabs="unifiedTabs"
+        :activeTabKey="activeTabKey"
+        :designTabs="designTabs"
+        :planTabs="planTabs"
         :isDark="displayIsDark"
-        :mode="previewMode"
-        @update:mode="handlePreviewModeChange"
         @activate="activeFileId = $event"
         @closeTab="closeFileTab"
+        @activateTab="activateTab"
+        @closeUnifiedTab="closeUnifiedTab"
+        @createNewTab="createNewTab"
+        @newTabAction="handleNewTabAction"
         @close="closePreviewPanel"
         @refresh="refreshFile"
         @open="runFileAction('open')"
@@ -538,11 +526,12 @@ import {isOk} from '../../utils/api';
 import {LogAPI} from '../../services/log';
 import {useFilePreview} from '../../composables/useFilePreview';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
+import {useUnifiedPreviewTabs} from '../../composables/useUnifiedPreviewTabs';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
-import type {FilePreviewOpenRequest} from '../../types/filePreview';
-import type {PreviewPanelMode, ShowWithAgentPayload} from '../../types/projectPagePreview';
+import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
+import {PLAN_PREVIEW_KEY} from '../../types/previewPanel';
 import ShowWithAgentModal from '../../components/chat/ShowWithAgentModal.vue';
 import {ANSWER_CHOICES_KEY, DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
@@ -647,107 +636,47 @@ const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, 
  * <p>项目页面的唯一真源是 {@link useProjectPagePreview}（由本组件持有并 provide）：
  * 面板外壳只传 `mode`，正文组件 inject 同一份状态 —— 面板被隐藏、切到文件模式都不会重置 iframe。</p>
  */
-const previewMode = ref<PreviewPanelMode>('file');
 const pagePreview = useProjectPagePreview();
 provide(PROJECT_PAGE_PREVIEW_KEY, pagePreview);
-const designPreviewOpen = ref(false);
 
-/**
- * 面板是否展开：**唯一显隐真源**。
- *
- * <p>以前是「文件 / 页面 / 设计三个内部状态任一为真」—— 于是收起面板时页面链路把
- * `pagePreview.open` 置假，可见性跟着瞬间变假，宿主那层的 `v-if` 同帧把组件卸载，
- * 离场动画根本没机会播（无文件标签时必现"面板啪一下消失、对话区弹回"）。</p>
- */
-const previewPanelOpen = ref(false);
-/**
- * 面板是否已挂载：开过一次就保留（收起只是宽度归零），否则没有卸载就没有离场动画。
- *
- * <p>显隐归 `visible`，卸载只发生在会话/工作区切换（隔离要求：新会话不许复用旧页面的登录态）。</p>
- */
-const panelMounted = ref(false);
+const {
+  previewPanelOpen,
+  panelMounted,
+  unifiedTabs,
+  activeTabKey,
+  designTabs,
+  planTabs,
+  togglePreviewPanel,
+  closePreviewPanel,
+  createNewTab,
+  activateTab,
+  closeUnifiedTab,
+  openFilePreviewInPanel,
+  openPlanPreview,
+  handleNewTabAction,
+  resetSessionPages,
+} = useUnifiedPreviewTabs({
+  fileTabs,
+  activeFileId,
+  filePreviewOpen,
+  openFilePreview,
+  closeFileTab,
+  pagePreview,
+  t,
+});
+
 const previewPanelVisible = computed<boolean>(() => previewPanelOpen.value);
 /** 顶部横条左侧展示的会话名：空态（未建会话 / 待首次发送）给占位文案，不留一段空白。 */
 const headerSessionName = computed<string>(() => currentActiveSession.value?.title?.trim() || t('chat.sidebar.newSession'));
 
-/** 展开面板：挂载（幂等）+ 打开。三个入口共用这一处，别各写一份。 */
-const showPreviewPanel = (): void => {
-  panelMounted.value = true;
-  previewPanelOpen.value = true;
-};
-
-/** 打开文件模式（有标签时才有这个入口）。 */
-const openFilePreviewPanel = (): void => {
-  previewMode.value = 'file';
-  filePreviewOpen.value = true;
-  showPreviewPanel();
-};
-
-/**
- * 正文链接 / 工具调用 / 本轮改动卡片共用的打开入口：**先开标签，再把面板展开**。
- *
- * <p>不能直接把 `useFilePreview.openFilePreview` provide 出去 —— 它只加标签、置
- * `filePreviewOpen`，而面板显隐的唯一真源是 `previewPanelOpen`。面板处于收起态时点文件链接，
- * 结果是「标签加好了，面板毫无反应」，用户得自己再去点一次顶部入口才看得到内容。
- * 同理要顺手把模式切回文件：面板可能停在页面/设计模式上。</p>
- */
-const openFilePreviewInPanel = (request: FilePreviewOpenRequest): void => {
-  previewMode.value = 'file';
-  openFilePreview(request);
-  showPreviewPanel();
-};
 provide(FILE_PREVIEW_KEY, openFilePreviewInPanel);
+provide(PLAN_PREVIEW_KEY, openPlanPreview);
 
-/** 打开项目页面模式：即使零个文件标签也能进，不去伪造文件标签。 */
-const openProjectPagePanel = (): void => {
-  previewMode.value = 'page';
-  showPreviewPanel();
-  pagePreview.open.value = true;
-};
-
-/** 打开设计原型模式：即使零个文件标签也能进。 */
-const openDesignPreviewPanel = (): void => {
-  previewMode.value = 'design';
-  designPreviewOpen.value = true;
-  showPreviewPanel();
-};
-
-/**
- * 面板内的模式切换。
- *
- * @param mode 目标模式。
- */
-const handlePreviewModeChange = (mode: PreviewPanelMode): void => {
-  previewMode.value = mode;
-  if (mode === 'page') {
-    pagePreview.open.value = true;
-  } else if (mode === 'design') {
-    designPreviewOpen.value = true;
-  } else if (fileTabs.value.length) {
-    filePreviewOpen.value = true;
-  }
-  showPreviewPanel();
-};
-
-/** 将设计原型画布生成的 AI 协同修改指令填入聊天输入区并聚焦。 */
+/** 将设计原型画布或实现计划生成的文本填入聊天输入区并聚焦。 */
 const handleDesignSendToChat = (payload: { prompt: string }): void => {
   if (!payload.prompt?.trim()) return;
   inputAreaRef.value?.setInputText(payload.prompt);
   inputAreaRef.value?.focusInput?.();
-};
-
-/**
- * 收起右侧预览面板。
- *
- * <p>收起 ≠ 销毁：文件标签收起后仍在（`useFilePreview.fileTabs` 不随面板关闭清空），
- * 网页标签也必须一致 —— 这里走 `pagePreview.hide()`（隐藏原生视图、保留主进程标签与登录态）。
- * 真正的销毁只发生在会话/工作区切换（隔离要求）与宿主卸载。</p>
- */
-const closePreviewPanel = (): void => {
-  previewPanelOpen.value = false;
-  filePreviewOpen.value = false;
-  designPreviewOpen.value = false;
-  pagePreview.hide();
 };
 
 const logOpening = ref(false);
@@ -934,9 +863,7 @@ const isTokenAuditOpen = ref(false);
  * 文件标签维持既有行为，不在本阶段改动。</p>
  */
 watch([localActiveId, localActiveWorkspaceId], () => {
-  pagePreview.close();
-  // 页面实例销毁后，面板若只剩「页面模式」这一条理由就跟着收起：不把上一个会话的页面带进新会话。
-  if (!fileTabs.value.length && !designPreviewOpen.value) previewPanelOpen.value = false;
+  resetSessionPages();
 });
 
 
