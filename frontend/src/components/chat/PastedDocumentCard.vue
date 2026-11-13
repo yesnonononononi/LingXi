@@ -9,6 +9,7 @@ import {t} from '../../i18n';
 const props = defineProps<{
   document: PastedDocument;
   isDark?: boolean;
+  readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -22,8 +23,11 @@ const statText = computed(() => formatDocumentStat(props.document));
 
 <template>
   <div
-    class="inline-flex items-center gap-1.5 pl-2 pr-1.5 py-1 rounded-xl text-xs select-none transition-all duration-150 border max-w-full"
-    :class="props.isDark ? 'bg-zinc-800/90 hover:bg-zinc-800 border-zinc-700/60 text-zinc-200' : 'bg-zinc-100 hover:bg-zinc-200/70 border-zinc-200 text-zinc-800'"
+    class="inline-flex items-center gap-1.5 pl-2 py-1 rounded-xl text-xs select-none transition-all duration-150 border max-w-full whitespace-normal"
+    :class="[
+      props.readonly ? 'pr-2.5' : 'pr-1.5',
+      props.isDark ? 'bg-zinc-800/90 hover:bg-zinc-800 border-zinc-700/60 text-zinc-200' : 'bg-zinc-100 hover:bg-zinc-200/70 border-zinc-200 text-zinc-800'
+    ]"
     data-testid="pasted-document-card"
   >
     <!-- 左侧可点击预览区 -->
@@ -50,7 +54,7 @@ const statText = computed(() => formatDocumentStat(props.document));
     </button>
 
     <!-- 右侧操作区：还原为纯文本、删除卡片 -->
-    <div class="flex items-center gap-0.5 ml-0.5 shrink-0">
+    <div v-if="!props.readonly" class="flex items-center gap-0.5 ml-0.5 shrink-0">
       <button
         type="button"
         class="inline-grid place-items-center bg-transparent opacity-60 hover:opacity-100 p-0 hover:[background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)] border-0 rounded-[5px] outline-none w-[20px] h-[20px] text-inherit cursor-pointer transition-opacity"

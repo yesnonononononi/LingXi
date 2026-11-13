@@ -109,3 +109,74 @@ export function composeMessageWithDocuments(inputText: string, documents: Pasted
   }
   return `${trimmed}\n\n${docBlocks}`;
 }
+
+export interface ParsedMessageDocuments {
+  text: string;
+  documents: PastedDocument[];
+}
+
+const DOCUMENT_BLOCK_PATTERN = /(?:^|\r?\n)\[文档: ([^\r\n]+)\]\r?\n(`{3,})\r?\n([\s\S]*?)\r?\n\2(?=\r?\n\r?\n|\r?\n?$)/g;
+
+/**
+ * 将用户消息正文按与输入框相同的口径解析为「附带文本 + 逻辑文档卡片」集合。
+ *
+ * <p>同时兼容两类来源：
+ * 1. 由 `composeMessageWithDocuments` 拼装的 `[文档: 标题]` 代码栅格块；
+ * 2. 未经封装但整体达到 `isLargePastedText` 阈值的纯大文本消息。</p>
+ */
+export function parseMessageDocuments(content: string): ParsedMessageDocuments {
+  if (!content) {
+    return { text: '', documents: [] };
+  }
+
+  const documents: PastedDocument[] = [];
+  const textParts: string[] = [];
+  let cursor = 0;
+
+  DOCUMENT_BLOCK_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null = DOCUMENT_BLOCK_PATTERN.exec(content);
+  while (match !== null) {
+    const leadingText = content.slice(cursor, match.index).trim();
+    if (leadingText) {
+      textParts.push(leadingText);
+    }
+    const title = match[1] ?? '';
+    const docContent = match[3] ?? '';
+    documents.push(
+      createPastedDocument(docContent, {
+        title,
+        id: `msg_doc_${documents.length}`
+      })
+    );
+    cursor = match.index + match[0].length;
+    match = DOCUMENT_BLOCK_PATTERN.exec(content);
+  }
+
+  if (documents.length === 0) {
+    if (isLargePastedText(content)) {
+      return {
+        text: '',
+        documents: [createPastedDocument(content, { id: 'msg_doc_0' })]
+      };
+    }
+    return { text: content, documents: [] };
+  }
+
+  const trailingText = content.slice(cursor).trim();
+  if (trailingText) {
+    textParts.push(trailingText);
+  }
+
+  const remainingText = textParts.join('\n\n');
+  if (remainingText && isLargePastedText(remainingText)) {
+    return {
+      text: '',
+      documents: [createPastedDocument(remainingText, { id: 'msg_doc_text' }), ...documents]
+    };
+  }
+
+  return {
+    text: remainingText,
+    documents
+  };
+}

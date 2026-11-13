@@ -17,7 +17,7 @@
           data-testid="user-message-bubble"
           :class="[
             'min-w-0 max-w-full rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors [overflow-wrap:anywhere] overflow-hidden',
-            userImageUrls.length ? 'p-2' : 'px-4 py-2.5',
+            userImageUrls.length || (parsedUserMessage.documents.length && !parsedUserMessage.text) ? 'p-2' : 'px-4 py-2.5',
             isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-zinc-800'
           ]"
         >
@@ -32,8 +32,26 @@
               @click="openImagePreview(imageUrl, index)"
             />
           </div>
-          <div :class="userImageUrls.length ? 'px-2 pb-1' : ''" data-testid="user-message-text">
-            {{ props.message.content }}
+          <div
+            v-if="parsedUserMessage.documents.length"
+            :class="[
+              'flex flex-wrap gap-1.5 whitespace-normal',
+              parsedUserMessage.text ? 'mb-2' : '',
+              userImageUrls.length && !parsedUserMessage.text ? 'px-1 pb-1' : ''
+            ]"
+            data-testid="user-message-documents"
+          >
+            <PastedDocumentCard
+              v-for="doc in parsedUserMessage.documents"
+              :key="doc.id"
+              :document="doc"
+              :is-dark="isDark"
+              readonly
+              @preview="openUserDocumentPreview(doc)"
+            />
+          </div>
+          <div v-if="parsedUserMessage.text" :class="userImageUrls.length ? 'px-2 pb-1' : ''" data-testid="user-message-text">
+            {{ parsedUserMessage.text }}
           </div>
         </div>
       </div>
@@ -46,6 +64,13 @@
         :name="previewImage?.name ?? ''"
         test-id="user-image-lightbox"
         @close="closeImagePreview"
+      />
+      <PastedDocumentPreviewModal
+        :open="isUserDocumentPreviewOpen"
+        :document="previewingUserDocument"
+        :is-dark="isDark"
+        readonly
+        @close="closeUserDocumentPreview"
       />
 
       <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
@@ -224,6 +249,9 @@ import type {PromptCardEntry} from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ImageLightbox from '../common/ImageLightbox.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
+import PastedDocumentCard from './PastedDocumentCard.vue';
+import PastedDocumentPreviewModal from './PastedDocumentPreviewModal.vue';
+import {parseMessageDocuments, type PastedDocument} from '../../utils/pastedDocument';
 
 const props = defineProps<{
   message: ChatMessage;
@@ -249,6 +277,21 @@ const props = defineProps<{
 
 const { isDark: globalIsDark } = useTheme();
 const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.imageUrl ? [props.message.imageUrl] : []));
+const parsedUserMessage = computed(() =>
+  props.message.role === 'user' && !isDelegatedTask.value
+    ? parseMessageDocuments(props.message.content)
+    : { text: props.message.content, documents: [] }
+);
+const previewingUserDocument = ref<PastedDocument | null>(null);
+const isUserDocumentPreviewOpen = ref(false);
+const openUserDocumentPreview = (doc: PastedDocument) => {
+  previewingUserDocument.value = doc;
+  isUserDocumentPreviewOpen.value = true;
+};
+const closeUserDocumentPreview = () => {
+  isUserDocumentPreviewOpen.value = false;
+  previewingUserDocument.value = null;
+};
 const resendTitle = computed(() => !props.message.serverMessageId ? t('chat.controls.messageSyncPending')
   : !props.canResend ? t('chat.controls.waitUntilIdle') : t('chat.controls.editResend'));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);

@@ -11,6 +11,7 @@ const props = defineProps<{
   open: boolean;
   document: PastedDocument | null;
   isDark?: boolean;
+  readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -86,6 +87,7 @@ const statText = computed(() => (props.document ? formatDocumentStat(props.docum
 
         <!-- 转为纯文本按钮 -->
         <button
+          v-if="!props.readonly"
           type="button"
           class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border transition-colors cursor-pointer"
           :class="props.isDark ? 'border-zinc-700 hover:bg-zinc-800 text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-zinc-700'"
