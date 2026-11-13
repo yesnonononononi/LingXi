@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.read;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
 import com.summit.core.anno.type.*;
+import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
@@ -10,11 +11,13 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadFileRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
@@ -57,6 +60,9 @@ public class ReadFileToolExecutor implements ToolExecutor {
     private static final int MAX_BYTES = 4 * 1024 * 1024;
     /** 只看开头这一段判二进制，避免为判定扫全文件。 */
     private static final int SNIFF_BYTES = 8 * 1024;
+    /** 越界与软链逃逸共用一句提示：对用户来说都是「这个路径不该被读」。 */
+    private static final String OUTSIDE_WORKSPACE_MESSAGE =
+            "读取文件只能在工作区内进行，读取项目外文件请切换到完全访问档位";
 
     private final ObjectMapper objectMapper;
 
@@ -75,10 +81,11 @@ public class ReadFileToolExecutor implements ToolExecutor {
             throwIf(start < 1, "读取文件的行号从 1 开始");
             throwIf(start > requestedEnd, "读取文件的起始行不能大于结束行");
 
-            WorkspaceFiles files = toolExecution.getWorkspace().bridge().files();
-            Path path = toolExecution.getWorkspace().resolve(request.getPath()).normalize();
+            Workspace workspace = toolExecution.getWorkspace();
+            Path path = resolveReadablePath(toolExecution, workspace, request.getPath());
             log.info("读取文件: path={}, startLine={}, endLine={}", path, request.getStartLine(), request.getEndLine());
 
+            WorkspaceFiles files = workspace.bridge().files();
             // 字节读一次、判定一次，再解码：读两次会把同一份 IO 成本摊到每个文本文件上。
             byte[] bytes = files.readBytes(path);
             throwIf(isBinary(bytes), "这是二进制文件，不能按文本读取: path=" + request.getPath());
@@ -109,6 +116,36 @@ public class ReadFileToolExecutor implements ToolExecutor {
         if (condition) {
             throw new ClientException(err);
         }
+    }
+
+    /**
+     * 解析出可读路径，越界就读不到。
+     *
+     * <p>与编辑/读图同一口径：越界读本身就是信息泄露，必须拦在读字节之前；
+     * 完全访问档是唯一例外，那个档位的名字就是承诺。</p>
+     */
+    private Path resolveReadablePath(ToolExecution toolExecution, Workspace workspace, String displayPath) {
+        Path target = workspace.resolve(displayPath);
+        if (AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()) {
+            return target;
+        }
+        throwIf(!workspace.encloses(target), OUTSIDE_WORKSPACE_MESSAGE);
+        // 几何包含挡不住目录链接：存在就再核一次真实文件的归属。
+        try {
+            throwIf(!insideRealRoot(workspace, target.toRealPath()), OUTSIDE_WORKSPACE_MESSAGE);
+        } catch (IOException ignored) {
+            // 路径不存在或不可达时交给后面的读取去报错，这里只负责「存在但指向外面」。
+        }
+        return target;
+    }
+
+    /** 工作区根目录本身也可能是链接，按它的真实根目录判断归属。 */
+    private boolean insideRealRoot(Workspace workspace, Path realPath) throws IOException {
+        if (workspace.encloses(realPath)) {
+            return true;
+        }
+        String workDir = workspace.workDir();
+        return workDir != null && !workDir.isBlank() && realPath.startsWith(Path.of(workDir).toRealPath());
     }
 
     /** 含 NUL 的按二进制处理：UTF-8 解码器对这种内容要么抛错，要么吐出满屏替换符。 */
