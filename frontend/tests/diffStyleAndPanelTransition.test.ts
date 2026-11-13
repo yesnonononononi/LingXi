@@ -152,11 +152,16 @@ test('控制栏关闭防漂移与侧边栏防挤压布局契约', () => {
     'ChatView 主视窗 flex-1 容器必须声明 min-w-0 避免内容撑大挤压侧栏'
   );
 
-  // 3. Sidebar aside 根节点必须包含 shrink-0 防止被 flex 兄弟元素挤压变形
+  // 3. Sidebar aside 根节点必须包含 shrink-0 与 overflow-hidden，且内部使用固定目标宽度画布避免展开瞬间文字折行挤压
   assert.match(
     sidebarSrc,
-    /<aside[\s\S]*?shrink-0/,
-    'Sidebar 根容器必须具有 shrink-0 防止弹性挤压'
+    /<aside[\s\S]*?shrink-0[\s\S]*?overflow-hidden/,
+    'Sidebar 根容器必须具有 shrink-0 与 overflow-hidden 防止弹性挤压与裁切溢出'
+  );
+  assert.match(
+    sidebarSrc,
+    /<div :class="\['h-full flex flex-col', isCollapsed \? 'w-16' : 'w-64'\]">/,
+    'Sidebar 内部必须使用固定宽度画布，避免宽度过渡期间内容被逐帧压缩折行'
   );
 
   // 4. App.vue desktop-content 必须禁用横向滚动，防止页面横向漂移

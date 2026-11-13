@@ -289,13 +289,15 @@ onBeforeUnmount(() => {
 <template>
   <aside
     :class="[
-      'h-full flex flex-col shrink-0 transition-[width,background-color,border-color] duration-300 z-30 select-none border-r',
+      'relative h-full shrink-0 overflow-hidden transition-[width,background-color,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-30 select-none border-r',
       isCollapsed ? 'w-16' : 'w-64',
       isDark
         ? 'bg-black border-white/[0.06] text-zinc-100'
         : 'bg-[#fafafa] border-zinc-200/80 text-zinc-800'
     ]"
   >
+    <!-- 固定宽度画布：内容按目标宽度（展开 256px / 收起 64px）一次性排版，外层宽度动画只推进裁切窗口，杜绝展开瞬间文字折行挤压 -->
+    <div :class="['h-full flex flex-col', isCollapsed ? 'w-16' : 'w-64']">
     <!-- Top Header: Logo & Sidebar Toggle Button -->
     <div class="px-3 pt-3 pb-2 flex items-center justify-between shrink-0">
       <div v-if="!isCollapsed" class="flex items-center gap-2 px-1">
@@ -436,6 +438,7 @@ onBeforeUnmount(() => {
         <component :is="injectedFooter" v-if="injectedFooter" v-bind="footerSlotProps" />
         <SidebarFooterBar v-else v-bind="footerSlotProps" />
       </slot>
+    </div>
     </div>
   </aside>
 </template>
