@@ -39,6 +39,19 @@ class RenderSyntaxPromptTest {
         assertTrue(section.contains("不要凭印象编造"), "必须禁止编造路径与行号");
     }
 
+    /**
+     * 失效情况必须写明：模型最常见的错法就是把链接包进反引号（以为在「举例」），
+     * 渲染器只会原样输出，用户看到的是一条死的 Markdown 源码。
+     */
+    @Test
+    void sectionNamesTheWaysAFileLinkSilentlyFails() {
+        String section = new RenderSyntaxPrompt().load();
+        assertTrue(section.contains("失效情况"), "要有一段说明写清哪些写法不生效");
+        assertTrue(section.contains("反引号"), "包进反引号/代码块是最常见的失效原因");
+        assertTrue(section.contains("展示语法"), "要说清「展示语法」与「用语法」的区别，否则模型仍会顺手加反引号");
+        assertTrue(section.contains("相对路径"), "相对路径只会变成普通外链，必须点名");
+    }
+
     @Test
     void sectionDoesNotLeakImplementationDetails() {
         String section = new RenderSyntaxPrompt().load();
