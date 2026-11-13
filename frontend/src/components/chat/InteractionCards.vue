@@ -11,10 +11,13 @@ const contentId = useId();
 const categories = computed(() => groupInteractionCards(props.entries));
 const pendingEntries = computed(() => props.entries.filter(isPendingCardEntry));
 const pendingCount = computed(() => pendingEntries.value.length);
-// 新待决到来必须露出入口；仅手动折叠时保留当前草稿。
+// 新待决到来必须露出入口；只有「待决清空」这一刻才收起。
+// 不能用「当前没有待决就收起」：getter 每次重算都产出新数组，Vue 判定"变了"就回调，
+// 卡片全已决时 ids 恒为空，于是每个流式片段都会把用户刚展开的详情关掉。
 watch(() => pendingEntries.value.map(entry => entry.id), (ids, previous) => {
-  if (ids.some(id => !previous?.includes(id))) expanded.value = true;
-  else if (!ids.length) expanded.value = false;
+  const previousIds: string[] = previous ?? [];
+  if (ids.some(id => !previousIds.includes(id))) expanded.value = true;
+  else if (previousIds.length && !ids.length) expanded.value = false;
 }, { immediate: true });
 </script>
 

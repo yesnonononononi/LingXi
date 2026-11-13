@@ -1459,3 +1459,55 @@ test('过程框不阻断滚动链式传递（不得设 overscroll-contain）', (
     '不得给过程框设 overscroll 行为：滚到框底后要继续滚外层对话区');
 });
 
+
+/**
+ * 看详情期间到达的流式内容，不得把用户手动展开的下拉收起来。
+ *
+ * <p>历史缺陷：折叠态监听写成「没有待决卡片就收起」。监听的 getter 每次重算都会产出**新数组**，
+ * 于是 Vue 每次都判定"变了"并回调；卡片全部已决时 `ids` 恒为空，回调就恒收起 ——
+ * 用户刚展开的历史详情，被下一个流式片段（哪怕只是一个思考块）关掉。</p>
+ */
+test('已决互动卡片手动展开后，流式新内容到达不能把它收起来', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ aiMessages: [],
+    toolCalls: [{ id: 'q1', toolName: AgentToolName.RequireChoice, status: 'success', order: 1, responseId: '101' }],
+    promptCards: [
+      { id: 'q1', conversationId: '7', type: 'PROMISE', status: 'completed', version: '1',
+        allowedActions: [], content: { kind: 'CHOICE', question: '第一题', options: ['A', 'B'] },
+        rawOutput: { outcome: 'ANSWERED', answer: 'A' } },
+    ] });
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'interaction-cards-toggle');
+  const category = find(root, node => node.props?.['data-testid'] === 'choice-card-toggle');
+  assert.equal(whole.props['aria-expanded'], false, '前提：全部已决时默认收起');
+  whole.props.onClick();
+  category.props.onClick();
+  await nextTick();
+  const summary = find(root, node => node.props?.['data-testid'] === 'choice-summary-toggle');
+  assert.ok(summary, '已决问题必须留下可回看的摘要入口');
+  summary.props.onClick();
+  await nextTick();
+  assert.equal(summary.props['aria-expanded'], true);
+  assert.ok(find(root, node => node.props?.['data-testid'] === 'choice-question-group'), '详情必须真的展开');
+
+  // 流式片段到达：过程时间线重算 → 卡片数组换成新引用，但卡片集合没变。
+  answer.aiMessages.push({ id: 'progress-2', text: '继续检查下一处', order: 2 });
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], true, '流式内容到达不能收起外层的互动卡片入口');
+  assert.equal(category.props['aria-expanded'], true, '流式内容到达不能收起分类入口');
+  assert.equal(summary.props['aria-expanded'], true, '流式内容到达不能收起正在看的详情');
+  assert.ok(find(root, node => node.props?.['data-testid'] === 'choice-question-group'));
+});
+
+/** 真·待决到齐后仍要自动收起：今天的行为必须保留。 */
+test('待决卡片结项后仍自动收起互动卡片', async t => {
+  const answer = message({ aiMessages: [], promptCards: [
+    { id: 'plan', type: 'PROMISE', status: 'pending', content: { kind: 'PLAN', title: '待批计划' } },
+  ] });
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'interaction-cards-toggle');
+  assert.equal(whole.props['aria-expanded'], true);
+  answer.promptCards[0].status = 'completed';
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], false, '结项后收起，避免历史区堆满已决卡片');
+});

@@ -23,9 +23,11 @@ const listId = useId();
 const expanded = ref(false);
 const expandedEntries = ref<Record<string, boolean>>({});
 const pendingEntries = computed(() => props.entries.filter(isPendingCardEntry));
+// 新待决到来必须露出入口；只有「待决清空」这一刻才收起（判据同 InteractionCards，见该处注释）。
 watch(() => pendingEntries.value.map(entry => entry.id), (ids, previous) => {
-  if (ids.some(id => !previous?.includes(id))) expanded.value = true;
-  else if (!ids.length) expanded.value = false;
+  const previousIds: string[] = previous ?? [];
+  if (ids.some(id => !previousIds.includes(id))) expanded.value = true;
+  else if (previousIds.length && !ids.length) expanded.value = false;
 }, { immediate: true });
 // 先保留响应内题序再置顶待处理批次，否则已答题会被挪到末尾，题号与提交批次失去对应。
 function isPendingEntry(entry: GroupedPromptCardEntry): boolean {
