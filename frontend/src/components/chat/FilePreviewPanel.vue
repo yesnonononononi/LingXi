@@ -3,6 +3,7 @@ import {computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch} f
 import type {FilePreviewTab} from '../../types/filePreview';
 import type {PreviewPanelMode} from '../../types/projectPagePreview';
 import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {useSidePanelWidthGuard} from '../../composables/useSidePanelWidthGuard';
 import {getApiBaseUrl} from '../../utils/apiConfig';
 import {mergeFullFileDiff, type MergedDiffLine} from '../../utils/fileDiff';
 import type {FileDiffContext, FileDiffView} from '../../utils/filePreviewDiffView';
@@ -68,8 +69,14 @@ const CodePreview = defineAsyncComponent(() => import('../common/CodePreview.vue
 const maximized = ref(false);
 const panelWidth = ref(540);
 const resizing = ref(false);
+/** 面板自身最小宽度：拖到再窄，代码区就没法读了。 */
+const MIN_PANEL_WIDTH = 320;
 const { copy, isCopied } = useCopyFeedback();
 let dragStart: { x: number; width: number } | undefined;
+
+/** 面板根元素：宽度守卫要拿它的父元素（弹性行）实测宽度。 */
+const shellRef = ref<HTMLElement | null>(null);
+const { clampWidth } = useSidePanelWidthGuard(shellRef, panelWidth, MIN_PANEL_WIDTH);
 
 /**
  * 切换内容模式：内部状态先跟上，再通知父级（受控时父级会回写 props.mode）。
@@ -84,7 +91,7 @@ const setMode = (mode: PreviewPanelMode): void => {
 
 const moveResize = (event: PointerEvent) => {
   if (!dragStart) return;
-  panelWidth.value = Math.max(320, Math.min(window.innerWidth - 360, dragStart.width + dragStart.x - event.clientX));
+  panelWidth.value = clampWidth(dragStart.width + dragStart.x - event.clientX);
 };
 const stopResize = () => {
   dragStart = undefined;
@@ -114,7 +121,6 @@ onBeforeUnmount(stopResize);
  */
 const SLIDE_MS = 240;
 
-const shellRef = ref<HTMLElement | null>(null);
 /** 真正喂给 CSS 的展开态：先以 0 宽度挂载、下一帧再展开，否则首次挂载没有起点可插值。 */
 const slidOpen = ref(false);
 /** 滑动进行中：原生网页视图浮在 DOM 之上、不参与过渡，这段时间必须停更，滑完再对位。 */
@@ -392,7 +398,7 @@ watch(() => props.activeId, () => {
   <!-- 画布：宽度固定，内容按最终宽度排版；外壳宽度变化只改裁切窗口，内容不逐帧重排 -->
   <div class="panel-canvas">
     <div v-if="!maximized" class="resize-handle" role="separator" :aria-label="t('filePreview.resizeAria')" aria-orientation="vertical" tabindex="0"
-      @pointerdown="startResize" @keydown.left.prevent="panelWidth = Math.min(panelWidth + 32, 1000)" @keydown.right.prevent="panelWidth = Math.max(panelWidth - 32, 320)" />
+      @pointerdown="startResize" @keydown.left.prevent="panelWidth = clampWidth(panelWidth + 32)" @keydown.right.prevent="panelWidth = clampWidth(panelWidth - 32)" />
     <header class="preview-topbar">
       <span class="panel-title">{{ panelTitle }}</span>
       <div class="topbar-actions">
@@ -517,7 +523,7 @@ watch(() => props.activeId, () => {
  *  - `--file-focus`：键盘焦点环，取中性灰（历史上这里曾是 indigo，与面板中性色语言冲突）
  * 子视图挂在面板外时（独立挂载 / 冒烟）用 var() 的第二参数兜底亮色值。
  */
-.file-preview-panel { --file-bg: #fff; --file-muted: #71717a; --file-line: #e4e4e7; --file-tab: #f4f4f5; --file-ink: #18181b; --file-ink-hover: #27272a; --file-ink-contrast: #ffffff; --file-focus: #a1a1aa; position: relative; flex: none; height: 100%; width: 0; min-width: 0; max-width: calc(100vw - 360px); overflow: hidden; color: #27272a; background: var(--file-bg); border-left: 1px solid var(--file-line); transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+.file-preview-panel { --file-bg: #fff; --file-muted: #71717a; --file-line: #e4e4e7; --file-tab: #f4f4f5; --file-ink: #18181b; --file-ink-hover: #27272a; --file-ink-contrast: #ffffff; --file-focus: #a1a1aa; position: relative; flex: none; height: 100%; width: 0; min-width: 0; overflow: hidden; color: #27272a; background: var(--file-bg); border-left: 1px solid var(--file-line); transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1); }
 /* 拖动调宽是实时输入，不能有过渡；滑动结束后面板也可能立刻再拖，所以过渡只在非拖动态生效。 */
 .file-preview-panel.is-resizing { transition: none; }
 /* 收起时总宽度为 0：边框宽度也得归零，否则左侧会留一条 1px 的布局占位。 */
@@ -526,7 +532,7 @@ watch(() => props.activeId, () => {
 .panel-canvas { position: absolute; top: 0; right: 0; bottom: 0; width: var(--lx-preview-canvas-w, 540px); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .file-preview-panel.is-dark { --file-bg: #0c0e13; --file-muted: #8b92a1; --file-line: #252933; --file-tab: #1b1f29; --file-ink: #f5f5f5; --file-ink-hover: #e4e4e7; --file-ink-contrast: #18181b; --file-focus: #6b7280; color: #e4e4e7; }
 /* 最大化不再切 position: absolute —— 绝对定位没法参与宽度过渡（会瞬间跳位），只保留层级与描边。 */
-.file-preview-panel.is-maximized { z-index: 40; max-width: none; }
+.file-preview-panel.is-maximized { z-index: 40; }
 .resize-handle { position: absolute; top: 0; bottom: 0; left: 0; width: 8px; cursor: col-resize; z-index: 5; touch-action: none; }
 .resize-handle:hover, .resize-handle:focus-visible { background: var(--file-line); }
 .preview-topbar, .preview-toolbar, .preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
@@ -631,5 +637,5 @@ button:disabled { opacity: .4; cursor: default; }
 .file-preview-panel.is-dark .diff-preview :deep(.hljs-quote) { color: #8b949e; font-style: italic; }
 .file-preview-panel.is-dark .diff-preview :deep(.hljs-number),
 .file-preview-panel.is-dark .diff-preview :deep(.hljs-literal) { color: #79c0ff; }
-@media (max-width: 900px) { .file-preview-panel { position: absolute; inset: 0; z-index: 40; width: 100% !important; max-width: none; } .panel-canvas { width: 100%; } .resize-handle { display: none; } }
+@media (max-width: 900px) { .file-preview-panel { position: absolute; inset: 0; z-index: 40; width: 100% !important; } .panel-canvas { width: 100%; } .resize-handle { display: none; } }
 </style>

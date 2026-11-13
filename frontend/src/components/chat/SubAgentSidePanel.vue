@@ -10,6 +10,7 @@ import SessionContextUsage from './SessionContextUsage.vue';
 import TaskProgressDock from './TaskProgressDock.vue';
 import type {SubSessionTaskProgressState} from '../../views/chat/useSubSessionTaskProgress';
 import {useChatScroll} from '../../views/chat/useChatScroll';
+import {useSidePanelWidthGuard} from '../../composables/useSidePanelWidthGuard';
 
 /** 默认及最小宽度配置 */
 const DEFAULT_PANEL_WIDTH = 460;
@@ -33,15 +34,16 @@ const resolveStoredWidth = (): number => {
 const panelWidth = ref(resolveStoredWidth());
 const isDragging = ref(false);
 
+/** 面板根元素：宽度守卫要拿它的父元素（弹性行）实测宽度。 */
+const shellRef = ref<HTMLElement | null>(null);
+const { clampWidth } = useSidePanelWidthGuard(shellRef, panelWidth, MIN_PANEL_WIDTH);
+
 let startX = 0;
 let startWidth = 0;
 
 const onMouseMove = (e: MouseEvent) => {
   if (!isDragging.value) return;
-  const deltaX = startX - e.clientX;
-  const maxAllowedWidth = Math.max(MIN_PANEL_WIDTH, window.innerWidth - 400);
-  const nextWidth = Math.min(Math.max(startWidth + deltaX, MIN_PANEL_WIDTH), maxAllowedWidth);
-  panelWidth.value = nextWidth;
+  panelWidth.value = clampWidth(startWidth + (startX - e.clientX));
 };
 
 const onMouseUp = () => {
@@ -211,6 +213,7 @@ defineExpose({
   <Transition name="sub-panel">
   <div
     v-if="isOpen"
+    ref="shellRef"
     class="sub-panel-shell relative shrink-0 h-full"
     :class="{ 'is-resizing': isDragging }"
     :style="{ '--sub-panel-width': `${panelWidth}px` }"
