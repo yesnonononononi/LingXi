@@ -418,7 +418,6 @@ watch(
                   :key="row.type"
                   data-testid="token-audit-message-row"
                   :data-category="row.type"
-                  class="space-y-1"
                 >
                   <div class="flex items-center justify-between gap-2">
                     <!-- 工具返回消息：可展开二级拆解 -->
@@ -476,7 +475,7 @@ watch(
                       </span>
                     </div>
                   </div>
-                  <div v-if="barWidth(row.ratio)" class="h-1 w-full overflow-hidden rounded-lx-full bg-lx-surface-active">
+                  <div v-if="barWidth(row.ratio)" class="mt-1 h-1 w-full overflow-hidden rounded-lx-full bg-lx-surface-active">
                     <div
                       :class="['h-full rounded-lx-full', CATEGORY_DOT_CLASS[row.type]]"
                       :style="{width: barWidth(row.ratio) ?? '0%'}"
@@ -485,38 +484,47 @@ watch(
 
                   <!-- 动态上下文的归因明细：记忆正文已并入每轮背景块，这里只说「其中有多少是记忆」。
                        不做成独立消息分项 —— 那会让消息构成合计多算一份记忆，和快照总量对不上。 -->
+                  <!-- 折叠外壳必须是「无 margin / border / padding」的纯容器。
+                       CollapseTransition 量的是元素自身 scrollHeight（不含自身 margin/border，且它会把 padding
+                       先清零再过渡），明细块自带 mt-1.5 + border + p-2 时量到的高度比稳态小约 10px：
+                       展开末尾突然补高、收起末帧又塌掉残留 —— 用户看到的就是「弹一下」。
+                       所以间距改成外壳内的固定高度占位，与内容一起参与高度动画。 -->
                   <CollapseTransition>
                     <div
                       v-if="row.type === 'DYNAMIC_CONTEXT' && dynamicContextRowExpanded && dynamicContextAttributionRows.length"
-                      data-testid="token-audit-dynamic-context-attribution"
-                      class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
                     >
-                      <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
-                        <span>{{ t('chat.tokenAudit.attribution.dynamicContextComposition') }}</span>
-                        <span>{{ t('chat.tokenAudit.tokenUnit') }}</span>
-                      </div>
-                      <div class="mt-1.5 space-y-1">
-                        <div
-                          v-for="item in dynamicContextAttributionRows"
-                          :key="item.key"
-                          class="flex items-center justify-between gap-2"
-                        >
-                          <span class="flex min-w-0 items-center gap-1">
-                            <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
-                            <span
-                              data-testid="token-audit-attribution-hint"
-                              class="inline-flex shrink-0 cursor-help text-lx-faint"
-                              :title="t('chat.tokenAudit.attribution.memoryHint')"
-                              :aria-label="t('chat.tokenAudit.attribution.memoryHint')"
-                            >
-                              <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <circle cx="12" cy="12" r="9" stroke-width="2" />
-                                <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
-                                <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
-                              </svg>
+                      <div class="h-1.5" aria-hidden="true"></div>
+                      <div
+                        data-testid="token-audit-dynamic-context-attribution"
+                        class="rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
+                      >
+                        <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
+                          <span>{{ t('chat.tokenAudit.attribution.dynamicContextComposition') }}</span>
+                          <span>{{ t('chat.tokenAudit.tokenUnit') }}</span>
+                        </div>
+                        <div class="mt-1.5 space-y-1">
+                          <div
+                            v-for="item in dynamicContextAttributionRows"
+                            :key="item.key"
+                            class="flex items-center justify-between gap-2"
+                          >
+                            <span class="flex min-w-0 items-center gap-1">
+                              <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
+                              <span
+                                data-testid="token-audit-attribution-hint"
+                                class="inline-flex shrink-0 cursor-help text-lx-faint"
+                                :title="t('chat.tokenAudit.attribution.memoryHint')"
+                                :aria-label="t('chat.tokenAudit.attribution.memoryHint')"
+                              >
+                                <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" stroke-width="2" />
+                                  <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
+                                  <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
+                                </svg>
+                              </span>
                             </span>
-                          </span>
-                          <span class="shrink-0 font-mono text-lx-fs-xs text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
+                            <span class="shrink-0 font-mono text-lx-fs-xs text-lx-secondary">{{ formatTokenAmount(item.tokens) }}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -524,66 +532,70 @@ watch(
 
                   <!-- 工具来源二级拆解：普通工具（逐项，限高滚动）/ MCP / Skill（分组合计） -->
                   <CollapseTransition>
-                  <div
-                    v-if="row.type === 'TOOL' && toolRowExpanded && (toolGroupRows.length || ordinaryToolRows.length)"
-                    data-testid="token-audit-tool-sources"
-                    class="mt-1.5 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
-                  >
-                    <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
-                      <span>{{ t('chat.tokenAudit.byToolSource') }}</span>
-                      <span>{{ t('chat.tokenAudit.toolTotal') }}</span>
-                    </div>
-                    <!-- 逐项工具明细：工具个数没有上界（实测一个会话几十个），必须限高独立滚动，
-                         否则整块把面板顶穿、把下面的 MCP / Skill 合计挤出视野。 -->
                     <div
-                      v-if="ordinaryToolRows.length"
-                      data-testid="token-audit-tool-items"
-                      class="mt-1.5 max-h-32 space-y-1 overflow-y-auto pr-1"
+                      v-if="row.type === 'TOOL' && toolRowExpanded && (toolGroupRows.length || ordinaryToolRows.length)"
                     >
-                      <div v-for="item in ordinaryToolRows" :key="item.toolName" data-testid="token-audit-tool-item" class="space-y-1">
-                        <div class="flex items-center justify-between gap-2 font-mono text-lx-fs-xs text-lx-secondary">
-                          <span class="truncate" :title="item.toolName">{{ item.toolName }}</span>
-                          <span class="shrink-0">{{ formatTokenAmount(item.tokens) }}</span>
+                      <div class="h-1.5" aria-hidden="true"></div>
+                      <div
+                        data-testid="token-audit-tool-sources"
+                        class="rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
+                      >
+                        <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
+                          <span>{{ t('chat.tokenAudit.byToolSource') }}</span>
+                          <span>{{ t('chat.tokenAudit.toolTotal') }}</span>
                         </div>
-                        <!-- 色条只比较参数和输出正文，框架总量还包含消息封装。 -->
+                        <!-- 逐项工具明细：工具个数没有上界（实测一个会话几十个），必须限高独立滚动，
+                             否则整块把面板顶穿、把下面的 MCP / Skill 合计挤出视野。 -->
                         <div
-                          v-if="item.argumentTokens !== null && item.outputTokens !== null && (item.argumentTokens > 0 || item.outputTokens > 0)"
-                          data-testid="token-audit-tool-io-bar"
-                          class="flex h-1 overflow-hidden rounded-lx-full"
-                          aria-hidden="true"
+                          v-if="ordinaryToolRows.length"
+                          data-testid="token-audit-tool-items"
+                          class="mt-1.5 max-h-32 space-y-1 overflow-y-auto pr-1"
                         >
-                          <div class="basis-0 bg-lx-accent" :style="{flexGrow: item.argumentTokens}"></div>
-                          <div class="basis-0 bg-lx-success" :style="{flexGrow: item.outputTokens}"></div>
+                          <div v-for="item in ordinaryToolRows" :key="item.toolName" data-testid="token-audit-tool-item" class="space-y-1">
+                            <div class="flex items-center justify-between gap-2 font-mono text-lx-fs-xs text-lx-secondary">
+                              <span class="truncate" :title="item.toolName">{{ item.toolName }}</span>
+                              <span class="shrink-0">{{ formatTokenAmount(item.tokens) }}</span>
+                            </div>
+                            <!-- 色条只比较参数和输出正文，框架总量还包含消息封装。 -->
+                            <div
+                              v-if="item.argumentTokens !== null && item.outputTokens !== null && (item.argumentTokens > 0 || item.outputTokens > 0)"
+                              data-testid="token-audit-tool-io-bar"
+                              class="flex h-1 overflow-hidden rounded-lx-full"
+                              aria-hidden="true"
+                            >
+                              <div class="basis-0 bg-lx-accent" :style="{flexGrow: item.argumentTokens}"></div>
+                              <div class="basis-0 bg-lx-success" :style="{flexGrow: item.outputTokens}"></div>
+                            </div>
+                            <div v-if="item.argumentTokens !== null || item.outputTokens !== null" class="flex flex-wrap gap-x-3 text-lx-fs-2xs text-lx-muted">
+                              <span v-if="item.argumentTokens !== null" class="inline-flex items-center gap-1">
+                                <span aria-hidden="true" class="size-1.5 rounded-lx-full bg-lx-accent"></span>
+                                {{ t('chat.tokenAudit.toolArguments') }} <span class="font-mono">{{ formatTokenAmount(item.argumentTokens) }}</span>
+                              </span>
+                              <span v-if="item.outputTokens !== null" class="inline-flex items-center gap-1">
+                                <span aria-hidden="true" class="size-1.5 rounded-lx-full bg-lx-success"></span>
+                                {{ t('chat.tokenAudit.toolOutput') }} <span class="font-mono">{{ formatTokenAmount(item.outputTokens) }}</span>
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div v-if="item.argumentTokens !== null || item.outputTokens !== null" class="flex flex-wrap gap-x-3 text-lx-fs-2xs text-lx-muted">
-                          <span v-if="item.argumentTokens !== null" class="inline-flex items-center gap-1">
-                            <span aria-hidden="true" class="size-1.5 rounded-lx-full bg-lx-accent"></span>
-                            {{ t('chat.tokenAudit.toolArguments') }} <span class="font-mono">{{ formatTokenAmount(item.argumentTokens) }}</span>
-                          </span>
-                          <span v-if="item.outputTokens !== null" class="inline-flex items-center gap-1">
-                            <span aria-hidden="true" class="size-1.5 rounded-lx-full bg-lx-success"></span>
-                            {{ t('chat.tokenAudit.toolOutput') }} <span class="font-mono">{{ formatTokenAmount(item.outputTokens) }}</span>
-                          </span>
+                        <!-- 分组合计（MCP / Skill）：与上面逐项明细之间留间距 + 分隔线 ——
+                             它们是「同一个 TOOL 分项下的另外两类来源」，不是逐项明细的续行；
+                             贴在一起会被读成「最后几个工具」。 -->
+                        <div
+                          v-if="toolGroupRows.length"
+                          data-testid="token-audit-tool-groups"
+                          class="mt-2 space-y-1 border-t border-lx-border-subtle pt-2"
+                        >
+                          <div v-for="group in toolGroupRows" :key="group.kind" class="flex items-center justify-between gap-2">
+                            <span class="text-lx-fs-sm font-medium text-lx-primary">{{ t(group.labelKey) }}</span>
+                            <span class="flex shrink-0 items-center gap-1.5 font-mono">
+                              <span class="text-lx-fs-sm font-medium text-lx-primary">{{ formatTokenAmount(group.tokens) }}</span>
+                              <span v-if="ratioText(group.ratio)" class="w-9 text-right text-lx-fs-2xs text-lx-faint">{{ ratioText(group.ratio) }}</span>
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <!-- 分组合计（MCP / Skill）：与上面逐项明细之间留间距 + 分隔线 ——
-                         它们是「同一个 TOOL 分项下的另外两类来源」，不是逐项明细的续行；
-                         贴在一起会被读成「最后几个工具」。 -->
-                    <div
-                      v-if="toolGroupRows.length"
-                      data-testid="token-audit-tool-groups"
-                      class="mt-2 space-y-1 border-t border-lx-border-subtle pt-2"
-                    >
-                      <div v-for="group in toolGroupRows" :key="group.kind" class="flex items-center justify-between gap-2">
-                        <span class="text-lx-fs-sm font-medium text-lx-primary">{{ t(group.labelKey) }}</span>
-                        <span class="flex shrink-0 items-center gap-1.5 font-mono">
-                          <span class="text-lx-fs-sm font-medium text-lx-primary">{{ formatTokenAmount(group.tokens) }}</span>
-                          <span v-if="ratioText(group.ratio)" class="w-9 text-right text-lx-fs-2xs text-lx-faint">{{ ratioText(group.ratio) }}</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
                   </CollapseTransition>
                 </div>
               </div>
@@ -593,7 +605,7 @@ watch(
             <section
               v-if="showBreakdown && showOverhead"
               data-testid="token-audit-overhead"
-              class="space-y-1.5 border-t border-lx-border-subtle pt-2.5"
+              class="border-t border-lx-border-subtle pt-2.5"
             >
               <button
                 type="button"
@@ -633,39 +645,41 @@ watch(
               </button>
 
               <CollapseTransition>
-                <div
-                  v-if="definitionRows.length > 0 && overheadExpanded"
-                  data-testid="token-audit-definitions"
-                  class="space-y-1 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
-                >
-                <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
-                  <span>{{ t('chat.tokenAudit.toolDefinitionComposition') }}</span>
-                  <span>{{ t('chat.tokenAudit.ratio') }}</span>
+                <div v-if="definitionRows.length > 0 && overheadExpanded">
+                  <div class="h-1.5" aria-hidden="true"></div>
+                  <div
+                    data-testid="token-audit-definitions"
+                    class="space-y-1 rounded-lx-md border border-lx-border-subtle bg-lx-surface-sunken p-2"
+                  >
+                    <div class="flex items-center justify-between border-b border-lx-border-subtle pb-1 text-lx-fs-2xs text-lx-faint">
+                      <span>{{ t('chat.tokenAudit.toolDefinitionComposition') }}</span>
+                      <span>{{ t('chat.tokenAudit.ratio') }}</span>
+                    </div>
+                    <div v-for="row in definitionRows" :key="row.key" class="flex items-center justify-between gap-2">
+                      <span class="flex min-w-0 items-center gap-1">
+                        <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(row.labelKey) }}</span>
+                        <!-- 「其它」是框架分词口径差：内部术语说不清，挂个感叹号，hover 时讲人话 -->
+                        <span
+                          v-if="row.key === 'framing'"
+                          data-testid="token-audit-framing-hint"
+                          class="inline-flex shrink-0 cursor-help text-lx-faint"
+                          :title="t('chat.tokenAudit.definition.framingHint')"
+                          :aria-label="t('chat.tokenAudit.definition.framingHint')"
+                        >
+                          <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" stroke-width="2" />
+                            <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
+                            <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
+                          </svg>
+                        </span>
+                      </span>
+                      <span class="flex shrink-0 items-center gap-1.5 font-mono text-lx-fs-xs">
+                        <span class="text-lx-secondary">{{ formatTokenAmount(row.tokens) }}</span>
+                        <span v-if="ratioText(row.ratio)" class="w-9 text-right text-lx-faint">{{ ratioText(row.ratio) }}</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div v-for="row in definitionRows" :key="row.key" class="flex items-center justify-between gap-2">
-                  <span class="flex min-w-0 items-center gap-1">
-                    <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(row.labelKey) }}</span>
-                    <!-- 「其它」是框架分词口径差：内部术语说不清，挂个感叹号，hover 时讲人话 -->
-                    <span
-                      v-if="row.key === 'framing'"
-                      data-testid="token-audit-framing-hint"
-                      class="inline-flex shrink-0 cursor-help text-lx-faint"
-                      :title="t('chat.tokenAudit.definition.framingHint')"
-                      :aria-label="t('chat.tokenAudit.definition.framingHint')"
-                    >
-                      <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="12" cy="12" r="9" stroke-width="2" />
-                        <path stroke-linecap="round" stroke-width="2" d="M12 8v4.5" />
-                        <path stroke-linecap="round" stroke-width="2" d="M12 16h.01" />
-                      </svg>
-                    </span>
-                  </span>
-                  <span class="flex shrink-0 items-center gap-1.5 font-mono text-lx-fs-xs">
-                    <span class="text-lx-secondary">{{ formatTokenAmount(row.tokens) }}</span>
-                    <span v-if="ratioText(row.ratio)" class="w-9 text-right text-lx-faint">{{ ratioText(row.ratio) }}</span>
-                  </span>
-                </div>
-              </div>
               </CollapseTransition>
             </section>
           </template>

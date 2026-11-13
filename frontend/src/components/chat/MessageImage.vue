@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import {ref, watch} from 'vue';
 import {t} from '../../i18n';
+import ImageLightbox from '../common/ImageLightbox.vue';
 
 const props = defineProps<{src: string; alt?: string; title?: string; isDark: boolean; linked?: boolean}>();
 const loading = ref(true);
 const failed = ref(false);
 const attempt = ref(0);
-const preview = ref<HTMLDialogElement | null>(null);
 const previewOpen = ref(false);
 
 watch(() => props.src, () => {
   loading.value = true;
   failed.value = false;
-  preview.value?.close();
+  // 换图时先收掉预览：旧地址已经不再是这张图，留着会显示错图。
+  previewOpen.value = false;
 });
 const retry = () => {
   loading.value = true;
@@ -23,7 +24,6 @@ const openPreview = () => {
   // 带链接的图片保留原链接行为，避免在链接内嵌套交互按钮。
   if (!props.linked && !loading.value && !failed.value) {
     previewOpen.value = true;
-    preview.value?.showModal();
   }
 };
 </script>
@@ -44,17 +44,15 @@ const openPreview = () => {
       <span v-if="alt">{{ alt }}</span>
       <button v-if="failed && !linked" type="button" class="message-image-retry" @click="retry">{{ t('chat.message.imageRetry') }}</button>
     </span>
-    <Teleport v-if="!linked" to="body">
-      <dialog ref="preview" class="message-image-preview" :class="{'message-image--dark': isDark}"
-        :aria-label="t('chat.message.previewImage', {path: alt || t('chat.message.imageLabel')})"
-        @close="previewOpen = false" @click.self="preview?.close()">
-        <div class="message-image-preview-toolbar">
-          <span>{{ alt || t('chat.message.imageLabel') }}</span>
-          <button type="button" autofocus :aria-label="t('common.close')" @click="preview?.close()">×</button>
-        </div>
-        <img v-if="previewOpen" :src="src" :alt="alt || t('chat.message.imageLabel')" />
-      </dialog>
-    </Teleport>
+    <!-- 大图预览复用唯一实现；`message-image-preview` 类名是既有样式钩子，继续挂在 dialog 上。 -->
+    <ImageLightbox
+      v-if="!linked"
+      :open="previewOpen"
+      :src="src"
+      :name="alt || t('chat.message.imageLabel')"
+      dialog-class="message-image-preview"
+      @close="previewOpen = false"
+    />
   </span>
 </template>
 
@@ -67,14 +65,6 @@ const openPreview = () => {
 .message-image-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: .8125rem; }
 .message-image-caption { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: .5rem .125rem 0; font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
 .message-image-retry { flex-shrink: 0; text-decoration: underline; text-underline-offset: .2em; cursor: pointer; }
-.message-image-surface:focus-visible, .message-image-retry:focus-visible, .message-image-preview-toolbar button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.message-image-surface:focus-visible, .message-image-retry:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .message-image--dark .message-image-surface { border-color: rgb(255 255 255 / 12%); background: rgb(255 255 255 / 4%); }
-.message-image-preview { margin: auto; padding: 1rem; width: fit-content; max-width: 94vw; max-height: 94vh; border: 1px solid rgb(0 0 0 / 10%); border-radius: 1rem; background: #fff; color: #3f3f46; }
-.message-image-preview.message-image--dark { border-color: rgb(255 255 255 / 12%); background: #18181b; color: #e4e4e7; }
-.message-image-preview::backdrop { background: rgb(0 0 0 / 70%); }
-.message-image-preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; font-size: .8125rem; }
-.message-image-preview-toolbar span { min-width: 0; overflow-wrap: anywhere; }
-.message-image-preview-toolbar button { flex-shrink: 0; width: 2rem; height: 2rem; border-radius: .5rem; font-size: 1.5rem; cursor: pointer; }
-.message-image-preview-toolbar button:hover { background: rgb(127 127 127 / 12%); }
-.message-image-preview > img { display: block; max-width: 100%; max-height: 78vh; margin: auto; object-fit: contain; }
 </style>

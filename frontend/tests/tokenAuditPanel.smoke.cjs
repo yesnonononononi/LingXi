@@ -362,7 +362,11 @@ window.ready = true;`);
   await evaluate('window.nextTickOnly()');
   const entering = await evaluate(`(() => {
     const el = document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]');
-    return el ? el.className : null;
+    if (!el) return null;
+    // 过渡类挂在「被 CollapseTransition 度量的外壳」上，明细块是它的子层；
+    // 这里沿祖先找，锚点随结构演进但不放宽断言（没有过渡就该红）。
+    const host = el.closest('[class*="collapse-transition-enter-active"]');
+    return (host ? host.className : el.className) || '';
   })()`);
   await evaluate('window.flush()');
   assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]')`),

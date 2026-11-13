@@ -11,6 +11,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
 import BorderGlow from '../common/BorderGlow.vue';
+import ImageLightbox from '../common/ImageLightbox.vue';
 import SparkTrail from '../common/SparkTrail.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
 import ChatInputPlusMenu from './ChatInputPlusMenu.vue';
@@ -237,6 +238,44 @@ const listening = ref(false);
 const { attachments, maxImages, limitsLoading, limitsError, attachmentError, canAttach,
   loadLimits, addImages, removeImage, clearImages } = useChatImageAttachments();
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+// ====== 附件大图预览 ======
+/** 正在预览的附件快照；关闭后**保留** src，让 dialog 元素不重建（原生焦点回收依赖它）。 */
+const previewingAttachment = ref<{src: string; name: string} | null>(null);
+const isImagePreviewOpen = ref(false);
+
+/** chip 缩略图 → 大图：只消费真实的 `attachment.preview`，不构造任何临时实体。 */
+const openImagePreview = (attachment: {file: File; preview: string}) => {
+  previewingAttachment.value = {
+    src: attachment.preview,
+    name: attachment.file.name || t('chat.input.imageAttachment')
+  };
+  isImagePreviewOpen.value = true;
+};
+
+const closeImagePreview = () => {
+  isImagePreviewOpen.value = false;
+};
+
+/**
+ * 删除附件：预览开着就先关预览、再让 composable revoke。
+ *
+ * <p>顺序不能反 —— `revokeObjectURL` 之后 `<img>` 立刻失去图源，用户会看到裂图；
+ * 而「关闭预览」不释放任何资源，先做没有代价。</p>
+ */
+const removeImageAttachment = (index: number) => {
+  const target = attachments.value[index];
+  if (target && previewingAttachment.value?.src === target.preview) {
+    closeImagePreview();
+  }
+  removeImage(index);
+};
+
+/** 清空附件同理：先关预览再统一 revoke，避免裂图与内存泄漏。 */
+const clearImageAttachments = () => {
+  closeImagePreview();
+  clearImages();
+};
 
 const processImageFiles = (files: File[]) => {
   addImages(files);
@@ -1236,7 +1275,7 @@ onBeforeUnmount(() => {
   inputDisposed = true;
   document.removeEventListener('mousedown', handleClickOutside);
   dictation += 1;
-  clearImages();
+  clearImageAttachments();
   clearPastedDocuments();
 });
 
@@ -1399,7 +1438,7 @@ const handleSend = () => {
   );
 
   writeInputText('');
-  clearImages();
+  clearImageAttachments();
   clearPastedDocuments();
 };
 
@@ -1443,7 +1482,7 @@ defineExpose({
   },
   setAttachedImage: (file: File | null) => {
     if (file) processImageFiles([file]);
-    else clearImages();
+    else clearImageAttachments();
   },
   setAttachedImages: processImageFiles,
   fetchTeams,
@@ -1690,24 +1729,45 @@ defineExpose({
           :key="attachment.preview"
           class="inline-flex items-center gap-1.5 pr-1.5 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] pl-2 rounded-lg h-[28px] text-lx-fs-md motion-reduce:[animation:none] [animation:prompt-bar-pop_200ms_cubic-bezier(0.23,1,0.32,1)_both] border border-white/5"
         >
-          <img
-            :src="attachment.preview"
-            :alt="attachment.file.name"
-            class="w-4 h-4 rounded object-cover flex-none"
-          />
+          <!-- 缩略图本身就是预览入口：@click.stop 保证不连带触发 chip 上的其它动作。
+               焦点环交给 .chat-input-chip-preview（键盘用户必须看得见当前焦点在哪）。 -->
+          <button
+            type="button"
+            class="chat-input-chip-preview inline-grid place-items-center flex-none p-0 bg-transparent border-0 rounded cursor-zoom-in text-inherit"
+            :aria-label="t('chat.input.previewAttachmentNamed', { name: attachment.file.name || t('chat.input.imageAttachment') })"
+            :title="t('chat.input.previewAttachmentNamed', { name: attachment.file.name || t('chat.input.imageAttachment') })"
+            data-testid="image-attachment-preview"
+            @click.stop="openImagePreview(attachment)"
+          >
+            <img
+              :src="attachment.preview"
+              :alt="attachment.file.name"
+              class="w-4 h-4 rounded object-cover flex-none"
+            />
+          </button>
                     <span class="max-w-[150px] truncate text-xs">{{ attachment.file.name || t('chat.input.imageAttachment') }}</span>
           <button
             type="button"
             class="inline-grid place-items-center bg-transparent opacity-60 hover:opacity-100 p-0 hover:[background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)] border-0 rounded-[5px] outline-none w-[18px] h-[18px] text-inherit cursor-pointer [transition:opacity_120ms_ease,background-color_120ms_ease]"
             :title="t('chat.input.removeAttachment')"
                         :aria-label="t('chat.input.removeAttachmentNamed', { name: attachment.file.name })"
-                        @click.stop="removeImage(index)"
+                        @click.stop="removeImageAttachment(index)"
           >
 
             <HugeiconsIcon :icon="Cancel01Icon as IconArray" :size="10" :stroke-width="2.5" />
           </button>
         </span>
       </div>
+
+      <!-- 大图预览：唯一样式与交互实现是 common/ImageLightbox（原生 dialog 自带焦点陷阱与 Esc 关闭） -->
+      <ImageLightbox
+        v-if="previewingAttachment"
+        :open="isImagePreviewOpen"
+        :src="previewingAttachment.src"
+        :name="previewingAttachment.name"
+        test-id="image-attachment-lightbox"
+        @close="closeImagePreview"
+      />
       <div class="text-xs text-lx-muted" aria-live="polite">
                 <span v-if="limitsLoading">{{ t('chat.input.readingImageLimit') }}</span>
         <span v-else-if="limitsError" class="text-red-500">{{ limitsError }}
@@ -1770,8 +1830,9 @@ defineExpose({
         </div>
       </div>
 
-      <!-- 底部工具栏行 -->
-      <div class="flex items-center justify-between pt-1 flex-nowrap gap-2 min-w-0">
+      <!-- 底部工具栏行：允许换行。右侧面板夹紧后对话列最窄 400px（见 utils/chatColumnLayout），
+           工具组合计约 450px 放不进一行 —— nowrap 会把整张卡片撑破、按钮被列裁掉 -->
+      <div class="flex items-center justify-between pt-1 flex-wrap gap-x-2 gap-y-1.5 min-w-0">
         <!-- 左侧工具组：+ 分组菜单（添加文件 / 模式 / 协作 / 技能 / MCP）、图片附件、Effort 强度 -->
         <div class="flex items-center gap-1 flex-nowrap shrink min-w-0">
           <!-- + 按钮 -->
@@ -1969,6 +2030,12 @@ defineExpose({
 </template>
 
 <style>
+/* 附件 chip 的缩略图预览入口：键盘聚焦时必须能看见焦点。 */
+.chat-input-chip-preview:focus-visible {
+  outline: 2px solid var(--pb-ink);
+  outline-offset: 2px;
+}
+
 .chat-text-input {
   display: block;
   padding: 0;
