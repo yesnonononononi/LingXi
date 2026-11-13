@@ -212,6 +212,20 @@ export interface AgentMessageEvent extends EventInterface {
 /* 工具调用事件                                                         */
 /* ------------------------------------------------------------------ */
 
+/** TOOL_CALL_PREPARE —— 模型开始流式生成工具调用参数（对应 {@code ToolCallPrepareEvent}）。 */
+export interface ToolCallPrepareEvent extends EventInterface {
+  type: 'TOOL_CALL_PREPARE';
+  agentId?: string;
+  responseId?: string;
+  /** 模型本轮请求中的工具序号 */
+  index?: number;
+  /** 调用 id，与后续 TOOL_CALL / TOOL_COMPLETED 的 requestId 对齐 */
+  toolCallId: string;
+  toolName: string;
+  /** 首个参数分片，可能是不完整 JSON */
+  partialArguments?: string;
+}
+
 /** TOOL_CALL —— 工具即将被调用（对应 {@code ToolCallStartEvent}）。 */
 export interface ToolCallStartEvent extends EventInterface {
   type: 'TOOL_CALL';
@@ -355,6 +369,7 @@ export interface AgentEventMap {
   COMPLETE_TEXT: AgentCompleteTextEvent;
   PARTIAL_THINKING: AgentPartialThinkingEvent;
   AI_MESSAGE: AgentMessageEvent;
+  TOOL_CALL_PREPARE: ToolCallPrepareEvent;
   TOOL_CALL: ToolCallStartEvent;
   TOOL_COMPLETED: ToolCallEndEvent;
   CONTEXT_UPDATE: ContextUpdateEvent;
@@ -428,6 +443,7 @@ const AGENT_EVENT_TYPES: Record<RuntimeEventType, true> = {
   COMPLETE_TEXT: true,
   PARTIAL_THINKING: true,
   AI_MESSAGE: true,
+  TOOL_CALL_PREPARE: true,
   TOOL_CALL: true,
   TOOL_COMPLETED: true,
   CONTEXT_UPDATE: true,

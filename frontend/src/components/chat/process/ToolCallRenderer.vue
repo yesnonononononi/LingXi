@@ -115,7 +115,7 @@ const copyResult = (): void => {
         </svg>
         </button>
         <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
-        <ToolRowIcon :tool-name="tool.toolName" :category="meta?.category" :is-dark="isDark" />
+        <ToolRowIcon :tool-name="tool.toolName" :category="meta?.category" :loading="tool.status === 'calling'" :is-dark="isDark" />
         <!-- 有目标路径/对象时（如读取/写入）：分类名 + 目标路径（读文件附行范围） -->
         <template v-if="meta?.target">
           <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-zinc-700'">{{ resolveToolRenderName(tool.toolName) }}</span>

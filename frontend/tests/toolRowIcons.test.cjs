@@ -175,3 +175,14 @@ test('绘制：每个图标分支都在源码里，缺一个分支就会掉到�
   }
   assert.match(source, /<svg v-else :class="iconClass"/, '必须有兜底分支，未登记工具不能白屏');
 });
+
+test('绘制：loading 态渲染通用旋转图标，完成态切回对应工具正式图标', async t => {
+  const {svg: loadingSvg} = renderIcon(t, {toolName: 'edit_file', category: meta.resolveToolCategory('edit_file'), loading: true});
+  assert.equal(loadingSvg.props['data-testid'], 'tool-row-loading-icon', 'loading 态必须渲染通用 loading 图标');
+  assert.match(String(loadingSvg.props.class), /\banimate-spin\b/, 'loading 图标必须带旋转动画类名');
+  assert.match(String(loadingSvg.props.class), /\bw-4 h-4\b/, 'loading 图标尺寸必须与正式图标一致');
+
+  const {svg: settledSvg} = renderIcon(t, {toolName: 'edit_file', category: meta.resolveToolCategory('edit_file'), loading: false});
+  assert.notEqual(settledSvg.props['data-testid'], 'tool-row-loading-icon', '非 loading 态必须切换回正式图标');
+  assert.doesNotMatch(String(settledSvg.props.class), /\banimate-spin\b/, '正式图标不得带旋转动画');
+});

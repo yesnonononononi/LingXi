@@ -12,6 +12,8 @@ const props = defineProps<{
   toolName?: string;
   /** 已知分类码；与 `toolName` 一起决定图标，缺省时按名称判别。 */
   category?: string;
+  /** 工具尚未完成（准备参数或执行中）时显示统一 loading 图标，完成后切回正式图标。 */
+  loading?: boolean;
   isDark: boolean;
 }>();
 
@@ -24,8 +26,13 @@ const iconClass = computed(() => [
 
 <template>
   <div class="flex-shrink-0 flex items-center">
+    <!-- 通用进行中图标：prepare / calling 阶段统一展示，完成态到达后切换为对应工具图标 -->
+    <svg v-if="loading" :class="[iconClass, 'animate-spin']" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" data-testid="tool-row-loading-icon">
+      <circle class="opacity-25" cx="12" cy="12" r="10" />
+      <path class="opacity-85" stroke-linecap="round" d="M12 2a10 10 0 0 1 10 10" />
+    </svg>
     <!-- 检索：检索文件内容 / 网页搜索 / 检索工具 / 检索记忆 -->
-    <svg v-if="kind === TOOL_ROW_ICON.FILE_SEARCH" :class="iconClass" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
+    <svg v-else-if="kind === TOOL_ROW_ICON.FILE_SEARCH" :class="iconClass" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
       <path d="M224 256h512V192H224zM224 384h512V320H224z" />
       <path d="M96 64h768v512h64V64a64 64 0 0 0-64-64H96a64 64 0 0 0-64 64v896a64 64 0 0 0 64 64h448v-64H96V64z" />
       <path d="M224 576v64h181.12c0-22.272 3.84-43.712 10.88-64H224zM480 448H224v64h189.44A221.76 221.76 0 0 1 480 448M483.008 674.496c0-89.344 75.072-161.792 167.616-161.792 92.544 0 167.552 72.448 167.552 161.792 0 89.344-75.008 161.792-167.552 161.792s-167.616-72.448-167.616-161.792m345.472 147.648c35.328-39.68 56.704-91.264 56.704-147.648C885.184 549.44 780.16 448 650.624 448 520.96 448 416 549.44 416 674.496c0 125.056 105.024 226.496 234.624 226.496 46.848 0 90.56-13.312 127.232-36.224l156.928 149.76a34.368 34.368 0 0 0 47.36 0 31.552 31.552 0 0 0 0-45.76l-153.6-146.624z" />

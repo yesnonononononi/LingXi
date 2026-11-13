@@ -768,3 +768,72 @@ test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任
   assert.equal(bubble.toolCalls?.length, 1, '原始 TOOL_CALL 不得新增工具项');
   assert.equal(bubble.content, '这个文件做了三件事。', '原始正文增量不得改写正文');
 });
+
+test('TOOL_CALL_PREPARE 先落 calling 态占位，TOOL_COMPLETED 到达后合并为最终状态', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: 'sess-prepare-1' });
+
+  reducer.consume({
+    type: 'EXECUTION_STARTED',
+    executionId: 'exec-p1',
+    timestamp: '2026-11-14T01:00:00Z',
+    metaData: { turnId: 'turn-p1' },
+  });
+
+  reducer.consume({
+    type: 'TOOL_CALL_PREPARE',
+    executionId: 'exec-p1',
+    timestamp: '2026-11-14T01:00:01Z',
+    responseId: 'resp-p1',
+    order: 1000,
+    index: 0,
+    toolCallId: 'call-edit-1',
+    toolName: AgentToolName.EditFile,
+    partialArguments: '{"path":"a.ts"',
+    metaData: { turnId: 'turn-p1' },
+  });
+
+  const bubble = messages.find(m => m.role === 'assistant');
+  assert.ok(bubble, '必须建立助手气泡');
+  assert.equal(bubble.isExploring, false, '进入工具准备态后应关闭初始思考占位');
+  assert.equal(bubble.toolCalls?.length, 1, 'TOOL_CALL_PREPARE 必须立刻落出工具调用项');
+  assert.equal(bubble.toolCalls?.[0].id, 'call-edit-1');
+  assert.equal(bubble.toolCalls?.[0].toolName, AgentToolName.EditFile);
+  assert.equal(bubble.toolCalls?.[0].status, 'calling', 'prepare 到达时应处于 calling 态以展示 loading 图标');
+  assert.equal(bubble.toolCalls?.[0].args, undefined, '半截 partialArguments 不得被当作完整参数解析');
+
+  reducer.consume({
+    type: 'TOOL_CALL',
+    executionId: 'exec-p1',
+    timestamp: '2026-11-14T01:00:02Z',
+    responseId: 'resp-p1',
+    order: 1000,
+    requestIndex: 0,
+    requestId: 'call-edit-1',
+    toolName: AgentToolName.EditFile,
+    args: '{"path":"a.ts"}',
+    resultStatus: 'STARTED',
+    metaData: { turnId: 'turn-p1' },
+  });
+  assert.equal(bubble.toolCalls?.length, 1, 'TOOL_CALL 应复用同一条记录');
+  assert.equal(bubble.toolCalls?.[0].status, 'calling');
+  assert.deepEqual(bubble.toolCalls?.[0].args, { path: 'a.ts' });
+
+  reducer.consume({
+    type: 'TOOL_COMPLETED',
+    executionId: 'exec-p1',
+    timestamp: '2026-11-14T01:00:03Z',
+    responseId: 'resp-p1',
+    order: 1000,
+    requestIndex: 0,
+    requestId: 'call-edit-1',
+    toolName: AgentToolName.EditFile,
+    args: '{"path":"a.ts"}',
+    output: 'ok',
+    resultStatus: 'COMPLETED',
+    metaData: { turnId: 'turn-p1' },
+  });
+  assert.equal(bubble.toolCalls?.length, 1);
+  assert.equal(bubble.toolCalls?.[0].status, 'success', '完成事件到达后应转为 success 以切换为正式图标');
+  assert.equal(bubble.toolCalls?.[0].result, 'ok');
+});

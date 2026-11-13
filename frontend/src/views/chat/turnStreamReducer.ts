@@ -199,6 +199,18 @@ export class TurnStreamReducer {
         break;
       }
 
+      case 'TOOL_CALL_PREPARE': {
+        if (turnId && !this.disposed) {
+          const bubble = this.obtainActiveBubble(turnId);
+          if (!bubble.isComplete && !bubble.isSuspended) {
+            if (bubble.isCompressingContext) this.clearCompression(bubble);
+            bubble.isExploring = false;
+            if (consumeToolEvent(bubble, event)) this.onScrollFollow?.();
+          }
+        }
+        break;
+      }
+
       case 'TOOL_CALL': {
         if (turnId && !this.disposed) {
           const bubble = this.obtainActiveBubble(turnId);
