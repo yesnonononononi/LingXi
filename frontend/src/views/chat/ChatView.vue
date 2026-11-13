@@ -376,6 +376,7 @@
               :models="localModels"
               :selectedModelId="selectedModelId"
               :accessMode="accessMode"
+              :envType="envType"
               :reasoningEffort="reasoningEffort"
               :reasoningEffortPending="reasoningEffortPending"
               :reasoningEffortError="reasoningEffortError"
@@ -390,7 +391,6 @@
               @sendMessage="handleSendMessage"
               @stopGeneration="handleStopGeneration"
               @updateModel="handleUpdateModel"
-              @updateAccessMode="handleUpdateAccessMode"
               @updateReasoningEffort="handleUpdateReasoningEffort"
               @updateTeam="handleUpdateTeam"
               @updateAgent="handleUpdateAgent"
@@ -774,6 +774,7 @@ const {
   localActiveWorkspaceId,
   selectedModelId,
   accessMode,
+  envType,
   selectedAgentId,
   handleResendUnsent,
   executionControls,
@@ -824,7 +825,6 @@ const {
   handleOpenModels,
   handleOpenModelEditor,
   handleUpdateModel,
-  handleUpdateAccessMode,
   handleUpdateAgent,
   handleUpdateReasoningEffort,
   handleOpenSettings,

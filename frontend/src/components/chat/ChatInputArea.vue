@@ -22,6 +22,7 @@ import type {
   ModelConfig,
   ReasoningEffort,
   TeamVO,
+  WorkspaceEnvType,
   WorkspaceVO
 } from '../../types/chat';
 import {reasoningEffortOptions} from '../../composables/useReasoningEffort';
@@ -42,6 +43,12 @@ import {
   type PastedDocument
 } from '../../utils/pastedDocument';
 import {t} from '../../i18n';
+import {
+  isAccessModeMismatch,
+  resolveAccessBadgeKey,
+  resolveAccessTipKey,
+  resolveSandboxState,
+} from '../../utils/accessModePresentation';
 import type {
   ChatInputContextUsageSlotProps,
   ChatInputModelSelectorSlotProps,
@@ -70,6 +77,8 @@ const props = defineProps<{
   workspaces?: WorkspaceVO[];
   selectedWorkspaceId?: string | number | null;
   accessMode?: AgentAccessMode | string;
+  /** 执行环境：档位语义随它变化，徽标必须一起读，不能只看档位。 */
+  envType?: WorkspaceEnvType | string;
   reasoningEffort?: ReasoningEffort;
   reasoningEffortPending?: boolean;
   reasoningEffortError?: string;
@@ -115,7 +124,6 @@ const emit = defineEmits<{
   (e: 'stopGeneration'): void;
   (e: 'updateMode', mode: ChatMode): void;
   (e: 'updateModel', modelId: string | number): void;
-  (e: 'updateAccessMode', mode: AgentAccessMode): void;
   (e: 'updateReasoningEffort', effort: ReasoningEffort): void;
   (e: 'updateTeam', teamId: string | number | null): void;
   (e: 'updateAgent', agentId: string | number | null): void;
@@ -1106,6 +1114,19 @@ const modelSelectorSlotProps = computed<ChatInputModelSelectorSlotProps>(() => (
   onOpenModelEditor: () => emit('openModelEditor')
 }));
 
+/**
+ * 当前访问档位徽标。
+ *
+ * <p>档位语义随执行环境变化（本地环境没有沙箱，只读档只剩「文件工具被禁用」），
+ * 所以徽标必须同时读两者，取值走 {@code accessModePresentation} 的同一份真源。</p>
+ */
+const accessSandboxState = computed(() => resolveSandboxState(props.envType));
+const accessBadge = computed(() => ({
+  label: t(resolveAccessBadgeKey(props.accessMode)),
+  tip: `${t(resolveAccessTipKey(props.accessMode, accessSandboxState.value))}\n${t('chat.input.accessModeTipAction')}`,
+  warn: isAccessModeMismatch(props.accessMode, accessSandboxState.value),
+}));
+
 const sendButtonSlotProps = computed<ChatInputSendButtonSlotProps>(() => ({
   isSending: showStop.value,
   armed: armed.value,
@@ -1787,6 +1808,25 @@ defineExpose({
           >
             <HugeiconsIcon :icon="SparklesIcon as IconArray" :size="13" :stroke-width="2" />
             <span>{{ level }}</span>
+          </button>
+
+          <!-- 当前访问档位：边界必须常驻可见，不能只藏在安全中心里；
+               本地+只读是唯一会让人误以为「已被保护」的组合，单独染色警示 -->
+          <button
+            type="button"
+            class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-lx-fs-md font-medium outline-none select-none whitespace-nowrap [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease]"
+            :class="accessBadge.warn
+              ? 'text-amber-500 bg-amber-500/10'
+              : 'text-lx-muted [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]'"
+            data-testid="chat-access-mode"
+            :data-mode="props.accessMode ?? ''"
+            :data-warn="accessBadge.warn ? '' : undefined"
+            :aria-label="accessBadge.label"
+            :title="accessBadge.tip"
+            @mousedown.prevent
+            @click="emit('openSettingsTab', 'security')"
+          >
+            <span>{{ accessBadge.label }}</span>
           </button>
         </div>
 

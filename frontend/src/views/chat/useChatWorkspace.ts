@@ -2,7 +2,7 @@ import {computed, onMounted, ref, type Ref} from 'vue';
 import {chatApi} from '../../services/api';
 import {toServerId} from '../../utils/ids';
 import {useUserConfigStore} from '../../stores/userConfigStore';
-import type {AgentAccessMode, ChatSession, ModelConfig, WorkspaceRequest, WorkspaceVO} from '../../types/chat';
+import type {ChatSession, ModelConfig, WorkspaceRequest, WorkspaceVO} from '../../types/chat';
 import {normalizeSettingsTab, type SettingsTabKey} from '../../utils/enum';
 import {isElectron, openDirectoryPicker} from '../../utils/platform';
 import {extractDirName} from '../../utils/path';
@@ -114,11 +114,6 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
     return userConfig.patch('modelId', id, { modelId: id });
   };
 
-  /** 切换会话访问档位：写全局配置。 */
-  const handleUpdateAccessMode = (accessMode: AgentAccessMode) => {
-    void userConfig.patch('accessMode', accessMode, { accessMode });
-  };
-
   const handleOpenSettings = () => {
     isSettingsOpen.value = true;
   };
@@ -182,7 +177,6 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
     handleDeleteWorkspace,
     handleQuickStart,
     handleUpdateModel,
-    handleUpdateAccessMode,
     handleOpenSettings,
     handleOpenModels,
     handleOpenSettingsTab,

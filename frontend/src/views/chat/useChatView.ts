@@ -895,6 +895,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
    */
   const selectedAgentId = computed(() => userConfig.agentId);
   const accessMode = computed(() => userConfig.accessMode);
+  // 档位含义随执行环境变化，输入区徽标必须一起拿到（同样不能读成取值快照）
+  const envType = computed(() => userConfig.envType);
 
   return {
     // 布局与设置
@@ -951,6 +953,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 配置类展示字段：真值在 userConfigStore / workspace 模块，模板直接消费（见上方 computed 说明）
     selectedModelId: workspace.selectedModelId,
     accessMode,
+    envType,
     selectedAgentId,
     reasoningEffort,
     reasoningEffortPending,
@@ -995,7 +998,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleOpenModels: workspace.handleOpenModels,
     handleOpenModelEditor: workspace.handleOpenModels,
     handleUpdateModel: workspace.handleUpdateModel,
-    handleUpdateAccessMode: workspace.handleUpdateAccessMode,
     handleUpdateAgent,
     handleUpdateReasoningEffort,
     handleOpenSettings: workspace.handleOpenSettings,

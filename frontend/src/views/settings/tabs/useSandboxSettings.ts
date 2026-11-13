@@ -9,9 +9,15 @@ import type {
 } from '../../../types/chat';
 import {isOk} from '../../../utils/api';
 import {useI18n} from '../../../i18n';
+import {
+  isAccessModeMismatch,
+  resolveAccessImpactKey,
+  resolveSandboxState,
+  type SandboxState,
+} from '../../../utils/accessModePresentation';
 
-/** 沙箱开关的三态：NONE 是「后端未设置」，不能渲染成「已关闭」——那是另一种事实。 */
-export type SandboxState = 'ON' | 'OFF' | 'UNSET';
+/** 沙箱开关的三态：沿用展示真源，不在两处各定义一套。 */
+export type {SandboxState} from '../../../utils/accessModePresentation';
 
 /**
  * 安全中心的沙箱级设置：执行环境、沙箱服务能力检查、工作空间权限、工具权限。
@@ -29,11 +35,7 @@ export function useSandboxSettings(emitModelUpdated: () => void) {
   const { t } = useI18n();
 
   // 执行环境：后端 NONE 表示未设置，语义上不同于沙箱，界面显示「未知」而非兜底成沙箱
-  const sandboxState = computed<SandboxState>(() => {
-    if (userConfig.envType === 'SAND_BOX') return 'ON';
-    if (userConfig.envType === 'LOCAL') return 'OFF';
-    return 'UNSET';
-  });
+  const sandboxState = computed<SandboxState>(() => resolveSandboxState(userConfig.envType));
   const envLabel = computed<string>(() => {
     if (sandboxState.value === 'ON') return t('settings.general.envSandbox');
     if (sandboxState.value === 'OFF') return t('settings.general.envLocal');
@@ -99,6 +101,20 @@ export function useSandboxSettings(emitModelUpdated: () => void) {
   const currentAccessModeLabel = computed(() => accessModeOptions.value.find(o => o.value === accessMode.value)?.label
     ?? t('settings.general.accessInWorkspace'));
 
+  /**
+   * 档位与执行环境必须一起读：同一个档位在本地与沙箱下能写到哪儿并不相同。
+   *
+   * <p>本地执行环境没有沙箱构建流程，终端不受任何目录围栏，只读档在那里只剩「文件工具被禁用」。</p>
+   */
+  const accessModeImpact = computed<{ warn: boolean; text: string }>(() => {
+    const state = sandboxState.value;
+    const prefix = state === 'UNSET' ? t('settings.general.impactUnset') : '';
+    return {
+      warn: isAccessModeMismatch(accessMode.value, state),
+      text: prefix + t(resolveAccessImpactKey(accessMode.value, state)),
+    };
+  });
+
   const handleSelectAccessMode = async (opt: AgentAccessMode): Promise<void> => {
     await userConfig.patch('accessMode', opt, { accessMode: opt });
   };
@@ -137,6 +153,7 @@ export function useSandboxSettings(emitModelUpdated: () => void) {
     accessMode,
     accessModeOptions,
     currentAccessModeLabel,
+    accessModeImpact,
     handleSelectAccessMode,
     commandApprovalPolicy,
     commandApprovalPolicyOptions,

@@ -23,6 +23,7 @@ const {
   checkSandboxService,
   accessMode,
   accessModeOptions,
+  accessModeImpact,
   handleSelectAccessMode,
   commandApprovalPolicy,
   commandApprovalPolicyOptions,
@@ -228,6 +229,17 @@ void load();
               :model-value="accessMode" :options="accessModeOptions" @update:model-value="selectAccessMode" />
           </div>
         </div>
+        <!-- 档位单独看会骗人：同一档位在本地与沙箱下能写到哪儿不同，这里把组合后的实际效果写出来 -->
+        <p
+          class="mt-2 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-lx-fs-sm leading-snug"
+          :class="accessModeImpact.warn
+            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+            : 'bg-black/[0.03] text-lx-muted dark:bg-white/[0.05]'"
+          data-testid="security-access-impact"
+        >
+          <span class="shrink-0 font-medium">{{ t('settings.general.accessImpact') }}：</span>
+          <span class="min-w-0">{{ accessModeImpact.text }}</span>
+        </p>
       </section>
       <section v-else-if="category === 'terminal'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
