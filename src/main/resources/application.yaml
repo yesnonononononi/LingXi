@@ -32,6 +32,12 @@ spring:
       time-between-eviction-runs-millis: 60000
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
+       # 防止未关闭连接把 H2 MVStore oldestVersionToKeep 钉死导致死 chunk 无法回收
+      remove-abandoned: true
+      remove-abandoned-timeout-millis: 180000
+      log-abandoned: true
+  transaction:
+    default-timeout: 60s
 
 # 时间列统一按 UTC 读写，CLOB 由字段上的大文本处理器处理。
 mybatis-plus:
@@ -55,6 +61,11 @@ lingxi:
   # 也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖，但设置页一旦写了值就以它为准。
   data:
     dir: ${user.home}/.lingxi/data
+  storage:
+    h2-compact-on-shutdown:
+      enabled: true
+      min-file-size-mb: 256
+      max-fill-rate-percent: 50
   # Skill 根目录的缺省值：真源在设置页（user_configs.skill_dir），改完立即生效（不需要重启）。
   # 框架递归查找其下的 SKILL.md，把 name/description/入口路径渲染进系统提示词，
   # 模型再用 read_skill 读取正文与引用资源。启动时目录不存在会被自动创建。
