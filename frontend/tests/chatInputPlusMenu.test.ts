@@ -114,6 +114,25 @@ test('菜单位置：底边锚在「+」按钮上沿，而不是输入卡片上�
   );
 });
 
+test('技能加载中只显示占位：不得先渲染列表再抽掉占位', async t => {
+  const {root} = mountMenu(t, {skillsLoading: true});
+  (groupButton(root, '技能').props.onClick as () => void)();
+  await nextTick();
+  assert.equal(harness.find(root, node => node.tag === 'button' && text(node).includes('skill-3')), undefined,
+    'skillsLoading 时不得渲染技能行：占位与列表并存，占位消失会把滚动框顶得一跳');
+  assert.match(text(root), /正在加载 Skill 清单/, '加载中必须给出占位');
+});
+
+test('MCP 加载中只显示占位：服务行不渲染、加载文案不复读', async t => {
+  const {root} = mountMenu(t, {mcpLoading: true});
+  (groupButton(root, 'MCP').props.onClick as () => void)();
+  await nextTick();
+  assert.equal(harness.find(root, node => node.tag === 'button' && text(node).includes('chrome-devtools')), undefined,
+    'mcpLoading 时不得渲染服务行');
+  assert.equal(text(root).split('正在加载 MCP 服务').length - 1, 1,
+    '加载文案只该出现一次（整块占位），不该每行右侧复读一遍');
+});
+
 test('宿主接线：ChatInputArea 绑 open-group 且三个分组各有加载落点', () => {
   const source = harness.readSource('../src/components/chat/ChatInputArea.vue');
   assert.match(source, /@open-group="loadPlusGroup"/, 'ChatInputArea 必须监听 open-group');

@@ -125,9 +125,8 @@ const filteredSkills = computed<SkillVO[]>(() => {
   );
 });
 
-/** MCP 服务可能已配置但从未连过：状态缺失就只说「未连接」，不编造工具数。 */
+/** MCP 服务可能已配置但从未连过：状态缺失就只说「未连接」，不编造工具数。加载中整块只渲染占位，所以这里不必再判 loading。 */
 const mcpStatusText = (server: McpVO): string => {
-  if (props.mcpLoading) return t('chat.input.plusMcpLoading');
   const state = props.mcpStates.find(item => String(item.id) === String(server.id));
   if (!state) return t('chat.input.plusMcpDisconnected');
   switch (state.state) {
@@ -290,22 +289,25 @@ const mcpStatusDot = (server: McpVO): string => {
         >
           <input v-model="skillQuery" type="text" :class="SEARCH_INPUT" :placeholder="t('chat.input.searchSkill')" />
           <div class="max-h-44 overflow-y-auto scrollbar-thin mt-1">
+            <!-- 加载中只留占位：占位和列表并存过一次，列表渲染后占位消失会把滚动框顶得一跳 -->
             <p v-if="skillsLoading" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.skillLoading') }}</p>
-            <p v-else-if="skillsError" class="px-2 py-2 text-xs text-center text-red-500">{{ t('chat.input.skillLoadFailed') }}</p>
-            <p v-else-if="!filteredSkills.length" class="px-2 py-2 text-xs text-center" :class="MUTED">
-              {{ skills.length ? t('chat.input.noMatchedSkill') : t('chat.input.skillEmpty') }}
-            </p>
-            <button
-              v-for="skill in filteredSkills"
-              :key="skill.name"
-              type="button"
-              :class="ROW"
-              :title="t('chat.input.skillFillTemplate', {name: skill.name})"
-              @click="emit('selectSkill', skill)"
-            >
-              <span class="shrink-0 max-w-[45%] truncate font-medium [color:var(--pb-ink)]">{{ skill.name }}</span>
-              <span class="flex-1 min-w-0 truncate text-right" :class="MUTED">{{ skill.description }}</span>
-            </button>
+            <template v-else>
+              <p v-if="skillsError" class="px-2 py-2 text-xs text-center text-red-500">{{ t('chat.input.skillLoadFailed') }}</p>
+              <p v-else-if="!filteredSkills.length" class="px-2 py-2 text-xs text-center" :class="MUTED">
+                {{ skills.length ? t('chat.input.noMatchedSkill') : t('chat.input.skillEmpty') }}
+              </p>
+              <button
+                v-for="skill in filteredSkills"
+                :key="skill.name"
+                type="button"
+                :class="ROW"
+                :title="t('chat.input.skillFillTemplate', {name: skill.name})"
+                @click="emit('selectSkill', skill)"
+              >
+                <span class="shrink-0 max-w-[45%] truncate font-medium [color:var(--pb-ink)]">{{ skill.name }}</span>
+                <span class="flex-1 min-w-0 truncate text-right" :class="MUTED">{{ skill.description }}</span>
+              </button>
+            </template>
           </div>
         </div>
 
@@ -318,20 +320,23 @@ const mcpStatusDot = (server: McpVO): string => {
           role="menu"
         >
           <div class="max-h-44 overflow-y-auto scrollbar-thin">
+            <!-- 同上：加载中只有占位。每行右侧不再各自复读「正在加载」，那是同一件事说五遍 -->
             <p v-if="mcpLoading" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.plusMcpLoading') }}</p>
-            <p v-else-if="mcpError" class="px-2 py-2 text-xs text-center text-red-500">{{ t('chat.input.plusMcpFailed') }}</p>
-            <p v-else-if="!mcpServers.length" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.plusMcpEmpty') }}</p>
-            <button
-              v-for="server in mcpServers"
-              :key="server.id"
-              type="button"
-              :class="ROW"
-              @click="emit('openMcpSettings')"
-            >
-              <span class="w-2 h-2 rounded-full shrink-0" :class="mcpStatusDot(server)" />
-              <span class="flex-1 min-w-0 truncate [color:var(--pb-ink)]">{{ server.name }}</span>
-              <span class="shrink-0 text-xs" :class="MUTED">{{ mcpStatusText(server) }}</span>
-            </button>
+            <template v-else>
+              <p v-if="mcpError" class="px-2 py-2 text-xs text-center text-red-500">{{ t('chat.input.plusMcpFailed') }}</p>
+              <p v-else-if="!mcpServers.length" class="px-2 py-2 text-xs text-center" :class="MUTED">{{ t('chat.input.plusMcpEmpty') }}</p>
+              <button
+                v-for="server in mcpServers"
+                :key="server.id"
+                type="button"
+                :class="ROW"
+                @click="emit('openMcpSettings')"
+              >
+                <span class="w-2 h-2 rounded-full shrink-0" :class="mcpStatusDot(server)" />
+                <span class="flex-1 min-w-0 truncate [color:var(--pb-ink)]">{{ server.name }}</span>
+                <span class="shrink-0 text-xs" :class="MUTED">{{ mcpStatusText(server) }}</span>
+              </button>
+            </template>
           </div>
           <div class="mt-1 pt-1 border-t border-black/5 dark:border-white/5">
             <button type="button" :class="ROW" @click="emit('openMcpSettings')">
