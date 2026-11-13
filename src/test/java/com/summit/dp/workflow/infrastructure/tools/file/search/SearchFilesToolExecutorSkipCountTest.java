@@ -69,6 +69,31 @@ class SearchFilesToolExecutorSkipCountTest {
         assertFalse(result.getToolOutput().contains("另跳过"), result.getToolOutput());
     }
 
+    @Test
+    void prunesCommonBuildAndDependencyDirectories() throws Exception {
+        Files.createDirectories(workspaceRoot.resolve("node_modules/pkg"));
+        Files.writeString(workspaceRoot.resolve("node_modules/pkg/index.js"), "canary\n");
+        Files.createDirectories(workspaceRoot.resolve("__pycache__"));
+        Files.writeString(workspaceRoot.resolve("__pycache__/mod.pyc"), "canary\n");
+        Files.createDirectories(workspaceRoot.resolve("bin"));
+        Files.writeString(workspaceRoot.resolve("bin/app.dll"), "canary\n");
+        Files.createDirectories(workspaceRoot.resolve("demo.egg-info"));
+        Files.writeString(workspaceRoot.resolve("demo.egg-info/PKG-INFO"), "canary\n");
+        // packages 是 monorepo 源码目录，误剪就是自伤。
+        Files.createDirectories(workspaceRoot.resolve("packages/core"));
+        Files.writeString(workspaceRoot.resolve("packages/core/index.ts"), "canary\n");
+
+        ToolExecuteResult result = search("canary");
+
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        String output = result.getToolOutput();
+        assertTrue(output.contains("packages/core/index.ts:1: canary"), output);
+        assertFalse(output.contains("node_modules"), output);
+        assertFalse(output.contains("__pycache__"), output);
+        assertFalse(output.contains("bin/app.dll"), output);
+        assertFalse(output.contains("demo.egg-info"), output);
+    }
+
     private ToolExecuteResult search(String pattern) throws Exception {
         SearchFilesToolExecutor executor = new SearchFilesToolExecutor(new ObjectMapper());
         return executor.execute(execution(executor, "{\"pattern\":\"" + pattern + "\"}"));

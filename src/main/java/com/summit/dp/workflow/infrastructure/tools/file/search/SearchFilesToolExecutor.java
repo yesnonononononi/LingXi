@@ -68,9 +68,28 @@ public class SearchFilesToolExecutor implements ToolExecutor {
     private static final int MAX_FILE_BYTES = 1024 * 1024;
     private static final int SNIFF_BYTES = 8 * 1024;
     private static final int MAX_LINE_CHARS = 200;
-    /** 依赖、构建与版本库目录：内容不属于本项目源码，扫进来只会灌满上下文。 */
+    /**
+     * 依赖、构建与缓存目录：不是本项目源码，扫进来只会灌满上下文。
+     *
+     * <p>不按语言筛选——同一工作区可能同时有 npm、Maven、Python 与 .NET 产物，只认 Java 那几项等于换个技术栈就失灵。
+     * 刻意不收 packages：JS monorepo 里它是源码目录，误剪就是自伤。</p>
+     */
     private static final Set<String> SKIPPED_DIRECTORIES = Set.of(
-            ".git", ".svn", ".hg", ".idea", ".vscode", ".mvn", "node_modules", "target", "dist", "build", "out", "logs");
+            // 版本库与编辑器
+            ".git", ".svn", ".hg", ".idea", ".vscode",
+            // JVM 构建
+            ".mvn", ".gradle", "target", "out",
+            // 通用构建产物
+            "build", "dist", "coverage",
+            // .NET
+            "bin", "obj",
+            // JS 系依赖与框架缓存
+            "node_modules", "bower_components",
+            ".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache", ".pnpm-store", ".cache",
+            // Python 与其它包管理
+            ".venv", "venv", "__pycache__", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", "vendor",
+            // 日志与临时
+            "logs", "tmp", "temp");
 
     private final ObjectMapper objectMapper;
 
@@ -209,7 +228,12 @@ public class SearchFilesToolExecutor implements ToolExecutor {
 
     private boolean isSkippedDirectory(Path path) {
         Path name = path.getFileName();
-        return name != null && SKIPPED_DIRECTORIES.contains(name.toString());
+        if (name == null) {
+            return false;
+        }
+        String directory = name.toString();
+        // *.egg-info 之类带后缀的产物目录，精确名匹配不到，只能按后缀判。
+        return SKIPPED_DIRECTORIES.contains(directory) || directory.endsWith(".egg-info");
     }
 
     private boolean isBinary(byte[] bytes) {
