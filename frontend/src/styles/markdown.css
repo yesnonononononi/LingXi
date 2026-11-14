@@ -343,6 +343,8 @@ html.light .markdown-body .mermaid-block {
   background: #ffffff;
   color: #1f2937;
   min-width: 0;
+  /* 白底盒子上的投影在浅色背景里最扎眼，图表块只靠边框和背景区分 */
+  box-shadow: none;
 }
 
 .markdown-body .mermaid-block--dark,
