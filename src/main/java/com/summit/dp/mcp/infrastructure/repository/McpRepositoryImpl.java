@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.mcp.domain.model.Mcp;
+import com.summit.dp.mcp.domain.model.McpAuth;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.persistence.mapper.McpMapper;
 import com.summit.dp.mcp.infrastructure.persistence.po.McpPO;
@@ -76,6 +77,7 @@ public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
                 .headers(parseStringMap(po.getHeaders()))
                 .command(parseCommand(po.getCommand()))
                 .env(parseStringMap(po.getEnv()))
+                .auth(parseAuth(po.getAuth()))
                 .description(po.getDescription())
                 .initializationTimeout(toDuration(po.getInitializationTimeout(), Mcp.DEFAULT_INITIALIZATION_TIMEOUT))
                 .executionTimeout(toDuration(po.getExecutionTimeout(), Mcp.DEFAULT_EXECUTION_TIMEOUT))
@@ -112,6 +114,7 @@ public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
                 .headers(writeStringMap(model.getHeaders()))
                 .command(writeCommand(model.getCommand()))
                 .env(writeStringMap(model.getEnv()))
+                .auth(writeAuth(model.resolveAuth()))
                 .description(model.getDescription())
                 .initializationTimeout(model.getInitializationTimeout() == null
                         ? null : model.getInitializationTimeout().toMillis())
@@ -172,6 +175,29 @@ public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
             return objectMapper.writeValueAsString(command);
         } catch (Exception e) {
             log.warn("MCP command 序列化失败，按空处理: {}", command);
+            return null;
+        }
+    }
+
+    /** 解析认证方式；非法内容与缺失同样落到 {@link McpAuth#NONE}，不让单行脏数据拖垮整个装配 */
+    private McpAuth parseAuth(String raw) {
+        if (raw == null || raw.isBlank()) return McpAuth.NONE;
+        try {
+            McpAuth auth = objectMapper.readValue(raw, McpAuth.class);
+            return auth == null ? McpAuth.NONE : new McpAuth(auth.mode(), auth.clientId(), auth.scopes(),
+                    auth.authorizationServer());
+        } catch (Exception e) {
+            log.warn("MCP auth 不是合法的认证配置，按未配置处理: {}", raw);
+            return McpAuth.NONE;
+        }
+    }
+
+    private String writeAuth(McpAuth auth) {
+        if (auth == null || McpAuth.MODE_NONE.equals(auth.mode())) return null;
+        try {
+            return objectMapper.writeValueAsString(auth);
+        } catch (Exception e) {
+            log.warn("MCP auth 序列化失败，按未配置处理: {}", auth);
             return null;
         }
     }

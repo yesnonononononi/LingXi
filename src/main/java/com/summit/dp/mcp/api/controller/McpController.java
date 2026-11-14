@@ -7,6 +7,7 @@ import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
+import com.summit.dp.mcp.application.vo.McpOAuthStateVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -64,6 +65,22 @@ public class McpController {
     @GetMapping("/status")
     public Result<List<McpConnectionStateVO>> listStates(@RequestParam(required = false) List<Long> ids) {
         return service.listStates(ids);
+    }
+
+    @PostMapping("/oauth/authorize/{id}")
+    public Result<String> authorize(@PathVariable Long id) {
+        return service.authorize(id);
+    }
+
+    /** 未保存的表单配置也要能先授权：否则「新增服务」必须先落库才能登录 */
+    @PostMapping("/oauth/authorize")
+    public Result<String> authorizeDraft(@RequestBody McpRequest request) {
+        return service.authorizeDraft(toCommand(request));
+    }
+
+    @GetMapping("/oauth/state/{id}")
+    public Result<McpOAuthStateVO> oauthState(@PathVariable Long id) {
+        return service.oauthState(id);
     }
 
     private McpCommand toCommand(McpRequest request) {

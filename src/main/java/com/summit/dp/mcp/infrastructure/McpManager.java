@@ -7,6 +7,7 @@ import com.summit.core.mcp.McpToolScope;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.ddd.utils.RetryUtil;
+import com.summit.dp.mcp.application.service.McpAuthorizationGateway;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.McpSessionRegistry;
@@ -14,7 +15,9 @@ import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
+import com.summit.dp.mcp.infrastructure.oauth.McpAuthorizationRequiredException;
 import com.summit.dp.shared.exception.ClientException;
+import io.modelcontextprotocol.client.transport.McpHttpClientTransportAuthorizationException;
 import jakarta.annotation.PreDestroy;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +29,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -43,14 +47,20 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     /** 退避基数，RetryUtil 会在此基础上取 0~基数 的随机抖动，避免多个 server 同时重试。 */
     private static final long STARTUP_RETRY_BASIC_DELAY_MILLIS = 2_000L;
     private static final int STARTUP_RETRY_MULTIPLE = 2;
+    private static final long STARTUP_RETRY_MAX_DELAY_MILLIS = 60_000L;
+    /** 需要授权时给用户看的话：说清该做什么，而不是让人去查网络 */
+    private static final String AUTHORIZATION_HINT = "该服务需要登录授权";
     private final McpRepository repository;
     private final McpConfigAssembler assembler;
     private final McpSessionFactory sessionFactory;
+    private final McpAuthorizationGateway authorizationGateway;
     private final Map<Long, PooledSession> sessions = new ConcurrentSkipListMap<>();
     // 每个 id 一把锁：注册是 I/O 密集的，共用一把锁会让卡住的 server 把整批排队拖死。
     private final Map<Long, Object> registrationLocks = new ConcurrentHashMap<>();
     // 最近一次注册失败的原因；只在同 id 锁内写，成功或移除时清掉。
     private final Map<Long, String> failures = new ConcurrentHashMap<>();
+    // 需要用户授权才可能连上的 id：这一档不重试，重试只会重复 401 并反复拉起浏览器。
+    private final Set<Long> authorizationRequired = ConcurrentHashMap.newKeySet();
     // 读锁=注册/移除并行，写锁=关闭整体排除，避免连接在关闭过程中被发布出去。
     private final ReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
@@ -64,11 +74,15 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
                 // 启动期一次抖动不该让 server 在整个进程生命周期缺席（注册只有启动和保存配置两个入口）。
                 // 握手中断这类瞬态失败实测重试即成功，所以补两次而不是一次；退避带抖动，不会同步轰同一端点。
                 // 上限仍是两次：连接失败本身可能已经耗掉整个初始化预算，重试太多会把启动拖成几分钟。
-                RetryUtil.retry(STARTUP_RETRY_BASIC_DELAY_MILLIS, STARTUP_RETRY_TIMES, STARTUP_RETRY_MULTIPLE,
-                        TimeUnit.MILLISECONDS, () -> {
+                // 「需要授权」不在重试范围内：它不会自愈，重试只会重复 401 并反复拉起浏览器。
+                RetryUtil.retry(new RetryUtil.RetryConf<>(STARTUP_RETRY_BASIC_DELAY_MILLIS, STARTUP_RETRY_TIMES,
+                        STARTUP_RETRY_MULTIPLE, STARTUP_RETRY_MAX_DELAY_MILLIS, TimeUnit.MILLISECONDS,
+                        () -> () -> {
                             register(model.getId());
                             return null;
-                        });
+                        },
+                        null, null,
+                        failure -> !isAuthorizationFailure(failure)));
             } catch (Exception failure) {
                 // 必须把 throwable 交给 logback：MCP 专用 appender 会把 cause 链压成一行「<- 类名: 消息」，
                 // 只打 getMessage() 的话，SDK 的通用句会把 SSL/超时这些真因全部吞掉。
@@ -95,8 +109,29 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             return new McpConnectionVO(names.size(), names, (System.nanoTime() - started) / 1_000_000L);
         } catch (Exception failure) {
             log.warn("测试 MCP 连接失败: name={}", server.name(), failure);
-            throw new ClientException("MCP 连接测试失败，请检查服务地址、启动命令、凭据和超时设置", failure);
+            throw resolveConnectFailure(server, failure);
         }
+    }
+
+    /**
+     * 连接失败的两种可能必须分开报：被拒绝时该做的是授权，套上「请检查地址、命令、凭据」只会把人
+     * 引到网络排查上。
+     */
+    private ClientException resolveConnectFailure(McpConfig.MCP server, Throwable failure) {
+        if (isAuthorizationFailure(failure)) {
+            return new McpAuthorizationRequiredException(server.name(),
+                    authorizationGateway.resolveAuthorizationUrl(server.name()), failure);
+        }
+        return new ClientException("MCP 连接测试失败，请检查服务地址、启动命令、凭据和超时设置", failure);
+    }
+
+    /** @return 失败链里是否有「凭据被拒绝」——只有它不是网络问题 */
+    private static boolean isAuthorizationFailure(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof McpHttpClientTransportAuthorizationException) return true;
+            if (current.getCause() == current) break;
+        }
+        return false;
     }
 
     @Override
@@ -105,7 +140,7 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         lifecycle.readLock().lock();
         try {
             synchronized (resolveRegistrationLock(id)) {
-                registerLocked(id);
+                registerLocked(id, true);
             }
         } finally {
             lifecycle.readLock().unlock();
@@ -113,6 +148,14 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     }
 
     private void registerLocked(Long id) {
+        registerLocked(id, false);
+    }
+
+    /**
+     * @param allowAuthorizationRetry 401 之后错误处理器可能已经静默续期成功，而 SDK 无法用新凭据重放
+     *                                旧请求，只能重建一次连接。只留一层，避免拿着坏令牌无限重建。
+     */
+    private void registerLocked(Long id, boolean allowAuthorizationRetry) {
         // 同 id 串行时重新读取已保存配置，避免并发保存把旧配置重新发布。
         Mcp model = repository.findById(id).orElse(null);
         if (model == null || !model.enabled()) {
@@ -140,11 +183,24 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             PooledSession ready = new PooledSession(server, candidate, List.copyOf(candidate.tools()));
             PooledSession previous = sessions.put(id, ready);
             failures.remove(id);
+            authorizationRequired.remove(id);
             closeQuietly(previous);
             log.info("注册 MCP 连接: id={}, name={}", id, server.name());
         } catch (RuntimeException failure) {
             closeQuietly(candidate);
             remove(id);
+            if (isAuthorizationFailure(failure)) {
+                if (allowAuthorizationRetry && authorizationGateway.hasUsableToken(server.name())) {
+                    failures.remove(id);
+                    registerLocked(id, false);
+                    return;
+                }
+                authorizationRequired.add(id);
+                failures.put(id, AUTHORIZATION_HINT);
+                log.warn("注册 MCP 连接需要授权: id={}, name={}", id, server.name(), failure);
+                throw new McpAuthorizationRequiredException(server.name(),
+                        authorizationGateway.resolveAuthorizationUrl(server.name()), failure);
+            }
             failures.put(id, resolveFailureReason(failure));
             log.warn("注册 MCP 连接失败: id={}, name={}", id, server.name(), failure);
             throw new ClientException("MCP 配置已保存，但连接或工具发现失败，请检查地址、启动命令、凭据和超时设置", failure);
@@ -160,6 +216,7 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             synchronized (resolveRegistrationLock(id)) {
                 closeQuietly(sessions.remove(id));
                 failures.remove(id);
+                authorizationRequired.remove(id);
             }
         } finally {
             lifecycle.readLock().unlock();
@@ -187,9 +244,20 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         if (session != null) {
             return new McpConnectionStateVO(id, McpConnectionStateVO.CONNECTED, session.tools().size(), null);
         }
+        if (authorizationRequired.contains(id)) {
+            return new McpConnectionStateVO(id, McpConnectionStateVO.AUTHORIZATION_REQUIRED, null,
+                    AUTHORIZATION_HINT, resolveAuthorizationUrl(id));
+        }
         String failure = failures.get(id);
         if (failure != null) return new McpConnectionStateVO(id, McpConnectionStateVO.FAILED, null, failure);
         return new McpConnectionStateVO(id, McpConnectionStateVO.DISCONNECTED, null, null);
+    }
+
+    /** 在途授权地址按服务名取：引擎不认识配置 id，而服务名是两者共有的键 */
+    private String resolveAuthorizationUrl(Long id) {
+        return repository.findById(id)
+                .map(model -> authorizationGateway.resolveAuthorizationUrl(model.getName()))
+                .orElse(null);
     }
 
     /** 只报根因类型：SDK 外层多是通用句，而根因消息可能带地址或凭据，会直接展示给前端。 */

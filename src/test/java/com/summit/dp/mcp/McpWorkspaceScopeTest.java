@@ -28,7 +28,7 @@ class McpWorkspaceScopeTest {
     private final McpRepository repository = mock(McpRepository.class);
     private final McpSessionFactory factory = mock(McpSessionFactory.class);
     private final McpConfigAssembler assembler = new McpConfigAssembler();
-    private final McpManager manager = new McpManager(repository, assembler, factory);
+    private final McpManager manager = new McpManager(repository, assembler, factory, NoopAuthorizationGateway.INSTANCE);
     private final Workspace workspace = mock(Workspace.class);
 
     @AfterEach void close() { manager.close(); manager.disconnect(); }

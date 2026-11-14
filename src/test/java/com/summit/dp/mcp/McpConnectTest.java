@@ -45,8 +45,9 @@ class McpConnectTest {
 
     private MockMvc endpoint(McpSessionFactory factory) {
         McpConfigAssembler assembler = new McpConfigAssembler();
-        manager = new McpManager(repository, assembler, factory);
-        McpServiceImpl service = new McpServiceImpl(repository, new McpValidator(repository), assembler, manager);
+        manager = new McpManager(repository, assembler, factory, NoopAuthorizationGateway.INSTANCE);
+        McpServiceImpl service = new McpServiceImpl(repository, new McpValidator(repository), assembler, manager,
+                NoopAuthorizationGateway.INSTANCE);
         return MockMvcBuilders.standaloneSetup(new McpController(service))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }

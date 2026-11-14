@@ -119,6 +119,11 @@ public class Mcp {
      */
     private Map<String, String> env;
 
+    /**
+     * 认证方式：缺省 {@link McpAuth#NONE}，即凭据只来自 {@link #headers}
+     */
+    private McpAuth auth;
+
     private Duration initializationTimeout;
 
     private Duration executionTimeout;
@@ -282,6 +287,17 @@ public class Mcp {
         update();
     }
 
+    /** 变更认证方式；null 视同未配置，恢复到只依赖静态请求头的行为 */
+    public void changeAuth(McpAuth auth) {
+        this.auth = auth == null ? McpAuth.NONE : auth;
+        update();
+    }
+
+    /** @return 生效的认证方式，历史数据缺失字段时为 {@link McpAuth#NONE} */
+    public McpAuth resolveAuth() {
+        return auth == null ? McpAuth.NONE : auth;
+    }
+
     /**
      * 该服务是否参与本轮请求级装配
      */
@@ -297,6 +313,7 @@ public class Mcp {
     public void requireCoherent() {
         if (transport == Transport.STDIO) {
             throwEIf("Mcp stdio transport requires command", command == null || command.isEmpty());
+            throwEIf("OAuth 认证只支持 streamable-http 传输", resolveAuth().isOauth());
         } else if (url == null || url.isBlank()) {
             throwEIf("Mcp transport '" + transport + "' requires url", url == null || url.isBlank());
         }

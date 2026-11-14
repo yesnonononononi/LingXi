@@ -52,7 +52,7 @@ class McpWorkspaceNativeTest {
                 .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
         when(repository.findById(1L)).thenReturn(Optional.of(model));
         McpSessionFactory factory = McpSessionFactoryFixture.realFactory(json);
-        McpManager manager = new McpManager(repository, assembler, factory);
+        McpManager manager = new McpManager(repository, assembler, factory, NoopAuthorizationGateway.INSTANCE);
         Workspace workspace = workspace(root);
         try {
             manager.register(1L);
@@ -83,7 +83,7 @@ class McpWorkspaceNativeTest {
                     .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
             when(repository.findById(2L)).thenReturn(Optional.of(model));
             McpSessionFactory factory = McpSessionFactoryFixture.realFactory(json);
-            McpManager manager = new McpManager(repository, assembler, factory);
+            McpManager manager = new McpManager(repository, assembler, factory, NoopAuthorizationGateway.INSTANCE);
             Workspace workspace = workspace(directory);
             try {
                 manager.register(2L);

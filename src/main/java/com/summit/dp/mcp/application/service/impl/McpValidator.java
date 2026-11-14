@@ -116,6 +116,12 @@ public class McpValidator {
             return TRANSPORT_HINT;
         }
 
+        // 运行时授权没有 HTTP 授权语义可言：stdio 的凭据只能来自环境变量
+        if (command.getAuth() != null && command.getAuth().isOauth()
+                && transportOrNull(command.getTransport()) == Mcp.Transport.STDIO) {
+            return "OAuth 认证只支持 streamable-http 传输";
+        }
+
         if (command.getCommand() != null) {
             String error = checkCommand(command.getCommand());
             if (error != null) return error;

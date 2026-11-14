@@ -254,6 +254,39 @@ test('状态缺失（未连接）与 DISCONNECTED 复用「重新连接」，不
   assert.deepEqual(reconnected.map(item => item.id), [41, 42], `两行点击都应 emit reconnectMcp，实际 ${JSON.stringify(reconnected)}`);
 });
 
+test('需要授权的服务行给「去设置授权」，点击打开设置页而不是重连（重连只会再吃一次 401）', async t => {
+  const {root, toggled, reconnected, settingsOpened} = mountMcpMenu(t, [{
+    server: {id: 81, name: 'linear', status: 1},
+    state: {id: 81, state: 'AUTHORIZATION_REQUIRED', toolCount: null, error: null}
+  }]);
+  await nextTick();
+
+  const labels = harness.findAll(root, item => item.tag === 'button'
+    && String(item.props['data-testid'] ?? '').startsWith('plus-mcp-action-'))
+    .map(item => text(item).trim());
+  assert.deepEqual(labels, ['去设置授权'],
+    `需要授权的行只能给授权入口，实际 ${JSON.stringify(labels)}`);
+
+  (actionButton(root, '去设置授权').props.onClick as () => void)();
+  await nextTick();
+  assert.equal(settingsOpened.length, 1, '点「去设置授权」必须打开 MCP 设置页（授权按钮在那里）');
+  assert.equal(reconnected.length, 0, '需要授权的行不得走 reconnectMcp');
+  assert.equal(toggled.length, 0, '需要授权的行不得走 toggleMcp');
+});
+
+test('状态文案把「需要授权」与「加载失败」分开：两者都红，用户分不清该改哪', async t => {
+  const {root} = mountMcpMenu(t, [{
+    server: {id: 82, name: 'linear', status: 1},
+    state: {id: 82, state: 'AUTHORIZATION_REQUIRED', toolCount: null, error: null}
+  }]);
+  await nextTick();
+
+  const row = harness.find(root, item => item.props['data-testid'] === 'plus-mcp-row-82');
+  assert.ok(row, '服务行必须可定位');
+  assert.match(text(row!), /需要授权/, `授权态必须说自己需要授权，实际文本=${JSON.stringify(text(row!))}`);
+  assert.doesNotMatch(text(row!), /加载失败/, '授权态不得复用「MCP 服务加载失败」文案');
+});
+
 test('mcpBusy 命中该 id 时动作按钮 disabled + aria-busy，点击不再发第二次请求', async t => {
   const {root, toggled} = mountMcpMenu(t, [{
     server: {id: 51, name: 'github', status: 1},

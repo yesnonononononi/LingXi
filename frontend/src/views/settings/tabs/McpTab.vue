@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed} from 'vue';
 import {useMcpTab, type McpTriState} from './useMcpTab';
-import {MCP_TRANSPORTS} from '../../../types/chat';
+import {MCP_AUTH_MODES, MCP_TRANSPORTS} from '../../../types/chat';
 import McpServiceCard from './McpServiceCard.vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import {useTheme} from '../../../composables/useTheme';
@@ -41,7 +41,9 @@ const {
   mcpRowConnections,
   mcpStates,
   mcpReconnecting,
+  mcpAuthorizing,
   handleReconnectMcp,
+  handleAuthorizeMcp,
   mcpToast,
   mcpForm,
   mcpAutoHealthCheckMode,
@@ -128,8 +130,10 @@ const {
           :state="mcpStates[item.id] ?? null"
           :row-connection="mcpRowConnections[item.id] ?? null"
           :reconnecting="!!mcpReconnecting[item.id]"
+          :authorizing="!!mcpAuthorizing[item.id]"
           :is-dark="isDark"
           @reconnect="handleReconnectMcp"
+          @authorize="handleAuthorizeMcp"
           @toggle="handleToggleMcp"
           @edit="startEditMcp"
           @remove="handleDeleteMcp"
@@ -292,6 +296,76 @@ const {
         >
                     {{ t('settings.mcp.headersPristineHint') }}
         </p>
+      </div>
+
+      <!-- 认证方式（http 系传输）：静态凭据走请求头，OAuth 走浏览器授权 -->
+      <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
+        <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authLabel') }}</label>
+        <div class="flex items-center gap-2">
+          <button
+            v-for="mode in MCP_AUTH_MODES"
+            :key="mode"
+            type="button"
+            @click="mcpForm.authMode = mode"
+            :class="[
+              'px-3 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
+              mcpForm.authMode === mode
+                ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
+                : (isDark
+                    ? 'border-white/15 text-zinc-300 hover:bg-white/5'
+                    : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
+            ]"
+          >
+            {{ mode === 'oauth' ? t('settings.mcp.authModeOAuth') : t('settings.mcp.authModeNone') }}
+          </button>
+        </div>
+        <p class="text-lx-fs-sm text-lx-faint">{{ t('settings.mcp.authHint') }}</p>
+      </div>
+
+      <!-- OAuth 细节：三项都可留空，由服务端发现 -->
+      <div v-if="mcpForm.transport !== 'stdio' && mcpForm.authMode === 'oauth'" class="grid grid-cols-2 gap-3">
+        <div class="space-y-1.5">
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authClientIdLabel') }}</label>
+          <input
+            v-model="mcpForm.authClientId"
+            type="text"
+            :placeholder="t('settings.mcp.authClientIdPlaceholder')"
+            :class="[
+              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+              isDark
+                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+            ]"
+          />
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authScopesLabel') }}</label>
+          <input
+            v-model="mcpForm.authScopes"
+            type="text"
+            :placeholder="t('settings.mcp.authScopesPlaceholder')"
+            :class="[
+              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+              isDark
+                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+            ]"
+          />
+        </div>
+        <div class="col-span-2 space-y-1.5">
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authServerLabel') }}</label>
+          <input
+            v-model="mcpForm.authServer"
+            type="text"
+            :placeholder="t('settings.mcp.authServerPlaceholder')"
+            :class="[
+              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+              isDark
+                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+            ]"
+          />
+        </div>
       </div>
 
       <!-- 服务描述：随提示词下发给模型（每服务一行），由业务用户填写 -->

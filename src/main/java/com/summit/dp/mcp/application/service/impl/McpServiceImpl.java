@@ -6,14 +6,18 @@ import com.summit.core.conf.McpConfig;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.application.command.McpCommand;
+import com.summit.dp.mcp.application.service.McpAuthorizationGateway;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
+import com.summit.dp.mcp.application.vo.McpOAuthStateVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 import com.summit.dp.mcp.domain.model.Mcp;
+import com.summit.dp.mcp.domain.model.McpAuth;
 import com.summit.dp.mcp.domain.repository.McpRepository;
+import com.summit.dp.mcp.infrastructure.oauth.McpOAuthEngine;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +43,7 @@ public class McpServiceImpl implements McpService {
     private final McpValidator validator;
     private final McpConfigAssembler assembler;
     private final McpConnectionRegistry connections;
+    private final McpAuthorizationGateway authorizationGateway;
 
     @Override
     public Result<McpVO> findById(Long id) {
@@ -147,6 +152,34 @@ public class McpServiceImpl implements McpService {
     }
 
     @Override
+    public Result<String> authorize(Long id) {
+        throwIf(id == null, "MCP 配置标识不能为空");
+        Mcp model = repository.findById(id).orElseThrow(ClientException::new);
+        return Result.success(authorizationGateway.beginAuthorization(model.getName(), model.getUrl(),
+                model.resolveAuth()));
+    }
+
+    @Override
+    public Result<String> authorizeDraft(McpCommand command) {
+        throwIf(command == null, "MCP 授权参数不能为空");
+        throwIf(command.getName() == null || command.getName().isBlank(), "服务名称不能为空");
+        throwIf(command.getUrl() == null || command.getUrl().isBlank(), "服务地址不能为空");
+        McpAuth auth = command.getAuth() == null ? McpAuth.NONE : command.getAuth();
+        return Result.success(authorizationGateway.beginAuthorization(command.getName().trim(),
+                command.getUrl().trim(), auth));
+    }
+
+    @Override
+    public Result<McpOAuthStateVO> oauthState(Long id) {
+        throwIf(id == null, "MCP 配置标识不能为空");
+        Mcp model = repository.findById(id).orElseThrow(ClientException::new);
+        String state = authorizationGateway.resolveStatus(model.getName());
+        // 失败原因在引擎侧只落在日志里：这里的文案是「动作提示」，细节对用户没有更多信息量
+        String errMsg = McpOAuthEngine.STATUS_FAILED.equals(state) ? "授权未完成，请重新发起" : null;
+        return Result.success(new McpOAuthStateVO(state, errMsg));
+    }
+
+    @Override
     public Result<List<McpVO>> queryIn(Collection<Long> ids) {
         if (ids == null || ids.isEmpty())
             return Result.success(List.of());
@@ -196,6 +229,7 @@ public class McpServiceImpl implements McpService {
         if (command.getCommand() != null) model.changeCommand(command.getCommand());
         if (command.getEnv() != null)
             model.changeEnv(mergeMaskedValues(command.getEnv(), model.getEnv()));
+        if (command.getAuth() != null) model.changeAuth(command.getAuth());
         if (command.getDescription() != null) model.changeDescription(command.getDescription().trim());
         if (command.getInitializationTimeout() != null)
             model.changeInitializationTimeout(Duration.ofMillis(command.getInitializationTimeout()));
@@ -268,6 +302,7 @@ public class McpServiceImpl implements McpService {
                 .headers(maskValues(model.getHeaders()))
                 .command(model.getCommand())
                 .env(maskValues(model.getEnv()))
+                .auth(model.resolveAuth())
                 .description(model.getDescription())
                 .initializationTimeout(model.getInitializationTimeout() == null
                         ? null : model.getInitializationTimeout().toMillis())
@@ -303,6 +338,7 @@ public class McpServiceImpl implements McpService {
                 .headers(command.getHeaders() == null ? Map.of() : command.getHeaders())
                 .command(command.getCommand())
                 .env(command.getEnv() == null ? Map.of() : command.getEnv())
+                .auth(command.getAuth() == null ? McpAuth.NONE : command.getAuth())
                 .description(command.getDescription() == null ? null : command.getDescription().trim())
                 .initializationTimeout(command.getInitializationTimeout() == null
                         ? Mcp.DEFAULT_INITIALIZATION_TIMEOUT : Duration.ofMillis(command.getInitializationTimeout()))

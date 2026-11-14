@@ -990,6 +990,9 @@ export interface PendingChatQueue {
  */
 export const MCP_TRANSPORTS = ['streamable-http', 'sse', 'stdio'] as const;
 
+/** MCP 认证方式；契约来源：{@code McpAuth.MODE_NONE / MODE_OAUTH}。 */
+export const MCP_AUTH_MODES = ['none', 'oauth'] as const;
+
 /**
  * 请求头脱敏掩码。
  * 契约来源：com.summit.dp.mcp.application.vo.McpVO.MASKED_VALUE。
@@ -1024,6 +1027,19 @@ export interface McpTuningFields {
   reconnectInterval?: number | null;
 }
 
+/**
+ * 服务的认证方式，对齐后端 `McpAuth`。
+ *
+ * <p>`mode` 缺省即 `none`：凭据只来自请求头，与本次改造前完全一致。三个可选字段只在
+ * `oauth` 下使用，留空表示交给服务端发现，不要填「业务默认值」。</p>
+ */
+export interface McpAuthSettings {
+  mode?: 'none' | 'oauth' | string | null;
+  clientId?: string | null;
+  scopes?: string[] | null;
+  authorizationServer?: string | null;
+}
+
 /** MCP 视图对象 (对应后端 McpVO) */
 export interface McpVO extends McpTuningFields {
   id: number | string;
@@ -1046,18 +1062,22 @@ export interface McpVO extends McpTuningFields {
   maxOutput?: number;
   /** 1 = 启用，0 = 停用 */
   status?: number;
+  /** 认证方式；缺省表示未配置认证 */
+  auth?: McpAuthSettings | null;
   createAt?: string;
   updateAt?: string;
 }
 
 /** 共享连接运行状态，对齐后端 McpConnectionStateVO。 */
-export type McpConnectionState = 'CONNECTED' | 'FAILED' | 'DISCONNECTED' | 'DISABLED';
+export type McpConnectionState = 'CONNECTED' | 'FAILED' | 'DISCONNECTED' | 'DISABLED' | 'AUTHORIZATION_REQUIRED';
 
 export interface McpConnectionStateVO {
   id: number | string;
   state: McpConnectionState;
   toolCount: number | null;
   error: string | null;
+  /** 仅在 AUTHORIZATION_REQUIRED 且有在途授权时非空：拿到它才开浏览器 */
+  authorizationUrl?: string | null;
 }
 
 /** MCP 连接测试结果，对齐后端 McpConnectionVO。 */
@@ -1084,6 +1104,8 @@ export interface McpRequest extends McpTuningFields {
   executionTimeout?: number;
   maxOutput?: number;
   status?: number;
+  /** 认证方式；不传表示保持库中原值 */
+  auth?: McpAuthSettings | null;
 }
 
 

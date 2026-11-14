@@ -1,5 +1,6 @@
 package com.summit.dp.mcp.application.command;
 
+import com.summit.dp.mcp.domain.model.McpAuth;
 import lombok.Data;
 
 import java.util.List;
@@ -24,6 +25,8 @@ public class McpCommand {
     private Map<String, String> env;
     /** 服务描述，随提示词下发给模型；由业务用户填写 */
     private String description;
+    /** 认证方式；null 表示保持库中原值（新增时为未配置认证） */
+    private McpAuth auth;
     /** 初始化超时，毫秒；null 表示走缺省 */
     private Long initializationTimeout;
     /** 执行超时，毫秒；null 表示走缺省 */

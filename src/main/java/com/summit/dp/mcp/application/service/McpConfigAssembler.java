@@ -1,5 +1,6 @@
 package com.summit.dp.mcp.application.service;
 
+import com.summit.core.conf.McpAuthMode;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.McpTransport;
 import com.summit.dp.mcp.domain.model.Mcp;
@@ -29,6 +30,7 @@ public class McpConfigAssembler {
                     model.getProtocolVersion(), model.getAutoHealthCheck(),
                     model.getHealthCheckInterval(), model.getReconnectInterval());
         };
-        return new McpConfig.MCP(model.getName(), model.getDescription(), transport, conf, model.getMaxOutput());
+        return new McpConfig.MCP(model.getName(), model.getDescription(), transport, conf, model.getMaxOutput(),
+                model.resolveAuth().isOauth() ? McpAuthMode.OAUTH : McpAuthMode.NONE);
     }
 }

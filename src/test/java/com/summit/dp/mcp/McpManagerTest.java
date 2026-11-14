@@ -9,6 +9,7 @@ import com.summit.core.mcp.McpSession;
 import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.tool.ToolDefinition;
+import com.summit.dp.mcp.application.service.McpAuthorizationGateway;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.domain.model.Mcp;
@@ -40,6 +41,7 @@ class McpManagerTest {
             context.registerBean(McpRepository.class, () -> repository);
             context.registerBean(McpSessionFactory.class, () -> factory);
             context.registerBean(McpConfigAssembler.class, () -> assembler);
+            context.registerBean(McpAuthorizationGateway.class, () -> authorizationGateway);
             context.register(McpManager.class);
             context.refresh();
             verify(repository, never()).findEnabled();
@@ -54,7 +56,8 @@ class McpManagerTest {
     private final McpRepository repository = mock(McpRepository.class);
     private final McpSessionFactory factory = mock(McpSessionFactory.class);
     private final McpConfigAssembler assembler = new McpConfigAssembler();
-    private final McpManager manager = new McpManager(repository, assembler, factory);
+    private final McpAuthorizationGateway authorizationGateway = mock(McpAuthorizationGateway.class);
+    private final McpManager manager = new McpManager(repository, assembler, factory, authorizationGateway);
 
     private Mcp model(long id, String name) {
         return Mcp.builder().id(id).name(name).transport(Mcp.Transport.STREAMABLE_HTTP)

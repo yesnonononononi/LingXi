@@ -1,5 +1,6 @@
 package com.summit.dp.mcp.application.vo;
 
+import com.summit.dp.mcp.domain.model.McpAuth;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -37,6 +38,8 @@ public class McpVO {
     private Map<String, String> env;
     /** 服务描述，随提示词下发给模型；由业务用户填写 */
     private String description;
+    /** 认证方式；非敏感字段，无需掩码；null 表示未配置 */
+    private McpAuth auth;
     private Long initializationTimeout;
     private Long executionTimeout;
     /** 显式协议版本；null 表示不钉版本。非敏感字段，无需掩码 */

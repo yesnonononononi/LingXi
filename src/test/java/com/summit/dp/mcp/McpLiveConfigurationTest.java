@@ -30,9 +30,10 @@ class McpLiveConfigurationTest {
     private final McpRepository repository = mock(McpRepository.class);
     private final McpSessionFactory factory = mock(McpSessionFactory.class);
     private final McpConfigAssembler assembler = new McpConfigAssembler();
-    private final McpManager manager = new McpManager(repository, assembler, factory);
+    private final McpManager manager = new McpManager(repository, assembler, factory,
+            NoopAuthorizationGateway.INSTANCE);
     private final McpServiceImpl service = new McpServiceImpl(repository, new McpValidator(repository),
-            assembler, manager);
+            assembler, manager, NoopAuthorizationGateway.INSTANCE);
 
     @BeforeEach
     void prepareRepository() {

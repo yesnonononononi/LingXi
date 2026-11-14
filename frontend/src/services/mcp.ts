@@ -99,4 +99,19 @@ export class McpAPI {
   static async delById(id: number | string): Promise<Result<void>> {
     return http.get<any, Result<void>>(`/mcp/del/${id}`);
   }
+
+  /** 为已保存的服务发起 OAuth 授权 (POST /mcp/oauth/authorize/{id})，返回要打开的授权地址 */
+  static async authorizeById(id: number | string): Promise<Result<string>> {
+    return http.post<any, Result<string>>(`/mcp/oauth/authorize/${id}`, undefined);
+  }
+
+  /** 为尚未保存的表单配置发起授权 (POST /mcp/oauth/authorize) */
+  static async authorizeDraft(data: McpRequest): Promise<Result<string>> {
+    return http.post<any, Result<string>>('/mcp/oauth/authorize', passTuningThrough(data));
+  }
+
+  /** 查询授权进度 (GET /mcp/oauth/state/{id})，界面按 PENDING → AUTHORIZED / FAILED 轮询 */
+  static async oauthState(id: number | string): Promise<Result<{ state: string | null; errMsg: string | null }>> {
+    return http.get<any, Result<{ state: string | null; errMsg: string | null }>>(`/mcp/oauth/state/${id}`);
+  }
 }

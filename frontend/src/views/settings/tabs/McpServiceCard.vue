@@ -2,6 +2,7 @@
 import {computed} from 'vue';
 import LxListCard from '../../../components/common/LxListCard.vue';
 import {actionClass, chipClass} from '../../../utils/listCardTone';
+import {isMcpAuthorizationRequired} from '../../../utils/mcpStatus';
 import type {McpConnectionStateVO, McpVO} from '../../../types/chat';
 import {useI18n} from '../../../i18n';
 
@@ -28,13 +29,16 @@ const props = withDefaults(
     rowConnection?: { loading?: boolean; success?: boolean; error?: string | null } | null;
     /** 「重新连接」进行中 */
     reconnecting?: boolean;
+    /** 「去授权」进行中：等待浏览器回调期间保持 busy */
+    authorizing?: boolean;
     isDark?: boolean;
   }>(),
-  {state: null, rowConnection: null, reconnecting: false}
+  {state: null, rowConnection: null, reconnecting: false, authorizing: false}
 );
 
 const emit = defineEmits<{
   reconnect: [McpVO];
+  authorize: [McpVO];
   toggle: [McpVO];
   edit: [McpVO];
   remove: [McpVO];
@@ -44,10 +48,11 @@ const emit = defineEmits<{
 const {t} = useI18n();
 
 /** 状态机：停用优先（配置态），否则按连接表（运行态）。 */
-const statusKind = computed<'DISABLED' | 'CONNECTED' | 'FAILED' | 'DISCONNECTED'>(() => {
+const statusKind = computed<'DISABLED' | 'CONNECTED' | 'FAILED' | 'AUTHORIZATION_REQUIRED' | 'DISCONNECTED'>(() => {
   if (props.item.status === 0) return 'DISABLED';
   if (props.state?.state === 'CONNECTED') return 'CONNECTED';
   if (props.state?.state === 'FAILED') return 'FAILED';
+  if (isMcpAuthorizationRequired(props.state?.state)) return 'AUTHORIZATION_REQUIRED';
   return 'DISCONNECTED';
 });
 
@@ -55,6 +60,7 @@ const statusTone = computed(() => {
   switch (statusKind.value) {
     case 'CONNECTED': return 'ok' as const;
     case 'FAILED': return 'danger' as const;
+    case 'AUTHORIZATION_REQUIRED': return 'warn' as const;
     case 'DISABLED': return 'muted' as const;
     default: return 'warn' as const;
   }
@@ -64,6 +70,7 @@ const statusLabel = computed(() => {
   switch (statusKind.value) {
     case 'CONNECTED': return t('settings.mcp.stateConnected', {count: props.state?.toolCount ?? 0});
     case 'FAILED': return t('settings.mcp.stateFailed');
+    case 'AUTHORIZATION_REQUIRED': return t('settings.mcp.stateAuthorizationRequired');
     case 'DISABLED': return t('settings.mcp.disabled');
     default: return t('settings.mcp.stateDisconnected');
   }
@@ -160,6 +167,18 @@ const failureReason = computed(() => (
     >{{ rowConnection.error }}</p>
 
     <template #actions>
+      <button
+        v-if="item.status !== 0 && statusKind === 'AUTHORIZATION_REQUIRED'"
+        type="button"
+        data-testid="mcp-authorize"
+        :disabled="authorizing"
+        :aria-busy="authorizing || false"
+        @click="emit('authorize', item)"
+        :class="actionClass('primary')"
+      >
+        <span v-if="authorizing" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+        {{ authorizing ? t('settings.mcp.authorizing') : t('settings.mcp.authorize') }}
+      </button>
       <button
         v-if="item.status !== 0"
         type="button"

@@ -6,6 +6,7 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
+import com.summit.dp.mcp.application.vo.McpOAuthStateVO;
 import com.summit.dp.mcp.application.vo.McpVO;
 
 import java.util.Collection;
@@ -38,6 +39,23 @@ public interface McpService {
 
     /** 批量查询共享连接状态，按库中存在的 id 返回；ids 为空返回空列表。 */
     Result<List<McpConnectionStateVO>> listStates(Collection<Long> ids);
+
+    /**
+     * 为已保存的服务发起 OAuth 授权。
+     *
+     * @return 需要在浏览器里打开的授权地址
+     */
+    Result<String> authorize(Long id);
+
+    /**
+     * 为尚未保存的表单配置发起 OAuth 授权（新增/编辑时先授权再落库）。
+     *
+     * @return 需要在浏览器里打开的授权地址
+     */
+    Result<String> authorizeDraft(McpCommand command);
+
+    /** 查询授权进度，供界面轮询；服务名缺失或从未授权时状态为 null。 */
+    Result<McpOAuthStateVO> oauthState(Long id);
 
     /**
      * 组装当前生效的 MCP 配置快照。

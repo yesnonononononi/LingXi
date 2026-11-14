@@ -117,6 +117,8 @@ const mcpStatusText = (server: McpVO): string => {
         : t('chat.input.plusMcpConnectedNoCount');
     case 'FAILED':
       return t('chat.input.plusMcpFailed');
+    case 'AUTHORIZATION_REQUIRED':
+      return t('chat.input.plusMcpAuthRequired');
     case 'DISABLED':
       return t('chat.input.plusMcpDisabled');
     default:
@@ -132,23 +134,28 @@ const mcpStatusDot = (server: McpVO): string => {
       return 'bg-emerald-500';
     case 'FAILED':
       return 'bg-red-500';
+    case 'AUTHORIZATION_REQUIRED':
+      return 'bg-amber-500';
     default:
       return 'bg-zinc-400';
   }
 };
 
-type McpRowAction = 'ENABLE' | 'DISABLE' | 'RECONNECT';
+type McpRowAction = 'ENABLE' | 'DISABLE' | 'RECONNECT' | 'AUTHORIZE';
 
 /**
  * 一行只给一个动作，收敛成单一函数（模板里不写多重条件）。
  *
  * <p>配置态优先于运行态：`status === 0` 或状态表说 DISABLED 时，连接表里的残留值没有意义，
  * 只能「启用」；其余没有连接（缺失 / DISCONNECTED）与连接失败一样靠重建连接恢复，不另设按钮。</p>
+ *
+ * <p>需要授权的服务单独一档：重连只会再吃一次 401，把用户直接送到设置页的「去授权」才是下一步。</p>
  */
 const resolveMcpAction = (server: McpVO): McpRowAction => {
   const state = findMcpState(server);
   if (server.status === 0 || state?.state === 'DISABLED') return 'ENABLE';
   if (state?.state === 'CONNECTED') return 'DISABLE';
+  if (state?.state === 'AUTHORIZATION_REQUIRED') return 'AUTHORIZE';
   return 'RECONNECT';
 };
 
@@ -158,6 +165,8 @@ const mcpActionLabel = (server: McpVO): string => {
       return t('chat.input.plusMcpEnable');
     case 'DISABLE':
       return t('chat.input.plusMcpDisable');
+    case 'AUTHORIZE':
+      return t('chat.input.plusMcpAuthorize');
     default:
       return t('chat.input.plusMcpReconnect');
   }
@@ -167,7 +176,12 @@ const isMcpBusy = (server: McpVO): boolean => props.mcpBusy?.[String(server.id)]
 
 const runMcpAction = (server: McpVO): void => {
   if (isMcpBusy(server)) return;
-  if (resolveMcpAction(server) === 'RECONNECT') {
+  const action = resolveMcpAction(server);
+  if (action === 'AUTHORIZE') {
+    emit('openMcpSettings');
+    return;
+  }
+  if (action === 'RECONNECT') {
     emit('reconnectMcp', server);
     return;
   }

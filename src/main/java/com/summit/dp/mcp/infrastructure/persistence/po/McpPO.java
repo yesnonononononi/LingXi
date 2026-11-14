@@ -43,6 +43,8 @@ public class McpPO {
     private String env;
     /** 服务描述，随提示词下发给模型；由业务用户填写 */
     private String description;
+    /** JSON 对象字符串，如 {"mode":"oauth","clientId":null,"scopes":[],"authorizationServer":null}；NULL 表示未配置认证 */
+    private String auth;
     /** 初始化超时，毫秒 */
     private Long initializationTimeout;
     /** 执行超时，毫秒 */

@@ -50,7 +50,7 @@ class McpServiceTest {
 
     private McpServiceImpl service(McpRepository repository) {
         McpServiceImpl impl = new McpServiceImpl(repository, new McpValidator(repository),
-                new McpConfigAssembler(), mock(McpConnectionRegistry.class));
+                new McpConfigAssembler(), mock(McpConnectionRegistry.class), NoopAuthorizationGateway.INSTANCE);
         return impl;
     }
 
@@ -80,7 +80,7 @@ class McpServiceTest {
         when(repository.findById(1L)).thenReturn(Optional.of(saved));
         McpConnectionRegistry connections = mock(McpConnectionRegistry.class);
         McpServiceImpl service = new McpServiceImpl(repository, new McpValidator(repository),
-                new McpConfigAssembler(), connections);
+                new McpConfigAssembler(), connections, NoopAuthorizationGateway.INSTANCE);
         McpCommand command = new McpCommand();
         command.setId(1L);
         command.setName("edited");
@@ -695,7 +695,7 @@ class McpServiceTest {
         McpRepository repository = repository();
         McpConnectionRegistry connections = mock(McpConnectionRegistry.class);
         McpServiceImpl impl = new McpServiceImpl(repository, new McpValidator(repository),
-                new McpConfigAssembler(), connections);
+                new McpConfigAssembler(), connections, NoopAuthorizationGateway.INSTANCE);
         McpController controller = new McpController(impl);
 
         Mcp enabled = sampleModel();

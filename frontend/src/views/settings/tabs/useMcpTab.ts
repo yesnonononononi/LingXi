@@ -11,6 +11,14 @@ import {useI18n} from '../../../i18n';
 const MCP_DEFAULT_INIT_TIMEOUT = 30_000;
 const MCP_DEFAULT_EXEC_TIMEOUT = 60_000;
 const MCP_DEFAULT_MAX_OUTPUT = 20_000;
+/** 授权进度轮询间隔：回调通常在浏览器里几秒内完成，2s 足够且不会打满后端 */
+const AUTHORIZE_POLL_INTERVAL = 2_000;
+/** 与后端 pending 授权的有效期一致，超时后不再轮询而是提示重新发起 */
+const AUTHORIZE_POLL_TIMEOUT = 5 * 60 * 1000;
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 /** 「自动健康检查」三态取值：unset = 不下发（沿用库默认），on / off = 显式下发布尔值。 */
 export type McpTriState = 'unset' | 'on' | 'off';
@@ -55,6 +63,10 @@ export function useMcpTab() {
   /** 共享连接运行状态，按 id 索引；与「测试连接」结果分开，后者不代表运行中的连接。 */
   const mcpStates = ref<Record<string, McpConnectionStateVO>>({});
   const mcpReconnecting = ref<Record<string, boolean>>({});
+  /** 授权进行中的行：等待回调期间按钮保持 busy，避免连点开出多个浏览器窗口 */
+  const mcpAuthorizing = ref<Record<string, boolean>>({});
+  /** 卸载后不再轮询：组件已经销毁，回调结果无处可展示 */
+  let disposed = false;
   const mcpToast = ref('');
   let mcpToastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -86,6 +98,14 @@ export function useMcpTab() {
     autoHealthCheck: null as boolean | null,
     healthCheckInterval: null as number | null,
     reconnectInterval: null as number | null,
+    /**
+     * 认证方式：`none` 只用请求头里的静态凭据（历史行为），`oauth` 由浏览器授权在运行时取令牌。
+     * 后三项只在 oauth 下有意义，留空即交给服务端发现——能自动拿到的不该让用户手填。
+     */
+    authMode: 'none' as 'none' | 'oauth',
+    authClientId: '',
+    authScopes: '',
+    authServer: '',
     enabled: true,
   });
 
@@ -181,6 +201,65 @@ export function useMcpTab() {
     }
   };
 
+  /**
+   * 等后端把回调换成令牌。
+   *
+   * <p>轮询而不是长连接：授权是用户手工完成的一次性动作，进度只有三态，用不上流式通道。
+   * 卸载标记必须参与循环条件，否则关掉设置页之后还在打后端。</p>
+   */
+  const waitForAuthorization = async (id: number | string): Promise<'AUTHORIZED' | 'FAILED' | 'TIMEOUT'> => {
+    const deadline = Date.now() + AUTHORIZE_POLL_TIMEOUT;
+    while (!disposed && Date.now() < deadline) {
+      await sleep(AUTHORIZE_POLL_INTERVAL);
+      if (disposed) break;
+      try {
+        const res = await McpAPI.oauthState(id);
+        const state = isOk(res.code) ? res.data?.state ?? null : null;
+        if (state === 'AUTHORIZED') return 'AUTHORIZED';
+        if (state === 'FAILED') return 'FAILED';
+      } catch {
+        // 单次查询抖动不该终止等待：回调已经完成，下一次查询就会拿到 AUTHORIZED
+      }
+    }
+    return 'TIMEOUT';
+  };
+
+  /**
+   * 打开系统浏览器完成授权，成功后自动重连。
+   *
+   * <p>授权地址由后端给：它会先起好回调端口再拼 URL，顺序反过来回调就落不到本地。
+   * 浏览器交给主进程开（`session.setWindowOpenHandler` 把 http(s) 外链转给系统浏览器），
+   * 应用内不会导航到第三方登录页。</p>
+   */
+  const handleAuthorizeMcp = async (item: McpVO) => {
+    const key = String(item.id);
+    if (mcpAuthorizing.value[key]) return;
+    mcpAuthorizing.value[key] = true;
+    try {
+      const res = await McpAPI.authorizeById(item.id);
+      const url = isOk(res.code) ? res.data ?? '' : '';
+      if (!url) {
+        showMcpToast(res.errMsg || t('settings.mcp.errAuthorize'));
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+      const outcome = await waitForAuthorization(item.id);
+      if (outcome === 'AUTHORIZED') {
+        showMcpToast(t('settings.mcp.toastAuthorized'));
+        await handleReconnectMcp(item);
+        return;
+      }
+      showMcpToast(t('settings.mcp.errAuthorize'));
+    } catch (error: unknown) {
+      showMcpToast(error instanceof ApiError && error.kind === 'network'
+        ? t('settings.mcp.errConnectNetwork')
+        : error instanceof Error ? error.message : t('settings.mcp.errAuthorize'));
+    } finally {
+      mcpAuthorizing.value[key] = false;
+      await loadMcpStates();
+    }
+  };
+
   /** 把请求头对象渲染成「Key: Value」多行文本；值为掩码时原样保留，供后端识别「未改动」 */
   const headersToLines = (headers?: Record<string, string>) => {
     if (!headers) return '';
@@ -254,6 +333,10 @@ export function useMcpTab() {
       autoHealthCheck: null,
       healthCheckInterval: null,
       reconnectInterval: null,
+      authMode: 'none',
+      authClientId: '',
+      authScopes: '',
+      authServer: '',
       enabled: true,
     };
     mcpHeadersPristine.value = false;
@@ -280,6 +363,10 @@ export function useMcpTab() {
       autoHealthCheck: item.autoHealthCheck ?? null,
       healthCheckInterval: item.healthCheckInterval ?? null,
       reconnectInterval: item.reconnectInterval ?? null,
+      authMode: item.auth?.mode === 'oauth' ? 'oauth' : 'none',
+      authClientId: item.auth?.clientId ?? '',
+      authScopes: (item.auth?.scopes ?? []).join(' '),
+      authServer: item.auth?.authorizationServer ?? '',
       enabled: item.status !== 0,
     };
     mcpHeadersPristine.value = true;
@@ -394,6 +481,24 @@ export function useMcpTab() {
       return null;
     }
 
+    // stdio 没有 HTTP 授权语义，后端会直接拒绝；表单在 stdio 下也藏了选择器，
+    // 这里按「用户此刻看到的」提交 none，而不是留一个他改不掉的 oauth。
+    const authorizationServer = mcpForm.value.authServer.trim();
+    const usesOauth = mcpForm.value.authMode === 'oauth' && !isStdio;
+    if (usesOauth && authorizationServer !== '' && !/^https?:\/\/.+/i.test(authorizationServer)) {
+      mcpFormError.value = t('settings.mcp.errAuthServerScheme');
+      return null;
+    }
+    // none 也要显式下发：否则把服务从 oauth 改回静态凭据时，库里会一直留着 oauth。
+    const auth = usesOauth
+      ? {
+        mode: 'oauth',
+        clientId: mcpForm.value.authClientId.trim() || null,
+        scopes: mcpForm.value.authScopes.split(/[\s,]+/).filter((scope) => scope.length > 0),
+        authorizationServer: authorizationServer || null,
+      }
+      : {mode: 'none', clientId: null, scopes: [], authorizationServer: null};
+
     const payload = {
       name: trimmedName,
       transport: mcpForm.value.transport,
@@ -410,6 +515,7 @@ export function useMcpTab() {
       autoHealthCheck: mcpForm.value.autoHealthCheck ?? null,
       healthCheckInterval,
       reconnectInterval,
+      auth,
       status: mcpForm.value.enabled ? 1 : 0,
     };
 
@@ -576,6 +682,7 @@ export function useMcpTab() {
   });
 
   onBeforeUnmount(() => {
+    disposed = true;
     connectionRequest++;
     mcpRowConnections.value = {};
     if (mcpToastTimer) clearTimeout(mcpToastTimer);
@@ -595,8 +702,10 @@ export function useMcpTab() {
     mcpRowConnections,
     mcpStates,
     mcpReconnecting,
+    mcpAuthorizing,
     loadMcpStates,
     handleReconnectMcp,
+    handleAuthorizeMcp,
     mcpToast,
     mcpForm,
     mcpAutoHealthCheckMode,
