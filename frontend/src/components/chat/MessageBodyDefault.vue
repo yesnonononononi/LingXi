@@ -19,6 +19,7 @@ const isStreaming = computed(() => Boolean(props.isThinking && !props.message.is
     :is-thinking="props.isThinking"
     :streaming="isStreaming"
     :smooth-streaming="true"
+    :reveal-initial="isStreaming"
   />
   <div v-if="props.message.responseImageUrls?.length" class="flex flex-wrap gap-3" data-testid="response-images">
     <MessageImage v-for="(url, index) in props.message.responseImageUrls" :key="url"

@@ -350,6 +350,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     :is-dark="isDark"
                     :thinking-text="true"
                     :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended && step.status === 'running'"
+                    :reveal-initial="!!msg.isThinking && !msg.isComplete && !msg.isSuspended && step.status === 'running'"
                   />
                 </div>
               </div>
@@ -420,7 +421,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               >
                 <MarkdownRenderer :content="msg.content" :is-dark="isDark"
                   :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended"
-                  :smooth-streaming="true" />
+                  :smooth-streaming="true"
+                  :reveal-initial="!!msg.isThinking && !msg.isComplete && !msg.isSuspended" />
               </div>
             </div>
           </template>
