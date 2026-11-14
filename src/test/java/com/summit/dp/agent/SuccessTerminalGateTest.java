@@ -1,6 +1,5 @@
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+package com.summit.dp.agent;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -8,10 +7,12 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.ExecutionCompleteEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.transaction.RuntimeTransactionalSupport;
+import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.MailReceiptFlusherStub;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
-import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -21,6 +22,9 @@ import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
+import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
@@ -38,15 +42,19 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -54,17 +62,19 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * 必须步骤失败时，框架的成功终态不许漏出去。
+ * 必须步骤失败时，框架的成功终态在事务收尾源头即被阻断，无需通知层再查库拦一道。
  *
- * <p><b>为什么只能靠通知层判据</b>：框架的 {@code RuntimeProcessorTemplate} 在 {@code finally} 里用
- * {@code RuntimeUtil.runAll(...)} 跑 {@code save → unregister → publish → 成功终态}，而
- * {@code runAll} 是<b>逐任务 catch</b> 的：让收口异常向上抛只会被吞掉，第 6 步照样执行；
- * 把投影塞进状态提交事务则会让执行停在非终态、更糟。所以判据落在业务侧自己的终态发布入口
- * （{@link com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener}）。</p>
+ * <p><b>为什么不再需要通知层查库门禁</b>：框架的 {@code RuntimeProcessorTemplate} 在 {@code finally} 里
+ * 把 {@code finalizeWithTransaction(execution, control)} 与 {@code notifyTerminal(pe)} 串联在同一任务内。
+ * {@code finalizeWithTransaction} 提交检查点事务（终态与 {@code closure_pending = 1} 落库）后触发
+ * {@code unregister} 的 {@code afterCommit} 回调；一旦必须步骤抛出
+ * {@link ExecutionLifecycleProjection.ExecutionClosureFailure}，异常从 {@code finalizeWithTransaction}
+ * 向上抛出（不会回滚已提交的检查点），直接跳过随后的 {@code notifyTerminal(pe)}。</p>
  *
- * <p>本用例走真实链路：真 H2 + 真仓储的 {@code save / unregister} → 真
- * {@link ExecutionLifecycleProjection}（轮次收口注入失败）→ 真
- * {@link RuntimeEventPublisher} + 真监听器 → 断言「框架那条成功终态没有发出」。</p>
+ * <p>本用例走真实链路：真 H2 + 真事务模板（{@link RuntimeTransactionalSupport}）+ 真仓储的
+ * {@code save / unregister} → 真 {@link ExecutionLifecycleProjection}（轮次收口注入失败）→
+ * 真 {@link RuntimeEventPublisher} + 真 {@link AgentEventListener} → 断言「框架终态在源头被阻断，
+ * 补偿收口后补发且只发一次」。</p>
  */
 class SuccessTerminalGateTest {
 
@@ -79,6 +89,7 @@ class SuccessTerminalGateTest {
     private ChatTurnMapper chatTurnMapper;
     private ExecutionRepositoryImpl executions;
     private LocalExecutionRepository runtime;
+    private RuntimeTransactionalSupport transactionalSupport;
     private SseEventPublisher ssePublisher;
     private AgentEventListener agentEvents;
     private RuntimeEventPublisher events;
@@ -94,7 +105,23 @@ class SuccessTerminalGateTest {
         chatTurnMapper = H2TestDatabase.sqlSession(database.sessionFactory(ChatTurnMapper.class))
                 .getMapper(ChatTurnMapper.class);
         executions = new ExecutionRepositoryImpl(executionMapper);
-        checkpointDir = com.summit.dp.execution.ExecutionRepositoryTestFactory.tempDataDir();
+        checkpointDir = ExecutionRepositoryTestFactory.tempDataDir();
+
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(database));
+        transactionalSupport = new RuntimeTransactionalSupport() {
+            @Override
+            public <T> T execute(Callable<T> callback) {
+                return transactionTemplate.execute(status -> {
+                    try {
+                        return callback.call();
+                    } catch (RuntimeException e) {
+                        throw e;
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
+            }
+        };
 
         turnFailureActive = new AtomicBoolean(true);
         realTurns = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));
@@ -102,8 +129,11 @@ class SuccessTerminalGateTest {
         ChatTurnService failingTurns = new DelegatingFailingTurnService(realTurns, turnFailureActive);
 
         ssePublisher = mock(SseEventPublisher.class);
+        ExecutionLocator locator = mock(ExecutionLocator.class);
+        when(locator.sessionId(EXECUTION_ID_TEXT)).thenReturn(SESSION_ID);
+        when(locator.resolveRootSessionId(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         agentEvents = new AgentEventListener(new JsonConfig().objectMapper(), ssePublisher,
-                mock(com.summit.dp.execution.application.service.ExecutionLocator.class), executions, mock(SessionTokenAuditCollector.class));
+                locator, mock(SessionTokenAuditCollector.class));
         events = new RuntimeEventPublisher(List.of(agentEvents));
         agentEvents.init();
 
@@ -120,139 +150,62 @@ class SuccessTerminalGateTest {
     }
 
     @Test
-    @DisplayName("收口失败：框架的成功终态不得发出，待收口位留 1；解除故障后补偿补发一次")
-    void successPublishSuppressedWhileClosurePending() {
+    @DisplayName("收口失败：事务已提交终态与待收口位 1，源头阻断成功终态；解除故障后补偿补发一次且仅一次")
+    void successPublishAbortedAtFinalizeSourceAndCompensatedOnce() {
         seedRunningTurn();
+        runtime.save(execution(ExecutionState.CREATED));
         ExecutionControlSignal signal = runtime.register(EXECUTION_ID_TEXT);
-        saveTerminal();
 
-        // 框架的顺序：save → unregister → publish。收口在 unregister 的 afterCommit 里失败。
-        runtime.unregister(signal);
+        // 对齐 RuntimeProcessorTemplate#finally：finalizeWithTransaction 与 notifyTerminal 顺序串联。
+        assertThrows(ExecutionLifecycleProjection.ExecutionClosureFailure.class,
+                () -> finalizeAndNotifyTerminal(signal));
+
         assertEquals(Integer.valueOf(1), closurePending(),
-                "轮次收口失败必须留下可重试的待收口事实");
-
-        // 框架随后发布成功终态（这一步框架自己的 runAll 一定会做）。
-        events.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-
+                "检查点事务已提交，轮次收口失败必须留下可重试的待收口事实");
         verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
         verify(ssePublisher, never()).publishBusiness(anyLong(), anyString(), any());
-        assertEquals("RUNNING", turnStatus(), "轮次没收口：界面若收到「完成」就会显示完成而轮次还在转");
+        assertEquals("RUNNING", turnStatus(), "轮次没收口：源头阻断终态后前端不会看到假完成");
 
-        // 故障解除：补偿收口一次，成功终态可以正常发出（且只一次）。
+        // 故障解除：补偿收口一次，成功终态正常补发（且只发一次）。
         turnFailureActive.set(false);
         projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, true);
         assertEquals(Integer.valueOf(0), closurePending(), "补偿成功后待收口位必须清零");
         assertEquals("COMPLETED", turnStatus(), "补偿成功后轮次必须收口");
-        verify(ssePublisher).publish(anyLong(), any(ExecutionCompleteEvent.class));
+        verify(ssePublisher, times(1)).publish(eq(ROOT_SESSION_ID), any(ExecutionCompleteEvent.class));
+
+        // 再次跑补偿：clearClosurePending 返回 false（已是 0），绝不重复补发。
+        projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, true);
+        verify(ssePublisher, times(1)).publish(eq(ROOT_SESSION_ID), any(ExecutionCompleteEvent.class));
     }
 
     @Test
-    @DisplayName("待收口位已为 0 时成功终态照常发出：门禁只拦「收口没做完」")
-    void successPublishPassesWhenClosureDone() {
+    @DisplayName("收口成功：待收口位清为 0，框架终态正常发出")
+    void successPublishPassesWhenClosureSucceeds() {
+        turnFailureActive.set(false);
         seedRunningTurn();
+        runtime.save(execution(ExecutionState.CREATED));
         ExecutionControlSignal signal = runtime.register(EXECUTION_ID_TEXT);
-        saveTerminal();
-        runtime.unregister(signal);
-        projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, false);
+
+        assertDoesNotThrow(() -> finalizeAndNotifyTerminal(signal));
+
         assertEquals(Integer.valueOf(0), closurePending());
-
-        events.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-
-        verify(ssePublisher).publish(anyLong(), any(ExecutionCompleteEvent.class));
-    }
-
-    @Test
-    @DisplayName("门禁读库失败按「未知即暂缓」处理：不发布成功终态，并留下带 executionId 的中文警告")
-    void closurePendingReadFailureDefersSuccess() {
-        ExecutionRepositoryImpl unreadableGate = spy(executions);
-        doThrow(new IllegalStateException("模拟待收口位读取失败"))
-                .when(unreadableGate).isClosurePending(anyLong());
-        AgentEventListener deferringListener = listenerWith(unreadableGate);
-
-        Logger logger = (Logger) LoggerFactory.getLogger(AgentEventListener.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        try {
-            new RuntimeEventPublisher(List.of(deferringListener))
-                    .onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-
-            verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
-            verify(ssePublisher, never()).publishBusiness(anyLong(), anyString(), any());
-
-            List<String> messages = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
-            assertTrue(messages.stream().anyMatch(message -> message.contains(EXECUTION_ID_TEXT)
-                            && message.contains("暂缓发布成功终态")
-                            && message.contains("等待权威快照收敛")
-                            && message.contains("模拟待收口位读取失败")),
-                    "读库失败必须留下带 executionId 与原因的可定位日志: " + messages);
-        } finally {
-            logger.detachAppender(appender);
-        }
-    }
-
-    @Test
-    @DisplayName("读库恢复且待收口位为 0 后，成功终态正常发出且只发一次")
-    void successPublishesOnceAfterGateReadRecovers() {
-        seedRunningTurn();
-        ExecutionControlSignal signal = runtime.register(EXECUTION_ID_TEXT);
-        saveTerminal();
-        runtime.unregister(signal);
-        assertEquals(Integer.valueOf(1), closurePending(), "夹具前提：收口失败必须留下待收口事实");
-
-        // 第一次读库失败、之后恢复真实读取。
-        ExecutionRepositoryImpl recoveringGate = spy(executions);
-        doThrow(new IllegalStateException("模拟待收口位读取失败"))
-                .doCallRealMethod()
-                .when(recoveringGate).isClosurePending(anyLong());
-        RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(listenerWith(recoveringGate)));
-
-        // ① 读库失败：暂缓，且不得改动待收口事实。
-        publisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-        verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
-        assertEquals(Integer.valueOf(1), closurePending(), "门禁只读，读失败也不得改动待收口事实");
-
-        // ② 收口仍未完成：恢复可读也不放行。
-        publisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-        verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
-
-        // ③ 恢复可读且待收口位已清零：成功终态正常发出一次。
-        turnFailureActive.set(false);
-        projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, false);
-        assertEquals(Integer.valueOf(0), closurePending(), "补偿成功后待收口位必须清零");
-        assertEquals("COMPLETED", turnStatus(), "补偿成功后轮次必须收口");
-
-        publisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-        verify(ssePublisher, times(1)).publish(anyLong(), any(ExecutionCompleteEvent.class));
-    }
-
-    @Test
-    @DisplayName("暂缓的那一帧不影响业务事实：补偿入口收敛后由它补发一次，且与轮次终态一致")
-    void deferredSuccessFrameConvergesWithBusinessSnapshotAfterCompensation() {
-        seedRunningTurn();
-        ExecutionControlSignal signal = runtime.register(EXECUTION_ID_TEXT);
-        saveTerminal();
-        runtime.unregister(signal);
-
-        // 这一路读库始终失败：本次执行的成功终态一直被暂缓。
-        ExecutionRepositoryImpl unreadableGate = spy(executions);
-        doThrow(new IllegalStateException("模拟待收口位读取失败"))
-                .when(unreadableGate).isClosurePending(anyLong());
-        RuntimeEventPublisher deferringPublisher = new RuntimeEventPublisher(List.of(listenerWith(unreadableGate)));
-        deferringPublisher.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null));
-        verify(ssePublisher, never()).publish(anyLong(), any(ExecutionCompleteEvent.class));
-
-        // 补偿路径（启动收口扫 closure_pending=1 的那条）照旧收敛：收口脚本 + 清位 + 补发被拦下的那一帧。
-        turnFailureActive.set(false);
-        projection(realTurns).completeClosure(execution(ExecutionState.COMPLETED), false, true);
-        assertEquals("COMPLETED", turnStatus(), "缺帧不得影响业务事实落库");
-        assertEquals(Integer.valueOf(0), closurePending(), "缺帧不得影响待收口位清零");
-        verify(ssePublisher, times(1)).publish(anyLong(), any(ExecutionCompleteEvent.class));
+        assertEquals("COMPLETED", turnStatus());
+        verify(ssePublisher, times(1)).publish(eq(ROOT_SESSION_ID), any(ExecutionCompleteEvent.class));
     }
 
     // ------------------------------------------------------------------
     // 夹具
     // ------------------------------------------------------------------
+
+    /** 对齐 RuntimeProcessorTemplate：finalizeWithTransaction 抛错即跳过 notifyTerminal。 */
+    private void finalizeAndNotifyTerminal(ExecutionControlSignal signal) {
+        transactionalSupport.execute(() -> {
+            runtime.save(execution(ExecutionState.COMPLETED));
+            runtime.unregister(signal);
+            return null;
+        });
+        runtime.afterCommit(() -> events.onExecutionComplete(new ExecutionCompleteEvent(EXECUTION_ID_TEXT, null)));
+    }
 
     /** 一条在跑的业务轮次：收口成功时它应变成 COMPLETED。 */
     private void seedRunningTurn() {
@@ -260,30 +213,16 @@ class SuccessTerminalGateTest {
                 .executionId(EXECUTION_ID).status("RUNNING").createdAt(Instant.now()).build());
     }
 
-    /** 先建行再落成终态，与框架的两步保存一致。 */
-    private void saveTerminal() {
-        runtime.save(execution(ExecutionState.CREATED));
-        runtime.save(execution(ExecutionState.COMPLETED));
-    }
-
     private Execution execution(ExecutionState state) {
         Map<String, Object> attributes = Map.of(
-                com.summit.dp.execution.ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID),
-                com.summit.dp.execution.ExecutionAttributes.ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
+                ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID),
+                ExecutionAttributes.ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID));
         return Execution.builder().id(EXECUTION_ID_TEXT).agentId("chatAgent")
                 .executionState(state)
                 .agentRequest(AgentRequest.builder().executionId(EXECUTION_ID_TEXT)
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())
                         .build())
                 .build();
-    }
-
-    /** 换一个门禁读口构造监听器，用于模拟读库失败 / 恢复。 */
-    private AgentEventListener listenerWith(ExecutionRepository gate) {
-        AgentEventListener listener = new AgentEventListener(new JsonConfig().objectMapper(),
-                ssePublisher, mock(com.summit.dp.execution.application.service.ExecutionLocator.class), gate, mock(SessionTokenAuditCollector.class));
-        listener.init();
-        return listener;
     }
 
     private ExecutionLifecycleProjection projection(ChatTurnService turns) {
@@ -316,9 +255,6 @@ class SuccessTerminalGateTest {
 
     /**
      * 只让「收口业务轮次」失败的委托：其余动作照常转发到真实服务。
-     *
-     * <p>注入点选在轮次收口，是因为它正是本项要守的那一步：失败后若成功终态照发，
-     * 用户就会看到「完成」而轮次还在 RUNNING。</p>
      */
     private static final class DelegatingFailingTurnService implements ChatTurnService {
         private final ChatTurnService delegate;
@@ -331,20 +267,20 @@ class SuccessTerminalGateTest {
 
         @Override
         public long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
-                               com.summit.dp.turn.domain.model.TurnModelSnapshot model) {
+                               TurnModelSnapshot model) {
             return delegate.acceptTurn(sessionId, rootSessionId, parentTurnId, executionId, model);
         }
 
         @Override
         public long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
-                               com.summit.dp.turn.domain.model.TurnModelSnapshot model, String commandId,
+                               TurnModelSnapshot model, String commandId,
                                String commandDigest) {
             return delegate.acceptTurn(sessionId, rootSessionId, parentTurnId, executionId, model,
                     commandId, commandDigest);
         }
 
         @Override
-        public java.util.Optional<com.summit.dp.turn.domain.model.ChatTurn> findByCommandId(String commandId) {
+        public Optional<ChatTurn> findByCommandId(String commandId) {
             return delegate.findByCommandId(commandId);
         }
 
@@ -354,12 +290,12 @@ class SuccessTerminalGateTest {
         }
 
         @Override
-        public java.util.Optional<com.summit.dp.turn.domain.model.ChatTurn> findByExecutionId(Long executionId) {
+        public Optional<ChatTurn> findByExecutionId(Long executionId) {
             return delegate.findByExecutionId(executionId);
         }
 
         @Override
-        public Map<Long, com.summit.dp.turn.domain.model.ChatTurn> findByIds(java.util.Collection<Long> turnIds) {
+        public Map<Long, ChatTurn> findByIds(Collection<Long> turnIds) {
             return delegate.findByIds(turnIds);
         }
 
@@ -370,7 +306,7 @@ class SuccessTerminalGateTest {
 
         @Override
         public void markTerminal(String executionId,
-                                 com.summit.dp.turn.domain.model.ChatTurnStatus terminalStatus,
+                                 ChatTurnStatus terminalStatus,
                                  Long inputTokens, Long outputTokens, Long totalTokens,
                                  Instant completedAt, Long rootSessionId) {
             if (failing.get()) {
@@ -398,19 +334,17 @@ class SuccessTerminalGateTest {
         }
 
         @Override
-        public Map<Long, com.summit.dp.turn.domain.model.ChatTurn> findByExecutionIds(
-                java.util.Collection<Long> executionIds) {
+        public Map<Long, ChatTurn> findByExecutionIds(Collection<Long> executionIds) {
             return delegate.findByExecutionIds(executionIds);
         }
 
         @Override
-        public List<com.summit.dp.turn.domain.model.ChatTurn> findActiveBySessionIds(
-                java.util.Collection<Long> sessionIds) {
+        public List<ChatTurn> findActiveBySessionIds(Collection<Long> sessionIds) {
             return delegate.findActiveBySessionIds(sessionIds);
         }
 
         @Override
-        public List<com.summit.dp.turn.domain.model.ChatTurn> rollbackFrom(long sessionId, long fromTurnId) {
+        public List<ChatTurn> rollbackFrom(long sessionId, long fromTurnId) {
             return delegate.rollbackFrom(sessionId, fromTurnId);
         }
     }

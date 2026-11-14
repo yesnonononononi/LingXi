@@ -8,7 +8,6 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.workflow.application.chat.ExecutionErrorText;
@@ -34,8 +33,6 @@ public class AgentEventListener implements RuntimeListener {
     private final ObjectMapper objectMapper;
     private final SseEventPublisher sseEventPublisher;
     private final ExecutionLocator executionLocator;
-    /** 待收口位读口：成功终态能否发布由这一列决定（见 {@code suppressedWhileClosurePending}）。 */
-    private final ExecutionRepository executions;
     /**
      * token 审计采集器（{@code session} 模块的纯服务）。
      *
@@ -53,6 +50,11 @@ public class AgentEventListener implements RuntimeListener {
     @PostConstruct
     public void init() {
         objectMapper.addMixIn(TypedEvent.class, TypedEventMixIn.class);
+    }
+
+    @Override
+    public int order() {
+        return 0;
     }
 
     @Override
@@ -91,71 +93,7 @@ public class AgentEventListener implements RuntimeListener {
 
     @Override
     public void onExecutionCompleted(ExecutionCompleteEvent event) {
-        if (suppressedWhileClosurePending(event)) {
-            return;
-        }
         broadcast(event);
-    }
-
-    /**
-     * 成功终态的通知层门禁：业务收口没做完就不发「完成」。
-     *
-     * <p><b>为什么必须在这里挡</b>：框架的 {@code RuntimeProcessorTemplate} 在 {@code finally} 里
-     * 用 {@code RuntimeUtil.runAll(...)} 逐任务 catch 地跑
-     * {@code save → unregister → publish → 成功终态}，也就是<b>收口失败绝不会阻止成功终态发出</b>
-     * —— 让收口异常向上抛只会被吞掉，把投影塞进状态提交事务同样躲不过这个 {@code runAll}。
-     * 因此唯一能生效的位置就是业务侧自己的终态发布入口。</p>
-     *
-     * <p><b>判据只有一列：{@code execution.closure_pending}</b>。它不是新状态机，只是「状态已提交、
-     * 业务收口没做完」这一事实本身；为 1 就意味着收口脚本没走完，此刻发「完成」会让界面显示完成
-     * 而业务轮次还在进行中。本方法<b>只读</b>这一列，不写、不改任何状态流转。</p>
-     *
-     * <p><b>谁来补发</b>：清位之后由补偿路径（启动收口）补一次成功终态；补发与否同样看这一列
-     * —— 第二遍发现它已是 0，就不会重复发。也就是说「是否已发布过」这个事实由库里的待收口位承载，
-     * 不靠内存标记。</p>
-     *
-     * <p><b>读库失败按「未知即暂缓」（fail-closed）</b>：查询抛异常时返回 {@code true}
-     * —— 不发布成功终态，并留一条带 {@code executionId} 的 warn 日志。</p>
-     *
-     * <p><b>这是刻意取向的修订，与原实现相反</b>。原实现读不到就照常发布（fail-open），
-     * 理由是「宁可多发一帧，也别让用户永久看不到完成」。但那份代价方向选错了：读不到待收口位
-     * 时我们<b>并不知道</b>收口是否已完成，此时发布成功终态等于<b>可能提前声称业务成功</b>
-     * —— 界面显示完成、而轮次 / 卡片 / 子执行可能还在进行，用户据此继续操作就会踩到不一致。
-     * 「看不到完成」只是延迟，且是可修复的缺帧；「错误地声称成功」则是事实错误。</p>
-     *
-     * <p><b>缺帧由权威快照修复，不需要另建状态机</b>：被暂缓的这一帧由权威 bootstrap 与轮次
-     * 终态快照收敛 —— 订阅方本来就能靠这两条路径补齐终态，因此暂缓不会造成「永久看不到完成」。
-     * 所以这里既不需要「已发布」列，也不需要去重表，判据仍然只有 {@code closure_pending} 一列。</p>
-     *
-     * <p><b>已知残留：会在「清位」与「发布」之间丢一帧</b>。崩溃若恰好落在补偿路径
-     * 「清掉 closure_pending」之后、「补发成功终态」之前，这一帧 SSE 成功通知就永久丢失：该执行
-     * 已是终态、待收口位已是 0，之后没有任何路径会再发一次。此时<b>业务事实（轮次 / 卡片 /
-     * 子执行 / 用量）都已落库</b>，客户端靠 bootstrap 与轮次终态快照能收敛到「已完成」，因此只是
-     * 少一帧实时通知，不是状态错乱。要彻底消除得新增「已发布」列或去重表，那等于给这一列判据
-     * 另起一套状态机，与本批「一列判据、不加状态机」的取舍冲突，留待后续。</p>
-     *
-     * @return 已拦截返回 {@code true}（不广播）
-     */
-    private boolean suppressedWhileClosurePending(ExecutionCompleteEvent event) {
-        String executionId = event.executionId();
-        if (executionId == null || executionId.isBlank()) {
-            return false;
-        }
-        boolean pending;
-        try {
-            pending = executions.isClosurePending(Long.parseLong(executionId));
-        } catch (RuntimeException failure) {
-            // 未知即暂缓：读不到待收口位就无从判断收口是否完成，宁可暂缓成功事件被权威快照补齐，
-            // 也不能提前声称业务成功。异常信息必须记下来，否则线上无从定位。
-            log.warn("待收口位查询失败，暂缓发布成功终态，等待权威快照收敛: executionId={}, error={}, message={}",
-                    executionId, failure.getClass().getSimpleName(), failure.getMessage());
-            return true;
-        }
-        if (!pending) {
-            return false;
-        }
-        log.warn("业务收口未完成，暂不发布成功终态: executionId={}, closure_pending=1", executionId);
-        return true;
     }
 
     @Override
@@ -255,9 +193,8 @@ public class AgentEventListener implements RuntimeListener {
      * 公共父接口，将来可能出现别的审计实现（其他口径 / 其他模型），把它们的载荷当成本口径的
      * {@code contextAudit} 会污染快照。因此这里用 {@code instanceof} 过滤，其它实现类型直接忽略。</p>
      *
-     * <p><b>必须吞异常</b>：审计采集是旁路动作，任何失败都不许影响执行终态 ——
-     * 框架的监听器调用发生在状态提交路径上，异常外抛会污染执行结果。这里捕获
-     * {@link RuntimeException} 并记 warn（含 {@code executionId}，便于定位）。</p>
+     * <p><b>异常隔离由框架负责</b>：{@code RuntimeEventPublisher} 按默认 {@code Behavior.CONTAIN}
+     * 捕获监听器异常，审计失败不会影响执行终态。</p>
      *
      * @param event 审计成功事件（框架回调）
      */
@@ -267,21 +204,15 @@ public class AgentEventListener implements RuntimeListener {
             // 其它审计实现类型不属于本口径：忽略（不是错误，不记 warn 以免噪声）。
             return;
         }
-        try {
-            sessionTokenAuditCollector.collect(event.executionId(), tokenAudit.contextAudit(),
-                    event.eventMetaData(), tokenAudit.timestamp());
-        } catch (RuntimeException failure) {
-            // 审计失败绝不影响执行终态：落库没做完就等下一次采集，前端仍可 GET 到旧快照。
-            log.warn("token 审计采集失败，已忽略: executionId={}, error={}, message={}",
-                    event.executionId(), failure.getClass().getSimpleName(), failure.getMessage());
-        }
+        sessionTokenAuditCollector.collect(event.executionId(), tokenAudit.contextAudit(),
+                event.eventMetaData(), tokenAudit.timestamp());
     }
 
     /**
      * token 审计失败事件 → 记失败态（<b>过渡接线</b>，待 workflow 统一
      * {@code ExecutionLifecycleProjectionListener} 落地后迁移）。
      *
-     * <p>同样只认 {@link AgentTokenAuditFailedEvent}；同样吞异常只记 warn。</p>
+     * <p>同样只认 {@link AgentTokenAuditFailedEvent}；异常由框架 {@code Behavior.CONTAIN} 统一隔离。</p>
      *
      * @param event 审计失败事件（框架回调）
      */
@@ -290,13 +221,8 @@ public class AgentEventListener implements RuntimeListener {
         if (!(event instanceof AgentTokenAuditFailedEvent tokenAudit)) {
             return;
         }
-        try {
-            sessionTokenAuditCollector.markFailed(event.executionId(), tokenAudit.errorType(),
-                    tokenAudit.errorMessage(), event.eventMetaData());
-        } catch (RuntimeException failure) {
-            log.warn("token 审计失败态记录失败，已忽略: executionId={}, error={}, message={}",
-                    event.executionId(), failure.getClass().getSimpleName(), failure.getMessage());
-        }
+        sessionTokenAuditCollector.markFailed(event.executionId(), tokenAudit.errorType(),
+                tokenAudit.errorMessage(), event.eventMetaData());
     }
 
     /** 执行终结只广播，连接由会话流自身的生命周期回收。 */

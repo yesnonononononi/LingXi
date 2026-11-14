@@ -253,34 +253,54 @@ public class ExecutionLifecycleProjection {
      * 同上，并声明「框架那一次成功终态发布不会再来，需要本入口补发」。
      *
      * <p><b>只有启动收口传 {@code true}</b>：它按 {@code closure_pending = 1} 扫出来的行，
-     * 而框架的成功终态在发布时已被通知层门禁拦下（同一列判据），此后再没有人会替它发。
-     * 正常路径（{@code save} / {@code unregister} 的 {@code afterCommit}）必须传 {@code false}：
-     * 框架紧接着自己会发，这里再发就是重复。</p>
+     * 而框架的成功终态在收口失败时已在 {@code RuntimeProcessorTemplate#finalizeWithTransaction}
+     * 源头被阻断，此后再没有人会替它发。正常路径（{@code save} / {@code unregister} 的 {@code afterCommit}）
+     * 必须传 {@code false}：框架紧接着自己会发，这里再发就是重复。</p>
      *
-     * <p><b>补发一次且只一次靠库内事实</b>：先读一次待收口位，只有「读到时仍为 1」（说明确实被拦过）
-     * 才在清位之后补发；第二遍补偿读到的已是 0，不会再发。不引入内存标记。</p>
+     * <p><b>补发一次且只一次靠库内条件更新结果</b>：{@code clearClosurePending} 按 {@code closure_pending = 1}
+     * 条件更新为 0，只有真正把 1 改成 0 的那一次返回 {@code true}，第二遍补偿返回 {@code false}，不会重复发。</p>
      *
-     * @param execution                 需要收口的终态执行
-     * @param cancelled                 是否取消终态
-     * @param compensateTerminalDelivery 是否由本入口补发被拦下的成功终态
+     * @param execution                  需要收口的终态执行
+     * @param cancelled                  是否取消终态
+     * @param compensateTerminalDelivery 是否由本入口补发被阻断的成功终态
      */
     public void completeClosure(Execution execution, boolean cancelled, boolean compensateTerminalDelivery) {
+        completeClosureInternal(execution, cancelled, compensateTerminalDelivery, false);
+    }
+
+    /**
+     * 控制信号注销时的收口入口：当运行在框架 {@code finalizeWithTransaction} 的事务同步回调内时，
+     * 收口失败在记录日志后继续向上抛出，直接阻断框架随后执行的 {@code notifyTerminal}（此时终态检查点与
+     * {@code closure_pending = 1} 已完成数据库提交，不会回滚）。
+     *
+     * @param execution      需要收口的终态执行
+     * @param cancelled      是否取消终态
+     * @param abortOnFailure 失败时是否向上抛出以阻断框架终态通知
+     */
+    public void completeClosureOnUnregister(Execution execution, boolean cancelled, boolean abortOnFailure) {
+        completeClosureInternal(execution, cancelled, false, abortOnFailure);
+    }
+
+    private void completeClosureInternal(Execution execution, boolean cancelled,
+                                         boolean compensateTerminalDelivery, boolean abortOnFailure) {
         if (execution == null || execution.getId() == null || !isTerminal(execution.getExecutionState())) {
             // 未到终态的执行没有「收口」可补：替它收口等于替用户做结束决定。
             return;
         }
-        // 补发判据在清位之前读：清完之后这一列就是 0，读不出「当初有没有被拦过」。
-        boolean terminalDeliverySuppressed = compensateTerminalDelivery && !cancelled && wasPending(execution);
         try {
             closeTerminal(execution);
         } catch (ExecutionClosureFailure failure) {
             log.error("执行收口失败，待收口位保留待重试: executionId={}, step={}, error={}",
                     execution.getId(), failure.step(), failure.getCause() == null
                             ? failure.toString() : failure.getCause().toString(), failure);
+            if (abortOnFailure) {
+                throw failure;
+            }
             return;
         }
+        boolean cleared = false;
         try {
-            executions.getObject().clearClosurePending(numericId(execution.getId()));
+            cleared = executions.getObject().clearClosurePending(numericId(execution.getId()));
         } catch (RuntimeException error) {
             // 清位失败只意味着「下次会再补一遍幂等脚本」，绝不能因此丢掉广播。
             log.error("清除待收口位失败: executionId={}, step={}", execution.getId(), STEP_CLEAR_PENDING, error);
@@ -293,14 +313,15 @@ public class ExecutionLifecycleProjection {
                 log.error("发布取消终态失败: executionId={}, step={}", execution.getId(), STEP_PUBLISH_CANCELLED, error);
             }
         }
-        if (terminalDeliverySuppressed) {
+        if (compensateTerminalDelivery && !cancelled && cleared
+                && execution.getExecutionState() == ExecutionState.COMPLETED) {
             publishCompensatedCompletion(execution);
         }
         resumeInputIfPending(execution);
     }
 
     /**
-     * 补发被通知层门禁拦下的成功终态。
+     * 补发因收口失败而在框架源头被阻断的成功终态。
      *
      * <p>只发一次「完成」：失败同样只记日志 —— 客户端靠 bootstrap 与轮次终态快照能收敛到已完成，
      * 而业务事实已经在库里，重试广播没有任何要修复的东西。</p>
@@ -311,17 +332,6 @@ public class ExecutionLifecycleProjection {
                     TokenInfo.from(execution.getTokenUsage()), execution.eventMetaData()));
         } catch (RuntimeException error) {
             log.error("补发成功终态失败: executionId={}, step={}", execution.getId(), STEP_PUBLISH_COMPLETED, error);
-        }
-    }
-
-    /** 只读该执行是否还有待收口事实；读失败按「没有」处理，绝不因此拦掉终态。 */
-    private boolean wasPending(Execution execution) {
-        try {
-            return executions.getObject().isClosurePending(numericId(execution.getId()));
-        } catch (RuntimeException error) {
-            log.warn("读取待收口位失败，按未拦下处理: executionId={}, error={}",
-                    execution.getId(), error.toString());
-            return false;
         }
     }
 

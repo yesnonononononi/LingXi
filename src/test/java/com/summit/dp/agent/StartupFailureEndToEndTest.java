@@ -140,7 +140,7 @@ class StartupFailureEndToEndTest {
         publisher.connect(ROOT_SESSION_ID);
 
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                publisher, identity, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
+                publisher, identity, mock(SessionTokenAuditCollector.class));
         agentEvents.init();
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                 new ChatTurnRuntimeListener(chatTurnService),
@@ -168,6 +168,10 @@ class StartupFailureEndToEndTest {
     /** 占位监听器：证明 RuntimeEventPublisher 按列表顺序回调，业务监听器都在链上。 */
     private static final class NoopRuntimeListener
             implements com.summit.core.runtime.RuntimeListener {
+        @Override
+        public int order() {
+            return 0;
+        }
     }
 
     private static Execution execution() {

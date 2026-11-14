@@ -99,9 +99,15 @@ class StreamingRetryContractTest {
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId("101")).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
-            AgentEventListener bridge = new AgentEventListener(stream.json, stream, locator, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
+            AgentEventListener bridge = new AgentEventListener(stream.json, stream, locator, mock(SessionTokenAuditCollector.class));
             bridge.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
+                @Override
+                public int order() {
+                    return 0;
+                }
+
+                @Override
                 public void onInvokeRetry(InvokeRetryEvent event) { retrySeen.countDown(); }
             }));
             AgentRequest request = AgentRequest.builder().contextSpec(ContextSpec.builder()

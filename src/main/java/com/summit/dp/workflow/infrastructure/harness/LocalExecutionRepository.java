@@ -345,7 +345,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     @Override
     public void unregister(ExecutionControlSignal signal) {
         if (signal == null) throw new IllegalArgumentException("执行控制信号不能为空");
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+        boolean inTransaction = TransactionSynchronizationManager.isSynchronizationActive();
+        if (inTransaction) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCompletion(int status) {
                     if (status != STATUS_COMMITTED) {
@@ -378,7 +379,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 // 收口脚本 + 清待收口位 + 广播/唤醒只有一处实现，正常收尾与启动补偿走同一条。
                 // cancelled 只表达「这次取消由业务侧造成、框架不会再发终态事件」：活跃循环里的取消
                 // 有自己的事件所有权（框架负责广播），这里若也发一次，订阅方会收到两次「已取消」。
-                projection().completeClosure(execution, cancelledOnRelease);
+                // 在事务同步（finalizeWithTransaction）中收口失败时向上抛出，直接阻断框架随后的 notifyTerminal。
+                projection().completeClosureOnUnregister(execution, cancelledOnRelease, inTransaction);
             }
             if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED) {
                 projection().resumeInputIfPending(execution);

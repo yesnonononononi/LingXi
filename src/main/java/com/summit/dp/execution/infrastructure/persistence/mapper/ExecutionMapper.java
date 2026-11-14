@@ -69,14 +69,6 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
                                           @Param("limit") int limit);
 
     /**
-     * 只读待收口位一列：通知层用它判断「成功终态能不能发」。
-     *
-     * <p>不读整行、不 join：这是发布热路径上的一次窄查询。</p>
-     */
-    @Select("SELECT closure_pending FROM execution WHERE id = #{id}")
-    Integer selectClosurePending(@Param("id") long executionId);
-
-    /**
      * 某会话最近的执行行（按 id 降序取前 {@code limit} 条）。
      *
      * <p>行数上限用 {@link Param} 绑定，不在调用侧拼字符串：拼接既绕开预编译，也让 SQL 不可缓存。</p>

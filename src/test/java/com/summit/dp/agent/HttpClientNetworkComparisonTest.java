@@ -213,9 +213,14 @@ class HttpClientNetworkComparisonTest {
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId(anyString())).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
-            AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(ExecutionRepository.class), mock(SessionTokenAuditCollector.class));
+            AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(SessionTokenAuditCollector.class));
             bridge.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
+                @Override
+                public int order() {
+                    return 0;
+                }
+
                 @Override
                 public void onInvokeRetry(InvokeRetryEvent event) { endpoint.retrySeen.countDown(); }
             }));
