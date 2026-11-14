@@ -1,4 +1,4 @@
-
+﻿
 <template>
   <div :class="['relative flex h-screen w-screen overflow-hidden font-sans', displayIsDark ? 'text-zinc-100 dark' : 'text-zinc-900 light']">
 
@@ -41,7 +41,23 @@
           data-test="chat-header-bar"
           :class="['shrink-0 flex h-11 items-center justify-between gap-3 px-4 border-b', displayIsDark ? 'border-zinc-800/70' : 'border-zinc-200/70']"
         >
-          <h1 class="min-w-0 truncate text-sm font-medium" :title="headerSessionName">{{ headerSessionName }}</h1>
+          <!-- 会话标题：双击就地重命名（Enter / 失焦提交，Esc 取消），只有已入库会话可改 -->
+          <input
+            v-if="isHeaderTitleEditing"
+            ref="headerTitleInputRef"
+            v-model="headerTitleDraft"
+            data-test="chat-title-input"
+            class="min-w-0 flex-1 bg-transparent border-b border-blue-500/70 px-0.5 text-sm font-medium outline-none"
+            @blur="commitHeaderTitleRename"
+            @keydown="handleHeaderTitleKeydown"
+          />
+          <h1
+            v-else
+            data-test="chat-title"
+            :class="['min-w-0 flex-1 truncate text-sm font-medium', canRenameHeaderTitle ? 'cursor-text' : '']"
+            :title="headerTitleTooltip"
+            @dblclick="startHeaderTitleRename"
+          >{{ headerSessionName }}</h1>
           <div class="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
@@ -527,6 +543,8 @@ import {LogAPI} from '../../services/log';
 import {useFilePreview} from '../../composables/useFilePreview';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {useUnifiedPreviewTabs} from '../../composables/useUnifiedPreviewTabs';
+import {useInlineRename} from '../../composables/useInlineRename';
+import {isTempSessionId} from '../../utils/ids';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
@@ -804,6 +822,47 @@ const {
   handleTouchStart,
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef, subSessionPanelVisible: computed(() => !previewPanelVisible.value) });
+
+/** 只有已入库会话能就地改名：临时会话（temp-*）后端没有这条记录，改了存不下。 */
+const canRenameHeaderTitle = computed<boolean>(() => {
+  const id = currentActiveSession.value?.id;
+  return id != null && !isTempSessionId(String(id));
+});
+
+/** 标题悬停提示：可改名时补一句双击提示；不可改名时只显示全名（截断后仍能看全）。 */
+const headerTitleTooltip = computed<string>(() =>
+  canRenameHeaderTitle.value
+    ? `${headerSessionName.value}\n${t('chat.view.renameHint')}`
+    : headerSessionName.value
+);
+
+/** 标题输入框元素：模板用字符串 ref 绑定，交给 useInlineRename 聚焦并全选。 */
+const headerTitleInputRef = ref<HTMLInputElement | null>(null);
+
+/**
+ * 顶部横条标题的就地重命名。
+ *
+ * <p>写入仍走 {@link handleRenameSession}（会话改名的唯一入口，改完即写回本地列表）；
+ * 这里只持有编辑态。目标会话 id 在进入编辑那一刻锁定，编辑途中切会话不会把名字写到别人头上。</p>
+ */
+const {
+  editing: isHeaderTitleEditing,
+  draft: headerTitleDraft,
+  start: startHeaderTitleRename,
+  commitEdit: commitHeaderTitleRename,
+  handleKeydown: handleHeaderTitleKeydown,
+} = useInlineRename<string>({
+  inputRef: headerTitleInputRef,
+  canEdit: () => canRenameHeaderTitle.value,
+  readValue: () => currentActiveSession.value?.title ?? '',
+  readTarget: () => {
+    const id = currentActiveSession.value?.id;
+    return id == null ? null : String(id);
+  },
+  commit: (name: string, sessionId: string): void => {
+    void handleRenameSession(sessionId, name);
+  },
+});
 
 /** 配置真源（与 useChatView 同一个 store 实例）：这里只读指令预测模型是否配置。 */
 const userConfig = useUserConfigStore();
