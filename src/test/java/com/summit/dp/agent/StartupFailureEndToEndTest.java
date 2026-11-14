@@ -1,13 +1,9 @@
 package com.summit.dp.agent;
 
-import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
@@ -20,6 +16,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
@@ -33,6 +30,7 @@ import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnReposito
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -55,13 +53,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 启动失败的端到端链路：服务端收口之后，客户端<b>真的</b>收到 EXECUTION_FAILED。

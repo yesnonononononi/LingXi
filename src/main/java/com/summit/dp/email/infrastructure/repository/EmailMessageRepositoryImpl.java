@@ -10,11 +10,7 @@ import com.summit.dp.email.infrastructure.persistence.po.EmailMessagePO;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * EmailMessage 仓储实现。

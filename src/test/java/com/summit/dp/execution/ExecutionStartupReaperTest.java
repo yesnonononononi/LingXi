@@ -1,7 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
@@ -12,6 +10,7 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.startup.ExecutionStartupReaper;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -25,9 +24,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import java.time.Instant;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 

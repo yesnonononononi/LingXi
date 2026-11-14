@@ -1,7 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -21,12 +19,7 @@ import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepo
 import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
-import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.*;
 import com.summit.dp.workflow.infrastructure.lifecycle.startup.ExecutionStartupReaper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,14 +39,8 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 真实启动入口按<b>持久化来源</b>重投遗留的人工恢复请求，而不是一律烧成 FAILED。

@@ -24,9 +24,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 真实升级迁移：V1..V6 建库 → 塞旧数据 → 跑全量（V7 生效）。

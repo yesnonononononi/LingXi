@@ -1,7 +1,5 @@
 package com.summit.dp.task;
 
-import com.summit.dp.shared.support.InputTestSupport;
-import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -21,9 +19,11 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.support.InputTestSupport;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -33,11 +33,7 @@ import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTa
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
 import com.summit.runtime.conversation.DefaultTokenizer;
-import com.summit.runtime.loop.DefaultExecutionController;
-import com.summit.runtime.loop.DefaultLoopInterceptor;
-import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
-import com.summit.runtime.loop.RuntimeProcessorTemplate;
-import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
+import com.summit.runtime.loop.*;
 import com.summit.runtime.model.DefaultChatModelInvoker;
 import org.junit.jupiter.api.Test;
 

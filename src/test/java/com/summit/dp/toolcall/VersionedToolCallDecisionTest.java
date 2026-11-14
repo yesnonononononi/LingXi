@@ -1,7 +1,5 @@
 package com.summit.dp.toolcall;
 
-import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -23,11 +21,11 @@ import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.concurrent.ManagedAsyncExecutor;
 import com.summit.dp.shared.utils.CommandDigest;
@@ -43,8 +41,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.decision.*;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.*;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
@@ -62,12 +59,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
-import com.summit.dp.session.domain.repo.MessageRepository;
-import com.summit.dp.workflow.application.decision.*;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;

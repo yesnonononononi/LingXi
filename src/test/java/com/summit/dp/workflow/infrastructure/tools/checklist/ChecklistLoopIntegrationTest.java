@@ -1,8 +1,5 @@
 package com.summit.dp.workflow.infrastructure.tools.checklist;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-import com.summit.dp.shared.support.InputTestSupport;
-import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -26,11 +23,13 @@ import com.summit.dp.checklist.application.ReminderDecision;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.support.ChecklistTestDatabase;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.shared.support.InputTestSupport;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import com.summit.runtime.context.RuntimeContext;

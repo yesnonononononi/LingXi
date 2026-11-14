@@ -1,9 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
-import com.summit.dp.email.MailClaimLivenessFake;
-
-import com.summit.dp.shared.support.InputTestSupport;
-import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -19,6 +15,7 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
+import com.summit.dp.email.MailClaimLivenessFake;
 import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
@@ -33,7 +30,9 @@ import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.support.InputTestSupport;
 import com.summit.dp.workflow.application.input.CommanderMailWakeService;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;

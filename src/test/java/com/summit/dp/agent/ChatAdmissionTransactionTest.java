@@ -4,13 +4,9 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
@@ -37,6 +33,7 @@ import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnReposito
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -57,7 +54,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 受理事务的原子性：轮次、用户消息与执行行必须共同提交 / 共同回滚。

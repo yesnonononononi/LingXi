@@ -10,11 +10,7 @@ import org.mockito.InOrder;
 
 import java.util.List;
 
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 会话删除的执行侧级联：行与记录在事务内、文件在提交后。

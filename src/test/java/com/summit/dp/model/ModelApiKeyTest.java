@@ -13,9 +13,9 @@ import com.summit.harness.springbootautoconfigure.properties.agent.AgentChatProp
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;

@@ -1,9 +1,6 @@
 package com.summit.dp.workflow.application.lifecycle;
 
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import org.junit.jupiter.api.DisplayName;
@@ -15,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 门禁链与用户暂停门禁的语义回归。

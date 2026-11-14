@@ -35,10 +35,11 @@ import java.util.regex.PatternSyntaxException;
     id = ToolCatalog.SEARCH_FILES,
     name = ToolCatalog.SEARCH_FILES,
     executor = SearchFilesToolExecutor.class,
-    description = "Search file contents inside the workspace by regular expression and return `path:line: content` hits. "
-            + "Read-only and independent of the shell, so it also works in read-only sessions. "
-            + "Skips VCS, dependency and build directories; `glob` matches the file name only (e.g. `*.java`). "
-            + "When the result reports that the limit was reached, narrow `path` or `glob` instead of raising maxResults.",
+    description = """
+            Search file contents inside the workspace by regular expression and return `path:line: content` hits.
+            Skips VCS, dependency and build directories; `glob` matches the file name only (e.g. `*.java`).
+            When the result reports that the limit was reached, narrow `path` or `glob` instead of raising maxResults.
+            """,
     parameters = @ObjectValue(
         properties = {
             @ToolProperty(key = "pattern", value = @Value(
@@ -46,7 +47,7 @@ import java.util.regex.PatternSyntaxException;
                 description = "Java regular expression matched against each line")),
             @ToolProperty(key = "path", value = @Value(
                 type = ValueType.STRING,
-                description = "Directory to search, relative to the workspace root; defaults to the whole workspace")),
+                description = "Directory to search, relative to the workspace root; defaults to the whole workspace, A large scope makes it easier to make mistakes")),
             @ToolProperty(key = "glob", value = @Value(
                 type = ValueType.STRING,
                 description = "Optional file name glob such as `*.java`; matched against the name, not the path")),

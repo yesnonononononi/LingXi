@@ -2,7 +2,10 @@ package com.summit.dp.workflow.infrastructure.tools.file.delete;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
-import com.summit.core.anno.type.*;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.exception.OutWorkSpaceException;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;

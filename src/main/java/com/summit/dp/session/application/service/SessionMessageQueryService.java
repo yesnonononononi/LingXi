@@ -12,7 +12,10 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 会话消息读路径查询服务：把「单条纯转换」与「按给定字典挂载工具调用」<b>显式串联在一个方法</b>内，

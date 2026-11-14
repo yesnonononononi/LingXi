@@ -1,6 +1,5 @@
 package com.summit.dp.execution.infrastructure.repository;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;

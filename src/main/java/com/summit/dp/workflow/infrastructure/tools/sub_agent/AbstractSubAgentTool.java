@@ -14,10 +14,6 @@ import java.util.Objects;
 
 public abstract class AbstractSubAgentTool {
 
-
-
-
-
     public abstract SessionRepository sessionRepository();
 
     /** 父会话绑定的工作空间：子执行在 workDir 落空时回落到它，保证不静默放行无工作空间的子执行。 */

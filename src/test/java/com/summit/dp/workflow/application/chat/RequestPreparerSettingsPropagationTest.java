@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
@@ -12,7 +13,6 @@ import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.ddd.application.vo.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

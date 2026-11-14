@@ -3,11 +3,7 @@ package com.summit.dp.execution;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
@@ -16,13 +12,8 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +32,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 历史重发的检查点守卫：多轮执行各自保留自己的正文文件。

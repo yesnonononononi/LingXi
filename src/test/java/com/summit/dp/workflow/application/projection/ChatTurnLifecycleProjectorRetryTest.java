@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.projection;
 
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.dp.shared.support.H2TestDatabase;
@@ -17,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 轮次投影的整笔重试：锁冲突换新事务重放，业务失败不重放。

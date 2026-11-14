@@ -1,24 +1,13 @@
 package com.summit.dp.workflow.application.lifecycle.impl;
 
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
-import com.summit.dp.workflow.application.lifecycle.GateCheckResult;
-import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
-import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
-import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
-import com.summit.dp.workflow.application.lifecycle.SuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
-import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.lifecycle.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -29,11 +18,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 生命周期编排的动作语义回归。

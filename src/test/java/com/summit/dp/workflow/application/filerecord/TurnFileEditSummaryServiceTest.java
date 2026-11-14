@@ -1,22 +1,15 @@
 package com.summit.dp.workflow.application.filerecord;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.TurnFileChangeVO;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
-import com.summit.dp.workflow.infrastructure.tools.file.record.ContentDigest;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
-import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileModificationException;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -26,10 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 

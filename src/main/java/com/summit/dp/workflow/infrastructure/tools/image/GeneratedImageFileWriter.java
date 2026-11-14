@@ -2,27 +2,26 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.summit.core.agent.Image;
 import com.summit.core.model.image.ImageGenerationOptions;
-import com.summit.core.runtime.workspace.WorkspaceFiles;
-import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.LocalWorkspaceBridge;
+import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.workspace.WorkspaceFiles;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
+import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 

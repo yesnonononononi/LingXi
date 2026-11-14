@@ -1,6 +1,7 @@
 package com.summit.dp.execution;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
@@ -19,7 +20,6 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 「提交后只回收正确的旧文件」守卫：同一执行反复保存，目录里只能留下库内引用的那一份。

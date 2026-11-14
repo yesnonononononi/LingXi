@@ -9,12 +9,11 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMap
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
-import com.summit.dp.shared.utils.TestTimeouts;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;

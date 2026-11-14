@@ -6,19 +6,16 @@ import com.summit.core.agent.Execution;
 import com.summit.core.compact.ContextUsageMetric;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.session.application.port.SessionDeletionGuard;
-import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionNodeDeletion;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.MessageRepository;
-import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.context.ApplicationEventPublisher;
+
 import java.util.Map;
 import java.util.Optional;
 

@@ -1,9 +1,9 @@
 package com.summit.dp.user_configs.application.service.impl;
 
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.ModelConfigVO;
-import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;

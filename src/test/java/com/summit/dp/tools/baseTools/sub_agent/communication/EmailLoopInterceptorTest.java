@@ -1,6 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
-import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -15,6 +14,7 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.workflow.application.input.MailInputChannel;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,8 +1,8 @@
 package com.summit.dp.workflow.application.decision;
 
+import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
 import com.summit.dp.toolcall.domain.model.ToolCall;
-import com.summit.dp.shared.vo.ToolCallVO;
 
 /**
  * 入口契约：把「同一个不变量」在本入口该用什么方式表达交给入口自己决定。

@@ -2,12 +2,10 @@ package com.summit.dp.context;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import mcp.McpSessionFactory;
 import com.summit.core.anno.Tool;
 import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
-import com.summit.runtime.loop.LoopInterceptorFactory;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
@@ -24,6 +22,8 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendM
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
+import com.summit.runtime.loop.LoopInterceptorFactory;
+import mcp.McpSessionFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,11 +31,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mockingDetails;

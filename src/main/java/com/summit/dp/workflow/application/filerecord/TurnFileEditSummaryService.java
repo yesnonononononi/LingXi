@@ -5,21 +5,12 @@ import com.summit.dp.shared.vo.block.TurnFileChangeVO;
 import com.summit.dp.turn.application.port.TurnFileChangeQuery;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
-import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.UnifiedDiffReplayer;
+import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * 单轮文件改动汇总：同一文件在本轮内的多次编辑合并成一条「净改动」。

@@ -5,9 +5,9 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.model.image.ImageGenerationOptions;
 import org.springframework.stereotype.Component;
 
-import java.util.regex.Pattern;
-import java.util.Set;
 import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /** 本地只检查参数格式，规格是否受模型支持交给服务端判断。 */
 @Component

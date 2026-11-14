@@ -1,14 +1,10 @@
 package com.summit.dp.workflow.infrastructure.harness;
 
-import com.summit.dp.email.MailClaimLivenessFake;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.dp.email.MailClaimLivenessFake;
 import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
@@ -22,8 +18,8 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
-import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.application.input.MailReceiptFlusher;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
@@ -34,7 +30,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -47,11 +42,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 邮件回执必须与检查点同批提交：崩在检查点之前重新投递，提交之后不再重复。

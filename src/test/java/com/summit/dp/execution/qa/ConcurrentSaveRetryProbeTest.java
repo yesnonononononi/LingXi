@@ -1,11 +1,7 @@
 package com.summit.dp.execution.qa;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -18,13 +14,8 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.utils.TestTimeouts;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.stubbing.Answer;
@@ -37,14 +28,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
-import com.summit.core.agent.ContextSpec;
 
 
 class ConcurrentSaveRetryProbeTest {

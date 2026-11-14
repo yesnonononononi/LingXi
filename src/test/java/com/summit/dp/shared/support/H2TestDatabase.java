@@ -1,16 +1,16 @@
 package com.summit.dp.shared.support;
 
-import com.summit.dp.shared.config.H2SchemaInitializer;
-import com.summit.dp.shared.persistence.H2ExceptionTranslator;
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.storage.StorageDataSourceKeys;
-import com.summit.dp.shared.storage.H2Storage;
-import com.summit.dp.shared.storage.StorageLayout;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import com.summit.dp.shared.config.H2SchemaInitializer;
+import com.summit.dp.shared.persistence.H2ExceptionTranslator;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.storage.H2Storage;
+import com.summit.dp.shared.storage.StorageDataSourceKeys;
+import com.summit.dp.shared.storage.StorageLayout;
 import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;

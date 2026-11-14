@@ -1,9 +1,6 @@
 package com.summit.dp.workflow.application.lifecycle;
 
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionStatusCodes;
@@ -29,9 +26,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
-import com.summit.core.agent.ContextSpec;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 「还有没有未完成的子执行」的两级证据判定：真 H2 + 真仓储。

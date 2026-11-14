@@ -1,7 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,9 +12,6 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
-import com.summit.dp.workflow.application.input.ResumeSupplementChannel;
-import com.summit.dp.workflow.application.input.ResumeSupplementVersionRegistry;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.model.ResumeSource;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
@@ -40,11 +35,11 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.ResumeSupplementChannel;
 import com.summit.dp.workflow.application.input.ResumeSupplementCommand;
 import com.summit.dp.workflow.application.input.ResumeSupplementService;
-import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.input.ResumeSupplementVersionRegistry;
+import com.summit.dp.workflow.application.lifecycle.*;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.harness.ResumeSupplementInterceptor;

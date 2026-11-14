@@ -1,25 +1,23 @@
 package com.summit.dp.workflow.application.input;
 
-import com.summit.dp.email.MailClaimLivenessFake;
-import com.summit.dp.email.domain.model.EmailMessageReceipt;
-
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.dp.email.MailClaimLivenessFake;
+import com.summit.dp.email.MailLeaseTestSupport;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.service.impl.EmailServiceImpl;
 import com.summit.dp.email.application.vo.EmailMessageVO;
-import com.summit.dp.email.MailLeaseTestSupport;
 import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.model.EmailMessage;
+import com.summit.dp.email.domain.model.EmailMessageReceipt;
 import com.summit.dp.email.domain.repository.EmailMessageReceiptRepository;
 import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
@@ -53,28 +51,14 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 邮件投递回执的守卫：跨轮/重发/冷恢复都不得重放已消费邮件，且不靠 id 高水位。

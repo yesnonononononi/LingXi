@@ -1,9 +1,9 @@
 package com.summit.dp.agent;
 
-import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.compact.ContextAttachmentProvider;
 import com.summit.core.conf.ModelConfig;
@@ -24,6 +24,7 @@ import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -72,7 +73,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。

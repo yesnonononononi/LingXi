@@ -1,10 +1,6 @@
 package com.summit.dp.execution;
 
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /** Business identity carried through the framework as opaque request attributes. */
 public final class ExecutionAttributes {

@@ -1,10 +1,7 @@
 package com.summit.dp.workflow.application.lifecycle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.support.SqlCaptureInterceptor;
@@ -29,7 +26,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 未决工具门禁的真实 SQL 回归。

@@ -1,9 +1,10 @@
 package com.summit.dp.agent;
 
-import com.summit.dp.session.application.service.SessionTokenAuditCollector;
+import anthropic.AnthropicChatModel;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.compact.ContextAttachmentProvider;
@@ -23,6 +24,7 @@ import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -35,12 +37,7 @@ import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
 import com.summit.runtime.model.DefaultStreamingModelInvoker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import anthropic.AnthropicChatModel;
-import openAi.DefaultChatModel;
-import openAi.MessageSerializer;
-import openAi.ModelChatResolver;
-import openAi.RequestBodyFactory;
-import openAi.ResponseSerializer;
+import openAi.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -58,7 +55,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 模型故障必须贯穿适配器、重试、执行终态和业务事件序列化。

@@ -1,11 +1,11 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
 import com.summit.dp.personalization.domain.model.ReplyStyle;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.core.workspace.WorkspaceSpec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;

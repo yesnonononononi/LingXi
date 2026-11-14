@@ -1,36 +1,22 @@
 package com.summit.dp.shared.support;
 
-import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
-
-import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
-
-import java.util.Map;
-import org.springframework.beans.factory.support.StaticListableBeanFactory;
-import org.springframework.beans.factory.ObjectProvider;
-import com.summit.dp.workflow.application.input.InputTurnContinuation;
-import com.summit.dp.workflow.application.input.InputNoticeReporter;
-import com.summit.dp.workflow.application.input.InputAutomationPolicy;
-import com.summit.dp.workflow.application.input.InputWakeupService;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
-import com.summit.dp.execution.application.port.ExecutionActivity;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.execution.domain.model.Execution;
+import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.domain.model.Execution;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.task.domain.repository.TaskRepository;
-import com.summit.dp.workflow.application.input.InputResolver;
-import com.summit.dp.workflow.application.input.MailInputChannel;
-import com.summit.dp.workflow.application.input.SubExecutionResultChannel;
-import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
-import com.summit.dp.workflow.application.lifecycle.SubExecutionDependency;
-import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
-import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
+import com.summit.dp.workflow.application.input.*;
+import com.summit.dp.workflow.application.lifecycle.*;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.Mockito.mock;
 

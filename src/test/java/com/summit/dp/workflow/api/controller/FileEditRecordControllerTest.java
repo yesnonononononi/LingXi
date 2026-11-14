@@ -6,22 +6,13 @@ import com.summit.dp.workflow.application.filerecord.FileEditDiff;
 import com.summit.dp.workflow.application.filerecord.FileEditSceneScope;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
-import com.summit.dp.workflow.infrastructure.tools.file.record.ContentDigest;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.InMemoryFileRecordStore;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
-import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
+import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import org.junit.jupiter.api.Test;
 
 import java.io.Serializable;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 

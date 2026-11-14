@@ -1,7 +1,5 @@
 package com.summit.dp.toolcall;
 
-import com.summit.dp.workflow.application.lifecycle.CoordinatorResumeAcceptance;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +12,6 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.application.service.ResumeDisposition;
@@ -40,12 +37,8 @@ import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.api.controller.ToolCallController;
-import com.summit.dp.workflow.application.decision.ChoiceAnswersService;
-import com.summit.dp.workflow.application.decision.ChoiceAnswersValidator;
-import com.summit.dp.workflow.application.decision.ToolCallWorkflowService;
-import com.summit.dp.workflow.application.decision.VersionedToolCallDecisionService;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
-import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.decision.*;
+import com.summit.dp.workflow.application.lifecycle.*;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,12 +58,6 @@ import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
-import com.summit.dp.workflow.application.decision.CommandApprovalExecutor;
-import com.summit.dp.workflow.application.decision.*;
-import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
-import com.summit.dp.workflow.application.lifecycle.UnresolvedToolSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.UserPauseSuspensionGate;
-import com.summit.dp.workflow.application.lifecycle.SuspensionGateChain;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;

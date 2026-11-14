@@ -19,9 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * 执行状态提交之后的业务投影：把「执行变了」翻译成「卡片、子执行、用量、轮次、界面」各自该做什么。
  *

@@ -1,5 +1,7 @@
 package com.summit.dp.session;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.session.application.port.SessionContextStore;
 import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore;
 import com.summit.dp.session.infrastructure.context.SessionContextFileMigrator;
@@ -7,8 +9,6 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMap
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.conversation.message.UserMessageEntity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

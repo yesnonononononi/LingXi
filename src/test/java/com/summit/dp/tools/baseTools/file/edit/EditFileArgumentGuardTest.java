@@ -19,7 +19,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 参数闸门与建目录：这两处失效都不报错，只会让脏输入静默走到落盘。 */
 class EditFileArgumentGuardTest {

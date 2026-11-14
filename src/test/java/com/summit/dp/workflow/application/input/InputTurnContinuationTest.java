@@ -1,43 +1,36 @@
 package com.summit.dp.workflow.application.input;
 
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.core.runtime.loop.ExecutionControl;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CompletableFuture;
-import com.summit.dp.shared.support.InputTestSupport;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ExecutionControl;
+import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.shared.support.InputTestSupport;
+import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.application.chat.PendingChatQueue;
-import com.summit.dp.workflow.application.chat.ChatCommand;
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
-import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.task.domain.repository.TaskRepository;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;

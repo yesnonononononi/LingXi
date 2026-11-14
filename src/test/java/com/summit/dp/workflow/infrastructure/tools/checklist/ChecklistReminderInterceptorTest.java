@@ -1,13 +1,12 @@
 package com.summit.dp.workflow.infrastructure.tools.checklist;
 
-import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
-import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.checklist.application.ChecklistCommand;
@@ -18,7 +17,7 @@ import com.summit.dp.checklist.support.ChecklistTestDatabase;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import org.junit.jupiter.api.AfterEach;

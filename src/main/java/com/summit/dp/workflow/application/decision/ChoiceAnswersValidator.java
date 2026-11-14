@@ -15,7 +15,10 @@ import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** 分组依据原模型请求，不能由客户端删减或拼接待答卡片。 */

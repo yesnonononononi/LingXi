@@ -2,11 +2,7 @@ package com.summit.dp.execution;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
@@ -19,13 +15,8 @@ import com.summit.dp.session.infrastructure.context.LocalSessionContextFileStore
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -44,7 +35,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import static org.mockito.Mockito.mock;
-import com.summit.core.agent.ContextSpec;
 
 /**
  * 512 MiB 受限堆下的真实保存压力夹具（由 {@link LimitedHeapCheckpointOomTest} 在子 JVM 里启动）。

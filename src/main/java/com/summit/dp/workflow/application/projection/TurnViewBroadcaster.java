@@ -7,7 +7,6 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
 import com.summit.dp.shared.vo.block.Block;
-import com.summit.dp.shared.vo.block.ToolBlock;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;

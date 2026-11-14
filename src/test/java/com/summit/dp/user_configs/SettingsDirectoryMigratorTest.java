@@ -1,7 +1,6 @@
 package com.summit.dp.user_configs;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.user_configs.infrastructure.fs.SettingsDirectoryMigrator;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
@@ -14,10 +13,10 @@ import javax.sql.DataSource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /** 目录搬迁的真实文件系统行为：复制的是整棵树，拒绝的是会毁数据的目录。 */
 class SettingsDirectoryMigratorTest {

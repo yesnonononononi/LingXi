@@ -1,13 +1,7 @@
 package com.summit.dp.session;
 
-import com.summit.dp.shared.utils.TestTimeouts;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.agent.*;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -26,14 +20,10 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMap
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.application.decision.ToolCallReadinessService;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -62,7 +52,6 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
-import com.summit.core.agent.ContextSpec;
 
 
 @SpringJUnitConfig(ModelContextReplaceTransactionTest.Config.class)
