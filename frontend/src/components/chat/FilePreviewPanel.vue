@@ -39,12 +39,15 @@ const props = withDefaults(defineProps<{
   designTabs?: DesignPreviewTab[];
   /** 已打开的实现计划标签列表（支持多开）。 */
   planTabs?: PlanPreviewTab[];
+  /** 当前会话 ID，供设计画布落盘与监听工作区原型文件。 */
+  sessionId?: string | number | null;
   visible?: boolean;
 }>(), {
   unifiedTabs: undefined,
   activeTabKey: undefined,
   designTabs: () => [],
   planTabs: () => [],
+  sessionId: undefined,
   visible: true,
 });
 const emit = defineEmits<{
@@ -643,6 +646,7 @@ watch(activeFileIdResolved, () => {
       :active="isDesignMode && activeTargetId === dtab.id"
       :initialContent="dtab.initialContent"
       :initialFileName="dtab.initialFileName"
+      :sessionId="props.sessionId"
       class="design-preview-frame"
       @sendToChat="emit('sendToChat', $event)"
     />

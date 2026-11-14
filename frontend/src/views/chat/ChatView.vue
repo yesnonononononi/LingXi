@@ -428,6 +428,7 @@
         :activeTabKey="activeTabKey"
         :designTabs="designTabs"
         :planTabs="planTabs"
+        :sessionId="localActiveId"
         :isDark="displayIsDark"
         @activate="activeFileId = $event"
         @closeTab="closeFileTab"

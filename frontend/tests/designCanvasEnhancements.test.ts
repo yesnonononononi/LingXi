@@ -15,6 +15,10 @@ import {
   resolveElementLabel,
   resolveElementSelector,
 } from '../src/utils/designCanvasHelpers.ts';
+import {
+  buildDesignDocumentPath,
+  DESIGN_DOCUMENT_DIR,
+} from '../src/composables/useDesignDocument.ts';
 
 test('预设模板列表包含 4 套独立模板且 HTML 完整', () => {
   assert.equal(DESIGN_STARTER_TEMPLATES.length, 4);
@@ -122,4 +126,34 @@ test('内置过渡动画预设、keyframes 生成与 CSS 值解析', () => {
   assert.equal(resolveAnimationCssValue('none', 400), 'none');
   assert.match(resolveAnimationCssValue('drawer-left', 50), /^lx-drawer-left 100ms /);
   assert.match(resolveAnimationCssValue('fade-in-out', 700), /^lx-fade-in-out 700ms .* 1 backwards$/);
+});
+
+test('设计原型文件绑定路径生成与 AI 闭环提示词（携带 filePath 不再贴整页 HTML）', () => {
+  assert.equal(buildDesignDocumentPath('landing-page.html'), `${DESIGN_DOCUMENT_DIR}landing-page.html`);
+  assert.equal(buildDesignDocumentPath('产品着陆页.htm'), `${DESIGN_DOCUMENT_DIR}产品着陆页.html`);
+  assert.equal(buildDesignDocumentPath('my app / v1?.html'), `${DESIGN_DOCUMENT_DIR}my-app-v1-.html`);
+  assert.equal(buildDesignDocumentPath('...'), `${DESIGN_DOCUMENT_DIR}design-prototype.html`);
+
+  const filePrompt = buildDesignAiPrompt({
+    instruction: '将主标题改得更有冲击力',
+    fileName: 'landing-page.html',
+    filePath: '.lingxi/design/landing-page.html',
+    selector: 'body > h1.title',
+    elementHtml: '<h1 class="title">欢迎使用</h1>',
+  });
+  assert.match(filePrompt, /\.lingxi\/design\/landing-page\.html/);
+  assert.match(filePrompt, /画布会在文件写入后自动刷新/);
+  assert.match(filePrompt, /body > h1\.title/);
+
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const read = (rel: string) => fs.readFileSync(path.resolve(currentDir, '..', rel), 'utf8');
+  const designCode = read('src/components/chat/DesignCanvasPreview.vue');
+  const panelCode = read('src/components/chat/FilePreviewPanel.vue');
+  const chatCode = read('src/views/chat/ChatView.vue');
+
+  assert.match(designCode, /useDesignDocument\(/);
+  assert.match(designCode, /saveDesignDocument/);
+  assert.match(designCode, /sessionId\?:\s*string \| number \| null/);
+  assert.match(panelCode, /:sessionId="props\.sessionId"/);
+  assert.match(chatCode, /:sessionId="localActiveId"/);
 });

@@ -47,6 +47,8 @@ export interface ElementLike {
 export interface DesignAiPromptInput {
   instruction: string;
   fileName?: string;
+  /** 已落盘的工作区相对路径；有它时让 Agent 直接改文件，不再贴整页 HTML。 */
+  filePath?: string;
   selector?: string;
   elementHtml?: string;
   fullHtml?: string;
@@ -440,6 +442,11 @@ export const buildDesignAiPrompt = (input: DesignAiPromptInput): string => {
   const targetName = input.fileName?.trim() || '当前设计原型';
   const lines: string[] = [`请帮我优化设计原型「${targetName}」：`];
 
+  if (input.filePath) {
+    // 贴进对话的 HTML 会被截断，Agent 只能按文件改才改得全；画布监听这个文件并自动刷新。
+    lines.push(`- 原型文件：\`${input.filePath}\`（画布会在文件写入后自动刷新）`);
+    lines.push('- 请先读取该文件，再用编辑文件工具直接修改它；保持单文件 HTML，样式与脚本内联，不要另建文件');
+  }
   if (input.selector) {
     lines.push(`- 目标组件选择器：\`${input.selector}\``);
   }

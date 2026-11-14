@@ -59,6 +59,14 @@ export interface FilePreviewData {
 
 export type NativeFileResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
+/** 设计原型落盘入参：只含原始字段，跨进程不能带响应式 Proxy。 */
+export interface DesignDocumentWriteRequest {
+  sessionId: string;
+  baseUrl: string;
+  path: string;
+  content: string;
+}
+
 export interface FilePreviewTab {
   id: string;
   request: FilePreviewRequest;

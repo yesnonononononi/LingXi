@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (request) => ipcRenderer.invoke('file-preview:open', request),
   revealFile: (request) => ipcRenderer.invoke('file-preview:reveal', request),
   unwatchFile: (watchId) => ipcRenderer.invoke('file-preview:unwatch', watchId),
+  /** 设计原型落盘（仅限工作区 .lingxi/design/*.html） */
+  writeDesignDocument: (request) => ipcRenderer.invoke('design-doc:write', request),
   onFileChanged: (callback) => {
     const listener = (_event, change) => callback(change);
     ipcRenderer.on('file-preview:changed', listener);
@@ -30,6 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   projectPage: {
     command: (request) => ipcRenderer.invoke('project-page:command', request),
     layout: (request) => ipcRenderer.invoke('project-page:layout', request),
+    /** 把当前语言的右键菜单文案推给主进程，原生菜单没有 i18n 运行时。 */
+    setLabels: (labels) => ipcRenderer.invoke('project-page:labels', labels),
     onEvent: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('project-page:event', listener);
@@ -60,6 +64,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * 剪切/复制/粘贴/全选一律交主进程按白名单派发。
    */
   edit: (command) => ipcRenderer.invoke('edit:command', command),
+  /**
+   * 图片动作（右键菜单的复制图片 / 保存图片）。
+   *
+   * 字节由渲染层取好再交过来（`blob:` 图源只有渲染进程能解析），保存位置由用户在系统
+   * 对话框里选 —— 渲染层没有任何路径入参。
+   */
+  image: {
+    copy: (bytes) => ipcRenderer.invoke('image:copy', bytes),
+    save: (bytes, suggestedName) => ipcRenderer.invoke('image:save', bytes, suggestedName),
+  },
   // 窗口创建参数不会随页面热更新，不能凭接口存在就展示第二层标题栏。
   customTitleBar: process.argv.includes('--lingxi-custom-titlebar'),
   /** 当前宿主系统平台 (win32 / darwin / linux) */

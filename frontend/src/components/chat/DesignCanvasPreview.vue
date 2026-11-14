@@ -21,11 +21,14 @@ import {
   resolveElementLabel,
   resolveElementSelector,
 } from '../../utils/designCanvasHelpers';
+import {useDesignDocument} from '../../composables/useDesignDocument';
 
 const props = defineProps<{
   active?: boolean;
   initialContent?: string;
   initialFileName?: string;
+  /** 原型落盘所在会话；没有会话时不能交给 AI 改写。 */
+  sessionId?: string | number | null;
 }>();
 
 const emit = defineEmits<{
@@ -67,6 +70,20 @@ const undoStack = ref<string[]>([]);
 const redoStack = ref<string[]>([]);
 const MAX_HISTORY = 30;
 
+/** Agent 改写后按选择器恢复选中，避免每轮都要重新点选。 */
+let pendingReselector = '';
+const agentUpdatedFlash = ref(false);
+
+const designDoc = useDesignDocument({
+  sessionId: computed(() => props.sessionId),
+  onExternalChange: content => {
+    pendingReselector = selectedElement.value ? resolveElementSelector(selectedElement.value) : '';
+    parseAndMountHtml(content, loadedFileName.value || 'design-prototype.html', true);
+    agentUpdatedFlash.value = true;
+    setTimeout(() => { agentUpdatedFlash.value = false; }, 2400);
+  },
+});
+
 const cleanCloneBody = (doc: Document): HTMLElement => {
   const cloned = doc.body.cloneNode(true) as HTMLElement;
   cloned.querySelectorAll('.moveable-control-box, [data-lx-hover-box]').forEach(el => el.remove());
@@ -90,6 +107,7 @@ const recordSnapshot = (): void => {
     undoStack.value.shift();
   }
   redoStack.value = [];
+  designDoc.markDirty();
 };
 
 const clearSelectionState = (hint?: string): void => {
@@ -160,7 +178,8 @@ const toggleCodeView = (): void => {
 
 const applyCodeDraft = (): void => {
   if (!codeDraft.value.trim()) return;
-  parseAndMountHtml(codeDraft.value, loadedFileName.value || 'design-prototype.html');
+  parseAndMountHtml(codeDraft.value, loadedFileName.value || 'design-prototype.html', true);
+  designDoc.markDirty();
   isCodeView.value = false;
 };
 
@@ -690,7 +709,18 @@ const docRange = (doc: Document, el: HTMLElement) => {
   }
 };
 
-const parseAndMountHtml = (content: string, name: string) => {
+/**
+ * 挂载 HTML 到画布。keepHistory 用于同一份原型的重载（源码编辑、Agent 改写）：
+ * 保留撤销栈与文件绑定，并把重载前的 body 压栈，让用户能撤回 AI 的改动。
+ */
+const parseAndMountHtml = (content: string, name: string, keepHistory = false) => {
+  if (keepHistory) {
+    recordSnapshot();
+  } else {
+    undoStack.value = [];
+    redoStack.value = [];
+    designDoc.unbind();
+  }
   loadedFileName.value = name;
   isFileLoaded.value = true;
   isCodeView.value = false;
@@ -698,8 +728,6 @@ const parseAndMountHtml = (content: string, name: string) => {
   isSelected.value = false;
   breadcrumb.value = [];
   breadcrumbNodes = [];
-  undoStack.value = [];
-  redoStack.value = [];
   canvasMode.value = 'design';
   selectedInfo.value = t('designPreview.modeDesignHint') || '点击组件可选中拖拽、调整尺寸、改样式与删除';
 
@@ -720,6 +748,17 @@ const parseAndMountHtml = (content: string, name: string) => {
 
     setTimeout(() => {
       setupIframeInteraction(doc);
+      if (pendingReselector) {
+        let target: HTMLElement | null = null;
+        // 选择器由画布生成，Agent 可能改掉对应结构；找不到或不合法都只是不恢复选中。
+        try {
+          target = doc.querySelector<HTMLElement>(pendingReselector);
+        } catch {
+          target = null;
+        }
+        pendingReselector = '';
+        if (target) selectElement(target);
+      }
     }, 150);
   });
 };
@@ -768,6 +807,7 @@ const handleDrop = (e: DragEvent) => {
 };
 
 const clearLoadedHtml = () => {
+  designDoc.unbind();
   isFileLoaded.value = false;
   isCodeView.value = false;
   loadedFileName.value = '';
@@ -863,17 +903,33 @@ const aiTargetLabel = computed(() => {
   return loadedFileName.value || '当前画布';
 });
 
-const sendDesignPrompt = (presetText?: string) => {
+/** 把画布写回工作区文件；失败原因显示在状态栏，由调用方决定是否中止后续动作。 */
+const saveDesignDocument = async (): Promise<string | null> => {
+  const html = isCodeView.value ? codeDraft.value : serializeDocumentHtml();
+  if (!html) return null;
+  try {
+    return await designDoc.save(html, loadedFileName.value);
+  } catch (err) {
+    selectedInfo.value = err instanceof Error ? err.message : '保存设计原型失败';
+    return null;
+  }
+};
+
+const sendDesignPrompt = async (presetText?: string) => {
   const text = (presetText ?? aiInstruction.value).trim();
   if (!text) return;
+
+  // 先落盘再发指令：Agent 改的是文件，画布未保存的手工改动必须先进文件，否则会被覆盖。
+  const filePath = await saveDesignDocument();
+  if (!filePath) return;
 
   const selected = selectedElement.value;
   const prompt = buildDesignAiPrompt({
     instruction: text,
     fileName: loadedFileName.value,
+    filePath,
     selector: selected ? resolveElementSelector(selected) : undefined,
     elementHtml: selected ? selected.outerHTML : undefined,
-    fullHtml: selected ? undefined : serializeDocumentHtml(),
   });
 
   emit('sendToChat', { prompt });
@@ -1020,6 +1076,31 @@ onBeforeUnmount(() => {
           title="选择本地 HTML 文件并渲染到画布"
         >
           {{ isFileLoaded ? (t('designPreview.replaceFile') || '更换文件') : (t('designPreview.openFile') || '选择 HTML 文件') }}
+        </button>
+
+        <span
+          v-if="isFileLoaded && (designDoc.status.value !== 'unbound' || agentUpdatedFlash)"
+          class="design-doc-status"
+          :class="`is-${agentUpdatedFlash ? 'agent' : designDoc.status.value}`"
+          :title="designDoc.error.value || designDoc.boundPath.value"
+          role="status"
+        >
+          {{ agentUpdatedFlash ? 'AI 已更新画布'
+            : designDoc.status.value === 'saving' ? '保存中…'
+              : designDoc.status.value === 'dirty' ? '未保存'
+                : designDoc.status.value === 'error' ? (designDoc.error.value || '保存失败')
+                  : '已同步' }}
+        </span>
+
+        <button
+          v-if="isFileLoaded"
+          type="button"
+          class="btn-secondary-action"
+          :disabled="designDoc.status.value === 'saving'"
+          title="保存到工作区 .lingxi/design/，Agent 改写该文件后画布自动刷新"
+          @click="saveDesignDocument"
+        >
+          保存
         </button>
 
         <button
@@ -1710,6 +1791,43 @@ onBeforeUnmount(() => {
   background: var(--file-tab, #f4f4f5);
   color: inherit;
   cursor: pointer;
+}
+
+.btn-secondary-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.design-doc-status {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--file-line, #e4e4e7);
+  color: var(--file-muted, #71717a);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.design-doc-status.is-dirty {
+  color: #b45309;
+  border-color: #fde68a;
+  background: #fef3c7;
+}
+
+.design-doc-status.is-saved,
+.design-doc-status.is-agent {
+  color: #047857;
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.design-doc-status.is-error {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 .btn-reset {

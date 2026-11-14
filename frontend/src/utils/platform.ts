@@ -5,16 +5,19 @@
  * 在 Web 浏览器环境下自动优雅降级。
  */
 
-import type {FilePreviewData, FilePreviewIpcRequest, NativeFileResult} from '../types/filePreview';
+import type {DesignDocumentWriteRequest, FilePreviewData, FilePreviewIpcRequest, NativeFileResult} from '../types/filePreview';
+import type {ElectronImageAPI} from '../types/imageActions';
 import type {
   ProjectPageState,
   ProjectPageIpcResult,
   ProjectPageCommandRequest,
   ProjectPageLayoutRequest,
+  ProjectPageMenuLabels,
   ShowWithAgentPayload,
 } from '../types/projectPagePreview';
 import type {UpdateActionResult, UpdateLookupResult, UpdateStatePayload} from '../types/update';
 import type {TextEditCommand} from './contextMenu';
+import {readImageBlob, suggestImageFileName, toPngBytes} from './imageTransfer';
 
 /** 通知类别：决定通知卡片的图标与配色。 */
 export type NotifyKind = 'completed' | 'failed' | 'cancelled' | 'suspended';
@@ -84,6 +87,8 @@ export interface ElectronBackgroundAPI {
 export interface ElectronProjectPageAPI {
   command: (request: ProjectPageCommandRequest) => Promise<ProjectPageIpcResult<ProjectPageState>>;
   layout: (request: ProjectPageLayoutRequest) => Promise<ProjectPageIpcResult<{applied: boolean}>>;
+  /** 原生右键菜单文案（按当前语言推送）。旧客户端没有此方法，调用方需判空。 */
+  setLabels?: (labels: ProjectPageMenuLabels) => Promise<ProjectPageIpcResult<{applied: boolean}>>;
   onEvent: (callback: (event: ProjectPageState) => void) => () => void;
   onShowWithAgent?: (callback: (payload: ShowWithAgentPayload) => void) => () => void;
 }
@@ -94,6 +99,8 @@ export interface ElectronAPI {
   openFile?: (request: FilePreviewIpcRequest) => Promise<NativeFileResult<void>>;
   revealFile?: (request: FilePreviewIpcRequest) => Promise<NativeFileResult<void>>;
   unwatchFile?: (watchId: string) => Promise<NativeFileResult<void>>;
+  /** 设计原型落盘：路径必须是工作区内 `.lingxi/design/*.html`。 */
+  writeDesignDocument?: (request: DesignDocumentWriteRequest) => Promise<NativeFileResult<{ path: string; size: number }>>;
   onFileChanged?: (callback: (change: { watchId: string }) => void) => () => void;
   selectDirectory: () => Promise<string | null>;
   /** 重启应用（仅桌面端；主进程会先停后端再重启）。Web 端为 undefined。 */
@@ -120,6 +127,13 @@ export interface ElectronAPI {
    * 四条命令在主进程按白名单校验，渲染层给不了别的动作。</p>
    */
   edit?: (command: TextEditCommand) => Promise<boolean>;
+  /**
+   * 图片动作（右键菜单的复制图片 / 保存图片）。Web 端为 undefined，调用方需判空。
+   *
+   * <p>字节由渲染层取好再交过来：图源可能是只有渲染进程能解析的 `blob:`。主进程只做
+   * 「写剪贴板」与「弹系统保存对话框」这两件渲染层做不到的事。</p>
+   */
+  image?: ElectronImageAPI;
 }
 
 /**
@@ -276,6 +290,77 @@ export async function runTextEditCommand(command: TextEditCommand): Promise<bool
   } catch (err) {
     console.error('执行文本命令失败:', err);
     return false;
+  }
+}
+
+/** 图片保存的结果。`saved` 与 `canceled` 都是正常结局，只有 `failed` 需要用户重试。 */
+export type ImageSaveOutcome = 'saved' | 'canceled' | 'failed';
+
+/**
+ * 把图片复制进系统剪贴板。
+ *
+ * <p>桌面端交给主进程 `clipboard.writeImage`：渲染层的 `navigator.clipboard.write` 在
+ * `file://` 页面里不可用，也没有位图写入的可靠路径。Web 端退回标准 Clipboard API。</p>
+ *
+ * @param src 图片地址（data: / blob: / http(s)）
+ * @returns 是否成功写入剪贴板（失败已打日志，调用方无需再提示）
+ */
+export async function copyImageToClipboard(src: string): Promise<boolean> {
+  try {
+    const blob = await readImageBlob(src);
+    const png = await toPngBytes(blob);
+    const bridge = isElectron() ? window.electronAPI?.image : undefined;
+    if (bridge) {
+      const result = await bridge.copy(png);
+      if (!result.ok) {
+        console.error('复制图片失败:', result.error);
+      }
+      return result.ok;
+    }
+    await navigator.clipboard.write([new ClipboardItem({'image/png': new Blob([png], {type: 'image/png'})})]);
+    return true;
+  } catch (err) {
+    console.error('复制图片失败:', err);
+    return false;
+  }
+}
+
+/**
+ * 另存一张图片：桌面端弹系统保存对话框，Web 端退到浏览器下载。
+ *
+ * <p>保存位置由用户在系统对话框里选，渲染层从头到尾拿不到路径入参 —— 不给「任意路径写文件」
+ * 留任何入口。</p>
+ *
+ * @param src 图片地址（data: / blob: / http(s)）
+ * @param suggestedName 默认文件名（来自图片说明或原文件名）
+ * @returns 保存结局
+ */
+export async function saveImageFile(src: string, suggestedName: string): Promise<ImageSaveOutcome> {
+  try {
+    const blob = await readImageBlob(src);
+    const fileName = suggestImageFileName(suggestedName, blob.type);
+    const bridge = isElectron() ? window.electronAPI?.image : undefined;
+    if (bridge) {
+      const result = await bridge.save(await blob.arrayBuffer(), fileName);
+      if (result.ok) {
+        return 'saved';
+      }
+      if (result.canceled) {
+        return 'canceled';
+      }
+      console.error('保存图片失败:', result.error);
+      return 'failed';
+    }
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return 'saved';
+  } catch (err) {
+    console.error('保存图片失败:', err);
+    return 'failed';
   }
 }
 

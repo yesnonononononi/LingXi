@@ -238,3 +238,55 @@ test('未指定工作区的会话或无会话时，绝对路径仍可正常预�
   assert.equal(revealed.length, 1);
 });
 
+test('设计原型落盘接口仅放行工作区 .lingxi/design/*.html，拒绝越权路径与超限内容', async t => {
+  const { root } = await fixture(t);
+
+  const sender = new EventEmitter();
+  sender.isDestroyed = () => false;
+  sender.send = () => {};
+  const handlers = new Map();
+
+  t.mock.method(global, 'fetch', async url => {
+    const u = String(url);
+    if (u.endsWith('/session/1')) {
+      return new Response(JSON.stringify({ code: 1, data: { workspaceId: '2' } }), { status: 200 });
+    }
+    if (u.endsWith('/workspace/find/2')) {
+      return new Response(JSON.stringify({ code: 1, data: { hostDir: root } }), { status: 200 });
+    }
+    return new Response('not found', { status: 404 });
+  });
+
+  const stop = registerFilePreview({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    shell: { openPath: async () => '', showItemInFolder: () => {} },
+    getWindow: () => ({ isDestroyed: () => false, webContents: sender }),
+  });
+  t.after(stop);
+
+  const event = { sender };
+  const writeDesign = handlers.get('design-doc:write');
+  const baseReq = { sessionId: '1', baseUrl: 'http://localhost:8088' };
+
+  const okRes = await writeDesign(event, {
+    ...baseReq,
+    path: '.lingxi/design/landing-page.html',
+    content: '<!DOCTYPE html><html><body><h1>Hi</h1></body></html>',
+  });
+  assert.equal(okRes.ok, true);
+  const diskText = await fs.readFile(path.join(root, '.lingxi', 'design', 'landing-page.html'), 'utf8');
+  assert.match(diskText, /<h1>Hi<\/h1>/);
+
+  for (const badPath of ['index.html', '.lingxi/design/a.js', '.lingxi/design/../evil.html', '../evil.html', '.lingxi/design/sub/a.html']) {
+    const badRes = await writeDesign(event, { ...baseReq, path: badPath, content: '<html></html>' });
+    assert.equal(badRes.ok, false, `应拒绝非法路径: ${badPath}`);
+  }
+
+  const emptyRes = await writeDesign(event, { ...baseReq, path: '.lingxi/design/empty.html', content: '   ' });
+  assert.equal(emptyRes.ok, false);
+
+  const oversized = 'a'.repeat(MAX_BYTES + 1);
+  const bigRes = await writeDesign(event, { ...baseReq, path: '.lingxi/design/big.html', content: oversized });
+  assert.equal(bigRes.ok, false);
+});
+

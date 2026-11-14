@@ -42,6 +42,12 @@ async function resolveWorkspaceFile(request) {
     const filePath = await resolveAbsoluteFile(requestedPath);
     return { filePath, sessionId: request?.sessionId ? String(request.sessionId) : '', base: '' };
   }
+  const { root, base, sessionId } = await resolveWorkspaceRoot(request);
+  const filePath = await resolvePreviewFile(root, requestedPath);
+  return { filePath, sessionId, base };
+}
+
+async function resolveWorkspaceRoot(request) {
   const base = resolveLocalBase(request?.baseUrl);
   const sessionId = resolveId(request?.sessionId);
   // 不按执行环境（local / sandbox）分流：沙箱工作空间的 workDir 就是宿主目录
@@ -52,9 +58,40 @@ async function resolveWorkspaceFile(request) {
   const workspaceId = resolveId(session.workspaceId);
   const workspace = await fetchData(base, '/workspace/find/' + workspaceId);
   if (!workspace.hostDir) throw new Error('会话没有可用的本地工作目录');
-  const filePath = await resolvePreviewFile(workspace.hostDir, requestedPath);
-  return { filePath, sessionId, base };
+  return { root: workspace.hostDir, base, sessionId };
 }
+
+/**
+ * 设计原型落盘：只允许写工作区内 `.lingxi/design/` 下的 html 文件。
+ *
+ * <p>预览器整体是只读的，这里是唯一的写口，所以白名单收得很窄：相对路径、固定目录、固定扩展名，
+ * 并在建目录后再按真实路径复核一次，防止目录联接把写入带出工作区。</p>
+ */
+async function writeDesignDocument(request) {
+  const requestedPath = request?.path;
+  const content = request?.content;
+  if (typeof requestedPath !== 'string' || !DESIGN_PATH_PATTERN.test(requestedPath.replace(/\\/g, '/'))) {
+    throw new Error('设计原型只能保存到 .lingxi/design/ 下的 .html 文件');
+  }
+  if (typeof content !== 'string' || !content.trim()) throw new Error('设计原型内容不能为空');
+  if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) throw new Error('设计原型超过 256 KB，无法保存');
+  const { root } = await resolveWorkspaceRoot(request);
+  const realRoot = await fsp.realpath(root);
+  const target = path.resolve(realRoot, requestedPath);
+  await fsp.mkdir(path.dirname(target), { recursive: true });
+  const realDir = await fsp.realpath(path.dirname(target));
+  const relative = path.relative(realRoot, realDir);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('设计原型目录实际位置不在当前会话工作目录内');
+  }
+  const filePath = path.join(realDir, path.basename(target));
+  const tmpPath = filePath + '.' + randomUUID() + '.tmp';
+  await fsp.writeFile(tmpPath, content, 'utf8');
+  await fsp.rename(tmpPath, filePath);
+  return { path: filePath, size: Buffer.byteLength(content, 'utf8') };
+}
+
+const DESIGN_PATH_PATTERN = /^\.lingxi\/design\/[\w\u4e00-\u9fa5.-]+\.html$/;
 
 /**
  * 解析待预览文件：绝对路径整机放行，相对路径锚定工作区。
@@ -193,6 +230,7 @@ function registerFilePreview({ ipcMain, shell, getWindow }) {
     }
     return { ...data, watchId };
   }));
+  ipcMain.handle('design-doc:write', run(async (_event, request) => writeDesignDocument(request)));
   ipcMain.handle('file-preview:unwatch', run(async (event, id) => {
     if (watches.get(id)?.sender === event.sender) closeWatch(id);
   }));
@@ -211,4 +249,4 @@ function registerFilePreview({ ipcMain, shell, getWindow }) {
   return () => [...watches.keys()].forEach(closeWatch);
 }
 
-module.exports = { registerFilePreview, resolveContainedFile, resolvePreviewFile, resolveAbsoluteFile, readTextPreview, resolveLocalBase, MAX_BYTES };
+module.exports = { registerFilePreview, writeDesignDocument, DESIGN_PATH_PATTERN, resolveContainedFile, resolvePreviewFile, resolveAbsoluteFile, readTextPreview, resolveLocalBase, MAX_BYTES };
