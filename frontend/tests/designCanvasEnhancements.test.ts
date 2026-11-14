@@ -7,10 +7,15 @@ import {
   buildDesignAiPrompt,
   buildDesignAnimationCss,
   buildDesignCommentsAiPrompt,
+  buildDesignHandoffPrompt,
+  buildDesignVariantPaths,
+  buildDesignVariantsPrompt,
   DESIGN_ANIMATION_PRESETS,
   DESIGN_QUICK_BLOCKS,
   DESIGN_STARTER_TEMPLATES,
   type ElementLike,
+  extractDesignSystemTokens,
+  parseDesignTweakVars,
   resolveAnimationCssValue,
   resolveElementBreadcrumb,
   resolveElementLabel,
@@ -217,4 +222,69 @@ test('元素锚定评论：增删改状态与批量提交 AI 提示词构建', (
   assert.match(designCode, /<DesignCommentLayer\b/);
   assert.match(designCode, /submitAllCommentsToAi/);
   assert.match(designCode, /restoreVersion/);
+});
+
+test('第三期：实时调参解析、设计令牌注入、多方案路径与代码交接提示词', () => {
+  const html = `
+    <style>
+      :root {
+        --lx-tweak-primary: #2563eb;
+        --lx-tweak-radius: 12px;
+        --lx-tweak-font: "Inter", sans-serif;
+        --lx-tweak-primary: #0f766e;
+      }
+    </style>
+  `;
+  const vars = parseDesignTweakVars(html);
+  assert.equal(vars.length, 3);
+  assert.equal(vars[0]?.kind, 'color');
+  assert.equal(vars[0]?.value, '#0f766e');
+  assert.equal(vars[1]?.kind, 'length');
+  assert.equal(vars[1]?.numericValue, 12);
+  assert.equal(vars[1]?.unit, 'px');
+  assert.equal(vars[2]?.kind, 'text');
+
+  const tokens = extractDesignSystemTokens('/* comment */\n:root {\n  --lx-canvas: #000000;\n  --lx-text-primary: #ffffff;\n  color: red;\n}');
+  assert.equal(tokens, '--lx-canvas: #000000;\n--lx-text-primary: #ffffff;');
+
+  const promptWithTokens = buildDesignAiPrompt({
+    instruction: '统一按钮圆角',
+    filePath: '.lingxi/design/app.html',
+    designTokens: tokens,
+  });
+  assert.match(promptWithTokens, /设计系统规范/);
+  assert.match(promptWithTokens, /--lx-canvas: #000000;/);
+
+  const variantPaths = buildDesignVariantPaths('.lingxi/design/landing.html');
+  assert.deepEqual(variantPaths, [
+    '.lingxi/design/landing-v1.html',
+    '.lingxi/design/landing-v2.html',
+    '.lingxi/design/landing-v3.html',
+  ]);
+
+  const variantsPrompt = buildDesignVariantsPrompt({
+    fileName: 'landing.html',
+    filePath: '.lingxi/design/landing.html',
+    variantPaths,
+    instruction: '极简科技风',
+  });
+  assert.match(variantsPrompt, /landing-v1\.html/);
+  assert.match(variantsPrompt, /landing-v3\.html/);
+  assert.match(variantsPrompt, /--lx-tweak-\*/);
+
+  const handoffPrompt = buildDesignHandoffPrompt({
+    fileName: 'landing.html',
+    filePath: '.lingxi/design/landing.html',
+    framework: 'vue',
+  });
+  assert.match(handoffPrompt, /Vue 3/);
+  assert.match(handoffPrompt, /\.lingxi\/design\/landing\.html/);
+
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const designCode = fs.readFileSync(path.resolve(currentDir, '../src/components/chat/DesignCanvasPreview.vue'), 'utf8');
+  assert.match(designCode, /<DesignTweakPanel\b/);
+  assert.match(designCode, /<DesignVariantsModal\b/);
+  assert.match(designCode, /exportPng/);
+  assert.match(designCode, /exportPdf/);
+  assert.match(designCode, /handoffToCode/);
 });

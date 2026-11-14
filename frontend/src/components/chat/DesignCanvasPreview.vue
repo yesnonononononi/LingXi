@@ -5,9 +5,13 @@ import {t} from '../../i18n';
 import LxSelect from '../common/LxSelect.vue';
 import type {SelectOption} from '../../types/ui';
 import {
+  applyDesignTweakToDocument,
   buildDesignAiPrompt,
   buildDesignAnimationCss,
   buildDesignCommentsAiPrompt,
+  buildDesignHandoffPrompt,
+  buildDesignVariantPaths,
+  buildDesignVariantsPrompt,
   DESIGN_AI_SUGGESTIONS,
   DESIGN_ANIMATION_PRESETS,
   DESIGN_ANIMATION_STYLE_ID,
@@ -17,16 +21,22 @@ import {
   type DesignBreadcrumbNode,
   type DesignQuickBlock,
   type DesignStarterTemplate,
+  type DesignTweakVar,
+  extractDesignSystemTokens,
+  parseDesignTweakVars,
   resolveAnimationCssValue,
   resolveElementBreadcrumb,
   resolveElementLabel,
   resolveElementSelector,
 } from '../../utils/designCanvasHelpers';
-import {useDesignDocument} from '../../composables/useDesignDocument';
+import {buildDesignDocumentPath, useDesignDocument} from '../../composables/useDesignDocument';
 import {type DesignVersionEntry, useDesignVersions} from '../../composables/useDesignVersions';
 import {useDesignComments} from '../../composables/useDesignComments';
 import DesignVersionPanel from './DesignVersionPanel.vue';
 import DesignCommentLayer from './DesignCommentLayer.vue';
+import DesignTweakPanel from './DesignTweakPanel.vue';
+import DesignVariantsModal from './DesignVariantsModal.vue';
+import projectTokensRaw from '../../theme/tokens.css?raw';
 
 const props = defineProps<{
   active?: boolean;
@@ -78,12 +88,18 @@ const MAX_HISTORY = 30;
 /** Agent 改写后按选择器恢复选中，避免每轮都要重新点选。 */
 let pendingReselector = '';
 const agentUpdatedFlash = ref(false);
-const activeDrawer = ref<'none' | 'versions' | 'comments'>('none');
+const activeDrawer = ref<'none' | 'versions' | 'comments' | 'tweaks'>('none');
+const tweakVars = ref<DesignTweakVar[]>([]);
+const tweakValues = ref<Record<string, string>>({});
+const injectProjectTokens = ref(false);
+const customTokens = ref('');
+const showVariantsModal = ref(false);
+const showExportMenu = ref(false);
 
 const versionMgr = useDesignVersions();
 const commentMgr = useDesignComments();
 
-const toggleDrawer = (drawer: 'versions' | 'comments'): void => {
+const toggleDrawer = (drawer: 'versions' | 'comments' | 'tweaks'): void => {
   if (activeDrawer.value === drawer) {
     activeDrawer.value = 'none';
     commentMgr.commentMode.value = false;
@@ -756,6 +772,7 @@ const parseAndMountHtml = (content: string, name: string, keepHistory = false) =
   loadedFileName.value = name;
   isFileLoaded.value = true;
   isCodeView.value = false;
+  refreshTweakVars(content);
   selectedElement.value = null;
   isSelected.value = false;
   breadcrumb.value = [];
@@ -994,6 +1011,119 @@ const addSelectedComment = (text: string): void => {
   commentMgr.addComment(selectedSelector.value, selectedCommentLabel.value, text);
 };
 
+const activeDesignTokens = computed(() => {
+  const parts: string[] = [];
+  if (injectProjectTokens.value) {
+    const extracted = extractDesignSystemTokens(projectTokensRaw);
+    if (extracted) parts.push(extracted);
+  }
+  if (customTokens.value.trim()) parts.push(customTokens.value.trim());
+  return parts.join('\n\n');
+});
+
+const variantPaths = computed(() =>
+  buildDesignVariantPaths(designDoc.boundPath.value || buildDesignDocumentPath(loadedFileName.value || 'design-prototype.html'))
+);
+
+const refreshTweakVars = (html: string): void => {
+  const parsed = parseDesignTweakVars(html);
+  tweakVars.value = parsed;
+  const next: Record<string, string> = {};
+  for (const item of parsed) next[item.name] = item.value;
+  tweakValues.value = next;
+};
+
+const handleUpdateTweak = (name: string, value: string): void => {
+  tweakValues.value = { ...tweakValues.value, [name]: value };
+  const doc = iframeRef.value?.contentDocument;
+  if (doc) {
+    applyDesignTweakToDocument(doc, tweakValues.value);
+    designDoc.markDirty();
+  }
+};
+
+const askAiExposeTweaks = (): void => {
+  void sendDesignPrompt('请在 :root 中声明 --lx-tweak-primary、--lx-tweak-radius、--lx-tweak-spacing、--lx-tweak-font-size 等 CSS 变量并让页面核心样式消费它们，方便我在画布里实时调参');
+};
+
+const generateDesignVariants = async (): Promise<void> => {
+  showExportMenu.value = false;
+  const filePath = await saveDesignDocument();
+  if (!filePath) return;
+  const prompt = buildDesignVariantsPrompt({
+    fileName: loadedFileName.value,
+    filePath,
+    variantPaths: buildDesignVariantPaths(filePath),
+    instruction: aiInstruction.value.trim() || undefined,
+    designTokens: activeDesignTokens.value || undefined,
+  });
+  emit('sendToChat', { prompt });
+  showVariantsModal.value = true;
+};
+
+const applyPickedVariant = async (payload: { html: string; label: string }): Promise<void> => {
+  showVariantsModal.value = false;
+  parseAndMountHtml(payload.html, loadedFileName.value || 'design-prototype.html', true);
+  versionMgr.recordVersion(payload.html, 'manual', `采用${payload.label}`);
+  await saveDesignDocument();
+};
+
+const handoffToCode = async (framework: 'vue' | 'react'): Promise<void> => {
+  showExportMenu.value = false;
+  const filePath = await saveDesignDocument();
+  if (!filePath) return;
+  const prompt = buildDesignHandoffPrompt({
+    fileName: loadedFileName.value,
+    filePath,
+    framework,
+  });
+  emit('sendToChat', { prompt });
+};
+
+const exportPdf = (): void => {
+  showExportMenu.value = false;
+  iframeRef.value?.contentWindow?.print();
+};
+
+const exportPng = async (): Promise<void> => {
+  showExportMenu.value = false;
+  const iframe = iframeRef.value;
+  const doc = iframe?.contentDocument;
+  const fullHtml = isCodeView.value ? codeDraft.value : serializeDocumentHtml();
+  if (!iframe || !doc || !fullHtml) return;
+
+  const width = Math.max(390, Math.round(iframe.clientWidth || 1200));
+  const height = Math.max(480, Math.round(doc.documentElement.scrollHeight || iframe.clientHeight || 800));
+  const xhtml = new XMLSerializer().serializeToString(doc.documentElement);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${xhtml}</foreignObject></svg>`;
+  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('PNG 渲染失败'));
+      img.src = svgUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('画布上下文不可用');
+    ctx.scale(2, 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const pngUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = pngUrl;
+    a.download = (loadedFileName.value ? loadedFileName.value.replace(/\.html?$/i, '') : 'design-prototype') + '.png';
+    a.click();
+  } catch {
+    selectedInfo.value = '当前页面含外部受限资源，请使用「打印 / 导出 PDF」';
+  }
+};
+
 const submitAllCommentsToAi = async (): Promise<void> => {
   const pending = commentMgr.unresolvedComments.value;
   if (pending.length === 0) return;
@@ -1009,6 +1139,7 @@ const submitAllCommentsToAi = async (): Promise<void> => {
       elementLabel: item.elementLabel,
       text: item.text,
     })),
+    designTokens: activeDesignTokens.value || undefined,
   });
   emit('sendToChat', { prompt });
 };
@@ -1028,6 +1159,7 @@ const sendDesignPrompt = async (presetText?: string) => {
     filePath,
     selector: selected ? resolveElementSelector(selected) : undefined,
     elementHtml: selected ? selected.outerHTML : undefined,
+    designTokens: activeDesignTokens.value || undefined,
   });
 
   emit('sendToChat', { prompt });
@@ -1222,6 +1354,35 @@ onBeforeUnmount(() => {
         >
           版本{{ versionMgr.versions.value.length ? ` (${versionMgr.versions.value.length})` : '' }}
         </button>
+
+        <button
+          v-if="isFileLoaded"
+          type="button"
+          class="btn-secondary-action"
+          :class="{ 'is-drawer-active': activeDrawer === 'tweaks' }"
+          title="实时调参 (--lx-tweak-*) 与设计系统注入"
+          @click="toggleDrawer('tweaks')"
+        >
+          调参
+        </button>
+
+        <div v-if="isFileLoaded" class="insert-dropdown">
+          <button
+            type="button"
+            class="btn-secondary-action"
+            @click="showExportMenu = !showExportMenu"
+          >
+            方案与导出 ▾
+          </button>
+          <div v-if="showExportMenu" class="insert-menu">
+            <button type="button" class="insert-menu-item" @click="generateDesignVariants">生成 3 个对比方案</button>
+            <button type="button" class="insert-menu-item" @click="showExportMenu = false; showVariantsModal = true">打开方案对比</button>
+            <button type="button" class="insert-menu-item" @click="exportPng">导出 PNG 图片</button>
+            <button type="button" class="insert-menu-item" @click="exportPdf">打印 / 导出 PDF</button>
+            <button type="button" class="insert-menu-item" @click="handoffToCode('vue')">交接为 Vue 组件</button>
+            <button type="button" class="insert-menu-item" @click="handoffToCode('react')">交接为 React 组件</button>
+          </div>
+        </div>
 
         <button
           v-if="isFileLoaded"
@@ -1534,7 +1695,29 @@ onBeforeUnmount(() => {
         @resolveAll="commentMgr.resolveAll"
         @submitAll="submitAllCommentsToAi"
       />
+
+      <DesignTweakPanel
+        v-if="isFileLoaded && activeDrawer === 'tweaks'"
+        :tweakVars="tweakVars"
+        :tweakValues="tweakValues"
+        :injectProjectTokens="injectProjectTokens"
+        :customTokens="customTokens"
+        @close="activeDrawer = 'none'"
+        @updateTweak="handleUpdateTweak"
+        @update:injectProjectTokens="injectProjectTokens = $event"
+        @update:customTokens="customTokens = $event"
+        @askAiExposeTweaks="askAiExposeTweaks"
+      />
     </div>
+
+    <DesignVariantsModal
+      :visible="showVariantsModal"
+      :variantPaths="variantPaths"
+      :sessionId="props.sessionId"
+      @close="showVariantsModal = false"
+      @pick="applyPickedVariant"
+      @generate="generateDesignVariants"
+    />
 
     <!-- 底部 DOM 面包屑与 AI 协同设计指令栏 -->
     <div v-if="isFileLoaded && !isCodeView" class="design-bottom-dock">

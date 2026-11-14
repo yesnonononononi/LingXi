@@ -52,6 +52,8 @@ export interface DesignAiPromptInput {
   selector?: string;
   elementHtml?: string;
   fullHtml?: string;
+  /** 可选：注入的设计系统令牌或品牌规范摘要。 */
+  designTokens?: string;
 }
 
 export const DESIGN_STARTER_TEMPLATES: DesignStarterTemplate[] = [
@@ -447,6 +449,12 @@ export const buildDesignAiPrompt = (input: DesignAiPromptInput): string => {
     lines.push(`- 原型文件：\`${input.filePath}\`（画布会在文件写入后自动刷新）`);
     lines.push('- 请先读取该文件，再用编辑文件工具直接修改它；保持单文件 HTML，样式与脚本内联，不要另建文件');
   }
+  if (input.designTokens?.trim()) {
+    lines.push('- 设计系统规范（请优先复用以下变量/色板与排版令牌）：');
+    lines.push('```css');
+    lines.push(input.designTokens.trim());
+    lines.push('```');
+  }
   if (input.selector) {
     lines.push(`- 目标组件选择器：\`${input.selector}\``);
   }
@@ -479,6 +487,7 @@ export interface DesignCommentsAiPromptInput {
   fileName?: string;
   filePath: string;
   comments: DesignCommentPromptEntry[];
+  designTokens?: string;
 }
 
 /** 将多条锚定在元素上的评论汇总为一条结构化 AI 修改指令。 */
@@ -488,13 +497,144 @@ export const buildDesignCommentsAiPrompt = (input: DesignCommentsAiPromptInput):
     `请根据以下画布评论批量优化设计原型「${targetName}」：`,
     `- 原型文件：\`${input.filePath}\`（画布会在文件写入后自动刷新）`,
     '- 请先读取该文件，再用编辑文件工具逐条落实修改；保持单文件 HTML，样式与脚本内联，不要另建文件',
-    '',
-    '待处理评论：',
   ];
+  if (input.designTokens?.trim()) {
+    lines.push('- 设计系统规范：');
+    lines.push('```css');
+    lines.push(input.designTokens.trim());
+    lines.push('```');
+  }
+  lines.push('');
+  lines.push('待处理评论：');
 
   input.comments.forEach((item, idx) => {
     lines.push(`${idx + 1}. [${item.elementLabel}] \`${item.selector}\`：${item.text}`);
   });
 
   return lines.join('\n');
+};
+
+export interface DesignTweakVar {
+  name: string;
+  label: string;
+  value: string;
+  kind: 'color' | 'length' | 'text';
+  unit?: string;
+  numericValue?: number;
+  min?: number;
+  max?: number;
+}
+
+export const DESIGN_TWEAK_STYLE_ID = 'lx-design-tweaks';
+
+/** 从 HTML 中的 CSS 提取 `--lx-tweak-*` 可调参数，供画布右侧滑杆实时调节。 */
+export const parseDesignTweakVars = (html: string): DesignTweakVar[] => {
+  const seen = new Map<string, DesignTweakVar>();
+  const regex = /(--lx-tweak-[a-z0-9-]+)\s*:\s*([^;}\n]+);/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(html)) !== null) {
+    const name = match[1]!.trim();
+    const rawValue = match[2]!.trim();
+    const label = name.replace(/^--lx-tweak-/, '').replace(/-/g, ' ');
+
+    let kind: DesignTweakVar['kind'] = 'text';
+    let unit: string | undefined;
+    let numericValue: number | undefined;
+    let min: number | undefined;
+    let max: number | undefined;
+
+    if (/^#[0-9a-f]{3,8}$/i.test(rawValue)) {
+      kind = 'color';
+    } else {
+      const lenMatch = rawValue.match(/^(-?\d+(?:\.\d+)?)(px|rem|em|%)$/);
+      if (lenMatch) {
+        kind = 'length';
+        numericValue = Number(lenMatch[1]);
+        unit = lenMatch[2];
+        min = 0;
+        max = unit === 'px' ? Math.max(64, Math.ceil(numericValue * 2)) : 100;
+      }
+    }
+
+    seen.set(name, { name, label, value: rawValue, kind, unit, numericValue, min, max });
+  }
+  return Array.from(seen.values());
+};
+
+/** 将调参变量实时写入 iframe 文档并同步到内联 `<style id="lx-design-tweaks">`，确保导出与保存可保留。 */
+export const applyDesignTweakToDocument = (doc: Document, vars: Record<string, string>): void => {
+  const entries = Object.entries(vars).filter(([k, v]) => k.startsWith('--lx-tweak-') && v.trim());
+  for (const [key, value] of entries) {
+    doc.documentElement?.style.setProperty(key, value);
+  }
+  if (!doc.head) return;
+  let styleEl = doc.getElementById(DESIGN_TWEAK_STYLE_ID) as HTMLStyleElement | null;
+  if (entries.length === 0) {
+    styleEl?.remove();
+    return;
+  }
+  if (!styleEl) {
+    styleEl = doc.createElement('style');
+    styleEl.id = DESIGN_TWEAK_STYLE_ID;
+    doc.head.appendChild(styleEl);
+  }
+  styleEl.textContent = `:root {\n${entries.map(([k, v]) => `  ${k}: ${v};`).join('\n')}\n}`;
+};
+
+/** 从项目 tokens.css 中提取精简的 `--lx-*` 变量摘要，控制提示词长度。 */
+export const extractDesignSystemTokens = (cssText: string, maxLines = 48): string => {
+  const withoutComments = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
+  const lines = withoutComments
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.startsWith('--lx-'));
+  return lines.slice(0, maxLines).join('\n');
+};
+
+/** 根据当前原型路径派生 3 个并排对比方案的工作区路径。 */
+export const buildDesignVariantPaths = (baseFilePath: string): string[] => {
+  const stem = baseFilePath.replace(/\.html?$/i, '');
+  return [1, 2, 3].map(idx => `${stem}-v${idx}.html`);
+};
+
+export interface DesignVariantsPromptInput {
+  fileName?: string;
+  filePath: string;
+  variantPaths: string[];
+  instruction?: string;
+  designTokens?: string;
+}
+
+/** 生成「一次产出 3 个视觉方案」的提示词。 */
+export const buildDesignVariantsPrompt = (input: DesignVariantsPromptInput): string => {
+  const targetName = input.fileName?.trim() || '当前设计原型';
+  const lines: string[] = [
+    `请基于设计原型「${targetName}」（\`${input.filePath}\`）生成 3 个风格与布局各有侧重的备选方案：`,
+    input.instruction?.trim() ? `- 设计方向要求：${input.instruction.trim()}` : '- 设计方向要求：在保留核心信息与功能的前提下，探索 3 种不同的视觉层次、配色或版式',
+    ...input.variantPaths.map((vp, idx) => `- 方案 ${idx + 1} 输出文件：\`${vp}\``),
+    '- 请先读取原文件，再用 write_file 分别写入以上 3 个单文件 HTML（样式与脚本内联，不要修改原文件）',
+    '- 可在 `:root` 中声明 `--lx-tweak-*` 变量（如主色、圆角、间距），方便在画布里实时调参',
+  ];
+  if (input.designTokens?.trim()) {
+    lines.push('- 设计系统规范：');
+    lines.push('```css');
+    lines.push(input.designTokens.trim());
+    lines.push('```');
+  }
+  return lines.join('\n');
+};
+
+/** 生成「交接为 Vue/React 组件代码」的提示词。 */
+export const buildDesignHandoffPrompt = (input: {
+  fileName?: string;
+  filePath: string;
+  framework: 'vue' | 'react';
+}): string => {
+  const targetName = input.fileName?.trim() || '当前设计原型';
+  const fwLabel = input.framework === 'vue' ? 'Vue 3 (`<script setup lang="ts">`) 单文件组件' : 'React + TypeScript 函数组件';
+  return [
+    `请将设计原型「${targetName}」（\`${input.filePath}\`）交接转换为干净、可维护的 ${fwLabel}：`,
+    '- 请先读取该 HTML 文件，拆解其中的结构、状态与交互逻辑',
+    '- 保留原有视觉层次与响应式断点，输出完整组件代码（如项目中有对应目录可给出落盘建议）',
+  ].join('\n');
 };
