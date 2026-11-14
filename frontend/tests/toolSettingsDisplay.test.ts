@@ -133,7 +133,7 @@ function prepare(context: test.TestContext) {
   context.mock.method(ModelAPI, 'list', async () => ({ code: 1, data: { records: [{ id: '7', modelName: '测试模型' }] } }));
   context.mock.method(ToolAPI, 'list', async () => ({ code: 1, data: [
     { name: AgentToolName.ExecuteCommand, readOnly: false }, { name: AgentToolName.ReadSkill, readOnly: true },
-    { name: AgentToolName.ReadFile, readOnly: true }, { name: AgentToolName.WebSearch, readOnly: true },
+    { name: AgentToolName.ReadFile, readOnly: true }, { name: AgentToolName.SearchWiki, readOnly: true },
   ] }));
   return context.mock.method(AgentAPI, 'update', async () => ({ code: 1 }));
 }
@@ -153,7 +153,7 @@ for (const mode of ['settings', 'team'] as const) {
       assert.match(String(prompt.props.class), /(?:^|\s)resize-y(?:\s|$)/, '提示词输入框应允许用户纵向拖拽调节高度');
     }
     assert.ok(text(root).includes('执行命令')); assert.ok(text(root).includes('读取技能'));
-    assert.ok(text(root).includes('读取文件')); assert.ok(text(root).includes('网页搜索'));
+    assert.ok(text(root).includes('读取文件')); assert.ok(text(root).includes('检索项目记忆'));
     for (const name of [AgentToolName.ExecuteCommand, AgentToolName.ReadSkill]) assert.ok(!text(root).includes(name));
     const option = find(root, item => item.tag === 'div' && typeof item.props.onClick === 'function' && text(item).includes('读取技能') && !text(item).includes('执行命令') && find(item, child => child.tag === 'input' && child.props.type === 'checkbox') !== undefined);
     assert.ok(option); option.props.onClick(); await nextTick();

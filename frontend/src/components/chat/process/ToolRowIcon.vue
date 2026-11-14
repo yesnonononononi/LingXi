@@ -31,7 +31,7 @@ const iconClass = computed(() => [
       <circle class="opacity-25" cx="12" cy="12" r="10" />
       <path class="opacity-85" stroke-linecap="round" d="M12 2a10 10 0 0 1 10 10" />
     </svg>
-    <!-- 检索：检索文件内容 / 网页搜索 / 检索工具 / 检索记忆 -->
+    <!-- 检索：检索文件内容 / 检索工具 / 检索记忆 -->
     <svg v-else-if="kind === TOOL_ROW_ICON.FILE_SEARCH" :class="iconClass" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true">
       <path d="M224 256h512V192H224zM224 384h512V320H224z" />
       <path d="M96 64h768v512h64V64a64 64 0 0 0-64-64H96a64 64 0 0 0-64 64v896a64 64 0 0 0 64 64h448v-64H96V64z" />

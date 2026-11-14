@@ -50,7 +50,7 @@ class CollaborationToolExposureTest {
 
     private static final Set<String> REGISTERED = Set.of(
             ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT, ToolCatalog.CREATE_PLAN,
-            "read_file", "search_files", "edit_file", "delete_file", "execute_command", "web_search", "require_choice");
+            "read_file", "search_files", "edit_file", "delete_file", "execute_command", "require_choice");
 
     // --- 授权边界：名单即授权 ------------------------------------------------------------
 
@@ -144,7 +144,7 @@ class CollaborationToolExposureTest {
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
-                        ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
                         ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
@@ -160,7 +160,7 @@ class CollaborationToolExposureTest {
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
-                        ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolList());
@@ -170,11 +170,11 @@ class CollaborationToolExposureTest {
     @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
     void readOnlyModeDisablesEditingAndKeepsTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "search_files", "web_search", "require_choice",
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "search_files", "require_choice",
                         ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST));
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
-                        ToolCatalog.SEARCH_FILES, ToolCatalog.WEB_SEARCH,
+                        ToolCatalog.SEARCH_FILES,
                         ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST),
                 request.getToolList(), "只读档禁用 edit_file 与 delete_file，终端不按并发策略被剔除");
     }

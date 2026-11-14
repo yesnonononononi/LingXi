@@ -38,7 +38,6 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.LoadMemory]: TOOL_CATEGORY.READ,
   [AgentToolName.SearchWiki]: TOOL_CATEGORY.READ,
   [AgentToolName.ReadImage]: TOOL_CATEGORY.READ,
-  [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
   [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
   [AgentToolName.WriteFile]: TOOL_CATEGORY.WRITE,

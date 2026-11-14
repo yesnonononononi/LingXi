@@ -76,8 +76,8 @@ test('图标判别：文件动作按具体工具分（检索/读取/编辑/写�
   assert.equal(expectIcon('read_file'), ICON.FILE_DOC);
 });
 
-test('图标判别：四个「找东西」的动作共用一个检索图标', () => {
-  for (const name of ['search_files', 'web_search', 'search_tool', 'search_wiki']) {
+test('图标判别：三个「找东西」的动作共用一个检索图标', () => {
+  for (const name of ['search_files', 'search_tool', 'search_wiki']) {
     assert.equal(expectIcon(name), ICON.FILE_SEARCH, `${name} 必须用检索图标`);
   }
 });

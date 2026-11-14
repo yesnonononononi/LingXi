@@ -819,9 +819,9 @@ test('实时过程：思考持续追加，迟到工具收尾不替换动态节�
   await nextTick();
   assert.match(text(thinking), /继续实时追加/);
   reducer.consume(event({ type: 'TOOL_CALL', requestId: 'new', responseId: '102', order: 2,
-    toolName: AgentToolName.WebSearch, args: '{}' }));
+    toolName: AgentToolName.SearchWiki, args: '{}' }));
   await nextTick();
-  assert.match(text(root), /检索网络资源/);
+  assert.match(text(root), /检索记忆/);
   reducer.dispose();
 });
 
@@ -862,7 +862,7 @@ test('历史摘要使用原操作名和目标，待确认与未知状态保留�
   assert.equal(answer.toolCalls[0].status, 'failed', '工具自身的失败状态保留');
   assert.ok(find(root, node => node.tag === 'prompt-card'), '审批卡片不进入过程折叠');
   assert.equal(header().props['aria-expanded'], false);
-  answer.toolCalls.push({ id: 'search', toolName: AgentToolName.WebSearch, order: 3, status: 'success' });
+  answer.toolCalls.push({ id: 'search', toolName: AgentToolName.SearchWiki, order: 3, status: 'success' });
   await nextTick();
   assert.equal(text(title()), '读取文件、编辑文件、执行命令等 4 类操作');
   assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-preview')), 'mcp.json');

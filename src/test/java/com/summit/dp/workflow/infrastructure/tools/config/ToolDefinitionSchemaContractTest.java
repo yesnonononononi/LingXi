@@ -9,7 +9,6 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
-import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandShell;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
@@ -37,13 +36,11 @@ import static org.mockito.Mockito.when;
 class ToolDefinitionSchemaContractTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final CommonToolConfiguration configuration = new CommonToolConfiguration();
 
     private List<ToolDefinition<?>> allDefinitions() {
         return List.of(
                 AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(objectMapper, null, null, new CommandToolProperties())),
-                AnnotatedToolTestDefinitions.create(ManageCommandToolExecutor.class, new ManageCommandToolExecutor(objectMapper, null)),
-                configuration.webSearchToolDefinition(null, new WebSearchToolProperties(), objectMapper));
+                AnnotatedToolTestDefinitions.create(ManageCommandToolExecutor.class, new ManageCommandToolExecutor(objectMapper, null)));
     }
 
     /** 每个工具都必须给出可解析的对象型 schema，且工具名与描述可直接进模型请求。 */

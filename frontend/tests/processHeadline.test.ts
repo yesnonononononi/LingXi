@@ -36,7 +36,7 @@ function thoughtItem(id: string, content: string, order = 0): ProcessTimelineIte
 test('四类工具收敛成「等 4 类操作」，目标按出现顺序列出', async () => {
   await useLocale('zh-CN');
   const headline = formatProcessHeadline(summary({
-    toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.WebSearch],
+    toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.SearchWiki],
     targets: ['markdown.ts', 'MarkdownRenderer.vue'],
   }));
   assert.equal(headline.title, '执行命令、编辑文件、读取文件等 4 类操作');
@@ -116,7 +116,7 @@ test('状态计数按 active 与 running 策略决定 running 是否入列', asy
 test('阈值可参数化，标题与目标超限时只报总数', async () => {
   await useLocale('zh-CN');
   const full = summary({
-    toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.WebSearch],
+    toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.SearchWiki],
     targets: ['a.ts', 'b.ts', 'c.ts', 'd.ts'],
   });
   assert.equal(formatProcessHeadline(full, { maxNames: 1 }).title, '执行命令等 4 类操作');
@@ -127,7 +127,7 @@ test('阈值可参数化，标题与目标超限时只报总数', async () => {
 test('英文语言下阈值文案与分隔符同步切换', async () => {
   await useLocale('en-US');
   const full = summary({
-    toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.WebSearch],
+    toolNames: [AgentToolName.ExecuteCommand, AgentToolName.EditFile, AgentToolName.ReadFile, AgentToolName.SearchWiki],
     targets: ['a.ts', 'b.ts', 'c.ts', 'd.ts'],
   });
   assert.equal(formatProcessHeadline(full).title, 'Command, Edit file, Read file (4 operation types)');
@@ -142,7 +142,7 @@ test('与 summarizeProcess 串联：标题、目标与最新活动均来自同�
     toolItem('c1', AgentToolName.ExecuteCommand, 0, { args: { command: 'npm test', intention: '跑单测' } }),
     toolItem('c2', AgentToolName.EditFile, 1, { args: { path: 'D:\\repo\\frontend\\src\\utils\\processHeadline.ts' } }),
     toolItem('c3', AgentToolName.ReadFile, 2, { args: { path: 'D:\\repo\\frontend\\src\\components\\chat\\MarkdownRenderer.vue' } }),
-    toolItem('c4', AgentToolName.WebSearch, 3, { args: { query: 'vue' } }),
+    toolItem('c4', AgentToolName.SearchWiki, 3, { args: { keyword: 'vue' } }),
   ];
   const facts = summarizeProcess(items);
   assert.deepEqual(facts.targets, ['processHeadline.ts', 'MarkdownRenderer.vue']);
@@ -151,7 +151,7 @@ test('与 summarizeProcess 串联：标题、目标与最新活动均来自同�
   assert.equal(overview.preview, 'processHeadline.ts、MarkdownRenderer.vue');
   assert.equal(overview.previewKind, 'value');
   const live = formatProcessHeadline(facts, { active: true });
-  assert.equal(live.title, '检索网络资源');
+  assert.equal(live.title, '检索记忆');
   assert.equal(live.preview, '');
   assert.equal(live.previewKind, 'none');
 });

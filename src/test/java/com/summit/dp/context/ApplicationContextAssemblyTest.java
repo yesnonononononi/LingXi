@@ -56,7 +56,6 @@ import static org.mockito.Mockito.mockingDetails;
         "lingxi.config.mcp.path=D:/Code/LingXi/.run/tmp/ctx-verify/mcp.json",
         "lingxi.config.model.path=D:/Code/LingXi/.run/tmp/ctx-verify/models.json",
         "lingxi.config.personalization.path=D:/Code/LingXi/.run/tmp/ctx-verify/personalization.json",
-        "TAVILY_APIKEY=ctx-verify-placeholder",
         "DEEPSEEK_APIKEY=ctx-verify-placeholder"
 })
 class ApplicationContextAssemblyTest {
@@ -173,7 +172,7 @@ class ApplicationContextAssemblyTest {
         assertTrue(names.containsAll(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
                         ToolCatalog.READ_FILE, ToolCatalog.SEARCH_FILES, ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE,
                         ToolCatalog.DELETE_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
-                        ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT,
                         ToolCatalog.CREATE_PLAN,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
@@ -186,7 +185,6 @@ class ApplicationContextAssemblyTest {
         // 清单分六组，与 @Tool 的实际落点一一对应：
         //   基础工具 9 件（read/search/edit/write/delete/image 两件 + 终端两件）、执行清单 6 件、
         //   项目记忆 2 件（load_memory / search_wiki）、人工确认 1 件、协作 3 件、计划书 1 件，合计 22。
-        // 注：web_search 不在其中——它是配置驱动的 ToolDefinition Bean，不是注解工具。
         Set<String> expectedAnnotationTools = Set.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
                 ToolCatalog.READ_FILE, ToolCatalog.SEARCH_FILES, ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE,
                 ToolCatalog.DELETE_FILE, ToolCatalog.READ_IMAGE, ToolCatalog.GENERATE_IMAGE,
@@ -207,10 +205,10 @@ class ApplicationContextAssemblyTest {
                         + "白名单=" + new TreeSet<>(expectedAnnotationTools) + "，实际=" + annotationTools);
         assertEquals(expectedAnnotationTools.size(), annotationTools.size(),
                 "数量由白名单推导，白名单自身必须无重复：" + expectedAnnotationTools.size());
-        // 不用裸数字：定义 Bean 分两组——配置驱动的 web_search、框架四个内核工具
-        // （渐进披露三件 + 上下文压缩）。compact_context 无 ToolCatalog 常量（实现在框架内核），
-        // 只能写字面量，改框架侧名字时这里会红——这正是要的效果。
-        Set<String> expectedDefinitionBeanNames = new TreeSet<>(Set.of(ToolCatalog.WEB_SEARCH, "compact_context",
+        // 不用裸数字：定义 Bean 只来自框架内核工具（渐进披露三件 + 上下文压缩）。
+        // compact_context 无 ToolCatalog 常量（实现在框架内核），只能写字面量，
+        // 改框架侧名字时这里会红——这正是要的效果。
+        Set<String> expectedDefinitionBeanNames = new TreeSet<>(Set.of("compact_context",
                 ToolCatalog.SEARCH_TOOL, ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.READ_SKILL));
         Set<String> definitionBeanNames = new TreeSet<>();
         context.getBeansOfType(ToolDefinition.class).values()

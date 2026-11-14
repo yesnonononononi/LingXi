@@ -197,7 +197,7 @@ test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置
   // 工具开始即显示，审批卡片仍从权威接口读取。
   reducer.consume({
     type: 'TOOL_CALL',
-    toolName: AgentToolName.WebSearch,
+    toolName: AgentToolName.SearchWiki,
     requestId: 'call-weather-1',
     order: 1,
     args: '{"q":"北京天气"}',
@@ -213,7 +213,7 @@ test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置
   // 收尾更新同一调用。
   reducer.consume({
     type: 'TOOL_COMPLETED',
-    toolName: AgentToolName.WebSearch,
+    toolName: AgentToolName.SearchWiki,
     requestId: 'call-weather-1',
     output: '晴，22℃',
     resultStatus: 'COMPLETED',
@@ -249,7 +249,7 @@ test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置
       viewVersion: 3,
       blocks: [
         { blockId: 'thinking:1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '正在规划查询步骤...' },
-        { blockId: 'tool:call-weather-1', type: 'TOOL', order: 1, status: 'COMPLETED', toolCallId: 'call-weather-1', toolName: AgentToolName.WebSearch },
+        { blockId: 'tool:call-weather-1', type: 'TOOL', order: 1, status: 'COMPLETED', toolCallId: 'call-weather-1', toolName: AgentToolName.SearchWiki },
         { blockId: 'text:1', type: 'TEXT', order: 2, status: 'COMPLETE', isBody: true, text: '今天北京的天气是晴天，气温约22℃。' }
       ]
     }
@@ -748,7 +748,7 @@ test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任
   // 原始事件之后再到达也不得改变任何过程项（展示内容只认块视图）
   reducer.consume({
     type: 'TOOL_CALL',
-    toolName: AgentToolName.WebSearch,
+    toolName: AgentToolName.SearchWiki,
     requestId: 'call-late',
     args: '{"q":"y"}',
     resultStatus: 'STARTED',

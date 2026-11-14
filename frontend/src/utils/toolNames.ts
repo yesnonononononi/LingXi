@@ -4,9 +4,9 @@
  * <p>契约来源（改名时两边一起改）：</p>
  * <ul>
  *   <li>业务常量 {@code com.summit.dp.shared.model.ToolCatalog}：call_sub_agent / create_plan /
- *       send_mail_to_agent / peek_teammate_state / execute_command / read_file / edit_file / web_search / search_tool / list_mcp_tools；</li>
+ *       send_mail_to_agent / peek_teammate_state / execute_command / read_file / edit_file / search_tool / list_mcp_tools；</li>
  *   <li>各 {@code ToolDefinition} 注册名：{@code FileToolConfiguration}（read_file / edit_file）、
- *       {@code CommonToolConfiguration}（execute_command / web_search）、{@code ToolConfig}（require_choice）；</li>
+ *       {@code CommandToolConfiguration}（终端工具属性）、{@code ToolConfig}（require_choice）；</li>
  *   <li>框架内核工具：{@code search_tool} / {@code list_mcp_tools}（harness-kernel-tools）、
  *       {@code compact_context}（上下文压缩）、{@code read_skill}（Skill 正文读取）。</li>
  * </ul>
@@ -40,8 +40,6 @@ export const AgentToolName = {
   ExecuteCommand: 'execute_command',
   /** 后台命令的查询与停止 */
   ManageCommand: 'manage_command',
-  /** 联网检索 */
-  WebSearch: 'web_search',
   /** 人工选择（PROMISE 卡片） */
   RequireChoice: 'require_choice',
   /** 计划书（PROMISE 卡片） */

@@ -50,7 +50,7 @@ const fullTools = (): TokenAuditToolBreakdown => ({
   ratio: 0.512,
   ordinary: {
     items: [
-      {toolName: AgentToolName.WebSearch, tokens: 9420, argumentTokens: 120, outputTokens: 980},
+      {toolName: AgentToolName.SearchWiki, tokens: 9420, argumentTokens: 120, outputTokens: 980},
       {toolName: AgentToolName.ReadFile, tokens: 6850, argumentTokens: 0, outputTokens: 6000},
       {toolName: AgentToolName.ExecuteCommand, tokens: 4960, argumentTokens: 300, outputTokens: null},
       {toolName: AgentToolName.SearchWiki, tokens: 2950, argumentTokens: null, outputTokens: null},
@@ -498,7 +498,7 @@ const stringNumericPayload = (): Record<string, unknown> => ({
       groupKind: 'ORDINARY',
       tokens: '24180',
       ratio: '0.331',
-      items: [{toolName: AgentToolName.WebSearch, tokens: '9420', ratio: '0.39', argumentTokens: '120', outputTokens: '980'}],
+      items: [{toolName: AgentToolName.SearchWiki, tokens: '9420', ratio: '0.39', argumentTokens: '120', outputTokens: '980'}],
     },
     mcp: {groupKind: 'MCP', tokens: '34700', ratio: '0.475', items: []},
     skill: null,
@@ -549,7 +549,7 @@ test('数值字段以字符串到达时仍正常渲染：148200 / 200k 与剩余
   assert.equal(rows.length, 4);
   assert.equal(rows[3]!.tokens, 73080);
   assert.deepEqual(resolveOrdinaryToolRows(snapshot!.tools)[0], {
-    toolName: AgentToolName.WebSearch, tokens: 9420, argumentTokens: 120, outputTokens: 980,
+    toolName: AgentToolName.SearchWiki, tokens: 9420, argumentTokens: 120, outputTokens: 980,
   });
   assert.equal(snapshot!.requestOverhead!.itemCount, 2);
   assert.equal(resolveToolDefinitionRows(snapshot!.requestOverhead)[0]!.tokens, 10400);

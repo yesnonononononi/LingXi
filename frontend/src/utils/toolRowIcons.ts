@@ -9,7 +9,7 @@ import {TOOL_CATEGORY} from './toolMeta';
 
 /** 图标种类（稳定判别码，不是展示文案）。 */
 export const TOOL_ROW_ICON = {
-  /** 检索：检索文件内容 / 网页搜索 / 检索工具 / 检索记忆 */
+  /** 检索：检索文件内容 / 检索工具 / 检索记忆 */
   FILE_SEARCH: 'FILE_SEARCH',
   /** 文档：读文件 */
   FILE_DOC: 'FILE_DOC',
@@ -59,8 +59,6 @@ export const TOOL_ROW_ICON = {
  */
 const TOOL_ICON_BY_NAME: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.SearchFiles]: TOOL_ROW_ICON.FILE_SEARCH,
-  // 网页搜索沿用检索图标：都是「按条件找东西」
-  [AgentToolName.WebSearch]: TOOL_ROW_ICON.FILE_SEARCH,
   [AgentToolName.SearchTool]: TOOL_ROW_ICON.FILE_SEARCH,
   [AgentToolName.SearchWiki]: TOOL_ROW_ICON.FILE_SEARCH,
   [AgentToolName.WriteFile]: TOOL_ROW_ICON.FILE_WRITE,

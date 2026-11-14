@@ -79,7 +79,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "lingxi.config.mcp.path=D:/Code/LingXi/.run/chat-controls/mcp.json",
         "lingxi.config.model.path=D:/Code/LingXi/.run/chat-controls/models.json",
         "lingxi.config.personalization.path=D:/Code/LingXi/.run/chat-controls/personalization.json",
-        "TAVILY_APIKEY=test-placeholder", "DEEPSEEK_APIKEY=test-placeholder"
+        "DEEPSEEK_APIKEY=test-placeholder"
 })
 @AutoConfigureMockMvc
 class ChatControllerLifecycleTest {

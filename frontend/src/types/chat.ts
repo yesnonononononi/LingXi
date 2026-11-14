@@ -38,7 +38,7 @@ export interface ToolCallTrace extends ResponsePosition, EditLineRange {
   id: string;
   /** 权威工具块版本；框架事件不携带持久化版本。 */
   version?: number;
-  toolName: string;          // 工具名称，如 "execute_command", "web_search", "read_file"
+  toolName: string;          // 工具名称，如 "execute_command", "search_wiki", "read_file"
   query?: string;            // 调用输入参数
   args?: any;                // 结构化输入参数对象
   result?: string;           // 工具返回的原始数据或状态

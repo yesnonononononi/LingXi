@@ -152,11 +152,6 @@ lingxi:
       token-audit:
         enabled: true
       tool:
-        web-search:
-          baseUrl: https://api.tavily.com/search
-          apiKey: ${TAVILY_APIKEY}
-          max-result: 3
-
         # 框架内核工具（harness-kernel-tools）：默认开启，这里只列可调参数。
         # search_tool 是 MCP 远端工具的唯一发现入口，单次检索的返回条数与超时在此收敛。
         search-tool:

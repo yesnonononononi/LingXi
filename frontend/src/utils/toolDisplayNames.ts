@@ -20,7 +20,7 @@ function defineToolName(chinese: string, english: string, renderKey: string): To
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = new Map([
   // read_file 短名独立成「读取文件」：READ 分类文案只有「读取」，光看动词分不出在读什么
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.fileRead')],
-  // 检索文件内容的短名独立成「检索文件」，避免与记忆检索、工具检索、网页搜索在流式工具行上同文案
+  // 检索文件内容的短名独立成「检索文件」，避免与记忆检索、工具检索在流式工具行上同文案
   [AgentToolName.SearchFiles, defineToolName('检索文件内容', 'Search file contents', 'tool.category.fileSearch')],
   // 记忆读取的渲染名独立成「读取记忆」，避免与 read_file 的「读取文件」只差宾语
   [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.memoryRead')],
@@ -37,8 +37,6 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.DeleteFile, defineToolName('删除文件', 'Delete file', 'tool.category.fileDelete')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],
   [AgentToolName.ManageCommand, defineToolName('确认后台任务状态', 'Check background task status', 'tool.category.backgroundCommand')],
-  // web_search 的渲染名不再复用 READ 分类文案（「读取」会让人以为是读文件），独立成「检索网络资源」
-  [AgentToolName.WebSearch, defineToolName('网页搜索', 'Web search', 'tool.category.webSearch')],
   // 工具行短名统一 4 字：CHOICE / PLAN 分类标签只有「选择」「计划」，工具行各取专属 key
   [AgentToolName.RequireChoice, defineToolName('请求用户选择', 'Request user choice', 'tool.category.choiceRequest')],
   [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.planCreate')],

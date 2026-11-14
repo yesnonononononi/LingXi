@@ -34,7 +34,6 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
     [AgentToolName.SearchFiles, '读取'],
     [AgentToolName.DeleteFile, '写入'],
     [AgentToolName.ReadImage, '读取'],
-    [AgentToolName.WebSearch, '读取'],
     [AgentToolName.EditFile, '写入'],
     [AgentToolName.WriteFile, '写入'],
     [AgentToolName.RequireChoice, '选择'],

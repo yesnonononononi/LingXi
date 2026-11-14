@@ -10,7 +10,6 @@
 | `create_checklist`、`update_checklist_step`、`delete_checklist` | 执行器注解 | 参数是扁平标量/标量数组，契约固定；会话归属与 Agent 身份来自每次工具调用。 |
 | `modify_checklist` | 执行器注解 + `parametersJsonSchema` | 补丁参数是「对象数组 + 嵌套对象」，注解只表达标量与标量数组，必须写显式 schema。 |
 | `call_sub_agent`、`peek_teammate_state`、`send_mail_to_agent` | 执行器注解 | 协作契约固定，团队与执行身份来自每次工具调用。 |
-| `web_search` | 配置 Bean | schema 中的最大结果数来自 `WebSearchToolProperties`，需保留配置生成过程。 |
 | 框架 `search_tool` | 条件自动配置 | 有启用开关、超时和匹配上限配置，并需延迟获取注册表以避免循环依赖。 |
 | 框架 `list_mcp_tools` | 条件自动配置 | 有启用开关、超时与窗口配置，需支持按 Bean 名替换。 |
 | 框架 `read_skill` | 条件自动配置 | 启用开关、输出上限和超时来自配置，需保留校验与替换规则。 |

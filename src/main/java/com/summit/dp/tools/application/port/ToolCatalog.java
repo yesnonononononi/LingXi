@@ -56,9 +56,6 @@ public interface ToolCatalog {
     /** 删除文件工具名 */
     String DELETE_FILE = "delete_file";
 
-    /** 联网检索工具名 */
-    String WEB_SEARCH = "web_search";
-
     String REQUIRE_CHOICE = "require_choice";
 
     /**
@@ -76,7 +73,7 @@ public interface ToolCatalog {
      */
     List<String> DEFAULT_AGENT_TOOLS =
             List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, SEARCH_FILES, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE, WRITE_FILE,
-                    DELETE_FILE, WEB_SEARCH, REQUIRE_CHOICE,
+                    DELETE_FILE, REQUIRE_CHOICE,
                     CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, GET_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST,
                     DELETE_CHECKLIST);
 

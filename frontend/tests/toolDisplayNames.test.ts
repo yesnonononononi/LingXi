@@ -47,8 +47,7 @@ test('每个固定工具都有完整名与渲染名', async () => {
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.UpdateChecklistStep) }, { fullName: '更新清单步骤', renderName: '更新清单步骤' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ModifyChecklist) }, { fullName: '修改执行清单', renderName: '修改清单' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.DeleteChecklist) }, { fullName: '删除执行清单', renderName: '删除清单' });
-  // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
-  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });
+  // edit_file 的短名独立成「编辑文件」：WRITE 分类标签只有「写入」，借它就看不出改了哪个文件
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '编辑文件' });
   // 工具行短名统一 4 字：CHOICE / PLAN 的短名各自独立于分类标签
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.RequireChoice) }, { fullName: '请求用户选择', renderName: '请求选择' });

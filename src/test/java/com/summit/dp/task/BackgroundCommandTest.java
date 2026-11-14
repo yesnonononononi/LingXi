@@ -47,7 +47,6 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.input.BackgroundTaskChannel;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
-import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.*;
@@ -340,7 +339,6 @@ class BackgroundCommandTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.exitCode").value(7));
         mvc.perform(post("/task/runtime/107/stop").param("sessionId", "10"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("FAILED"));
-        CommonToolConfiguration configuration = new CommonToolConfiguration();
         ToolDefinition<?> execute = AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(json, null, submitter, new CommandToolProperties()));
         assertTrue(json.readTree(execute.parametersJsonSchema()).path("properties").has("background"));
         assertEquals(ToolCatalog.MANAGE_COMMAND, AnnotatedToolTestDefinitions.create(ManageCommandToolExecutor.class, new ManageCommandToolExecutor(json, manager)).name());

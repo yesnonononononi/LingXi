@@ -37,7 +37,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 /** 对话模型调用生图工具，配置、配额、落盘、用量与历史必须闭环。 */
-@SpringBootTest(properties={"TAVILY_APIKEY=test-placeholder","DEEPSEEK_APIKEY=test-placeholder","lingxi.skill.dir="})
+@SpringBootTest(properties={"DEEPSEEK_APIKEY=test-placeholder","lingxi.skill.dir="})
 @AutoConfigureMockMvc(print=MockMvcPrint.NONE)
 class ImageGenerationFlowTest {
     private static final Path ROOT=createRoot();

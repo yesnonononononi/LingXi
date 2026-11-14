@@ -257,7 +257,7 @@ test('思考与正文的偏移独立，新模型响应使用自己的身份', ()
   reducer.consume(partial('先查资料', 0));
   assert.equal(bubble.thoughtSteps?.[0]?.content, '分析问题');
   assertPendingText(bubble, '先查资料');
-  reducer.consume({ type: 'TOOL_CALL', responseId: '101', requestId: 'c1', toolName: AgentToolName.WebSearch,
+  reducer.consume({ type: 'TOOL_CALL', responseId: '101', requestId: 'c1', toolName: AgentToolName.SearchWiki,
     isBody: false, executionId: 'e', timestamp: '', metaData: metadata });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '先查资料');
