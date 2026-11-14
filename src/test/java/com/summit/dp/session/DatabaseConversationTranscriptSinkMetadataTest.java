@@ -3,7 +3,6 @@ package com.summit.dp.session;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.infrastructure.harness.transcript.DatabaseConversationTranscriptSink;
 import com.summit.dp.workflow.infrastructure.harness.transcript.GeneratedImagePersistence;
 import org.junit.jupiter.api.Test;
@@ -11,15 +10,14 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 /**
  * 落库入口的归属与身份解析。
  *
- * <p><b>响应身份必须从框架参数进来、不从元数据里找</b>：框架只调 5 参重载，
- * 身份是它的 {@code ChatResponseEntity.responseId}。这里守住的是「5 参入口真的把身份
- * 传给了下游」—— 只覆写 4 参会编译通过、测试全绿，但身份在 default 方法里被静默丢弃。</p>
+ * <p><b>响应身份必须从框架参数进来、不从元数据里找</b>：sink 契约只保留携带 {@code responseId}
+ * 的入口，身份来自 {@code ChatResponseEntity.responseId}。这里守住的是「入口真的把身份传给了
+ * 下游」，而不是在元数据里再猜一次。</p>
  */
 class DatabaseConversationTranscriptSinkMetadataTest {
     private static final String RESPONSE_ID = "9007199254740993";
@@ -70,13 +68,5 @@ class DatabaseConversationTranscriptSinkMetadataTest {
         sink.appendRound("execution", ai, List.of(), RESPONSE_ID, Map.of());
 
         verify(transcript).appendRound(500L, null, null, ai, List.of(), RESPONSE_ID);
-    }
-
-    @Test
-    void entryWithoutResponseIdentityIsRejected() {
-        AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
-        assertThrows(ClientException.class, () -> sink.appendRound("execution", ai, List.of()));
-        assertThrows(ClientException.class, () -> sink.appendRound("execution", ai, List.of(), Map.of("sessionId", "777")));
-        verifyNoInteractions(transcript, identity);
     }
 }

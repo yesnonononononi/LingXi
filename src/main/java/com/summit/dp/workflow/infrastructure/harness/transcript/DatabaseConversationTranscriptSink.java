@@ -6,7 +6,6 @@ import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 
-/** 框架响应身份必须进入历史幂等键，不能通过无身份入口追加模型消息。 */
+/** 模型响应身份是历史的幂等键：sink 只开放携带身份的入口，缺失由框架契约挡在编译期。 */
 @Component
 @RequiredArgsConstructor
 public class DatabaseConversationTranscriptSink implements ConversationTranscriptSink {
@@ -22,12 +21,6 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
     private final ExecutionLocator executionLocator;
     private final GeneratedImagePersistence imagePersistence;
 
-    @Override
-    public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages) {
-        throw new ClientException("记录模型响应必须使用携带响应身份的入口");
-    }
-
-    /** 身份和归属来自框架，缺失身份由业务入口拒绝。 */
     @Override
     @Transactional
     public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages,

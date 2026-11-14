@@ -226,7 +226,7 @@ class ChecklistLoopIntegrationTest {
         ContextUsageReporter usage = new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1);
         return new AgentLoopStepRunner(RuntimeContext.builder()
                 .conversationManager(DefaultConversationManager.builder()
-                        .conversationTranscriptSink((id, ai, results) -> transcripts.incrementAndGet())
+                        .conversationTranscriptSink((id, ai, results, responseId, metadata) -> transcripts.incrementAndGet())
                         .contextAttachmentProvider(ContextAttachmentProvider.NONE)
                         .build())
                 .runtimeBoundaryChecker(boundary).toolExecutionManager(tools)
