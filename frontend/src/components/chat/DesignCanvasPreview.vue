@@ -7,6 +7,7 @@ import type {SelectOption} from '../../types/ui';
 import {
   buildDesignAiPrompt,
   buildDesignAnimationCss,
+  buildDesignCommentsAiPrompt,
   DESIGN_AI_SUGGESTIONS,
   DESIGN_ANIMATION_PRESETS,
   DESIGN_ANIMATION_STYLE_ID,
@@ -22,6 +23,10 @@ import {
   resolveElementSelector,
 } from '../../utils/designCanvasHelpers';
 import {useDesignDocument} from '../../composables/useDesignDocument';
+import {type DesignVersionEntry, useDesignVersions} from '../../composables/useDesignVersions';
+import {useDesignComments} from '../../composables/useDesignComments';
+import DesignVersionPanel from './DesignVersionPanel.vue';
+import DesignCommentLayer from './DesignCommentLayer.vue';
 
 const props = defineProps<{
   active?: boolean;
@@ -73,12 +78,27 @@ const MAX_HISTORY = 30;
 /** Agent 改写后按选择器恢复选中，避免每轮都要重新点选。 */
 let pendingReselector = '';
 const agentUpdatedFlash = ref(false);
+const activeDrawer = ref<'none' | 'versions' | 'comments'>('none');
+
+const versionMgr = useDesignVersions();
+const commentMgr = useDesignComments();
+
+const toggleDrawer = (drawer: 'versions' | 'comments'): void => {
+  if (activeDrawer.value === drawer) {
+    activeDrawer.value = 'none';
+    commentMgr.commentMode.value = false;
+    return;
+  }
+  activeDrawer.value = drawer;
+  commentMgr.commentMode.value = drawer === 'comments';
+};
 
 const designDoc = useDesignDocument({
   sessionId: computed(() => props.sessionId),
   onExternalChange: content => {
     pendingReselector = selectedElement.value ? resolveElementSelector(selectedElement.value) : '';
     parseAndMountHtml(content, loadedFileName.value || 'design-prototype.html', true);
+    versionMgr.recordVersion(content, 'ai');
     agentUpdatedFlash.value = true;
     setTimeout(() => { agentUpdatedFlash.value = false; }, 2400);
   },
@@ -469,6 +489,14 @@ const handleCanvasKeyDown = (e: KeyboardEvent): void => {
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       deleteSelectedElement();
+      return;
+    }
+  }
+
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'c') {
+    if (isFileLoaded.value && canvasMode.value === 'design') {
+      e.preventDefault();
+      toggleDrawer('comments');
     }
   }
 };
@@ -720,6 +748,10 @@ const parseAndMountHtml = (content: string, name: string, keepHistory = false) =
     undoStack.value = [];
     redoStack.value = [];
     designDoc.unbind();
+    versionMgr.clearVersions();
+    versionMgr.recordVersion(content, 'initial');
+    commentMgr.clearComments();
+    activeDrawer.value = 'none';
   }
   loadedFileName.value = name;
   isFileLoaded.value = true;
@@ -808,6 +840,9 @@ const handleDrop = (e: DragEvent) => {
 
 const clearLoadedHtml = () => {
   designDoc.unbind();
+  versionMgr.clearVersions();
+  commentMgr.clearComments();
+  activeDrawer.value = 'none';
   isFileLoaded.value = false;
   isCodeView.value = false;
   loadedFileName.value = '';
@@ -908,11 +943,74 @@ const saveDesignDocument = async (): Promise<string | null> => {
   const html = isCodeView.value ? codeDraft.value : serializeDocumentHtml();
   if (!html) return null;
   try {
-    return await designDoc.save(html, loadedFileName.value);
+    const savedPath = await designDoc.save(html, loadedFileName.value);
+    versionMgr.recordVersion(html, 'manual');
+    return savedPath;
   } catch (err) {
     selectedInfo.value = err instanceof Error ? err.message : '保存设计原型失败';
     return null;
   }
+};
+
+const currentCanvasHtml = computed(() => {
+  if (!isFileLoaded.value) return '';
+  return isCodeView.value ? codeDraft.value : serializeDocumentHtml();
+});
+
+const selectedSelector = computed(() =>
+  selectedElement.value ? resolveElementSelector(selectedElement.value) : ''
+);
+
+const selectedCommentLabel = computed(() =>
+  selectedElement.value ? resolveElementLabel(selectedElement.value) : ''
+);
+
+const restoreVersion = (entry: DesignVersionEntry): void => {
+  parseAndMountHtml(entry.html, loadedFileName.value || 'design-prototype.html', true);
+  versionMgr.recordVersion(entry.html, 'restore');
+  designDoc.markDirty();
+};
+
+const focusCommentSelector = (selector: string): void => {
+  const doc = iframeRef.value?.contentDocument;
+  if (!doc) return;
+  let target: HTMLElement | null = null;
+  try {
+    target = doc.querySelector<HTMLElement>(selector);
+  } catch {
+    target = null;
+  }
+  if (!target) {
+    selectedInfo.value = '原元素已变更，无法在当前画布定位';
+    return;
+  }
+  if (canvasMode.value !== 'design') setCanvasMode('design');
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  selectElement(target);
+};
+
+const addSelectedComment = (text: string): void => {
+  if (!selectedElement.value) return;
+  commentMgr.addComment(selectedSelector.value, selectedCommentLabel.value, text);
+};
+
+const submitAllCommentsToAi = async (): Promise<void> => {
+  const pending = commentMgr.unresolvedComments.value;
+  if (pending.length === 0) return;
+
+  const filePath = await saveDesignDocument();
+  if (!filePath) return;
+
+  const prompt = buildDesignCommentsAiPrompt({
+    fileName: loadedFileName.value,
+    filePath,
+    comments: pending.map(item => ({
+      selector: item.selector,
+      elementLabel: item.elementLabel,
+      text: item.text,
+    })),
+  });
+  emit('sendToChat', { prompt });
 };
 
 const sendDesignPrompt = async (presetText?: string) => {
@@ -1101,6 +1199,28 @@ onBeforeUnmount(() => {
           @click="saveDesignDocument"
         >
           保存
+        </button>
+
+        <button
+          v-if="isFileLoaded"
+          type="button"
+          class="btn-secondary-action"
+          :class="{ 'is-drawer-active': activeDrawer === 'comments' }"
+          title="元素评论与批量批注 (快捷键 C)"
+          @click="toggleDrawer('comments')"
+        >
+          评论{{ commentMgr.unresolvedComments.value.length ? ` (${commentMgr.unresolvedComments.value.length})` : '' }}
+        </button>
+
+        <button
+          v-if="isFileLoaded"
+          type="button"
+          class="btn-secondary-action"
+          :class="{ 'is-drawer-active': activeDrawer === 'versions' }"
+          title="查看版本历史、对比差异与回退"
+          @click="toggleDrawer('versions')"
+        >
+          版本{{ versionMgr.versions.value.length ? ` (${versionMgr.versions.value.length})` : '' }}
         </button>
 
         <button
@@ -1324,15 +1444,15 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 可视化设计画布主区域 -->
-    <div
-      v-show="!isCodeView"
-      class="canvas-viewport"
-      :class="{ 'is-dragging-over': isDraggingOver }"
-      @dragover.prevent="isDraggingOver = true"
-      @dragleave.prevent="isDraggingOver = false"
-      @drop.prevent="handleDrop"
-    >
+    <!-- 可视化设计画布主区域 + 右侧版本/评论抽屉 -->
+    <div v-show="!isCodeView" class="canvas-split-body">
+      <div
+        class="canvas-viewport"
+        :class="{ 'is-dragging-over': isDraggingOver }"
+        @dragover.prevent="isDraggingOver = true"
+        @dragleave.prevent="isDraggingOver = false"
+        @drop.prevent="handleDrop"
+      >
       <!-- 空状态：文件选择 + 预设模板 + 粘贴 HTML -->
       <div v-show="!isFileLoaded" class="empty-workspace">
         <div class="empty-upload-card" @click="triggerFileInput">
@@ -1389,6 +1509,31 @@ onBeforeUnmount(() => {
           sandbox="allow-scripts allow-same-origin allow-modals"
         />
       </div>
+      </div>
+
+      <DesignVersionPanel
+        v-if="isFileLoaded && activeDrawer === 'versions'"
+        :versions="versionMgr.versions.value"
+        :currentHtml="currentCanvasHtml"
+        @close="activeDrawer = 'none'"
+        @restore="restoreVersion"
+      />
+
+      <DesignCommentLayer
+        v-if="isFileLoaded && activeDrawer === 'comments'"
+        :comments="commentMgr.comments.value"
+        :selectedLabel="selectedCommentLabel"
+        :selectedSelector="selectedSelector"
+        :commentMode="commentMgr.commentMode.value"
+        @close="toggleDrawer('comments')"
+        @toggleMode="commentMgr.commentMode.value = !commentMgr.commentMode.value"
+        @addComment="addSelectedComment"
+        @focusSelector="focusCommentSelector"
+        @toggleResolve="commentMgr.toggleResolve"
+        @removeComment="commentMgr.removeComment"
+        @resolveAll="commentMgr.resolveAll"
+        @submitAll="submitAllCommentsToAi"
+      />
     </div>
 
     <!-- 底部 DOM 面包屑与 AI 协同设计指令栏 -->
@@ -1796,6 +1941,19 @@ onBeforeUnmount(() => {
 .btn-secondary-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-secondary-action.is-drawer-active {
+  border-color: var(--file-accent, #2563eb);
+  color: var(--file-accent, #2563eb);
+  font-weight: 600;
+}
+
+.canvas-split-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
 }
 
 .design-doc-status {

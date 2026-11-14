@@ -468,3 +468,33 @@ export const buildDesignAiPrompt = (input: DesignAiPromptInput): string => {
 
   return lines.join('\n');
 };
+
+export interface DesignCommentPromptEntry {
+  selector: string;
+  elementLabel: string;
+  text: string;
+}
+
+export interface DesignCommentsAiPromptInput {
+  fileName?: string;
+  filePath: string;
+  comments: DesignCommentPromptEntry[];
+}
+
+/** 将多条锚定在元素上的评论汇总为一条结构化 AI 修改指令。 */
+export const buildDesignCommentsAiPrompt = (input: DesignCommentsAiPromptInput): string => {
+  const targetName = input.fileName?.trim() || '当前设计原型';
+  const lines: string[] = [
+    `请根据以下画布评论批量优化设计原型「${targetName}」：`,
+    `- 原型文件：\`${input.filePath}\`（画布会在文件写入后自动刷新）`,
+    '- 请先读取该文件，再用编辑文件工具逐条落实修改；保持单文件 HTML，样式与脚本内联，不要另建文件',
+    '',
+    '待处理评论：',
+  ];
+
+  input.comments.forEach((item, idx) => {
+    lines.push(`${idx + 1}. [${item.elementLabel}] \`${item.selector}\`：${item.text}`);
+  });
+
+  return lines.join('\n');
+};

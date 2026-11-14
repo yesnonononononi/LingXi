@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildDesignAiPrompt,
   buildDesignAnimationCss,
+  buildDesignCommentsAiPrompt,
   DESIGN_ANIMATION_PRESETS,
   DESIGN_QUICK_BLOCKS,
   DESIGN_STARTER_TEMPLATES,
@@ -19,6 +20,11 @@ import {
   buildDesignDocumentPath,
   DESIGN_DOCUMENT_DIR,
 } from '../src/composables/useDesignDocument.ts';
+import {
+  computeDesignVersionDiff,
+  useDesignVersions,
+} from '../src/composables/useDesignVersions.ts';
+import {useDesignComments} from '../src/composables/useDesignComments.ts';
 
 test('预设模板列表包含 4 套独立模板且 HTML 完整', () => {
   assert.equal(DESIGN_STARTER_TEMPLATES.length, 4);
@@ -156,4 +162,59 @@ test('设计原型文件绑定路径生成与 AI 闭环提示词（携带 filePa
   assert.match(designCode, /sessionId\?:\s*string \| number \| null/);
   assert.match(panelCode, /:sessionId="props\.sessionId"/);
   assert.match(chatCode, /:sessionId="localActiveId"/);
+});
+
+test('版本历史管理：去重记录、数量上限、差异计算与回退接线', () => {
+  const { versions, recordVersion, clearVersions } = useDesignVersions();
+  const v1 = recordVersion('<div>v1</div>', 'initial');
+  assert.ok(v1);
+  // 连续相同内容不重复入栈
+  const dup = recordVersion('<div>v1</div>', 'manual');
+  assert.equal(dup?.id, v1.id);
+  assert.equal(versions.value.length, 1);
+
+  const v2 = recordVersion('<div>v1</div>\n<p>v2</p>', 'ai');
+  assert.ok(v2);
+  assert.equal(versions.value.length, 2);
+  assert.equal(versions.value[0]?.source, 'ai');
+
+  const diff = computeDesignVersionDiff(v1.html, v2.html);
+  assert.equal(diff.added, 1);
+  assert.equal(diff.removed, 0);
+  assert.ok(diff.lines.some(l => l.kind === 'add' && l.text.includes('<p>v2</p>')));
+
+  clearVersions();
+  assert.equal(versions.value.length, 0);
+});
+
+test('元素锚定评论：增删改状态与批量提交 AI 提示词构建', () => {
+  const { comments, unresolvedComments, addComment, toggleResolve, removeComment, resolveAll } = useDesignComments();
+  const c1 = addComment('body > header > button.cta', 'button.cta', '增大按钮内边距');
+  const c2 = addComment('body > main > h1', 'h1', '字体改为 36px');
+  assert.ok(c1 && c2);
+  assert.equal(unresolvedComments.value.length, 2);
+
+  toggleResolve(c1.id);
+  assert.equal(unresolvedComments.value.length, 1);
+
+  const batchPrompt = buildDesignCommentsAiPrompt({
+    fileName: 'landing.html',
+    filePath: '.lingxi/design/landing.html',
+    comments: unresolvedComments.value,
+  });
+  assert.match(batchPrompt, /\.lingxi\/design\/landing\.html/);
+  assert.match(batchPrompt, /1\. \[h1\] `body > main > h1`：字体改为 36px/);
+  assert.doesNotMatch(batchPrompt, /增大按钮内边距/);
+
+  resolveAll();
+  assert.equal(unresolvedComments.value.length, 0);
+  removeComment(c2.id);
+  assert.equal(comments.value.length, 1);
+
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const designCode = fs.readFileSync(path.resolve(currentDir, '../src/components/chat/DesignCanvasPreview.vue'), 'utf8');
+  assert.match(designCode, /<DesignVersionPanel\b/);
+  assert.match(designCode, /<DesignCommentLayer\b/);
+  assert.match(designCode, /submitAllCommentsToAi/);
+  assert.match(designCode, /restoreVersion/);
 });
