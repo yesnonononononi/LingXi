@@ -33,6 +33,14 @@ export function isAccessModeMismatch(mode: AgentAccessMode | string | null | und
   return state !== 'ON' && resolveAccessPreset(mode) === 'ReadOnly';
 }
 
+/**
+ * 终端是否跳出档位约束：沙箱才拦得住终端，本地/未设置环境下任何档位都管不了它。
+ * 菜单里那条「终端不受限」的提示按这个判据决定要不要出现，不按档位判断。
+ */
+export function isTerminalOutsideAccessControl(state: SandboxState): boolean {
+  return state !== 'ON';
+}
+
 /** 安全中心「实际效果」说明的文案键。 */
 export function resolveAccessImpactKey(mode: AgentAccessMode | string | null | undefined, state: SandboxState): string {
   return `settings.general.impact${resolveAccessPreset(mode)}${state === 'ON' ? 'Sandbox' : 'Local'}`;

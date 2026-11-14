@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   isAccessModeMismatch,
+  isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
   resolveAccessImpactKey,
   resolveAccessPreset,
@@ -22,6 +23,7 @@ import {
 } from '../src/utils/accessModePresentation';
 
 const messagesSource = readFileSync(resolve(process.cwd(), 'src/i18n/messages.ts'), 'utf8');
+const menuSource = readFileSync(resolve(process.cwd(), 'src/components/chat/ChatInputAccessMenu.vue'), 'utf8');
 const securityCopySource = readFileSync(resolve(process.cwd(), 'src/views/settings/tabs/securityCopy.ts'), 'utf8');
 const settingsSource = readFileSync(resolve(process.cwd(), 'src/views/settings/tabs/useSandboxSettings.ts'), 'utf8');
 const tabSource = readFileSync(resolve(process.cwd(), 'src/views/settings/tabs/SecurityTab.vue'), 'utf8');
@@ -82,6 +84,17 @@ test('组合出来的键在两个语种里都必须真实存在', () => {
 test('「文件规则只在沙箱生效」必须写在安全中心提示里', () => {
   assert.match(securityCopySource, /文件规则只在沙箱执行环境生效/);
   assert.match(securityCopySource, /file rules apply only in the sandbox environment/);
+});
+
+test('「终端在非沙箱环境不受档位约束」必须由真源判定，并挂在菜单标题上', () => {
+  assert.equal(isTerminalOutsideAccessControl('LOCAL'), true);
+  assert.equal(isTerminalOutsideAccessControl('UNSET'), true);
+  assert.equal(isTerminalOutsideAccessControl('ON'), false);
+  // 金丝雀：先证明读到了组件源码，否则下面的「用了真源」可能是假绿
+  assert.match(menuSource, /data-testid="chat-access-terminal-caveat"/, '菜单缺少终端提示图标');
+  assert.match(menuSource, /isTerminalOutsideAccessControl\(/, '菜单必须走真源判据');
+  const caveatHits = messagesSource.match(/\baccessMenuTerminalCaveat:/g) ?? [];
+  assert.equal(caveatHits.length, 2, `accessMenuTerminalCaveat 应在两个语种里各出现一次，实际 ${caveatHits.length} 次`);
 });
 
 test('安全中心与输入区消费同一份真源，不得各自硬编码档位判断', () => {
