@@ -18,6 +18,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -123,8 +125,7 @@ public class SearchFilesToolExecutor implements ToolExecutor {
 
             List<String> hits = new ArrayList<>();
             boolean limitReached = false;
-            int skippedBinary = 0;
-            int skippedOversize = 0;
+            SkipCounters skipped = new SkipCounters();
             for (WorkspaceFiles.Entry candidate : candidates) {
                 if (hits.size() >= maxResults) {
                     limitReached = true;
@@ -133,15 +134,14 @@ public class SearchFilesToolExecutor implements ToolExecutor {
                 if (nameMatcher != null && !nameMatcher.matches(candidate.path().getFileName())) {
                     continue;
                 }
-                ScanOutcome outcome = collectHits(files, root, candidate.path(), pattern, maxResults, hits);
-                if (outcome == ScanOutcome.SKIPPED_BINARY) {
-                    skippedBinary++;
-                } else if (outcome == ScanOutcome.SKIPPED_OVERSIZE) {
-                    skippedOversize++;
-                }
+                collectHits(files, root, candidate.path(), pattern, maxResults, hits, skipped);
+            }
+            if (skipped.failed > 0) {
+                // 逐文件记日志会刷屏，路径留在 debug 里，这里只给一条汇总。
+                log.warn("检索文件跳过读取失败的文件: count={}", skipped.failed);
             }
             return ToolExecuteResult.success(render(root, request, maxResults,
-                    new ScanSummary(hits, limitReached, skippedBinary, skippedOversize)));
+                    new ScanSummary(hits, limitReached, skipped)));
         } catch (PatternSyntaxException e) {
             return ToolExecuteResult.err("检索文件的正则不合法: " + e.getMessage());
         } catch (OutWorkSpaceException outsideWorkspace) {
@@ -156,15 +156,30 @@ public class SearchFilesToolExecutor implements ToolExecutor {
      *
      * <p>跳过原因必须回传：静默跳过会让「未找到」同时代表「真的没有」和「压根没扫」，
      * 模型据此下的结论无法自证。超限优先于二进制判定，免得大文件被误报成含 NUL。</p>
+     *
+     * <p>单个文件读不出来（被占用、坏链接、扫到一半被删）只累加计数，不打断整次检索：
+     * 一个坏文件不该让整轮报废；但也不能装作扫过了，所以异常数要一并回传给模型。</p>
      */
-    private ScanOutcome collectHits(WorkspaceFiles files, Path root, Path file, Pattern pattern,
-                                    int maxResults, List<String> hits) throws Exception {
-        byte[] bytes = files.readBytes(file);
+    private void collectHits(WorkspaceFiles files, Path root, Path file, Pattern pattern,
+                             int maxResults, List<String> hits, SkipCounters skipped) {
+        byte[] bytes;
+        try {
+            bytes = files.readBytes(file);
+        } catch (OutWorkSpaceException rejected) {
+            // 越界是安全拦截，吞掉就等于在工作区外给出「没找到」，必须放穿由 execute 转成错误。
+            throw rejected;
+        } catch (IOException | UncheckedIOException unreadable) {
+            log.debug("检索文件读取失败: path={}, cause={}", file, unreadable.toString());
+            skipped.failed++;
+            return;
+        }
         if (bytes.length > MAX_FILE_BYTES) {
-            return ScanOutcome.SKIPPED_OVERSIZE;
+            skipped.oversize++;
+            return;
         }
         if (isBinary(bytes)) {
-            return ScanOutcome.SKIPPED_BINARY;
+            skipped.binary++;
+            return;
         }
         // 检索用宽松解码：单个非 UTF-8 文件不该让整次检索失败，替换符也不会命中正常正则。
         String content = new String(bytes, StandardCharsets.UTF_8);
@@ -176,11 +191,10 @@ public class SearchFilesToolExecutor implements ToolExecutor {
                 hits.add(name + ":" + (index + 1) + ": " + abbreviate(line));
             }
         }
-        return ScanOutcome.SCANNED;
     }
 
     private String render(Path root, SearchFilesRequest request, int maxResults, ScanSummary summary) {
-        String skipped = describeSkipped(summary);
+        String skipped = describeSkipped(summary.skipped());
         if (summary.hits().isEmpty()) {
             return "未找到匹配内容: pattern=" + request.getPattern()
                     + ", scope=" + relativize(root, root) + "."
@@ -199,13 +213,17 @@ public class SearchFilesToolExecutor implements ToolExecutor {
     }
 
     /** 跳过说明供模型判读「没找到」的可信度；没跳过时返回空串，不污染正常输出。 */
-    private String describeSkipped(ScanSummary summary) {
+    private String describeSkipped(SkipCounters skipped) {
         List<String> reasons = new ArrayList<>();
-        if (summary.skippedBinary() > 0) {
-            reasons.add(summary.skippedBinary() + " 个含 NUL 的文件");
+        if (skipped.binary > 0) {
+            reasons.add(skipped.binary + " 个含 NUL 的文件");
         }
-        if (summary.skippedOversize() > 0) {
-            reasons.add(summary.skippedOversize() + " 个超 " + MAX_FILE_BYTES / 1024 / 1024 + "MB 的文件");
+        if (skipped.oversize > 0) {
+            reasons.add(skipped.oversize + " 个超 " + MAX_FILE_BYTES / 1024 / 1024 + "MB 的文件");
+        }
+        if (skipped.failed > 0) {
+            // 异常跳过的文件最容易被忽略：模型必须知道「这里是盲区」，不能当成扫过没命中。
+            reasons.add(skipped.failed + " 个读取异常的文件");
         }
         return reasons.isEmpty() ? "" : "另跳过 " + String.join("、", reasons);
     }
@@ -269,14 +287,18 @@ public class SearchFilesToolExecutor implements ToolExecutor {
         }
     }
 
-    /** 单文件扫描结果：跳过原因要计数，不能和「扫过但没命中」混为一谈。 */
-    private enum ScanOutcome {
-        SCANNED, SKIPPED_BINARY, SKIPPED_OVERSIZE
+    /**
+     * 单次检索的跳过统计表：原因只会越加越多，用可变容器跨调用累加，
+     * 免得每加一类跳过原因就再改一次方法签名。
+     */
+    private static final class SkipCounters {
+        private int binary;
+        private int oversize;
+        private int failed;
     }
 
     /** 一次检索的汇总；把计数与命中一起传给渲染，避免 render 参数膨胀。 */
-    private record ScanSummary(List<String> hits, boolean limitReached,
-                               int skippedBinary, int skippedOversize) {
+    private record ScanSummary(List<String> hits, boolean limitReached, SkipCounters skipped) {
     }
 
 }
