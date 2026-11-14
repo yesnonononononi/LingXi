@@ -8,7 +8,6 @@ import com.summit.dp.workflow.application.chat.ExecutionErrorText;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,13 +35,12 @@ import org.springframework.stereotype.Component;
  * <p><b>{@code tokenInfo} 为 null 一律跳过</b>：那是「未采集到」（例如首轮模型调用之前就失败），
  * 与「确实为 0」严格区分，不猜、不补 0。</p>
  *
- * <p><b>为什么显式 {@link Order}：</b>失败原因必须先于 SSE 广播提交，前端收到终态后才能立即对账到它
- * （否则存在「流已结束但原因还没写」的竞态窗口）。{@code RuntimeEventPublisher} 按注入顺序回调，
+ * <p><b>为什么显式实现 {@link #order()}：</b>失败原因必须先于 SSE 广播提交，前端收到终态后才能立即对账到它
+ * （否则存在「流已结束但原因还没写」的竞态窗口）。{@code RuntimeEventPublisher} 按 {@link #order()} 排序回调，
  * 本类取 {@code HIGHEST_PRECEDENCE} 保证最早执行。</p>
  */
 @Slf4j
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
 @RequiredArgsConstructor
 public class ChatTurnRuntimeListener implements RuntimeListener {
 
@@ -50,12 +48,16 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
     private final ChatTurnService chatTurnService;
 
     @Override
+    public int order() {
+        return Ordered.HIGHEST_PRECEDENCE;
+    }
+
+    @Override
     public void onExecutionStart(ExecutionStartEvent event) {
         if (event == null || event.executionId() == null) {
             return;
         }
-        guard("onExecutionStart", event.executionId(),
-                () -> chatTurnService.markRunning(event.executionId(), event.timestamp(), resolveRootSessionId(event)));
+        chatTurnService.markRunning(event.executionId(), event.timestamp(), resolveRootSessionId(event));
     }
 
     @Override
@@ -64,8 +66,7 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
             return;
         }
         // 传 null：恢复不是「首次开始」，领域方法只在 startedAt 为空时才赋值。
-        guard("onExecutionResumed", event.executionId(),
-                () -> chatTurnService.markRunning(event.executionId(), null, resolveRootSessionId(event)));
+        chatTurnService.markRunning(event.executionId(), null, resolveRootSessionId(event));
     }
 
     @Override
@@ -79,8 +80,8 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
     /**
      * 失败是终态：先记原因，再入账失败前已累计的用量。
      *
-     * <p>两步各自隔离异常 —— 原因写入失败（归属不明 / 落库失败）不得连带跳过用量更新，
-     * 反之亦然；本类处于同步广播链路，异常绝不能外抛。</p>
+     * <p>原因写入失败（归属不明 / 落库失败）本地兜底，不得连带跳过同方法内的用量更新；
+     * 监听器外层异常由 {@code RuntimeEventPublisher} 按 {@code Behavior.CONTAIN} 统一隔离。</p>
      */
     @Override
     public void onExecutionError(ExecutionErrorEvent event) {
@@ -100,13 +101,17 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
         writeUsage(event.executionId(), event.getTokenInfo(), resolveRootSessionId(event));
     }
 
-    /** 失败原因只写轮次、不改状态；状态由生命周期端口按已保存的终态置为 FAILED。 */
+    /** 失败原因只写轮次、不改状态；原因写入失败不阻断后续用量刷新。 */
     private void recordFailureReason(ExecutionErrorEvent event) {
         if (event.executionId() == null) {
             return;
         }
-        guard("recordFailureReason", event.executionId(),
-                () -> chatTurnService.recordFailureReason(event.executionId(), ExecutionErrorText.resolve(event), resolveRootSessionId(event)));
+        try {
+            chatTurnService.recordFailureReason(event.executionId(), ExecutionErrorText.resolve(event), resolveRootSessionId(event));
+        } catch (RuntimeException e) {
+            log.warn("{} recordFailureReason 失败（不影响用量入账）: executionId={}, error={}",
+                    LOG_PREFIX, event.executionId(), e.toString());
+        }
     }
 
     /** 三个终态事件的统一用量入口；未采集到（{@code tokenInfo} 为 null）即跳过，不补 0。 */
@@ -114,11 +119,10 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
         if (executionId == null || usage == null) {
             return;
         }
-        guard("refreshUsage", executionId,
-                () -> chatTurnService.refreshUsage(executionId,
-                        toLong(usage.inputTokenCount()), toLong(usage.outputTokenCount()),
-                        toLong(usage.totalTokenCount()), toLong(usage.cacheTokens()),
-                        toLong(usage.reasoningTokens()), rootSessionId));
+        chatTurnService.refreshUsage(executionId,
+                toLong(usage.inputTokenCount()), toLong(usage.outputTokenCount()),
+                toLong(usage.totalTokenCount()), toLong(usage.cacheTokens()),
+                toLong(usage.reasoningTokens()), rootSessionId);
     }
 
     /**
@@ -135,18 +139,5 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
     /** 框架用量是 {@code Integer}，轮次是 BIGINT（{@code Long}）；null 原样透传，不得当成 0。 */
     private static Long toLong(Integer value) {
         return value == null ? null : value.longValue();
-    }
-
-    /**
-     * 本地异常隔离：框架的事件广播在整条 {@code forEach} 之外捕获，一位监听器抛错会跳过后续监听器，
-     * 所以同步观察链路上的每个动作都要各自兜底。
-     */
-    private void guard(String hook, String executionId, Runnable action) {
-        try {
-            action.run();
-        } catch (RuntimeException e) {
-            log.warn("{} {} 失败（不影响执行本身）: executionId={}, error={}",
-                    LOG_PREFIX, hook, executionId, e.toString());
-        }
     }
 }

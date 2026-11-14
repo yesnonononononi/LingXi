@@ -4,9 +4,7 @@ import com.summit.core.conversation.event.*;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -24,16 +22,19 @@ import org.springframework.stereotype.Component;
  * {@code HIGHEST_PRECEDENCE}），本类必须在它之后跑 —— 否则快照读到的是变更前的状态，
  * 前端会看到「终态事件带的是 RUNNING」。{@link Ordered#LOWEST_PRECEDENCE} 保证本类最后执行。</p>
  *
- * <p><b>为什么 catchErr 的语义在这里是「吞掉」</b>：推送是旁路观测，失败不改业务语义 ——
- * 世界仍然一致（会话状态另有历史接口兜底）。因此每个钩子各自隔离异常，绝不上抛。</p>
+ * <p><b>异常隔离由框架负责</b>：{@code RuntimeEventPublisher} 按默认 {@code Behavior.CONTAIN}
+ * 逐监听器隔离异常，旁路推送失败不会中断其他监听器或主执行流。</p>
  */
-@Slf4j
 @Component
-@Order(Ordered.LOWEST_PRECEDENCE)
 @RequiredArgsConstructor
 public class TurnViewRuntimeListener implements RuntimeListener {
 
     private final TurnViewBroadcaster turnViewBroadcaster;
+
+    @Override
+    public int order() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
 
     @Override
     public void onExecutionStart(ExecutionStartEvent event) {
@@ -82,15 +83,11 @@ public class TurnViewRuntimeListener implements RuntimeListener {
         snapshot(event);
     }
 
-    /** 取执行 ID 推整轮快照；失败只告警，绝不外抛（同步广播链路上一位监听器抛错会跳过后续）。 */
+    /** 取执行 ID 推整轮快照；异常由 {@code RuntimeEventPublisher} 按 {@code Behavior.CONTAIN} 统一隔离。 */
     private void snapshot(AgentEvent event) {
         if (event == null || event.executionId() == null || event.executionId().isBlank()) {
             return;
         }
-        try {
-            turnViewBroadcaster.broadcastSnapshotForExecution(event.executionId());
-        } catch (RuntimeException e) {
-            log.warn("推送轮次快照失败（不影响执行本身）: executionId={}, error={}", event.executionId(), e.toString());
-        }
+        turnViewBroadcaster.broadcastSnapshotForExecution(event.executionId());
     }
 }

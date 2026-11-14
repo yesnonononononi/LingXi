@@ -3,6 +3,7 @@ package com.summit.dp.turn;
 import com.summit.core.conversation.event.ExecutionCancelledEvent;
 import com.summit.core.conversation.event.ExecutionCompleteEvent;
 import com.summit.core.conversation.event.ExecutionErrorEvent;
+import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.TokenInfo;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
@@ -10,7 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -89,16 +91,17 @@ class ChatTurnRuntimeListenerTest {
     }
 
     @Test
-    @DisplayName("入账失败只吞掉，不向外抛（观测链路不得拖垮主执行流）")
+    @DisplayName("入账失败由 RuntimeEventPublisher 按 Behavior.CONTAIN 隔离，不向外抛（观测链路不得拖垮主执行流）")
     void swallowsUsageFailures() {
         doThrow(new IllegalStateException("db down")).when(chatTurnService)
                 .refreshUsage(anyString(), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class));
+        RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(listener));
 
-        assertDoesNotThrow(() -> listener.onExecutionCompleted(
+        assertDoesNotThrow(() -> publisher.onExecutionComplete(
                 new ExecutionCompleteEvent("3008", usage(1, 1, 2))));
-        assertDoesNotThrow(() -> listener.onExecutionError(
+        assertDoesNotThrow(() -> publisher.onExecutionError(
                 new ExecutionErrorEvent("boom", null, "3009", usage(1, 1, 2), null)));
-        assertDoesNotThrow(() -> listener.onExecutionCancelled(
+        assertDoesNotThrow(() -> publisher.onExecutionCancelled(
                 new ExecutionCancelledEvent("3010", usage(1, 1, 2), null)));
     }
 
@@ -186,12 +189,10 @@ class ChatTurnRuntimeListenerTest {
     }
 
     @Test
-    @DisplayName("显式 @Order(HIGHEST_PRECEDENCE)：失败原因写入早于 SSE 广播")
+    @DisplayName("显式 order() = HIGHEST_PRECEDENCE：失败原因写入早于 SSE 广播")
     void failureReasonRunsBeforeBroadcast() {
-        Order order = ChatTurnRuntimeListener.class.getAnnotation(Order.class);
-
-        assertNotNull(order, "必须显式声明顺序，否则原因写入与广播的先后不可保证");
-        assertEquals(Ordered.HIGHEST_PRECEDENCE, order.value());
+        assertEquals(Ordered.HIGHEST_PRECEDENCE, listener.order(),
+                "必须显式声明 HIGHEST_PRECEDENCE 顺序，保证原因写入早于 SSE 广播");
     }
 
     private static TokenInfo usage(int input, int output, int total) {

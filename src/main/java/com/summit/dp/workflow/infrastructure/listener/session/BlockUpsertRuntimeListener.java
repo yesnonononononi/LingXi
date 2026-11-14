@@ -14,7 +14,6 @@ import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,12 +30,16 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@Order(Ordered.LOWEST_PRECEDENCE)
 @RequiredArgsConstructor
 public class BlockUpsertRuntimeListener implements RuntimeListener {
 
     private final TurnViewBroadcaster turnViewBroadcaster;
     private final ChatTurnRepository chatTurnRepository;
+
+    @Override
+    public int order() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
 
     @Override
     public void onToolCall(ToolCallStartEvent event) {
@@ -75,17 +78,12 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
         if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
             return;
         }
-        try {
-            TurnBroadcastIdentity identity = TurnBroadcastIdentity.fromEventMetadata(event.eventMetaData());
-            if (identity != null) {
-                turnViewBroadcaster.broadcastBlockUpsert(identity, facts);
-                return;
-            }
-            broadcastWithExecutionLookup(facts, event);
-        } catch (RuntimeException e) {
-            log.warn("推送工具块增量失败（不影响执行本身）: requestId={}, error={}",
-                    facts.toolCallId(), e.toString());
+        TurnBroadcastIdentity identity = TurnBroadcastIdentity.fromEventMetadata(event.eventMetaData());
+        if (identity != null) {
+            turnViewBroadcaster.broadcastBlockUpsert(identity, facts);
+            return;
         }
+        broadcastWithExecutionLookup(facts, event);
     }
 
     /**

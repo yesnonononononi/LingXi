@@ -8,7 +8,6 @@ import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -27,7 +26,6 @@ import java.util.Map;
  * 的 {@code resultStatus} 为 {@code PROMISED}（或根本无 {@code STARTED}），其状态一律由
  * {@code ToolCallService.decide} 收尾；本监听器对 {@code PROMISED} 显式忽略。</p>
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ToolCallExecutionListener implements RuntimeListener {
@@ -35,14 +33,14 @@ public class ToolCallExecutionListener implements RuntimeListener {
     private final ToolCallRegistrar registrar;
 
     @Override
+    public int order() {
+        return 0;
+    }
+
+    @Override
     public void onToolCall(ToolCallStartEvent event) {
-        try {
-            registrar.markExecuteStarted(event.getRequestId(), numericId(event.getExecutionId()),
-                    event.getToolName(), event.getArgs());
-        } catch (RuntimeException e) {
-            // 观测链路不得拖垮主执行流：登记失败只告警，工具照常执行。
-            log.warn("登记工具调用开始失败: requestId={}, error={}", event.getRequestId(), e.toString());
-        }
+        registrar.markExecuteStarted(event.getRequestId(), numericId(event.getExecutionId()),
+                event.getToolName(), event.getArgs());
     }
 
     @Override
@@ -50,14 +48,10 @@ public class ToolCallExecutionListener implements RuntimeListener {
         if (event.resultStatus() == ToolCallStatus.PROMISED) {
             return;   // PROMISE 的结论交给 decide 端点收尾
         }
-        try {
-            ToolCallOutcome outcome = ToolCallOutcome.fromFrameworkStatus(event.resultStatus());
-            registrar.completeExecute(event.getRequestId(), numericId(event.getExecutionId()),
-                    event.getToolName(), event.getArgs(), event.getOutput(), outcome,
-                    fileEditOf(event.getMetaData()));
-        } catch (RuntimeException e) {
-            log.warn("登记工具调用结束失败: requestId={}, error={}", event.getRequestId(), e.toString());
-        }
+        ToolCallOutcome outcome = ToolCallOutcome.fromFrameworkStatus(event.resultStatus());
+        registrar.completeExecute(event.getRequestId(), numericId(event.getExecutionId()),
+                event.getToolName(), event.getArgs(), event.getOutput(), outcome,
+                resolveFileEdit(event.getMetaData()));
     }
 
     /**
@@ -67,7 +61,7 @@ public class ToolCallExecutionListener implements RuntimeListener {
      * 登记器据此不改动元数据。</p>
      */
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> fileEditOf(Map<String, Object> metaData) {
+    private static Map<String, Object> resolveFileEdit(Map<String, Object> metaData) {
         if (metaData == null) {
             return null;
         }
