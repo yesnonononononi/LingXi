@@ -2,9 +2,11 @@
 /**
  * 全站唯一的右键菜单。
  *
- * <p>既负责监听（document 上的 contextmenu）也负责渲染（Teleport 到 body 的浮层），
+ * <p>既负责监听（document 上的 contextmenu）也负责渲染（Teleport 浮层），
  * 因为这两件事必须成对存在：少一个监听就少一个菜单，多一份监听就会弹出两份。
  * 规则与状态见 {@link ../../utils/contextMenu} 与 {@link ../../composables/useContextMenu}。</p>
+ *
+ * <p>浮层默认挂到 body；落点在模态 dialog 内时改挂进那个 dialog（见 {@link mountTarget}）。</p>
  *
  * <p>三个不能动的细节：① 菜单本身用 `pointerdown.prevent` 吞掉按下，否则输入框失焦、
  * 粘贴会落空；② 只有真的弹出才 `preventDefault`，让 Monaco 等自带菜单的区域先声明主权
@@ -16,7 +18,7 @@ import {t} from '../../i18n';
 import {useContextMenu} from '../../composables/useContextMenu';
 import {clampMenuPosition} from '../../utils/contextMenu';
 
-const {state, openTextMenu, closeTextMenu, runTextCommand} = useContextMenu();
+const {state, openTextMenu, closeTextMenu, runMenuCommand} = useContextMenu();
 
 const menuRef = ref<HTMLElement | null>(null);
 /** 实测尺寸后夹取到的落点；未测量前先用右键坐标顶上，避免闪到左上角。 */
@@ -25,6 +27,14 @@ const position = ref({x: 0, y: 0});
 const activeIndex = ref(-1);
 
 const items = computed(() => state.items);
+
+/**
+ * 浮层挂载容器：落在模态 dialog 里的右键挂进那个 dialog。
+ *
+ * <p>`dialog.showModal()` 的元素在浏览器顶层（top layer），挂在 body 的浮层会被它整个盖住 ——
+ * 菜单看得见与否是次要的，关键是点不到。默认仍是 body，文本菜单行为逐字节不变。</p>
+ */
+const mountTarget = computed<string | HTMLElement>(() => state.mountTarget ?? 'body');
 
 /** 第一个可用项的下标；全禁用时返回 -1。 */
 const firstEnabledIndex = (): number => items.value.findIndex(item => !item.disabled);
@@ -135,7 +145,7 @@ const handleKeydown = (event: KeyboardEvent): void => {
     }
     event.preventDefault();
     event.stopPropagation();
-    runTextCommand(item.command);
+    runMenuCommand(item.command);
   }
 };
 
@@ -171,7 +181,7 @@ const itemClass = (index: number, disabled: boolean): string[] => [
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="mountTarget">
     <div
       v-if="state.open"
       ref="menuRef"
@@ -191,7 +201,7 @@ const itemClass = (index: number, disabled: boolean): string[] => [
         :disabled="item.disabled"
         :class="itemClass(index, item.disabled)"
         @mouseenter="activeIndex = item.disabled ? activeIndex : index"
-        @click="runTextCommand(item.command)"
+        @click="runMenuCommand(item.command)"
       >{{ t(`contextMenu.${item.command}`) }}</button>
     </div>
   </Teleport>

@@ -135,6 +135,8 @@ export const messages: MessageSchema = {
       copy: '复制',
       paste: '粘贴',
       selectAll: '全选',
+      copyImage: '复制图片',
+      saveImage: '保存图片',
     },
     format: {
       oneSecond: '1秒',
@@ -166,7 +168,6 @@ export const messages: MessageSchema = {
         write: '写入',
         // edit_file 的短名独立成「编辑文件」：write 是分类标签，工具行不能借它；短名统一 4 字
         fileEdit: '编辑文件',
-        webSearch: '检索网络资源',
         choice: '选择',
         // 工具行短名统一 4 字：CHOICE 分类标签只有「选择」，工具行另取「请求选择」
         choiceRequest: '请求选择',
@@ -195,7 +196,7 @@ export const messages: MessageSchema = {
         // 读图独立文案：与 read_file 的「读取」区分
         imageRead: '查看图片',
         imageGenerate: '生成图片',
-        // 文件检索独立文案：与记忆检索、工具检索、网页搜索都不重名
+        // 文件检索独立文案：与记忆检索、工具检索都不重名
         fileSearch: '检索文件',
         // 整文件写入的短名是「写入文件」，与 edit_file 的「编辑文件」靠动词区分
         fileWrite: '写入文件',
@@ -1704,6 +1705,8 @@ export const messages: MessageSchema = {
       copy: 'Copy',
       paste: 'Paste',
       selectAll: 'Select all',
+      copyImage: 'Copy image',
+      saveImage: 'Save image',
     },
     format: {
       oneSecond: '1s',
@@ -1735,7 +1738,6 @@ export const messages: MessageSchema = {
         write: 'Write',
         // edit_file gets its own label: "write" is the category label; tool rows keep 4-word names.
         fileEdit: 'Edit file',
-        webSearch: 'Search the web',
         choice: 'Choice',
         // Tool rows use their own label: the CHOICE category label is just "Choice".
         choiceRequest: 'Request choice',

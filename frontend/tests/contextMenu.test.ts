@@ -14,11 +14,28 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {nextTick} from 'vue';
-import type {ContextMenuContext, TextEditCommand} from '../src/utils/contextMenu';
-import {clampMenuPosition, isMenuEnabled, resolveTextMenuItems} from '../src/utils/contextMenu';
+import type {ContextMenuContext, ContextMenuCommand, ImageMenuCommand, TextEditCommand} from '../src/utils/contextMenu';
+import {
+  clampMenuPosition,
+  IMAGE_MENU_NAME_ATTR,
+  IMAGE_MENU_SRC_ATTR,
+  IMAGE_MENU_TARGET_ATTR,
+  isMenuEnabled,
+  isTextEditCommand,
+  resolveImageMenuItems,
+  resolveTextMenuItems,
+} from '../src/utils/contextMenu';
 import {messages} from '../src/i18n/messages';
 
 const COMMANDS: readonly TextEditCommand[] = ['cut', 'copy', 'paste', 'selectAll'];
+const IMAGE_COMMANDS: readonly ImageMenuCommand[] = ['copyImage', 'saveImage'];
+
+/** 读一个源文件并先做金丝雀校验，避免「路径写错 → 到处都找不到 → 静默变绿」。 */
+function readSource(relativeUrl: string, canary: string): string {
+  const source = readFileSync(fileURLToPath(new URL(relativeUrl, import.meta.url)), 'utf8');
+  assert.ok(source.includes(canary), `读到的不是目标文件（金丝雀未命中）：${relativeUrl}`);
+  return source;
+}
 
 /** 取某条命令的禁用态；顺便断言四项恒在且顺序固定。 */
 function disabledState(context: ContextMenuContext): Record<TextEditCommand, boolean> {
@@ -148,4 +165,91 @@ test('CM-11 组件里不许写死菜单文案（必须走 t()）', () => {
   for (const literal of ['剪切', '复制', '粘贴', '全选', 'Cut', 'Copy', 'Paste']) {
     assert.equal(template.includes(literal), false, `模板里出现了写死的文案：${literal}`);
   }
+});
+
+// ───────────────────────── 图片菜单（复制图片 / 保存图片） ─────────────────────────
+
+test('IM-1 图片落点恒出两项，顺序固定且都可用', () => {
+  const items = resolveImageMenuItems();
+  assert.deepEqual(
+    items.map(item => item.command),
+    [...IMAGE_COMMANDS],
+    '图片菜单必须恒为「复制图片 → 保存图片」两项，顺序固定'
+  );
+  for (const item of items) {
+    assert.equal(item.disabled, false, `${item.command} 不得预先灰掉：失败只有执行时才知道`);
+  }
+});
+
+test('IM-2 命令分组只有一组能走主进程文本白名单', () => {
+  const members: ContextMenuCommand[] = [...COMMANDS, ...IMAGE_COMMANDS];
+  for (const command of members) {
+    assert.equal(
+      isTextEditCommand(command),
+      (COMMANDS as readonly string[]).includes(command),
+      `${command} 的分组判错了：图片命令绝不能走 edit:command`
+    );
+  }
+});
+
+test('IM-3 中英文各有图片两项文案，且不是同一个串', () => {
+  for (const locale of ['zh-CN', 'en-US'] as const) {
+    const dict = messages[locale].contextMenu as unknown as Record<string, string>;
+    for (const command of IMAGE_COMMANDS) {
+      const label = dict[command];
+      assert.equal(typeof label, 'string', `${locale} 缺少 contextMenu.${command}`);
+      assert.ok(label.trim().length > 0, `${locale} 的 contextMenu.${command} 不能是空串`);
+    }
+  }
+  const zh = messages['zh-CN'].contextMenu as unknown as Record<string, string>;
+  const en = messages['en-US'].contextMenu as unknown as Record<string, string>;
+  assert.notEqual(zh.copyImage, en.copyImage, '中英文必须真的翻译过');
+  assert.notEqual(zh.copyImage, zh.saveImage, '两项文案不能一样，否则用户分不清');
+});
+
+test('IM-4 大图声明图片落点属性，且属性名只有一份（渲染方与探测方共用常量）', () => {
+  const lightbox = readSource('../src/components/common/ImageLightbox.vue', 'lx-image-lightbox__image');
+  assert.ok(lightbox.includes('v-bind="imageMenuAttrs"'), '大图必须用共用的属性表挂落点');
+  // 只看 imageMenuAttrs 那一段：属性名必须逐个来自常量，不许在组件里重写一遍
+  const start = lightbox.indexOf('const imageMenuAttrs');
+  const end = lightbox.indexOf('});', start);
+  assert.ok(start > 0 && end > start, '没找到 imageMenuAttrs 定义，扫描器失效');
+  const attrBlock = lightbox.slice(start, end);
+  for (const constant of ['IMAGE_MENU_TARGET_ATTR', 'IMAGE_MENU_SRC_ATTR', 'IMAGE_MENU_NAME_ATTR']) {
+    assert.ok(attrBlock.includes(constant), `大图缺少落点属性：${constant}`);
+  }
+  assert.ok(
+    lightbox.includes("from '../../utils/contextMenu'"),
+    '属性名必须从 utils/contextMenu 导入，不能在组件里重写一遍'
+  );
+  for (const literal of [IMAGE_MENU_TARGET_ATTR, IMAGE_MENU_SRC_ATTR, IMAGE_MENU_NAME_ATTR]) {
+    assert.equal(
+      lightbox.includes(`'${literal}'`) || lightbox.includes(`"${literal}"`),
+      false,
+      `不许在组件里写死属性名字面量：${literal}`
+    );
+  }
+});
+
+test('IM-5 图片探测先于文本探测，且模态框内的菜单挂进 dialog', () => {
+  const source = readSource('../src/composables/useContextMenu.ts', 'export const useContextMenu');
+  const textProbe = source.indexOf('const openTextMenu');
+  const imageCallInTextProbe = source.indexOf('if (openImageMenu(event))', textProbe);
+  assert.ok(textProbe > 0 && imageCallInTextProbe > textProbe, '图片落点必须在文本探测之前分流');
+  assert.ok(
+    source.includes('element.closest(\'dialog\')') || source.includes("element.closest('dialog')"),
+    '落在模态 dialog 内必须把浮层挂进 dialog —— body 层的浮层会被 top layer 盖住'
+  );
+});
+
+test('IM-6 浮层挂载目标是动态的，且命令派发走统一的 runMenuCommand', () => {
+  const source = readSource('../src/components/common/ContextMenu.vue', 'role="menu"');
+  assert.ok(source.includes('<Teleport :to="mountTarget">'), 'Teleport 目标必须跟着落点走');
+  assert.ok(source.includes('state.mountTarget ?? \'body\''), '默认仍然挂 body，文本菜单行为不变');
+  assert.equal(source.includes('runTextCommand'), false, '菜单项派发必须走统一的 runMenuCommand');
+  assert.equal(
+    (source.match(/runMenuCommand\(/g) ?? []).length >= 2,
+    true,
+    '点击与回车两条路径都必须走 runMenuCommand'
+  );
 });

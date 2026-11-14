@@ -1,16 +1,35 @@
 /**
  * 右键菜单的全局状态与落点探测。
  *
- * <p>模块级单例：一屏只有一个右键菜单，任何组件（消息正文、输入框、预览面板）
- * 都不需要各自挂一套。视觉与交互在 {@link ../components/common/ContextMenu.vue}。</p>
+ * <p>模块级单例：一屏只有一个右键菜单，任何组件（消息正文、输入框、图片预览）都不需要各自挂一套。
+ * 视觉与交互在 {@link ../components/common/ContextMenu.vue}。</p>
  *
- * <p>落点探测只在事件发生那一刻做一次：菜单项算好就冻结，避免用户先右键再改选区
+ * <p>落点探测只在事件发生那一刻做一次：菜单项与动作算好就冻结，避免用户先右键再改选区
  * 出现「菜单说能复制、点了没东西」的错位。</p>
+ *
+ * <p>两组命令共用同一个浮层：落点带 {@link IMAGE_MENU_TARGET_ATTR} 时是图片两项，
+ * 其余按文本编辑四项。加命令就在这里加一条分支，别在别处另挂一套监听。</p>
  */
 import {reactive} from 'vue';
-import type {ContextMenuItem, ContextMenuContext, TextEditCommand} from '../utils/contextMenu';
-import {isMenuEnabled, resolveTextMenuItems} from '../utils/contextMenu';
-import {runTextEditCommand} from '../utils/platform';
+import type {
+  ContextMenuItem,
+  ContextMenuCommand,
+  ContextMenuContext,
+  ImageMenuCommand,
+} from '../utils/contextMenu';
+import {
+  IMAGE_MENU_NAME_ATTR,
+  IMAGE_MENU_SRC_ATTR,
+  IMAGE_MENU_TARGET_ATTR,
+  isMenuEnabled,
+  isTextEditCommand,
+  resolveImageMenuItems,
+  resolveTextMenuItems,
+} from '../utils/contextMenu';
+import {copyImageToClipboard, runTextEditCommand, saveImageFile} from '../utils/platform';
+
+/** 菜单项的执行动作：图片命令自己带动作，文本命令走主进程白名单。 */
+export type ContextMenuAction = () => void | Promise<void>;
 
 /** 右键菜单的可见状态。 */
 export interface ContextMenuState {
@@ -19,6 +38,16 @@ export interface ContextMenuState {
   x: number;
   y: number;
   items: ContextMenuItem[];
+  /**
+   * 浮层挂载容器；null 表示 `body`。
+   *
+   * <p>为什么需要它：图片预览用 `dialog.showModal()`，元素进了浏览器的顶层（top layer），
+   * z-index 再大也压不过它 —— 挂在 body 的菜单会藏到对话框底下，既看不见也点不到。
+   * 所以落在模态框里的右键必须把菜单挂进那个对话框。</p>
+   */
+  mountTarget: HTMLElement | null;
+  /** 非文本命令的执行动作，按命令 id 取；缺失时该命令走文本命令通路。 */
+  actions: Partial<Record<ContextMenuCommand, ContextMenuAction>>;
 }
 
 /** 文本可编辑元素的候选选择器。 */
@@ -30,7 +59,14 @@ const NON_TEXT_INPUT_TYPES: readonly string[] = [
 ];
 
 /** 单例状态：整屏共用一份。 */
-const state = reactive<ContextMenuState>({open: false, x: 0, y: 0, items: []});
+const state = reactive<ContextMenuState>({
+  open: false,
+  x: 0,
+  y: 0,
+  items: [],
+  mountTarget: null,
+  actions: {},
+});
 
 /**
  * 判断一个 input 是否承载文本编辑。
@@ -82,6 +118,40 @@ const probeContext = (target: EventTarget | null): ContextMenuContext => {
   return {editable: true, readOnly, hasSelection};
 };
 
+/** 图片命令的执行动作表：复制指到剪贴板，保存指到系统对话框。 */
+const imageActions = (src: string, name: string): Partial<Record<ImageMenuCommand, ContextMenuAction>> => ({
+  copyImage: () => void copyImageToClipboard(src),
+  saveImage: () => void saveImageFile(src, name),
+});
+
+/**
+ * 探测图片落点并打开图片菜单。
+ *
+ * @param event 触发菜单的鼠标事件
+ * @returns 真的弹出时为 true
+ */
+const openImageMenu = (event: MouseEvent): boolean => {
+  const element = event.target instanceof Element
+    ? event.target.closest(`[${IMAGE_MENU_TARGET_ATTR}]`)
+    : null;
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+  const src = element.getAttribute(IMAGE_MENU_SRC_ATTR) ?? '';
+  if (!src) {
+    return false;
+  }
+  const name = element.getAttribute(IMAGE_MENU_NAME_ATTR) ?? '';
+  state.items = resolveImageMenuItems();
+  state.actions = imageActions(src, name);
+  // 落在模态 dialog 里就必须挂进 dialog：body 层的浮层会被 top layer 盖住
+  state.mountTarget = element.closest('dialog');
+  state.x = event.clientX;
+  state.y = event.clientY;
+  state.open = true;
+  return true;
+};
+
 /**
  * 尝试在落点处打开菜单。
  *
@@ -89,41 +159,59 @@ const probeContext = (target: EventTarget | null): ContextMenuContext => {
  * @returns 真的弹出时为 true（调用方据此 preventDefault）；落点无任何可用命令时为 false
  */
 const openTextMenu = (event: MouseEvent): boolean => {
+  if (openImageMenu(event)) {
+    return true;
+  }
   const items = resolveTextMenuItems(probeContext(event.target));
   if (!isMenuEnabled(items)) {
     return false;
   }
   state.items = items;
+  state.actions = {};
+  state.mountTarget = null;
   state.x = event.clientX;
   state.y = event.clientY;
   state.open = true;
   return true;
 };
 
-/** 关闭菜单并清空上一轮的项，避免下次打开到测量完成之间闪一帧旧菜单。 */
+/** 关闭菜单并清空上一轮的项与动作，避免下次打开到测量完成之间闪一帧旧菜单。 */
 const closeTextMenu = (): void => {
   state.open = false;
   state.items = [];
+  state.actions = {};
+  state.mountTarget = null;
 };
 
 /**
  * 执行一条命令并收起菜单。
  *
  * <p>先收菜单再执行：粘贴要求焦点仍在原来的输入框里，菜单不抢焦点（见组件里的
- * `pointerdown.prevent`），顺序反了会让主进程的 `paste` 落到菜单上。</p>
+ * `pointerdown.prevent`），顺序反了会让主进程的 `paste` 落到菜单上。图片命令同理 ——
+ * 保存对话框是模态的，菜单留着只会变成一层动不了的浮层。</p>
  *
  * @param command 要执行的命令
  */
-const runTextCommand = (command: TextEditCommand): void => {
+const runMenuCommand = (command: ContextMenuCommand): void => {
+  const action = state.actions[command];
   closeTextMenu();
-  void runTextEditCommand(command);
+  if (action) {
+    void action();
+    return;
+  }
+  if (isTextEditCommand(command)) {
+    void runTextEditCommand(command);
+    return;
+  }
+  // 动作表里没有、又不是文本命令：新增命令忘了挂动作。宁可留一条 warn，也不静默吞掉
+  console.warn(`菜单命令没有对应动作: ${command}`);
 };
 
 /**
  * 右键菜单组合式函数。
  *
- * @returns { state, openTextMenu, closeTextMenu, runTextCommand }。
+ * @returns { state, openTextMenu, closeTextMenu, runMenuCommand }。
  */
 export const useContextMenu = () => {
-  return {state, openTextMenu, closeTextMenu, runTextCommand};
+  return {state, openTextMenu, closeTextMenu, runMenuCommand};
 };

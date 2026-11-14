@@ -1,10 +1,11 @@
-const { app, BrowserWindow, WebContentsView, session, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage, systemPreferences } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage, clipboard, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
 const { registerProjectPagePreview } = require('./project-page-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
+const { registerImageActions } = require('./image-actions.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
 const { createDisabledPet, resolvePetExposure } = require('./pet-feature-gate.cjs');
 // M3 T04：偏好与菜单的单一真源（两个都是纯 CJS、零数据文件依赖，随包安全）。
@@ -305,6 +306,23 @@ const backgroundImages = registerBackgroundImages({
   dialog,
   nativeImage,
   userDataDir,
+  getWindow: () => mainWindow,
+  assertTrustedSender,
+});
+
+/**
+ * 图片右键动作（复制图片 / 保存图片）。
+ *
+ * <p>字节由渲染层取好再交过来（`blob:` 图源只有渲染进程能解析），主进程只做「写系统剪贴板」
+ * 与「弹系统保存对话框 + 写盘」两件渲染层做不到的事。两条 handler 都做来源校验：
+ * 写剪贴板会覆盖用户的剪贴板内容，弹对话框 + 写文件更是高权限动作。</p>
+ */
+const imageActions = registerImageActions({
+  ipcMain,
+  dialog,
+  clipboard,
+  nativeImage,
+  downloadsDir: app.getPath('downloads'),
   getWindow: () => mainWindow,
   assertTrustedSender,
 });
@@ -772,6 +790,8 @@ app.on('before-quit', () => {
   projectPagePreview.close();
   // 背景 IPC 只是注销通道，不删用户图片（图片要跨重启保留）
   backgroundImages.close();
+  // 图片动作只是注销两条通道，没有需要落盘的状态
+  imageActions.close();
   // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净
   notifications.closeAll();
 

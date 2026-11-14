@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import {nextTick, ref, watch} from 'vue';
+import {computed, nextTick, ref, watch} from 'vue';
 import {t} from '../../i18n';
+import {IMAGE_MENU_NAME_ATTR, IMAGE_MENU_SRC_ATTR, IMAGE_MENU_TARGET_ATTR} from '../../utils/contextMenu';
 
 /**
  * 图片放大预览对话框 —— 全站唯一实现。
@@ -8,6 +9,10 @@ import {t} from '../../i18n';
  * <p>为什么必须只有这一份：原生 `<dialog>` + `showModal()` 自带焦点陷阱、Esc 关闭，且关闭时
  * 浏览器会把焦点还给触发元素；各写一份迟早走偏。消息气泡（`MessageImage`）与输入区附件 chip
  * 都指到这里，不要再手写第二套遮罩/关闭逻辑。</p>
+ *
+ * <p>右键菜单也不在这里另挂一套监听：大图只声明「我是可操作的图片」这组属性，
+ * 全站唯一的右键菜单（`common/ContextMenu.vue`）据此改出「复制图片 / 保存图片」两项。
+ * 属性名从 `utils/contextMenu` 取，渲染方与探测方共用同一份字面量。</p>
  */
 
 const props = withDefaults(defineProps<{
@@ -29,6 +34,18 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{(event: 'close'): void}>();
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
+
+/**
+ * 大图上的右键菜单落点属性。
+ *
+ * <p>值直接从 props 取：右键那一刻菜单要拿的就是当前这张图的地址与名称，
+ * 复制/保存都按它来，不再回头问宿主。</p>
+ */
+const imageMenuAttrs = computed<Record<string, string>>(() => ({
+  [IMAGE_MENU_TARGET_ATTR]: '',
+  [IMAGE_MENU_SRC_ATTR]: props.src,
+  [IMAGE_MENU_NAME_ATTR]: props.name,
+}));
 
 /** 请求关闭：只发意图，受控状态归宿主。 */
 const requestClose = (): void => {
@@ -106,6 +123,7 @@ const handleKeydown = (event: KeyboardEvent): void => {
         :src="src"
         :alt="name"
         decoding="async"
+        v-bind="imageMenuAttrs"
       />
     </dialog>
   </Teleport>
