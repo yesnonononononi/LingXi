@@ -3,11 +3,31 @@ const {randomUUID} = require('node:crypto');
 const CHANNELS = Object.freeze({
   command: 'project-page:command',
   layout: 'project-page:layout',
+  labels: 'project-page:labels',
   event: 'project-page:event',
   showWithAgent: 'project-page:show-with-agent',
 });
 const PARTITION = 'persist:lingxi-project-pages';
 const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
+/** 右键菜单兜底文案：渲染层来不及推送语言时，菜单也只能是单语言，不能中英混排。 */
+const DEFAULT_MENU_LABELS = Object.freeze({
+  showWithAgent: '让 Agent 分析此页面',
+  showWithAgentWithSelection: '让 Agent 分析选中文本与页面',
+  back: '后退',
+  forward: '前进',
+  reload: '重新加载',
+});
+const MENU_LABEL_KEYS = Object.keys(DEFAULT_MENU_LABELS);
+
+function normalizeMenuLabels(request) {
+  const labels = {...DEFAULT_MENU_LABELS};
+  if (!request || typeof request !== 'object') return labels;
+  for (const key of MENU_LABEL_KEYS) {
+    const value = request[key];
+    if (typeof value === 'string' && value.trim() && value.length <= 200) labels[key] = value.trim();
+  }
+  return labels;
+}
 
 function normalizeTargetUrl(value) {
   if (typeof value !== 'string' || !value.trim()) throw new Error('目标页面地址不能为空');
@@ -41,6 +61,8 @@ function normalizeLayout(request) {
 function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
   let previewSession;
+  // 菜单文案由渲染层按当前语言推送，主进程不做翻译。
+  let menuLabels = DEFAULT_MENU_LABELS;
 
   const clearTimer = tab => { clearTimeout(tab.timer); tab.timer = undefined; };
   const destroyTab = (state, tab) => {
@@ -158,7 +180,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const hasText = Boolean(params.selectionText && params.selectionText.trim());
       const template = [
         {
-          label: hasText ? 'Show with Agent (分析选中文本与页面)' : 'Show with Agent (让 Agent 分析此页面)',
+          label: hasText ? menuLabels.showWithAgentWithSelection : menuLabels.showWithAgent,
           click: async () => {
             try {
               const image = await contents.capturePage();
@@ -173,23 +195,23 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
                 });
               }
             } catch (error) {
-              console.error('Show with Agent capturePage failed:', error);
+              console.error(`页面截图失败: url=${tab.url}`, error);
             }
           },
         },
         { type: 'separator' },
         {
-          label: '返回',
+          label: menuLabels.back,
           enabled: !contents.isDestroyed() && contents.navigationHistory && contents.navigationHistory.canGoBack(),
           click: () => { if (contents.navigationHistory && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack(); },
         },
         {
-          label: '前进',
+          label: menuLabels.forward,
           enabled: !contents.isDestroyed() && contents.navigationHistory && contents.navigationHistory.canGoForward(),
           click: () => { if (contents.navigationHistory && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward(); },
         },
         {
-          label: '重新加载',
+          label: menuLabels.reload,
           enabled: Boolean(tab.url),
           click: () => contents.reload(),
         },
@@ -337,10 +359,18 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     applyLayout(state);
     return {applied: true};
   });
+  ipcMain.handle(CHANNELS.labels, (event, request) => {
+    try {
+      assertSender(event);
+      menuLabels = normalizeMenuLabels(request);
+      return {ok: true, data: {applied: true}};
+    } catch (error) { return {ok: false, error: error.message}; }
+  });
   return {close: () => {
     for (const state of [...states.values()]) release(state);
     ipcMain.removeHandler(CHANNELS.command);
     ipcMain.removeHandler(CHANNELS.layout);
+    ipcMain.removeHandler(CHANNELS.labels);
   }};
 }
-module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS};
+module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, normalizeMenuLabels, DEFAULT_MENU_LABELS, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS};

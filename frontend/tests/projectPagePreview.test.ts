@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {EventEmitter} from 'node:events';
 import {useProjectPagePreview, validateProjectPageUrl} from '../src/composables/useProjectPagePreview';
+import {t as translate} from '../src/i18n';
 import type {ProjectPageState, ProjectPageTab} from '../src/types/projectPagePreview';
 const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
 const ADDRESS = 'http://localhost:5173/';
@@ -79,6 +80,7 @@ function createHarness(timeoutMs = 15000) {
   const views: FakeView[] = [];
   const callbacks = new Set<(state: ProjectPageState) => void>();
   const showWithAgentEvents: any[] = [];
+  const pushedLabels: any[] = [];
   let lastBuiltMenu: any = null;
   class FakeMenu {
     constructor(readonly template: any[]) { lastBuiltMenu = this; }
@@ -162,9 +164,11 @@ function createHarness(timeoutMs = 15000) {
   const sender = {sender: host, senderFrame: host.mainFrame};
   const invoke = (action: string, request: any = {}, event = sender) => handlers.get(CHANNELS.command)!(event, {generation: 1, ...request, action});
   const layout = (request: any) => handlers.get(CHANNELS.layout)!(sender, {generation: 1, ...request});
+  const setLabels = (labels: any, event = sender) => { pushedLabels.push(labels); return handlers.get(CHANNELS.labels)!(event, labels); };
   const bridge = {command: async (request: any) => invoke(request.action, request), layout: async (request: any) => layout(request),
+    setLabels: async (labels: any) => setLabels(labels),
     onEvent: (callback: (state: ProjectPageState) => void) => { callbacks.add(callback); return () => { callbacks.delete(callback); }; }};
-  return {views, events, children, host, sender, invoke, layout, bridge, registration, partition,
+  return {views, events, children, host, sender, invoke, layout, setLabels, pushedLabels, bridge, registration, partition,
     showWithAgentEvents, getLastBuiltMenu: () => lastBuiltMenu,
     getState: () => events.at(-1)!, checkPermission: () => checkPermission(), requestPermission: (...args: any[]) => requestPermission(...args)};
 }
@@ -329,6 +333,20 @@ function installBridge(t: any, bridge: any) {
   t.after(() => { if (previous) Object.defineProperty(globalThis, 'window', previous); else Reflect.deleteProperty(globalThis, 'window'); });
 }
 
+test('前端创建预览时会话把当前语言的右键菜单文案推给主进程', async t => {
+  const h = createHarness(); t.after(() => h.registration.close()); installBridge(t, h.bridge);
+  const preview = useProjectPagePreview(); t.after(() => preview.close());
+  await delay(0);
+  assert.equal(h.pushedLabels.length, 1);
+  assert.deepEqual(h.pushedLabels[0], {
+    showWithAgent: translate('projectPagePreview.showWithAgent'),
+    showWithAgentWithSelection: translate('projectPagePreview.menuShowWithAgentSelection'),
+    back: translate('projectPagePreview.back'),
+    forward: translate('projectPagePreview.forward'),
+    reload: translate('projectPagePreview.reload'),
+  });
+});
+
 test('前端按权威快照渲染标签，草稿独立，旧版本和旧会话回执失效', async t => {
   const h = createHarness(); t.after(() => h.registration.close()); installBridge(t, h.bridge);
   const preview = useProjectPagePreview(); t.after(() => preview.close());
@@ -464,17 +482,28 @@ test('内置浏览器右键菜单包含 Show with Agent，触发后捕获截图�
   const view = h.views[0]!;
   assert.ok(view);
 
-  // 1. 无选中文本时触发 context-menu
+  // 1. 没有语言推送时走中文兜底，且必须是单语言文案：不能出现「Show with Agent (让 Agent ...)」这种中英混排
   view.webContents.emit('context-menu', {}, {selectionText: ''});
   const menu1 = h.getLastBuiltMenu();
   assert.ok(menu1);
-  assert.equal(menu1.template[0].label, 'Show with Agent (让 Agent 分析此页面)');
+  assert.equal(menu1.template[0].label, '让 Agent 分析此页面');
+  assert.deepEqual(menu1.template.slice(2).map((item: any) => item.label), ['后退', '前进', '重新加载']);
+  // 专有名词 Agent 保留英文，但中文文案里不能再塞一整套英文短语（旧实现是「中文 (English)」）
+  for (const item of [menu1.template[0], ...menu1.template.slice(2)]) {
+    assert.doesNotMatch(item.label, /[（(]/, `中文菜单项不能夹英文短语：${item.label}`);
+  }
 
-  // 2. 有选中文本时触发 context-menu
+  // 2. 渲染层推送英文文案后，同一菜单整体切英文
+  const labels = {showWithAgent: 'Analyze this page with Agent', showWithAgentWithSelection: 'Analyze selection and page with Agent',
+    back: 'Back', forward: 'Forward', reload: 'Reload'};
+  assert.equal(h.setLabels(labels).ok, true);
   view.webContents.emit('context-menu', {}, {selectionText: '  表单校验逻辑  '});
   const menu2 = h.getLastBuiltMenu();
   assert.ok(menu2);
-  assert.equal(menu2.template[0].label, 'Show with Agent (分析选中文本与页面)');
+  assert.equal(menu2.template[0].label, 'Analyze selection and page with Agent');
+  for (const item of [menu2.template[0], ...menu2.template.slice(2)]) {
+    assert.doesNotMatch(item.label, /[\u4e00-\u9fff]/, `英文菜单项不能夹中文：${item.label}`);
+  }
 
   // 3. 点击 Show with Agent 项
   await menu2.template[0].click();
@@ -484,6 +513,19 @@ test('内置浏览器右键菜单包含 Show with Agent，触发后捕获截图�
   assert.equal(event.url, ADDRESS);
   assert.equal(event.selectionText, '表单校验逻辑');
   assert.equal(event.imageBuffer.toString(), 'mock-png-snapshot');
+});
+
+test('右键菜单文案只接受来自主窗口主框架的推送，非法值退回兜底', t => {
+  const h = createHarness(); t.after(() => h.registration.close());
+  h.invoke('sync');
+  const view = h.views[0]!;
+  assert.equal(h.setLabels({back: 'Back'}, {...h.sender, senderFrame: {}}).ok, false);
+  assert.equal(h.setLabels({back: 'Back', forward: '', reload: 'x'.repeat(201)}).ok, true);
+  view.webContents.emit('context-menu', {}, {selectionText: ''});
+  const menu = h.getLastBuiltMenu();
+  assert.equal(menu.template[2].label, 'Back');
+  assert.equal(menu.template[3].label, '前进');
+  assert.equal(menu.template[4].label, '重新加载');
 });
 
 test('指令调用 show-with-agent 同样触发截图并发送 IPC 事件', async t => {

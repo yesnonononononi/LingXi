@@ -344,7 +344,6 @@ onBeforeUnmount(() => {
 
     <div class="status-row">
       <span class="status-text" :class="stateClass" role="status">{{ statusText }}</span>
-      <span class="browse-mode">{{ t('projectPagePreview.browseMode') }}</span>
     </div>
 
     <p v-if="diagnoseText" class="diagnose-text" role="note">{{ diagnoseText }}</p>
@@ -419,7 +418,6 @@ onBeforeUnmount(() => {
 .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
 .status-text.state-timeout { color: #b45309; }
 .status-text.state-failed { color: #dc2626; }
-.browse-mode { opacity: .85; }
 .diagnose-text { margin: 0; font-size: var(--lx-font-size-sm); color: #b45309; }
 .frame-area { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--file-line, #e4e4e7); border-radius: 10px; background: #fff; }
 .frame-placeholder { height: 100%; display: grid; place-items: center; padding: 0 20px; font-size: var(--lx-font-size-md); color: var(--file-muted, #71717a); text-align: center; }

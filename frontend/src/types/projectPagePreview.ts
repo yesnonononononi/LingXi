@@ -28,6 +28,15 @@ export interface ProjectPageState {
 }
 
 export type ProjectPageAction = 'sync' | 'create' | 'activate' | 'close-tab' | 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'close' | 'show-with-agent';
+/** 原生右键菜单文案。原生 Menu 没有 i18n 运行时，只能由渲染层按当前语言推送。 */
+export interface ProjectPageMenuLabels {
+  showWithAgent: string;
+  showWithAgentWithSelection: string;
+  back: string;
+  forward: string;
+  reload: string;
+}
+
 export interface ProjectPageCommandRequest {
   generation: number;
   action: ProjectPageAction;

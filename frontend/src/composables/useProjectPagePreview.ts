@@ -1,6 +1,6 @@
 /** 主进程管理标签与加载，前端只保存每个标签尚未提交的地址草稿。 */
 import {computed, getCurrentInstance, onBeforeUnmount, reactive, ref, watch} from 'vue';
-import {t} from '../i18n';
+import {t, useI18n} from '../i18n';
 import type {ElectronProjectPageAPI} from '../utils/platform';
 import type {ProjectPageCommandRequest, ProjectPageLayout, ProjectPageLoadState, ProjectPagePreviewApi, ProjectPageRejectReason, ProjectPageState, ProjectPageTab, ProjectPageUrlResult} from '../types/projectPagePreview';
 
@@ -65,6 +65,26 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
    */
   let sessionAlive = false;
   let layout: ProjectPageLayout = {visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}};
+  const {locale} = useI18n();
+
+  /**
+   * 把当前语言的右键菜单文案推给主进程。
+   *
+   * <p>内嵌网页的 context-menu 只能在主进程弹原生 Menu，那里没有 i18n 运行时；
+   * 所以文案真源仍留在 i18n 字典，这里只负责按语言同步过去，切换语言立即重推。</p>
+   */
+  const syncMenuLabels = (): void => {
+    const setLabels = getBridge()?.setLabels;
+    if (!setLabels) return;
+    void setLabels({
+      showWithAgent: t('projectPagePreview.showWithAgent'),
+      showWithAgentWithSelection: t('projectPagePreview.menuShowWithAgentSelection'),
+      back: t('projectPagePreview.back'),
+      forward: t('projectPagePreview.forward'),
+      reload: t('projectPagePreview.reload'),
+    }).catch(() => undefined);
+  };
+  watch(locale, syncMenuLabels, {immediate: true});
 
   const applyState = (state: ProjectPageState): void => {
     if (!open.value || state.generation !== generation.value || state.revision <= revision) return;
