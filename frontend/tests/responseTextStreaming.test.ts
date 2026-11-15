@@ -7,6 +7,7 @@ import type {TurnViewVO} from '../src/types/block';
 import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
 import {upsertBlockIntoBubble, upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
 import {applyTextPlacement, getTurnState, writeResponseText} from '../src/views/chat/turnRenderState';
+import {ProgressiveFadeState} from '../src/utils/progressiveFade';
 import {AgentToolName} from '../src/utils/toolNames';
 import {compareResponsePosition} from '../src/utils/responseOrder';
 
@@ -517,4 +518,31 @@ test('ACCEPTED 快照进入流式思考态，且旧 ACCEPTED 快照不能重开�
   assert.equal(thoughtSetCount, 0, '未变更的思考条目在后续正文分片到达时不得被重复写入属性');
   assert.equal(streamCheck.bubble.responseImageUrls, initialImagesRef, '空图片列表在每个 Token 到达时必须保持同一数组引用');
   assert.equal(bubble.isThinking, false);
+});
+
+
+test('过程文本升级为正文后标记 bodyPromotedFromProcess，抑制首包重播淡入防闪烁', () => {
+  const promoted = setup();
+  promoted.reducer.consume({ ...partial('已流式输出的正文', 0, '101', false), order: 1 });
+  assert.equal(promoted.bubble.aiMessages?.length, 1, '未确定 isBody 前先落入过程区');
+  assert.equal(promoted.bubble.turnState?.bodyPromotedFromProcess, false);
+
+  promoted.reducer.consume({ type: 'COMPLETE_TEXT', executionId: 'e', timestamp: '',
+    metaData: metadata, responseId: '101', content: '已流式输出的正文', order: 1, isBody: true });
+  assert.equal(promoted.bubble.aiMessages?.length, 0);
+  assert.equal(promoted.bubble.content, '已流式输出的正文');
+  assert.equal(promoted.bubble.turnState?.bodyPromotedFromProcess, true,
+    '从过程区升级为正文时必须标记 bodyPromotedFromProcess');
+
+  const fade = new ProgressiveFadeState();
+  fade.update(promoted.bubble.content, true, 100, !promoted.bubble.turnState?.bodyPromotedFromProcess);
+  assert.equal(fade.ranges.length, 0, '升级挂载时既有文本不得重播渐显动画');
+  fade.update('已流式输出的正文，后续新字', true, 120, false);
+  assert.ok(fade.ranges.length > 0, '升级后继续到达的新增量仍应平滑渐显');
+
+  const direct = setup();
+  direct.reducer.consume({ ...partial('直接正文', 0, '202', false), order: 1, isBody: true });
+  assert.equal(direct.bubble.content, '直接正文');
+  assert.equal(direct.bubble.turnState?.bodyPromotedFromProcess, false,
+    '从未进过过程区的首包正文应保留首包渐显');
 });

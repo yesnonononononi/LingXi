@@ -129,7 +129,8 @@ test('正文流式契约：MarkdownRenderer 与 MessageBodyDefault 声明并接�
   const bodyContent = fs.readFileSync(bodyPath, 'utf8');
   assert.match(bodyContent, /:smooth-streaming="true"/, '默认正文渲染器必须开启 smooth-streaming');
   assert.match(bodyContent, /:streaming="isStreaming"/, '默认正文渲染器必须传递运行时流式状态');
-  assert.match(bodyContent, /:reveal-initial="isStreaming"/, '默认正文渲染器必须对齐思考步骤传递首包渐显标记');
+  assert.match(bodyContent, /const revealInitial = computed\(\(\) => isStreaming\.value && !props\.message\.turnState\?\.bodyPromotedFromProcess\);/, '过程区升级正文必须抑制首包渐显以防闪烁');
+  assert.match(bodyContent, /:reveal-initial="revealInitial"/, '默认正文渲染器必须传递经过程升级保护的 revealInitial');
 
   const drawerPath = new URL('../src/components/chat/SubSessionDetailDrawer.vue', import.meta.url);
   const drawerContent = fs.readFileSync(drawerPath, 'utf8');

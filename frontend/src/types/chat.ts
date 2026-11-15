@@ -135,6 +135,8 @@ export interface ResponseTextBuffer extends ResponsePosition {
   complete: boolean;
   /** 正文归属：true=正文区，false=过程区；由后端唯一判定，缺失表示尚未确定 */
   isBody?: boolean;
+  /** 是否已在过程区渲染过；升级为正文时据此抑制首包重播淡入，避免闪烁 */
+  renderedInProcess?: boolean;
   order?: number;
 }
 
@@ -142,6 +144,8 @@ export interface ResponseTextBuffer extends ResponsePosition {
 export interface TurnRenderState {
   /** 历史与 SSE 共用已接受版本，随轮次状态一并保留或作废。 */
   viewVersion?: number;
+  /** 当前正文是否由过程区文本升级而来（已展示过的内容不再重播首包渐显） */
+  bodyPromotedFromProcess?: boolean;
   texts: Record<string, ResponseTextBuffer>;
   tools: Record<string, ToolCallTrace>;
   rejectedResponses?: Record<string, true>;

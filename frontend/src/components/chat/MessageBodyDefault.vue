@@ -9,6 +9,8 @@ import type {ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
 
 const props = defineProps<ChatMessageBodySlotProps>();
 const isStreaming = computed(() => Boolean(props.isThinking && !props.message.isComplete && !props.message.isSuspended));
+// 从过程区升级为正文的文本已在屏幕稳定展示，挂载正文时不再重播首包淡入，避免一瞬间闪烁。
+const revealInitial = computed(() => isStreaming.value && !props.message.turnState?.bodyPromotedFromProcess);
 </script>
 
 <template>
@@ -19,7 +21,7 @@ const isStreaming = computed(() => Boolean(props.isThinking && !props.message.is
     :is-thinking="props.isThinking"
     :streaming="isStreaming"
     :smooth-streaming="true"
-    :reveal-initial="isStreaming"
+    :reveal-initial="revealInitial"
   />
   <div v-if="props.message.responseImageUrls?.length" class="flex flex-wrap gap-3" data-testid="response-images">
     <MessageImage v-for="(url, index) in props.message.responseImageUrls" :key="url"

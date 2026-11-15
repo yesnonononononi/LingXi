@@ -156,12 +156,14 @@ export function renderTurnState(bubble: ChatMessage): void {
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
       thoughts.push(step);
     } else if (buffer.isBody !== true) {
+      buffer.renderedInProcess = true;
       const message = { id, text: buffer.text, order: buffer.order, responseId: buffer.responseId };
       messages.push(message);
     } else if (!body || compareResponsePosition(body, buffer) <= 0) {
       body = buffer;
     }
   }
+  state.bodyPromotedFromProcess = Boolean(body?.renderedInProcess);
   bubble.thoughtSteps = reconcileRenderItems(bubble.thoughtSteps, thoughts);
   bubble.aiMessages = reconcileRenderItems(bubble.aiMessages, messages);
   bubble.toolCalls = reconcileRenderItems(bubble.toolCalls, Object.values(state.tools));
