@@ -690,19 +690,6 @@ const previewPanelVisible = computed<boolean>(() => previewPanelOpen.value);
 /** 顶部横条左侧展示的会话名：空态（未建会话 / 待首次发送）给占位文案，不留一段空白。 */
 const headerSessionName = computed<string>(() => currentActiveSession.value?.title?.trim() || t('chat.sidebar.newSession'));
 
-// 同步当前会话名到窗口标题，Windows 任务栏悬停缩略图预览会直接读取原生窗口标题。
-watch(headerSessionName, (sessionName) => {
-  if (typeof document !== 'undefined') {
-    document.title = resolveWindowTitle(sessionName);
-  }
-}, { immediate: true });
-
-onBeforeUnmount(() => {
-  if (typeof document !== 'undefined') {
-    document.title = DEFAULT_WINDOW_TITLE;
-  }
-});
-
 provide(FILE_PREVIEW_KEY, openFilePreviewInPanel);
 provide(PLAN_PREVIEW_KEY, openPlanPreview);
 
@@ -838,6 +825,19 @@ const {
   handleTouchStart,
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef, subSessionPanelVisible: computed(() => !previewPanelVisible.value) });
+
+// 必须在 useChatView 初始化 currentActiveSession 之后再 immediate watch，否则会触发 TDZ 白屏。
+watch(headerSessionName, (sessionName) => {
+  if (typeof document !== 'undefined') {
+    document.title = resolveWindowTitle(sessionName);
+  }
+}, { immediate: true });
+
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
+    document.title = DEFAULT_WINDOW_TITLE;
+  }
+});
 
 /** 只有已入库会话能就地改名：临时会话（temp-*）后端没有这条记录，改了存不下。 */
 const canRenameHeaderTitle = computed<boolean>(() => {
