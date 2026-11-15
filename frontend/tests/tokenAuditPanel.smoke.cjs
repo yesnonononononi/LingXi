@@ -385,6 +385,39 @@ window.ready = true;`);
   assert(await evaluate(`!!document.querySelector('[data-testid="token-audit-dynamic-context-attribution"]')`),
     '恢复完整快照后归因行应重新出现');
 
+  // ④'''''' 框架切段后：展开项逐段列出，记忆只作为其中一段，不再单行顶替整块
+  await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: {
+    memoryTokens: 6400,
+    sections: [
+      {kind: 'MCP', tokens: 1800},
+      {kind: 'SKILL', tokens: 900},
+      {kind: 'MEMORY', tokens: 6400},
+      {kind: 'TASK', tokens: 600},
+    ],
+  }})})`);
+  const sectionRows = await evaluate(`Array.from(
+    document.querySelectorAll('[data-testid="token-audit-dynamic-context-item"]')
+  ).map(el => ({
+    kind: el.getAttribute('data-kind'),
+    text: el.innerText.replace(/\\s+/g, ' ').trim(),
+    hint: !!el.querySelector('[data-testid="token-audit-attribution-hint"]'),
+  }))`);
+  assert(sectionRows.length === 4,
+    '框架切段后应按段列出四行，实际: ' + JSON.stringify(sectionRows));
+  assert(sectionRows.map(row => row.kind).join(',') === 'MCP,SKILL,MEMORY,TASK',
+    '分段顺序应为 MCP → 技能 → 记忆 → 任务，实际: ' + JSON.stringify(sectionRows.map(row => row.kind)));
+  assert(/MCP 摘要/.test(sectionRows[0].text) && /1,800/.test(sectionRows[0].text),
+    '首段应显示「MCP 摘要」与金额，实际: ' + JSON.stringify(sectionRows[0].text));
+  assert(/记忆正文/.test(sectionRows[2].text) && /6,400/.test(sectionRows[2].text),
+    '记忆正文应作为第三段显示自己的金额，实际: ' + JSON.stringify(sectionRows[2].text));
+  assert(sectionRows.filter(row => row.hint).length === 1 && sectionRows[2].hint,
+    '「已含在动态上下文内」的说明气泡只挂在记忆行，实际: ' + JSON.stringify(sectionRows.map(row => row.hint)));
+  assert(sectionRows.every(row => !/%/.test(row.text)),
+    '分段行不得出现百分比（后端不给分段占比，前端不许补算）');
+  await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
+  assert(await evaluate(`document.querySelectorAll('[data-testid="token-audit-dynamic-context-item"]').length === 1`),
+    '历史快照（框架没切段）应退回记忆正文一行');
+
   // ④''''' 滚动条不得挤窄内容：展开下拉让内容变高、滚动条出现时，整块不能横向抖一下
   const widthGap = () => evaluate(`(() => {
     const box = document.querySelector('[data-testid="token-audit-scroll"]');

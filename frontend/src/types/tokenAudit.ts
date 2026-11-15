@@ -121,6 +121,21 @@ export interface TokenAuditRequestOverheadVO {
 export interface TokenAuditContextAttributionVO {
   /** 记忆正文 token（AGENTS.md 正文 + 项目 wiki 索引）；null/undefined 表示后端没给。 */
   memoryTokens?: TokenAuditNumeric;
+  /**
+   * 动态上下文的按段拆分（MCP / SKILL / MEMORY / TASK）；后端没切段时为空数组。
+   *
+   * <p>各段之和不等于整块（分词跨段合并、段标题不属于任何一段），因此只作明细，
+   * 且 `MEMORY` 段与 `memoryTokens` 同源 —— 渲染时二选一，绝不并排。</p>
+   */
+  sections?: TokenAuditContextSectionVO[] | null;
+}
+
+/** 动态上下文的一段（**原始载荷**）：段类 + 该段 token 数。 */
+export interface TokenAuditContextSectionVO {
+  /** 段类名，取值见 {@link TokenAuditContextSectionKind}；后端可能下发未知段类（整行丢弃）。 */
+  kind?: string;
+  /** 该段 token；同一段类多块已由后端合并。 */
+  tokens?: TokenAuditNumeric;
 }
 
 
@@ -246,7 +261,27 @@ export interface TokenAuditRequestOverhead {
 export interface TokenAuditContextAttribution {
   /** 记忆正文 token；null = 不知道（不是 0）。 */
   memoryTokens: number | null;
+  /**
+   * 动态上下文的按段拆分；`null` = 后端没给（框架没切段/历史快照），**不是「各段为 0」**。
+   *
+   * <p>只保留已知段类（MCP / SKILL / MEMORY / TASK），未知段类整行丢弃；同一段类只留一条。</p>
+   */
+  sections: TokenAuditContextSection[] | null;
 }
+
+/** 动态上下文的一段（**已归一**）。 */
+export interface TokenAuditContextSection {
+  kind: TokenAuditContextSectionKind;
+  /** 该段 token；null = 不知道（不是 0）。 */
+  tokens: number | null;
+}
+
+/**
+ * 动态上下文的段类，与框架 `ContextSectionKind` 同名。
+ *
+ * <p>{@code MEMORY} 与 {@code contextAttribution.memoryTokens} 同源，渲染时二选一。</p>
+ */
+export type TokenAuditContextSectionKind = 'MCP' | 'SKILL' | 'MEMORY' | 'TASK';
 
 export interface SessionTokenAuditSnapshot {
   /** 会话 ID（字符串，雪花精度安全）。 */

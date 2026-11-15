@@ -16,6 +16,7 @@ import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionTokenAuditRepositoryImpl;
 import com.summit.dp.shared.support.H2TestDatabase;
+import com.summit.dp.shared.vo.TokenAuditContextSectionVO;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,6 +71,22 @@ class SessionTokenAuditRepositoryTest {
     @AfterEach
     void shutdown() {
         database.shutdown();
+    }
+
+    @Test
+    @DisplayName("动态上下文分段随框架原文落库：写进去的段读回后仍在（不新增表/列）")
+    void dynamicContextSectionsSurviveFrameworkDocumentRoundTrip() {
+        SessionTokenAudit audit = collected(List.of("search_web"));
+        audit.changeFrameworkDocument(
+                TokenAuditFrameworkViewConverter.write(SessionTokenAuditApiTest.frameworkDocument()));
+        repository.replaceSnapshot(audit);
+
+        String stored = repository.findBySessionId(SESSION_ID).orElseThrow().getFrameworkDocument();
+        List<TokenAuditContextSectionVO> sections =
+                TokenAuditFrameworkViewConverter.read(stored).getContextAttribution().getSections();
+        assertEquals(4, sections.size(), "四段（MCP / SKILL / MEMORY / TASK）必须能原样读回");
+        assertEquals("MEMORY", sections.get(2).getKind());
+        assertEquals(777, sections.get(2).getTokens());
     }
 
     @Test

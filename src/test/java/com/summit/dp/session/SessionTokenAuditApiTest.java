@@ -86,7 +86,63 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.messagesTotalTokens").doesNotExist())
                 .andExpect(jsonPath("$.data.reconciliation").doesNotExist())
                 .andExpect(jsonPath("$.data.contextAttribution.memoryTokens").value(777))
+                .andExpect(jsonPath("$.data.contextAttribution.sections.length()").value(4))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[0].kind").value("MCP"))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[0].tokens").value(1800))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[2].kind").value("MEMORY"))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[2].tokens").value(777))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[2].ratio").doesNotExist())
                 .andExpect(jsonPath("$.data.contextAttribution.attachmentTokens").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("动态上下文分段：同段类合并、失败段不渲染，且不下发比例")
+    void dynamicContextSectionsMergedAndFiltered() throws Exception {
+        TokenAuditDocument document = frameworkDocument();
+        OtherTokens other = document.otherTokens();
+        DocumentElement<Integer> failedTask = section("TASK", 999);
+        failedTask.setStatus(AuditStatus.FAILED);
+        List<DocumentElement<Integer>> sections = List.of(
+                section("MCP", 1800), section("MCP", 100), section("SKILL", 900),
+                failedTask, section("MEMORY", 777), section("MEMORY", 200));
+        TokenAuditDocument merged = new TokenAuditDocument(document.assistantTokens(),
+                document.userTokens(), document.toolTokens(), document.systemTokens(),
+                new OtherTokens(other.toolDefinitionTokens(), other.mcpToolDefinitionTokens(),
+                        other.dynamicContextTokens(), other.memoryTokens(), sections,
+                        other.attachmentTokens()));
+        SessionTokenAudit audit = collected();
+        audit.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(merged));
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(audit));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.contextAttribution.sections.length()").value(3))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[0].kind").value("MCP"))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[0].tokens").value(1900))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[1].tokens").value(900))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[2].kind").value("MEMORY"))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[2].tokens").value(977))
+                .andExpect(jsonPath("$.data.contextAttribution.sections[2].ratio").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("框架没切段时 sections 为空集合：那是「没给」，不是「各段为 0」")
+    void dynamicContextSectionsStayEmptyWhenFrameworkGaveNone() throws Exception {
+        TokenAuditDocument document = frameworkDocument();
+        OtherTokens other = document.otherTokens();
+        TokenAuditDocument unsliced = new TokenAuditDocument(document.assistantTokens(),
+                document.userTokens(), document.toolTokens(), document.systemTokens(),
+                new OtherTokens(other.toolDefinitionTokens(), other.mcpToolDefinitionTokens(),
+                        other.dynamicContextTokens(), other.memoryTokens(), List.of(),
+                        other.attachmentTokens()));
+        SessionTokenAudit audit = collected();
+        audit.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(unsliced));
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(audit));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.contextAttribution.memoryTokens").value(777))
+                .andExpect(jsonPath("$.data.contextAttribution.sections.length()").value(0));
     }
 
     @Test
@@ -302,7 +358,16 @@ class SessionTokenAuditApiTest {
                                 Map.of("search_web", new ToolElement(2100, 8700, 9420)))).build(),
                 amount(12300, 0.0612345),
                 new OtherTokens(amount(8200, 0.0412345), amount(3100, 0.0156789),
-                        amount(4500, 0.0225), amount(777, 0.003), List.of(), amount(889, 0.004)));
+                        amount(4500, 0.0225), amount(777, 0.003),
+                        List.of(section("MCP", 1800), section("SKILL", 900),
+                                section("MEMORY", 777), section("TASK", 600)),
+                        amount(889, 0.004)));
+    }
+
+    /** 动态上下文的一段：框架给的那一条 {@code DocumentElement}（type 即段类名）。 */
+    static DocumentElement<Integer> section(String kind, int tokens) {
+        return DocumentElement.<Integer>builder().type(kind).status(AuditStatus.SUCCESS)
+                .tokenMeta(tokens).ratio(tokens / 200000.0).build();
     }
 
     private static DocumentElement<Integer> amount(int tokens, double ratio) {

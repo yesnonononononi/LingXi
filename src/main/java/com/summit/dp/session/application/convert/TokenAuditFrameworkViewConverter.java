@@ -13,6 +13,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.*;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -69,8 +70,42 @@ public final class TokenAuditFrameworkViewConverter {
                         .itemCount((definition == null ? 0 : 1) + (mcpDefinition == null ? 0 : 1))
                         .toolDefinition(definition).mcpToolDefinition(mcpDefinition).build())
                 .contextAttribution(other == null ? null : TokenAuditContextAttributionVO.builder()
-                        .memoryTokens(value(other.memoryTokens())).build())
+                        .memoryTokens(value(other.memoryTokens()))
+                        .sections(sections(other.dynamicContextSections()))
+                        .build())
                 .build();
+    }
+
+    /**
+     * 动态上下文的按段拆分（框架 {@code OtherTokens.dynamicContextSections}）。
+     *
+     * <p><b>为什么按段类合并</b>：框架给的是「渲染时切出来的段」，压缩前历史里可能堆多块背景块，
+     * 同一个段类会出现多次；不合并就会在面板里列出两行「记忆正文」。</p>
+     *
+     * <p><b>为什么不下发 ratio</b>：合并后的金额不对应任何单段，框架给的比例只属于单段，
+     * 拿它当合并值的占比就是错数据。分段只解释整块，比率仍看 {@code DYNAMIC_CONTEXT} 行。</p>
+     *
+     * @param elements 框架分段元素，可为 null
+     * @return 按段类合并后的分段；没有可用段时返回空集合（不是 0）
+     */
+    private static List<TokenAuditContextSectionVO> sections(List<DocumentElement<Integer>> elements) {
+        if (elements == null || elements.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Integer> merged = new LinkedHashMap<>();
+        for (DocumentElement<Integer> element : elements) {
+            Integer tokens = element == null ? null : value(element);
+            if (tokens == null || tokens < 0 || element.getType() == null) {
+                continue;
+            }
+            merged.merge(element.getType(), tokens, Integer::sum);
+        }
+        List<TokenAuditContextSectionVO> sections = new ArrayList<>(merged.size());
+        for (Map.Entry<String, Integer> entry : merged.entrySet()) {
+            sections.add(TokenAuditContextSectionVO.builder()
+                    .kind(entry.getKey()).tokens(entry.getValue()).build());
+        }
+        return sections;
     }
 
     public static void applyLiveUsage(SessionTokenAuditVO view, Integer total, Integer max, Double ratio) {

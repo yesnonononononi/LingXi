@@ -3,6 +3,7 @@ import type {
   SessionTokenAuditSnapshot,
   TokenAuditCategoryType,
   TokenAuditCategory,
+  TokenAuditContextSectionKind,
   TokenAuditRequestOverhead,
   TokenAuditToolBreakdown,
   TokenAuditToolGroupKind,
@@ -54,6 +55,21 @@ export const TOOL_GROUP_LABEL_KEY: Readonly<Record<TokenAuditToolGroupKind, stri
   SKILL: 'chat.tokenAudit.toolGroup.skill',
 };
 
+/**
+ * 动态上下文各段的固定展示顺序：与框架渲染背景块的顺序一致（MCP → 技能 → 记忆 → 任务）。
+ *
+ * <p>后端只保证「同段类已合并」，顺序不作保证，前端按业务语义定序。</p>
+ */
+export const CONTEXT_SECTION_ORDER: readonly TokenAuditContextSectionKind[] = ['MCP', 'SKILL', 'MEMORY', 'TASK'];
+
+/** 动态上下文各段的标签 i18n 键。 */
+export const CONTEXT_SECTION_LABEL_KEY: Readonly<Record<TokenAuditContextSectionKind, string>> = {
+  MCP: 'chat.tokenAudit.attribution.section.mcp',
+  SKILL: 'chat.tokenAudit.attribution.section.skill',
+  MEMORY: 'chat.tokenAudit.attribution.section.memory',
+  TASK: 'chat.tokenAudit.attribution.section.task',
+};
+
 /** 「当前上下文」小节的派生结果；任一字段为 null 即表示该项「不知道」，不渲染。 */
 export interface TokenAuditContextSummary {
   usedTokens: number | null;
@@ -77,17 +93,22 @@ export interface TokenAuditMessageRow {
 
 /** 工具来源分组的一行（含组内明细）。 */
 /**
- * 归因明细的一行（记忆正文等）。
+ * 动态上下文的构成行。
  *
- * <p>它挂在**所属消息分项下方**，不是消息分项的兄弟行：这部分 token 已经算在那个分项里，
+ * <p>它挂在**动态上下文分项下方**，不是消息分项的兄弟行：这部分 token 已经算在那个分项里，
  * 平铺出去就是重复计数。</p>
+ *
+ * <p>`key` 取段类（MCP / SKILL / MEMORY / TASK）；`'memory'` 是历史快照的退化形态 ——
+ * 框架没切段时只有「记忆正文」这一个已知明细。</p>
  */
 export interface TokenAuditAttributionRow {
-  key: 'memory';
+  key: TokenAuditContextSectionKind | 'memory';
   labelKey: string;
   tokens: number;
   /** 后端不提供该明细的占比，恒为 null（前端不补假百分比）。 */
   ratio: null;
+  /** 是否需要「已含在动态上下文内」的说明气泡：只有记忆行有意义。 */
+  withHint: boolean;
 }
 
 export interface TokenAuditToolGroupRow {
@@ -256,29 +277,56 @@ export function resolveMessageRows(messages?: TokenAuditCategory[] | null): Toke
 }
 
 /**
- * 「动态上下文」下的归因明细行：记忆正文（AGENTS.md 正文 + 项目 wiki 索引）。
+ * 「动态上下文」下的构成行：框架切了段就逐段列出，没切段时退回记忆正文一行。
  *
- * <p><b>为什么是子行而不是消息分项</b>：框架把记忆正文算进了每轮背景块
- * （{@code DYNAMIC_CONTEXT}），它只是那块内容的一部分 —— 平铺成独立分项会让
- * 「消息构成合计」比快照总量多出一份记忆，恒等式当场破。因此它只作为动态上下文内部的
+ * <p><b>为什么是子行而不是消息分项</b>：框架把整块背景块算成 {@code DYNAMIC_CONTEXT} 分项，
+ * 记忆 / MCP 摘要 / 技能列表 / 任务清单都只是那块内容的一部分 —— 平铺成独立分项会让
+ * 「消息构成合计」比快照总量多出一份，恒等式当场破。因此它们只作为动态上下文内部的
  * 构成说明存在，不参与任何合计。</p>
+ *
+ * <p><b>为什么二选一</b>：{@code MEMORY} 段与 {@code memoryTokens} 是同一个事实的两种出口，
+ * 并排列出会出现两行「记忆正文」。</p>
  *
  * <p>渲染规则（与「其它」残差行同口径）：</p>
  * <ol>
  *   <li>未知（`null`）不渲染，不猜 0；</li>
- *   <li>已知为 0 不渲染：说明这一轮没有注入记忆正文，多一行 0 只是噪声；</li>
- *   <li>`ratio` 恒为 `null` —— 后端不给该明细的占比，前端不做除法补假百分比。</li>
+ *   <li>已知为 0 不渲染：说明这一轮没有注入该段，多一行 0 只是噪声；</li>
+ *   <li>`ratio` 恒为 `null` —— 后端不给分段占比（合并后比例无意义），前端不做除法补假百分比。</li>
  * </ol>
  *
  * @param audit 已归一快照
- * @returns 可渲染的归因明细行；不可渲染时返回空数组
+ * @returns 可渲染的构成行；不可渲染时返回空数组
  */
 export function resolveDynamicContextAttributionRows(
   audit?: SessionTokenAuditSnapshot | null
 ): TokenAuditAttributionRow[] {
-  const memory = audit?.contextAttribution?.memoryTokens;
+  const attribution = audit?.contextAttribution;
+  const sections = attribution?.sections;
+  if (Array.isArray(sections) && sections.length > 0) {
+    const rows: TokenAuditAttributionRow[] = [];
+    // 定序 + 逐段取值都按 CONTEXT_SECTION_ORDER：后端只保证合并，不保证顺序。
+    for (const kind of CONTEXT_SECTION_ORDER) {
+      const section = sections.find(item => item.kind === kind);
+      if (!section || !isKnownNumber(section.tokens) || section.tokens <= 0) continue;
+      rows.push({
+        key: kind,
+        labelKey: CONTEXT_SECTION_LABEL_KEY[kind],
+        tokens: section.tokens,
+        ratio: null,
+        withHint: kind === 'MEMORY',
+      });
+    }
+    return rows;
+  }
+  const memory = attribution?.memoryTokens;
   if (!isKnownNumber(memory) || memory <= 0) return [];
-  return [{key: 'memory', labelKey: 'chat.tokenAudit.attribution.memory', tokens: memory, ratio: null}];
+  return [{
+    key: 'memory',
+    labelKey: CONTEXT_SECTION_LABEL_KEY.MEMORY,
+    tokens: memory,
+    ratio: null,
+    withHint: true,
+  }];
 }
 
 /**

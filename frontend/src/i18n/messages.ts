@@ -889,9 +889,14 @@ export const messages: MessageSchema = {
           framingHint: '框架分词口径的微小偏差（合并计数与分开计数不同），可能为负数',
         },
         attribution: {
-          memory: '记忆正文',
           memoryHint: '记忆正文（项目规范与 wiki 索引）是动态上下文的一部分，不重复计入合计',
           dynamicContextComposition: '动态上下文构成',
+          section: {
+            mcp: 'MCP 摘要',
+            skill: '技能列表',
+            memory: '记忆正文',
+            task: '任务清单',
+          },
         },
       },
       subSessions: {
@@ -2504,9 +2509,14 @@ export const messages: MessageSchema = {
           framingHint: 'Tiny difference from how the framework tokenizes merged vs. separate inputs. It can be negative.',
         },
         attribution: {
-          memory: 'Memory text',
           memoryHint: 'Memory text (project rules and wiki index) is part of the dynamic context, so it is not counted twice',
           dynamicContextComposition: 'Dynamic context composition',
+          section: {
+            mcp: 'MCP summaries',
+            skill: 'Skill list',
+            memory: 'Memory text',
+            task: 'Task manifest',
+          },
         },
       },
       subSessions: {

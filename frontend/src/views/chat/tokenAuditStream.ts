@@ -5,6 +5,8 @@ import type {
   TokenAuditCategory,
   TokenAuditCategoryType,
   TokenAuditContextAttribution,
+  TokenAuditContextSection,
+  TokenAuditContextSectionKind,
   TokenAuditDisplayState,
   TokenAuditRequestOverhead,
   TokenAuditToolBreakdown,
@@ -56,6 +58,9 @@ const KNOWN_CATEGORY_TYPES: readonly TokenAuditCategoryType[] = [
 
 /** 已知工具来源分组（非法取值整组丢弃）。 */
 const KNOWN_TOOL_GROUP_KINDS: readonly TokenAuditToolGroupKind[] = ['ORDINARY', 'MCP', 'SKILL'];
+
+/** 已知动态上下文段类（非法取值整段丢弃：面板没有它的文案）。 */
+const KNOWN_CONTEXT_SECTION_KINDS: readonly TokenAuditContextSectionKind[] = ['MCP', 'SKILL', 'MEMORY', 'TASK'];
 
 /**
  * 纯数字字符串判定：只认十进制整数/小数，可带正负号，两侧允许空白。
@@ -186,7 +191,7 @@ const normalizeRequestOverhead = (raw: unknown): TokenAuditRequestOverhead | nul
 };
 
 /**
- * 归出归因明细（记忆正文等）。
+ * 归出归因明细（记忆正文 + 动态上下文按段拆分）。
  *
  * <p>小节不存在 → `null`（后端没给）；小节存在但某项未知 → 对象保留、值 `null`。
  * 与 {@link normalizeAmount} 同一取向：「存在但未知」和「不存在」不是一回事。</p>
@@ -196,7 +201,32 @@ const normalizeRequestOverhead = (raw: unknown): TokenAuditRequestOverhead | nul
  */
 const normalizeContextAttribution = (raw: unknown): TokenAuditContextAttribution | null => {
   if (!isRecord(raw)) return null;
-  return {memoryTokens: toTokenAuditNumber(readField(raw, 'memoryTokens'))};
+  return {
+    memoryTokens: toTokenAuditNumber(readField(raw, 'memoryTokens')),
+    sections: normalizeContextSections(readField(raw, 'sections')),
+  };
+};
+
+/**
+ * 归出动态上下文的按段拆分。
+ *
+ * <p>段类不在白名单内整段丢弃（面板没有它的文案，留着只能渲染成「未知段」）；
+ * 同一段类只留第一条 —— 后端已按段类合并，再出现重复说明载荷异常，前端不替它做加法。</p>
+ *
+ * @param raw 原始数组
+ * @returns 已归一的分段；后端没给（缺失/非数组）时返回 null
+ */
+const normalizeContextSections = (raw: unknown): TokenAuditContextSection[] | null => {
+  if (!Array.isArray(raw)) return null;
+  const sections: TokenAuditContextSection[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const kind = readField(item, 'kind');
+    if (typeof kind !== 'string' || !(KNOWN_CONTEXT_SECTION_KINDS as readonly string[]).includes(kind)) continue;
+    if (sections.some(section => section.kind === kind)) continue;
+    sections.push({kind: kind as TokenAuditContextSectionKind, tokens: toTokenAuditNumber(readField(item, 'tokens'))});
+  }
+  return sections;
 };
 
 /** 模块级单例：sessionId → 最新推送。整体替换 Map 以触发 Vue 响应式更新。 */

@@ -5,7 +5,8 @@
  * <p>右侧浮动抽屉，展示一次「上下文快照」口径的 token 构成：当前上下文占用、
  * 消息构成（系统 / 动态上下文 / 用户 / 附件 / 模型 / 工具返回）、工具来源二级拆解，
  * 以及其他消息（请求开销）。<b>动态上下文是框架每轮插入的背景块</b>（MCP 摘要、技能、记忆正文、
- * 任务清单），既不是系统提示词也不是用户原话 —— 记忆归因挂在它自己的下拉里，系统消息不再有下拉框。</p>
+ * 任务清单），既不是系统提示词也不是用户原话 —— 背景块的按段构成（MCP 摘要 / 技能列表 / 记忆正文 /
+ * 任务清单）挂在它自己的下拉里，系统消息没有下拉框。</p>
  *
  * <p><b>数据来源两条，解析/渲染只有一条</b>：</p>
  * <ol>
@@ -148,7 +149,7 @@ const messageRows = computed(() => resolveMessageRows(displayed.value?.messages)
 const toolGroupRows = computed(() => resolveToolGroupRows(displayed.value?.tools));
 const ordinaryToolRows = computed(() => resolveOrdinaryToolRows(displayed.value?.tools));
 const toolKindCount = computed<number>(() => countToolGroupKinds(displayed.value?.tools));
-/** 动态上下文的归因明细（记忆正文）：只做说明，不进消息构成合计。 */
+/** 动态上下文的按段构成（MCP 摘要 / 技能列表 / 记忆正文 / 任务清单）：只做说明，不进消息构成合计。 */
 const dynamicContextAttributionRows = computed(() => resolveDynamicContextAttributionRows(displayed.value));
 const capturedAtText = computed<string>(() => formatCapturedAt(displayed.value?.capturedAt));
 
@@ -442,8 +443,8 @@ watch(
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
-                    <!-- 动态上下文：记忆正文的归因明细可展开。
-                         系统消息不再有下拉框 —— 记忆正文已挪到每轮背景块，挂在系统消息下是错的口径。 -->
+                    <!-- 动态上下文：背景块的按段构成可展开（MCP 摘要 / 技能列表 / 记忆正文 / 任务清单）。
+                         系统消息没有下拉框 —— 这些内容都在每轮背景块里，挂在系统消息下是错的口径。 -->
                     <button
                       v-else-if="row.type === 'DYNAMIC_CONTEXT' && dynamicContextAttributionRows.length > 0"
                       type="button"
@@ -482,8 +483,8 @@ watch(
                     ></div>
                   </div>
 
-                  <!-- 动态上下文的归因明细：记忆正文已并入每轮背景块，这里只说「其中有多少是记忆」。
-                       不做成独立消息分项 —— 那会让消息构成合计多算一份记忆，和快照总量对不上。 -->
+                  <!-- 动态上下文构成：框架已把整块背景块从用户消息中单独摘出，这里只说「其中各段占多少」。
+                       不做成独立消息分项 —— 那会让消息构成合计多算一份，和快照总量对不上。 -->
                   <!-- 折叠外壳必须是「无 margin / border / padding」的纯容器。
                        CollapseTransition 量的是元素自身 scrollHeight（不含自身 margin/border，且它会把 padding
                        先清零再过渡），明细块自带 mt-1.5 + border + p-2 时量到的高度比稳态小约 10px：
@@ -506,11 +507,14 @@ watch(
                           <div
                             v-for="item in dynamicContextAttributionRows"
                             :key="item.key"
+                            data-testid="token-audit-dynamic-context-item"
+                            :data-kind="item.key"
                             class="flex items-center justify-between gap-2"
                           >
                             <span class="flex min-w-0 items-center gap-1">
                               <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
                               <span
+                                v-if="item.withHint"
                                 data-testid="token-audit-attribution-hint"
                                 class="inline-flex shrink-0 cursor-help text-lx-faint"
                                 :title="t('chat.tokenAudit.attribution.memoryHint')"
