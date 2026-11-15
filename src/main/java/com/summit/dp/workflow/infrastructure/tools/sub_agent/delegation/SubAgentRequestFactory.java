@@ -7,6 +7,7 @@ import com.summit.core.agent.ContextSpec;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -138,6 +139,10 @@ public class SubAgentRequestFactory {
      *
      * <p>框架约定 {@code AgentRequest.messages} 是执行期对话历史的唯一来源（运行时不按 id 回读），
      * 因此复用必须在这里把历史显式交出去；否则子 Agent 会「接着聊」却看不到之前聊过什么。</p>
+     *
+     * <p><b>丢掉开头的系统消息</b>：历史里的系统提示词属于上一次执行，而框架对「还没有助手轮次」的
+     * 会话会原样保留调用方给的前导系统消息（历史只追加，改写它就等于让缓存前缀失效）。本次的提示词
+     * 由 {@code contextSpec.systemPrompt} 渲染，再把旧的塞进历史，等于让子 Agent 按上一轮的指令干活。</p>
      */
     private static List<Message> buildContext(List<Message> priorMessages, String task) {
         UserMessageEntity current = UserMessageEntity.from(task);
@@ -145,6 +150,9 @@ public class SubAgentRequestFactory {
             return List.of(current);
         }
         List<Message> context = new ArrayList<>(priorMessages);
+        while (!context.isEmpty() && context.getFirst() instanceof SystemMessageEntity) {
+            context.removeFirst();
+        }
         context.add(current);
         return context;
     }

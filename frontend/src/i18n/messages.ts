@@ -203,6 +203,7 @@ export const messages: MessageSchema = {
         // 删除是破坏性动作，短名不复用「写入」
         fileDelete: '删除文件',
         mcpList: '列举 MCP 工具',
+        mcpCall: '调用 MCP 工具',
         skill: '读取技能',
         // 读技能的短名独立成「加载技能」：skill 是 SKILL 分类标签，且要与「读取文件」靠动词分开
         skillRead: '加载技能',
@@ -1817,6 +1818,7 @@ export const messages: MessageSchema = {
         // Deletion is destructive, so it never reuses the "Write" label.
         fileDelete: 'Delete file',
         mcpList: 'List MCP tools',
+        mcpCall: 'Call MCP tool',
         skill: 'Read skill',
         // Skill reading gets its own label so the verb tells it apart from "Read file".
         skillRead: 'Load skill',

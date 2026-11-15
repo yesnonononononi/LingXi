@@ -22,6 +22,7 @@ export const TOOL_CATEGORY = {
   COMPACT: 'COMPACT',
   TOOL_SEARCH: 'TOOL_SEARCH',
   MCP_LIST: 'MCP_LIST',
+  MCP_CALL: 'MCP_CALL',
   SKILL: 'SKILL',
   DEFAULT: 'DEFAULT',
 } as const;
@@ -62,9 +63,10 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.SendMailToAgent]: TOOL_CATEGORY.MAIL,
   // 上下文压缩
   [AgentToolName.CompactContext]: TOOL_CATEGORY.COMPACT,
-  // 渐进披露：检索工具 / 列举 MCP 工具
+  // 渐进披露：检索工具 / 列举 MCP 工具 / 转发调用
   [AgentToolName.SearchTool]: TOOL_CATEGORY.TOOL_SEARCH,
   [AgentToolName.ListMcpTools]: TOOL_CATEGORY.MCP_LIST,
+  [AgentToolName.CallMcpTool]: TOOL_CATEGORY.MCP_CALL,
   // Skill 正文读取
   [AgentToolName.ReadSkill]: TOOL_CATEGORY.SKILL,
 };
@@ -87,6 +89,7 @@ const TOOL_CATEGORY_LABEL_KEY: Record<string, string> = {
   [TOOL_CATEGORY.COMPACT]: 'tool.category.compact',
   [TOOL_CATEGORY.TOOL_SEARCH]: 'tool.category.toolSearch',
   [TOOL_CATEGORY.MCP_LIST]: 'tool.category.mcpList',
+  [TOOL_CATEGORY.MCP_CALL]: 'tool.category.mcpCall',
   [TOOL_CATEGORY.SKILL]: 'tool.category.skill',
   [TOOL_CATEGORY.DEFAULT]: 'tool.category.default',
 };
@@ -256,6 +259,14 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
     case AgentToolName.CreatePlan:
       description = field('title');
       break;
+
+    case AgentToolName.CallMcpTool: {
+      // 网关行的正文只能是它要调的远端工具名：`name` 缺失时留空，不臆断。
+      const remote = field('name').trim();
+      target = remote;
+      description = remote;
+      break;
+    }
   }
   return { category, description, target, command, lineRange };
 }

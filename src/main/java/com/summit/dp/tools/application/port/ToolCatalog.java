@@ -1,6 +1,7 @@
 package com.summit.dp.tools.application.port;
 
 
+import com.summit.kernel.tools.mcp.CallMcpToolExecutor;
 import com.summit.kernel.tools.mcp.ListMcpToolsExecutor;
 import com.summit.kernel.tools.search.SearchToolExecutor;
 import com.summit.kernel.tools.skill.ReadSkillTool;
@@ -85,6 +86,15 @@ public interface ToolCatalog {
 
     /** MCP 工具清单工具名，与 {@link #SEARCH_TOOL} 同属渐进披露的两级入口，同样转发框架常量。 */
     String LIST_MCP_TOOLS = ListMcpToolsExecutor.NAME;
+
+    /**
+     * MCP 调用网关名。远端工具从不单独进入模型工具表，模型拿到名字与 schema 后统一经它转发；
+     * 实现归框架侧（{@code harness-kernel-tools} 的 {@link CallMcpToolExecutor}），这里转发常量。
+     *
+     * <p><b>发现与调用是两个名字</b>：配了 MCP 只把检索入口塞进清单，模型能查不能调；
+     * 要真正调用远端工具，网关必须和前面两级入口一起进名单——名单即授权，没有隐含关系。</p>
+     */
+    String CALL_MCP_TOOL = CallMcpToolExecutor.NAME;
 
     /**
      * Skill 正文读取工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link ReadSkillTool}），

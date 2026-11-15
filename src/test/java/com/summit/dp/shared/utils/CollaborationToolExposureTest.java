@@ -37,8 +37,10 @@ import static org.mockito.Mockito.when;
  * <ol>
  *   <li><b>框架语义：名单即授权。</b>未配清单不再等于「不加限制」—— 不显式写出来的静态工具
  *       一律不暴露。这消除了「清单组装失败变成 null，静默放大为进程内全部能力」的隐患。</li>
- *   <li><b>业务语义：MCP 在场则兜底检索入口。</b>请求级 MCP 工具名无法预先进清单，模型只能靠
- *       {@code search_tool} 发现它们；框架侧对 MCP 工具一律放行，所以「看得见就能执行」。</li>
+ *   <li><b>业务语义：MCP 在场则兜底全部三级入口。</b>请求级 MCP 工具名无法预先进清单，
+ *       模型只能靠 {@code list_mcp_tools} 列名、{@code search_tool} 取 schema，再经
+ *       {@code call_mcp_tool} 网关转发调用。发现与调用是三个独立名字，谁都不隐含谁：
+ *       少给网关，模型查得到也调不动。</li>
  * </ol>
  *
  * <p>另一组回归：{@code call_sub_agent} 与 {@code send_mail_to_agent} 只在身份前置条件满足时
@@ -86,12 +88,13 @@ class CollaborationToolExposureTest {
     }
 
     @Test
-    @DisplayName("未配清单但配了 MCP：兜底两级检索入口，静态工具仍不暴露")
-    void mcpPresenceFallsBackToTheSearchEntry() {
+    @DisplayName("未配清单但配了 MCP：兜底三级入口，静态工具仍不暴露")
+    void mcpPresenceFallsBackToTheMcpEntries() {
         AgentRequest request = request(null, null, null, REGISTERED, true);
 
-        assertEquals(List.of(ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL), request.getToolList(),
-                "MCP 工具分两级发现：先列清单（不含 schema）再检索（含 schema）；静态工具仍须显式授权");
+        assertEquals(List.of(ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL, ToolCatalog.CALL_MCP_TOOL),
+                request.getToolList(),
+                "MCP 工具分三级：先列清单（不含 schema）、再检索（含 schema）、最后经网关调用；静态工具仍须显式授权");
     }
 
     @Test
@@ -104,12 +107,13 @@ class CollaborationToolExposureTest {
     }
 
     @Test
-    @DisplayName("配了静态工具清单：按清单走，并补上两级 MCP 入口")
-    void explicitWhitelistIsHonouredAndCarriesSearchEntry() {
+    @DisplayName("配了静态工具清单：按清单走，并补上三级 MCP 入口")
+    void explicitWhitelistIsHonouredAndCarriesTheMcpEntries() {
         AgentRequest request = request(null, null,
                 List.of("read_file", "edit_file"), REGISTERED, true);
 
-        assertEquals(List.of("read_file", "edit_file", ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
+        assertEquals(List.of("read_file", "edit_file", ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL,
+                        ToolCatalog.CALL_MCP_TOOL),
                 request.getToolList());
     }
 
@@ -147,9 +151,9 @@ class CollaborationToolExposureTest {
                         ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
-                        ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
+                        ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL, ToolCatalog.CALL_MCP_TOOL),
                 request.getToolList(),
-                "基础工具包含用户确认、执行清单、文件检索写入删除与项目记忆读取/检索，外加两级 MCP 发现入口；协作工具不该出现");
+                "基础工具包含用户确认、执行清单、文件检索写入删除与项目记忆读取/检索，外加 MCP 三级入口；协作工具不该出现");
     }
 
     @Test

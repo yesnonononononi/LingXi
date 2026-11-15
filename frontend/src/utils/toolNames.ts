@@ -68,6 +68,8 @@ export const AgentToolName = {
   SearchTool: 'search_tool',
   /** MCP 工具清单（渐进披露第一级） */
   ListMcpTools: 'list_mcp_tools',
+  /** MCP 调用网关：远端工具不单独出现在工具表里，模型经它转发调用 */
+  CallMcpTool: 'call_mcp_tool',
   /** Skill 正文读取（入口路径由框架的 Skill 提示词下发） */
   ReadSkill: 'read_skill',
 } as const;

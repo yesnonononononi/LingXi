@@ -253,7 +253,7 @@ class SessionTokenAuditCollectorTest {
         DocumentElement<Integer> zero = auditElement(0);
         return new TokenAuditDocument(zero, zero, null, zero,
                 new OtherTokens(auditElement(0), auditElement(0), auditElement(dynamicContextTokens),
-                        auditElement(memoryTokens), auditElement(0)));
+                        auditElement(memoryTokens), List.of(), auditElement(0)));
     }
 
     private static DocumentElement<Integer> auditElement(int tokens) {

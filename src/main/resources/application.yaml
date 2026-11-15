@@ -153,7 +153,8 @@ lingxi:
         enabled: true
       tool:
         # 框架内核工具（harness-kernel-tools）：默认开启，这里只列可调参数。
-        # search_tool 是 MCP 远端工具的唯一发现入口，单次检索的返回条数与超时在此收敛。
+        # MCP 远端工具分三级：list_mcp_tools 列清单、search_tool 取 schema、call_mcp_tool 真正调用。
+        # search_tool 只有检索职责，单次检索的返回条数与超时在此收敛。
         search-tool:
           max-matches: 30
           timeout: 10s

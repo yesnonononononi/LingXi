@@ -166,7 +166,9 @@ class QaPendingMailRedelegationTest {
         assertFalse(Files.exists(fixture.artifact.getParent()));
         assertTrue(fixture.emails.pendingItems(10L, 6L).isEmpty());
         assertTrue(observed.requests().stream().allMatch(messages -> messages.stream()
-                .anyMatch(message -> message instanceof SystemMessageEntity && message.text().contains(CURRENT_TASK))));
+                        .anyMatch(message -> message instanceof UserMessageEntity user
+                                && user.hasContextContract() && user.text().contains(CURRENT_TASK))),
+                "任务段随每轮动态上下文下发（在缓存前缀之后），不再写进系统提示词");
         assertTrue(observed.requests().stream().allMatch(messages -> messages.stream()
                 .anyMatch(message -> message instanceof UserMessageEntity && message.text().equals(CURRENT_TASK))));
 

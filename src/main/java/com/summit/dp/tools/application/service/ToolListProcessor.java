@@ -36,6 +36,8 @@ public class ToolListProcessor {
         if (context.mcpConfig() != null && context.mcpConfig().getMcp() != null && !context.mcpConfig().getMcp().isEmpty()) {
             tools.add(ToolCatalog.LIST_MCP_TOOLS);
             tools.add(ToolCatalog.SEARCH_TOOL);
+            // 发现与调用各是一个名字：只给检索入口，模型能查到 schema 却调不动远端工具。
+            tools.add(ToolCatalog.CALL_MCP_TOOL);
         }
         if (context.skillRoot() != null) tools.add(ToolCatalog.READ_SKILL);
         if (context.projectMemory()) {
@@ -50,8 +52,10 @@ public class ToolListProcessor {
 
         if (!context.accessMode().allowsWriteTools()) {
             Set<String> readOnly = toolCatalog.readOnlyNames();
+            // 网关与终端同等对待：远端工具与命令一样副作用未知，档位不保证它们的写行为，
+            // 但一律剔除会让只读档连远端只读工具都用不了。
             tools.removeIf(name -> !ToolCatalog.EXECUTE_COMMAND.equals(name) && !ToolCatalog.MANAGE_COMMAND.equals(name)
-                    && !readOnly.contains(name));
+                    && !ToolCatalog.CALL_MCP_TOOL.equals(name) && !readOnly.contains(name));
         }
         if (context.member() || context.teamId() == null) {
             tools.remove(ToolCatalog.CALL_SUB_AGENT);

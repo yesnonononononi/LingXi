@@ -167,7 +167,7 @@ class SubAgentRequestFactoryTest {
 
     @ParameterizedTest(name = "复用历史={0}")
     @ValueSource(booleans = {false, true})
-    void taskStaysInSystemPromptThroughPruningSummaryAndCheckpointResume(boolean reused) throws Exception {
+    void taskSurvivesPruningSummaryAndCheckpointResume(boolean reused) throws Exception {
         stubModel();
         AgentVO member = agent(6L, "工程师", "执行主理人交付的任务");
         String oldTask = "上一轮委派：核查旧端口";
@@ -183,7 +183,9 @@ class SubAgentRequestFactoryTest {
         execution.startChecked();
         String protectedPrompt = execution.getMessages().getFirst().text();
         assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
-        assertTrue(protectedPrompt.contains(task));
+        // 任务不再写进系统提示词：框架把它放进每轮动态上下文（位于缓存前缀之后），
+        // 所以这里断言的是「任务随本轮上下文下发」，而不是「系统提示词里有任务」。
+        assertTrue(carries(execution.getMessages(), task), "首轮上下文必须带着本次委派任务");
         assertFalse(protectedPrompt.contains(oldTask), "复用子会话不能沿用上一轮的系统任务");
 
         // 邮件成为最后用户消息后，历史工具组必须真的被剪掉，不能只验证一个未执行的压缩调用。
@@ -203,7 +205,7 @@ class SubAgentRequestFactoryTest {
         assertTrue(execution.getMessages().stream().noneMatch(ToolMessageEntity.class::isInstance));
         assertEquals(protectedPrompt, execution.getMessages().getFirst().text());
 
-        // 摘要故意不复述任务，确认任务保护来自系统段，而不是摘要模型碰巧记住了它。
+        // 摘要故意不复述任务：任务保护靠的是「每轮按请求重渲染任务段」，而不是摘要模型碰巧记住它。
         AtomicInteger summaries = new AtomicInteger();
         ChatModel summaryModel = command -> {
             summaries.incrementAndGet();
@@ -221,7 +223,9 @@ class SubAgentRequestFactoryTest {
             assertTrue(compacter.compact(new ContextCompactRequest(execution)));
             assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
             assertEquals(protectedPrompt, execution.getMessages().getFirst().text());
-            assertTrue(execution.getMessages().getFirst().text().contains(task));
+            // 压缩把历史换成摘要之后，任务依旧原样挂在请求上，下一轮据此重渲染任务段。
+            assertEquals(List.of(task), execution.getAgentRequest().getTask(),
+                    "摘要与剪枝都不该碰请求里的任务，任务靠它每轮重新进入上下文");
         }
         assertEquals(2, summaries.get());
 
@@ -233,7 +237,7 @@ class SubAgentRequestFactoryTest {
         assertEquals(List.of(task), restored.getAgentRequest().getTask());
         assertEquals(protectedPrompt, restored.getMessages().getFirst().text());
 
-        // 恢复链不会重新初始化系统提示词，验证真正送模时仍使用受保护的任务段。
+        // 恢复链不会重新初始化系统提示词：任务保护靠的是「请求仍带任务，下一轮据此重渲染」。
         List<Message> sent = new ArrayList<>();
         ToolExecutionManager tools = mock(ToolExecutionManager.class);
         when(tools.toolRegistry()).thenReturn(new ToolRegistry(List.of()));
@@ -255,7 +259,7 @@ class SubAgentRequestFactoryTest {
         assertEquals(ExecutionState.COMPLETED, runtime.execute(restored).getExecutionState());
         assertInstanceOf(SystemMessageEntity.class, sent.getFirst());
         assertEquals(protectedPrompt, sent.getFirst().text());
-        assertTrue(sent.getFirst().text().contains(task));
+        assertTrue(carries(sent, task), "恢复后的执行必须把任务重新随本轮上下文送达模型");
         System.out.printf("验证委派任务保护: reused=%s, tokensBefore=%d, tokensAfterPrune=%d, summaries=%d, runtimeJar=%s%n",
                 reused, before, pruned, summaries.get(), DefaultConversationManager.class.getProtectionDomain().getCodeSource().getLocation());
     }
@@ -492,6 +496,12 @@ class SubAgentRequestFactoryTest {
         when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder()
                 .baseUrl("https://example.invalid").apiKey("k").modelName("m").build(), false));
         when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
+    }
+
+    /** 任务段在框架里以每轮动态上下文的消息形态送达，位置不固定在系统提示词。 */
+    private static boolean carries(List<Message> messages, String text) {
+        return messages.stream().anyMatch(message -> message != null && message.text() != null
+                && message.text().contains(text));
     }
 
     private static AgentVO agent(Long id, String name, String prompt) {

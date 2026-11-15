@@ -205,11 +205,11 @@ class ApplicationContextAssemblyTest {
                         + "白名单=" + new TreeSet<>(expectedAnnotationTools) + "，实际=" + annotationTools);
         assertEquals(expectedAnnotationTools.size(), annotationTools.size(),
                 "数量由白名单推导，白名单自身必须无重复：" + expectedAnnotationTools.size());
-        // 不用裸数字：定义 Bean 只来自框架内核工具（渐进披露三件 + 上下文压缩）。
+        // 不用裸数字：定义 Bean 只来自框架内核工具（MCP 三级入口 + Skill + 上下文压缩）。
         // compact_context 无 ToolCatalog 常量（实现在框架内核），只能写字面量，
         // 改框架侧名字时这里会红——这正是要的效果。
         Set<String> expectedDefinitionBeanNames = new TreeSet<>(Set.of("compact_context",
-                ToolCatalog.SEARCH_TOOL, ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.READ_SKILL));
+                ToolCatalog.SEARCH_TOOL, ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.CALL_MCP_TOOL, ToolCatalog.READ_SKILL));
         Set<String> definitionBeanNames = new TreeSet<>();
         context.getBeansOfType(ToolDefinition.class).values()
                 .forEach(definition -> definitionBeanNames.add(definition.name()));

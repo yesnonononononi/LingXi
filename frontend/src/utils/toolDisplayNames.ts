@@ -54,6 +54,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.CompactContext, defineToolName('压缩上下文', 'Compact context', 'tool.category.compact')],
   [AgentToolName.SearchTool, defineToolName('检索工具', 'Search tools', 'tool.category.toolSearch')],
   [AgentToolName.ListMcpTools, defineToolName('列举 MCP 工具', 'List MCP tools', 'tool.category.mcpList')],
+  // 网关行的正文是远端工具名，短名只说明「经网关调用」，不占用 MCP_LIST 分类标签
+  [AgentToolName.CallMcpTool, defineToolName('调用 MCP 工具', 'Call MCP tool', 'tool.category.mcpCall')],
   // 读技能的短名独立成「加载技能」：与「读取文件」靠动词分开，且不占用 SKILL 分类标签
   [AgentToolName.ReadSkill, defineToolName('读取技能', 'Read skill', 'tool.category.skillRead')],
 ]);

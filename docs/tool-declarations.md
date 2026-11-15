@@ -14,7 +14,9 @@
 | 框架 `list_mcp_tools` | 条件自动配置 | 有启用开关、超时与窗口配置，需支持按 Bean 名替换。 |
 | 框架 `read_skill` | 条件自动配置 | 启用开关、输出上限和超时来自配置，需保留校验与替换规则。 |
 | 框架 `compact_context` | 条件自动配置 | 工具可禁用，但同一压缩器还承担循环内部压缩职责，不能因执行器存在就自动暴露工具。 |
-| 远端 `mcp_*` | 请求级动态定义 | 名称和 schema 由远端发现，每次请求隔离，不能进入全局静态注册表。 |
+| 框架 `call_mcp_tool` | 条件自动配置 | 远端工具的唯一调用入口：静态 schema 固定，请求名单决定是否下发，`SERIAL_MUTATION` 让批里不并发。 |
+
+MCP 远端工具**从不进入模型工具表**：`list_mcp_tools` 列清单、`search_tool` 取 schema、`call_mcp_tool` 转发调用，三级各是一个静态名字，谁都不隐含谁。工具表因此跨轮不变，提供方的前缀缓存与 thinking 签名不会因「查了一个工具」而失效；代价是远端 schema 只活在检索结果里，历史被剪掉后模型要重新查一次。
 
 十三个固定工具使用 `parameters = @ObjectValue(...)`：根节点固定为 object，属性通过 `ValueType` 选择标量或标量数组，必填项在根节点统一声明。约束只填写到对应类型中；`OptionalBoolean.UNSET` 表示省略，`FALSE` 表示显式 false。
 

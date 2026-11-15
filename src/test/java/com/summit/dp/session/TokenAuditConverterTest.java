@@ -9,6 +9,8 @@ import com.summit.dp.session.domain.model.TokenAuditReconciler.Measurement;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -35,7 +37,7 @@ class TokenAuditConverterTest {
     @Test
     @DisplayName("元素为 null：两项归因一律 null")
     void nullElementYieldsNull() {
-        OtherTokens other = new OtherTokens(null, null, null, null, null);
+        OtherTokens other = new OtherTokens(null, null, null, null, List.of(), null);
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
         assertNull(measurement.memoryTokens());
@@ -50,6 +52,7 @@ class TokenAuditConverterTest {
                 element(200, AuditStatus.FAILED),
                 element(555, AuditStatus.NO_DATA),
                 element(777, AuditStatus.NO_DATA),
+                List.of(),
                 element(889, AuditStatus.FAILED));
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
@@ -66,6 +69,7 @@ class TokenAuditConverterTest {
                 element(3100, AuditStatus.SUCCESS),
                 element(4500, AuditStatus.SUCCESS),
                 element(0, AuditStatus.SUCCESS),
+                List.of(),
                 element(889, AuditStatus.SUCCESS));
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
@@ -80,7 +84,7 @@ class TokenAuditConverterTest {
     @DisplayName("框架给出负数：按未知处理，不夹成 0 也不抛错")
     void negativeValueTreatedAsUnknown() {
         OtherTokens other = new OtherTokens(null, null, element(-3, AuditStatus.SUCCESS),
-                element(-5, AuditStatus.SUCCESS), element(-1, AuditStatus.SUCCESS));
+                element(-5, AuditStatus.SUCCESS), List.of(), element(-1, AuditStatus.SUCCESS));
         Measurement measurement = converter.toMeasurement(documentWithOther(other), null);
 
         assertNull(measurement.dynamicContextTokens());
@@ -92,7 +96,7 @@ class TokenAuditConverterTest {
     @DisplayName("动态上下文：成功值原样透传，缺失时保持未知（不是 0）")
     void dynamicContextPassesThrough() {
         OtherTokens other = new OtherTokens(null, null, element(4500, AuditStatus.SUCCESS),
-                element(777, AuditStatus.SUCCESS), element(889, AuditStatus.SUCCESS));
+                element(777, AuditStatus.SUCCESS), List.of(), element(889, AuditStatus.SUCCESS));
 
         assertEquals(4500, converter.toMeasurement(documentWithOther(other), null).dynamicContextTokens());
         assertNull(converter.toMeasurement(documentWithOther(null), null).dynamicContextTokens(),

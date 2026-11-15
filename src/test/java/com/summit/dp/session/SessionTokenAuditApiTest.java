@@ -302,7 +302,7 @@ class SessionTokenAuditApiTest {
                                 Map.of("search_web", new ToolElement(2100, 8700, 9420)))).build(),
                 amount(12300, 0.0612345),
                 new OtherTokens(amount(8200, 0.0412345), amount(3100, 0.0156789),
-                        amount(4500, 0.0225), amount(777, 0.003), amount(889, 0.004)));
+                        amount(4500, 0.0225), amount(777, 0.003), List.of(), amount(889, 0.004)));
     }
 
     private static DocumentElement<Integer> amount(int tokens, double ratio) {
