@@ -1506,6 +1506,8 @@ export const messages: MessageSchema = {
         execTimeoutLabel: '执行超时(ms)',
         maxOutputLabel: '输出上限',
         // 高级连接容错：4 项全部可选，留空即不下发（null），沿用 MCP 库默认行为
+        advancedOptionsTitle: '高级选项',
+        advancedOptionsHint: '（选填，留空即用服务端或库默认值）',
         advancedGroup: '高级连接容错',
         advancedGroupHint: '四项均可留空：留空表示不下发该参数，沿用 MCP 库默认行为（与升级前完全一致）。',
         protocolVersionLabel: '协议版本',
@@ -3096,6 +3098,8 @@ export const messages: MessageSchema = {
         execTimeoutLabel: 'Execution timeout (ms)',
         maxOutputLabel: 'Max output',
         // Advanced connection tolerance: all four optional, blank = not sent = library default
+        advancedOptionsTitle: 'Advanced options',
+        advancedOptionsHint: '(optional; blank keeps the server or library default)',
         advancedGroup: 'Advanced connection tolerance',
         advancedGroupHint: 'All four are optional: a blank value sends nothing and keeps the MCP library default (identical to before this update).',
         protocolVersionLabel: 'Protocol version',

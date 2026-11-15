@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, ref, watch} from 'vue';
 import {useMcpTab, type McpTriState} from './useMcpTab';
 import {MCP_AUTH_MODES, MCP_TRANSPORTS} from '../../../types/chat';
 import McpServiceCard from './McpServiceCard.vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
+import CollapseTransition from '../../../components/common/CollapseTransition.vue';
 import {useTheme} from '../../../composables/useTheme';
 import {useI18n} from '../../../i18n';
 
@@ -59,6 +60,31 @@ const {
   handleDeleteMcp,
   handleToggleMcp,
 } = useMcpTab();
+
+/** 「高级选项」折叠面板的开合状态：默认收起，主区只留必填项，避免一屏塞满选填框。 */
+const isAdvancedOpen = ref(false);
+
+/** 是否存在被折叠起来的非默认配置：用于编辑态自动展开，否则用户会以为配置丢失。 */
+const hasAdvancedConfig = (): boolean => {
+  const form = mcpForm.value;
+  return form.protocolVersion !== ''
+    || form.autoHealthCheck !== null
+    || form.healthCheckInterval !== null
+    || form.reconnectInterval !== null
+    || form.authClientId !== ''
+    || form.authScopes !== ''
+    || form.authServer !== '';
+};
+
+// flush: 'post' —— startEditMcp 先填表单再翻编辑态，post 才能读到已回填的值。
+watch(isEditingOrAddingMcp, (editing) => {
+  isAdvancedOpen.value = editing && hasAdvancedConfig();
+}, {flush: 'post'});
+
+// 切到 OAuth 就把面板摊开：客户端 ID 之类的入口藏在收起的面板里等于让用户找。
+watch(() => mcpForm.value.authMode, (mode) => {
+  if (mode === 'oauth') isAdvancedOpen.value = true;
+});
 
 </script>
 
@@ -158,7 +184,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
               : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
@@ -197,7 +223,7 @@ const {
             :class="[
               'px-3 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
               mcpForm.transport === t
-                ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
+                ? 'bg-blue-600 border-blue-500 text-white shadow-[0_0_12px_rgba(37,99,235,0.4)]'
                 : (isDark
                     ? 'border-white/15 text-zinc-300 hover:bg-white/5'
                     : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
@@ -221,7 +247,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
             isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
               : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
@@ -240,7 +266,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
               : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
@@ -260,7 +286,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
               : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
@@ -286,7 +312,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
               : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
@@ -310,7 +336,7 @@ const {
             :class="[
               'px-3 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
               mcpForm.authMode === mode
-                ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
+                ? 'bg-blue-600 border-blue-500 text-white shadow-[0_0_12px_rgba(37,99,235,0.4)]'
                 : (isDark
                     ? 'border-white/15 text-zinc-300 hover:bg-white/5'
                     : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
@@ -320,52 +346,6 @@ const {
           </button>
         </div>
         <p class="text-lx-fs-sm text-lx-faint">{{ t('settings.mcp.authHint') }}</p>
-      </div>
-
-      <!-- OAuth 细节：三项都可留空，由服务端发现 -->
-      <div v-if="mcpForm.transport !== 'stdio' && mcpForm.authMode === 'oauth'" class="grid grid-cols-2 gap-3">
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authClientIdLabel') }}</label>
-          <input
-            v-model="mcpForm.authClientId"
-            type="text"
-            :placeholder="t('settings.mcp.authClientIdPlaceholder')"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-            ]"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authScopesLabel') }}</label>
-          <input
-            v-model="mcpForm.authScopes"
-            type="text"
-            :placeholder="t('settings.mcp.authScopesPlaceholder')"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-            ]"
-          />
-        </div>
-        <div class="col-span-2 space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authServerLabel') }}</label>
-          <input
-            v-model="mcpForm.authServer"
-            type="text"
-            :placeholder="t('settings.mcp.authServerPlaceholder')"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-            ]"
-          />
-        </div>
       </div>
 
       <!-- 服务描述：随提示词下发给模型（每服务一行），由业务用户填写 -->
@@ -382,165 +362,248 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
               : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
 
-      <!-- 超时与输出上限 -->
-      <div class="grid grid-cols-3 gap-3">
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
-          <input
-            v-model.number="mcpForm.initializationTimeout"
-            type="number"
-            min="1"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
-            ]"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
-          <input
-            v-model.number="mcpForm.executionTimeout"
-            type="number"
-            min="1"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
-            ]"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
-          <input
-            v-model.number="mcpForm.maxOutput"
-            type="number"
-            min="1"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
-            ]"
-          />
-        </div>
-      </div>
-
-      <!-- 高级连接容错：4 项全部可选，留空即不下发（null），沿用库默认行为 -->
+      <!--
+        高级选项：可留空、有默认值的配置全收在这里，主区只留必填项。
+        展开区自己滚动（max-h + overflow-y-auto），避免把底部保存按钮顶出视口。
+      -->
       <div
-        class="space-y-3 p-3 rounded-2xl border"
+        class="rounded-2xl border"
         :class="isDark ? 'border-white/10 bg-white/[0.02]' : 'border-zinc-200 bg-zinc-50/60'"
       >
-        <div>
-          <p class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-            {{ t('settings.mcp.advancedGroup') }}
-          </p>
-          <p class="text-lx-fs-sm text-lx-faint mt-0.5">
-            {{ t('settings.mcp.advancedGroupHint') }}
-          </p>
-        </div>
+        <button
+          type="button"
+          :aria-expanded="isAdvancedOpen"
+          @click="isAdvancedOpen = !isAdvancedOpen"
+          class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-2xl cursor-pointer text-left"
+        >
+          <span class="flex items-baseline gap-1.5 min-w-0">
+            <span class="text-xs font-semibold text-zinc-800 dark:text-zinc-200 shrink-0">
+              {{ t('settings.mcp.advancedOptionsTitle') }}
+            </span>
+            <span class="text-lx-fs-sm text-lx-faint truncate">
+              {{ t('settings.mcp.advancedOptionsHint') }}
+            </span>
+          </span>
+          <svg
+            class="w-3.5 h-3.5 shrink-0 text-zinc-400 transition-transform duration-200"
+            :class="isAdvancedOpen ? 'rotate-180' : ''"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
 
-        <!-- 协议版本：留空 = 走协议探测 -->
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            {{ t('settings.mcp.protocolVersionLabel') }}
-            <span class="text-lx-faint font-normal">{{ t('settings.mcp.protocolVersionHint') }}</span>
-          </label>
-          <input
-            v-model="mcpForm.protocolVersion"
-            type="text"
-            maxlength="32"
-            :placeholder="t('settings.mcp.protocolVersionPlaceholder')"
-            :title="t('settings.mcp.protocolVersionTooltip')"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
-              isDark
-                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-            ]"
-          />
-          <p class="text-lx-fs-sm text-lx-faint">{{ t('settings.mcp.protocolVersionTooltip') }}</p>
-        </div>
+        <CollapseTransition>
+          <div v-if="isAdvancedOpen" class="px-3 pb-3">
+            <div class="max-h-[340px] overflow-y-auto space-y-3 pr-1">
+              <!-- OAuth 细节：三项都可留空，由服务端发现 -->
+              <div v-if="mcpForm.transport !== 'stdio' && mcpForm.authMode === 'oauth'" class="grid grid-cols-2 gap-3">
+                <div class="space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authClientIdLabel') }}</label>
+                  <input
+                    v-model="mcpForm.authClientId"
+                    type="text"
+                    :placeholder="t('settings.mcp.authClientIdPlaceholder')"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authScopesLabel') }}</label>
+                  <input
+                    v-model="mcpForm.authScopes"
+                    type="text"
+                    :placeholder="t('settings.mcp.authScopesPlaceholder')"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+                <div class="col-span-2 space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.authServerLabel') }}</label>
+                  <input
+                    v-model="mcpForm.authServer"
+                    type="text"
+                    :placeholder="t('settings.mcp.authServerPlaceholder')"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+              </div>
 
-        <div class="grid grid-cols-3 gap-3">
-          <!-- 自动健康检查：三态，才能表达「未设置，沿用库默认」 -->
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              {{ t('settings.mcp.autoHealthCheckLabel') }}
-            </label>
-            <SettingsSelect
-              id="mcp-auto-health-check"
-              data-testid="mcp-auto-health-check"
-              :label="t('settings.mcp.autoHealthCheckLabel')"
-              :title="t('settings.mcp.autoHealthCheckTooltip')"
-              :model-value="mcpAutoHealthCheckMode"
-              :options="autoHealthCheckOptions"
-              @update:model-value="setAutoHealthCheckMode"
-            />
+              <!-- 超时与输出上限 -->
+              <div class="grid grid-cols-3 gap-3">
+                <div class="space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
+                  <input
+                    v-model.number="mcpForm.initializationTimeout"
+                    type="number"
+                    min="1"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
+                  <input
+                    v-model.number="mcpForm.executionTimeout"
+                    type="number"
+                    min="1"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
+                  <input
+                    v-model.number="mcpForm.maxOutput"
+                    type="number"
+                    min="1"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+              </div>
+
+              <!-- 高级连接容错：4 项全部可选，留空即不下发（null），沿用库默认行为 -->
+              <div class="space-y-3 pt-1">
+                <div>
+                  <p class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                    {{ t('settings.mcp.advancedGroup') }}
+                  </p>
+                  <p class="text-lx-fs-sm text-lx-faint mt-0.5">
+                    {{ t('settings.mcp.advancedGroupHint') }}
+                  </p>
+                </div>
+
+                <!-- 协议版本：留空 = 走协议探测 -->
+                <div class="space-y-1.5">
+                  <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {{ t('settings.mcp.protocolVersionLabel') }}
+                    <span class="text-lx-faint font-normal">{{ t('settings.mcp.protocolVersionHint') }}</span>
+                  </label>
+                  <input
+                    v-model="mcpForm.protocolVersion"
+                    type="text"
+                    maxlength="32"
+                    :placeholder="t('settings.mcp.protocolVersionPlaceholder')"
+                    :title="t('settings.mcp.protocolVersionTooltip')"
+                    :class="[
+                      'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+                      isDark
+                        ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                        : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+                    ]"
+                  />
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                  <!-- 自动健康检查：三态，才能表达「未设置，沿用库默认」 -->
+                  <div class="space-y-1.5">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      {{ t('settings.mcp.autoHealthCheckLabel') }}
+                    </label>
+                    <SettingsSelect
+                      id="mcp-auto-health-check"
+                      data-testid="mcp-auto-health-check"
+                      :label="t('settings.mcp.autoHealthCheckLabel')"
+                      :title="t('settings.mcp.autoHealthCheckTooltip')"
+                      :model-value="mcpAutoHealthCheckMode"
+                      :options="autoHealthCheckOptions"
+                      @update:model-value="setAutoHealthCheckMode"
+                    />
+                  </div>
+
+                  <!-- 健康检查间隔(ms) -->
+                  <div class="space-y-1.5">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      {{ t('settings.mcp.healthCheckIntervalLabel') }}
+                    </label>
+                    <input
+                      v-model.number="mcpForm.healthCheckInterval"
+                      type="number"
+                      min="1"
+                      step="1"
+                      :placeholder="t('settings.mcp.healthCheckIntervalPlaceholder')"
+                      :title="t('settings.mcp.healthCheckIntervalTooltip')"
+                      :class="[
+                        'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                        isDark
+                          ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                          : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+                      ]"
+                    />
+                  </div>
+
+                  <!-- 重连间隔(ms) -->
+                  <div class="space-y-1.5">
+                    <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      {{ t('settings.mcp.reconnectIntervalLabel') }}
+                    </label>
+                    <input
+                      v-model.number="mcpForm.reconnectInterval"
+                      type="number"
+                      min="1"
+                      step="1"
+                      :placeholder="t('settings.mcp.reconnectIntervalPlaceholder')"
+                      :title="t('settings.mcp.reconnectIntervalTooltip')"
+                      :class="[
+                        'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                        isDark
+                          ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                          : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+                      ]"
+                    />
+                  </div>
+                </div>
+
+                <p class="text-lx-fs-sm text-lx-faint">
+                  {{ t('settings.mcp.autoHealthCheckTooltip') }}
+                </p>
+                <p class="text-lx-fs-sm text-lx-faint">
+                  {{ t('settings.mcp.intervalTooltip') }}
+                </p>
+              </div>
+            </div>
           </div>
-
-          <!-- 健康检查间隔(ms) -->
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              {{ t('settings.mcp.healthCheckIntervalLabel') }}
-            </label>
-            <input
-              v-model.number="mcpForm.healthCheckInterval"
-              type="number"
-              min="1"
-              step="1"
-              :placeholder="t('settings.mcp.healthCheckIntervalPlaceholder')"
-              :title="t('settings.mcp.healthCheckIntervalTooltip')"
-              :class="[
-                'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
-                isDark
-                  ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-                  : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-              ]"
-            />
-          </div>
-
-          <!-- 重连间隔(ms) -->
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              {{ t('settings.mcp.reconnectIntervalLabel') }}
-            </label>
-            <input
-              v-model.number="mcpForm.reconnectInterval"
-              type="number"
-              min="1"
-              step="1"
-              :placeholder="t('settings.mcp.reconnectIntervalPlaceholder')"
-              :title="t('settings.mcp.reconnectIntervalTooltip')"
-              :class="[
-                'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
-                isDark
-                  ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-                  : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-              ]"
-            />
-          </div>
-        </div>
-
-        <p class="text-lx-fs-sm text-lx-faint">
-          {{ t('settings.mcp.autoHealthCheckTooltip') }}
-        </p>
-        <p class="text-lx-fs-sm text-lx-faint">
-          {{ t('settings.mcp.intervalTooltip') }}
-        </p>
+        </CollapseTransition>
       </div>
 
       <!-- 启用开关 -->
       <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer accent-cyan-500" />
+        <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer accent-blue-500" />
         <span class="text-xs text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.enableService') }}</span>
       </label>
 
@@ -593,7 +656,7 @@ const {
           @click="handleSaveMcp"
           class="px-4 py-1.5 rounded-xl text-xs font-medium text-white cursor-pointer transition shadow-sm"
           :class="[
-            isSubmittingMcp || isConnectingMcp ? 'bg-cyan-600/50 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]'
+            isSubmittingMcp || isConnectingMcp ? 'bg-blue-600/50 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.4)]'
           ]"
         >
                     {{ isSubmittingMcp ? t('common.saving') : t('common.save') }}
