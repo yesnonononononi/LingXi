@@ -37,14 +37,16 @@ export function usePendingChatQueue(sessionId: Readonly<Ref<string | null>>, isA
     });
   }, {immediate: true});
 
-  async function change(action: (owner: string) => Promise<Result<void>>) {
+  async function change(action: (owner: string) => Promise<Result<void>>): Promise<boolean> {
     const owner = sessionId.value;
-    if (!owner || changing.value) return;
+    if (!owner || changing.value) return false;
     changing.value = true;
     error.value = '';
+    let ok = false;
     try {
       const result = await action(owner);
       if (!isOk(result.code)) throw new Error(result.errMsg || t('chat.pending.operationFailed'));
+      ok = true;
     } catch (cause) {
       if (owner === sessionId.value) {
         error.value = cause instanceof Error ? cause.message : t('chat.pending.operationFailed');
@@ -53,6 +55,7 @@ export function usePendingChatQueue(sessionId: Readonly<Ref<string | null>>, isA
       await refresh(owner);
       changing.value = false;
     }
+    return ok;
   }
 
   return {

@@ -340,17 +340,35 @@
                       <span class="h-1.5 w-1.5 rounded-full bg-current lx-live-dot" aria-hidden="true" />
                       {{ t('chat.pending.sending') }}
                     </span>
-                    <button
-                      v-else
-                      type="button"
-                      class="shrink-0 inline-flex items-center rounded-lg px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      :class="displayIsDark
-                        ? 'text-zinc-400 hover:bg-red-500/15 hover:text-red-300'
-                        : 'text-zinc-500 hover:bg-red-500/10 hover:text-red-600'"
-                      :aria-label="t('chat.pending.cancelNamed', {input: entry.input})"
-                      :disabled="pendingQueue.changing.value"
-                      @click="pendingQueue.cancel(entry.id)"
-                    >{{ t('chat.pending.cancel') }}</button>
+                    <div v-else class="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        data-testid="pending-edit-btn"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        :class="displayIsDark
+                          ? 'text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-100'
+                          : 'text-zinc-500 hover:bg-zinc-200/75 hover:text-zinc-800'"
+                        :title="t('chat.pending.edit')"
+                        :aria-label="t('chat.pending.editNamed', {input: entry.input})"
+                        :disabled="pendingQueue.changing.value"
+                        @click="handlePendingRestore(entry)"
+                      >
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M11.333 2.667a1.414 1.414 0 0 1 2 2L5.5 12.5l-2.833.833.833-2.833 7.833-7.833Z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="pending-cancel-btn"
+                        class="inline-flex items-center rounded-lg px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        :class="displayIsDark
+                          ? 'text-zinc-400 hover:bg-red-500/15 hover:text-red-300'
+                          : 'text-zinc-500 hover:bg-red-500/10 hover:text-red-600'"
+                        :aria-label="t('chat.pending.cancelNamed', {input: entry.input})"
+                        :disabled="pendingQueue.changing.value"
+                        @click="handlePendingRestore(entry)"
+                      >{{ t('chat.pending.cancel') }}</button>
+                    </div>
                   </li>
                 </TransitionGroup>
               </section>
@@ -697,6 +715,14 @@ provide(PLAN_PREVIEW_KEY, openPlanPreview);
 const handleDesignSendToChat = (payload: { prompt: string }): void => {
   if (!payload.prompt?.trim()) return;
   inputAreaRef.value?.setInputText(payload.prompt);
+  inputAreaRef.value?.focusInput?.();
+};
+
+/** 撤销或回写编辑待发送消息：仅在后端成功移除后写回输入框并聚焦，避免原文被自动发出。 */
+const handlePendingRestore = async (entry: { id: string; input: string }): Promise<void> => {
+  const cancelled = await pendingQueue.cancel(entry.id);
+  if (!cancelled) return;
+  inputAreaRef.value?.setInputText(entry.input);
   inputAreaRef.value?.focusInput?.();
 };
 
