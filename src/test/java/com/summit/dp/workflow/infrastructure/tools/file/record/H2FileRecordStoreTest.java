@@ -410,6 +410,92 @@ class H2FileRecordStoreTest {
         assertEquals(0, store.deleteByExecutionIds(List.of(EXECUTION)), "重复回收不能再删任何行");
     }
 
+    /**
+     * 每个文件只取**最早**那条：回滚要的是「首次被工具修改之前」的形态。
+     *
+     * <p>取最新那段（分段重开后的基线）回填的是执行中途的状态，界面还会说是"回到改动前" ——
+     * 比不回滚更骗人。</p>
+     */
+    @Test
+    void earliestPerFileKeepsTheFirstRecordOfEachFile() {
+        store.put(chainDraft("a.txt", "v1\n", "+a2", TURN, "digest-a1", true));
+        store.put(chainDraft("b.txt", "b1\n", "+b2", TURN, "digest-b1", true));
+        // 同文件第二段（链被工具外的修改打断）自带一份新基线，回滚不能用它。
+        store.put(chainDraft("a.txt", "手改\n", "+a3", TURN, "digest-a2", true));
+        store.put(chainDraft("a.txt", null, "+a4", TURN, "digest-a3", false));
+
+        List<FileRecord> earliest = store.earliestPerFile(EXECUTION);
+
+        assertEquals(List.of("a.txt", "b.txt"), earliest.stream().map(FileRecord::filePath).toList(),
+                "每文件一条，顺序沿用 seq");
+        assertEquals("v1\n", earliest.getFirst().baseline(), "取的是第一段的基线，不是断链重开后那份");
+        assertEquals("digest-a1", earliest.getFirst().contentDigest());
+        assertNull(earliest.getFirst().diff(), "回滚不读差异，投影里就没有这一列");
+        assertEquals("b1\n", earliest.get(1).baseline());
+    }
+
+    /** 跨轮次同样只认最早：每个轮次首条都会重开分段，最新那段一定不是执行前的形态。 */
+    @Test
+    void earliestPerFileCrossesTurnsAndKeepsTheFirstSegment() {
+        store.put(chainDraft("a.txt", "v1\n", "+a2", TURN, "digest-turn1", true));
+        store.put(chainDraft("a.txt", "v2\n", "+a3", "78", "digest-turn2", true));
+
+        FileRecord earliest = store.earliestPerFile(EXECUTION).getFirst();
+
+        assertEquals(TURN, earliest.turnId(), "跨轮次也要取最先写下的那条");
+        assertEquals("v1\n", earliest.baseline());
+        assertEquals(1, earliest.version());
+    }
+
+    @Test
+    void earliestPerFileIsScopedByExecution() {
+        store.put(chainDraft("a.txt", "v1\n", "+a2", TURN, "digest-a1", true));
+        store.put(FileRecord.builder()
+                .executionId((Serializable) "9002").turnId((Serializable) TURN)
+                .filePath("other.txt").baseline("o1\n").diff("+o2")
+                .plusLines(1).minusLines(0).createAt(Instant.now()).build());
+
+        assertEquals(List.of("a.txt"), store.earliestPerFile(EXECUTION).stream()
+                .map(FileRecord::filePath).toList());
+        assertTrue(store.earliestPerFile("nobody").isEmpty(), "没有记录的执行返回空列表，不抛");
+    }
+
+    /**
+     * 末态摘要按「整执行 + 该文件」取最后一条，与 {@code findTurnFileTail} 的轮次口径不同。
+     *
+     * <p>回滚门禁问的是「执行结束后有人动过这个文件吗」，答案只在最后一条记录里。</p>
+     */
+    @Test
+    void findFileTailSpansTurnsAndReturnsTheLastDigest() {
+        store.put(chainDraft("a.txt", "v1\n", "+a2", TURN, "digest-turn1", true));
+        store.put(chainDraft("other.txt", "o1\n", "+o2", TURN, "digest-other", true));
+        store.put(chainDraft("a.txt", null, "+a3", "78", "digest-turn2", false));
+
+        RecordTail tail = store.findFileTail(EXECUTION, "a.txt").orElseThrow();
+
+        assertEquals("digest-turn2", tail.contentDigest(), "跨轮次取最后一条");
+        assertTrue(store.findFileTail(EXECUTION, "never.txt").isEmpty(), "别的文件不算");
+        assertTrue(store.findFileTail("9002", "a.txt").isEmpty(), "别的执行不算");
+    }
+
+    /**
+     * 回滚标记只落在末条记录上：历史不可变，判定与展示都只看「这个文件现在的状态」。
+     */
+    @Test
+    void markRolledBackOnlyTouchesTheLastRecordOfEachFile() {
+        store.put(chainDraft("a.txt", "v1\n", "+a2", TURN, "digest-turn1", true));
+        store.put(chainDraft("a.txt", null, "+a3", TURN, "digest-turn2", false));
+        store.put(chainDraft("b.txt", "b1\n", "+b2", TURN, "digest-b1", true));
+        // 列精度是 TIMESTAMP(3)：截到毫秒再比，否则断言在比对纳秒。
+        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+
+        assertEquals(1, store.markRolledBack(EXECUTION, List.of("a.txt"), at), "只标这个文件的末条");
+        RecordTail tail = store.findFileTail(EXECUTION, "a.txt").orElseThrow();
+        assertEquals(at, tail.rolledBackAt());
+        assertNull(store.findFileTail(EXECUTION, "b.txt").orElseThrow().rolledBackAt(), "别的文件不受影响");
+        assertEquals(0, store.markRolledBack(EXECUTION, List.of("never.txt"), at), "没有记录的文件不产生更新");
+    }
+
     private FileRecord draft(String path, String baseline, String diff, Instant createAt) {
         return draft(path, baseline, diff, createAt, TURN);
     }

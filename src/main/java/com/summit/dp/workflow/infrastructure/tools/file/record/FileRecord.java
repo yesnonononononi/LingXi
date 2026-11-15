@@ -45,7 +45,9 @@ public record FileRecord(
         /** 本次修改后的全文摘要；老记录（V16 之前）没有这个值，按「链不可验证」处理。 */
         String contentDigest,
         /** 本条是否是新分段的起点（携带基线的那条）；老记录靠「有没有基线」等价判断。 */
-        boolean segmentStart
+        boolean segmentStart,
+        /** 该文件在这次执行里的末条记录被按基线回填的时间；{@code null} 表示没回滚过。 */
+        Instant rolledBackAt
 ) {
 }
 

@@ -26,6 +26,8 @@ import java.util.stream.Stream;
 public class BaselineFileStore {
 
     private static final String SUFFIX = ".baseline";
+    /** 回滚前备份：与基线同目录、不同后缀，回收执行时一起走。 */
+    private static final String BACKUP_SUFFIX = ".pre-rollback";
     private static final String TEMP_SUFFIX = ".part";
 
     private final Path root;
@@ -41,11 +43,27 @@ public class BaselineFileStore {
      * @throws UncheckedIOException 写盘失败：此时记录不能登记，否则会引用一个不存在的基线
      */
     public String write(String executionId, String recordId, String content) {
-        Path target = resolve(executionId, recordId);
+        return this.persist(resolve(executionId, recordId + SUFFIX), content);
+    }
+
+    /**
+     * 写一份「回滚前」备份：回填会把当前内容覆盖掉，这是用户唯一能反悔的凭据。
+     *
+     * <p>落在同一个执行目录下，回收执行时随目录一并删除 —— 不额外维护第二条生命周期。
+     * 后缀与 {@code .baseline} 区分开，基线只按 {@code baseline_path} 精确读，不会被误读。</p>
+     *
+     * @return 备份文件的绝对路径
+     */
+    public String writeBackup(String executionId, String recordId, String content) {
+        return this.persist(resolve(executionId, recordId + BACKUP_SUFFIX), content);
+    }
+
+    /** 先写 {@code .part} 再原子改名：半截内容被当成完整内容读回去，比没有更危险。 */
+    private String persist(Path target, String content) {
         Path directory = target.getParent();
         try {
             Files.createDirectories(directory);
-            Path temp = directory.resolve(recordId + SUFFIX + TEMP_SUFFIX);
+            Path temp = directory.resolve(target.getFileName() + TEMP_SUFFIX);
             Files.writeString(temp, content, StandardCharsets.UTF_8);
             Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             return target.toString();
@@ -104,8 +122,8 @@ public class BaselineFileStore {
         }
     }
 
-    private Path resolve(String executionId, String recordId) {
-        Path target = root.resolve(executionId).resolve(recordId + SUFFIX).normalize();
+    private Path resolve(String executionId, String fileName) {
+        Path target = root.resolve(executionId).resolve(fileName).normalize();
         if (!target.startsWith(root)) {
             throw new IllegalArgumentException("文件编辑基线路径越界: " + target);
         }

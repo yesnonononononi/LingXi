@@ -68,6 +68,31 @@ public interface FileRecordMapper extends BaseMapper<FileRecordPO> {
                                     @Param("turnIds") Collection<String> turnIds);
 
 
+    /**
+     * 该执行下每个文件的**最早**一条记录（回滚基线）。
+     *
+     * <p>回滚要的是「这个文件首次被工具修改之前」的形态；而分段是每个轮次、每次断链都会重开一段，
+     * 取最新那段等于回填到执行中途的状态。{@code MIN(seq)} 子查询由库算，不把整执行的基线读进内存。
+     * 只投影回滚需要的列，{@code diff} 不在其中。</p>
+     */
+    @Select("SELECT f.id, f.execution_id, f.turn_id, f.version, f.file_path, f.baseline_path,"
+            + " f.segment_start, f.content_digest, f.create_at FROM file_record f"
+            + " JOIN (SELECT file_path AS target_path, MIN(seq) AS target_seq FROM file_record"
+            + " WHERE execution_id = #{executionId} GROUP BY file_path) earliest"
+            + " ON f.seq = earliest.target_seq ORDER BY f.seq")
+    List<FileRecordPO> selectEarliestPerFile(@Param("executionId") String executionId);
+
+    /**
+     * 该执行下这个文件的最后一条记录（跨轮次、跨分段）。
+     *
+     * <p>{@code findTurnFileTail} 带 {@code turn_id}，回答的是「本轮链还连着吗」；
+     * 回滚的门禁问的是「执行结束后有人动过这个文件吗」，必须看整执行的末态。</p>
+     */
+    @Select("SELECT id, content_digest, rolled_back_at FROM file_record WHERE execution_id = #{executionId}"
+            + " AND file_path = #{filePath} ORDER BY seq DESC LIMIT 1")
+    FileRecordPO selectFileTail(@Param("executionId") String executionId,
+                                @Param("filePath") String filePath);
+
     /** 同一文件的下一个版本号；由存储分配，调用方不能自行编造。 */
     @Select("SELECT COALESCE(MAX(version), 0) FROM file_record WHERE execution_id = #{executionId} "
             + "AND file_path = #{filePath}")

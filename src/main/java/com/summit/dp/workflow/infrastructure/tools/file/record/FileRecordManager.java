@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.record;
 import lombok.NonNull;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -10,8 +11,9 @@ import java.util.Optional;
 /**
  * 文件修改记录的登记与读取。
  *
- * <p><b>只登记、不回滚</b>：撤销功能整体暂缓（实现留在 {@code backup/edit-undo-20261110} 分支），
- * 这里只保留「记录 + 读出来重建差异」所需的能力。少一条写文件的路径，就少一处能写坏用户文件的地方。</p>
+ * <p><b>记录正文只追加</b>：一条记录描述一次修改，差异与基线一经登记不再改写。唯一的例外是
+ * 回滚标记 {@code rolled_back_at}（{@link #markRolledBack}）—— 它不改变任何差异语义，
+ * 只记录「这个文件的末条记录被回填过」，否则重复回滚只能靠内容巧合去猜。</p>
  */
 public interface FileRecordManager {
 
@@ -49,6 +51,32 @@ public interface FileRecordManager {
      * {@link #listTurnRecords}，否则会把无关轮次的基线一并 hydrate。</p>
      */
     List<FileRecord> listRecords(@NonNull Serializable executionId);
+
+    /**
+     * 该执行下每个文件的最早一条记录（回滚基线的唯一入口）。
+     *
+     * <p>不是热路径：回滚是用户动作，频率与单轮汇总不在一个量级。但实现会按文件逐个读回基线正文
+     * —— 那是回填本身需要的，不是额外开销。</p>
+     */
+    List<FileRecord> earliestPerFile(@NonNull Serializable executionId);
+
+    /**
+     * 该执行下这个文件的末态摘要（跨轮次、跨分段）。
+     *
+     * <p>回滚门禁「执行结束后没人动过这个文件」靠它判定。写成跨轮次查询，是因为门禁关心的是
+     * 执行结束后文件长什么样，而不是某一轮的链有没有断。</p>
+     */
+    Optional<RecordTail> findFileTail(@NonNull Serializable executionId, @NonNull String filePath);
+
+    /**
+     * 给这些文件在该执行下的末条记录打回滚标记。
+     *
+     * <p>成功写盘之后才调用：标记是「已经回填过」的事实，先标后写会让回滚失手变成永久不可回滚。</p>
+     *
+     * @return 实际标记的记录条数
+     */
+    int markRolledBack(@NonNull Serializable executionId, @NonNull Collection<String> filePaths,
+                       @NonNull Instant at);
 
     /**
      * 作用域内该文件最新的一条记录（跨轮次差异视图的定位入口）。

@@ -5,7 +5,9 @@ import lombok.NonNull;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -71,6 +73,32 @@ public class InMemoryFileRecordStore implements FileRecordStore {
         return Optional.ofNullable(latest);
     }
 
+    /** 每个文件第一次出现的那条；插入顺序就是生产的 {@code seq}，所以重复出现时保留首个。 */
+    @Override
+    public List<FileRecord> earliestPerFile(@NonNull Serializable executionId) {
+        Map<String, FileRecord> earliest = new LinkedHashMap<>();
+        for (FileRecord record : this.insertionOrder) {
+            if (!executionId.equals(record.executionId())) {
+                continue;
+            }
+            earliest.putIfAbsent(record.filePath(), record);
+        }
+        return List.copyOf(earliest.values());
+    }
+
+    /** 全程覆盖即「最后一条」：与生产实现 {@code ORDER BY seq DESC LIMIT 1} 同一口径。 */
+    @Override
+    public Optional<RecordTail> findFileTail(@NonNull Serializable executionId, @NonNull String filePath) {
+        RecordTail tail = null;
+        for (FileRecord record : this.insertionOrder) {
+            if (!executionId.equals(record.executionId()) || !Objects.equals(record.filePath(), filePath)) {
+                continue;
+            }
+            tail = new RecordTail(record.id(), record.contentDigest(), record.rolledBackAt());
+        }
+        return Optional.ofNullable(tail);
+    }
+
     @Override
     public Optional<RecordTail> findTurnFileTail(@NonNull Serializable executionId, Serializable turnId,
                                                  @NonNull String filePath) {
@@ -81,9 +109,46 @@ public class InMemoryFileRecordStore implements FileRecordStore {
                     || !Objects.equals(record.filePath(), filePath)) {
                 continue;
             }
-            tail = new RecordTail(record.id(), record.contentDigest());
+            tail = new RecordTail(record.id(), record.contentDigest(), record.rolledBackAt());
         }
         return Optional.ofNullable(tail);
+    }
+
+    /** 末条原地替换成带标记的副本：内存实现没有库列，只能靠换条目表达同一次状态变更。 */
+    @Override
+    public int markRolledBack(@NonNull Serializable executionId, @NonNull Collection<String> filePaths,
+                              @NonNull Instant at) {
+        int marked = 0;
+        for (String filePath : filePaths) {
+            int index = this.lastIndexOf(executionId, filePath);
+            if (index < 0) {
+                continue;
+            }
+            this.insertionOrder.set(index, this.withRolledBackAt(this.insertionOrder.get(index), at));
+            marked++;
+        }
+        return marked;
+    }
+
+    private int lastIndexOf(Serializable executionId, String filePath) {
+        for (int index = this.insertionOrder.size() - 1; index >= 0; index--) {
+            FileRecord record = this.insertionOrder.get(index);
+            if (executionId.equals(record.executionId()) && Objects.equals(record.filePath(), filePath)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private FileRecord withRolledBackAt(FileRecord record, Instant at) {
+        return FileRecord.builder()
+                .id(record.id()).executionId(record.executionId()).turnId(record.turnId())
+                .version(record.version()).filePath(record.filePath()).baseline(record.baseline())
+                .diff(record.diff()).plusLines(record.plusLines()).minusLines(record.minusLines())
+                .createAt(record.createAt()).baselineMissing(record.baselineMissing())
+                .contentDigest(record.contentDigest()).segmentStart(record.segmentStart())
+                .rolledBackAt(at)
+                .build();
     }
 
     @Override
@@ -117,6 +182,7 @@ public class InMemoryFileRecordStore implements FileRecordStore {
                 .baselineMissing(record.baselineMissing())
                 .contentDigest(record.contentDigest())
                 .segmentStart(record.segmentStart())
+                .rolledBackAt(record.rolledBackAt())
                 .build();
     }
 }

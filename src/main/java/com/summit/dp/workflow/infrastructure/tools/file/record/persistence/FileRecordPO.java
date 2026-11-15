@@ -45,4 +45,6 @@ public class FileRecordPO {
     /** 本条是否为一个新分段的起点（分段起点才带 {@code baseline_path}）。 */
     private boolean segmentStart;
     private Instant createAt;
+    /** 该文件在这次执行里的末条记录被按基线回填的时间；{@code null} 表示没回滚过（V20）。 */
+    private Instant rolledBackAt;
 }

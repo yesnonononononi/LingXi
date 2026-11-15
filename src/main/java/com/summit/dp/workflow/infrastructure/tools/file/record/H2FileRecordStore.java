@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.file.record;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.summit.dp.execution.application.port.FileRecordMaintenance;
 import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordMapper;
 import com.summit.dp.workflow.infrastructure.tools.file.record.persistence.FileRecordPO;
@@ -64,6 +65,7 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
                 .diff(record.diff()).plusLines(record.plusLines()).minusLines(record.minusLines())
                 .contentDigest(record.contentDigest()).segmentStart(record.segmentStart())
                 .createAt(po.getCreateAt())
+                .rolledBackAt(record.rolledBackAt())
                 .build();
     }
 
@@ -178,11 +180,53 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
      * 之后的编辑就会被当成「第一段」重新保留一份全文基线。</p>
      */
     @Override
+    public List<FileRecord> earliestPerFile(@NonNull Serializable executionId) {
+        List<FileRecordPO> rows = this.mapper.selectEarliestPerFile(String.valueOf(executionId));
+        List<FileRecord> records = new ArrayList<>(rows.size());
+        for (FileRecordPO row : rows) {
+            records.add(this.toRecord(row));
+        }
+        return records;
+    }
+
+    @Override
+    public Optional<RecordTail> findFileTail(@NonNull Serializable executionId, @NonNull String filePath) {
+        FileRecordPO po = this.mapper.selectFileTail(String.valueOf(executionId), filePath);
+        return po == null ? Optional.empty()
+                : Optional.of(new RecordTail(po.getId(), po.getContentDigest(), po.getRolledBackAt()));
+    }
+
+    @Override
     public Optional<RecordTail> findTurnFileTail(@NonNull Serializable executionId, Serializable turnId,
                                                  @NonNull String filePath) {
         FileRecordPO po = this.mapper.selectTurnFileTail(String.valueOf(executionId),
                 turnId == null ? null : String.valueOf(turnId), filePath);
-        return po == null ? Optional.empty() : Optional.of(new RecordTail(po.getId(), po.getContentDigest()));
+        return po == null ? Optional.empty()
+                : Optional.of(new RecordTail(po.getId(), po.getContentDigest(), po.getRolledBackAt()));
+    }
+
+    /**
+     * 给每个文件的末条记录打回滚标记。
+     *
+     * <p>只标末条：历史记录不可变，回滚判定与清单展示看的都是「这个文件现在的状态」。
+     * 逐文件一次 {@code UPDATE}：一个执行的改动文件数是个位到几十，比在 SQL 里写同表子查询稳。</p>
+     */
+    @Override
+    public int markRolledBack(@NonNull Serializable executionId, @NonNull Collection<String> filePaths,
+                              @NonNull Instant at) {
+        int marked = 0;
+        for (String filePath : filePaths) {
+            Optional<RecordTail> tail = this.findFileTail(executionId, filePath);
+            if (tail.isEmpty()) {
+                continue;
+            }
+            marked += this.mapper.update(null, new LambdaUpdateWrapper<FileRecordPO>()
+                    .eq(FileRecordPO::getId, String.valueOf(tail.get().id()))
+                    .set(FileRecordPO::getRolledBackAt, at));
+        }
+        log.info("标记文件改动已回滚: executionId={}, files={}, marked={}",
+                executionId, filePaths.size(), marked);
+        return marked;
     }
 
     /** 过期记录条数：预览用，不读 diff 与基线。 */
@@ -232,6 +276,7 @@ public class H2FileRecordStore implements FileRecordStore, FileRecordMaintenance
                 .diff(po.getDiff()).plusLines(po.getPlusLines()).minusLines(po.getMinusLines())
                 .contentDigest(po.getContentDigest()).segmentStart(po.isSegmentStart())
                 .createAt(po.getCreateAt())
+                .rolledBackAt(po.getRolledBackAt())
                 .build();
     }
 }

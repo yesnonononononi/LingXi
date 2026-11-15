@@ -2,9 +2,15 @@ package com.summit.dp.workflow.api.controller;
 
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.api.request.RollbackFilesRequest;
 import com.summit.dp.workflow.application.filerecord.FileEditDiff;
 import com.summit.dp.workflow.application.filerecord.FileEditSceneScope;
+import com.summit.dp.workflow.application.filerecord.FileRollbackItem;
+import com.summit.dp.workflow.application.filerecord.FileRollbackPlan;
+import com.summit.dp.workflow.application.filerecord.FileRollbackResult;
+import com.summit.dp.workflow.application.filerecord.FileRollbackService;
 import com.summit.dp.workflow.application.filerecord.TurnFileEditSummaryService;
+import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import org.junit.jupiter.api.Test;
@@ -14,13 +20,14 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * 记录读侧接口：只做转发，差异内容与截断口径由应用层决定。
  *
- * <p>本类没有写接口（撤销整体暂缓），所以这里也不该有任何「还原文件」的断言 ——
- * 一个读不脏文件的面，不需要在这里模拟文件。</p>
+ * <p>回滚是写文件的，但它同样是「转发」：计划与逐文件结果都由 {@code FileRollbackService} 决定，
+ * 所以这里也不模拟文件系统。</p>
  */
 class FileEditRecordControllerTest {
 
@@ -70,6 +77,37 @@ class FileEditRecordControllerTest {
                 () -> controller(newRecordManager(), scenes).latest(5L, "never-touched.txt"));
     }
 
+    @Test
+    void rollbackEndpointsForwardToTheService() {
+        FileRollbackService rollbacks = mock(FileRollbackService.class);
+        FileRollbackPlan plan = new FileRollbackPlan("e1", List.of(FileRollbackItem.skip("/x.txt", "原因", "r1")));
+        FileRollbackResult result = new FileRollbackResult("e1", List.of());
+        when(rollbacks.preview(9L)).thenReturn(plan);
+        when(rollbacks.rollback(9L, List.of("/x.txt"))).thenReturn(result);
+        when(rollbacks.rollback(9L, null)).thenReturn(result);
+        FileEditRecordController controller = this.controller(newRecordManager(),
+                mock(FileEditSceneScope.class), rollbacks);
+
+        assertEquals(plan, controller.previewRollback(9L).getData());
+        assertEquals(result, controller.rollback(9L, new RollbackFilesRequest(List.of("/x.txt"))).getData());
+        // 空 body 不该炸在控制器里：把 null 原样交给应用层，由它给出业务文案。
+        assertEquals(result, controller.rollback(9L, null).getData());
+    }
+
+    /** 回滚成功后重推一帧轮次视图，清单上的「已回滚」标记才不用前端自己发请求补。 */
+    @Test
+    void rollbackRebroadcastsTheTurnView() {
+        FileRollbackService rollbacks = mock(FileRollbackService.class);
+        when(rollbacks.rollback(9L, List.of("/x.txt"))).thenReturn(new FileRollbackResult("e1", List.of()));
+        TurnViewBroadcaster turnViews = mock(TurnViewBroadcaster.class);
+        FileEditRecordController controller = this.controller(newRecordManager(),
+                mock(FileEditSceneScope.class), rollbacks, turnViews);
+
+        controller.rollback(9L, new RollbackFilesRequest(List.of("/x.txt")));
+
+        verify(turnViews).broadcastSnapshotForExecution("9");
+    }
+
     private final Differ differ = new EditDiffer();
 
     private FileEditRecordController controller(FileRecordManager records) {
@@ -77,9 +115,19 @@ class FileEditRecordControllerTest {
     }
 
     private FileEditRecordController controller(FileRecordManager records, FileEditSceneScope scenes) {
+        return this.controller(records, scenes, mock(FileRollbackService.class));
+    }
+
+    private FileEditRecordController controller(FileRecordManager records, FileEditSceneScope scenes,
+                                                FileRollbackService rollbacks) {
+        return this.controller(records, scenes, rollbacks, mock(TurnViewBroadcaster.class));
+    }
+
+    private FileEditRecordController controller(FileRecordManager records, FileEditSceneScope scenes,
+                                                FileRollbackService rollbacks, TurnViewBroadcaster turnViews) {
         TurnFileEditSummaryService turnEdits =
                 new TurnFileEditSummaryService(records, mock(ChatTurnRepository.class), scenes, differ);
-        return new FileEditRecordController(turnEdits);
+        return new FileEditRecordController(turnEdits, rollbacks, turnViews);
     }
 
     /** 差异由真实 differ 生成，避免手搓的 hunk 头与实际内容行数对不上；摘要按改完的全文算。 */

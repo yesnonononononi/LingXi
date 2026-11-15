@@ -163,7 +163,19 @@ public class TurnFileEditSummaryService implements TurnFileChangeQuery {
         int minusLines = combined == null ? 0 : combined.minusLines();
         return new TurnFileChangeVO(path, plusLines, minusLines, fileRecords.size(),
                 this.createdInTurn(first), executionKey, String.valueOf(fileRecords.getLast().id()),
-                combined != null);
+                combined != null, this.rolledBack(executionKey, path));
+    }
+
+    /**
+     * 该文件在这次执行里是否已被回滚过。
+     *
+     * <p>看末条记录的标记，不看磁盘内容：内容可能被用户在回滚之后又改掉，那时清单仍然应该
+     * 承认「这次执行的回填发生过了」。</p>
+     */
+    private boolean rolledBack(String executionKey, String path) {
+        return this.records.findFileTail(executionKey, path)
+                .map(tail -> tail.rolledBackAt() != null)
+                .orElse(false);
     }
 
     /**

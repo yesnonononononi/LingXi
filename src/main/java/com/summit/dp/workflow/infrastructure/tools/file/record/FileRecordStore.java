@@ -46,6 +46,35 @@ public interface FileRecordStore {
                                           @NonNull String filePath);
 
     /**
+     * 该执行下每个文件的**最早**一条记录，按写入顺序返回。
+     *
+     * <p>回滚的基线入口：「这个文件首次被工具修改之前」只存在于最早那一段。分段会因跨轮次与断链
+     * 反复重开，取最新一段就是回填到执行中途的状态。</p>
+     *
+     * <p>实现只投影回滚需要的列，返回记录的 {@code diff} 为 {@code null} —— 它不参与回填。</p>
+     */
+    List<FileRecord> earliestPerFile(@NonNull Serializable executionId);
+
+    /**
+     * 该执行下这个文件的最后一条记录（跨轮次、跨分段），只带标识与末态摘要。
+     *
+     * <p>回滚门禁要问的是「执行结束后有人动过这个文件吗」，所以不能用 {@link #findTurnFileTail}
+     * —— 那条查询带 {@code turn_id}，只回答「本轮链还连着吗」。</p>
+     */
+    Optional<RecordTail> findFileTail(@NonNull Serializable executionId, @NonNull String filePath);
+
+    /**
+     * 给这些文件在该执行下的末条记录打上回滚标记。
+     *
+     * <p>回滚的唯一持久痕迹：靠它识别「这个文件已经回填过」，不再依赖「当前内容恰好等于基线」
+     * 这种会被用户手改破坏的推断。</p>
+     *
+     * @return 实际标记的记录条数
+     */
+    int markRolledBack(@NonNull Serializable executionId, @NonNull Collection<String> filePaths,
+                       @NonNull Instant at);
+
+    /**
      * 回收 {@code cutoff} 之前建立的记录（含基线大文本），返回删除条数。
      *
      * <p>整条回收而不是只删基线：只删基线会留下 {@code baseline} 悬空的记录，读回来变成

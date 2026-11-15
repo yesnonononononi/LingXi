@@ -139,6 +139,18 @@ class TurnFileEditSummaryServiceTest {
         assertTrue(edit.diffAvailable(), "历史轮次同样要给差异入口");
     }
 
+    /** 清单上的「已回滚」标记来自末条记录的标记，不来自磁盘内容。 */
+    @Test
+    void rolledBackFlagComesFromTheRecordMark() throws FileModificationException {
+        givenTurn(TURN_ID, EXECUTION_ID);
+        records.record(EXECUTION_KEY, TURN_KEY, draft("demo.txt", "a\n", "a\nb\n"));
+        assertFalse(service.summarize(TURN_ID).getFirst().rolledBack(), "没回滚过就不能标");
+
+        records.markRolledBack(EXECUTION_KEY, List.of("demo.txt"), Instant.now());
+
+        assertTrue(service.summarize(TURN_ID).getFirst().rolledBack());
+    }
+
     @Test
     void latestDiffFollowsTheFileNameAcrossTurns() throws FileModificationException {
         givenTurn(TURN_ID, EXECUTION_ID);

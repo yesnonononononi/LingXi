@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param recordId      末条记录标识，打开差异视图要用
  * @param diffAvailable 差异能否点开；<b>该文件本轮有可重放的记录就为 true</b>（不限最新轮次），
  *                      差异正文仍按需现取
+ * @param rolledBack    该文件在这次执行里的末条记录是否已被按基线回填过（来自 {@code rolled_back_at}）
  */
 public record TurnFileChangeVO(
         @JsonProperty("filePath") String filePath,
@@ -32,6 +33,7 @@ public record TurnFileChangeVO(
         @JsonProperty("created") boolean created,
         @JsonProperty("executionId") String executionId,
         @JsonProperty("recordId") String recordId,
-        @JsonProperty("diffAvailable") boolean diffAvailable
+        @JsonProperty("diffAvailable") boolean diffAvailable,
+        @JsonProperty("rolledBack") boolean rolledBack
 ) {
 }

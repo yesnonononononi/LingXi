@@ -61,6 +61,22 @@ public class DefaultFileRecordManager implements FileRecordManager {
         return this.store.findLatestRecord(filePath, turnIds);
     }
 
+    @Override
+    public List<FileRecord> earliestPerFile(@NonNull Serializable executionId) {
+        return this.store.earliestPerFile(executionId);
+    }
+
+    @Override
+    public Optional<RecordTail> findFileTail(@NonNull Serializable executionId, @NonNull String filePath) {
+        return this.store.findFileTail(executionId, filePath);
+    }
+
+    @Override
+    public int markRolledBack(@NonNull Serializable executionId, @NonNull Collection<String> filePaths,
+                              @NonNull Instant at) {
+        return this.store.markRolledBack(executionId, filePaths, at);
+    }
+
     private FileRecord normalize(Serializable executionId, Serializable turnId, FileRecord draft)
             throws FileModificationException {
         if (draft.filePath() == null || draft.diff() == null) {
