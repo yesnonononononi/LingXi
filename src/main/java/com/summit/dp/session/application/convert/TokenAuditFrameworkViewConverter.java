@@ -62,6 +62,8 @@ public final class TokenAuditFrameworkViewConverter {
         addMessage(messages, "TOOL", document.toolTokens(), tools == null ? null : tools.toolTokens());
         TokenAuditOverheadItemVO definition = other == null ? null : amount(other.toolDefinitionTokens());
         TokenAuditOverheadItemVO mcpDefinition = other == null ? null : amount(other.mcpToolDefinitionTokens());
+        List<TokenAuditContextSectionVO> sections = other == null ? List.of() : sections(other.dynamicContextSections());
+        Integer dynamicContextTokens = value(dynamicContext);
         return SessionTokenAuditVO.builder()
                 .messages(messages)
                 .tools(tools == null ? null : toolView(document.toolTokens(), tools))
@@ -71,7 +73,8 @@ public final class TokenAuditFrameworkViewConverter {
                         .toolDefinition(definition).mcpToolDefinition(mcpDefinition).build())
                 .contextAttribution(other == null ? null : TokenAuditContextAttributionVO.builder()
                         .memoryTokens(value(other.memoryTokens()))
-                        .sections(sections(other.dynamicContextSections()))
+                        .sections(sections)
+                        .unattributedTokens(unattributed(dynamicContextTokens, sections))
                         .build())
                 .build();
     }
@@ -106,6 +109,31 @@ public final class TokenAuditFrameworkViewConverter {
                     .kind(entry.getKey()).tokens(entry.getValue()).build());
         }
         return sections;
+    }
+
+    /**
+     * 动态上下文里「不属于任何一段」的剩余部分：整块 − Σ各段。
+     *
+     * <p><b>为什么由减法派生、不落库</b>：它是「扣掉已知段之后剩下的」，存下来只会多一份
+     * 可能与整块对不上的事实。段标题、消息分帧与跨段合并的分词差异都落在这里，所以可能为负数
+     * （与「请求开销」残差同理，负数照实下发，前端隐藏它会让子项比父项还大）。</p>
+     *
+     * <p><b>为什么没有分段时不给</b>：没切段时整块都要算「其它」，那行等于把父项抄一遍，
+     * 只会误导。此时 {@code null}（未知），不是 0。</p>
+     *
+     * @param dynamicContextTokens 动态上下文整块；null 表示未知
+     * @param sections             已合并的分段
+     * @return 剩余部分（可负）；整块未知或没有分段时为 null
+     */
+    private static Integer unattributed(Integer dynamicContextTokens, List<TokenAuditContextSectionVO> sections) {
+        if (dynamicContextTokens == null || sections.isEmpty()) {
+            return null;
+        }
+        int attributed = 0;
+        for (TokenAuditContextSectionVO section : sections) {
+            attributed += section.getTokens();
+        }
+        return dynamicContextTokens - attributed;
     }
 
     public static void applyLiveUsage(SessionTokenAuditVO view, Integer total, Integer max, Double ratio) {

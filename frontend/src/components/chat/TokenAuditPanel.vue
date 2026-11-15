@@ -514,11 +514,11 @@ watch(
                             <span class="flex min-w-0 items-center gap-1">
                               <span class="truncate text-lx-fs-xs text-lx-secondary">{{ t(item.labelKey) }}</span>
                               <span
-                                v-if="item.withHint"
+                                v-if="item.hintKey"
                                 data-testid="token-audit-attribution-hint"
                                 class="inline-flex shrink-0 cursor-help text-lx-faint"
-                                :title="t('chat.tokenAudit.attribution.memoryHint')"
-                                :aria-label="t('chat.tokenAudit.attribution.memoryHint')"
+                                :title="t(item.hintKey)"
+                                :aria-label="t(item.hintKey)"
                               >
                                 <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                   <circle cx="12" cy="12" r="9" stroke-width="2" />

@@ -85,7 +85,7 @@ const collectedAudit = (): SessionTokenAuditSnapshot => ({
     mcpToolDefinition: {tokens: 4800, ratio: 0.316},
   },
   // 记忆正文已含在 DYNAMIC_CONTEXT 的 9,000 内，只作构成说明；框架没切段（历史快照形态）
-  contextAttribution: {memoryTokens: 6400, sections: null},
+  contextAttribution: {memoryTokens: 6400, sections: null, unattributedTokens: null},
 });
 
 // ─────────────────────────── 文本格式化 ───────────────────────────
@@ -301,7 +301,7 @@ test('resolveDynamicContextAttributionRows：框架没切段时退回记忆正�
     labelKey: 'chat.tokenAudit.attribution.section.memory',
     tokens: 6400,
     ratio: null,
-    withHint: true,
+    hintKey: 'chat.tokenAudit.attribution.memoryHint',
   }], '记忆归因只有一个金额行，占比恒为 null（后端不给，前端不补算）');
 
   const messages = resolveMessageRows(collectedAudit().messages);
@@ -325,14 +325,16 @@ test('resolveDynamicContextAttributionRows：框架切段后逐段列出，MEMOR
         {kind: 'MCP' as const, tokens: 1200},
         {kind: 'SKILL' as const, tokens: 0},
       ],
+      unattributedTokens: null,
     },
   };
   const rows = resolveDynamicContextAttributionRows(sliced);
   assert.deepEqual(rows.map(row => [row.key, row.tokens]), [
     ['MCP', 1200], ['MEMORY', 6400], ['TASK', 300],
   ], '按 MCP → 技能 → 记忆 → 任务定序，金额为 0 的段不占位');
-  assert.deepEqual(rows.map(row => row.withHint), [false, true, false],
-    '只有记忆行需要「已含在动态上下文内」的说明气泡');
+  assert.deepEqual(rows.map(row => row.hintKey), [
+    null, 'chat.tokenAudit.attribution.memoryHint', null,
+  ], '只有记忆行需要「已含在动态上下文内」的说明气泡');
   assert.deepEqual(rows.map(row => row.labelKey), [
     'chat.tokenAudit.attribution.section.mcp',
     'chat.tokenAudit.attribution.section.memory',
@@ -343,14 +345,44 @@ test('resolveDynamicContextAttributionRows：框架切段后逐段列出，MEMOR
     '记忆不能同时以段类和 memoryTokens 两行出现');
 });
 
+test('resolveDynamicContextAttributionRows：不属于任何段的部分渲染为「其它」，0 不占位、负值照常', () => {
+  const base = {
+    memoryTokens: 6400,
+    sections: [
+      {kind: 'MEMORY' as const, tokens: 6400},
+      {kind: 'MCP' as const, tokens: 1200},
+    ],
+  };
+  const residual = {...collectedAudit(), contextAttribution: {...base, unattributedTokens: 1400}};
+  const rows = resolveDynamicContextAttributionRows(residual);
+  assert.deepEqual(rows.map(row => [row.key, row.tokens]), [
+    ['MCP', 1200], ['MEMORY', 6400], ['other', 1400],
+  ], '「其它」排在最后，金额直接消费后端减法结果（前端不再做减法）');
+  assert.equal(rows[2].labelKey, 'chat.tokenAudit.attribution.other', '尾行文案是「其它」，与请求开销残差同一口径');
+  assert.equal(rows[2].hintKey, 'chat.tokenAudit.attribution.otherHint', '「其它」挂自己的说明气泡，不与记忆共用');
+  assert.equal(rows[2].ratio, null, '后端不给占比，前端不补算');
+
+  const negative = resolveDynamicContextAttributionRows(
+    {...collectedAudit(), contextAttribution: {...base, unattributedTokens: -50}});
+  assert.equal(negative[2].tokens, -50, '负残差照常渲染：藏掉它各段之和就会大于父项');
+
+  const zero = resolveDynamicContextAttributionRows(
+    {...collectedAudit(), contextAttribution: {...base, unattributedTokens: 0}});
+  assert.deepEqual(zero.map(row => row.key), ['MCP', 'MEMORY'], '残差为 0 说明各段已解释整块，多一行 0 是噪声');
+
+  const unknown = resolveDynamicContextAttributionRows(
+    {...collectedAudit(), contextAttribution: {...base, unattributedTokens: null}});
+  assert.deepEqual(unknown.map(row => row.key), ['MCP', 'MEMORY'], '未知不渲染，不猜 0');
+});
+
 test('resolveDynamicContextAttributionRows：0 与未知都不渲染（0 是噪声，null 是不知道）', () => {
-  const zero = {...collectedAudit(), contextAttribution: {memoryTokens: 0, sections: null}};
+  const zero = {...collectedAudit(), contextAttribution: {memoryTokens: 0, sections: null, unattributedTokens: null}};
   assert.deepEqual(resolveDynamicContextAttributionRows(zero), [], '这一轮没注入记忆正文时不占位');
-  const unknown = {...collectedAudit(), contextAttribution: {memoryTokens: null, sections: null}};
+  const unknown = {...collectedAudit(), contextAttribution: {memoryTokens: null, sections: null, unattributedTokens: null}};
   assert.deepEqual(resolveDynamicContextAttributionRows(unknown), [], '未知不猜 0');
   const missing = {...collectedAudit(), contextAttribution: null};
   assert.deepEqual(resolveDynamicContextAttributionRows(missing), [], '整节缺失时不渲染');
-  const emptySections = {...collectedAudit(), contextAttribution: {memoryTokens: null, sections: []}};
+  const emptySections = {...collectedAudit(), contextAttribution: {memoryTokens: null, sections: [], unattributedTokens: null}};
   assert.deepEqual(resolveDynamicContextAttributionRows(emptySections), [],
     '框架给了空分段且记忆未知时不渲染空块');
 });
@@ -365,16 +397,19 @@ test('normalizeTokenAuditSnapshot：分段只留已知段类、同段类去重�
       {kind: 'UNKNOWN', tokens: 5},
       {tokens: 7},
     ],
+    unattributedTokens: '423',
   }}, null);
   assert.deepEqual(fromString!.contextAttribution!.sections, [
     {kind: 'MCP', tokens: 1200},
     {kind: 'MEMORY', tokens: 6400},
   ], '未知段类与同段类重复项都要被挡在归一阶段');
   assert.equal(fromString!.contextAttribution!.memoryTokens, 6400, '纯数字字符串要收敛成数值');
+  assert.equal(fromString!.contextAttribution!.unattributedTokens, 423, '「其它」残差同样按数值收敛');
 
   const fromGarbage = normalizeTokenAuditSnapshot({...collectedAudit(), contextAttribution: {memoryTokens: '1e5'}}, null);
   assert.equal(fromGarbage!.contextAttribution!.memoryTokens, null, '非数字串是未知，不是 100000');
   assert.equal(fromGarbage!.contextAttribution!.sections, null, '后端没给分段时为 null，不造空数组');
+  assert.equal(fromGarbage!.contextAttribution!.unattributedTokens, null, '后端没给残差时为 null，不猜 0');
   const absent = normalizeTokenAuditSnapshot({...collectedAudit(), contextAttribution: undefined}, null);
   assert.equal(absent!.contextAttribution, null, '后端没给时整节为 null，不造空对象');
 });

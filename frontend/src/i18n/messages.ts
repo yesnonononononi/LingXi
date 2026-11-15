@@ -890,6 +890,8 @@ export const messages: MessageSchema = {
         },
         attribution: {
           memoryHint: '记忆正文（项目规范与 wiki 索引）是动态上下文的一部分，不重复计入合计',
+          other: '其它',
+          otherHint: '各段之外的剩余部分（段标题与分词跨段合并的差异），可能为负数',
           dynamicContextComposition: '动态上下文构成',
           section: {
             mcp: 'MCP 摘要',
@@ -2510,6 +2512,8 @@ export const messages: MessageSchema = {
         },
         attribution: {
           memoryHint: 'Memory text (project rules and wiki index) is part of the dynamic context, so it is not counted twice',
+          other: 'Other',
+          otherHint: 'What is left outside the named sections (section headings and cross-section token merging). It can be negative.',
           dynamicContextComposition: 'Dynamic context composition',
           section: {
             mcp: 'MCP summaries',

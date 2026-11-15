@@ -21,4 +21,11 @@ public class TokenAuditContextAttributionVO {
      * 其中 {@code MEMORY} 段与 {@link #memoryTokens} 同源，展示时二选一，绝不并排累加。</p>
      */
     private List<TokenAuditContextSectionVO> sections;
+    /**
+     * 不属于任何一段的剩余部分：整块 − Σ各段，拼成面板上的「其它」行。
+     *
+     * <p>段标题、消息分帧与跨段合并的分词差异都落在这里，因此可能为负数（同「请求开销」残差）。
+     * <b>null 表示未知</b>：框架没切段时整块都算「其它」只会误导，所以那时不给。</p>
+     */
+    private Integer unattributedTokens;
 }

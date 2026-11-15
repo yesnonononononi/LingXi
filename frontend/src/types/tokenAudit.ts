@@ -128,6 +128,12 @@ export interface TokenAuditContextAttributionVO {
    * 且 `MEMORY` 段与 `memoryTokens` 同源 —— 渲染时二选一，绝不并排。</p>
    */
   sections?: TokenAuditContextSectionVO[] | null;
+  /**
+   * 不属于任何一段的剩余部分（整块 − Σ各段），面板展示为「其它」；可能为负数。
+   *
+   * <p>`null`/`undefined` 表示后端没给（框架没切段或整块未知）——那时整块归「其它」只会误导。</p>
+   */
+  unattributedTokens?: TokenAuditNumeric;
 }
 
 /** 动态上下文的一段（**原始载荷**）：段类 + 该段 token 数。 */
@@ -267,6 +273,12 @@ export interface TokenAuditContextAttribution {
    * <p>只保留已知段类（MCP / SKILL / MEMORY / TASK），未知段类整行丢弃；同一段类只留一条。</p>
    */
   sections: TokenAuditContextSection[] | null;
+  /**
+   * 不属于任何一段的剩余部分（整块 − Σ各段），展示为「其它」行；`null` = 不知道（不是 0）。
+   *
+   * <p>由后端减法派生，前端不做这个减法（渲染铁律 3）。可能为负数，负值照常渲染。</p>
+   */
+  unattributedTokens: number | null;
 }
 
 /** 动态上下文的一段（**已归一**）。 */

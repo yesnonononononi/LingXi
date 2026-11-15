@@ -394,26 +394,55 @@ window.ready = true;`);
       {kind: 'MEMORY', tokens: 6400},
       {kind: 'TASK', tokens: 600},
     ],
+    // 整块 12,000 − Σ各段 9,700：不属于任何段的部分由后端减出来，前端不再做减法
+    unattributedTokens: 2300,
   }})})`);
   const sectionRows = await evaluate(`Array.from(
     document.querySelectorAll('[data-testid="token-audit-dynamic-context-item"]')
   ).map(el => ({
     kind: el.getAttribute('data-kind'),
     text: el.innerText.replace(/\\s+/g, ' ').trim(),
-    hint: !!el.querySelector('[data-testid="token-audit-attribution-hint"]'),
+    hint: el.querySelector('[data-testid="token-audit-attribution-hint"]')?.getAttribute('title') || null,
   }))`);
-  assert(sectionRows.length === 4,
-    '框架切段后应按段列出四行，实际: ' + JSON.stringify(sectionRows));
-  assert(sectionRows.map(row => row.kind).join(',') === 'MCP,SKILL,MEMORY,TASK',
-    '分段顺序应为 MCP → 技能 → 记忆 → 任务，实际: ' + JSON.stringify(sectionRows.map(row => row.kind)));
+  assert(sectionRows.length === 5,
+    '框架切段后应按段列出四行 + 「其它」一行，实际: ' + JSON.stringify(sectionRows));
+  assert(sectionRows.map(row => row.kind).join(',') === 'MCP,SKILL,MEMORY,TASK,other',
+    '分段顺序应为 MCP → 技能 → 记忆 → 任务 → 其它，实际: ' + JSON.stringify(sectionRows.map(row => row.kind)));
   assert(/MCP 摘要/.test(sectionRows[0].text) && /1,800/.test(sectionRows[0].text),
     '首段应显示「MCP 摘要」与金额，实际: ' + JSON.stringify(sectionRows[0].text));
   assert(/记忆正文/.test(sectionRows[2].text) && /6,400/.test(sectionRows[2].text),
     '记忆正文应作为第三段显示自己的金额，实际: ' + JSON.stringify(sectionRows[2].text));
-  assert(sectionRows.filter(row => row.hint).length === 1 && sectionRows[2].hint,
-    '「已含在动态上下文内」的说明气泡只挂在记忆行，实际: ' + JSON.stringify(sectionRows.map(row => row.hint)));
+  assert(/其它/.test(sectionRows[4].text) && /2,300/.test(sectionRows[4].text),
+    '不属于任何段的部分应显示「其它」与金额，实际: ' + JSON.stringify(sectionRows[4].text));
+  assert(sectionRows.filter(row => row.hint).length === 2 && sectionRows[2].hint && sectionRows[4].hint,
+    '说明气泡只挂记忆行与「其它」行，实际: ' + JSON.stringify(sectionRows.map(row => row.hint)));
+  assert(/动态上下文/.test(sectionRows[2].hint) && /负数/.test(sectionRows[4].hint),
+    '记忆行与「其它」行的提示文案必须各说各的事，实际: ' + JSON.stringify(sectionRows.map(row => row.hint)));
   assert(sectionRows.every(row => !/%/.test(row.text)),
     '分段行不得出现百分比（后端不给分段占比，前端不许补算）');
+
+  // 「其它」为 0 说明各段已解释整块，多一行 0 只是噪声 ⇒ 不渲染
+  await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: {
+    memoryTokens: 6400,
+    sections: [{kind: 'MEMORY', tokens: 6400}],
+    unattributedTokens: 0,
+  }})})`);
+  assert(await evaluate(`document.querySelectorAll('[data-testid="token-audit-dynamic-context-item"]').length === 1`),
+    '「其它」为 0 时不占位');
+
+  // 负残差照常渲染：藏掉它会让各段之和大于父项，正是「儿子比爹大」的读图事故
+  await run(`window.__inject(${JSON.stringify({...SNAPSHOT, contextAttribution: {
+    memoryTokens: 6400,
+    sections: [{kind: 'MEMORY', tokens: 6400}],
+    unattributedTokens: -50,
+  }})})`);
+  const negativeOther = await evaluate(`(() => {
+    const el = document.querySelector('[data-testid="token-audit-dynamic-context-item"][data-kind="other"]');
+    return el ? el.innerText.replace(/\\s+/g, ' ').trim() : null;
+  })()`);
+  assert(negativeOther !== null && /其它/.test(negativeOther) && /-50/.test(negativeOther),
+    '负残差的「其它」行必须照常渲染，实际: ' + JSON.stringify(negativeOther));
+
   await run(`window.__inject(${JSON.stringify(SNAPSHOT)})`);
   assert(await evaluate(`document.querySelectorAll('[data-testid="token-audit-dynamic-context-item"]').length === 1`),
     '历史快照（框架没切段）应退回记忆正文一行');

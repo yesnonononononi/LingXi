@@ -98,17 +98,23 @@ export interface TokenAuditMessageRow {
  * <p>它挂在**动态上下文分项下方**，不是消息分项的兄弟行：这部分 token 已经算在那个分项里，
  * 平铺出去就是重复计数。</p>
  *
- * <p>`key` 取段类（MCP / SKILL / MEMORY / TASK）；`'memory'` 是历史快照的退化形态 ——
- * 框架没切段时只有「记忆正文」这一个已知明细。</p>
+ * <p>`key` 取段类（MCP / SKILL / MEMORY / TASK）、`'memory'` 或 `'other'`；
+ * `'memory'` 是历史快照的退化形态 —— 框架没切段时只有「记忆正文」这一个已知明细，
+ * `'other'` 是「不属于任何一段」的剩余部分（整块 − Σ各段）。</p>
  */
 export interface TokenAuditAttributionRow {
-  key: TokenAuditContextSectionKind | 'memory';
+  key: TokenAuditContextSectionKind | 'memory' | 'other';
   labelKey: string;
   tokens: number;
   /** 后端不提供该明细的占比，恒为 null（前端不补假百分比）。 */
   ratio: null;
-  /** 是否需要「已含在动态上下文内」的说明气泡：只有记忆行有意义。 */
-  withHint: boolean;
+  /**
+   * 说明气泡的 i18n 键；`null` 表示这一行不需要气泡。
+   *
+   * <p>记忆行解释「已含在动态上下文内」，其它行解释「段之外的剩余、可能为负」——
+   * 两句话不能共用，所以这里存键而不是布尔。</p>
+   */
+  hintKey: string | null;
 }
 
 export interface TokenAuditToolGroupRow {
@@ -277,7 +283,8 @@ export function resolveMessageRows(messages?: TokenAuditCategory[] | null): Toke
 }
 
 /**
- * 「动态上下文」下的构成行：框架切了段就逐段列出，没切段时退回记忆正文一行。
+ * 「动态上下文」下的构成行：框架切了段就逐段列出 + 一行「其它」（不属于任何段的剩余），
+ * 没切段时退回记忆正文一行。
  *
  * <p><b>为什么是子行而不是消息分项</b>：框架把整块背景块算成 {@code DYNAMIC_CONTEXT} 分项，
  * 记忆 / MCP 摘要 / 技能列表 / 任务清单都只是那块内容的一部分 —— 平铺成独立分项会让
@@ -291,7 +298,9 @@ export function resolveMessageRows(messages?: TokenAuditCategory[] | null): Toke
  * <ol>
  *   <li>未知（`null`）不渲染，不猜 0；</li>
  *   <li>已知为 0 不渲染：说明这一轮没有注入该段，多一行 0 只是噪声；</li>
- *   <li>`ratio` 恒为 `null` —— 后端不给分段占比（合并后比例无意义），前端不做除法补假百分比。</li>
+ *   <li>`ratio` 恒为 `null` —— 后端不给分段占比（合并后比例无意义），前端不做除法补假百分比；</li>
+ *   <li>「其它」是后端减出来的（整块 − Σ各段），<b>前端不再做那个减法</b>；负值照常渲染，
+ *       隐藏负数会让各段之和大于父项，正是「儿子比爹大」的读图事故。</li>
  * </ol>
  *
  * @param audit 已归一快照
@@ -302,8 +311,8 @@ export function resolveDynamicContextAttributionRows(
 ): TokenAuditAttributionRow[] {
   const attribution = audit?.contextAttribution;
   const sections = attribution?.sections;
+  const rows: TokenAuditAttributionRow[] = [];
   if (Array.isArray(sections) && sections.length > 0) {
-    const rows: TokenAuditAttributionRow[] = [];
     // 定序 + 逐段取值都按 CONTEXT_SECTION_ORDER：后端只保证合并，不保证顺序。
     for (const kind of CONTEXT_SECTION_ORDER) {
       const section = sections.find(item => item.kind === kind);
@@ -313,20 +322,32 @@ export function resolveDynamicContextAttributionRows(
         labelKey: CONTEXT_SECTION_LABEL_KEY[kind],
         tokens: section.tokens,
         ratio: null,
-        withHint: kind === 'MEMORY',
+        hintKey: kind === 'MEMORY' ? 'chat.tokenAudit.attribution.memoryHint' : null,
       });
     }
-    return rows;
+  } else {
+    const memory = attribution?.memoryTokens;
+    if (isKnownNumber(memory) && memory > 0) {
+      rows.push({
+        key: 'memory',
+        labelKey: CONTEXT_SECTION_LABEL_KEY.MEMORY,
+        tokens: memory,
+        ratio: null,
+        hintKey: 'chat.tokenAudit.attribution.memoryHint',
+      });
+    }
   }
-  const memory = attribution?.memoryTokens;
-  if (!isKnownNumber(memory) || memory <= 0) return [];
-  return [{
-    key: 'memory',
-    labelKey: CONTEXT_SECTION_LABEL_KEY.MEMORY,
-    tokens: memory,
-    ratio: null,
-    withHint: true,
-  }];
+  const unattributed = attribution?.unattributedTokens;
+  if (isKnownNumber(unattributed) && unattributed !== 0) {
+    rows.push({
+      key: 'other',
+      labelKey: 'chat.tokenAudit.attribution.other',
+      tokens: unattributed,
+      ratio: null,
+      hintKey: 'chat.tokenAudit.attribution.otherHint',
+    });
+  }
+  return rows;
 }
 
 /**

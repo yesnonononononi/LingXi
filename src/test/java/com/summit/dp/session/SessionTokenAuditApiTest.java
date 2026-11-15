@@ -92,6 +92,7 @@ class SessionTokenAuditApiTest {
                 .andExpect(jsonPath("$.data.contextAttribution.sections[2].kind").value("MEMORY"))
                 .andExpect(jsonPath("$.data.contextAttribution.sections[2].tokens").value(777))
                 .andExpect(jsonPath("$.data.contextAttribution.sections[2].ratio").doesNotExist())
+                .andExpect(jsonPath("$.data.contextAttribution.unattributedTokens").value(423))
                 .andExpect(jsonPath("$.data.contextAttribution.attachmentTokens").doesNotExist());
     }
 
@@ -142,7 +143,28 @@ class SessionTokenAuditApiTest {
                 Session.builder().id(SESSION_ID).build()));
         createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
                 .andExpect(jsonPath("$.data.contextAttribution.memoryTokens").value(777))
-                .andExpect(jsonPath("$.data.contextAttribution.sections.length()").value(0));
+                .andExpect(jsonPath("$.data.contextAttribution.sections.length()").value(0))
+                .andExpect(jsonPath("$.data.contextAttribution.unattributedTokens").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("不属于任何段的部分由减法派生：整块 − Σ各段，可为负数，没切段时不下发")
+    void unattributedTokensDerivedFromWholeMinusSections() throws Exception {
+        TokenAuditDocument document = frameworkDocument();
+        OtherTokens other = document.otherTokens();
+        // 各段之和 4,900 > 整块 4,500：分词跨段合并会让这种倒挂真实出现，残差因此可能为负。
+        TokenAuditDocument overdrawn = new TokenAuditDocument(document.assistantTokens(),
+                document.userTokens(), document.toolTokens(), document.systemTokens(),
+                new OtherTokens(other.toolDefinitionTokens(), other.mcpToolDefinitionTokens(),
+                        other.dynamicContextTokens(), other.memoryTokens(),
+                        List.of(section("MCP", 4900)), other.attachmentTokens()));
+        SessionTokenAudit audit = collected();
+        audit.changeFrameworkDocument(TokenAuditFrameworkViewConverter.write(overdrawn));
+        when(auditRepository.findBySessionId(SESSION_ID)).thenReturn(Optional.of(audit));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
+                Session.builder().id(SESSION_ID).build()));
+        createMvc().perform(get("/session/{id}/token-audit", SESSION_ID))
+                .andExpect(jsonPath("$.data.contextAttribution.unattributedTokens").value(-400));
     }
 
     @Test

@@ -204,6 +204,7 @@ const normalizeContextAttribution = (raw: unknown): TokenAuditContextAttribution
   return {
     memoryTokens: toTokenAuditNumber(readField(raw, 'memoryTokens')),
     sections: normalizeContextSections(readField(raw, 'sections')),
+    unattributedTokens: toTokenAuditNumber(readField(raw, 'unattributedTokens')),
   };
 };
 

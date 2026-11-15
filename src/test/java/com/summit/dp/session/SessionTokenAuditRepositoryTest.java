@@ -87,6 +87,8 @@ class SessionTokenAuditRepositoryTest {
         assertEquals(4, sections.size(), "四段（MCP / SKILL / MEMORY / TASK）必须能原样读回");
         assertEquals("MEMORY", sections.get(2).getKind());
         assertEquals(777, sections.get(2).getTokens());
+        assertEquals(423, TokenAuditFrameworkViewConverter.read(stored)
+                .getContextAttribution().getUnattributedTokens(), "「其它」残差也要能原样读回");
     }
 
     @Test
