@@ -209,3 +209,23 @@ test('兜底渲染器直接挂载：未知项显示既有文案，不出现 key 
   assert.equal(text(root).trim(), '(暂无输出)', '复用既有 chat.message.noOutput 文案');
   assert.doesNotMatch(text(root), /chat\.message\./, '不得出现未翻译的 key 字面量');
 });
+
+test('过程文本样式契约：与正文基线一致，终态权威对齐升级为正文时不发生字体变细与行高跳动', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const markdownCss = fs.readFileSync(path.resolve(__dirname, '../src/styles/markdown.css'), 'utf8');
+  const baseBlock = markdownCss.match(/\.markdown-body\s*\{([^}]*)\}/)?.[1] ?? '';
+  const processBlock = markdownCss.match(/\.markdown-body--process\s*\{([^}]*)\}/)?.[1] ?? '';
+  const readProp = (block, name) => block.match(new RegExp(`${name}\\s*:\\s*([^;]+);`))?.[1]?.trim();
+
+  assert.equal(readProp(processBlock, 'font-size'), readProp(baseBlock, 'font-size'),
+    '过程文本字号必须与正文一致');
+  assert.equal(readProp(processBlock, 'line-height'), readProp(baseBlock, 'line-height'),
+    '过程文本行高必须与正文一致，避免归位时垂直跳动');
+  assert.equal(readProp(processBlock, 'font-weight'), '400',
+    '过程文本字重必须与正文一致（400），禁止 500 导致归位后字体变细');
+
+  const rendererSource = fs.readFileSync(path.resolve(__dirname, '../src/components/chat/MarkdownRenderer.vue'), 'utf8');
+  assert.doesNotMatch(rendererSource, /props\.processText\s*\?/,
+    '过程文本颜色不得与正文分叉，避免权威对齐后明暗对比突变');
+});
