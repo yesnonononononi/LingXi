@@ -422,6 +422,7 @@
       <FilePreviewPanel
         v-if="panelMounted"
         :visible="previewPanelVisible"
+        :default-maximized="true"
         :tabs="fileTabs"
         :activeId="activeFileId"
         :unifiedTabs="unifiedTabs"

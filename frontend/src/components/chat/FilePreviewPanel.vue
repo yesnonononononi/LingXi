@@ -17,12 +17,14 @@ import {
   isLatestChangeOfCurrentRecord,
   resolveDiffEndpoint
 } from '../../utils/filePreviewDiffView';
+import {isMarkdownFile} from '../../utils/filePreviewMarkdown';
 import hljs from 'highlight.js';
 import {t} from '../../i18n';
 import ProjectPagePreview from './ProjectPagePreview.vue';
 import DesignCanvasPreview from './DesignCanvasPreview.vue';
 import PlanPreviewView from './PlanPreviewView.vue';
 import NewPreviewTabView from './NewPreviewTabView.vue';
+import MarkdownRenderer from './MarkdownRenderer.vue';
 
 /**
  * 预览面板外壳：统一胶囊 Tab 栏（文件 / 页面 / 设计原型 / 实现计划 / 新标签页）、拖拽调宽、最大化。
@@ -42,6 +44,8 @@ const props = withDefaults(defineProps<{
   /** 当前会话 ID，供设计画布落盘与监听工作区原型文件。 */
   sessionId?: string | number | null;
   visible?: boolean;
+  /** 首次打开时是否默认完全展开（最大化）。 */
+  defaultMaximized?: boolean;
 }>(), {
   unifiedTabs: undefined,
   activeTabKey: undefined,
@@ -49,6 +53,7 @@ const props = withDefaults(defineProps<{
   planTabs: () => [],
   sessionId: undefined,
   visible: true,
+  defaultMaximized: false,
 });
 const emit = defineEmits<{
   (e: 'activate', id: string): void;
@@ -123,7 +128,7 @@ const closeUnifiedTab = (tab: UnifiedPreviewTab): void => {
 };
 
 const CodePreview = defineAsyncComponent(() => import('../common/CodePreview.vue'));
-const maximized = ref(false);
+const maximized = ref(Boolean(props.defaultMaximized));
 const panelWidth = ref(540);
 const resizing = ref(false);
 /** 面板自身最小宽度：拖到再窄，代码区就没法读了。 */
@@ -237,12 +242,24 @@ const handleSlideEnd = (event: TransitionEvent): void => {
   if (event.propertyName === 'width' && event.target === shellRef.value) finishSlide();
 };
 
+const syncHostObserver = (on: boolean): void => {
+  hostObserver?.disconnect();
+  hostObserver = undefined;
+  const host = shellRef.value?.parentElement;
+  if (on && host && typeof ResizeObserver !== 'undefined') {
+    // 最大化期间窗口尺寸变化要跟着改宽度；父容器尺寸只受窗口影响，不会被面板自己改变，不会自激。
+    hostObserver = new ResizeObserver(() => { maximizedWidth.value = hostWidth(); });
+    hostObserver.observe(host);
+  }
+};
+
 watch(() => props.visible, async (visible) => {
   if (visible) {
-    maximizedWidth.value = hostWidth();
     await nextTick();
     const shell = shellRef.value;
     if (!shell) return;
+    maximizedWidth.value = hostWidth();
+    syncHostObserver(maximized.value);
     // 强制以「0 宽度」这版样式落一次布局，过渡才有起点；只等下一帧是不行的 ——
     // 窗口被遮挡/节流时 rAF 可能长时间不触发，面板就会一直停在收起态。
     shell.getBoundingClientRect();
@@ -256,14 +273,7 @@ watch(() => props.visible, async (visible) => {
 
 watch(maximized, (on) => {
   maximizedWidth.value = on ? hostWidth() : 0;
-  hostObserver?.disconnect();
-  hostObserver = undefined;
-  const host = shellRef.value?.parentElement;
-  if (on && host && typeof ResizeObserver !== 'undefined') {
-    // 最大化期间窗口尺寸变化要跟着改宽度；父容器尺寸只受窗口影响，不会被面板自己改变，不会自激。
-    hostObserver = new ResizeObserver(() => { maximizedWidth.value = hostWidth(); });
-    hostObserver.observe(host);
-  }
+  syncHostObserver(on);
   if (slidOpen.value) startSlide();
 });
 
@@ -293,7 +303,10 @@ interface DiffState {
 const emptyDiffState = (): DiffState =>
   ({text: '', truncated: false, loading: false, error: '', loaded: false});
 
+type MarkdownViewMode = 'preview' | 'source';
+
 const diffView = ref<FileDiffView>('turn');
+const markdownView = ref<MarkdownViewMode>('preview');
 const turnDiff = ref<DiffState>(emptyDiffState());
 const latestDiff = ref<DiffState>(emptyDiffState());
 /** 「最新改动」是否就是当前这条记录：相同要说明，否则两档内容一样会让人以为按钮坏了。 */
@@ -306,6 +319,10 @@ const revertMessage = ref('');
 const currentDiff = computed<DiffState>(() =>
   diffView.value === 'latest' ? latestDiff.value : turnDiff.value);
 const isDiffMode = computed<boolean>(() => diffView.value !== 'source');
+const isMarkdown = computed<boolean>(() => isMarkdownFile(active.value?.name));
+const showMarkdownPreview = computed<boolean>(
+  () => isMarkdown.value && (!hasEdit.value || !isDiffMode.value) && markdownView.value === 'preview'
+);
 
 /** 拼地址与请求只需要这三个字段。 */
 const diffContext = (): FileDiffContext => ({
@@ -403,7 +420,18 @@ const loadDiff = async (view: FileDiffView): Promise<void> => {
 const setDiffView = (view: FileDiffView): void => {
   if (!canUseDiffView(view, diffContext())) return;
   diffView.value = view;
+  if (view === 'source' && isMarkdown.value) {
+    markdownView.value = 'source';
+  }
   void loadDiff(view);
+};
+
+/** 切换 Markdown 预览/源码：带编辑上下文时同步切出差异模式，确保视图立即响应。 */
+const selectMarkdownView = (mode: MarkdownViewMode): void => {
+  markdownView.value = mode;
+  if (hasEdit.value) {
+    diffView.value = 'source';
+  }
 };
 
 /**
@@ -437,16 +465,25 @@ const revertEdit = async (): Promise<void> => {
   }
 };
 
-/** 切换文件标签时把三档状态清干净再按新标签取数；默认回到「本次改动」。 */
+/** 切换文件标签时把三档状态清干净再按新标签取数；默认回到「本次改动」（带行定位时直接看源码）。 */
 watch(activeFileIdResolved, () => {
   turnDiff.value = emptyDiffState();
   latestDiff.value = emptyDiffState();
   latestIsCurrent.value = false;
   diffView.value = 'turn';
+  markdownView.value = active.value?.lineAnchor ? 'source' : 'preview';
   reverted.value = false;
   revertMessage.value = '';
   void loadDiff('turn');
 }, {immediate: true});
+
+watch(() => active.value?.lineAnchor?.seq, (seq) => {
+  if (!seq) return;
+  markdownView.value = 'source';
+  if (hasEdit.value) {
+    diffView.value = 'source';
+  }
+});
 </script>
 
 <template>
@@ -560,17 +597,31 @@ watch(activeFileIdResolved, () => {
           <span>{{ active.data?.path ?? active.request.path }}</span>
         </div>
         <div class="toolbar-actions">
-          <!-- 三档：本次改动 / 最新改动 / 当前源码。只有带编辑上下文的标签才出现，普通预览行为不变 -->
-          <div v-if="hasEdit" class="mode-switch" role="group" :aria-label="t('filePreview.diffViews')">
-            <button type="button" :aria-pressed="diffView === 'turn'" @click="setDiffView('turn')">{{ t('filePreview.viewThisChange') }}</button>
+          <!-- 差异/视图切换：普通 Markdown 文件展示「预览 / 源码」；带编辑上下文时展示差异档位（Markdown 额外带「预览」） -->
+          <div v-if="hasEdit || isMarkdown" class="mode-switch" role="group" :aria-label="hasEdit ? t('filePreview.diffViews') : t('filePreview.markdownAria')">
+            <button
+              v-if="isMarkdown"
+              type="button"
+              data-testid="file-preview-markdown-btn"
+              :aria-pressed="showMarkdownPreview"
+              @click="selectMarkdownView('preview')"
+            >{{ t('filePreview.viewMarkdownPreview') }}</button>
+            <template v-if="hasEdit">
+              <button type="button" :aria-pressed="diffView === 'turn'" @click="setDiffView('turn')">{{ t('filePreview.viewThisChange') }}</button>
+              <button
+                type="button"
+                :aria-pressed="diffView === 'latest'"
+                :disabled="!canUseLatest"
+                :title="canUseLatest ? t('filePreview.viewLatestChangeHint') : t('filePreview.latestNeedsSession')"
+                @click="setDiffView('latest')"
+              >{{ t('filePreview.viewLatestChange') }}</button>
+            </template>
             <button
               type="button"
-              :aria-pressed="diffView === 'latest'"
-              :disabled="!canUseLatest"
-              :title="canUseLatest ? t('filePreview.viewLatestChangeHint') : t('filePreview.latestNeedsSession')"
-              @click="setDiffView('latest')"
-            >{{ t('filePreview.viewLatestChange') }}</button>
-            <button type="button" :aria-pressed="diffView === 'source'" @click="setDiffView('source')">{{ t('filePreview.viewSource') }}</button>
+              data-testid="file-preview-source-btn"
+              :aria-pressed="(!hasEdit || diffView === 'source') && !showMarkdownPreview"
+              @click="hasEdit ? setDiffView('source') : selectMarkdownView('source')"
+            >{{ t('filePreview.viewSource') }}</button>
           </div>
           <button
             v-if="hasEdit && active.request.edit"
@@ -615,8 +666,19 @@ watch(activeFileIdResolved, () => {
               </div>
             </template>
           </div>
+          <div
+            v-if="!!active.data && showMarkdownPreview"
+            class="markdown-preview"
+            data-testid="file-markdown-preview"
+          >
+            <MarkdownRenderer
+              :content="active.data.content"
+              :is-dark="isDark"
+              :reveal-initial="false"
+            />
+          </div>
           <CodePreview
-            v-show="!!active.data && !(hasEdit && isDiffMode)"
+            v-show="!!active.data && !(hasEdit && isDiffMode) && !showMarkdownPreview"
             :tabs="tabs" :activeId="activeFileIdResolved" :isDark="isDark"
           />
           <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
@@ -729,6 +791,7 @@ button:disabled { opacity: .4; cursor: default; }
 .file-heading strong { font-size: var(--lx-font-size-xl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-heading > span { font-size: var(--lx-font-size-sm); color: var(--file-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-preview { flex: 1; min-height: 0; overflow: hidden; }
+.markdown-preview { height: 100%; overflow: auto; padding: 16px 20px; box-sizing: border-box; }
 .preview-placeholder { height: 100%; display: grid; place-items: center; font-size: var(--lx-font-size-lg); color: var(--file-muted); }
 .revert-button { color: #dc2626 !important; font-weight: 500; }
 .revert-button:hover:not(:disabled) { background: #ef444415 !important; }

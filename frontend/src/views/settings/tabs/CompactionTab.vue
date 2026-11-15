@@ -148,10 +148,10 @@ const maxTokensFill = computed(() => {
             </div>
           </div>
 
-          <!-- 专属附属配置扩展槽：生图每日/单轮调用上限 -->
+          <!-- 专属附属配置扩展槽：生图每日/单轮调用上限（用缩进子容器明确归属于生图模型，避免误解为全局限制） -->
           <div
             v-if="item.key === 'image'"
-            class="flex items-center justify-between gap-4 pt-2 border-t border-lx-border-faint"
+            class="flex items-center justify-between gap-4 rounded-xl border border-lx-border-faint bg-lx-surface-sunken px-3.5 py-2.5"
           >
             <div class="min-w-0">
               <label :for="`${id}-image-limit`" class="block text-xs font-medium text-lx-secondary">{{ t('settings.compaction.imageLimit') }}</label>
@@ -166,7 +166,7 @@ const maxTokensFill = computed(() => {
               step="1"
               :disabled="imageDisabled"
               data-testid="image-generation-limit"
-              class="h-9 w-24 shrink-0 rounded-xl border border-lx-border bg-lx-surface-sunken px-3 text-xs text-lx-primary text-right tabular-nums focus:outline-none focus:border-lx-border-strong focus:ring-2 focus:ring-lx-surface-active disabled:opacity-50 transition"
+              class="h-9 w-24 shrink-0 rounded-xl border border-lx-border bg-lx-surface px-3 text-xs text-lx-primary text-right tabular-nums focus:outline-none focus:border-lx-border-strong focus:ring-2 focus:ring-lx-surface-active disabled:opacity-50 transition"
               @change="saveImageLimit"
             />
           </div>
