@@ -311,9 +311,6 @@ const turnDiff = ref<DiffState>(emptyDiffState());
 const latestDiff = ref<DiffState>(emptyDiffState());
 /** 「最新改动」是否就是当前这条记录：相同要说明，否则两档内容一样会让人以为按钮坏了。 */
 const latestIsCurrent = ref(false);
-const reverting = ref(false);
-const reverted = ref(false);
-const revertMessage = ref('');
 
 /** 当前档位的差异状态：源码档不参与，取到的永远是最近选中过的差异档。 */
 const currentDiff = computed<DiffState>(() =>
@@ -380,10 +377,6 @@ function highlightLine(text: string): string {
 
 const apiBase = (): string => getApiBaseUrl() || window.location.origin;
 
-/** 本次改动（含撤销）仍按记录定位；地址拼装统一在 utils 里，别在这里写第二份。 */
-const editEndpoint = (suffix = ''): string =>
-  `${resolveDiffEndpoint('turn', diffContext(), apiBase()) ?? ''}${suffix}`;
-
 /**
  * 按档位拉取差异：只在需要时请求，每档一次。
  *
@@ -434,37 +427,6 @@ const selectMarkdownView = (mode: MarkdownViewMode): void => {
   }
 };
 
-/**
- * 撤销这次编辑。
- *
- * <p>失败原因原样透传：后端会在「文件在编辑后又被改过」时拒绝回滚（内容 hash 不匹配），
- * 这类信息必须让用户看到，不能统一吞成「撤销失败」。</p>
- */
-const revertEdit = async (): Promise<void> => {
-  const current = active.value;
-  if (!current?.request.edit || reverting.value) return;
-  if (!window.confirm(t('filePreview.revertConfirm'))) return;
-  reverting.value = true;
-  revertMessage.value = '';
-  try {
-    const query = current.request.sessionId ? `?sessionId=${encodeURIComponent(current.request.sessionId)}` : '';
-    const response = await fetch(editEndpoint(`/reject${query}`), {method: 'POST'});
-    const body = await response.json().catch(() => null);
-    if (!response.ok || body?.code === 0) throw new Error(body?.errMsg || String(response.status));
-    reverted.value = true;
-    revertMessage.value = t('filePreview.revertDone');
-    // 文件已还原，差异视图不再成立，回到源码态并让主进程重新读一次内容。
-    diffView.value = 'source';
-    emit('refresh', current);
-  } catch (error) {
-    revertMessage.value = t('filePreview.revertFailed', {
-      reason: error instanceof Error ? error.message : ''
-    });
-  } finally {
-    reverting.value = false;
-  }
-};
-
 /** 切换文件标签时把三档状态清干净再按新标签取数；默认回到「本次改动」（带行定位时直接看源码）。 */
 watch(activeFileIdResolved, () => {
   turnDiff.value = emptyDiffState();
@@ -472,8 +434,6 @@ watch(activeFileIdResolved, () => {
   latestIsCurrent.value = false;
   diffView.value = 'turn';
   markdownView.value = active.value?.lineAnchor ? 'source' : 'preview';
-  reverted.value = false;
-  revertMessage.value = '';
   void loadDiff('turn');
 }, {immediate: true});
 
@@ -623,23 +583,11 @@ watch(() => active.value?.lineAnchor?.seq, (seq) => {
               @click="hasEdit ? setDiffView('source') : selectMarkdownView('source')"
             >{{ t('filePreview.viewSource') }}</button>
           </div>
-          <button
-            v-if="hasEdit && active.request.edit"
-            type="button"
-            :disabled="reverting || reverted"
-            :title="reverted ? t('filePreview.revertedHint') : t('filePreview.revertTitle')"
-            class="revert-button"
-            @click="revertEdit"
-          >{{ reverting ? t('filePreview.reverting') : reverted ? t('filePreview.reverted') : t('filePreview.revert') }}</button>
           <button type="button" :disabled="!active.data" @click="copy(active.data?.content ?? '')">{{ isCopied ? t('common.copied') : t('common.copy') }}</button>
           <button type="button" :disabled="active.loading" @click="emit('refresh', active)">{{ t('common.refresh') }}</button>
           <button type="button" :title="t('filePreview.openWithSystem')" @click="emit('open')">{{ t('common.open') }}</button>
           <button type="button" :title="t('filePreview.revealInFolder')" @click="emit('reveal')">{{ t('filePreview.reveal') }}</button>
         </div>
-      </div>
-      <div v-if="revertMessage" class="revert-notice" :class="{ 'is-done': reverted }" role="status">
-        <span>{{ revertMessage }}</span>
-        <button type="button" @click="revertMessage = ''">×</button>
       </div>
       <div v-if="active?.error" class="preview-error" role="alert">
         <span>{{ active.error }}</span>
@@ -793,10 +741,6 @@ button:disabled { opacity: .4; cursor: default; }
 .code-preview { flex: 1; min-height: 0; overflow: hidden; }
 .markdown-preview { height: 100%; overflow: auto; padding: 16px 20px; box-sizing: border-box; }
 .preview-placeholder { height: 100%; display: grid; place-items: center; font-size: var(--lx-font-size-lg); color: var(--file-muted); }
-.revert-button { color: #dc2626 !important; font-weight: 500; }
-.revert-button:hover:not(:disabled) { background: #ef444415 !important; }
-.revert-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; font-size: var(--lx-font-size-sm); color: #dc2626; background: #ef444410; border-bottom: 1px solid var(--file-line); }
-.revert-notice.is-done { color: #16a34a; background: #22c55e10; }
 .preview-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; font-size: var(--lx-font-size-md); color: #dc2626; background: #ef444410; }
 .preview-status { font-size: var(--lx-font-size-sm); color: var(--file-muted); padding: 9px 14px; border-top: 1px solid var(--file-line); }
 .preview-truncated { padding: 6px 14px; font-size: var(--lx-font-size-sm); color: #b45309; background: #f59e0b10; }

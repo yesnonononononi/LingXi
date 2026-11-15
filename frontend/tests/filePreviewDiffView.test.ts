@@ -58,6 +58,6 @@ test('「最新改动」是否就是当前这条记录：相同要能识别出�
 test('预览面板把端点拼装委托给 utils，组件里不再出现裸接口路径', () => {
   const source = readFileSync(new URL('../src/components/chat/FilePreviewPanel.vue', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /\/a\/file-edits\//, '组件里出现接口字面量就是第二份口径');
-  assert.match(source, /resolveDiffEndpoint\('turn'/, '本次改动的地址必须来自 utils');
+  assert.match(source, /resolveDiffEndpoint\(/, '差异接口地址必须来自 utils');
   assert.match(source, /setDiffView\('latest'\)/, '切到最新改动要走同一个入口');
 });
