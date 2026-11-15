@@ -204,6 +204,10 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
   };
 
   const createNewTab = (): void => {
+    if (typeof window !== 'undefined' && typeof window.electronAPI?.projectPage?.command === 'function') {
+      openPageFromNewTab('');
+      return;
+    }
     const id = `new-${++newTabSeq}`;
     newTabs.value.push({ id, title: t('filePreview.newTab') });
     const key = `new:${id}`;
