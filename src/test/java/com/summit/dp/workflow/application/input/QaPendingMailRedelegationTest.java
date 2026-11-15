@@ -165,12 +165,15 @@ class QaPendingMailRedelegationTest {
         assertFalse(Files.exists(fixture.artifact));
         assertFalse(Files.exists(fixture.artifact.getParent()));
         assertTrue(fixture.emails.pendingItems(10L, 6L).isEmpty());
+        // 任务就是一条用户消息：它进了历史就不再重渲染，也不该在动态上下文里再出现一份。
         assertTrue(observed.requests().stream().allMatch(messages -> messages.stream()
                         .anyMatch(message -> message instanceof UserMessageEntity user
-                                && user.hasContextContract() && user.text().contains(CURRENT_TASK))),
-                "任务段随每轮动态上下文下发（在缓存前缀之后），不再写进系统提示词");
-        assertTrue(observed.requests().stream().allMatch(messages -> messages.stream()
-                .anyMatch(message -> message instanceof UserMessageEntity && message.text().equals(CURRENT_TASK))));
+                                && !user.hasContextContract() && user.text().equals(CURRENT_TASK))),
+                "任务以用户消息形态进入历史，不进动态上下文段");
+        assertTrue(observed.requests().stream().flatMap(List::stream)
+                        .noneMatch(message -> message instanceof UserMessageEntity user
+                                && user.hasContextContract() && user.text().contains(CURRENT_TASK)),
+                "任务段不再按轮重渲染：请求上已经没有 task 可供渲染");
 
         // 完成提醒只认执行终态；它本身不证明任务要求的文件存在。
         ExecutionRepository snapshots = mock(ExecutionRepository.class);
@@ -312,7 +315,7 @@ class QaPendingMailRedelegationTest {
                                 : response("第三轮产物已生成", List.of());
                     })).build());
             Execution completed = runtime.execute(execution);
-            assertEquals(List.of(CURRENT_TASK), request.getTask());
+            assertNull(request.getTask(), "任务不再挂在请求上：它作为用户消息追加在历史末尾");
             return new Observation(completed, List.copyOf(requests));
         }
 

@@ -79,27 +79,25 @@ public interface ToolCatalog {
                     DELETE_CHECKLIST);
 
     /**
-     * 工具检索工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link SearchToolExecutor}），
-     * 这里转发常量而非另写字面量：该名字同时被系统提示词与框架披露账本引用，各写一遍迟早漂移。
+     * 工具检索工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link SearchToolExecutor}）。
+     *
+     * <p>内核工具由框架默认注册、恒准入，业务侧<b>不再往 toolList 里写</b>；这里的常量只为测试与
+     * 配置核对提供唯一真源，名字改动时编译期就会红。</p>
      */
     String SEARCH_TOOL = SearchToolExecutor.NAME;
 
-    /** MCP 工具清单工具名，与 {@link #SEARCH_TOOL} 同属渐进披露的两级入口，同样转发框架常量。 */
+    /** MCP 工具清单工具名，与 {@link #SEARCH_TOOL} 同属内核工具，同样只做名字转发。 */
     String LIST_MCP_TOOLS = ListMcpToolsExecutor.NAME;
 
     /**
-     * MCP 调用网关名。远端工具从不单独进入模型工具表，模型拿到名字与 schema 后统一经它转发；
-     * 实现归框架侧（{@code harness-kernel-tools} 的 {@link CallMcpToolExecutor}），这里转发常量。
-     *
-     * <p><b>发现与调用是两个名字</b>：配了 MCP 只把检索入口塞进清单，模型能查不能调；
-     * 要真正调用远端工具，网关必须和前面两级入口一起进名单——名单即授权，没有隐含关系。</p>
+     * MCP 调用网关名。远端工具从不单独进入模型工具表，模型拿到名字与 schema 后统一经它转发。
+     * 实现归框架侧（{@code harness-kernel-tools} 的 {@link CallMcpToolExecutor}），这里是名字转发。
      */
     String CALL_MCP_TOOL = CallMcpToolExecutor.NAME;
 
     /**
      * Skill 正文读取工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link ReadSkillTool}），
-     * 这里同样转发常量而非另写字面量：该名字同时被框架渲染的 Skill 提示词与工具注册表引用，
-     * 各写一遍迟早漂移。
+     * 与上面三个同属内核工具：请求里只下发 {@code skillConfig}，名单里不写它。
      */
     String READ_SKILL = ReadSkillTool.NAME;
 

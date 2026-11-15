@@ -7,7 +7,6 @@ import com.summit.core.agent.ContextSpec;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
-import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -130,19 +129,18 @@ public class SubAgentRequestFactory {
                         .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot)
                         .projectMemory(workspaceSpec != null).build()))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
-                .task(List.of(task))
                 .build();
     }
 
     /**
-     * 本次执行的完整上下文快照：复用子会话时为「既有历史 + 本次任务」，首次委派时只有本次任务。
+     * 本次执行的完整上下文快照：复用子会话时为「既有历史原样 + 本次任务」，首次委派时只有本次任务。
      *
      * <p>框架约定 {@code AgentRequest.messages} 是执行期对话历史的唯一来源（运行时不按 id 回读），
      * 因此复用必须在这里把历史显式交出去；否则子 Agent 会「接着聊」却看不到之前聊过什么。</p>
      *
-     * <p><b>丢掉开头的系统消息</b>：历史里的系统提示词属于上一次执行，而框架对「还没有助手轮次」的
-     * 会话会原样保留调用方给的前导系统消息（历史只追加，改写它就等于让缓存前缀失效）。本次的提示词
-     * 由 {@code contextSpec.systemPrompt} 渲染，再把旧的塞进历史，等于让子 Agent 按上一轮的指令干活。</p>
+     * <p><b>历史原样保留，一个字节都不改</b>：复用要的是前缀缓存命中和 thinking 块的签名绑定，
+     * 两者都以「历史前缀与上次完全一致」为前提。开头的系统消息也在缓存前缀里，剥掉或替换它，
+     * 后面每一轮都要重新计费并可能让签名失配。本次任务作为新的一条用户消息追加在末尾即可。</p>
      */
     private static List<Message> buildContext(List<Message> priorMessages, String task) {
         UserMessageEntity current = UserMessageEntity.from(task);
@@ -150,9 +148,6 @@ public class SubAgentRequestFactory {
             return List.of(current);
         }
         List<Message> context = new ArrayList<>(priorMessages);
-        while (!context.isEmpty() && context.getFirst() instanceof SystemMessageEntity) {
-            context.removeFirst();
-        }
         context.add(current);
         return context;
     }

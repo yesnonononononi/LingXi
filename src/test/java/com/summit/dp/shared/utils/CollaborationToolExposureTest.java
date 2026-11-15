@@ -37,10 +37,9 @@ import static org.mockito.Mockito.when;
  * <ol>
  *   <li><b>框架语义：名单即授权。</b>未配清单不再等于「不加限制」—— 不显式写出来的静态工具
  *       一律不暴露。这消除了「清单组装失败变成 null，静默放大为进程内全部能力」的隐患。</li>
- *   <li><b>业务语义：MCP 在场则兜底全部三级入口。</b>请求级 MCP 工具名无法预先进清单，
- *       模型只能靠 {@code list_mcp_tools} 列名、{@code search_tool} 取 schema，再经
- *       {@code call_mcp_tool} 网关转发调用。发现与调用是三个独立名字，谁都不隐含谁：
- *       少给网关，模型查得到也调不动。</li>
+ *   <li><b>内核工具不进名单。</b>{@code search_tool} / {@code list_mcp_tools} /
+ *       {@code call_mcp_tool} / {@code read_skill} / {@code compact_context} 由框架默认注册并
+ *       恒准入，业务侧既不补也不滤：它们换名字、换口径都由框架一个地方决定。</li>
  * </ol>
  *
  * <p>另一组回归：{@code call_sub_agent} 与 {@code send_mail_to_agent} 只在身份前置条件满足时
@@ -92,9 +91,8 @@ class CollaborationToolExposureTest {
     void mcpPresenceFallsBackToTheMcpEntries() {
         AgentRequest request = request(null, null, null, REGISTERED, true);
 
-        assertEquals(List.of(ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL, ToolCatalog.CALL_MCP_TOOL),
-                request.getToolList(),
-                "MCP 工具分三级：先列清单（不含 schema）、再检索（含 schema）、最后经网关调用；静态工具仍须显式授权");
+        assertEquals(List.of(), request.getToolList(),
+                "内核工具不再由业务侧补：框架默认注册且恒准入；静态工具仍须显式授权");
     }
 
     @Test
@@ -112,9 +110,8 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null,
                 List.of("read_file", "edit_file"), REGISTERED, true);
 
-        assertEquals(List.of("read_file", "edit_file", ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL,
-                        ToolCatalog.CALL_MCP_TOOL),
-                request.getToolList());
+        assertEquals(List.of("read_file", "edit_file"), request.getToolList(),
+                "内核工具不进名单：框架默认注册且恒准入");
     }
 
     @Test
@@ -150,10 +147,9 @@ class CollaborationToolExposureTest {
                         ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
                         ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
-                        ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
-                        ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL, ToolCatalog.CALL_MCP_TOOL),
+                        ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolList(),
-                "基础工具包含用户确认、执行清单、文件检索写入删除与项目记忆读取/检索，外加 MCP 三级入口；协作工具不该出现");
+                "基础工具包含用户确认、执行清单、文件检索写入删除与项目记忆读取/检索；内核工具不进名单，协作工具不该出现");
     }
 
     @Test
@@ -229,27 +225,27 @@ class CollaborationToolExposureTest {
     Path skillDir;
 
     @Test
-    @DisplayName("Skill 根目录可用：补 read_skill 并下发 skillConfig")
+    @DisplayName("Skill 根目录可用：下发 skillConfig，read_skill 由框架提供")
     void skillRootAddsReadSkillAndConfig() {
         AgentRequest request = request(null, null, List.of("read_file"), REGISTERED, false,
                 AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(skillDir.toString()));
 
-        assertEquals(List.of("read_file", ToolCatalog.READ_SKILL), request.getToolList(),
-                "框架渲染的 Skill 提示词只给名称与入口路径，读正文全靠 read_skill；名单即授权，必须在这里补");
+        assertEquals(List.of("read_file"), request.getToolList(),
+                "read_skill 是内核工具，框架默认注册且恒准入，业务侧不再补进名单");
         assertNotNull(request.getSkillConfig(), "必须下发 skillConfig，否则框架压根不会渲染 Skill 提示词");
         assertEquals(skillDir.toAbsolutePath().normalize(), request.getSkillConfig().getPath(),
                 "skillConfig 必须指向配置的根目录，框架按它递归找 SKILL.md");
     }
 
     @Test
-    @DisplayName("Skill 可用 + 只读档位：read_skill 必须通过只读滤网（登记为 READ_ONLY）")
+    @DisplayName("Skill 可用 + 只读档位：名单不被只读滤网改写，read_skill 依旧由框架准入")
     void skillRootToolSurvivesTheReadOnlyFilter() {
         AgentRequest request = request(null, null, List.of("read_file", "edit_file"), REGISTERED, false,
                 AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", ToolCatalog.READ_SKILL),
                 new SkillRootResolver(skillDir.toString()));
 
-        assertEquals(List.of("read_file", ToolCatalog.READ_SKILL), request.getToolList(),
-                "补入位置必须在只读滤网之前：滤网只剔写工具，读技能是只读动作，不该被剔掉");
+        assertEquals(List.of("read_file"), request.getToolList(),
+                "只读滤网按注册表剔除写工具；read_skill 不在名单里，框架侧恒准入且只读");
     }
 
     @Test

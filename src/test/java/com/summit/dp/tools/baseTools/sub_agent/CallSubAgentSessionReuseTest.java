@@ -145,12 +145,12 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
-        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
+        assertNull(task.request().getTask(), "任务不再挂在请求上：它作为末位用户消息下发");
         assertTrue(task.target().reused(), "命中已有子会话必须标记复用");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "复用同一子会话 id");
 
         List<Message> delivered = task.request().getContextSpec().getContext();
-        assertEquals(2, delivered.size(), "应为「既有历史 + 本次任务」");
+        assertEquals(2, delivered.size(), "应为「既有历史原样 + 本次任务」");
         assertTrue(delivered.get(0).text().contains("上次的任务"));
         assertTrue(delivered.get(1).text().contains("再评估一下上次的方案"));
     }
@@ -165,11 +165,13 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
-        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
+        assertNull(task.request().getTask());
         assertFalse(task.target().reused(), "未命中必须标记首派");
         assertNotNull(task.numericSubSessionId());
         assertNotEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "未命中时必须派生新 id");
-        assertEquals(1, task.request().getContextSpec().getContext().size(), "首派上下文只有本次任务");
+        List<Message> delivered = task.request().getContextSpec().getContext();
+        assertEquals(1, delivered.size(), "首派上下文只有本次任务");
+        assertTrue(delivered.getFirst().text().contains("再评估一下上次的方案"));
     }
 
     @Test
@@ -186,9 +188,11 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
-        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
+        assertNull(task.request().getTask());
         assertTrue(task.target().reused(), "上下文缺失也必须复用同一子会话，不得另派生");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId());
+        assertTrue(task.request().getContextSpec().getContext().getLast().text()
+                .contains("再评估一下上次的方案"), "历史缺失时上下文只有本次任务");
     }
 
     @Test

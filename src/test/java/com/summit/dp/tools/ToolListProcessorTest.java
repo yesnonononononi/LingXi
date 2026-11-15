@@ -102,34 +102,32 @@ class ToolListProcessorTest {
 
     @Test
     void registeredReadOnlyAdditionsSurviveTheSameFilter() {
-        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_IMAGE, ToolCatalog.READ_SKILL, ToolCatalog.CREATE_PLAN));
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_IMAGE, ToolCatalog.CREATE_PLAN));
         ToolProcessingContext context = ToolProcessingContext.builder().vision(true).requirePlan(true).skillRoot(Path.of("skills"))
                 .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build();
-        assertEquals(Set.of(ToolCatalog.READ_IMAGE, ToolCatalog.READ_SKILL, ToolCatalog.CREATE_PLAN),
-                Set.copyOf(processor.process(List.of(ToolCatalog.EDIT_FILE), context)));
+        assertEquals(Set.of(ToolCatalog.READ_IMAGE, ToolCatalog.CREATE_PLAN),
+                Set.copyOf(processor.process(List.of(ToolCatalog.EDIT_FILE), context)),
+                "补齐的只读工具要能过只读滤网；read_skill 属内核工具，不再由业务侧补");
     }
 
     @Test
-    void availableMcpAddsAllThreeEntries() {
+    void availableMcpDoesNotInjectKernelEntries() {
         McpConfig mcp = mock(McpConfig.class);
         when(mcp.getMcp()).thenReturn(List.of(mock(McpConfig.MCP.class)));
         ToolProcessingContext context = ToolProcessingContext.builder().mcpConfig(mcp).accessMode(AgentAccessMode.IN_WORKSPACE).build();
-        assertEquals(List.of(ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL, ToolCatalog.CALL_MCP_TOOL),
-                processor.process(List.of(), context),
-                "有 MCP 就必须给调用网关：只给检索入口，模型查得到 schema 却调不动远端工具");
+        assertEquals(List.of(), processor.process(List.of(), context),
+                "MCP 三级入口是框架内核工具，默认注册且恒准入，业务侧不再往名单里塞");
     }
 
     @Test
-    void theGatewaySurvivesTheReadOnlyFilterLikeTheTerminal() {
-        // 检索入口本身是只读工具，注册表会把它们列进来；网关是 SERIAL_MUTATION，靠豁免留下。
-        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_FILE, ToolCatalog.SEARCH_TOOL, ToolCatalog.LIST_MCP_TOOLS));
+    void theReadOnlyFilterLeavesTheInjectedListAlone() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_FILE));
         McpConfig mcp = mock(McpConfig.class);
         when(mcp.getMcp()).thenReturn(List.of(mock(McpConfig.MCP.class)));
         ToolProcessingContext context = ToolProcessingContext.builder().mcpConfig(mcp)
                 .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build();
-        assertEquals(List.of(ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL, ToolCatalog.CALL_MCP_TOOL),
-                processor.process(List.of(ToolCatalog.EDIT_FILE), context),
-                "远端工具副作用未知，与终端同待遇：档位不保证写行为，但剔除会让只读档连远端只读工具都用不了");
+        assertEquals(List.of(ToolCatalog.READ_FILE), processor.process(List.of(ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE), context),
+                "只读档只按注册表剔除写工具，内核工具本来就不在名单里");
     }
 
     private ToolProcessingContext root() {

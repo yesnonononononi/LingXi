@@ -33,13 +33,8 @@ public class ToolListProcessor {
             tools.add(ToolCatalog.PEEK_TEAMMATE_STATE);
             tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
         }
-        if (context.mcpConfig() != null && context.mcpConfig().getMcp() != null && !context.mcpConfig().getMcp().isEmpty()) {
-            tools.add(ToolCatalog.LIST_MCP_TOOLS);
-            tools.add(ToolCatalog.SEARCH_TOOL);
-            // 发现与调用各是一个名字：只给检索入口，模型能查到 schema 却调不动远端工具。
-            tools.add(ToolCatalog.CALL_MCP_TOOL);
-        }
-        if (context.skillRoot() != null) tools.add(ToolCatalog.READ_SKILL);
+        // 内核工具（MCP 三级入口、read_skill、compact_context）由框架默认注册并恒准入，
+        // 不再由业务侧往名单里塞；这里只补充业务自己的工具。
         if (context.projectMemory()) {
             tools.add(ToolCatalog.LOAD_MEMORY);
             tools.add(ToolCatalog.SEARCH_WIKI);
@@ -52,10 +47,10 @@ public class ToolListProcessor {
 
         if (!context.accessMode().allowsWriteTools()) {
             Set<String> readOnly = toolCatalog.readOnlyNames();
-            // 网关与终端同等对待：远端工具与命令一样副作用未知，档位不保证它们的写行为，
-            // 但一律剔除会让只读档连远端只读工具都用不了。
+            // 终端与命令同等对待：写行为由档位兜住，剔除它们反而会让只读档没法跑命令。
+            // 内核工具不参与此过滤——框架侧恒准入，名单里本来也没有它们。
             tools.removeIf(name -> !ToolCatalog.EXECUTE_COMMAND.equals(name) && !ToolCatalog.MANAGE_COMMAND.equals(name)
-                    && !ToolCatalog.CALL_MCP_TOOL.equals(name) && !readOnly.contains(name));
+                    && !readOnly.contains(name));
         }
         if (context.member() || context.teamId() == null) {
             tools.remove(ToolCatalog.CALL_SUB_AGENT);

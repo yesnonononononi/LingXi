@@ -167,15 +167,25 @@ class SubAgentRequestFactoryTest {
 
     @ParameterizedTest(name = "复用历史={0}")
     @ValueSource(booleans = {false, true})
-    void taskSurvivesPruningSummaryAndCheckpointResume(boolean reused) throws Exception {
+    void taskArrivesAsTheTrailingUserMessageAndThePrefixStaysUntouched(boolean reused) throws Exception {
         stubModel();
         AgentVO member = agent(6L, "工程师", "执行主理人交付的任务");
-        String oldTask = "上一轮委派：核查旧端口";
-        List<Message> prior = reused ? List.of(SystemMessageEntity.builder().text(oldTask).build(),
-                UserMessageEntity.from("旧轮用户输入")) : List.of();
+        // 复用会话的历史是同一个子 Agent 自己的前缀：开头那条系统消息必须原样留着，
+        // 它是缓存前缀与 thinking 签名绑定的起点，改写它等于让复用每轮重新计费。
+        String previousPrompt = "上一轮的系统提示词：核查旧端口";
+        List<Message> prior = reused ? List.of(SystemMessageEntity.builder().text(previousPrompt).build(),
+                UserMessageEntity.from("旧轮用户输入"),
+                AiMessageEntity.builder().text("旧轮回复").build()) : List.of();
         AgentRequest request = build(member, buildTeam(member), parentToolExecution(), prior);
         String task = "请只回复一个词：ok";
-        assertEquals(List.of(task), request.getTask());
+        assertNull(request.getTask(), "任务不再挂在请求上：它是一条用户消息");
+        assertEquals(task, request.getContextSpec().getContext().getLast().text(),
+                "本次任务追加在历史末尾，历史一个字节都不改");
+        if (reused) {
+            assertEquals(previousPrompt, request.getContextSpec().getContext().getFirst().text(),
+                    "复用会话的前缀原样交回框架，缓存才可能命中");
+        }
+
         Execution execution = Execution.create(request, "");
         execution.setMessages(new ArrayList<>(execution.getMessages()));
         DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
@@ -183,10 +193,10 @@ class SubAgentRequestFactoryTest {
         execution.startChecked();
         String protectedPrompt = execution.getMessages().getFirst().text();
         assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
-        // 任务不再写进系统提示词：框架把它放进每轮动态上下文（位于缓存前缀之后），
-        // 所以这里断言的是「任务随本轮上下文下发」，而不是「系统提示词里有任务」。
-        assertTrue(carries(execution.getMessages(), task), "首轮上下文必须带着本次委派任务");
-        assertFalse(protectedPrompt.contains(oldTask), "复用子会话不能沿用上一轮的系统任务");
+        assertTrue(carries(execution.getMessages(), task), "本次委派任务必须以用户消息送达");
+        if (reused) {
+            assertEquals(previousPrompt, protectedPrompt, "复用会话的前缀由历史提供，框架既不添加也不替换");
+        }
 
         // 邮件成为最后用户消息后，历史工具组必须真的被剪掉，不能只验证一个未执行的压缩调用。
         conversations.appendMessage(execution, AiMessageEntity.builder().text("历史读取")
@@ -205,7 +215,6 @@ class SubAgentRequestFactoryTest {
         assertTrue(execution.getMessages().stream().noneMatch(ToolMessageEntity.class::isInstance));
         assertEquals(protectedPrompt, execution.getMessages().getFirst().text());
 
-        // 摘要故意不复述任务：任务保护靠的是「每轮按请求重渲染任务段」，而不是摘要模型碰巧记住它。
         AtomicInteger summaries = new AtomicInteger();
         ChatModel summaryModel = command -> {
             summaries.incrementAndGet();
@@ -222,10 +231,9 @@ class SubAgentRequestFactoryTest {
         for (int round = 0; round < 2; round++) {
             assertTrue(compacter.compact(new ContextCompactRequest(execution)));
             assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
-            assertEquals(protectedPrompt, execution.getMessages().getFirst().text());
-            // 压缩把历史换成摘要之后，任务依旧原样挂在请求上，下一轮据此重渲染任务段。
-            assertEquals(List.of(task), execution.getAgentRequest().getTask(),
-                    "摘要与剪枝都不该碰请求里的任务，任务靠它每轮重新进入上下文");
+            assertEquals(protectedPrompt, execution.getMessages().getFirst().text(),
+                    "压缩重建也必须把原来的前缀放回首位");
+            assertNull(execution.getAgentRequest().getTask(), "请求上本来就没有任务，压缩也无从丢它");
         }
         assertEquals(2, summaries.get());
 
@@ -234,10 +242,10 @@ class SubAgentRequestFactoryTest {
         Path checkpoint = skillDir.resolve("delegation-checkpoint.json");
         json.writeValue(checkpoint.toFile(), execution);
         Execution restored = json.readValue(checkpoint.toFile(), Execution.class);
-        assertEquals(List.of(task), restored.getAgentRequest().getTask());
+        assertNull(restored.getAgentRequest().getTask());
         assertEquals(protectedPrompt, restored.getMessages().getFirst().text());
 
-        // 恢复链不会重新初始化系统提示词：任务保护靠的是「请求仍带任务，下一轮据此重渲染」。
+        // 恢复链不会重新初始化系统提示词：前缀照旧，任务本来就在历史里。
         List<Message> sent = new ArrayList<>();
         ToolExecutionManager tools = mock(ToolExecutionManager.class);
         when(tools.toolRegistry()).thenReturn(new ToolRegistry(List.of()));
@@ -259,8 +267,7 @@ class SubAgentRequestFactoryTest {
         assertEquals(ExecutionState.COMPLETED, runtime.execute(restored).getExecutionState());
         assertInstanceOf(SystemMessageEntity.class, sent.getFirst());
         assertEquals(protectedPrompt, sent.getFirst().text());
-        assertTrue(carries(sent, task), "恢复后的执行必须把任务重新随本轮上下文送达模型");
-        System.out.printf("验证委派任务保护: reused=%s, tokensBefore=%d, tokensAfterPrune=%d, summaries=%d, runtimeJar=%s%n",
+        System.out.printf("验证委派前缀保护: reused=%s, tokensBefore=%d, tokensAfterPrune=%d, summaries=%d, runtimeJar=%s%n",
                 reused, before, pruned, summaries.get(), DefaultConversationManager.class.getProtectionDomain().getCodeSource().getLocation());
     }
 
@@ -397,21 +404,24 @@ class SubAgentRequestFactoryTest {
     }
 
     @Test
-    @DisplayName("复用：messages 为「既有历史 + 本次任务」，且本次任务在末位")
+    @DisplayName("复用：messages 为「既有历史原样 + 本次任务」，且本次任务在末位")
     void reusedDelegationAppendsTaskAfterHistory() {
         stubModel();
 
         AgentVO member = agent(6L, "架构师", "你是架构师");
         List<Message> prior = List.of(
+                SystemMessageEntity.builder().text("上一轮的系统提示词").build(),
                 UserMessageEntity.from("上次的任务"),
                 UserMessageEntity.from("上次的追问"));
 
         AgentRequest request = build(member, buildTeam(member), parentToolExecution(), prior);
 
         List<Message> messages = request.getContextSpec().getContext();
-        assertEquals(3, messages.size(), "历史两条 + 本次任务一条");
-        assertTrue(messages.get(0).text().contains("上次的任务"));
-        assertTrue(messages.get(1).text().contains("上次的追问"));
+        assertEquals(4, messages.size(), "历史三条 + 本次任务一条");
+        assertEquals("上一轮的系统提示词", messages.getFirst().text(),
+                "历史原样保留：剥掉开头的系统消息就等于让缓存前缀与 thinking 签名一起失效");
+        assertTrue(messages.get(1).text().contains("上次的任务"));
+        assertTrue(messages.get(2).text().contains("上次的追问"));
         assertTrue(messages.getLast().text().contains("请只回复一个词：ok"));
     }
 
@@ -426,18 +436,17 @@ class SubAgentRequestFactoryTest {
     }
 
     @Test
-    @DisplayName("Skill 根目录可用：子执行拿到 read_skill 与请求级 skillConfig；关闭时两者都不给")
+    @DisplayName("Skill 根目录可用：子执行下发请求级 skillConfig；read_skill 由框架提供，不进名单")
     void childRequestCarriesSkillRootOnlyWhenConfigured() {
         stubModel();
 
         AgentVO member = agent(6L, "架构师", "你是架构师");
         TeamVO team = buildTeam(member);
 
-        // 开启：框架按请求级 skillConfig 渲染 Skill 提示词，正文只能靠 read_skill 取回 ——
-        // 名单即授权，不补工具就等于提示词里说了件模型做不到的事。
+        // read_skill 是框架内核工具，默认注册且恒准入：业务侧只负责把 skillConfig 交出去。
         AgentRequest withSkills = build(factoryWithSkills(), member, team, parentToolExecution(), List.of());
-        assertTrue(withSkills.getToolList().contains(ToolCatalog.READ_SKILL),
-                "Skill 可用时必须下发 read_skill，否则子执行看得到入口路径却读不了");
+        assertFalse(withSkills.getToolList().contains(ToolCatalog.READ_SKILL),
+                "内核工具不进名单：框架默认注册，业务侧多写一遍只会在改名时漂移");
         assertNotNull(withSkills.getSkillConfig(), "必须下发 skillConfig，否则框架不会渲染 Skill 提示词");
         assertEquals(skillDir.toAbsolutePath().normalize(), withSkills.getSkillConfig().getPath(),
                 "skillConfig 必须指向配置的根目录（read_skill 也按它做越界校验）");
