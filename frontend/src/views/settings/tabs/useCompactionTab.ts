@@ -7,6 +7,48 @@ import {t} from '../../../i18n';
 import type {CompactionParamsVO, ProviderModelGroupVO} from '../../../types/chat';
 import {isImageModel} from '../../../utils/modelCapabilities';
 
+export type ModelPurposeKey = 'image' | 'predicate' | 'compaction';
+
+export interface ModelPurposeOption {
+  value: string;
+  label: string;
+  desc?: string;
+}
+
+export interface ModelPurposeToggle {
+  enabled: boolean;
+  disabled: boolean;
+  ariaLabel: string;
+  badgeText: string;
+  testId: string;
+  onToggle: (next: boolean) => void;
+}
+
+/**
+ * 专用模型用途条目描述符。
+ *
+ * <p>新增用途（如命令审批模型）时只需在 {@link useCompactionTab} 注册配置项并拼入
+ * {@code purposeItems}，渲染层统一消费同一套行结构，无需复制整张卡片。</p>
+ */
+export interface ModelPurposeItem {
+  key: ModelPurposeKey;
+  testIdCard: string;
+  testIdSelect: string;
+  title: string;
+  description: string;
+  chooseLabel: string;
+  selectedId: string;
+  options: ModelPurposeOption[];
+  disabled: boolean;
+  warnings: string[];
+  error: string;
+  showAddModelGuide: boolean;
+  emptyText?: string;
+  emptyHelp?: string;
+  toggle?: ModelPurposeToggle;
+  onSelect: (value: string) => void;
+}
+
 /**
  * 其它模型配置页的状态与动作，压缩、生图与指令预测各自独立保存。
  *
@@ -163,10 +205,75 @@ export function useCompactionTab() {
   watch(() => store.compactModelId, () => { saveError.value = ''; });
   onMounted(load);
 
+  const purposeItems = computed<ModelPurposeItem[]>(() => {
+    const compactionWarnings: string[] = [];
+    if (dangling.value) compactionWarnings.push(t('settings.compaction.unavailable'));
+    if (missingCredential.value) compactionWarnings.push(t('settings.compaction.missingKey'));
+
+    return [
+      {
+        key: 'image',
+        testIdCard: 'image-model-card',
+        testIdSelect: 'image-model-select',
+        title: t('settings.compaction.imageTitle'),
+        description: t('settings.compaction.imageHelp'),
+        chooseLabel: t('settings.compaction.imageChoose'),
+        selectedId: imageSelectedId.value,
+        options: imageOptions.value,
+        disabled: imageDisabled.value,
+        warnings: imageUnavailable.value ? [t('settings.compaction.imageUnavailable')] : [],
+        error: imageSaveError.value,
+        showAddModelGuide: imageOptions.value.length === 1,
+        onSelect: chooseImage,
+      },
+      {
+        key: 'predicate',
+        testIdCard: 'predicate-model-card',
+        testIdSelect: 'predicate-model-select',
+        title: t('settings.compaction.predicateTitle'),
+        description: t('settings.compaction.predicateHelp'),
+        chooseLabel: t('settings.compaction.predicateChoose'),
+        selectedId: predicateSelectedId.value,
+        options: predicateOptions.value,
+        disabled: predicateDisabled.value,
+        warnings: predicateUnavailable.value ? [t('settings.compaction.predicateUnavailable')] : [],
+        error: predicateSaveError.value,
+        showAddModelGuide: predicateOptions.value.length === 1,
+        onSelect: choosePredicate,
+      },
+      {
+        key: 'compaction',
+        testIdCard: 'compaction-model-card',
+        testIdSelect: 'compaction-model-select',
+        title: t('settings.compaction.sectionModel'),
+        description: t('settings.compaction.sectionModelDesc'),
+        chooseLabel: t('settings.compaction.choose'),
+        selectedId: selectedId.value,
+        options: options.value,
+        disabled: disabled.value,
+        warnings: compactionWarnings,
+        error: saveError.value,
+        showAddModelGuide: !loading.value && options.value.length === 0,
+        emptyText: t('settings.compaction.empty'),
+        emptyHelp: t('settings.compaction.emptyHelp'),
+        toggle: {
+          enabled: enabled.value,
+          disabled: disabled.value || (!enabled.value && !readyModels.value.length),
+          ariaLabel: t('settings.compaction.toggleLabel'),
+          badgeText: enabled.value ? t('settings.compaction.enabled') : t('settings.compaction.disabled'),
+          testId: 'compaction-switch',
+          onToggle: toggle,
+        },
+        onSelect: choose,
+      },
+    ];
+  });
+
   return {
     store,
     imageSelectedId, imageOptions, imageUnavailable, imageDisabled, imageSaveError, imageLimitDraft, chooseImage, saveImageLimit,
     predicateSelectedId, predicateOptions, predicateUnavailable, predicateDisabled, predicateSaveError, choosePredicate,
+    purposeItems,
     params,
     loading,
     loadError,
