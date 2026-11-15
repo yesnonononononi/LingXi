@@ -81,11 +81,6 @@ watch(isEditingOrAddingMcp, (editing) => {
   isAdvancedOpen.value = editing && hasAdvancedConfig();
 }, {flush: 'post'});
 
-// 切到 OAuth 就把面板摊开：客户端 ID 之类的入口藏在收起的面板里等于让用户找。
-watch(() => mcpForm.value.authMode, (mode) => {
-  if (mode === 'oauth') isAdvancedOpen.value = true;
-});
-
 </script>
 
 <template>

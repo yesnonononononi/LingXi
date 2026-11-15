@@ -249,3 +249,16 @@ test('授权判定与启停方向互不污染：AUTHORIZATION_REQUIRED 只是运
   assert.equal(isMcpAuthorizationRequired(null), false);
   assert.equal(isMcpAuthorizationRequired(undefined), false);
 });
+
+/**
+ * 缺陷现场：切到 OAuth 时自动摊开「高级选项」，于是在静态凭据与 OAuth 之间来回切，
+ * 面板反复弹开又收回，把下面几行输入一起顶走。开合只允许由「进入编辑态」决定一次。
+ */
+test('切换认证方式不得自动展开高级选项：开合只由编辑态决定', () => {
+  const tab = harness.readSource('../src/views/settings/tabs/McpTab.vue');
+  const writes = tab.match(/isAdvancedOpen\.value\s*=/g) ?? [];
+  assert.equal(writes.length, 1,
+    '只允许编辑态入口写 isAdvancedOpen，多出来的 watcher 会让面板在切认证方式时自己弹开');
+  assert.doesNotMatch(tab, /watch\(\s*\(\)\s*=>\s*mcpForm\.value\.(authMode|transport)/,
+    '认证方式/传输方式的变化不得触发高级选项展开');
+});
