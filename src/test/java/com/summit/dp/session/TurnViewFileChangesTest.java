@@ -56,7 +56,7 @@ class TurnViewFileChangesTest {
     void terminalTurnCarriesFileChangesInTheSameView() {
         stubMessages();
         List<TurnFileChangeVO> summary = List.of(
-                new TurnFileChangeVO("D:/repo/a.txt", 3, 1, 2, false, "100", "7", true));
+                new TurnFileChangeVO("D:/repo/a.txt", 3, 1, 2, false, "100", "7", true, false));
         when(fileChanges.summarize(TURN_ID)).thenReturn(summary);
 
         TurnViewVO view = service.assembleTurnView(null, completedTurn(), 1L).orElseThrow();
