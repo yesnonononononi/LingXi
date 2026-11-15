@@ -22,18 +22,24 @@ test('折叠动画的裁剪方式必须是 clip-path，不能建立 BFC', () => 
   }
 });
 
-test('enter-active 用 clip-path 裁剪且不写 overflow', () => {
+test('enter-active 用 clip-path 裁剪且必须 overflow: clip 兜住子树溢出（禁止 BFC overflow）', () => {
   const block = ruleBlock('.collapse-transition-enter-active');
   assert.match(block, /clip-path\s*:/, '.collapse-transition-enter-active 应使用 clip-path 裁剪溢出内容');
 
-  // overflow: hidden 会让折叠块在动画期间变成 BFC，块内子元素的上下 margin 不再塌陷：
-  // onEnter 量到的 scrollHeight 比展开结束后的稳态高度多出这些 margin（实测 16px），
-  // 动画收尾时高度回落，展开就是「先撑高再缩回」的弹跳。enter 的测量发生在 enter-active
-  // 类生效期间，任何 overflow 都会污染测量，这里锁死不许回退。
+  // 只靠 clip-path 时，enter 首帧高度为 0 但子树已撑开祖先 scrollHeight，
+  // 底部吸底会当帧瞬跳。overflow: clip 兜住溢出且不建 BFC，不污染 scrollHeight 测量。
+  assert.match(
+    block,
+    /overflow\s*:\s*clip\b/,
+    '.collapse-transition-enter-active 必须写 overflow: clip，兜住子树溢出（否则底部展开会瞬跳）'
+  );
+
+  // overflow: hidden/scroll/auto 会让折叠块在动画期间变成 BFC，块内子元素的上下 margin 不再塌陷，
+  // 导致 onEnter 量到的 scrollHeight 比稳态多出 margin，展开末尾回落弹跳。
   assert.doesNotMatch(
     block,
-    /overflow\s*:/,
-    '.collapse-transition-enter-active 不得写 overflow（会建立 BFC，导致折叠展开弹跳）'
+    /overflow\s*:\s*(?:hidden|scroll|auto)\b/,
+    '.collapse-transition-enter-active 只能用 overflow: clip；hidden/scroll/auto 会建立 BFC'
   );
 });
 

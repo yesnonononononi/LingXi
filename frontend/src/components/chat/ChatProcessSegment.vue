@@ -110,7 +110,9 @@ const isRunningTurn = computed(() => props.turn
       </span>
     </button>
     <CollapseTransition>
-      <div v-if="visible && expanded" class="mt-1">
+      <div v-if="visible && expanded">
+        <!-- 间距放在被度量容器内部，避免 margin-top 在首帧先跳 4px 再开始高度过渡。 -->
+        <div class="h-1" aria-hidden="true" />
         <!-- 滚动框与动画层分开，避免折叠动画按全部内容高度测量而撑开页面。
              刻意**不写** `overscroll-*-contain`：滚到框底后继续下滑必须把滚动链交给外层对话区，
              否则鼠标停在过程区里就等于被锁死（得先把指针挪出去才能继续读下文）。

@@ -93,12 +93,18 @@ const onAfterLeave = (el: Element) => {
    动画走完、Transition 类被移除的瞬间高度回落 —— 展开等于先撑高再缩回，就是那个「弹跳」；
    leave 方向同理，收起开始时块内内容会先整体下移一次。
    clip-path 只裁剪绘制、不建立 BFC，动画期间与稳态的盒模型完全一致，两个方向都不再有跳变。 */
+/* enter 方向同样需要 overflow: clip（且只能是 clip，不能是 hidden/scroll/auto）：
+   只靠 clip-path 时，动画首帧高度为 0 但子树已是自然高度，会直接撑高外层滚动容器的
+   scrollHeight；处于最底部时 ResizeObserver 会当帧把 scrollTop 拽走，导致整段对话
+   向上瞬跳再填内容。overflow: clip 既能兜住子树溢出让 scrollHeight 随高度平滑增长，
+   又不会像 hidden 那样建立 BFC 破坏内部 margin 塌陷与 scrollHeight 测量。 */
 .collapse-transition-enter-active {
   transition: height 260ms cubic-bezier(0.25, 0.1, 0.25, 1),
               opacity 220ms ease,
               padding-top 260ms ease,
               padding-bottom 260ms ease !important;
   clip-path: inset(0) !important;
+  overflow: clip;
 }
 
 /* leave 方向在 clip-path 之外还必须加 overflow: clip。
