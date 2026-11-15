@@ -1,7 +1,8 @@
 import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type {ChatMessage, ToolCallVO} from '../src/types/chat';
+import type {ChatMessage, ChatSession, ToolCallVO} from '../src/types/chat';
+import type {PlanPreviewTab} from '../src/types/previewPanel';
 import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
 import {
     buildCardSummary,
@@ -9,6 +10,7 @@ import {
     isApprovableCard,
     isCardToolName,
     resolveCardKind,
+    resolveLivePlanTab,
     toPromptCardData,
     upsertPromptCard
 } from '../src/utils/toolCallCard';
@@ -365,4 +367,81 @@ test('9. 折叠摘要按生命周期状态显示，缺 outcome 不得标成「�
     content: { kind: 'COMMAND', command: 'ls' }, rawOutput: { outcome: 'APPROVED' }
   } as ToolCallVO);
   assert.ok(buildCardSummary(approved).includes('已批准'), '有结论时摘要显示结论');
+});
+
+test('10. 计划预览 Tab 与会话权威卡片同步：决策回执替换 promptCards 后不再停留在待审态', () => {
+  const pendingVo: ToolCallVO = {
+    id: 'plan-live-1',
+    type: 'PROMISE',
+    status: 'pending',
+    pending: true,
+    version: 3,
+    allowedActions: ['APPROVE', 'REJECT'],
+    content: { kind: 'PLAN', title: '回滚实施计划', text: '## 步骤 1' }
+  };
+  const snapshotTab: PlanPreviewTab = {
+    id: 'plan-live-1',
+    title: '回滚实施计划',
+    promptCard: toPromptCardData(pendingVo),
+    sessionId: 'sess-1'
+  };
+  const sessions: ChatSession[] = [
+    {
+      id: 'sess-1',
+      title: '主会话',
+      messages: [{ id: 'msg-1', role: 'assistant', content: '', promptCards: [pendingVo] }]
+    }
+  ];
+
+  assert.equal(canDecideCard(resolveLivePlanTab(snapshotTab, sessions).promptCard, 'APPROVE'), true);
+
+  // 模拟 applyCardReceipt 用回执 VO 替换数组元素（快照对象本身未被就地修改）
+  sessions[0].messages[0].promptCards![0] = {
+    ...pendingVo,
+    status: 'completed',
+    pending: false,
+    version: 4,
+    allowedActions: [],
+    rawOutput: { outcome: 'APPROVED' }
+  };
+
+  const synced = resolveLivePlanTab(snapshotTab, sessions);
+  assert.equal(canDecideCard(synced.promptCard, 'APPROVE'), false, '受理成功后执行按钮必须消失');
+  assert.equal(canDecideCard(synced.promptCard, 'REJECT'), false, '受理成功后取消/拒绝按钮必须消失');
+  assert.equal(synced.promptCard.outcome, 'APPROVED');
+
+  // 子会话中的计划卡片同样能同步；找不到匹配卡片时回退原 Tab
+  const subVo: ToolCallVO = {
+    ...pendingVo,
+    id: 'plan-sub-1',
+    status: 'completed',
+    pending: false,
+    allowedActions: [],
+    rawOutput: { outcome: 'REJECTED' }
+  };
+  const subSessions: ChatSession[] = [
+    {
+      id: 'sess-root',
+      title: '根会话',
+      messages: [],
+      subSessions: [
+        {
+          id: 'sess-sub',
+          title: '子会话',
+          messages: [{ id: 'msg-sub', role: 'assistant', content: '', promptCards: [subVo] }]
+        }
+      ]
+    }
+  ];
+  const subTab: PlanPreviewTab = {
+    id: 'plan-sub-1',
+    title: '子计划',
+    promptCard: toPromptCardData(pendingVo)
+  };
+  subTab.promptCard.toolCallId = 'plan-sub-1';
+  const syncedSub = resolveLivePlanTab(subTab, subSessions);
+  assert.equal(canDecideCard(syncedSub.promptCard, 'REJECT'), false);
+  assert.equal(syncedSub.promptCard.outcome, 'REJECTED');
+
+  assert.equal(resolveLivePlanTab(snapshotTab, []).promptCard, snapshotTab.promptCard);
 });

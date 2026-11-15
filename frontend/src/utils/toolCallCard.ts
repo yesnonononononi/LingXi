@@ -1,4 +1,5 @@
-import type {ChatMessage, PromptCardData, ToolCallVO} from '../types/chat';
+import type {ChatMessage, ChatSession, PromptCardData, ToolCallVO} from '../types/chat';
+import type {PlanPreviewTab} from '../types/previewPanel';
 import {asObject, toText} from './json';
 import {AgentToolName} from './toolNames';
 import {t} from '../i18n';
@@ -12,7 +13,7 @@ import {t} from '../i18n';
  */
 
 /** 后端可识别的卡片形态（{@code content.kind} 的合法取值）。 */
-const KNOWN_CARD_KINDS = ['PLAN', 'CHOICE', 'COMMAND'] as const;
+const KNOWN_CARD_KINDS = ['PLAN', 'CHOICE', 'COMMAND', 'FILE_WRITE'] as const;
 
 type CardKind = PromptCardData['kind'];
 
@@ -27,18 +28,24 @@ export function resolveCardKind(content: unknown): CardKind {
 }
 
 /**
- * 工具名是否可能承载互动卡片（后端 PROMISE 形态的三种工具：计划 / 提问 / 命令审批）。
+ * 工具名是否可能承载互动卡片（后端 PROMISE 形态：计划 / 提问 / 命令审批 / 文件改动审批）。
  *
  * <p>**不包含** {@code call_sub_agent}：异步委派下该工具**不再产生 PROMISE 槽位**
  * （{@code AsyncDelegationResultRenderer} 返回受理即完成的普通 {@code success}）。
  * 若保留该判断，前端会为一个**永远不会存在**的卡片触发 {@code requestPromptCard}，
  * 进而按 {@code CARD_RETRY_MAX} 做 5 次 × 400ms 的无效重试与请求。
  * 去掉后 {@code call_sub_agent} 的工具块照常渲染（它走工具轨迹，不走卡片）。</p>
+ *
+ * <p>写类工具要在这里列出：越过工作区边界时后端会为它们挂起并产出 {@code FILE_WRITE} 卡片，
+ * 漏一个就等于「后端卡住了，前端看不见，用户永远批不了」。</p>
  */
 export function isCardToolName(toolName?: string | null): boolean {
   return toolName === AgentToolName.CreatePlan
     || toolName === AgentToolName.RequireChoice
-    || toolName === AgentToolName.ExecuteCommand;
+    || toolName === AgentToolName.ExecuteCommand
+    || toolName === AgentToolName.WriteFile
+    || toolName === AgentToolName.EditFile
+    || toolName === AgentToolName.DeleteFile;
 }
 
 /**
@@ -77,7 +84,7 @@ function resolveCardStatus(status?: string): PromptCardData['status'] {
   }
 }
 
-/** 按形态取卡片正文（PLAN 计划书 / CHOICE 问题 / COMMAND 命令）。 */
+/** 按形态取卡片正文（PLAN 计划书 / CHOICE 问题 / COMMAND 命令 / FILE_WRITE 目标路径）。 */
 function resolveCardContent(kind: CardKind, content: Record<string, any> | null): string {
   if (!content) return '';
   switch (kind) {
@@ -87,6 +94,8 @@ function resolveCardContent(kind: CardKind, content: Record<string, any> | null)
       return content.question != null ? toText(content.question) : '';
     case 'COMMAND':
       return content.command != null ? toText(content.command) : '';
+    case 'FILE_WRITE':
+      return content.path != null ? toText(content.path) : '';
     default:
       return '';
   }
@@ -120,6 +129,7 @@ export function toPromptCardData(card: ToolCallVO): PromptCardData {
     workDir: content && content.workDir != null ? toText(content.workDir) : undefined,
     shell: content && content.shell != null ? toText(content.shell) : undefined,
     command: content && content.command != null ? toText(content.command) : undefined,
+    path: content && content.path != null ? toText(content.path) : undefined,
     intention: content && content.intention != null ? toText(content.intention) : undefined,
     status: resolveCardStatus(card.status),
     version: card.version != null ? String(card.version) : undefined,
@@ -184,6 +194,7 @@ const CARD_KIND_LABEL_KEY: Record<CardKind, string> = {
   PLAN: 'card.kind.plan',
   CHOICE: 'card.kind.choice',
   COMMAND: 'card.kind.command',
+  FILE_WRITE: 'card.kind.fileWrite',
   UNAVAILABLE: 'card.kind.unavailable'
 };
 
@@ -228,4 +239,32 @@ export function buildCardSummary(card: PromptCardData): string {
   return title
     ? t('card.summaryWithTitle', { kind, title, tail })
     : t('card.summaryPlain', { kind, tail });
+}
+
+/**
+ * 按 {@code toolCallId} 从会话列表中读取最新的权威计划卡片，避免预览 Tab 持有过期快照。
+ * 找不到匹配卡片时回退原 Tab。
+ */
+export function resolveLivePlanTab(
+  tab: PlanPreviewTab,
+  sessions: readonly ChatSession[]
+): PlanPreviewTab {
+  const targetId = tab.promptCard.toolCallId;
+  if (!targetId) return tab;
+  for (const session of sessions) {
+    for (const target of [session, ...(session.subSessions || [])]) {
+      for (const message of target.messages || []) {
+        const matched = message.promptCards?.find(card => String(card.id) === targetId);
+        if (matched) {
+          const liveCard = toPromptCardData(matched);
+          return {
+            ...tab,
+            title: liveCard.title || tab.title,
+            promptCard: liveCard
+          };
+        }
+      }
+    }
+  }
+  return tab;
 }

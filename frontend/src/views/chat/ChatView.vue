@@ -537,7 +537,7 @@
 
 <script setup lang="ts">
 import type {Component} from 'vue';
-import {computed, onBeforeUnmount, onMounted, provide, ref, shallowReactive, watch} from 'vue';
+import {computed, inject, onBeforeUnmount, onMounted, provide, ref, shallowReactive, watch} from 'vue';
 import {t} from '../../i18n';
 import {isOk} from '../../utils/api';
 import {LogAPI} from '../../services/log';
@@ -652,10 +652,10 @@ const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, 
 /**
  * 预览面板的内容模式 + 项目页面预览状态。
  *
- * <p>项目页面的唯一真源是 {@link useProjectPagePreview}（由本组件持有并 provide）：
- * 面板外壳只传 `mode`，正文组件 inject 同一份状态 —— 面板被隐藏、切到文件模式都不会重置 iframe。</p>
+ * <p>优先继承应用根组件 {@code App.vue} 注入的全局浏览器实例，使已打开的网页不随
+ * 会话切换或路由切换销毁；仅在独立挂载 {@code ChatView} 的场景下回退创建本地实例。</p>
  */
-const pagePreview = useProjectPagePreview();
+const pagePreview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
 provide(PROJECT_PAGE_PREVIEW_KEY, pagePreview);
 
 const {
@@ -673,7 +673,6 @@ const {
   openFilePreviewInPanel,
   openPlanPreview,
   handleNewTabAction,
-  resetSessionPages,
 } = useUnifiedPreviewTabs({
   fileTabs,
   activeFileId,
@@ -681,6 +680,7 @@ const {
   openFilePreview,
   closeFileTab,
   pagePreview,
+  sessions: () => localSessions.value,
   t,
 });
 
@@ -915,16 +915,6 @@ const handleSidebarSessionSelect = (id: string): void => {
  * 二者需要共享同一个开关。默认收起 —— 这是辅助诊断面板，不该默认占屏。</p>
  */
 const isTokenAuditOpen = ref(false);
-
-/**
- * 切换会话或工作区必须销毁页面实例。
- *
- * <p>否则新会话会复用上一个项目页面的登录态与表单内容，隔离边界就破了（计划书阶段一验收第 5 条）。
- * 文件标签维持既有行为，不在本阶段改动。</p>
- */
-watch([localActiveId, localActiveWorkspaceId], () => {
-  resetSessionPages();
-});
 
 
 // 卡片决策提交能力：注入给深层卡片组件（PlanCard / ApprovalCard / RequireChoiceCard）

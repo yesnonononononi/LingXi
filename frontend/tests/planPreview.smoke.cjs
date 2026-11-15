@@ -17,38 +17,91 @@ app.whenReady().then(async () => {
     + Array.from({ length: 20 }, (_, index) => `### 步骤 ${index + 1}\n\n验证执行结果并记录关键依据。\n\n`).join('')
     + '计划末尾校验标记';
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
-import { ref, provide } from 'vue';
+import { computed, ref, provide } from 'vue';
 import PlanCard from '../../../src/components/chat/PlanCard.vue';
 import FilePreviewPanel from '../../../src/components/chat/FilePreviewPanel.vue';
 import { DECIDE_TOOL_CALL_KEY } from '../../../src/types/toolDecision';
 import { PLAN_PREVIEW_KEY } from '../../../src/types/previewPanel';
+import { resolveLivePlanTab, toPromptCardData } from '../../../src/utils/toolCallCard';
 import { setPreference } from '../../../src/i18n';
 import '../../../src/style.css';
 const dark = ref(false);
-const card = ref({kind:'PLAN',toolCallId:'plan-1',conversationId:'42',title:'交付计划与产物管理',content:${JSON.stringify(content)},pending:true,status:'pending',version:'7',allowedActions:['APPROVE','REJECT']});
+const sessions = ref([{
+  id: '42',
+  title: '计划会话',
+  messages: [{
+    id: 'm1',
+    role: 'assistant',
+    content: '',
+    promptCards: [{
+      id: 'plan-1',
+      type: 'PROMISE',
+      conversationId: '42',
+      status: 'pending',
+      pending: true,
+      version: '7',
+      allowedActions: ['APPROVE', 'REJECT'],
+      content: { kind: 'PLAN', title: '交付计划与产物管理', text: ${JSON.stringify(content)} }
+    }]
+  }]
+}]);
+const card = computed(() => toPromptCardData(sessions.value[0].messages[0].promptCards[0]));
 const panelOpen = ref(false);
-const planTabs = ref([]);
+const rawPlanTabs = ref([]);
+const planTabs = computed(() => rawPlanTabs.value.map(tab => resolveLivePlanTab(tab, sessions.value)));
 const unifiedTabs = ref([]);
 const activeTabKey = ref('');
 window.decisions = [];
 window.insertedTips = [];
+window.decisionDelayMs = 0;
 const onSendToChat = payload => window.insertedTips.push(payload.prompt);
-provide(DECIDE_TOOL_CALL_KEY, async payload => window.decisions.push(payload));
+provide(DECIDE_TOOL_CALL_KEY, async payload => {
+  window.decisions.push(payload);
+  if (window.decisionDelayMs > 0) {
+    await new Promise(resolve => setTimeout(resolve, window.decisionDelayMs));
+  }
+  const vo = sessions.value[0].messages[0].promptCards[0];
+  sessions.value[0].messages[0].promptCards[0] = {
+    ...vo,
+    status: 'completed',
+    pending: false,
+    allowedActions: [],
+    rawOutput: { outcome: payload.action === 'APPROVE' ? 'APPROVED' : 'REJECTED' }
+  };
+  return { commandId: 'cmd-1', decisionApplied: true, decision: payload.action, toolCall: sessions.value[0].messages[0].promptCards[0], resumeDisposition: 'RUNNING' };
+});
 provide(PLAN_PREVIEW_KEY, tab => {
-  const existing = planTabs.value.find(item => item.id === tab.id);
+  const existing = rawPlanTabs.value.find(item => item.id === tab.id);
   if (existing) {
     existing.title = tab.title;
     existing.promptCard = tab.promptCard;
   } else {
-    planTabs.value.push({ ...tab });
+    rawPlanTabs.value.push({ ...tab });
     unifiedTabs.value.push({ key: 'plan:' + tab.id, kind: 'plan', targetId: tab.id, title: tab.title });
   }
   activeTabKey.value = 'plan:' + tab.id;
   panelOpen.value = true;
 });
 window.setDark = value => { dark.value = value; document.documentElement.classList.toggle('dark', value); };
-window.completePlan = () => { Object.assign(card.value, {pending:false,status:'completed',outcome:'APPROVED',allowedActions:[]}); };
-window.updatePlan = () => { card.value.content += '\\n\\n权威正文已更新'; };
+window.resetPendingPlan = () => {
+  sessions.value[0].messages[0].promptCards[0] = {
+    id: 'plan-1',
+    type: 'PROMISE',
+    conversationId: '42',
+    status: 'pending',
+    pending: true,
+    version: '8',
+    allowedActions: ['APPROVE', 'REJECT'],
+    content: { kind: 'PLAN', title: '交付计划与产物管理', text: ${JSON.stringify(content)} }
+  };
+};
+window.updatePlan = () => {
+  const vo = sessions.value[0].messages[0].promptCards[0];
+  sessions.value[0].messages[0].promptCards[0] = {
+    ...vo,
+    content: { ...vo.content, text: vo.content.text + '\\n\\n权威正文已更新' }
+  };
+};
 window.setEnglish = () => setPreference('en-US');
 window.panelOpen = panelOpen;
 </script>
@@ -114,14 +167,28 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await run('window.updatePlan()');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-preview-content]").textContent.includes("权威正文已更新")'), true);
 
-  // 5. 点击主卡片蓝色执行按钮（不冒泡误伤）
-  await click('[data-testid=plan-execute-button]');
+  // 5. 在计划书预览面板点击「执行」：提交期间禁用，受理成功后「执行」「拒绝执行」均消失
+  await run('window.decisionDelayMs = 150');
+  await evaluate('document.querySelector("[data-testid=plan-tab-execute]").click()');
+  await evaluate('new Promise(resolve => setTimeout(resolve, 30))');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-tab-execute]")?.disabled'), true, '提交中执行按钮必须禁用');
+  assert.equal(await evaluate('document.querySelector(".plan-btn-danger")?.disabled'), true, '提交中拒绝按钮必须禁用');
+  await evaluate('new Promise(resolve => setTimeout(resolve, 200))');
+  await evaluate('window.flush()');
   assert.equal(await evaluate('window.decisions.length'), 1, '点击执行按钮应提交 APPROVE');
   assert.equal(await evaluate('window.decisions[0].action'), 'APPROVE');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-tab-execute]") === null'), true, '受理成功后预览面板执行按钮必须消失');
+  assert.equal(await evaluate('document.querySelector(".plan-btn-danger") === null'), true, '受理成功后预览面板拒绝按钮必须消失');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-execute-button]") === null'), true, '已决态主卡片不再显示执行按钮');
 
-  // 6. 已决态更新
-  await run('window.completePlan()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=plan-execute-button]") === null'), true, '已决态不再显示执行按钮');
+  // 6. 重置为待审后在预览面板点击「拒绝执行」：受理成功后按钮同样消失
+  await run('window.decisionDelayMs = 0; window.resetPendingPlan()');
+  assert.equal(await evaluate('document.querySelector(".plan-btn-danger") !== null'), true, '重置为待审后应重新显示拒绝按钮');
+  await click('.plan-btn-danger');
+  assert.equal(await evaluate('window.decisions.length'), 2);
+  assert.equal(await evaluate('window.decisions[1].action'), 'REJECT');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-tab-execute]") === null'), true, '拒绝受理成功后执行按钮必须消失');
+  assert.equal(await evaluate('document.querySelector(".plan-btn-danger") === null'), true, '拒绝受理成功后拒绝按钮必须消失');
   assert.deepEqual(await evaluate('window.runtimeErrors'), [], '不得出现运行时错误');
 
   clearTimeout(deadline);

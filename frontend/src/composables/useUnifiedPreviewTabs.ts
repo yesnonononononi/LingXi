@@ -1,4 +1,5 @@
 import {computed, ref, watch, type Ref} from 'vue';
+import type {ChatSession} from '../types/chat';
 import type {FilePreviewOpenRequest, FilePreviewTab} from '../types/filePreview';
 import type {ProjectPagePreviewApi} from '../types/projectPagePreview';
 import type {
@@ -7,6 +8,7 @@ import type {
   PlanPreviewTab,
   UnifiedPreviewTab,
 } from '../types/previewPanel';
+import {resolveLivePlanTab} from '../utils/toolCallCard';
 
 export interface UseUnifiedPreviewTabsOptions {
   fileTabs: Ref<FilePreviewTab[]>;
@@ -15,6 +17,7 @@ export interface UseUnifiedPreviewTabsOptions {
   openFilePreview: (request: FilePreviewOpenRequest) => void;
   closeFileTab: (id: string) => void;
   pagePreview: ProjectPagePreviewApi;
+  sessions?: () => readonly ChatSession[];
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -26,6 +29,7 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
     openFilePreview,
     closeFileTab,
     pagePreview,
+    sessions,
     t,
   } = options;
 
@@ -34,6 +38,10 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
   const designTabs = ref<DesignPreviewTab[]>([]);
   const planTabs = ref<PlanPreviewTab[]>([]);
   const newTabs = ref<NewPreviewTab[]>([]);
+
+  const livePlanTabs = computed<PlanPreviewTab[]>(() =>
+    sessions ? planTabs.value.map(tab => resolveLivePlanTab(tab, sessions())) : planTabs.value
+  );
 
   const previewPanelOpen = ref(false);
   const panelMounted = ref(false);
@@ -85,9 +93,10 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
   // 同步浏览页面标签增删（来自 Electron 主进程状态）
   watch(
     () => pagePreview.tabs.value.map(tab => tab.id),
-    (ids, prevIds = []) => {
+    (ids, prevIds) => {
+      const isInitialSync = prevIds === undefined;
       const idSet = new Set(ids);
-      const prevSet = new Set(prevIds);
+      const prevSet = new Set(prevIds ?? []);
       const added = ids.filter(id => !prevSet.has(id));
 
       for (const id of added) {
@@ -112,7 +121,18 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
         ensureInOrder(`page:${id}`);
       }
       tabOrder.value = tabOrder.value.filter(key => !key.startsWith('page:') || idSet.has(key.slice(5)));
-    }
+
+      if (isInitialSync && ids.length > 0) {
+        const activeId = pagePreview.activeTabId.value;
+        if (activeId && idSet.has(activeId)) {
+          activeTabKey.value = `page:${activeId}`;
+        }
+        if (pagePreview.open.value) {
+          showPreviewPanel();
+        }
+      }
+    },
+    {immediate: true}
   );
 
   watch(
@@ -143,7 +163,7 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
     const fileMap = new Map(fileTabs.value.map(tab => [`file:${tab.id}`, tab]));
     const pageMap = new Map(pagePreview.tabs.value.map(tab => [`page:${tab.id}`, tab]));
     const designMap = new Map(designTabs.value.map(tab => [`design:${tab.id}`, tab]));
-    const planMap = new Map(planTabs.value.map(tab => [`plan:${tab.id}`, tab]));
+    const planMap = new Map(livePlanTabs.value.map(tab => [`plan:${tab.id}`, tab]));
     const newMap = new Map(newTabs.value.map(tab => [`new:${tab.id}`, tab]));
 
     const result: UnifiedPreviewTab[] = [];
@@ -336,7 +356,7 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
     unifiedTabs,
     activeTabKey,
     designTabs,
-    planTabs,
+    planTabs: livePlanTabs,
     showPreviewPanel,
     togglePreviewPanel,
     closePreviewPanel,
