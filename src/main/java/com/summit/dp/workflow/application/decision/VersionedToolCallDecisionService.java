@@ -7,7 +7,6 @@ import com.summit.dp.toolcall.api.dto.ToolCallDecisionReceipt;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;
-import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +28,7 @@ public class VersionedToolCallDecisionService {
     private final ToolCallConverter converter;
     private final InteractionDecisionEngine engine;
     private final VersionedDecisionContract contract;
+    private final ApprovalKindHandlers approvalHandlers;
 
     /**
      * 受理一次 v2 决策。
@@ -47,14 +47,15 @@ public class VersionedToolCallDecisionService {
     /**
      * 把 v2 请求转成统一决议输入。
      *
-     * <p>形态要从卡片读出：命令有外部副作用，必须走两阶段形态，不能与立即形态混用一条事务边界。</p>
+     * <p>形态要从卡片读出：有外部副作用的形态必须走两阶段，不能与立即形态混用一条事务边界。
+     * 哪些形态属于这一类由处理器注册表回答。</p>
      */
     private SlotDecisionCommand toDecision(
             ToolCallDecisionCommand command, String digest) {
         ToolCall located = toolCallRepository.findById(command.toolCallId()).orElseThrow(ClientException::new);
-        boolean isCommand = converter.resolveKind(located.getContent()) == ToolCallKind.COMMAND;
-        return isCommand
-                ? new CommandDecision(command.conversationId(), command.toolCallId(), command.commandId(),
+        boolean twoPhase = approvalHandlers.supports(converter.resolveKind(located.getContent()));
+        return twoPhase
+                ? new TwoPhaseDecision(command.conversationId(), command.toolCallId(), command.commandId(),
                         command.expectedVersion(), command.action(), digest, ResumeIntent.COORDINATOR, null)
                 : new ImmediateDecision(command.conversationId(), command.toolCallId(), command.commandId(),
                         command.expectedVersion(), command.action(), command.text(), digest,

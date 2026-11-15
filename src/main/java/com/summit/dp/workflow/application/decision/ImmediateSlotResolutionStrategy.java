@@ -38,7 +38,7 @@ public final class ImmediateSlotResolutionStrategy implements SlotResolutionStra
         return switch (command) {
             case ChoiceBatchDecision batch -> prepareBatch(execution, cards, batch, contract);
             case ImmediateDecision single -> List.of(prepareSingle(execution, cards.getFirst(), single, contract));
-            case CommandDecision ignored -> List.of();
+            case TwoPhaseDecision ignored -> List.of();
         };
     }
 

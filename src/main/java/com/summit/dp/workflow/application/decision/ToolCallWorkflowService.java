@@ -18,7 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * v1 决策入口：只做输入/输出转换与流管理，业务一律交给统一引擎。
  *
- * <p><b>命令为什么必须单独一条</b>：v1 命令要求「先建流、再提交、恢复落定才关流」。
+ * <p><b>两阶段形态为什么必须单独一条</b>：v1 要求「先建流、再提交、恢复落定才关流」。
  * 受理闸门、幂等三态、执行态与形态判定全部由 {@link InteractionDecisionEngine} 承担 ——
  * 这里只保留建流、提交与异常收尾三件事，绝不再自建第二套校验。</p>
  */
@@ -32,6 +32,7 @@ public class ToolCallWorkflowService {
     private final InteractionDecisionEngine engine;
     private final ToolCallDecisionService decisionService;
     private final ReactiveDecisionContract contract;
+    private final ApprovalKindHandlers approvalHandlers;
 
     /** v1 请求级 SSE：命令审批在提交前先建流，恢复期事件与命令输出经它下发。 */
     private final SseEventPublisher sseEventPublisher;
@@ -51,24 +52,26 @@ public class ToolCallWorkflowService {
         ToolCallKind kind = converter.resolveKind(located.getContent());
         // 形态必须先判：它决定走哪条链路，也决定「不可识别 / 无需审批」这两条旧文案。
         throwIf(kind == null, "互动内容不可识别，请刷新后重试");
-        throwIf(kind != ToolCallKind.PLAN && kind != ToolCallKind.CHOICE && kind != ToolCallKind.COMMAND,
+        // 哪些形态要两阶段审批由处理器注册表回答，入口不再维护第二份清单。
+        boolean twoPhase = approvalHandlers.supports(kind);
+        throwIf(kind != ToolCallKind.PLAN && kind != ToolCallKind.CHOICE && !twoPhase,
                 "该工具调用无需人工审批，子代理结果会自动回填");
-        if (kind != ToolCallKind.COMMAND) {
+        if (!twoPhase) {
             // 普通互动：归属、准备中、已处理、活跃执行与执行态全部由引擎按 v1 契约判定。
             return decisionService.decide(located, approved, text);
         }
-        return decideCommand(conversationId, located, approved);
+        return decideApproval(conversationId, located, approved);
     }
 
-    /** 命令审批：建流 → 交给统一引擎（T1/T2 与恢复全在引擎与策略里）→ 落定回调关流。 */
-    private SseEmitter decideCommand(Long conversationId, ToolCall located, boolean approved) {
+    /** 两阶段审批：建流 → 交给统一引擎（T1/T2 与恢复全在引擎与策略里）→ 落定回调关流。 */
+    private SseEmitter decideApproval(Long conversationId, ToolCall located, boolean approved) {
         // 先建流再提交：恢复请求在 T1 提交后立刻派发，此时必须已经有连接可接事件。
         SseEmitter emitter = sseEventPublisher.connect(
                 executionLocator.resolveRootSessionId(located.getConversationId()));
         DecisionReceipt receipt;
         try {
             ToolCallAction action = approved ? ToolCallAction.APPROVE : ToolCallAction.REJECT;
-            receipt = engine.decide(new CommandDecision(located.getConversationId(), located.getId(), null, null,
+            receipt = engine.decide(new TwoPhaseDecision(located.getConversationId(), located.getId(), null, null,
                     action,
                     CommandDigest.build(located.getId(), located.getConversationId(), located.getVersion(),
                             action.wireValue(), null),

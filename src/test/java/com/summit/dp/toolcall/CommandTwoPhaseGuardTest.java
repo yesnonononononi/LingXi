@@ -106,8 +106,8 @@ class CommandTwoPhaseGuardTest {
     private InteractionDecisionEngine engine;
     private ToolCallWorkflowService workflowService;
     private VersionedToolCallDecisionService versionedService;
-    private TwoPhaseCommandResolutionStrategy commandStrategy;
-    private CommandApprovalExecutor executor;
+    private TwoPhaseApprovalStrategy commandStrategy;
+    private TwoPhaseApprovalExecutor executor;
     private ExecutionResumeCoordinator coordinator;
     private RecordingSseEventPublisher sse;
     private CountingCommandExecutor command;
@@ -206,25 +206,25 @@ class CommandTwoPhaseGuardTest {
                 new UnresolvedToolSuspensionGate(tools), provider(executions), provider(activity),
                 new StartupFailureCloser(executionControl));
         coordinators.add(coordinator);
-        executor = new CommandApprovalExecutor(tools, converter, transactions, provider(executionControl),
+        executor = new TwoPhaseApprovalExecutor(tools, converter, transactions, provider(executionControl),
                 provider(executions),
-                new CommandOutcomeResolver(converter, mock(RuntimeEventPublisher.class)),
+                new ApprovedCallResolver(mock(RuntimeEventPublisher.class)),
                 new ApprovalFinalizer(tools, converter, contexts, mock(RuntimeEventPublisher.class),
                         transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(coordinator)),
                 new UnresolvedToolSuspensionGate(tools),
-                new ApprovedCommandRestorer(mapper, workspaces, provider(registry)),
+                commandHandlers(),
                 contexts, new CoordinatorResumeAcceptance(coordinator), new ManagedAsyncExecutor());
-        commandStrategy = new TwoPhaseCommandResolutionStrategy(executor, tools, converter);
+        commandStrategy = new TwoPhaseApprovalStrategy(executor, tools, converter);
         engine = new InteractionDecisionEngine(tools, converter, provider(executions), contexts, transactions,
                 new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools),
                 new ImmediateSlotResolutionStrategy(converter, mock(ChoiceAnswersValidator.class), tools),
-                commandStrategy);
+                commandStrategy, commandHandlers());
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executions), provider(activity))));
         workflowService = new ToolCallWorkflowService(tools, converter, engine,
-                new ToolCallDecisionService(locator(), sse, engine, reactive), reactive, sse, locator());
+                new ToolCallDecisionService(locator(), sse, engine, reactive), reactive, commandHandlers(), sse, locator());
         versionedService = new VersionedToolCallDecisionService(tools, converter, engine,
-                new VersionedDecisionContract(converter));
+                new VersionedDecisionContract(converter), commandHandlers());
     }
 
     // ------------------------------------------------------------------
@@ -316,13 +316,13 @@ class CommandTwoPhaseGuardTest {
     @Test
     @DisplayName("4) 派发被拒：执行收为 FAILED、控制槽位释放、v1 流关闭、不重跑命令")
     void dispatchRejectedSettlesExecutionAndClosesStream() {
-        CommandApprovalExecutor rejecting = new CommandApprovalExecutor(tools, converter, transactions,
+        TwoPhaseApprovalExecutor rejecting = new TwoPhaseApprovalExecutor(tools, converter, transactions,
                 provider(executionControl), provider(executions),
-                new CommandOutcomeResolver(converter, mock(RuntimeEventPublisher.class)),
+                new ApprovedCallResolver(mock(RuntimeEventPublisher.class)),
                 new ApprovalFinalizer(tools, converter, contexts, mock(RuntimeEventPublisher.class),
                         transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(coordinator)),
                 new UnresolvedToolSuspensionGate(tools),
-                new ApprovedCommandRestorer(mapper, workspaces, provider(registry)),
+                commandHandlers(),
                 contexts, new CoordinatorResumeAcceptance(coordinator), new ManagedAsyncExecutor()) {
             @Override
             protected void dispatchAsync(Runnable task) {
@@ -398,13 +398,13 @@ class CommandTwoPhaseGuardTest {
     @DisplayName("7) 冷重建（T1 已落库、进程崩溃）：不重跑命令，执行按不确定失败收口")
     void coldRebuildDoesNotReplayCommand() {
         // 崩溃模拟：T1 提交成功，但收尾任务永远没跑起来（dispatch 不派发）。
-        CommandApprovalExecutor crashing = new CommandApprovalExecutor(tools, converter, transactions,
+        TwoPhaseApprovalExecutor crashing = new TwoPhaseApprovalExecutor(tools, converter, transactions,
                 provider(executionControl), provider(executions),
-                new CommandOutcomeResolver(converter, mock(RuntimeEventPublisher.class)),
+                new ApprovedCallResolver(mock(RuntimeEventPublisher.class)),
                 new ApprovalFinalizer(tools, converter, contexts, mock(RuntimeEventPublisher.class),
                         transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(coordinator)),
                 new UnresolvedToolSuspensionGate(tools),
-                new ApprovedCommandRestorer(mapper, workspaces, provider(registry)),
+                commandHandlers(),
                 contexts, new CoordinatorResumeAcceptance(coordinator), new ManagedAsyncExecutor()) {
             @Override
             protected void dispatchAsync(Runnable task) {
@@ -517,20 +517,27 @@ class CommandTwoPhaseGuardTest {
     // 装配辅助
     // ------------------------------------------------------------------
 
+    /** 命令形态的处理器注册表：本用例只跑命令审批这条链。 */
+    private ApprovalKindHandlers commandHandlers() {
+        ApprovedCommandRestorer restorer = new ApprovedCommandRestorer(mapper,
+                new ApprovalWorkspaceResolver(workspaces), provider(registry));
+        return new ApprovalKindHandlers(new CommandApprovalHandler(restorer, converter));
+    }
+
     /** 把新的编排器接回引擎与两个入口：故障注入只换一个协作方，别的都不动。 */
-    private void rebind(CommandApprovalExecutor replacement) {
+    private void rebind(TwoPhaseApprovalExecutor replacement) {
         this.executor = replacement;
-        commandStrategy = new TwoPhaseCommandResolutionStrategy(replacement, tools, converter);
+        commandStrategy = new TwoPhaseApprovalStrategy(replacement, tools, converter);
         engine = new InteractionDecisionEngine(tools, converter, provider(executions), contexts, transactions,
                 new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools),
                 new ImmediateSlotResolutionStrategy(converter, mock(ChoiceAnswersValidator.class), tools),
-                commandStrategy);
+                commandStrategy, commandHandlers());
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executions), provider(activity))));
         workflowService = new ToolCallWorkflowService(tools, converter, engine,
-                new ToolCallDecisionService(locator(), sse, engine, reactive), reactive, sse, locator());
+                new ToolCallDecisionService(locator(), sse, engine, reactive), reactive, commandHandlers(), sse, locator());
         versionedService = new VersionedToolCallDecisionService(tools, converter, engine,
-                new VersionedDecisionContract(converter));
+                new VersionedDecisionContract(converter), commandHandlers());
     }
 
     /** 一条挂起执行 + 一张待批命令卡；命令快照与工作空间桩完全对得上。 */

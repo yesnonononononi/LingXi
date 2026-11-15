@@ -156,7 +156,8 @@ class ToolCallDecisionAsyncContractTest {
                 unresolvedGate,
                 new ImmediateSlotResolutionStrategy(converter,
                         new ChoiceAnswersValidator(new ObjectMapper(), mock(MessageRepository.class)), toolCallRepository),
-                new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), toolCallRepository, converter));
+                new TwoPhaseApprovalStrategy(mock(TwoPhaseApprovalExecutor.class), toolCallRepository, converter),
+                new ApprovalKindHandlers(new CommandApprovalHandler(mock(ApprovedCommandRestorer.class), converter)));
         return new ToolCallDecisionService(executionLocator, sseEventPublisher, engine, contract);
     }
 

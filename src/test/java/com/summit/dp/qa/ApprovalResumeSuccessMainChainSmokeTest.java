@@ -144,14 +144,16 @@ class ApprovalResumeSuccessMainChainSmokeTest {
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
                 new ChoiceAnswersValidator(mapper, new SessionMessageRepositoryImpl(
                         session.getMapper(SessionMessageMapper.class), session.getMapper(SessionMapper.class))), tools);
-        TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
-                mock(CommandApprovalExecutor.class), tools, converter);
+        TwoPhaseApprovalStrategy commandStrategy = new TwoPhaseApprovalStrategy(
+                mock(TwoPhaseApprovalExecutor.class), tools, converter);
+        ApprovalKindHandlers approvalHandlers = new ApprovalKindHandlers(new CommandApprovalHandler(
+                mock(ApprovedCommandRestorer.class), converter));
         engine = new InteractionDecisionEngine(tools, converter,
                 ExecutionRepositoryTestFactory.provider(executions), contexts, transactions,
                 new CoordinatorResumeAcceptance(coordinator),
-                new UnresolvedToolSuspensionGate(tools), immediate, commandStrategy);
+                new UnresolvedToolSuspensionGate(tools), immediate, commandStrategy, approvalHandlers);
         versionedService = new VersionedToolCallDecisionService(tools, converter, engine,
-                new VersionedDecisionContract(converter));
+                new VersionedDecisionContract(converter), approvalHandlers);
         runtime = runtime(executionControl);
     }
 

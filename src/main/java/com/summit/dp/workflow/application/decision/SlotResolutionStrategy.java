@@ -13,7 +13,7 @@ import java.util.List;
  * 引擎按穷尽 switch 分派 —— 不用按 {@code Class} 查注册表。</p>
  */
 public sealed interface SlotResolutionStrategy
-        permits ImmediateSlotResolutionStrategy, TwoPhaseCommandResolutionStrategy {
+        permits ImmediateSlotResolutionStrategy, TwoPhaseApprovalStrategy {
 
     /**
      * 计算本批槽位决议。<b>只读不写库</b>：全部校验通过之前不得产生任何副作用。

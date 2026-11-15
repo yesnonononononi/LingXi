@@ -72,7 +72,7 @@ import static org.mockito.Mockito.*;
 /**
  * 决策链路回归：{@code PLAN} 单事务收尾 + {@code COMMAND} 两段式执行 + 幂等。
  *
- * <p>由旧 {@code InteractionCommandDecisionTest} / {@code CommandApprovalServiceTest} 演进而来，
+ * <p>由旧 {@code InteractionTwoPhaseDecisionTest} / {@code CommandApprovalServiceTest} 演进而来，
  * 覆盖用户决策落定、执行恢复、以及「已处理不再重复执行」的不可逆保护。</p>
  */
 class ToolCallDecisionTest {
@@ -126,15 +126,18 @@ class ToolCallDecisionTest {
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
         ToolCallConverter converter = new ToolCallConverter(mapper);
-        CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
+        ApprovalKindHandlers approvalHandlers = new ApprovalKindHandlers(new CommandApprovalHandler(
+                new ApprovedCommandRestorer(mapper, new ApprovalWorkspaceResolver(workspaces), provider(toolRegistry)),
+                converter));
+        TwoPhaseApprovalExecutor commandApprovalExecutor = new TwoPhaseApprovalExecutor(toolCallRepository,
                 converter, transactions,
                 provider(executionControl), provider(executionRepository),
-                new CommandOutcomeResolver(converter, runtimeEvents),
+                new ApprovedCallResolver(runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer,
                         new CoordinatorResumeAcceptance(coordinator(resumer))),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
-                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
+                approvalHandlers,
                 modelContextService,
                 new CoordinatorResumeAcceptance(coordinator(resumer)),
                 asyncExecutor);
@@ -145,14 +148,14 @@ class ToolCallDecisionTest {
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
                 new ChoiceAnswersValidator(mapper, mock(MessageRepository.class)),
                 toolCallRepository);
-        TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
+        TwoPhaseApprovalStrategy commandStrategy = new TwoPhaseApprovalStrategy(
                 commandApprovalExecutor, toolCallRepository, converter);
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
                 provider(executionRepository), modelContextService, transactions, new CoordinatorResumeAcceptance(coordinator(resumer)),
-                new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
+                new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy, approvalHandlers);
         service = new ToolCallWorkflowService(toolCallRepository, converter, engine,
                 new ToolCallDecisionService(executionIdentity, sseEventPublisher, engine, contract),
-                contract, sseEventPublisher, executionIdentity);
+                contract, approvalHandlers, sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
         when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any(), any())).thenReturn(resumeTask());
         when(resumeTaskRepository.findByExecutionId(3L)).thenReturn(List.of(resumeTask()));

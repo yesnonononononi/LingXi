@@ -127,26 +127,29 @@ class VersionedToolCallDecisionTest {
         resumer = new SuspendedExecutionResumer(new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
         ToolCallConverter converter = new ToolCallConverter(mapper);
-        CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
+        ApprovalKindHandlers approvalHandlers = new ApprovalKindHandlers(new CommandApprovalHandler(
+                new ApprovedCommandRestorer(mapper, new ApprovalWorkspaceResolver(workspaces), provider(toolRegistry)),
+                converter));
+        TwoPhaseApprovalExecutor commandApprovalExecutor = new TwoPhaseApprovalExecutor(toolCallRepository,
                 converter, transactions,
                 provider(executionControl), provider(executionRepository),
-                new CommandOutcomeResolver(converter, runtimeEvents),
+                new ApprovedCallResolver(runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(resumeCoordinator)),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
-                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
+                approvalHandlers,
                 modelContextService,
                 new CoordinatorResumeAcceptance(resumeCoordinator),
                 asyncExecutor);
         VersionedDecisionContract contract = new VersionedDecisionContract(converter);
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
                 new ChoiceAnswersValidator(mapper, mock(MessageRepository.class)), toolCallRepository);
-        TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
+        TwoPhaseApprovalStrategy commandStrategy = new TwoPhaseApprovalStrategy(
                 commandApprovalExecutor, toolCallRepository, converter);
         InteractionDecisionEngine engine = new InteractionDecisionEngine(toolCallRepository, converter,
                 provider(executionRepository), modelContextService, transactions, new CoordinatorResumeAcceptance(resumeCoordinator),
-                new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy);
-        service = new VersionedToolCallDecisionService(toolCallRepository, converter, engine, contract);
+                new UnresolvedToolSuspensionGate(toolCallRepository), immediate, commandStrategy, approvalHandlers);
+        service = new VersionedToolCallDecisionService(toolCallRepository, converter, engine, contract, approvalHandlers);
     }
 
     // ------------------------------------------------------------------

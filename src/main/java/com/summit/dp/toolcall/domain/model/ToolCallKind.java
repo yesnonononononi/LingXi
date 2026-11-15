@@ -12,6 +12,8 @@ public enum ToolCallKind {
     PLAN,
     CHOICE,
     COMMAND,
+    /** 文件改动越界审批：批准后按快照重放那次写类工具调用。 */
+    FILE_WRITE,
     EXECUTE;
 
     /** 宽松解析；识别不了返回 {@code null}（降级为「状态不可用」，不抛异常）。 */

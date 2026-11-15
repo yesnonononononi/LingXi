@@ -175,13 +175,17 @@ test('B4 对照：真实 PLAN 卡片仍走 PLAN 分支（确认不可用态不�
   assert.doesNotMatch(text(root), /卡片状态不可用/);
 });
 
-test('B5 isCardToolName：仅三种 PROMISE 工具建卡；call_sub_agent 不再建卡', () => {
+test('B5 isCardToolName：三类 PROMISE 建卡（计划/提问/审批）+ 写类工具越界审批建卡；call_sub_agent 不建卡', () => {
   const { isCardToolName } = util('utils/toolCallCard.ts');
   const { AgentToolName } = util('utils/toolNames.ts');
   assert.equal(isCardToolName(AgentToolName.CreatePlan), true);
   assert.equal(isCardToolName(AgentToolName.RequireChoice), true);
   assert.equal(isCardToolName(AgentToolName.ExecuteCommand), true);
+  // 写类工具越过工作区边界时后端会挂起并产出 FILE_WRITE 卡；漏一个等于「后端卡住、前端看不见」
+  assert.equal(isCardToolName(AgentToolName.WriteFile), true, '越界写审批必须能请求到卡片');
+  assert.equal(isCardToolName(AgentToolName.EditFile), true, '越界改审批必须能请求到卡片');
+  assert.equal(isCardToolName(AgentToolName.DeleteFile), true, '越界删审批必须能请求到卡片');
   assert.equal(isCardToolName(AgentToolName.CallSubAgent), false, '异步委派不产生 PROMISE 槽位，不得建卡');
-  assert.equal(isCardToolName(AgentToolName.ReadFile), false);
+  assert.equal(isCardToolName(AgentToolName.ReadFile), false, '读文件不产生审批卡');
   assert.equal(isCardToolName(undefined), false);
 });

@@ -114,7 +114,8 @@ class ChoiceAnswersServiceTest {
         InteractionDecisionEngine engine = new InteractionDecisionEngine(tools, converter, provider, contexts,
                 transactions, new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools),
                 new ImmediateSlotResolutionStrategy(converter, validator, tools),
-                new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), tools, converter));
+                new TwoPhaseApprovalStrategy(mock(TwoPhaseApprovalExecutor.class), tools, converter),
+                new ApprovalKindHandlers(new CommandApprovalHandler(mock(ApprovedCommandRestorer.class), converter)));
         service = new ChoiceAnswersService(validator, engine, contract);
         seed();
     }

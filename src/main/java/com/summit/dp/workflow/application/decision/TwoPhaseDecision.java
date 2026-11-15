@@ -6,10 +6,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 命令决议：有外部副作用，走两阶段（T1 提交先于执行、T2 落结果）。
+ * 两阶段决议：有外部副作用，走两阶段（T1 提交先于执行、T2 落结果）。
  *
- * <p>与 {@link ImmediateDecision} 分开成型，是因为它的事务边界不同 —— 命令有两段事务：
+ * <p>与 {@link ImmediateDecision} 分开成型，是因为它的事务边界不同 —— 两阶段有两段事务：
  * T1 由引擎的 commit 打开，T2 由收尾段打开，外部副作用夹在两者之间。</p>
+ *
+ * <p>哪一种卡片形态走本决议由 {@code ApprovalKindHandlers} 决定（命令、文件改动都是），
+ * 因此本记录只承载「批不批、批的是哪一张」。</p>
  *
  * @param conversationId 会话 id，可为空
  * @param toolCallId     目标卡片
@@ -20,7 +23,7 @@ import java.util.Map;
  * @param resumeIntent   恢复由谁登记
  * @param settledCallback 落定回调；记录组件自带访问器，直接满足 {@link SlotDecisionCommand}
  */
-public record CommandDecision(
+public record TwoPhaseDecision(
         Long conversationId,
         String toolCallId,
         String commandId,

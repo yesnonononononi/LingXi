@@ -45,6 +45,9 @@ public final class ToolCallKeys {
     /** COMMAND 卡片：执行意图，从模型 args 提取后提到载荷顶层，供审批卡直接展示。 */
     public static final String INTENTION = "intention";
 
+    /** FILE_WRITE 卡片：待改动的目标路径（模型原始 arg，未做解析）。 */
+    public static final String PATH = "path";
+
     // ------------------------------------------------------------------
     // raw_input：输入载荷
     // ------------------------------------------------------------------

@@ -10,7 +10,6 @@ import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
 import com.summit.dp.toolcall.domain.model.ToolCall;
-import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptancePort;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
@@ -35,8 +34,8 @@ import java.util.stream.Collectors;
  * 策略算槽位 → 单事务写入 → 统一回执。锁内重读不能省：等门闩期间对方可能已落定结论。</p>
  *
  * <p>正确性来自 {@code tool_call} 的条件更新（{@code eq(version)}），进程内门闩只减少无谓竞争，
- * 多进程下不成立。命令副作用、SSE 连接与命令环境重建不在本类，见
- * {@link TwoPhaseCommandResolutionStrategy} 与各入口适配器。</p>
+ * 多进程下不成立。外部副作用、SSE 连接与环境重建不在本类，见
+ * {@link TwoPhaseApprovalStrategy} 与各入口适配器。</p>
  */
 @Slf4j
 @Service
@@ -51,7 +50,8 @@ public class InteractionDecisionEngine {
     private final ResumeAcceptancePort resumeAcceptance;
     private final UnresolvedToolSuspensionGate unresolvedToolGate;
     private final ImmediateSlotResolutionStrategy immediate;
-    private final TwoPhaseCommandResolutionStrategy twoPhase;
+    private final TwoPhaseApprovalStrategy twoPhase;
+    private final ApprovalKindHandlers approvalHandlers;
 
     /**
      * 受理一次决策。
@@ -95,8 +95,8 @@ public class InteractionDecisionEngine {
         Execution execution = requireSuspendedExecution(target, contract);
         SlotResolutionStrategy strategy = strategyFor(target);
         return switch (strategy) {
-            case TwoPhaseCommandResolutionStrategy commandStrategy ->
-                    decideTwoPhase(commandStrategy, target, (CommandDecision) command, contract);
+            case TwoPhaseApprovalStrategy twoPhaseStrategy ->
+                    decideTwoPhase(twoPhaseStrategy, target, (TwoPhaseDecision) command, contract);
             case ImmediateSlotResolutionStrategy ignored -> {
                 List<SlotResolutionItem> items =
                         this.immediate.prepareSlotResolutions(execution, cards, command, contract);
@@ -108,11 +108,11 @@ public class InteractionDecisionEngine {
     /**
      * 命令形态：T1（引擎事务）→ 提交后派发锁外副作用 → T2 由收尾段落结果。
      *
-     * <p>顺序不可调换：T1 必须早于副作用（否则崩溃重启会静默重放已产生副作用的命令），
+     * <p>顺序不可调换：T1 必须早于副作用（否则崩溃重启会静默重放已产生副作用的调用），
      * T2 必须与真实输出同批提交（否则「执行过但没落库」会被当成失败重跑）。</p>
      */
-    private DecisionReceipt decideTwoPhase(TwoPhaseCommandResolutionStrategy strategy, ToolCall card,
-                                           CommandDecision command, DecisionEntryContract contract) {
+    private DecisionReceipt decideTwoPhase(TwoPhaseApprovalStrategy strategy, ToolCall card,
+                                           TwoPhaseDecision command, DecisionEntryContract contract) {
         ApprovalPlan plan = strategy.prepare(card, command, contract, command.settledCallback());
         ResumeDisposition[] disposition = new ResumeDisposition[1];
         try {
@@ -186,9 +186,9 @@ public class InteractionDecisionEngine {
                 cards.stream().map(converter::toVO).toList(), readDisposition(cards.getFirst()));
     }
 
-    /** 形态决定策略：密封类型加穷尽 switch，不按 Class 查注册表。 */
+    /** 形态决定策略：密封类型加穷尽 switch；哪些形态走两阶段由处理器注册表回答。 */
     private SlotResolutionStrategy strategyFor(ToolCall card) {
-        return converter.resolveKind(card.getContent()) == ToolCallKind.COMMAND ? this.twoPhase : this.immediate;
+        return approvalHandlers.supports(converter.resolveKind(card.getContent())) ? this.twoPhase : this.immediate;
     }
 
     /**

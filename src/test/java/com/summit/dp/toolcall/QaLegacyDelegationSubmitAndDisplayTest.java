@@ -54,7 +54,7 @@ class QaLegacyDelegationSubmitAndDisplayTest {
     @DisplayName("B2 遗留 DELEGATION 未决槽位提交决策：被干净拒绝（ClientException），不 NPE、不写状态")
     void legacyDelegationSlotIsRejectedCleanlyOnSubmit() {
         ToolCallRepository repository = mock(ToolCallRepository.class);
-        CommandApprovalExecutor commandExecutor = mock(CommandApprovalExecutor.class);
+        TwoPhaseApprovalExecutor commandExecutor = mock(TwoPhaseApprovalExecutor.class);
         ToolCallDecisionService decisionService = mock(ToolCallDecisionService.class);
         SseEventPublisher sse = mock(SseEventPublisher.class);
         ExecutionLocator identity = mock(ExecutionLocator.class);
@@ -66,10 +66,10 @@ class QaLegacyDelegationSubmitAndDisplayTest {
         ReactiveDecisionContract contract = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new HarnessExecutionGate(provider(mock(ExecutionRepository.class)),
                         provider(mock(ExecutionActivity.class)))));
-        // 命令形态不进这条链路（用例验的是「不可识别形态」），引擎只需要存在。
+        // 命令/文件改动形态都不进这条链路（用例验的是「不可识别形态」），引擎只需要存在。
         InteractionDecisionEngine engine = mock(InteractionDecisionEngine.class);
         ToolCallWorkflowService service = new ToolCallWorkflowService(repository, converter, engine, decisionService,
-                contract, sse, identity);
+                contract, new ApprovalKindHandlers(), sse, identity);
 
         ClientException failure = assertThrows(ClientException.class,
                 () -> service.decide(2L, legacy.getId(), true, "批准"),

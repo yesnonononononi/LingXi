@@ -27,11 +27,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Objects;
 
 /**
- * 命令审批的事务 T2：把命令输出写回执行末条 tool 消息与 {@code tool_call} 行，
+ * 审批的事务 T2：把真实输出写回执行末条 tool 消息与 {@code tool_call} 行，
  * 再回写模型上下文，随后广播工具结束事件，并在无未决槽位时恢复执行。
  *
- * <p>T1 在 {@code CommandApprovalExecutor}，副作用在 {@code CommandOutcomeResolver}，T2 在这里。
- * 三段分处三类，「提交先于副作用」这条不变量才在调用链上一眼可见，不会被后人把命令挪到 T1 之前。</p>
+ * <p>T1 在 {@code TwoPhaseApprovalExecutor}，副作用在 {@code ApprovedCallResolver}，T2 在这里。
+ * 三段分处三类，「提交先于副作用」这条不变量才在调用链上一眼可见，不会被后人把副作用挪到 T1 之前。</p>
  */
 @Slf4j
 @Component
@@ -52,11 +52,11 @@ public class ApprovalFinalizer {
      *
      * <p>顺序不可调换：先提交 T2 再广播结束事件，提前广播会让前端先看到「已完成」而后端尚未提交，刷新即回退。</p>
      *
-     * @param cancelRequired 调用方求得的取消标志；命令执行期间可能被异步置位，
-     *                       故与 {@code command.outcome()} 分开传入而非从结论推导
+     * @param cancelRequired 调用方求得的取消标志；调用执行期间可能被异步置位，
+     *                       故与 {@code execution.outcome()} 分开传入而非从结论推导
      */
     public void commitOutcome(ToolCall toolCall, Execution execution, ToolMessageEntity message,
-                              ToolExecution call, CommandOutcomeResolver.CommandExecution command,
+                              ToolExecution call, ApprovedCallResolver.ToolCallExecution command,
                               long conversationId, boolean cancelRequired) {
         ApprovalOutcome approvalOutcome = cancelRequired
                 ? ApprovalOutcome.CANCELLED : ApprovalOutcome.CONTINUE;
@@ -76,7 +76,7 @@ public class ApprovalFinalizer {
                 call == null ? null : call.getResponseId(),
                 message.getName(), call == null ? "" : call.getArgs(), command.result().getToolOutput(),
                 execution.eventMetaData(),
-                CommandOutcomeResolver.resolveResultStatus(command.outcome(), cancelRequired),
+                ApprovedCallResolver.resolveResultStatus(command.outcome(), cancelRequired),
                 ExecutionToolSlot.resolveRequestIndex(execution, String.valueOf(message.getId()))));
     }
 
@@ -102,10 +102,13 @@ public class ApprovalFinalizer {
                 == ResumeDisposition.QUEUED;
     }
 
-    /** 命令执行中断：把执行与卡片一并收成失败，禁止自动重放已可能产生副作用的命令。 */
+    /**
+     * 执行中断：把执行与卡片一并收成失败，禁止自动重放已可能产生副作用的调用。
+     *
+     * @param reason 完整原因文案，由形态处理器组装（措辞属于形态，不属于本类）
+     */
     public void failApproval(ToolCall toolCall, Execution execution, String reason) {
-        executionControl.getObject().failApproval(execution,
-                "命令审批执行中断；请检查命令实际结果，禁止自动重放：" + reason);
+        executionControl.getObject().failApproval(execution, reason);
         toolCall.complete(converter.commandOutcome(ToolCallOutcome.FAILED, null, reason));
         toolCallRepository.updateById(toolCall);
     }

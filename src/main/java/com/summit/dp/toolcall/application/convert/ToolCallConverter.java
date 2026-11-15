@@ -266,6 +266,39 @@ public class ToolCallConverter {
         return node.toString();
     }
 
+    /**
+     * {@code content.kind=FILE_WRITE}：{@code {kind,path,workDir,workspaceId,intention?,args}}。
+     *
+     * <p>载荷只记「模型原本要改哪个路径」，不记解析后的绝对路径：恢复时必须用当初的
+     * arg 与工作空间重算一遍，两者任一变化都说明审批已过期。</p>
+     */
+    public String fileWriteContent(String path, String workDir, String workspaceId, String args) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put(ToolCallKeys.KIND, ToolCallKind.FILE_WRITE.name());
+        node.put(ToolCallKeys.PATH, path);
+        node.put(ToolCallKeys.WORK_DIR, workDir);
+        node.put(ToolCallKeys.WORKSPACE_ID, workspaceId);
+        String intention = resolveIntention(args);
+        if (intention != null) {
+            node.put(ToolCallKeys.INTENTION, intention);
+        }
+        node.put(ToolCallKeys.ARGS, args);
+        return node.toString();
+    }
+
+    /** {@code raw_output}（文件改动审批结论）：{@code {outcome,output?,reason?}}。 */
+    public String mutationOutcome(ToolCallOutcome outcome, String output, String reason) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put(ToolCallKeys.OUTCOME, outcome.value());
+        if (output != null) {
+            node.put(ToolCallKeys.OUTPUT, output);
+        }
+        if (reason != null) {
+            node.put(ToolCallKeys.REASON, reason);
+        }
+        return node.toString();
+    }
+
     /** 从模型 args JSON 提取 {@code intention}；args 缺失 / 非法 / 无该字段一律返回 {@code null}。 */
     private String resolveIntention(String argsJson) {
         if (argsJson == null || argsJson.isBlank()) {

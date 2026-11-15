@@ -56,4 +56,12 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
     :session-id="sessionId"
     :is-dark="isDark"
   />
+
+  <!-- 文件改动审批与命令审批共用同一张审批卡（同一套批准/拒绝语义），正文换成目标路径 -->
+  <ApprovalCard
+    v-else-if="kind === 'FILE_WRITE'"
+    :prompt-card="promptCard"
+    :session-id="sessionId"
+    :is-dark="isDark"
+  />
 </template>

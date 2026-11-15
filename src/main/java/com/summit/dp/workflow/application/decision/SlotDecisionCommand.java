@@ -11,7 +11,7 @@ import java.util.Map;
  * 而不是运行期找不到注册项。</p>
  */
 public sealed interface SlotDecisionCommand
-        permits ImmediateDecision, CommandDecision, ChoiceBatchDecision {
+        permits ImmediateDecision, TwoPhaseDecision, ChoiceBatchDecision {
 
     /** 会话 id；{@code null} 表示本次不校验归属。 */
     Long conversationId();

@@ -431,7 +431,7 @@ export interface ToolCallVO {
   status?: 'pending' | 'in_progress' | 'completed' | string;
   /** 卡片标题 */
   title?: string;
-  /** 多态内容块：{kind:'PLAN'|'CHOICE'|'COMMAND', ...} */
+  /** 多态内容块：{kind:'PLAN'|'CHOICE'|'COMMAND'|'FILE_WRITE', ...} */
   content?: any;
   /** 输入载荷：{args, answers?} */
   rawInput?: any;
@@ -458,11 +458,11 @@ export interface ToolCallVO {
  */
 export interface PromptCardData {
   /**
-   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND`（= `toolCall.content.kind`）。
+   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND` / `FILE_WRITE`（= `toolCall.content.kind`）。
    * `UNAVAILABLE` 表示 `content.kind` 缺失/非法（后端 `fromName()` 识别不了返回 `null`），
    * 渲染为「状态不可用」，**绝不**回落成 `COMMAND`（否则语义未知的卡片会被渲染成带「批准并执行」按钮的命令审批卡）。
    */
-  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'UNAVAILABLE';
+  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'FILE_WRITE' | 'UNAVAILABLE';
   /** 决策锚点：tool_call.id / 模型 call_id */
   toolCallId: string;
   /** 归属会话（= session.id）；提交决策时回传 */
@@ -479,6 +479,8 @@ export interface PromptCardData {
   command?: string;
   /** COMMAND：模型声明的命令意图（content.intention，后端从 args 提取；缺失时无此键） */
   intention?: string;
+  /** FILE_WRITE：待改动的工作区外路径（content.path，模型原始 arg） */
+  path?: string;
   /** 生命周期：pending / in_progress / completed */
   status: 'preparing' | 'pending' | 'in_progress' | 'completed';
   version?: string;

@@ -192,12 +192,16 @@ class DecisionConflictHttpContractTest {
         ToolCallConverter converter = new ToolCallConverter(mapper);
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
                 mock(ChoiceAnswersValidator.class), tools);
+        ApprovalKindHandlers approvalHandlers = new ApprovalKindHandlers(
+                new CommandApprovalHandler(mock(ApprovedCommandRestorer.class), converter));
         InteractionDecisionEngine engine = new InteractionDecisionEngine(tools, converter, provider(executions),
                 contexts, transactions,
                 new CoordinatorResumeAcceptance(mock(ExecutionResumeCoordinator.class)),
                 new UnresolvedToolSuspensionGate(tools), immediate,
-                new TwoPhaseCommandResolutionStrategy(mock(CommandApprovalExecutor.class), tools, converter));
-        return new VersionedToolCallDecisionService(tools, converter, engine, new VersionedDecisionContract(converter));
+                new TwoPhaseApprovalStrategy(mock(TwoPhaseApprovalExecutor.class), tools, converter),
+                approvalHandlers);
+        return new VersionedToolCallDecisionService(tools, converter, engine,
+                new VersionedDecisionContract(converter), approvalHandlers);
     }
 
     /** 挂起执行 + 一张待决计划卡：版本 1，供过期版本用例撞冲突。 */

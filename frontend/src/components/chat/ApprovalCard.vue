@@ -18,7 +18,7 @@ import CollapseTransition from '../common/CollapseTransition.vue';
 import {useI18n} from '../../i18n';
 
 const props = defineProps<{
-  /** 统一卡片数据（COMMAND 命令审批） */
+  /** 统一卡片数据（COMMAND 命令审批 / FILE_WRITE 文件改动审批） */
   promptCard: PromptCardData;
   sessionId?: string | number;
   isDark?: boolean;
@@ -40,11 +40,25 @@ const errorMsg = ref('');
 // 复制反馈（布尔键控；见 composables/useCopyFeedback.ts）
 const { isCopied: copied, copy: copyRaw } = useCopyFeedback();
 
-/** 命令正文：优先结构化 command，回落卡片正文 */
-const commandText = computed(() => props.promptCard.command || props.promptCard.content || '');
-const commandWorkDir = computed(() => props.promptCard.workDir || '');
-/** 模型声明的命令意图（content.intention）；缺失时整行不渲染 */
-const commandIntention = computed(() => props.promptCard.intention || '');
+/**
+ * 本组件同时承载两种审批形态：命令审批（正文是命令行）与文件改动审批（正文是目标路径）。
+ *
+ * <p>两者的批准/拒绝语义完全一致，只有类型标签、正文来源与已决文案不同 —— 不为此拆成两个组件，
+ * 否则提交、按钮门控、折叠、错误提示这几段会各写一份，迟早漂移。</p>
+ */
+const isFileWrite = computed(() => props.promptCard.kind === 'FILE_WRITE');
+/** 正文：命令审批取命令行，文件改动审批取目标路径；都缺时回落到卡片正文 */
+const primaryText = computed(() => props.promptCard.command || props.promptCard.path || props.promptCard.content || '');
+const targetWorkDir = computed(() => props.promptCard.workDir || '');
+/** 模型声明的意图（content.intention）；缺失时整行不渲染 */
+const targetIntention = computed(() => props.promptCard.intention || '');
+/** header 类型标签随形态变 */
+const typeLabel = computed(() => isFileWrite.value ? t('chat.approval.fileTypeLabel') : t('chat.approval.typeLabel'));
+/** 复制按钮文案随形态变 */
+const copyActionLabel = computed(() => isFileWrite.value ? t('chat.approval.copyPath') : t('chat.approval.copyCommand'));
+/** 已决态文案随形态变，避免「已批准执行该命令」出现在文件改动卡上 */
+const approvedLabel = computed(() => isFileWrite.value ? t('chat.approval.fileApproved') : t('chat.approval.approved'));
+const rejectedLabel = computed(() => isFileWrite.value ? t('chat.approval.fileRejected') : t('chat.approval.rejected'));
 
 /**
  * 是否可操作：**叠加权威 `pending`**（= type==='PROMISE' && status==='pending'），
@@ -74,9 +88,9 @@ const headerTone = computed<CardTone>(() => {
   return 'unknown';
 });
 
-// 复制命令（保留原有「空文本不复制」守卫）
-const copyCommand = () => {
-  const text = commandText.value;
+// 复制正文（保留原有「空文本不复制」守卫）
+const copyText = () => {
+  const text = primaryText.value;
   if (!text) return;
   void copyRaw(text);
 };
@@ -122,7 +136,7 @@ const handleReject = () => submit(false);
   >
     <div :class="CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
-      <CardHeader :tone="headerTone" :type-label="t('chat.approval.typeLabel')" :is-dark="isDark">
+      <CardHeader :tone="headerTone" :type-label="typeLabel" :is-dark="isDark">
         <template #actions>
           <!-- ★ 待决策态不得移除操作入口：折叠 / 关闭均只在已决态出现 -->
           <button
@@ -159,7 +173,7 @@ const handleReject = () => submit(false);
           <div class="space-y-2.5">
             <!-- 命令展示区 -->
             <div
-              v-if="commandText"
+              v-if="primaryText"
               :class="[
                 'rounded-xl border relative group overflow-hidden',
                 isDark ? 'bg-[#0e131d] border-zinc-800' : 'bg-[#f7f8fa] border-zinc-200/80'
@@ -169,8 +183,8 @@ const handleReject = () => submit(false);
               <div class="absolute right-2 top-2 z-10">
                 <button
                   type="button"
-                  @click="copyCommand"
-                  :aria-label="t('chat.approval.copyCommand')"
+                  @click="copyText"
+                  :aria-label="copyActionLabel"
                   :class="[
                     'text-lx-fs-sm px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
                     isDark
@@ -193,14 +207,17 @@ const handleReject = () => submit(false);
                 </button>
               </div>
 
-              <div v-if="commandIntention" class="px-3 pt-2 pr-16 text-xs break-all text-lx-tertiary">
-                                <span class="font-medium">{{ t('chat.approval.intention') }}</span>{{ commandIntention }}
+              <div v-if="targetIntention" class="px-3 pt-2 pr-16 text-xs break-all text-lx-tertiary">
+                                <span class="font-medium">{{ t('chat.approval.intention') }}</span>{{ targetIntention }}
               </div>
-              <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-zinc-500 break-all">{{ t('chat.approval.workDir') }}{{ commandWorkDir }}</div>
-              <!-- 命令正文 -->
+              <div v-if="targetWorkDir" class="px-3 pt-2 pr-16 text-xs text-zinc-500 break-all">{{ t('chat.approval.workDir') }}{{ targetWorkDir }}</div>
+              <!-- 正文：命令审批带 $ 提示符，文件改动审批用落笔图标，不假装自己是命令 -->
               <div class="p-3 pr-16 font-mono text-lx-fs-md leading-relaxed break-all select-text flex items-start gap-2">
-                <span class="text-blue-500/80 font-bold select-none">$</span>
-                <span :class="isDark ? 'text-zinc-200' : 'text-zinc-800'">{{ commandText }}</span>
+                <span v-if="!isFileWrite" class="text-blue-500/80 font-bold select-none">$</span>
+                <svg v-else class="w-3.5 h-3.5 mt-1 shrink-0 text-blue-500/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span :class="isDark ? 'text-zinc-200' : 'text-zinc-800'">{{ primaryText }}</span>
               </div>
             </div>
 
@@ -218,7 +235,7 @@ const handleReject = () => submit(false);
               <svg v-else class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>{{ isUnavailable ? t('chat.approval.resolvedUnavailable') : resolvedStatus === 'approved' ? t('chat.approval.approved') : resolvedStatus === 'rejected' ? t('chat.approval.rejected') : promptCard.status === 'preparing' ? t('chat.approval.preparing') : promptCard.unavailableReason || t('chat.approval.statusUnknown') }}</span>
+              <span>{{ isUnavailable ? t('chat.approval.resolvedUnavailable') : resolvedStatus === 'approved' ? approvedLabel : resolvedStatus === 'rejected' ? rejectedLabel : promptCard.status === 'preparing' ? t('chat.approval.preparing') : promptCard.unavailableReason || t('chat.approval.statusUnknown') }}</span>
             </div>
 
             <!-- 错误提示 -->

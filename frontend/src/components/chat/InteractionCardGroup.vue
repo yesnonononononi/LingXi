@@ -14,10 +14,13 @@ const props = defineProps<{ kind: PromptCardData['kind']; entries: PromptCardEnt
 const GROUP_LABELS = {
   PLAN: { prefix: 'plan-approval', title: 'chat.plan.groupTitle' },
   COMMAND: { prefix: 'command-approval', title: 'chat.approval.groupTitle' },
+  FILE_WRITE: { prefix: 'file-approval', title: 'chat.approval.fileGroupTitle' },
   CHOICE: { prefix: 'choice-card', title: 'chat.choice.categoryTitle' },
   UNAVAILABLE: { prefix: 'unavailable-card', title: 'chat.cards.otherTitle' },
 } as const;
 const testPrefix = computed(() => GROUP_LABELS[props.kind].prefix);
+/** 审批类卡片（命令 / 文件改动）：摘要行优先展示「模型声明的意图或目标」。 */
+const isApprovalKind = computed(() => props.kind === 'COMMAND' || props.kind === 'FILE_WRITE');
 const groupTitle = computed(() => t(GROUP_LABELS[props.kind].title));
 const listId = useId();
 const expanded = ref(false);
@@ -84,13 +87,13 @@ const expectedChoiceCounts = computed(() => {
             class="flex w-full min-w-0 items-center gap-2 py-2 text-left text-xs text-lx-tertiary disabled:cursor-default cursor-pointer"
             :disabled="entry.card.pending"
             :aria-expanded="entry.card.pending || !!expandedEntries[entry.id]"
-            :title="entry.card.title || entry.card.command"
+            :title="entry.card.title || entry.card.command || entry.card.path"
             :data-testid="`${testPrefix}-entry-toggle`"
             @click="expandedEntries[entry.id] = !expandedEntries[entry.id]"
           >
             <svg class="h-3 w-3 shrink-0 transition-transform" :class="entry.card.pending || expandedEntries[entry.id] ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
             <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="cardDotClass(resolveCardTone(entry.card))"></span>
-            <span class="min-w-0 flex-1 truncate">{{ kind === 'COMMAND' ? (entry.card.intention || entry.card.command || entry.card.title || groupTitle) : (entry.card.title || entry.card.content || groupTitle) }}</span>
+            <span class="min-w-0 flex-1 truncate">{{ isApprovalKind ? (entry.card.intention || entry.card.command || entry.card.path || entry.card.title || groupTitle) : (entry.card.title || entry.card.content || groupTitle) }}</span>
             <span class="shrink-0 text-lx-fs-sm">{{ resolveCardStatusLabel(entry.card) }}</span>
           </button>
           <PromptCard

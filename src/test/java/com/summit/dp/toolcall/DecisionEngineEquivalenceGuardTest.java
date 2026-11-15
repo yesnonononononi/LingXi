@@ -136,18 +136,21 @@ class DecisionEngineEquivalenceGuardTest {
         ImmediateSlotResolutionStrategy immediate = new ImmediateSlotResolutionStrategy(converter,
                 new ChoiceAnswersValidator(mapper, new SessionMessageRepositoryImpl(
                         messageMapper, session.getMapper(SessionMapper.class))), tools);
-        TwoPhaseCommandResolutionStrategy commandStrategy = new TwoPhaseCommandResolutionStrategy(
-                mock(CommandApprovalExecutor.class), tools, converter);
+        TwoPhaseApprovalStrategy commandStrategy = new TwoPhaseApprovalStrategy(
+                mock(TwoPhaseApprovalExecutor.class), tools, converter);
+        ApprovalKindHandlers approvalHandlers = new ApprovalKindHandlers(
+                new CommandApprovalHandler(mock(ApprovedCommandRestorer.class), converter));
         engine = new InteractionDecisionEngine(tools, converter, provider(executions), contexts, transactions,
-                new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools), immediate, commandStrategy);
+                new CoordinatorResumeAcceptance(coordinator), new UnresolvedToolSuspensionGate(tools), immediate,
+                commandStrategy, approvalHandlers);
         ReactiveDecisionContract reactive = new ReactiveDecisionContract(
                 new CardAvailabilityPolicy(new com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate(
                         provider(executions), provider(activity))));
         workflowService = new ToolCallWorkflowService(tools, converter, engine,
                 new ToolCallDecisionService(locator(), sseEventPublisher, engine, reactive),
-                reactive, sseEventPublisher, locator());
+                reactive, approvalHandlers, sseEventPublisher, locator());
         versionedService = new VersionedToolCallDecisionService(tools, converter, engine,
-                new VersionedDecisionContract(converter));
+                new VersionedDecisionContract(converter), approvalHandlers);
         choiceService = new ChoiceAnswersService(
                 new ChoiceAnswersValidator(mapper, new SessionMessageRepositoryImpl(
                         messageMapper, session.getMapper(SessionMapper.class))),

@@ -65,13 +65,13 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * {@link CommandApprovalExecutor} 的安全护栏与收口回归。
+ * {@link TwoPhaseApprovalExecutor} 的安全护栏与收口回归。
  *
  * <p>覆盖两类不变量：审批期间环境被替换则拒绝重放（命令绝不落地）；以及命令执行链的
  * 取消与「异步派发失败」两条收口路径——无论哪条，控制槽位都不能泄漏、执行都不能卡在
  * RUNNING。</p>
  */
-class CommandApprovalExecutorTest {
+class TwoPhaseApprovalExecutorTest {
 
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
@@ -88,7 +88,7 @@ class CommandApprovalExecutorTest {
 
     private TransactionTemplate transactions;
     private SuspendedExecutionResumer resumer;
-    private CommandApprovalExecutor executor;
+    private TwoPhaseApprovalExecutor executor;
 
     @BeforeEach
     void setup() {
@@ -129,7 +129,7 @@ class CommandApprovalExecutorTest {
      * 本用例用同一个顺序，只把事务模板换成直通桩，以便单独验编排器自己的护栏。
      * 引擎粘合层本身由 {@code CommandTwoPhaseGuardTest}（真实 H2 + 真实事务）覆盖。</p>
      */
-    private void decide(CommandApprovalExecutor target, ToolCall toolCall, boolean approved,
+    private void decide(TwoPhaseApprovalExecutor target, ToolCall toolCall, boolean approved,
                         String commandId, String digest, Runnable completion) {
         ApprovalPlan plan = target.prepare(toolCall, approved, commandId, digest, completion);
         try {
@@ -140,22 +140,30 @@ class CommandApprovalExecutorTest {
         }
         target.afterCommit(plan);
     }
-    private CommandApprovalExecutor buildExecutor() {
+    private TwoPhaseApprovalExecutor buildExecutor() {
         return buildExecutor(workspaces);
     }
 
-    private CommandApprovalExecutor buildExecutor(WorkspaceResolver resolver) {
-        return new CommandApprovalExecutor(toolCallRepository,
+    private TwoPhaseApprovalExecutor buildExecutor(WorkspaceResolver resolver) {
+        return new TwoPhaseApprovalExecutor(toolCallRepository,
                 new ToolCallConverter(mapper), transactions,
                 provider(executionControl), provider(executionRepository),
-                new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
+                new ApprovedCallResolver(runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(resumeCoordinator)),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
-                new ApprovedCommandRestorer(mapper, resolver, provider(toolRegistry)),
+                commandHandlers(resolver),
                 modelContextService,
                 new CoordinatorResumeAcceptance(resumeCoordinator),
                 asyncExecutor);
+    }
+
+    /** 命令形态的处理器注册表：本用例只关心命令审批这条链。 */
+    private ApprovalKindHandlers commandHandlers(WorkspaceResolver resolver) {
+        ToolCallConverter converter = new ToolCallConverter(mapper);
+        ApprovedCommandRestorer restorer = new ApprovedCommandRestorer(mapper,
+                new ApprovalWorkspaceResolver(resolver), provider(toolRegistry));
+        return new ApprovalKindHandlers(new CommandApprovalHandler(restorer, converter));
     }
 
     @Test
@@ -297,14 +305,14 @@ class CommandApprovalExecutorTest {
         when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
 
         // 派发线程池不可用：T1 已提交，收尾永远起不来。
-        CommandApprovalExecutor failing = new CommandApprovalExecutor(toolCallRepository,
+        TwoPhaseApprovalExecutor failing = new TwoPhaseApprovalExecutor(toolCallRepository,
                 new ToolCallConverter(mapper), transactions,
                 provider(executionControl), provider(executionRepository),
-                new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
+                new ApprovedCallResolver(runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, new CoordinatorResumeAcceptance(resumeCoordinator)),
                 new UnresolvedToolSuspensionGate(toolCallRepository),
-                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
+                commandHandlers(workspaces),
                 modelContextService,
                 new CoordinatorResumeAcceptance(resumeCoordinator),
                 asyncExecutor) {

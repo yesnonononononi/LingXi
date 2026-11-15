@@ -9,9 +9,6 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolRegistry;
-import com.summit.core.workspace.BasicWorkspaceSpec;
-import com.summit.core.workspace.WorkspaceResolver;
-import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
@@ -41,7 +38,7 @@ import java.util.Objects;
 public class ApprovedCommandRestorer {
 
     private final ObjectMapper objectMapper;
-    private final WorkspaceResolver workspaces;
+    private final ApprovalWorkspaceResolver workspaces;
     private final ObjectProvider<ToolRegistry> toolRegistry;
 
     /** 重建审批通过时待执行的命令调用；环境或参数与快照不一致即抛 {@link ClientException}。 */
@@ -51,7 +48,7 @@ public class ApprovedCommandRestorer {
         if (tool == null || !(tool.executor() instanceof CommandToolDefinitionExecutor)) {
             throw new ClientException("审批命令工具不可用");
         }
-        Workspace workspace = resolveWorkspace(execution);
+        Workspace workspace = workspaces.resolve(execution);
         String args = snapshot.args();
         ExecuteCommandRequest request;
         try {
@@ -88,25 +85,6 @@ public class ApprovedCommandRestorer {
                 .attributes(execution.getAgentRequest().runtimeParametersOrDefault().getAttributes())
                 .eventMetaData(execution.eventMetaData())
                 .build();
-    }
-
-    /**
-     * 解析命令要落地的宿主环境。
-     *
-     * <p>会话未绑定工作空间时请求里没有规格（框架允许缺省，工具就跑在进程工作目录）。
-     * 审批只是把同一条命令重新放行，不能比首次执行更严格，因此这里沿用框架
-     * {@code ChatAgent#resolveWorkspace} 的同一回落，而不是把 null 直接交给解析器。</p>
-     *
-     * <p>回落规格必须与框架同形：{@link BasicWorkspaceSpec} 的 scope 为空，派生的工作空间 id
-     * 才与签发审批卡时一致；换成带 scope 的 {@code LingXiWorkspaceSpec} 会被下面的环境校验
-     * 误判成「命令执行环境已变化」。</p>
-     */
-    private Workspace resolveWorkspace(Execution execution) {
-        WorkspaceSpec spec = execution.getAgentRequest().getWorkspaceSpec();
-        if (spec == null) {
-            spec = new BasicWorkspaceSpec(LocalWorkspaceProvider.TYPE, System.getProperty("user.dir"));
-        }
-        return workspaces.resolve(spec);
     }
 
     /** 从 {@code content}（{@code kind=COMMAND}）解出重建 {@link ToolExecution} 所需的载荷。 */

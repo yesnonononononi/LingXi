@@ -54,13 +54,15 @@ public class CardAvailabilityPolicy {
             case PLAN -> new KindRule(ToolCallKeys.TEXT, approveOrReject());
             case CHOICE -> new KindRule(ToolCallKeys.QUESTION, List.of(ToolCallAction.ANSWER.wireValue()));
             case COMMAND -> new KindRule(ToolCallKeys.COMMAND, approveOrReject());
+            case FILE_WRITE -> new KindRule(ToolCallKeys.PATH, approveOrReject());
             case EXECUTE -> new KindRule(null, List.of());
         };
     }
 
     /** 是否人工可决策的形态（自动回填 / 无卡片载荷的形态不算）。 */
     public boolean isHumanDecision(ToolCallKind kind) {
-        return kind == ToolCallKind.PLAN || kind == ToolCallKind.CHOICE || kind == ToolCallKind.COMMAND;
+        return kind == ToolCallKind.PLAN || kind == ToolCallKind.CHOICE
+                || kind == ToolCallKind.COMMAND || kind == ToolCallKind.FILE_WRITE;
     }
 
     /** 规则的必要 content 键是否已填；{@code requiredKey} 为 null 表示该形态无内容要求。 */

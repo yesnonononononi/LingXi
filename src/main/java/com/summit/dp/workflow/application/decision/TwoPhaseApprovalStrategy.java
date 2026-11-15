@@ -13,27 +13,30 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 命令形态：T1 提交先于副作用、锁外执行命令、T2 落结果、释放并恢复。
+ * 两阶段形态：T1 提交先于副作用、锁外执行、T2 落结果、释放并恢复。
+ *
+ * <p>本形态<b>只接受批准或拒绝</b>，与具体 kind 无关 —— 哪些 kind 走这里由
+ * {@link ApprovalKindHandlers} 决定，重建与文案由 {@link ApprovalKindHandler} 提供。</p>
  *
  * <p><b>三段的分工</b>：{@link #prepare} 做锁外准备（校验、登记、环境重建），
  * {@link #writeT1} 只提供写入集 —— 由引擎在它自己的事务里调用（事务边界归引擎，
  * 「T1 提交早于副作用」才是一条看得见的不变量），{@link #afterCommit} 在提交之后
- * 派发锁外副作用。副作用本身、T2 仍分别由 {@code CommandOutcomeResolver}、
- * {@code ApprovalFinalizer} 承担；恢复登记只经 {@code ResumeAcceptancePort}
+ * 派发锁外副作用。副作用本身、T2 仍分别由 {@link ApprovedCallResolver}、
+ * {@link ApprovalFinalizer} 承担；恢复登记只经 {@code ResumeAcceptancePort}
  * （实现转交 {@code ExecutionResumeCoordinator}，门禁与消费口仍只在那处）。</p>
  *
- * <p><b>引擎不碰 shell</b>：这里也不。命令执行只在 {@code CommandOutcomeResolver} 里发生，
+ * <p><b>引擎不碰外壳</b>：这里也不。命令执行只在 {@link ApprovedCallResolver} 里发生，
  * 本类只编排顺序，不新建队列、不持有线程。</p>
  */
 @Component
 @RequiredArgsConstructor
-public final class TwoPhaseCommandResolutionStrategy implements SlotResolutionStrategy {
+public final class TwoPhaseApprovalStrategy implements SlotResolutionStrategy {
 
-    private final CommandApprovalExecutor executor;
+    private final TwoPhaseApprovalExecutor executor;
     private final ToolCallRepository toolCalls;
     private final ToolCallConverter converter;
 
-    /** 命令形态不产出引擎决议项：写入由命令链的 T1/T2 自己持有。 */
+    /** 两阶段形态不产出引擎决议项：写入由审批链的 T1/T2 自己持有。 */
     @Override
     public List<SlotResolutionItem> prepareSlotResolutions(Execution execution, List<ToolCall> cards,
                                                            SlotDecisionCommand command,
@@ -42,18 +45,18 @@ public final class TwoPhaseCommandResolutionStrategy implements SlotResolutionSt
     }
 
     /**
-     * 锁外准备：校验动作、登记控制信号、重建命令环境。
+     * 锁外准备：校验动作、登记控制信号、重建执行环境。
      *
-     * @param card       锁内重读到的命令卡片
-     * @param command    命令决议输入（v1 的 commandId / digest 为 {@code null}）
+     * @param card       锁内重读到的待审批卡片
+     * @param command    决议输入（v1 的 commandId / digest 为 {@code null}）
      * @param contract   入口契约
      * @param completion 链路收尾回调（v1 用它关流）；可空
      */
-    public ApprovalPlan prepare(ToolCall card, CommandDecision command, DecisionEntryContract contract,
+    public ApprovalPlan prepare(ToolCall card, TwoPhaseDecision command, DecisionEntryContract contract,
                                 Runnable completion) {
-        // ANSWER 对命令卡无意义：放行会把「作答」静默当成「拒绝」，因此在入口显式拒绝。
+        // ANSWER 对审批卡无意义：放行会把「作答」静默当成「拒绝」，因此在入口显式拒绝。
         if (command.action() == ToolCallAction.ANSWER) {
-            throw new ClientException("命令审批只接受批准或拒绝");
+            throw new ClientException("该审批只接受批准或拒绝");
         }
         return executor.prepare(card, command.action() == ToolCallAction.APPROVE,
                 command.commandId(), command.digest(), completion);
@@ -86,7 +89,8 @@ public final class TwoPhaseCommandResolutionStrategy implements SlotResolutionSt
      * @param command     原始决议输入
      * @param disposition T1 给出的恢复处置
      */
-    public DecisionReceipt buildReceipt(ApprovalPlan plan, CommandDecision command, ResumeDisposition disposition) {
+    public DecisionReceipt buildReceipt(ApprovalPlan plan, TwoPhaseDecision command,
+                                        ResumeDisposition disposition) {
         ToolCall latest = toolCalls.findById(plan.card().getId()).orElse(plan.card());
         return new DecisionReceipt(command.commandId(), true,
                 plan.approved() ? "APPROVED" : "REJECTED",
