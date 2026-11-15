@@ -59,6 +59,15 @@ public final class ExecutionControlSlot {
         return true;
     }
 
+    /** 执行线程已退出但框架未正常注销时，清理残留的运行占用。 */
+    synchronized ExecutionControlSignal forceRelease() {
+        ExecutionControlSignal leaked = running;
+        if (leaked == null) return null;
+        if (leaked.isCancelRequired()) cancelled = true;
+        running = null;
+        return leaked;
+    }
+
     synchronized boolean requireSuspend() {
         if (running == null) return false;
         running.requireSuspend();

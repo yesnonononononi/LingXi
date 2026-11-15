@@ -80,4 +80,30 @@ class SessionExecutionStopperTest {
         verify(control).cancel("102");
         assertTrue(registry.isExecutionCancelled("102"));
     }
+
+    @Test
+    void persistenceFailureDuringCancelStillCancelsOthersAndPropagatesFailure() {
+        registry.registerPendingChild(800L, 555L, "101", null);
+        registry.registerPendingChild(800L, 556L, "102", null);
+        IllegalStateException persistenceError = new IllegalStateException(
+                "保存执行检查点失败: executionId=101", new RuntimeException("db down"));
+        doThrow(persistenceError).when(control).cancel("101");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> stopper.stop(800L));
+
+        assertSame(persistenceError, thrown);
+        verify(control).cancel("102");
+        assertTrue(registry.isExecutionCancelled("102"));
+    }
+
+    @Test
+    void persistenceFailureWithoutCauseStillCountsAsPersistenceFailure() {
+        registry.registerPendingChild(800L, 555L, "101", null);
+        IllegalStateException persistenceError = new IllegalStateException("保存执行检查点失败: executionId=101");
+        doThrow(persistenceError).when(control).cancel("101");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> stopper.stop(800L));
+
+        assertSame(persistenceError, thrown);
+    }
 }

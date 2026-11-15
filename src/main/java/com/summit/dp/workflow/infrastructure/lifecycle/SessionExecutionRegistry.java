@@ -166,20 +166,33 @@ public class SessionExecutionRegistry {
     public boolean release(ExecutionControlSignal signal) {
         ExecutionControlSlot slot = slots.get(signal.getExecutionId());
         if (slot == null || !slot.release(signal)) return false;
+        cleanupAfterRelease(slot);
+        return true;
+    }
+
+    /** 线程退出兜底：清理未被框架 unregister 释放的运行占用，避免后续取消误判为仍在运行。 */
+    public boolean forceRelease(String executionId) {
+        if (executionId == null) return false;
+        ExecutionControlSlot slot = slots.get(executionId);
+        if (slot == null || slot.forceRelease() == null) return false;
+        cleanupAfterRelease(slot);
+        return true;
+    }
+
+    private void cleanupAfterRelease(ExecutionControlSlot slot) {
         Long rootSessionId = slot.rootSessionId();
         if (rootSessionId == null) {
-            if (slot.isFinished()) slots.remove(signal.getExecutionId(), slot);
-        } else {
-            // 释放占用不证明检查点已提交，首次保存失败仍须允许受理入口撤销槽位。
-            synchronized (ExecutionCoordination.monitor("control:" + rootSessionId)) {
-                RootExecution root = roots.get(rootSessionId);
-                if (root != null) {
-                    removeFinishedRootSlot(rootSessionId, root, slot);
-                    removeIfFinished(rootSessionId, root);
-                }
+            if (slot.isFinished()) slots.remove(slot.executionId(), slot);
+            return;
+        }
+        // 释放占用不证明检查点已提交，首次保存失败仍须允许受理入口撤销槽位。
+        synchronized (ExecutionCoordination.monitor("control:" + rootSessionId)) {
+            RootExecution root = roots.get(rootSessionId);
+            if (root != null) {
+                removeFinishedRootSlot(rootSessionId, root, slot);
+                removeIfFinished(rootSessionId, root);
             }
         }
-        return true;
     }
 
     public boolean isActive(String executionId) {

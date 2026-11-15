@@ -180,6 +180,7 @@ public class PreparedChatExecutor {
         // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
         synchronized (ExecutionCoordination.monitor("session:" + context.executionContext().sessionId())) {
             long rootSessionId = context.executionContext().rootSessionId();
+            String executionId = context.executionContext().executionId();
             try {
                 Execution execution = context.execution();
                 if (execution == null) {
@@ -192,14 +193,22 @@ public class PreparedChatExecutor {
                 // 异步任务不会把 Error 返回给受理接口，依赖不兼容也必须落失败终态并通知界面。
                 IllegalStateException failure = new IllegalStateException(
                         "运行依赖版本不兼容，请重新加载 Maven 依赖并重启后端", error);
-                log.error("执行依赖加载失败: executionId={}", context.executionContext().executionId(), error);
+                log.error("执行依赖加载失败: executionId={}", executionId, error);
                 markStartupFailedQuietly(context, failure);
                 throw failure;
+            } catch (Error error) {
+                // 其余 Error 不走 RuntimeException 兜底，必须在线程退出前落失败终态并记日志。
+                IllegalStateException failure = new IllegalStateException("执行发生严重错误: " + error, error);
+                log.error("执行发生严重错误: executionId={}", executionId, error);
+                markStartupFailedQuietly(context, failure);
+                throw error;
             } catch (RuntimeException e) {
                 markStartupFailedQuietly(context, e);
                 throw e;
             } finally {
-                sessionExecutionRegistry.finishRoot(rootSessionId, context.executionContext().executionId());
+                // 线程已退出，若框架未正常注销，必须强清运行占用，避免后续取消误判为仍在运行。
+                sessionExecutionRegistry.forceRelease(executionId);
+                sessionExecutionRegistry.finishRoot(rootSessionId, executionId);
                 if (inputWakeups != null && context.execution() != null) {
                     inputWakeups.getObject().resumeIfInputPending(Long.parseLong(context.execution().getId()));
                 }

@@ -167,7 +167,7 @@ class ExecutionResumeGateRecheckTest {
         Execution execution = stubSuspendedExecution(autoRoundsAtLimit());
         when(executionControl.resume(any(Execution.class))).thenReturn(execution);
 
-        // 直连 accept：这就是 ApprovalFinalizer / ChoiceAnswersService / CommandApprovalExecutor /
+        // 直连 accept：这就是 ApprovalFinalizer / ChoiceAnswersService / TwoPhaseApprovalExecutor /
         // VersionedToolCallDecisionService 真实调用形态，不经过编排器。
         ResumeDisposition disposition = coordinator.accept(EXECUTION_ID, ResumeTriggerType.APPROVAL_DECISION);
 

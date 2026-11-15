@@ -201,6 +201,13 @@ public class AsyncDelegationSubmitter {
             // 子执行从未建立执行（无生命周期通知）时的结束事实：移除登记 + 唤醒根；已开跑的失败走框架
             // notifyFinished 链，二者幂等。
             subExecutionLifecycle.abandonChild(rootSessionId, childSessionId, task.request().getExecutionId(), task.rootExecutionId());
+        } catch (Error error) {
+            log.error("异步子执行发生严重错误: rootSessionId={}, subSessionId={}", rootSessionId, childSessionId, error);
+            subExecutionLifecycle.abandonChild(rootSessionId, childSessionId, task.request().getExecutionId(), task.rootExecutionId());
+            throw error;
+        } finally {
+            // 线程已退出，若框架未正常注销，必须强清运行占用，避免后续取消误判为仍在运行。
+            sessionExecutionRegistry.forceRelease(task.request().getExecutionId());
         }
     }
 
@@ -220,6 +227,9 @@ public class AsyncDelegationSubmitter {
         } catch (RuntimeException e) {
             closeFailedChildStartup(created, e);
             throw e;
+        } catch (Error error) {
+            closeFailedChildStartup(created, new IllegalStateException("子执行发生严重错误: " + error, error));
+            throw error;
         }
     }
 

@@ -92,4 +92,21 @@ class PreparedChatExecutorLinkageTest {
         verifyNoInteractions(modelContext);
         assertDoesNotThrow(() -> registry.beginRoot(10L, "13"));
     }
+
+    @Test
+    void unexpectedErrorReleasesLeakedRunningSlotAndFailsExecution() {
+        AssertionError severeError = new AssertionError("模拟非链接严重错误");
+        doAnswer(invocation -> {
+            registry.acquire("12");
+            throw severeError;
+        }).when(orchestrator).execute(context, execution);
+
+        AssertionError thrown = assertThrows(AssertionError.class, () -> executor.run(context));
+        assertSame(severeError, thrown);
+        assertEquals(ExecutionState.FAILED, execution.getExecutionState());
+        assertTrue(failurePublished.get());
+        assertFalse(registry.isActive("12"), "线程退出后残留的运行槽位必须强清");
+        assertFalse(registry.requireCancel("12"), "已退出的执行不能再被误判为仍在运行");
+        assertDoesNotThrow(() -> registry.beginRoot(10L, "13"));
+    }
 }
