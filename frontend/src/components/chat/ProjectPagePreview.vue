@@ -30,7 +30,7 @@ const syncViewport = (): void => {
   const modalOpen = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"], dialog[open]'))
     .some(modal => modal.getClientRects().length > 0 && getComputedStyle(modal).visibility !== 'hidden');
   const layout = {
-    visible: props.active && !bookmarksOpen.value && rect.width > 2 && rect.height > 2 && !modalOpen && getComputedStyle(element).visibility !== 'hidden',
+    visible: preview.open.value && props.active && !bookmarksOpen.value && rect.width > 2 && rect.height > 2 && !modalOpen && getComputedStyle(element).visibility !== 'hidden',
     bounds: {x: rect.x + 1, y: rect.y + 1, width: Math.max(0, rect.width - 2), height: Math.max(0, rect.height - 2)},
   };
   const signature = JSON.stringify([preview.generation.value, layout]);
@@ -78,6 +78,8 @@ const scheduleViewport = (): void => {
 const applySliding = (sliding: boolean): void => {
   if (sliding) {
     if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = 0; }
+    // 滑动隐藏直接向主进程发了 visible: false，必须让 lastLayout 失效，否则滑完若尺寸未变会命中旧缓存跳过重显。
+    lastLayout = '';
     preview.updateLayout({visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}});
     return;
   }
@@ -86,6 +88,7 @@ const applySliding = (sliding: boolean): void => {
 watch(() => props.sliding, applySliding);
 
 watch(() => [props.active, preview.open.value, preview.generation.value, preview.activeTabId.value, preview.committedUrl.value], () => {
+  if (!preview.open.value || !props.active) lastLayout = '';
   scheduleViewport();
   scrollActiveTabIntoView();
 }, {flush: 'post'});
@@ -113,6 +116,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleViewport);
   window.removeEventListener('scroll', scheduleViewport, true);
   document.removeEventListener('transitionend', scheduleViewport, true);
+  lastLayout = '';
   preview.updateLayout({visible: false, bounds: {x: 0, y: 0, width: 0, height: 0}});
 });
 

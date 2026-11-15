@@ -80,7 +80,9 @@ async function assertChatViewWiring() {
   assert.match(source, /<FilePreviewPanel\s+v-if="panelMounted"[\s\S]{0,120}?:visible="previewPanelVisible"/,
     '面板必须由 :visible 驱动显隐（v-if 只负责挂载）');
   assert.doesNotMatch(source, /<Transition name="preview-panel-slide">/, '滑动过渡归面板自己，宿主不得再包一层 Transition');
-  assert.match(source, /watch\(\[localActiveId, localActiveWorkspaceId\][\s\S]{0,80}resetSessionPages\(\)/, '切换会话/工作区必须销毁页面实例');
+  assert.doesNotMatch(source, /resetSessionPages\s*\(/, '切换会话/工作区不得销毁全局浏览器页面实例');
+  const appSource = await fs.readFile(path.resolve(__dirname, '../src/App.vue'), 'utf8');
+  assert.match(appSource, /provide\(PROJECT_PAGE_PREVIEW_KEY,\s*pagePreview\)/, 'App.vue 必须持有并注入全局浏览器实例');
 }
 
 app.whenReady().then(async () => {
@@ -350,6 +352,12 @@ window.__demo = {page, activeTabKey, visible, modal};
   await assertBounds();
   assert.equal(await runPage('location.href'), remoteOrigin + '/final');
   assert.equal(await run('window.__demo.page.tabs.value.length'), 1);
+  // 模拟快速收起后立即重开（在 240ms 滑动动画结束前重开，验证 lastLayout 不会命中旧缓存导致白屏）。
+  await run("document.querySelector('button[aria-label=关闭文件预览]').click()");
+  await delay(30);
+  await run("window.__demo.activeTabKey.value = 'page:' + window.__demo.page.activeTabId.value; window.__demo.page.open.value = true");
+  await waitFor(() => last.getVisible(), '快速收起后重开原生视图必须恢复可见');
+  await assertBounds();
   await run('window.__demo.page.close()');
   await waitFor(() => getViews().length === 0, '销毁会话释放所有标签');
   await waitFor(() => lastContents.isDestroyed(), '网页进程释放完成');
