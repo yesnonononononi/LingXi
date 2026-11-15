@@ -28,6 +28,7 @@ app.whenReady().then(async () => {
   const content = await fs.readFile(path.resolve(__dirname, '../../src/main/java/com/summit/dp/shared/config/MybatisPlusConfig.java'), 'utf8');
   await fs.writeFile(path.join(workspace, 'MybatisPlusConfig.java'), content);
   await fs.writeFile(path.join(workspace, 'docker-compose.yml'), 'services:\n  app:\n    image: lingxi:latest\n');
+  await fs.writeFile(path.join(workspace, 'README.md'), '# LingXi 预览\n\n这是 **Markdown** 文档。\n\n| 列A | 列B |\n| --- | --- |\n| 1 | 2 |\n');
   // 行定位验证需要「一屏放不下」的文件，否则滚不滚都看不出差别。
   const longFile = path.join(workspace, 'long-file.ts');
   await fs.writeFile(longFile, Array.from({ length: 200 }, (_, index) => `const line${index + 1} = ${index + 1};`).join('\n') + '\n');
@@ -204,6 +205,33 @@ const linkMessage = { id: 'link-message', role: 'assistant', content: ${JSON.str
   await waitFor('window.previewEditor().getScrollTop() > 0');
   assert.deepEqual(remoteRequests, []);
   console.log('本地文件链接验证通过: 文件图标、无 href/下划线、tooltip 全路径、点击与键盘唤起预览并定位 150 行、重复点击可重定位');
+
+  /* ---------------- Markdown 文件：默认渲染预览，支持与源码互相切换 ---------------- */
+  await window.webContents.executeJavaScript('window.previewDemo.openFilePreview({ sessionId: "101", path: "README.md" })');
+  await waitFor('!!document.querySelector(\'[data-testid="file-markdown-preview"] h1\')');
+  const mdState = await window.webContents.executeJavaScript(`(() => ({
+    heading: document.querySelector('[data-testid="file-markdown-preview"] h1')?.textContent?.trim(),
+    strong: document.querySelector('[data-testid="file-markdown-preview"] strong')?.textContent?.trim(),
+    hasTable: !!document.querySelector('[data-testid="file-markdown-preview"] table'),
+    previewPressed: document.querySelector('[data-testid="file-preview-markdown-btn"]')?.getAttribute('aria-pressed'),
+    sourcePressed: document.querySelector('[data-testid="file-preview-source-btn"]')?.getAttribute('aria-pressed'),
+  }))()`);
+  assert.equal(mdState.heading, 'LingXi 预览');
+  assert.equal(mdState.strong, 'Markdown');
+  assert.equal(mdState.hasTable, true);
+  assert.equal(mdState.previewPressed, 'true');
+  assert.equal(mdState.sourcePressed, 'false');
+
+  await window.webContents.executeJavaScript('document.querySelector(\'[data-testid="file-preview-source-btn"]\').click()');
+  await waitFor('!document.querySelector(\'[data-testid="file-markdown-preview"]\')');
+  await waitFor('window.previewEditor()?.getValue().includes("# LingXi 预览")');
+  assert.equal(
+    await window.webContents.executeJavaScript('document.querySelector(\'[data-testid="file-preview-source-btn"]\')?.getAttribute("aria-pressed")'),
+    'true'
+  );
+  await window.webContents.executeJavaScript('document.querySelector(\'[data-testid="file-preview-markdown-btn"]\').click()');
+  await waitFor('!!document.querySelector(\'[data-testid="file-markdown-preview"] h1\')');
+  console.log('Markdown 文件预览验证通过: 默认渲染标题/加粗/表格，可与源码视图互切');
   console.log('预览截图: ' + output);
 }).then(() => {
   clearTimeout(deadline);
