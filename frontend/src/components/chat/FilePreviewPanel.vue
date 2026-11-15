@@ -647,7 +647,13 @@ watch(() => active.value?.lineAnchor?.seq, (seq) => {
       :active="isPageMode && !resizing"
       :sliding="isSliding || resizing"
       :hideTabBar="true"
+      :fileTabs="tabs"
+      :planTabs="planTabs ?? []"
+      :isDark="isDark"
       class="page-preview-frame"
+      @openDesign="emit('newTabAction', { type: 'design', tabId: '' })"
+      @activateFile="emit('activateTab', `file:${$event}`)"
+      @activatePlan="emit('activateTab', `plan:${$event}`)"
     />
     <DesignCanvasPreview
       v-for="dtab in designTabs"

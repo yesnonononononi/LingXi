@@ -8,6 +8,8 @@ defineProps<{
   fileTabs: FilePreviewTab[];
   planTabs: PlanPreviewTab[];
   isDark?: boolean;
+  /** 嵌入在 ProjectPagePreview 空态视口内时，隐藏「浏览页面」卡片（上方已有完整地址栏）。 */
+  embedded?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -38,7 +40,7 @@ const submitUrl = () => {
       <section class="new-tab-section">
         <h3 class="section-label">{{ t('filePreview.toolsTitle') }}</h3>
         <div class="tools-grid">
-          <div class="tool-card tool-card-page">
+          <div v-if="!embedded" class="tool-card tool-card-page">
             <button
               type="button"
               class="tool-card-page-head"

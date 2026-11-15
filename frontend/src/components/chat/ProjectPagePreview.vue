@@ -6,8 +6,24 @@ import {useBrowserBookmarks} from '../../composables/useBrowserBookmarks';
 import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 import type {ProjectPageTab} from '../../types/projectPagePreview';
+import type {FilePreviewTab} from '../../types/filePreview';
+import type {PlanPreviewTab} from '../../types/previewPanel';
+import NewPreviewTabView from './NewPreviewTabView.vue';
 
-const props = withDefaults(defineProps<{active?: boolean; sliding?: boolean; hideTabBar?: boolean}>(), {active: true, sliding: false, hideTabBar: false});
+const props = withDefaults(defineProps<{
+  active?: boolean;
+  sliding?: boolean;
+  hideTabBar?: boolean;
+  fileTabs?: FilePreviewTab[];
+  planTabs?: PlanPreviewTab[];
+  isDark?: boolean;
+}>(), {active: true, sliding: false, hideTabBar: false});
+
+const emit = defineEmits<{
+  (e: 'openDesign'): void;
+  (e: 'activateFile', id: string): void;
+  (e: 'activatePlan', id: string): void;
+}>();
 const preview = inject(PROJECT_PAGE_PREVIEW_KEY, null) ?? useProjectPagePreview();
 const { bookmarks, isBookmarked, toggleBookmark, removeBookmark } = useBrowserBookmarks();
 const bookmarksOpen = ref(false);
@@ -354,7 +370,17 @@ onBeforeUnmount(() => {
 
     <div id="project-page-viewport" ref="frameArea" class="frame-area" role="tabpanel" :aria-labelledby="activeTabId ? `page-tab-${activeTabId}` : undefined" :aria-label="t('projectPagePreview.frameTitle')">
       <div v-if="!nativeAvailable" class="frame-placeholder">{{ t('projectPagePreview.desktopRequired') }}</div>
-      <div v-else-if="!committedUrl" class="frame-placeholder">{{ t('projectPagePreview.emptyHint') }}</div>
+      <div v-else-if="!committedUrl" class="frame-launcher">
+        <NewPreviewTabView
+          :fileTabs="fileTabs ?? []"
+          :planTabs="planTabs ?? []"
+          :isDark="isDark"
+          :embedded="true"
+          @openDesign="emit('openDesign')"
+          @activateFile="emit('activateFile', $event)"
+          @activatePlan="emit('activatePlan', $event)"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -423,6 +449,7 @@ onBeforeUnmount(() => {
 .status-text.state-timeout { color: #b45309; }
 .status-text.state-failed { color: #dc2626; }
 .diagnose-text { margin: 0; font-size: var(--lx-font-size-sm); color: #b45309; }
-.frame-area { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--file-line, #e4e4e7); border-radius: 10px; background: #fff; }
+.frame-area { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--file-line, #e4e4e7); border-radius: 10px; background: var(--file-bg, #fff); }
+.frame-launcher { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .frame-placeholder { height: 100%; display: grid; place-items: center; padding: 0 20px; font-size: var(--lx-font-size-md); color: var(--file-muted, #71717a); text-align: center; }
 </style>
