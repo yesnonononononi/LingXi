@@ -547,6 +547,7 @@ import {useProjectPagePreview} from '../../composables/useProjectPagePreview';
 import {useUnifiedPreviewTabs} from '../../composables/useUnifiedPreviewTabs';
 import {useInlineRename} from '../../composables/useInlineRename';
 import {isTempSessionId} from '../../utils/ids';
+import {DEFAULT_WINDOW_TITLE, resolveWindowTitle} from '../../utils/windowTitle';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
@@ -688,6 +689,19 @@ const {
 const previewPanelVisible = computed<boolean>(() => previewPanelOpen.value);
 /** 顶部横条左侧展示的会话名：空态（未建会话 / 待首次发送）给占位文案，不留一段空白。 */
 const headerSessionName = computed<string>(() => currentActiveSession.value?.title?.trim() || t('chat.sidebar.newSession'));
+
+// 同步当前会话名到窗口标题，Windows 任务栏悬停缩略图预览会直接读取原生窗口标题。
+watch(headerSessionName, (sessionName) => {
+  if (typeof document !== 'undefined') {
+    document.title = resolveWindowTitle(sessionName);
+  }
+}, { immediate: true });
+
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
+    document.title = DEFAULT_WINDOW_TITLE;
+  }
+});
 
 provide(FILE_PREVIEW_KEY, openFilePreviewInPanel);
 provide(PLAN_PREVIEW_KEY, openPlanPreview);
