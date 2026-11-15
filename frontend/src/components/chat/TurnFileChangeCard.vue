@@ -18,6 +18,14 @@
           <span class="text-[#b42c3f] dark:text-rose-400">-{{ totals.minusLines }}</span>
         </span>
       </div>
+      <button
+        v-if="rollbackExecutionId"
+        type="button"
+        data-testid="turn-file-changes-rollback"
+        :class="['shrink-0 rounded-lg px-2 py-1 text-lx-fs-xs',
+                 isDark ? 'text-zinc-300 hover:bg-white/10' : 'text-zinc-600 hover:bg-black/5']"
+        @click="rollbackOpen = true"
+      >{{ t('turnFileChanges.rollbackAction') }}</button>
     </div>
 
     <div class="mt-2 flex flex-col gap-0.5 max-h-[16rem] overflow-y-auto">
@@ -38,6 +46,9 @@
           {{ row.dir }}
         </span>
         <span v-if="row.created" :class="chipClass('ok')">{{ t('turnFileChanges.created') }}</span>
+        <span v-if="row.rolledBack" data-testid="turn-file-changes-rolled-back" :class="chipClass('muted')">
+          {{ t('turnFileChanges.rolledBack') }}
+        </span>
         <span v-if="row.edits > 1" :class="chipClass('muted')">
           {{ t('turnFileChanges.edits', {count: String(row.edits)}) }}
         </span>
@@ -47,6 +58,14 @@
         </span>
       </component>
     </div>
+
+    <FileRollbackDialog
+      v-if="rollbackExecutionId"
+      :open="rollbackOpen"
+      :executionId="rollbackExecutionId"
+      :isDark="isDark"
+      @close="rollbackOpen = false"
+    />
   </div>
 </template>
 
@@ -64,17 +83,23 @@
  *
  * <p><b>每一行都能点开差异</b>：记录还在、重放得出来就给入口（历史轮次一样）。
  * 面板里再分三档 —— 本次改动 / 最新改动 / 当前源码，让「这一轮改了什么」和
- * 「文件现在长什么样」各有归属。撤销功能整体暂缓，这里不提供任何写操作入口。</p>
+ * 「文件现在长什么样」各有归属。</p>
+ *
+ * <p><b>回滚入口只在执行标识唯一时出现</b>：清单按轮次渲染、回滚按执行生效，两个执行混在一张卡上
+ * 就说明数据异常，此时宁可不给按钮，也不能回滚到别人的执行上。回滚成功后清单靠后端重推的
+ * 轮次视图刷新，卡片自己不发请求、也不伪造「已回滚」状态。</p>
  */
-import {computed, inject} from 'vue';
+import {computed, inject, ref} from 'vue';
 import {t} from '../../i18n';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import type {TurnFileChangeVO} from '../../types/block';
+import FileRollbackDialog from './FileRollbackDialog.vue';
 import {
   buildTurnFileChangeRows,
   turnFileChangeTotals,
   type TurnFileChangeRow
 } from '../../utils/turnFileChanges';
+import {resolveRollbackExecutionId} from '../../utils/fileRollbackPlan';
 
 const props = defineProps<{
   /** 本轮改动清单（来自轮次视图）；空数组即整卡不渲染。 */
@@ -87,6 +112,10 @@ const openFilePreview = inject(FILE_PREVIEW_KEY, null);
 
 const rows = computed<TurnFileChangeRow[]>(() => buildTurnFileChangeRows(props.items));
 const totals = computed(() => turnFileChangeTotals(rows.value));
+/** 回滚按执行生效：只有整张卡的所有行同属一个执行时才给入口（多于一个说明数据异常）。 */
+const rollbackExecutionId = computed(() =>
+  resolveRollbackExecutionId((props.items ?? []).map(item => item.executionId)));
+const rollbackOpen = ref(false);
 /** 行内小标签配色：只区分「新建」和「多次修改」两种语义，不承载交互。 */
 const chipClass = (tone: 'ok' | 'muted'): string => {
   const base = 'shrink-0 rounded px-1 py-0.5 text-lx-fs-xs leading-none';

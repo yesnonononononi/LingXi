@@ -191,6 +191,8 @@ export interface TurnFileChangeVO {
   recordId?: string | null;
   /** 差异能否点开；该文件本轮有可重放的记录就为 true（不限最新轮次） */
   diffAvailable?: boolean;
+  /** 该文件在这次执行里是否已被按基线回填过（来自后端 rolled_back_at） */
+  rolledBack?: boolean;
 }
 
 /** 上下文用量（对应后端 {@code ContextUsageMetric}）。 */

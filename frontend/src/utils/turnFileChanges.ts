@@ -23,6 +23,8 @@ export interface TurnFileChangeRow {
   minusLines: number;
   edits: number;
   created: boolean;
+  /** 该文件在这次执行里已被回滚过：清单上打标记，来自后端记录，不在前端推断。 */
+  rolledBack: boolean;
   /** 点开差异视图的定位；差异不可用或缺标识即为 null（该行只展示、不可点）。 */
   edit: FilePreviewEditRef | null;
 }
@@ -50,6 +52,7 @@ export function buildTurnFileChangeRows(items?: TurnFileChangeVO[] | null): Turn
       minusLines: item.minusLines ?? 0,
       edits: item.edits ?? 0,
       created: !!item.created,
+      rolledBack: !!item.rolledBack,
       edit: canOpenDiff ? {executionId: item.executionId!, recordId: item.recordId!} : null
     };
   });

@@ -138,3 +138,27 @@ test('TurnFileChangeCard：空清单整卡不渲染，不占位', async (t) => {
 
   assert.equal(findAll(root, node => node.props['data-testid'] === 'turn-file-changes').length, 0);
 });
+
+test('TurnFileChangeCard：执行标识唯一时给回滚入口，混了两个执行就不给', async (t) => {
+  const single = await mountCard(t);
+  const buttons = findAll(single.root, node => node.props['data-testid'] === 'turn-file-changes-rollback');
+  assert.equal(buttons.length, 1, '同一执行才允许整批回滚');
+  assert.match(text(buttons[0]), /回滚这次执行的文件改动/);
+
+  // 数据异常（一卡两个执行）时宁可不给入口：按钮会把回滚落到「别人的执行」上。
+  const mixed = await mountCard(t, [...ITEMS, {...ITEMS[0], filePath: '/ws/b.ts', executionId: 'e2'}]);
+  assert.equal(findAll(mixed.root,
+    node => node.props['data-testid'] === 'turn-file-changes-rollback').length, 0);
+});
+
+test('TurnFileChangeCard：「已回滚」标记只来自后端 rolledBack，不在前端推断', async (t) => {
+  const {root} = await mountCard(t, [
+    {...ITEMS[0], rolledBack: true},
+    {...ITEMS[1]}
+  ]);
+
+  const rows = findAll(root, node => node.props['data-testid'] === 'turn-file-changes-row');
+  assert.equal(findAll(rows[0], node => node.props['data-testid'] === 'turn-file-changes-rolled-back').length, 1);
+  assert.match(text(rows[0]), /已回滚/);
+  assert.equal(findAll(rows[1], node => node.props['data-testid'] === 'turn-file-changes-rolled-back').length, 0);
+});
