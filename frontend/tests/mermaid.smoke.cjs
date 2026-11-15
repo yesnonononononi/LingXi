@@ -52,7 +52,8 @@ window.parseDocument = renderMarkdownDocument;
       if (id === path.join(output, 'RaceBlock.vue').replaceAll('\\', '/') || id === path.join(output, 'RaceBlock.vue')) {
         let source = await fs.readFile(path.join(root, 'src/components/chat/MermaidBlock.vue'), 'utf8');
         source = source.replace("'../../utils/mermaid'", "'/node_modules/.tmp/mermaid/race-renderer.js'")
-          .replaceAll("'../../composables/", "'/src/composables/").replace("'../../i18n'", "'/src/i18n'");
+          .replaceAll("'../../composables/", "'/src/composables/").replace("'../../i18n'", "'/src/i18n'")
+          .replace("'../common/LxModal.vue'", "'/src/components/common/LxModal.vue'");
         if (mutation === 'stale') source = source.replaceAll('if (current)', 'if (true)');
         return source;
       }
@@ -105,7 +106,12 @@ window.parseDocument = renderMarkdownDocument;
   assert.equal(await evaluate('window.parseDocument("```mermaid\\nflowchart LR\\n A --> B", true).diagrams[0].complete'), false, '未闭合的流式围栏不能提前画图');
   await setContent(first, true);
   await waitFor('document.querySelector("#actual .mermaid-diagram svg") !== null', '闭合后未成图');
-  assert.match(await evaluate('document.querySelector("#actual svg").textContent'), /开始/);
+  assert.match(await evaluate('document.querySelector("#actual .mermaid-diagram svg").textContent'), /开始/);
+  assert.equal(await evaluate('Boolean(document.querySelector("#actual .mermaid-block .diagram-zoom-btn svg"))'), true, '图表右上角应有 SVG 放大按钮');
+  await evaluate('document.querySelector("#actual .mermaid-block .diagram-zoom-btn").click()');
+  await waitFor('document.querySelector(".mermaid-lightbox-body svg") !== null', '点击放大按钮后未打开图表放大弹窗');
+  await evaluate('document.querySelector(".mermaid-lightbox-close").click()');
+  await waitFor('document.querySelector(".mermaid-lightbox-body") === null', '点击关闭按钮后未关闭图表放大弹窗');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block")).backgroundColor'), 'rgb(255, 255, 255)', '浅色图表背景必须与文字主题一致');
   // 图表不是代码块：不能继承代码块的深色标题栏与语言徽标（回归锁）。
   assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block .block-toolbar")).backgroundColor'), 'rgba(0, 0, 0, 0)', '图表工具栏不能有深色标题栏背景');
@@ -177,8 +183,8 @@ window.parseDocument = renderMarkdownDocument;
   await setContent(fence(reservedParticipant));
   await waitFor('document.querySelector("#actual .mermaid-diagram svg") || document.querySelector("#actual [role=status]")?.textContent.includes("渲染失败")', '关键字参与者未结束渲染');
   assert.equal(await evaluate('document.querySelectorAll("#actual .mermaid-diagram svg").length'), 1, '截图中的 Loop 参与者必须正常成图');
-  assert.match(await evaluate('document.querySelector("#actual svg").textContent'), /根 loop/);
-  assert.match(await evaluate('document.querySelector("#actual svg").textContent'), /resume 拉起新 loop/);
+  assert.match(await evaluate('document.querySelector("#actual .mermaid-diagram svg").textContent'), /根 loop/);
+  assert.match(await evaluate('document.querySelector("#actual .mermaid-diagram svg").textContent'), /resume 拉起新 loop/);
   await evaluate('document.querySelector("#actual .copy-code-btn").click()');
   assert.equal(await evaluate('window.copiedText'), reservedParticipant + '\n', '渲染修正不能改写复制的原始源码');
   await fs.writeFile(path.join(output, 'reserved-participant.png'), (await window.webContents.capturePage()).toPNG());
@@ -277,9 +283,9 @@ destroy End
   await evaluate('window.setRace("second")');
   await waitFor('window.renders.length === 2', '未启动第二个异步请求');
   await evaluate('window.renders[1].resolve("<svg><text>新结果</text></svg>")');
-  await waitFor('document.querySelector("#race svg")?.textContent === "新结果"', '新结果未显示');
+  await waitFor('document.querySelector("#race .mermaid-diagram svg")?.textContent === "新结果"', '新结果未显示');
   await evaluate('window.renders[0].resolve("<svg><text>旧结果</text></svg>")');
-  assert.equal(await evaluate('document.querySelector("#race svg")?.textContent'), '新结果', '旧异步结果覆盖了新结果');
+  assert.equal(await evaluate('document.querySelector("#race .mermaid-diagram svg")?.textContent'), '新结果', '旧异步结果覆盖了新结果');
   await evaluate('window.setRace("third")');
   await evaluate('window.setRace("partial", false)');
   await evaluate('window.renders[2].reject(new Error("旧错误"))');
@@ -287,7 +293,7 @@ destroy End
   await evaluate('window.setRace("unmount")');
   await evaluate('window.setRace("unmount", true, false)');
   await evaluate('window.renders[3].resolve("<svg><text>卸载结果</text></svg>")');
-  assert.equal(await evaluate('document.querySelector("#race svg")'), null);
+  assert.equal(await evaluate('document.querySelector("#race .mermaid-diagram svg")'), null);
 
   console.log('Mermaid 真实组件验证通过：流式闭合、SVG 保留、多图嵌套、主题、复制、错误恢复、安全与异步隔离。');
   clearTimeout(deadline); window.destroy(); await server.close(); app.exit(0);

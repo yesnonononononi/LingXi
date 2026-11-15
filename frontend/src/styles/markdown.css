@@ -261,7 +261,8 @@ html.light .markdown-body .content-block {
   font-size: calc(var(--lx-font-size-xl) * 6 / 7); /* 原 0.75rem = 12px（6/7 em） */
   user-select: none;
 }
-.markdown-body .block-toolbar .copy-code-btn {
+.markdown-body .block-toolbar .copy-code-btn,
+.markdown-body .block-toolbar .diagram-zoom-btn {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -297,17 +298,20 @@ html.light .markdown-body .block-toolbar--code {
   color: #f1f5f9;
 }
 
-/* 图表工具栏：透明、无边框，只保留右侧一个低调的复制入口 */
+/* 图表工具栏：透明、无边框，右侧保留低调的放大与复制入口 */
 .markdown-body .block-toolbar--diagram {
   justify-content: flex-end;
+  gap: 0.25rem;
   padding: 0.4rem 0.65rem 0;
   color: #6b7280;
 }
-.markdown-body .block-toolbar--diagram .copy-code-btn {
+.markdown-body .block-toolbar--diagram .copy-code-btn,
+.markdown-body .block-toolbar--diagram .diagram-zoom-btn {
   color: #6b7280;
   opacity: 0.65;
 }
-.markdown-body .block-toolbar--diagram .copy-code-btn:hover {
+.markdown-body .block-toolbar--diagram .copy-code-btn:hover,
+.markdown-body .block-toolbar--diagram .diagram-zoom-btn:hover {
   background-color: rgba(15, 23, 42, 0.08);
   color: #111827;
   opacity: 1;
@@ -315,10 +319,12 @@ html.light .markdown-body .block-toolbar--code {
 .markdown-body .mermaid-block--dark .block-toolbar--diagram {
   color: #a1a1aa;
 }
-.markdown-body .mermaid-block--dark .block-toolbar--diagram .copy-code-btn {
+.markdown-body .mermaid-block--dark .block-toolbar--diagram .copy-code-btn,
+.markdown-body .mermaid-block--dark .block-toolbar--diagram .diagram-zoom-btn {
   color: #a1a1aa;
 }
-.markdown-body .mermaid-block--dark .block-toolbar--diagram .copy-code-btn:hover {
+.markdown-body .mermaid-block--dark .block-toolbar--diagram .copy-code-btn:hover,
+.markdown-body .mermaid-block--dark .block-toolbar--diagram .diagram-zoom-btn:hover {
   background-color: rgba(255, 255, 255, 0.12);
   color: #f4f4f5;
 }
