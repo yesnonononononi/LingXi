@@ -10,6 +10,7 @@ public interface McpConnectionRegistry {
     /** 测试未保存的配置，临时连接不进入进程连接池。 */
     McpConnectionVO connect(McpConfig.MCP server);
 
+    /** oauth 模式且从未授权过的服务不发起连接，只登记「需要授权」，等用户自己点「去授权」。 */
     void register(Long id);
 
     void remove(Long id);

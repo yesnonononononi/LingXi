@@ -13,6 +13,7 @@ import com.summit.dp.mcp.application.service.McpAuthorizationGateway;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.domain.model.Mcp;
+import com.summit.dp.mcp.domain.model.McpAuth;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
 import com.summit.dp.shared.exception.ClientException;
@@ -62,6 +63,14 @@ class McpManagerTest {
     private Mcp model(long id, String name) {
         return Mcp.builder().id(id).name(name).transport(Mcp.Transport.STREAMABLE_HTTP)
                 .url("https://example.test/" + name).headers(Map.of()).description(name)
+                .initializationTimeout(Duration.ofSeconds(1)).executionTimeout(Duration.ofSeconds(1))
+                .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
+    }
+
+    private Mcp oauthModel(long id, String name) {
+        return Mcp.builder().id(id).name(name).transport(Mcp.Transport.STREAMABLE_HTTP)
+                .url("https://example.test/" + name).headers(Map.of()).description(name)
+                .auth(new McpAuth(McpAuth.MODE_OAUTH, null, List.of(), null))
                 .initializationTimeout(Duration.ofSeconds(1)).executionTimeout(Duration.ofSeconds(1))
                 .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
     }
@@ -431,6 +440,66 @@ class McpManagerTest {
         try (McpToolScope scope = manager.openScope(config(ready, slow))) {
             assertNotNull(scope.getTool("mcp_slow_slow_tool"));
         }
+        manager.close();
+    }
+
+    /**
+     * 从没授权过的 oauth 服务：保存配置这一步不该被迫做一次注定 401 的握手。
+     *
+     * <p>一旦握手，异常会把「已保存」报成失败，前端表单不关、列表不刷新，
+     * 而「去授权」按钮只在状态为 {@code AUTHORIZATION_REQUIRED} 时才渲染——用户被锁死在配置页里。</p>
+     */
+    @Test
+    void oauthServerWithoutCredentialIsNotConnectedAndOnlyWaitsForAuthorization() {
+        Mcp oauth = oauthModel(1L, "needs-login");
+        when(repository.findById(1L)).thenReturn(Optional.of(oauth));
+        when(authorizationGateway.hasCredential("needs-login")).thenReturn(false);
+
+        assertDoesNotThrow(() -> manager.register(1L));
+
+        verifyNoInteractions(factory);
+        assertEquals(McpConnectionStateVO.AUTHORIZATION_REQUIRED, manager.resolveState(1L).state());
+        manager.close();
+    }
+
+    /** 有凭据就照常握手：令牌过期由 401 后的刷新续上，不能因为「不在有效期内」就跳过连接。 */
+    @Test
+    void oauthServerWithStoredCredentialIsConnectedNormally() {
+        Mcp oauth = oauthModel(1L, "authorized");
+        when(authorizationGateway.hasCredential("authorized")).thenReturn(true);
+        session(oauth, "inspect");
+
+        manager.register(1L);
+
+        verify(factory, times(1)).openSession(eq(assembler.toServer(oauth)), isNull(),
+                eq(McpSessionType.REUSE), anyString());
+        assertEquals(McpConnectionStateVO.CONNECTED, manager.resolveState(1L).state());
+        manager.close();
+    }
+
+    /** 凭据没了且配置变了：旧会话必须摘掉，不能让一个再也连不上的连接继续冒充可用。 */
+    @Test
+    void unauthorizedOauthRegistrationDropsStaleConnection() {
+        Mcp authorized = oauthModel(1L, "needs-login");
+        when(authorizationGateway.hasCredential("needs-login")).thenReturn(true);
+        McpSession stale = session(authorized, "inspect");
+        manager.register(1L);
+        assertEquals(McpConnectionStateVO.CONNECTED, manager.resolveState(1L).state());
+
+        when(authorizationGateway.hasCredential("needs-login")).thenReturn(false);
+        Mcp changed = Mcp.builder().id(1L).name("needs-login").transport(Mcp.Transport.STREAMABLE_HTTP)
+                .url("https://changed.test/mcp").headers(Map.of())
+                .auth(new McpAuth(McpAuth.MODE_OAUTH, null, List.of(), null))
+                .initializationTimeout(Duration.ofSeconds(1)).executionTimeout(Duration.ofSeconds(1))
+                .maxOutput(1000).status(Mcp.STATUS_ENABLED).build();
+        when(repository.findById(1L)).thenReturn(Optional.of(changed));
+
+        manager.register(1L);
+
+        verify(stale).close();
+        // 只注册过一次连接：跳过连接时不能再开新会话
+        verify(factory, times(1)).openSession(any(), any(), any(), anyString());
+        assertEquals(McpConnectionStateVO.AUTHORIZATION_REQUIRED, manager.resolveState(1L).state());
         manager.close();
     }
 

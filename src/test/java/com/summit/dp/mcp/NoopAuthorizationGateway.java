@@ -36,4 +36,9 @@ final class NoopAuthorizationGateway implements McpAuthorizationGateway {
     public boolean hasUsableToken(String serverName) {
         return false;
     }
+
+    @Override
+    public boolean hasCredential(String serverName) {
+        return false;
+    }
 }

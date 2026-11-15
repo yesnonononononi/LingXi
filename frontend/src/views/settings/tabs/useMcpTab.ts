@@ -4,7 +4,7 @@ import {ApiError} from '../../../services/interceptor';
 import type {McpConnectionStateVO, McpConnectionVO, McpRequest, McpVO} from '../../../types/chat';
 import {MCP_PROTOCOL_VERSION_MAX_LENGTH, MCP_PROTOCOL_VERSION_PATTERN,} from '../../../types/chat';
 import {isOk} from '../../../utils/api';
-import {nextMcpStatus} from '../../../utils/mcpStatus';
+import {isMcpAuthorizationRequired, nextMcpStatus} from '../../../utils/mcpStatus';
 import {useConfirm} from '../../../composables/useConfirm';
 import {useI18n} from '../../../i18n';
 
@@ -186,7 +186,10 @@ export function useMcpTab() {
       const res = await McpAPI.reconnect(item);
       if (isOk(res.code) && res.data) {
         mcpStates.value[key] = res.data;
-        showMcpToast(t('settings.mcp.toastReconnected'));
+        // 未授权的 oauth 服务不会真的去握手：这时报「已重新连接」是假话，指向「去授权」才对。
+        showMcpToast(isMcpAuthorizationRequired(res.data.state)
+          ? t('settings.mcp.stateAuthorizationRequired')
+          : t('settings.mcp.toastReconnected'));
       } else {
         showMcpToast(res.errMsg || t('settings.mcp.errReconnect'));
       }

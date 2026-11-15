@@ -7,7 +7,9 @@ import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.impl.McpServiceImpl;
 import com.summit.dp.mcp.application.service.impl.McpValidator;
+import com.summit.dp.mcp.application.vo.McpConnectionStateVO;
 import com.summit.dp.mcp.domain.model.Mcp;
+import com.summit.dp.mcp.domain.model.McpAuth;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
 import com.summit.dp.shared.exception.ClientException;
@@ -151,6 +153,26 @@ class McpLiveConfigurationTest {
         try (McpToolScope scope = manager.openScope(service.currentConfig())) {
             assertNotNull(scope.getTool("mcp_test-server_recovered"));
         }
+        manager.close();
+    }
+
+    /**
+     * oauth 模式尚未授权时，保存配置必须成功：连不上是事实，但保存不该被连接结果推翻。
+     *
+     * <p>握手必然 401，异常会把「已保存」报成失败，前端表单不关、列表不刷新，
+     * 而「去授权」按钮只在状态为 {@code AUTHORIZATION_REQUIRED} 时才出现。</p>
+     */
+    @Test
+    void oauthConfigurationIsSavedWithoutAttemptingAnUnauthorizedConnection() {
+        McpCommand command = command();
+        command.setAuth(new McpAuth(McpAuth.MODE_OAUTH, null, List.of(), null));
+
+        assertDoesNotThrow(() -> service.add(command));
+
+        assertEquals(1, records.size());
+        verify(factory, never()).openSession(any(), any(), any(), anyString());
+        assertEquals(McpConnectionStateVO.AUTHORIZATION_REQUIRED,
+                manager.resolveState(records.keySet().iterator().next()).state());
         manager.close();
     }
 

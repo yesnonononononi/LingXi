@@ -78,6 +78,12 @@ public class McpOAuthEngine implements McpAuthorizationGateway {
         return resolveAccessToken(serverName) != null;
     }
 
+    /** @return 是否存过该服务的凭据：过期的也算有，握手时的 401 由刷新令牌续上 */
+    @Override
+    public boolean hasCredential(String serverName) {
+        return tokenStore.find(serverName).isPresent();
+    }
+
     /** @return 授权状态，从未发起过授权时为 null */
     public String resolveStatus(String serverName) {
         return statuses.get(serverName);

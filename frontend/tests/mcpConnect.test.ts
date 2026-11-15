@@ -209,6 +209,15 @@ test('批量查询共享连接状态并支持重新连接已启用服务', async
     assert.equal(value.mcpStates.value['7']?.state, 'CONNECTED');
     assert.equal(value.mcpStates.value['7']?.toolCount, 4);
     assert.equal(value.mcpToast.value, '已重新连接');
+
+    // 未授权的 oauth 服务后端不会真的握手：这时报「已重新连接」是假话，提示必须指向「去授权」。
+    reconnect.mock.mockImplementation(async () => ({
+      code: 1,
+      data: { id: '7', state: 'AUTHORIZATION_REQUIRED' as const, toolCount: null, error: '该服务需要登录授权' },
+    }));
+    await value.handleReconnectMcp(item);
+    assert.equal(value.mcpToast.value, translate('settings.mcp.stateAuthorizationRequired'),
+      '跳过连接时 toast 必须指向「去授权」，不能报已重新连接');
   } finally { scope.stop(); }
 });
 

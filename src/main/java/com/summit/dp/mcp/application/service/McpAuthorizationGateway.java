@@ -27,4 +27,9 @@ public interface McpAuthorizationGateway {
 
     /** @return 当前是否有可用（未过期）的访问令牌 */
     boolean hasUsableToken(String serverName);
+
+    /**
+     * @return 是否存有该服务的授权凭据记录；已过期的也算有——握手时的 401 能靠刷新令牌续上
+     */
+    boolean hasCredential(String serverName);
 }

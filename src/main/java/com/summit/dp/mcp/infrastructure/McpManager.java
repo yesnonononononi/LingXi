@@ -175,6 +175,15 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         PooledSession current = sessions.get(id);
         if (current != null && current.server().equals(server)) return;
 
+        if (needsAuthorizationFirst(model, server)) {
+            // 从没授权过的 oauth 服务握手必然 401：保存配置这一步用户还没有授权入口，
+            // 打过去只会把「已保存」变成一条红字。只登记需求，等用户点「去授权」再连。
+            closeQuietly(sessions.remove(id));
+            authorizationRequired.add(id);
+            log.info("MCP 服务尚未授权，跳过连接: id={}, name={}", id, server.name());
+            return;
+        }
+
         McpSession candidate = null;
         try {
             // 共享连接的 REUSE 语义与工具前缀都由调用方声明；超时与输出预算由框架按 server 配置统一换算。
@@ -270,6 +279,14 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     /** 同一 id 的注册与移除共用一把锁，不同 id 之间互不阻塞。 */
     private Object resolveRegistrationLock(Long id) {
         return registrationLocks.computeIfAbsent(id, ignored -> new Object());
+    }
+
+    /**
+     * @return 是否必须先走一次浏览器授权：oauth 模式且库里没有任何授权凭据。
+     *         <p>有凭据就照常握手，哪怕令牌已过期——401 会用刷新令牌续上。</p>
+     */
+    private boolean needsAuthorizationFirst(Mcp model, McpConfig.MCP server) {
+        return model.resolveAuth().isOauth() && !authorizationGateway.hasCredential(server.name());
     }
 
     @Override
