@@ -34,44 +34,50 @@ const submitUrl = () => {
 
 <template>
   <div class="new-tab-view" :class="{ 'is-dark': isDark }">
-    <form class="new-tab-address-bar" @submit.prevent="submitUrl">
-      <div class="new-tab-address-field">
-        <svg class="address-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18" />
-        </svg>
-        <input
-          v-model="urlDraft"
-          type="text"
-          autocomplete="off"
-          spellcheck="false"
-          :placeholder="t('filePreview.urlPlaceholder')"
-          class="new-tab-address-input"
-        />
-        <button type="submit" class="new-tab-address-go" :title="t('projectPagePreview.openAddress')" :aria-label="t('projectPagePreview.openAddress')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m9 5 7 7-7 7" />
-          </svg>
-        </button>
-      </div>
-    </form>
-
     <div class="new-tab-content">
       <section class="new-tab-section">
         <h3 class="section-label">{{ t('filePreview.toolsTitle') }}</h3>
         <div class="tools-grid">
-          <button type="button" class="tool-card" data-testid="new-tab-open-page" @click="emit('openPage')">
-            <span class="tool-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18" />
-              </svg>
-            </span>
-            <span class="tool-meta">
-              <span class="tool-title">{{ t('filePreview.openPageTool') }}</span>
-              <span class="tool-desc">{{ t('filePreview.openPageDesc') }}</span>
-            </span>
-          </button>
+          <div class="tool-card tool-card-page">
+            <button
+              type="button"
+              class="tool-card-page-head"
+              data-testid="new-tab-open-page"
+              @click="emit('openPage')"
+            >
+              <span class="tool-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18" />
+                </svg>
+              </span>
+              <span class="tool-meta">
+                <span class="tool-title">{{ t('filePreview.openPageTool') }}</span>
+                <span class="tool-desc">{{ t('filePreview.openPageDesc') }}</span>
+              </span>
+            </button>
+
+            <form class="new-tab-address-field" @submit.prevent="submitUrl">
+              <input
+                v-model="urlDraft"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                :placeholder="t('filePreview.urlPlaceholder')"
+                class="new-tab-address-input"
+              />
+              <button
+                type="submit"
+                class="new-tab-address-go"
+                :title="t('projectPagePreview.openAddress')"
+                :aria-label="t('projectPagePreview.openAddress')"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m9 5 7 7-7 7" />
+                </svg>
+              </button>
+            </form>
+          </div>
 
           <button type="button" class="tool-card" data-testid="new-tab-open-design" @click="emit('openDesign')">
             <span class="tool-icon">
@@ -147,28 +153,18 @@ const submitUrl = () => {
   background: var(--file-bg, #fff);
   color: inherit;
 }
-.new-tab-address-bar {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--file-line, #e4e4e7);
-  flex-shrink: 0;
-}
 .new-tab-address-field {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px 6px 12px;
+  padding: 5px 8px 5px 12px;
   border-radius: 9999px;
   background: var(--file-tab, #f4f4f5);
   border: 1px solid var(--file-line, #e4e4e7);
+  transition: border-color 150ms ease;
 }
 .new-tab-address-field:focus-within {
   border-color: var(--file-focus, #a1a1aa);
-}
-.address-search-icon {
-  width: 15px;
-  height: 15px;
-  color: var(--file-muted, #71717a);
-  flex-shrink: 0;
 }
 .new-tab-address-input {
   flex: 1;
@@ -243,6 +239,32 @@ const submitUrl = () => {
 }
 .tool-card:hover {
   background: var(--file-tab, #f4f4f5);
+}
+.tool-card-page {
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  cursor: default;
+}
+.tool-card-page:hover {
+  background: transparent;
+}
+.tool-card-page-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.tool-card-page-head:hover .tool-title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .tool-icon {
   display: grid;
