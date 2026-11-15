@@ -1,5 +1,8 @@
 package com.summit.dp.mcp.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -15,6 +18,7 @@ import java.util.Locale;
  * <p>不提供「从 headers 推断模式」的入口：静态请求头与运行时凭据是两种独立意图，猜错会直接把
  * 一个能用的服务改成需要登录。</p>
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record McpAuth(String mode, String clientId, List<String> scopes, String authorizationServer) {
 
     public static final String MODE_NONE = "none";
@@ -47,6 +51,7 @@ public record McpAuth(String mode, String clientId, List<String> scopes, String 
     }
 
     /** @return 是否走运行时授权流程 */
+    @JsonIgnore
     public boolean isOauth() {
         return MODE_OAUTH.equals(mode);
     }

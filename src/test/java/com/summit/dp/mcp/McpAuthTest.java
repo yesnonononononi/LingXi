@@ -1,5 +1,6 @@
 package com.summit.dp.mcp;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.mcp.domain.model.McpAuth;
 import org.junit.jupiter.api.Test;
 
@@ -58,5 +59,19 @@ class McpAuthTest {
         assertNull(auth.clientId());
         assertNull(auth.authorizationServer());
         assertEquals(List.of(), auth.scopes());
+    }
+
+    @Test
+    void jacksonRoundTripOmitsDerivedOauthFlagAndAcceptsLegacyJson() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        McpAuth original = new McpAuth(McpAuth.MODE_OAUTH, null, List.of(), null);
+        String json = mapper.writeValueAsString(original);
+        assertFalse(json.contains("\"oauth\":"), "序列化不应输出派生属性 oauth: " + json);
+        assertEquals(original, mapper.readValue(json, McpAuth.class));
+
+        String legacyJson = "{\"mode\":\"oauth\",\"clientId\":null,\"scopes\":[],\"authorizationServer\":null,\"oauth\":true}";
+        McpAuth parsed = mapper.readValue(legacyJson, McpAuth.class);
+        assertTrue(parsed.isOauth());
+        assertEquals(original, parsed);
     }
 }

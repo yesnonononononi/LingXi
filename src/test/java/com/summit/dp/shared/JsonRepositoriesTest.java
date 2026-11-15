@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.ddd.infrastructure.repository.json.JsonListCodec;
 import com.summit.dp.mcp.domain.model.Mcp;
+import com.summit.dp.mcp.domain.model.McpAuth;
 import com.summit.dp.mcp.infrastructure.persistence.mapper.McpMapper;
 import com.summit.dp.mcp.infrastructure.persistence.po.McpPO;
 import com.summit.dp.mcp.infrastructure.repository.McpRepositoryImpl;
@@ -107,6 +108,29 @@ class JsonRepositoriesTest {
         assertNull(legacy.getHealthCheckInterval());
         assertNull(legacy.getReconnectInterval());
         assertEquals(original, Files.readString(path("mcp")));
+    }
+
+    @Test
+    void mcpOAuthConfigSurvivesLegacyJsonAndReopen() {
+        mcpMapper.insert(McpPO.builder()
+                .id(77L)
+                .name("oauth-legacy")
+                .transport("streamable-http")
+                .url("https://mcp.example.test")
+                .auth("{\"mode\":\"oauth\",\"clientId\":null,\"scopes\":[],\"authorizationServer\":null,\"oauth\":true}")
+                .build());
+        Mcp imported = mcps.findById(77L).orElseThrow();
+        assertTrue(imported.resolveAuth().isOauth());
+
+        imported.changeAuth(new McpAuth(McpAuth.MODE_OAUTH, "cid-1", List.of("read"), "https://auth.example.test"));
+        mcps.updateById(imported);
+
+        McpRepositoryImpl reopened = new McpRepositoryImpl(mcpMapper, new ObjectMapper(), path("mcp").toString());
+        Mcp reloaded = reopened.findById(77L).orElseThrow();
+        assertTrue(reloaded.resolveAuth().isOauth());
+        assertEquals("cid-1", reloaded.resolveAuth().clientId());
+        assertEquals(List.of("read"), reloaded.resolveAuth().scopes());
+        assertEquals("https://auth.example.test", reloaded.resolveAuth().authorizationServer());
     }
 
     @Test
