@@ -2,10 +2,11 @@
 /**
  * 输入区「工作区权限」上拉框。
  *
- * <p>档位文案与警示判据全部读 `accessModePresentation`，与安全中心共用同一份真源：
- * 本地环境没有沙箱，只读档只剩「文件工具被禁用」，这里也必须照实说，不能只写「只读模式」。</p>
+ * <p>档位名与警示判据全部读 `accessModePresentation`，与安全中心共用同一份真源：
+ * 本地环境没有沙箱，只读档只剩「文件工具被禁用」，这里也必须照实说。</p>
  *
- * <p>「终端管不住」这条约束对所有本地档位都成立，所以不写在每一档下面，改成标题旁的灰点悬停说明。</p>
+ * <p>「终端管不住」这条约束对所有本地档位都成立，所以不写在每一档下面，改成标题旁常驻的感叹号悬停说明；
+ * 非沙箱环境下图标转成警示色，提示这份权限清单本身就是漏的。</p>
  *
  * <p>本组件不写配置：选中只是 emit 意图，由宿主落到 userConfig。档位是全局安全策略，
  * 输入区自己缓存一份就会和安全中心分叉。</p>
@@ -18,7 +19,7 @@ import {
   isAccessModeMismatch,
   isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
-  resolveAccessImpactKey,
+  resolveAccessMenuDescKey,
   resolveAccessPreset,
   resolveSandboxState,
 } from '../../utils/accessModePresentation';
@@ -44,12 +45,12 @@ const sandboxState = computed(() => resolveSandboxState(props.envType));
 const isSelected = (mode: AgentAccessMode): boolean =>
   resolveAccessPreset(mode) === resolveAccessPreset(props.accessMode);
 
-/** 终端不受档位约束时的悬停提示：档位文案里不再重复这段长句，改成标题旁一个可悬停的灰点。 */
+/** 终端不受档位约束时的悬停提示：档位文案里不再重复这段长句，改成标题旁常驻感叹号的悬停说明。 */
 const terminalCaveatVisible = computed<boolean>(() => isTerminalOutsideAccessControl(sandboxState.value));
 
 const modeLabel = (mode: AgentAccessMode): string => t(resolveAccessBadgeKey(mode));
 
-const modeImpact = (mode: AgentAccessMode): string => t(resolveAccessImpactKey(mode, sandboxState.value));
+const modeImpact = (mode: AgentAccessMode): string => t(resolveAccessMenuDescKey(mode));
 
 const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, sandboxState.value);
 </script>
@@ -63,11 +64,10 @@ const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, 
   >
     <div class="flex items-center gap-1 px-2 pt-1 pb-1 select-none">
       <span class="text-lx-fs-xs font-medium" :class="MUTED">{{ t('chat.input.accessMenuTitle') }}</span>
-      <!-- 档位只约束文件工具；终端在非沙箱环境照样能越界，这条长约束改成悬停说明，别再撑三行 -->
+      <!-- 档位只约束文件工具；终端与命令执行在非沙箱环境照样越界，这条长约束改成常驻悬停说明，别再撑三行 -->
       <span
-        v-if="terminalCaveatVisible"
         class="inline-grid shrink-0 place-items-center cursor-help"
-        :class="MUTED"
+        :class="terminalCaveatVisible ? 'text-amber-500' : MUTED"
         :title="t('chat.input.accessMenuTerminalCaveat')"
         :aria-label="t('chat.input.accessMenuTerminalCaveat')"
         data-testid="chat-access-terminal-caveat"

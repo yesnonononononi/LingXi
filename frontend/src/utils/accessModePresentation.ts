@@ -5,6 +5,9 @@ import type {AgentAccessMode, WorkspaceEnvType} from '../types/chat';
  *
  * <p>关键事实：本地执行环境不走沙箱构建，终端没有任何目录围栏；沙箱下 `IN_WORKSPACE` 在 Windows
  * 也是整盘普通目录可写。所以「只读」「普通修改」这两个词单独出现都会骗人，必须带环境后缀。</p>
+ *
+ * <p>例外是输入区上拉框：档位说明只讲档位本身，环境差异收敛成标题旁的一条悬停提示，
+ * 不然三个档位各拖一条长尾巴，菜单读不成样。</p>
  */
 
 /** 执行环境三态：后端 NONE 表示未设置，不能折叠成「已关闭」。 */
@@ -35,7 +38,7 @@ export function isAccessModeMismatch(mode: AgentAccessMode | string | null | und
 
 /**
  * 终端是否跳出档位约束：沙箱才拦得住终端，本地/未设置环境下任何档位都管不了它。
- * 菜单里那条「终端不受限」的提示按这个判据决定要不要出现，不按档位判断。
+ * 菜单标题旁的感叹号常驻，但只有按这个判据为真时才转成警示色 —— 图标不按档位判断。
  */
 export function isTerminalOutsideAccessControl(state: SandboxState): boolean {
   return state !== 'ON';
@@ -44,6 +47,14 @@ export function isTerminalOutsideAccessControl(state: SandboxState): boolean {
 /** 安全中心「实际效果」说明的文案键。 */
 export function resolveAccessImpactKey(mode: AgentAccessMode | string | null | undefined, state: SandboxState): string {
   return `settings.general.impact${resolveAccessPreset(mode)}${state === 'ON' ? 'Sandbox' : 'Local'}`;
+}
+
+/**
+ * 输入区上拉框的档位说明：只描述档位本身的语义，不再按环境分身。
+ * 环境差异（终端在非沙箱下越界）统一收在标题旁的悬停说明里，避免每档文案都拖一条长尾巴。
+ */
+export function resolveAccessMenuDescKey(mode: AgentAccessMode | string | null | undefined): string {
+  return `chat.input.accessMenuDesc${resolveAccessPreset(mode)}`;
 }
 
 /** 输入区徽标的悬停说明：必须同时带上档位与环境。 */

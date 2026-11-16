@@ -3,7 +3,10 @@
  *
  * <p><b>被钉住的事实</b>：档位语义依赖执行环境。本地执行环境不走沙箱构建，终端没有任何目录围栏，
  * 所以「只读模式 = 不修改文件」在本地只剩「文件编辑工具被禁用」；沙箱下「普通修改」在 Windows 也是
- * 整盘普通目录可写。文案键因此按 {@code 档位 + 环境} 组合生成。</p>
+ * 整盘普通目录可写。安全中心的「实际效果」文案键因此按 {@code 档位 + 环境} 组合生成。</p>
+ *
+ * <p>输入区上拉框是例外：档位说明只讲档位本身（`accessMenuDesc*`），环境差异收敛到标题旁的
+ * 常驻感叹号悬停提示，免得每档都拖一条长尾巴。</p>
  *
  * <p>组合式文案键绕过了 TS 的字面量检查，所以这里同时断言 messages.ts 里**两个语种**都真有这些键，
  * 否则界面会渲染出裸键名而不是文案。</p>
@@ -17,6 +20,7 @@ import {
   isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
   resolveAccessImpactKey,
+  resolveAccessMenuDescKey,
   resolveAccessPreset,
   resolveAccessTipKey,
   resolveSandboxState,
@@ -62,6 +66,10 @@ test('文案键按「档位 + 环境」组合，不得出现无环境后缀的�
   assert.equal(resolveAccessTipKey('IN_WORKSPACE', 'ON'), 'chat.input.accessModeTipInWorkspaceSandbox');
   assert.equal(resolveAccessTipKey('IN_WORKSPACE', 'OFF'), 'chat.input.accessModeTipInWorkspaceLocal');
   assert.equal(resolveAccessBadgeKey('OUT_OF_WORKSPACE'), 'chat.input.accessModeBadgeFull');
+  assert.equal(resolveAccessMenuDescKey('READ_ONLY_IN_WORKSPACE'), 'chat.input.accessMenuDescReadOnly');
+  assert.equal(resolveAccessMenuDescKey('IN_WORKSPACE'), 'chat.input.accessMenuDescInWorkspace');
+  assert.equal(resolveAccessMenuDescKey('OUT_OF_WORKSPACE'), 'chat.input.accessMenuDescFull');
+  assert.equal(resolveAccessMenuDescKey(undefined), 'chat.input.accessMenuDescInWorkspace');
 });
 
 test('组合出来的键在两个语种里都必须真实存在', () => {
@@ -72,6 +80,7 @@ test('组合出来的键在两个语种里都必须真实存在', () => {
       keys.add(resolveAccessTipKey(mode, state).split('.').pop() as string);
     }
     keys.add(resolveAccessBadgeKey(mode).split('.').pop() as string);
+    keys.add(resolveAccessMenuDescKey(mode).split('.').pop() as string);
   }
   // 金丝雀：先证明扫描器能命中，否则下面的「都在」可能假绿
   assert.match(messagesSource, /accessModeBadgeReadOnly:/, '金丝雀：messages.ts 未读到档位文案');
@@ -86,12 +95,20 @@ test('「文件规则只在沙箱生效」必须写在安全中心提示里', ()
   assert.match(securityCopySource, /file rules apply only in the sandbox environment/);
 });
 
-test('「终端在非沙箱环境不受档位约束」必须由真源判定，并挂在菜单标题上', () => {
+test('档位说明不再按环境分身，环境差异收敛到标题旁的常驻悬停提示', () => {
+  // 金丝雀：先证明读到了组件源码，否则下面的「不走组合键」可能是假绿
+  assert.match(menuSource, /data-testid="chat-access-terminal-caveat"/, '菜单缺少终端提示图标');
+  assert.match(menuSource, /resolveAccessMenuDescKey\(/, '档位说明必须走静态文案真源');
+  assert.doesNotMatch(menuSource, /resolveAccessImpactKey\(/, '上拉框说明不该再按环境切换，那是安全中心的职责');
+  // 图标常驻（不受环境影响），非沙箱时转警示色
+  assert.doesNotMatch(menuSource, /v-if="terminalCaveatVisible"/, '感叹号必须常驻，不能按环境隐藏');
+  assert.match(menuSource, /terminalCaveatVisible \? 'text-amber-500' : MUTED/, '非沙箱环境必须给感叹号警示色');
+});
+
+test('「终端在非沙箱环境不受档位约束」必须由真源判定', () => {
   assert.equal(isTerminalOutsideAccessControl('LOCAL'), true);
   assert.equal(isTerminalOutsideAccessControl('UNSET'), true);
   assert.equal(isTerminalOutsideAccessControl('ON'), false);
-  // 金丝雀：先证明读到了组件源码，否则下面的「用了真源」可能是假绿
-  assert.match(menuSource, /data-testid="chat-access-terminal-caveat"/, '菜单缺少终端提示图标');
   assert.match(menuSource, /isTerminalOutsideAccessControl\(/, '菜单必须走真源判据');
   const caveatHits = messagesSource.match(/\baccessMenuTerminalCaveat:/g) ?? [];
   assert.equal(caveatHits.length, 2, `accessMenuTerminalCaveat 应在两个语种里各出现一次，实际 ${caveatHits.length} 次`);
