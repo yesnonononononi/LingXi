@@ -38,8 +38,9 @@ public class ChecklistContextInjector {
         String previous = stored instanceof String text ? text : null;
 
         // 属性还在不代表模型还看得到那条消息：压缩与剪枝会把它带走，按上下文实况判断。
+        // 必须带 pendingCompaction 标记：否则框架会把清单通知当成真实用户发言，截断尾部边界并在多次压缩后永久堆叠旧快照。
         if (current != null && (!current.equals(previous) || !present(execution, current))) {
-            context.appendMessage(List.of(UserMessageEntity.from(current)));
+            context.appendMessage(List.of(UserMessageEntity.from(current).markPendingCompaction()));
         }
 
         // 追加成功后才记录文本，失败重试仍能补入。

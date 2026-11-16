@@ -68,6 +68,6 @@ final class ChecklistReminderState {
         String text = expected.get();
         boolean present = execution.getMessages() != null
                 && execution.getMessages().stream().anyMatch(message -> message.text().contains(text));
-        if (!present) context.appendMessage(List.of(UserMessageEntity.from(text)));
+        if (!present) context.appendMessage(List.of(UserMessageEntity.from(text).markPendingCompaction()));
     }
 }

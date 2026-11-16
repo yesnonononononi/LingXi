@@ -259,6 +259,33 @@ class ChecklistContextAttachmentsTest {
         assertEquals("# 当前计划\n计划正文", attachments.attachment("1001").orElseThrow());
     }
 
+    @Test
+    void checklistUserMessagesCarryCompactionMarkerAndDoNotPileUpAcrossCompactions() throws Exception {
+        injector.injectIfNeeded(context(), execution);
+        UserMessageEntity firstNotice = assertInstanceOf(UserMessageEntity.class, execution.getMessages().getLast());
+        assertTrue(firstNotice.hasCompactionMarker(), "清单通知必须带压缩标记，避免被当成真实用户发言");
+
+        ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(service, injector, delivery);
+        assertTrue(reminder.onBeforeComplete(context()).loopResult().shouldContinue());
+        UserMessageEntity reminderMessage = assertInstanceOf(UserMessageEntity.class, execution.getMessages().getLast());
+        assertTrue(reminderMessage.hasCompactionMarker(), "收尾提醒必须带压缩标记");
+
+        execution.getMessages().add(AiMessageEntity.builder().text("收到，继续推进").build());
+        execution.getMessages().add(UserMessageEntity.from("下一轮用户提问"));
+        saveCheckpoint();
+
+        DefaultConversationManager conversations = new DefaultConversationManager(attachments);
+        conversations.rebuildContext("第一次摘要", execution);
+        assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().equals(firstNotice.text())),
+                "首次压缩保留一轮以便衔接");
+
+        execution.getMessages().add(AiMessageEntity.builder().text("继续处理").build());
+        execution.getMessages().add(UserMessageEntity.from("再下一轮用户提问"));
+        conversations.rebuildContext("第二次摘要", execution);
+        assertFalse(execution.getMessages().stream().anyMatch(message -> message.text().equals(firstNotice.text())),
+                "已有后续回复且经过两次压缩的旧清单通知必须淘汰，不能永久堆叠在 earlierUsers");
+    }
+
     /** 通知只保留最近一份，且不复制步骤正文：每轮追加正文会把同一份快照反复计费。 */
     private void assertLatestNoticeBounded(String title) {
         String current = ChecklistReminderText.renderUpdate(service.findActive(SESSION).orElseThrow());

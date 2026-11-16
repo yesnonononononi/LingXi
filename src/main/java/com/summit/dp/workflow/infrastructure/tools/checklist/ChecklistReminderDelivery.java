@@ -30,8 +30,8 @@ public class ChecklistReminderDelivery {
         String marker = ChecklistReminderContext.buildDeliveryMarker(decision.checklist().getChecklistId(),
                 decision.checklist().getProgressVersion(), Long.parseLong(execution.getId()));
         String text = ChecklistReminderText.render(decision) + "\n" + marker;
-        // 用户消息而非系统消息：追加即可，压缩也会保留它；改写历史里的旧提醒会让其后缓存全部失效。
-        context.appendMessage(List.of(UserMessageEntity.from(text)));
+        // 用户消息而非系统消息：追加即可且不污染真实用户轮次边界；改写历史里的旧提醒会让其后缓存全部失效。
+        context.appendMessage(List.of(UserMessageEntity.from(text).markPendingCompaction()));
         // 追加成功后才登记，投递证据必须与对应消息一起保存。
         AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
         Map<String, Object> attributes = new HashMap<>(parameters.getAttributes());
