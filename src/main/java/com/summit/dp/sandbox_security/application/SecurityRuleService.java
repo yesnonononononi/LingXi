@@ -97,6 +97,13 @@ public class SecurityRuleService {
         try { return SecurityCategory.valueOf(category.toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException invalid) { throw new ClientException("安全规则类别必须是 files、terminal 或 net"); }
     }
+    /**
+     * 视图里的 {@code activation} 是给前端的生效时机契约。
+     *
+     * <p>文件规则曾是 {@code NATIVE_NEXT_WORKSPACE}（写进沙箱规格、下个工作区才生效），但新沙箱
+     * 规格没有清单入参，那条链路已不存在；现在由 {@code FileSecurityPolicy} 逐次调用即时裁决，
+     * 因此如实报 {@code IMMEDIATE}，不让界面拿着过期语义。</p>
+     */
     private SecurityRuleView view(SecurityCategory category, SecurityRuleSet model) {
         List<SecurityAction> supported = switch (category) {
             case FILES -> List.of(SecurityAction.ALLOW, SecurityAction.DENY);
@@ -105,7 +112,7 @@ public class SecurityRuleService {
         };
         return new SecurityRuleView(category.name().toLowerCase(Locale.ROOT), model.getRevision(), model.getRules(), supported,
                 category == SecurityCategory.TERMINAL ? SecurityAction.ASK : SecurityAction.ALLOW,
-                category == SecurityCategory.FILES ? "NATIVE_NEXT_WORKSPACE" : category == SecurityCategory.TERMINAL ? "IMMEDIATE" : "OUTBOUND_OPEN");
+                category == SecurityCategory.NET ? "OUTBOUND_OPEN" : "IMMEDIATE");
     }
     private void throwIf(boolean condition, String message) { if (condition) throw new ClientException(message); }
     public record SaveRules(long revision, List<SecurityRule> rules) { }

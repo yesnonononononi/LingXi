@@ -35,7 +35,7 @@ class SecurityRuleApiTest {
         MockMvc mvc = mvc();
         mvc.perform(get("/sandbox/security/files")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1)).andExpect(jsonPath("$.data.revision").value("0"))
-                .andExpect(jsonPath("$.data.activation").value("NATIVE_NEXT_WORKSPACE"));
+                .andExpect(jsonPath("$.data.activation").value("IMMEDIATE"));
         mvc.perform(put("/sandbox/security/files").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"revision\":\"0\",\"rules\":[]}"))
                 .andExpect(jsonPath("$.code").value(1)).andExpect(jsonPath("$.data.revision").value("1"));

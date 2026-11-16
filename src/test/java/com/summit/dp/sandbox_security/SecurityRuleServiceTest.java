@@ -35,7 +35,7 @@ class SecurityRuleServiceTest {
     @Test void seedsThreeSeparateTablesAndRoundTripsCustomRules() throws Exception {
         SecurityRuleService service = service();
         assertEquals(8, service.current("files").rules().size());
-        assertEquals("NATIVE_NEXT_WORKSPACE", service.current("files").activation());
+        assertEquals("IMMEDIATE", service.current("files").activation());
         assertEquals(6, service.current("terminal").rules().size());
         assertEquals(SecurityAction.ALLOW, service.current("net").rules().getFirst().action());
         SecurityRule custom = file(directory.resolve("中文隐私").toString(), SecurityAction.DENY);
