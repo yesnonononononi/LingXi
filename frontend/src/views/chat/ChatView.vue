@@ -580,6 +580,7 @@ import TokenBackground from '../../components/background/TokenBackground.vue';
 import ImageBackground from '../../components/background/ImageBackground.vue';
 import {BACKGROUND_SLOTS_KEY} from '../../types/backgroundSlots';
 import {useBackgroundPreference} from '../../composables/useBackgroundPreference';
+import {usePackHost} from '../../packs/packHost';
 import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
 import {CHAT_INPUT_SLOTS_KEY} from '../../types/chatInputSlots';
 import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';
@@ -962,69 +963,75 @@ const isTokenAuditOpen = ref(false);
 provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
 provide(ANSWER_CHOICES_KEY, answerChoices);
 
-// 默认实现也走注册入口，保证生产与扩展组件使用同一契约。
-provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: MessageActionsBar });
+const { packSlots } = usePackHost();
+
+// 默认实现与官方扩展包槽位合并：未覆盖字段自动回落内置默认组件。
+const messageSlots = shallowReactive({
+  body: packSlots.chatMessage.body ?? MessageBodyDefault,
+  actions: packSlots.chatMessage.actions ?? MessageActionsBar,
+});
+watch(
+  () => [packSlots.chatMessage.body, packSlots.chatMessage.actions] as const,
+  ([body, actions]) => {
+    messageSlots.body = body ?? MessageBodyDefault;
+    messageSlots.actions = actions ?? MessageActionsBar;
+  },
+);
+provide(CHAT_MESSAGE_SLOTS_KEY, messageSlots);
 
 /**
  * 主页背景装饰表面（L2 切片：本仓第一个**真实替换实现**的注册点，全仓唯一）。
  *
- * <p>没有背景时注册的就是内置令牌背景本身 —— 「宿主注入」因此是生产活路径，
- * 而「未注册兜底」由无宿主挂载场景（visual 组件场景直接挂 ChatBackground）承担，
- * 两条分支都真实存在，且只有一份实现代码，不存在 A/B 双实现漂移。</p>
- *
- * <p>用 shallowReactive 而不是常量对象：用户在设置页选图/清除后表面要立刻跟着换
- * （图片变量本身是实时的，若表面不换就会出现「有图没遮罩」）。组件对象不该被深度代理，
- * 所以刻意用 shallow 版本。</p>
+ * <p>优先级：用户自定义图片背景 > 扩展包自定义表面 > 内置令牌背景。
+ * 用 shallowReactive 保证设置页换图或切换扩展包时表面实时响应。</p>
  */
 const { hasBackground: hasBackgroundImage } = useBackgroundPreference();
 const backgroundSlots = shallowReactive<{ surface: Component }>({
   surface: hasBackgroundImage.value ? ImageBackground : TokenBackground,
 });
-watch(hasBackgroundImage, (hasBackground) => {
-  backgroundSlots.surface = hasBackground ? ImageBackground : TokenBackground;
-});
+const syncBackgroundSurface = (): void => {
+  backgroundSlots.surface = hasBackgroundImage.value
+    ? ImageBackground
+    : (packSlots.background.surface ?? TokenBackground);
+};
+watch(hasBackgroundImage, syncBackgroundSurface);
+watch(() => packSlots.background.surface, syncBackgroundSurface, { immediate: true });
 provide(BACKGROUND_SLOTS_KEY, backgroundSlots);
 
 /**
- * 输入区插槽渲染器（同上：试点期注册的就是**内置默认实现**本身）。
- *
- * <p>三个字段全部指向默认实现，好处是「宿主注入」这条分支在生产是活路径，
- * 而「未注册」的兜底分支由无宿主挂载场景（visual 场景直接挂 ChatInputArea）承担，
- * 两条分支都真实存在，且只有一份实现代码 —— 不存在 A/B 双实现漂移。
- * 注意这里**只注册渲染器**：输入/附件/语音/菜单/拖拽等行为状态仍全部留在 ChatInputArea 内部。</p>
+ * 输入区插槽渲染器（合并官方扩展包槽位覆盖，未覆盖字段回落内置默认实现）。
  */
-provide(CHAT_INPUT_SLOTS_KEY, {
-  contextUsage: ChatInputContextUsage,
-  modelSelector: ChatInputModelSelector,
-  sendButton: ChatInputSendButton,
+const inputSlots = shallowReactive({
+  contextUsage: packSlots.chatInput.contextUsage ?? ChatInputContextUsage,
+  modelSelector: packSlots.chatInput.modelSelector ?? ChatInputModelSelector,
+  sendButton: packSlots.chatInput.sendButton ?? ChatInputSendButton,
 });
+watch(
+  () => [packSlots.chatInput.contextUsage, packSlots.chatInput.modelSelector, packSlots.chatInput.sendButton] as const,
+  ([contextUsage, modelSelector, sendButton]) => {
+    inputSlots.contextUsage = contextUsage ?? ChatInputContextUsage;
+    inputSlots.modelSelector = modelSelector ?? ChatInputModelSelector;
+    inputSlots.sendButton = sendButton ?? ChatInputSendButton;
+  },
+);
+provide(CHAT_INPUT_SLOTS_KEY, inputSlots);
 
 /**
- * Sidebar 插槽渲染器（B 档第三组件 S4：让「宿主注入」这条分支成为活路径）。
- *
- * <p>注册的就是**内置默认实现**本身：生产里走<em>注入分支</em>，而无宿主挂载场景
- * （例如 visual 组件场景直接挂 Sidebar）走<em>兜底分支</em>，两条分支都真实存在，
- * 且只有一份实现代码 —— 不存在 A/B 双实现漂移。</p>
- *
- * <p>Sidebar 的对外契约只有 2 个插槽，且**不含** openModels / toggleTheme 两个死事件
- * （已裁决不纳入契约，另立缺陷 D-1），因此这里只注册两个字段。</p>
- */
-/**
- * 默认工作区树实现的注册标记。
- *
- * <p>它的 props 是**内部接口**（24 项，见 SidebarWorkspaceTree.vue 文件头），并不满足对外 7 项
- * 契约，因此注册处必须显式转换 —— 这是设计 §7.0「两套接口」方案③的直接代价。</p>
- *
- * <p><b>为什么这个转换是安全的：</b>Sidebar 用组件身份（`injectedTree === SidebarWorkspaceTree`）
- * 决定渲染时喂哪一套 props；命中默认实现时喂内部 props，绝不会按对外契约喂它。
- * 真正的第三方替换实现走的是对外契约分支，与这里无关。</p>
+ * Sidebar 插槽渲染器（合并官方扩展包槽位覆盖，未覆盖字段回落内置默认实现）。
  */
 const defaultWorkspaceTree = SidebarWorkspaceTree as unknown as Component<SidebarTreeSlotProps>;
-
-provide(SIDEBAR_SLOTS_KEY, {
-  workspaceTree: defaultWorkspaceTree,
-  sidebarFooter: SidebarFooterBar,
+const sidebarSlots = shallowReactive({
+  workspaceTree: packSlots.sidebar.workspaceTree ?? defaultWorkspaceTree,
+  sidebarFooter: packSlots.sidebar.sidebarFooter ?? SidebarFooterBar,
 });
+watch(
+  () => [packSlots.sidebar.workspaceTree, packSlots.sidebar.sidebarFooter] as const,
+  ([workspaceTree, sidebarFooter]) => {
+    sidebarSlots.workspaceTree = workspaceTree ?? defaultWorkspaceTree;
+    sidebarSlots.sidebarFooter = sidebarFooter ?? SidebarFooterBar;
+  },
+);
+provide(SIDEBAR_SLOTS_KEY, sidebarSlots);
 </script>
 
 <style scoped>

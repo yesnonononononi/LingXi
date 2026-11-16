@@ -5,6 +5,7 @@ const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
 const { registerProjectPagePreview } = require('./project-page-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
+const { registerPacksManager } = require('./packs-manager.cjs');
 const { registerImageActions } = require('./image-actions.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
 const { createDisabledPet, resolvePetExposure } = require('./pet-feature-gate.cjs');
@@ -51,7 +52,7 @@ let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
 /** 网页独立于主页面，保留主窗口原有外链策略。 */
-const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu });
+const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme });
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
@@ -310,6 +311,12 @@ const backgroundImages = registerBackgroundImages({
   assertTrustedSender,
 });
 
+const packsManager = registerPacksManager({
+  ipcMain,
+  userDataDir,
+  assertTrustedSender,
+});
+
 /**
  * 图片右键动作（复制图片 / 保存图片）。
  *
@@ -508,6 +515,7 @@ ipcMain.handle('window:set-titlebar-theme', (event, isDark) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
     || typeof isDark !== 'boolean') return;
   nativeTheme.themeSource = isDark ? 'dark' : 'light';
+  projectPagePreview.setTheme(isDark);
   if (process.platform === 'darwin') return;
   mainWindow.setTitleBarOverlay({
     color: isDark ? '#09090b' : '#f5f5f7',
@@ -790,6 +798,7 @@ app.on('before-quit', () => {
   projectPagePreview.close();
   // 背景 IPC 只是注销通道，不删用户图片（图片要跨重启保留）
   backgroundImages.close();
+  packsManager.close();
   // 图片动作只是注销两条通道，没有需要落盘的状态
   imageActions.close();
   // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净

@@ -1637,6 +1637,7 @@ defineExpose({
     >
       <div
         ref="commandContainerRef"
+        data-slot="chat-input-card"
         class="group relative z-10 text-lx-fs-xl leading-[22px] [color:var(--pb-ink)] [border-radius:var(--pb-radius)] transition-all isolate before:-z-10 before:absolute before:inset-0 before:rounded-[inherit] before:content-[''] before:pointer-events-none before:[transition:opacity_500ms_ease] data-[max]:before:opacity-100 before:opacity-0 before:[background:radial-gradient(140%_120%_at_0%_100%,color-mix(in_srgb,var(--pb-spark)_26%,transparent),transparent_62%)] p-3 flex flex-col gap-2 bg-transparent border-0"
         :data-busy="isSending ? '' : undefined"
         :data-max="maxed ? '' : undefined"

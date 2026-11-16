@@ -27,6 +27,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clear: () => ipcRenderer.invoke('background:clear'),
   },
   /** 重启应用（数据目录变更后需要重启才生效）；主进程会校验调用来源 */
+  packs: {
+    fetchRegistry: (category) => ipcRenderer.invoke('packs:fetch-registry', category),
+    listInstalled: () => ipcRenderer.invoke('packs:list-installed'),
+    install: (request) => ipcRenderer.invoke('packs:install', request),
+    load: (packId) => ipcRenderer.invoke('packs:load', packId),
+    uninstall: (packId) => ipcRenderer.invoke('packs:uninstall', packId),
+  },
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   /** 仅主页面使用，网页视图不加载此 preload。 */
   projectPage: {

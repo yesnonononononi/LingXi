@@ -115,6 +115,7 @@ export interface ElectronAPI {
   customTitleBar?: boolean;
   /** 主页背景（选图 / 读图 / 清除）。Web 端为 undefined，调用方需判空。 */
   background?: ElectronBackgroundAPI;
+  packs?: ElectronPacksAPI;
   /** 项目页面原生视图通道。Web 端为 undefined，调用方需判空。 */
   projectPage?: ElectronProjectPageAPI;
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
@@ -142,6 +143,35 @@ export interface ElectronAPI {
  * ⚠️ 这里刻意只有「读状态」和「发意图」两类方法，没有任何涉及 URL 或文件的方法。
  *    下载、校验、安装全部在主进程完成 —— 渲染层接触不到，也就无法被注入利用。
  */
+export interface ElectronPacksAPI {
+  fetchRegistry: (category: RemotePackManifest['category']) => Promise<{ ok: boolean; packs?: RemotePackManifest[]; error?: string }>;
+  listInstalled: () => Promise<{ ok: boolean; packs?: RemotePackManifest[]; error?: string }>;
+  install: (request: { id: string; files?: readonly string[] }) => Promise<{ ok: boolean; manifest?: RemotePackManifest; error?: string }>;
+  load: (packId: string) => Promise<{ ok: boolean; manifest?: RemotePackManifest; cssText?: string; error?: string }>;
+  uninstall: (packId: string) => Promise<{ ok: boolean; error?: string }>;
+}
+
+export interface RemotePackManifest {
+  readonly id: string;
+  readonly category: 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'component';
+  readonly name: string;
+  readonly description: string;
+  readonly version: string;
+  readonly hostApiVersion?: string;
+  readonly capabilities?: readonly string[];
+  readonly preview?: {
+    readonly canvas: string;
+    readonly surface: string;
+    readonly accent: string;
+    readonly text: string;
+  };
+  readonly fontPreview?: {
+    readonly sample: string;
+    readonly family: string;
+  };
+  readonly files?: readonly string[];
+}
+
 export interface ElectronUpdaterAPI {
   getState: () => Promise<UpdateLookupResult | null>;
   check: () => Promise<UpdateActionResult>;

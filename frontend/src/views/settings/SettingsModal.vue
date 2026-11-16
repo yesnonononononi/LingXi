@@ -6,6 +6,7 @@ import {normalizeSettingsTab} from '../../utils/enum';
 import GeneralTab from './tabs/GeneralTab.vue';
 import PersonalizationTab from './tabs/PersonalizationTab.vue';
 import {usePersonalizationCopy} from './tabs/personalizationCopy';
+import PacksTab from './tabs/PacksTab.vue';
 import ModelsTab from './tabs/ModelsTab.vue';
 import CompactionTab from './tabs/CompactionTab.vue';
 import AgentsTab from './tabs/AgentsTab.vue';
@@ -161,6 +162,23 @@ const panelClass = computed(() =>
           <span>{{ personalizationCopy.page }}</span>
         </button>
 
+        <!-- 扩展包 -->
+        <button
+          data-settings-tab="packs"
+          @click="activeTab = 'packs'"
+          :class="[
+            'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+            activeTab === 'packs'
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
+              : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
+          ]"
+        >
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14 6V4a2 2 0 10-4 0v2H6a2 2 0 00-2 2v4h2a2 2 0 110 4H4v4a2 2 0 002 2h4v-2a2 2 0 114 0v2h4a2 2 0 002-2v-4h-2a2 2 0 110-4h2V8a2 2 0 00-2-2h-4z" />
+          </svg>
+          <span>{{ t('settings.nav.packs') }}</span>
+        </button>
+
         <!-- 2. 模型 -->
         <button
           data-settings-tab="models"
@@ -303,6 +321,7 @@ const panelClass = computed(() =>
         <div :key="activeTab" class="settings-tab-content" :data-settings-content="activeTab">
         <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" />
         <PersonalizationTab v-else-if="activeTab === 'personalization'" />
+        <PacksTab v-else-if="activeTab === 'packs'" />
         <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" @open-compaction="activeTab = 'compaction'" />
         <CompactionTab v-else-if="activeTab === 'compaction'" :is-dark="isDark" @back="activeTab = 'models'" @open-models="activeTab = 'models'" />
         <AgentsTab v-else-if="activeTab === 'agents'" :is-dark="isDark" />
