@@ -79,93 +79,104 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
 
   const clearTimer = tab => { clearTimeout(tab.timer); tab.timer = undefined; };
   const clearAgentOverlayTimer = tab => { clearTimeout(tab.agentOverlayTimer); tab.agentOverlayTimer = undefined; };
-  const setAgentOverlayVisible = async (tab, visible) => {
+  const isAgentGlowActive = tab => Boolean(tab?.openedByAgent && !tab?.agentGlowDismissed);
+  const syncAgentOverlay = async (tab, {forceHide = false} = {}) => {
     const contents = tab?.contents;
     if (!contents || contents.isDestroyed() || typeof contents.executeJavaScript !== 'function') return;
+    const glowVisible = !forceHide && isAgentGlowActive(tab);
+    const busyVisible = !forceHide && Boolean(tab.agentBusy);
     const script = `(() => {
       const HOST_ID = '__lingxi_agent_overlay_host__';
+      const glowVisible = ${glowVisible};
+      const busyVisible = ${busyVisible};
       const existing = document.getElementById(HOST_ID);
-      if (!${Boolean(visible)}) {
+      if (!glowVisible && !busyVisible) {
         if (existing) existing.remove();
-        return;
-      }
-      if (existing) {
-        existing.style.display = 'block';
         return;
       }
       const rootEl = document.documentElement || document.body;
       if (!rootEl) return;
-      const host = document.createElement('div');
-      host.id = HOST_ID;
-      host.setAttribute('aria-hidden', 'true');
-      host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;margin:0;padding:0;border:0;background:transparent;';
-      const shadow = host.attachShadow({ mode: 'closed' });
-      shadow.innerHTML = \`
-        <style>
-          @keyframes lingxi-ring-pulse {
-            0%, 100% {
-              box-shadow:
-                inset 0 0 18px 2px rgba(59, 130, 246, 0.28),
-                inset 0 0 56px 12px rgba(37, 99, 235, 0.20),
-                inset 0 0 110px 24px rgba(59, 130, 246, 0.10);
+      let host = existing;
+      if (!host) {
+        host = document.createElement('div');
+        host.id = HOST_ID;
+        host.setAttribute('aria-hidden', 'true');
+        host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;margin:0;padding:0;border:0;background:transparent;';
+        const shadow = host.attachShadow({ mode: 'closed' });
+        shadow.innerHTML = \`
+          <style>
+            @keyframes lingxi-ring-pulse {
+              0%, 100% {
+                box-shadow:
+                  inset 0 0 18px 2px rgba(59, 130, 246, 0.28),
+                  inset 0 0 56px 12px rgba(37, 99, 235, 0.20),
+                  inset 0 0 110px 24px rgba(59, 130, 246, 0.10);
+              }
+              50% {
+                box-shadow:
+                  inset 0 0 24px 4px rgba(96, 165, 250, 0.38),
+                  inset 0 0 72px 18px rgba(59, 130, 246, 0.28),
+                  inset 0 0 130px 32px rgba(37, 99, 235, 0.15);
+              }
             }
-            50% {
-              box-shadow:
-                inset 0 0 24px 4px rgba(96, 165, 250, 0.38),
-                inset 0 0 72px 18px rgba(59, 130, 246, 0.28),
-                inset 0 0 130px 32px rgba(37, 99, 235, 0.15);
+            @keyframes lingxi-spin {
+              to { transform: rotate(360deg); }
             }
-          }
-          @keyframes lingxi-dot-pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.45; transform: scale(0.82); }
-          }
-          .ring {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            animation: lingxi-ring-pulse 2s ease-in-out infinite;
-          }
-          .banner {
-            position: fixed;
-            top: 14px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 14px;
-            border-radius: 9999px;
-            background: rgba(15, 23, 42, 0.86);
-            border: 1px solid rgba(96, 165, 250, 0.55);
-            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.28);
-            backdrop-filter: blur(8px);
-            color: #eff6ff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-            font-size: 12px;
-            font-weight: 500;
-            letter-spacing: 0.02em;
-            white-space: nowrap;
-            pointer-events: none;
-            user-select: none;
-          }
-          .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #60a5fa;
-            box-shadow: 0 0 8px #3b82f6;
-            animation: lingxi-dot-pulse 1.4s ease-in-out infinite;
-          }
-        </style>
-        <div class="ring">
-          <div class="banner">
-            <span class="dot"></span>
+            .ring {
+              position: fixed;
+              inset: 0;
+              pointer-events: none;
+              animation: lingxi-ring-pulse 2.4s ease-in-out infinite;
+            }
+            .banner {
+              position: fixed;
+              top: 14px;
+              left: 50%;
+              transform: translateX(-50%);
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              padding: 6px 14px;
+              border-radius: 9999px;
+              background: rgba(15, 23, 42, 0.86);
+              border: 1px solid rgba(96, 165, 250, 0.55);
+              box-shadow: 0 6px 20px rgba(37, 99, 235, 0.28);
+              backdrop-filter: blur(8px);
+              color: #eff6ff;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+              font-size: 12px;
+              font-weight: 500;
+              letter-spacing: 0.02em;
+              white-space: nowrap;
+              pointer-events: none;
+              user-select: none;
+            }
+            .spinner {
+              width: 12px;
+              height: 12px;
+              border-radius: 50%;
+              border: 1.8px solid rgba(147, 197, 253, 0.35);
+              border-top-color: #60a5fa;
+              animation: lingxi-spin 0.75s linear infinite;
+              flex-shrink: 0;
+            }
+          </style>
+          <div class="ring" data-role="ring"></div>
+          <div class="banner" data-role="banner">
+            <span class="spinner"></span>
             <span>浏览器正在被 LingXi 操控</span>
           </div>
-        </div>
-      \`;
-      rootEl.appendChild(host);
+        \`;
+        host.__lingxiShadow = shadow;
+        rootEl.appendChild(host);
+      }
+      const shadow = host.__lingxiShadow;
+      if (shadow) {
+        const ring = shadow.querySelector('[data-role="ring"]');
+        const banner = shadow.querySelector('[data-role="banner"]');
+        if (ring) ring.style.display = glowVisible ? 'block' : 'none';
+        if (banner) banner.style.display = busyVisible ? 'inline-flex' : 'none';
+      }
     })()`;
     try {
       await contents.executeJavaScript(script, true);
@@ -175,15 +186,15 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
   };
   const beginAgentControl = tab => {
     clearAgentOverlayTimer(tab);
-    tab.agentOverlayActive = true;
-    void setAgentOverlayVisible(tab, true);
+    tab.agentBusy = true;
+    void syncAgentOverlay(tab);
   };
-  const endAgentControl = (tab, holdMs = 1800) => {
+  const endAgentControl = (tab, holdMs = 800) => {
     clearAgentOverlayTimer(tab);
     tab.agentOverlayTimer = setTimeout(() => {
       tab.agentOverlayTimer = undefined;
-      tab.agentOverlayActive = false;
-      void setAgentOverlayVisible(tab, false);
+      tab.agentBusy = false;
+      void syncAgentOverlay(tab);
     }, holdMs);
   };
 
@@ -231,6 +242,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       loadState: tab.loadState, isLoading: tab.isLoading, errorCode: tab.errorCode, errorDescription: tab.errorDescription,
       canGoBack: !tab.contents.isDestroyed() && tab.contents.navigationHistory.canGoBack(),
       canGoForward: !tab.contents.isDestroyed() && tab.contents.navigationHistory.canGoForward(),
+      agentGlowActive: isAgentGlowActive(tab),
     })),
   });
   const publish = state => {
@@ -306,7 +318,8 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     }});
     applyViewTheme(view);
     const tab = {id: randomUUID(), view, contents: view.webContents, url: '', title: '', favicon: '', loadState: 'idle',
-      isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined};
+      isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined,
+      openedByAgent: false, agentGlowDismissed: false, agentBusy: false, agentOverlayTimer: undefined};
     state.tabs.set(tab.id, tab);
     if (!background || !state.activeTabId) state.activeTabId = tab.id;
     view.setVisible(false);
@@ -394,7 +407,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       if (!current()) return;
       applyViewTheme(tab.view);
       applyLayout(state);
-      if (tab.agentOverlayActive) void setAgentOverlayVisible(tab, true);
+      if (isAgentGlowActive(tab) || tab.agentBusy) void syncAgentOverlay(tab);
     });
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) updateUrl(url); });
     contents.on('page-title-updated', (_event, title) => { tab.title = title; send(); });
@@ -477,6 +490,12 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           }
           return payload;
         });
+      }
+      case 'dismiss-agent-glow': {
+        const tab = request.tabId ? requireTab(state, request.tabId) : (state.tabs.get(state.activeTabId) ?? requireTab(state, ''));
+        tab.agentGlowDismissed = true;
+        void syncAgentOverlay(tab);
+        break;
       }
       case 'close': destroyTabs(state); state.closed = true; state.layout = null; break;
       default: throw new Error('不支持此网页标签操作');
@@ -653,6 +672,9 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       }
       const targetUrl = normalizeTargetUrl(url);
       const tab = newTab ? createTab(state) : resolveAutomationTab(state, tabId);
+      if (newTab || !tab.url) {
+        tab.openedByAgent = true;
+      }
       return withAgentControl(tab, async () => {
         state.activeTabId = tab.id;
         const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
@@ -1047,12 +1069,12 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const contents = tab.contents;
       if (!contents || contents.isDestroyed()) throw new Error('网页实例不可用');
       return withAgentControl(tab, async () => {
-        await setAgentOverlayVisible(tab, false);
+        await syncAgentOverlay(tab, {forceHide: true});
         let image;
         try {
           image = await contents.capturePage();
         } finally {
-          await setAgentOverlayVisible(tab, true);
+          await syncAgentOverlay(tab);
         }
       const size = image.getSize();
       if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {

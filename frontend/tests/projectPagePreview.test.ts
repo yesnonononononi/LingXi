@@ -584,38 +584,64 @@ test('发起导航及新开前台标签时在 loadURL 前先落定非零视口�
   assert.deepEqual(popupView.bounds, {x: 20, y: 40, width: 600, height: 760});
 });
 
-test('Agent 操控内置浏览器时注入环绕蓝色光效与操控提示浮层，截图前瞬时隐藏并恢复', async t => {
+test('Agent 仅在自己打开的标签产生持久蓝色光晕，用户可手动关闭，操作时显示 loading 提示且截图纯净', async t => {
   const h = createHarness(15000, true); t.after(() => h.registration.close());
   h.invoke('sync');
   h.layout({visible: true, bounds: {x: 0, y: 0, width: 400, height: 300}});
-  const view = h.views[0]!;
+
+  // 1. 用户自己打开的标签：被 Agent 操作时不开启持久光晕
+  h.invoke('navigate', {url: ADDRESS});
+  const userView = h.views[0]!;
   const executedScripts: string[] = [];
-  const origExec = view.webContents.executeJavaScript.bind(view.webContents);
-  view.webContents.executeJavaScript = async (script: string, userGesture?: boolean) => {
-    executedScripts.push(script);
-    if (script.includes('__lingxi_agent_overlay_host__')) return undefined;
-    if (script.includes('document.querySelectorAll')) {
-      return {ok: true, matchedCount: 1, visibleCount: 1, tag: 'button', id: 'ok', className: 'btn', text: 'OK'};
-    }
-    return origExec(script, userGesture);
+  const patchExec = (view: typeof userView) => {
+    const orig = view.webContents.executeJavaScript.bind(view.webContents);
+    view.webContents.executeJavaScript = async (script: string, userGesture?: boolean) => {
+      executedScripts.push(script);
+      if (script.includes('__lingxi_agent_overlay_host__')) return undefined;
+      if (script.includes('document.querySelectorAll')) {
+        return {ok: true, matchedCount: 1, visibleCount: 1, tag: 'button', id: 'ok', className: 'btn', text: 'OK'};
+      }
+      return orig(script, userGesture);
+    };
+    view.webContents.capturePage = async () => ({
+      getSize: () => ({width: 800, height: 600}),
+      resize: () => ({getSize: () => ({width: 800, height: 600}), toPNG: () => Buffer.from('png')}),
+      toPNG: () => Buffer.from('png'),
+    });
   };
+  patchExec(userView);
+
   await h.registration.automation.click({selector: '.btn'});
   assert.ok(
-    executedScripts.some(s => s.includes('__lingxi_agent_overlay_host__') && s.includes('浏览器正在被 LingXi 操控')),
-    '点击操控期间应注入环绕蓝色光效与中央偏上方提示浮层',
+    executedScripts.some(s => s.includes('glowVisible = false') && s.includes('busyVisible = true') && s.includes('spinner')),
+    '用户自己的标签被操作时不应显示持久光晕，仅显示带 loading 的操控提示',
   );
+  const stateAfterUserClick = await h.registration.automation.listTabs();
+  assert.equal(stateAfterUserClick.tabs[0]!.agentGlowActive, false);
 
+  // 2. Agent 自己新建的标签：开启持久光晕
   executedScripts.length = 0;
-  view.webContents.capturePage = async () => ({
-    getSize: () => ({width: 800, height: 600}),
-    resize: () => ({getSize: () => ({width: 800, height: 600}), toPNG: () => Buffer.from('png')}),
-    toPNG: () => Buffer.from('png'),
-  });
-  await h.registration.automation.screenshot({saveToTemp: false});
+  const navPromise = h.registration.automation.navigate({url: OTHER_ADDRESS, newTab: true, waitUntilLoad: false});
+  await Promise.resolve();
+  const agentView = h.views[1]!;
+  patchExec(agentView);
+  const navRes = await navPromise;
+  const stateAfterAgentOpen = await h.registration.automation.listTabs();
+  const agentTab = stateAfterAgentOpen.tabs.find((tab: ProjectPageTab) => tab.id === navRes.tabId)!;
+  assert.equal(agentTab.agentGlowActive, true);
+
+  // 3. 截图前瞬时隐藏，截完恢复
+  executedScripts.length = 0;
+  await h.registration.automation.screenshot({tabId: navRes.tabId, saveToTemp: false});
   const overlayCalls = executedScripts.filter(s => s.includes('__lingxi_agent_overlay_host__'));
-  assert.ok(overlayCalls.length >= 3, '截图应先显示浮层、截屏前隐藏、截屏后恢复');
-  assert.ok(overlayCalls.some(s => s.includes('!false')), '截屏前应瞬时隐藏操控浮层');
-  assert.ok(overlayCalls.some(s => s.includes('!true')), '截屏后应恢复操控浮层');
+  assert.ok(overlayCalls.some(s => s.includes('glowVisible = false') && s.includes('busyVisible = false')), '截屏前应瞬时隐藏浮层');
+  assert.ok(overlayCalls.some(s => s.includes('glowVisible = true')), '截屏后应恢复持久光晕');
+
+  // 4. 用户手动关闭光晕
+  const dismissed = h.invoke('dismiss-agent-glow', {tabId: navRes.tabId});
+  assert.equal(dismissed.ok, true);
+  const afterDismiss = dismissed.data.tabs.find((tab: ProjectPageTab) => tab.id === navRes.tabId)!;
+  assert.equal(afterDismiss.agentGlowActive, false);
 });
 
 test('Agent browser_fill 优先走原生 insertText 与 sendInputEvent，失焦未写入时兜底 CDP Input.insertText', async t => {

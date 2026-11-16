@@ -176,6 +176,10 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
     const targetId = tabId || activeTabId.value;
     if (targetId) execute({action: 'show-with-agent', tabId: targetId, selectionText});
   };
+  const dismissAgentGlow = (tabId?: string): void => {
+    const targetId = tabId || activeTabId.value;
+    if (targetId) execute({action: 'dismiss-agent-glow', tabId: targetId});
+  };
   /**
    * 收起面板：只让原生视图让位，标签、登录态与表单留在主进程，重开按 sync 快照原样恢复。
    *
@@ -221,5 +225,5 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   }
   return {open, tabs, activeTabId, activeTab, addressInput, committedUrl, loadState, generation, addressError, statusText, diagnoseText,
     openAddress, updateAddress, createTab, activateTab, closeTab, goBack: () => control('back'), goForward: () => control('forward'),
-    reload: () => control('reload'), stop: () => control('stop'), showWithAgent, hide, close, updateLayout, applyState};
+    reload: () => control('reload'), stop: () => control('stop'), showWithAgent, dismissAgentGlow, hide, close, updateLayout, applyState};
 }

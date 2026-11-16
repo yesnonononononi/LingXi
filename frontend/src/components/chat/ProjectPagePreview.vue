@@ -364,6 +364,16 @@ onBeforeUnmount(() => {
 
     <div class="status-row">
       <span class="status-text" :class="stateClass" role="status">{{ statusText }}</span>
+      <button
+        v-if="activeTab?.agentGlowActive"
+        type="button"
+        class="agent-glow-dismiss-btn"
+        @click="preview.dismissAgentGlow(activeTab.id)"
+      >
+        <span class="agent-glow-dot" aria-hidden="true"></span>
+        <span>{{ t('projectPagePreview.agentGlowDismiss') }}</span>
+        <span aria-hidden="true">×</span>
+      </button>
     </div>
 
     <p v-if="diagnoseText" class="diagnose-text" role="note">{{ diagnoseText }}</p>
@@ -445,7 +455,10 @@ onBeforeUnmount(() => {
 .bookmark-row-remove:hover { background: var(--file-line, #e4e4e7); color: inherit; }
 .bookmarks-empty { padding: 18px 12px; text-align: center; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
 .address-error { margin: 0; font-size: var(--lx-font-size-md); color: #dc2626; }
-.status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
+.status-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--lx-font-size-sm); color: var(--file-muted, #71717a); }
+.agent-glow-dismiss-btn { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 9999px; border: 1px solid rgba(59, 130, 246, .38); background: rgba(59, 130, 246, .1); color: #2563eb; font-size: var(--lx-font-size-xs); font-weight: 500; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.agent-glow-dismiss-btn:hover { background: rgba(59, 130, 246, .18); border-color: rgba(59, 130, 246, .6); }
+.agent-glow-dot { width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 6px #3b82f6; }
 .status-text.state-timeout { color: #b45309; }
 .status-text.state-failed { color: #dc2626; }
 .diagnose-text { margin: 0; font-size: var(--lx-font-size-sm); color: #b45309; }
