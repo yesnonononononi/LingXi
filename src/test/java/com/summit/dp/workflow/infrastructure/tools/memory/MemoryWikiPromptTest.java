@@ -58,10 +58,9 @@ class MemoryWikiPromptTest {
         member.setId(6L);
         member.setPrompt("成员职责");
 
-        String prompt = builder().buildMemberPrompt(member, null, "交付任务", spec(project));
+        String prompt = builder().buildMemberPrompt(member, null, spec(project));
 
         assertTrue(prompt.startsWith("成员职责"), prompt);
-        assertTrue(prompt.contains("交付任务"), prompt);
         assertTrue(prompt.contains("三层记忆规则"), prompt);
         assertFalse(prompt.contains("\"total\""), prompt);
     }

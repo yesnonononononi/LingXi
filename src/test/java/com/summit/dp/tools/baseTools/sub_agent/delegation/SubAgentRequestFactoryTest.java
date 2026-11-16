@@ -80,6 +80,12 @@ import static org.mockito.Mockito.*;
  */
 class SubAgentRequestFactoryTest {
 
+    /** 本次委派的任务正文：多数用例共用一个极短任务，断言好定位。 */
+    private static final String TASK = "请只回复一个词：ok";
+
+    /** 基线委派上下文：与 TASK 一样只是夹具，守卫用例会显式传入不同内容。 */
+    private static final String CALLER_PROMPT = "这是委派上下文";
+
     private final WorkspaceService workspaceService = mock(WorkspaceService.class);
     private final ModelService modelService = mock(ModelService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
@@ -179,8 +185,11 @@ class SubAgentRequestFactoryTest {
         AgentRequest request = build(member, buildTeam(member), parentToolExecution(), prior);
         String task = "请只回复一个词：ok";
         assertNull(request.getTask(), "任务不再挂在请求上：它是一条用户消息");
-        assertEquals(task, request.getContextSpec().getContext().getLast().text(),
-                "本次任务追加在历史末尾，历史一个字节都不改");
+        String trailing = request.getContextSpec().getContext().getLast().text();
+        assertTrue(trailing.startsWith(task), "本次任务追加在历史末尾，历史一个字节都不改: " + trailing);
+        assertTrue(trailing.contains(CALLER_PROMPT), "主理人给的上下文必须随任务一起送达: " + trailing);
+        assertFalse(request.getContextSpec().getSystemPrompt().contains(CALLER_PROMPT),
+                "委派上下文不进系统提示词: " + request.getContextSpec().getSystemPrompt());
         if (reused) {
             assertEquals(previousPrompt, request.getContextSpec().getContext().getFirst().text(),
                     "复用会话的前缀原样交回框架，缓存才可能命中");
@@ -267,8 +276,6 @@ class SubAgentRequestFactoryTest {
         assertEquals(ExecutionState.COMPLETED, runtime.execute(restored).getExecutionState());
         assertInstanceOf(SystemMessageEntity.class, sent.getFirst());
         assertEquals(protectedPrompt, sent.getFirst().text());
-        System.out.printf("验证委派前缀保护: reused=%s, tokensBefore=%d, tokensAfterPrune=%d, summaries=%d, runtimeJar=%s%n",
-                reused, before, pruned, summaries.get(), DefaultConversationManager.class.getProtectionDomain().getCodeSource().getLocation());
     }
 
     @Test
@@ -426,6 +433,68 @@ class SubAgentRequestFactoryTest {
     }
 
     @Test
+    @DisplayName("守卫：系统提示词不随委派上下文变化，同一成员两次不同 prompt 必须逐字相同")
+    void systemPromptIgnoresThePerDelegationCallerPrompt() {
+        stubModel();
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        TeamVO team = buildTeam(member);
+
+        String first = buildWithCallerPrompt(factory, member, team, parentToolExecution(), List.of(),
+                "只改单测，不改主代码").getContextSpec().getSystemPrompt();
+        String second = buildWithCallerPrompt(factory, member, team, parentToolExecution(), List.of(),
+                "这次换个完全不同的约束").getContextSpec().getSystemPrompt();
+
+        assertFalse(first.contains("只改单测"), "每次委派都变的内容不能进系统提示词: " + first);
+        assertEquals(first, second, "系统提示词逐字相同，前缀缓存与复用子会话才不被它带走");
+    }
+
+    @Test
+    @DisplayName("守卫：复用会话的本次上下文进尾条用户消息，旧前缀逐字不动")
+    void reusedDelegationDeliversTheCallerPromptInTheTrailingUserMessage() {
+        stubModel();
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        String previousPrompt = "上一轮的系统提示词";
+        List<Message> prior = List.of(
+                SystemMessageEntity.builder().text(previousPrompt).build(),
+                UserMessageEntity.from("上次的任务"),
+                AiMessageEntity.builder().text("上次的回复").build());
+
+        AgentRequest request = buildWithCallerPrompt(factory, member, buildTeam(member), parentToolExecution(),
+                prior, "只改单测，不改主代码");
+
+        List<Message> messages = request.getContextSpec().getContext();
+        assertEquals(4, messages.size(), "历史三条 + 本次任务一条");
+        assertEquals(previousPrompt, messages.getFirst().text(),
+                "旧系统消息必须逐字保留，否则缓存前缀与 thinking 签名一起失效");
+        assertInstanceOf(UserMessageEntity.class, messages.getLast());
+        assertTrue(messages.getLast().text().contains("只改单测，不改主代码"),
+                "复用会话的系统提示词是旧的，本次约束只有这一条路能到成员手里: " + messages.getLast().text());
+        assertFalse(request.getContextSpec().getSystemPrompt().contains("只改单测"));
+    }
+
+    @Test
+    @DisplayName("守卫：首派也只有一条用户消息，任务在前、上下文在约束段，空上下文不留空段")
+    void freshDelegationCarriesTaskAndCallerPromptInOneUserMessage() {
+        stubModel();
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        TeamVO team = buildTeam(member);
+
+        AgentRequest request = buildWithCallerPrompt(factory, member, team, parentToolExecution(), List.of(),
+                "  只改单测  ");
+
+        List<Message> messages = request.getContextSpec().getContext();
+        assertEquals(1, messages.size());
+        String text = messages.getFirst().text();
+        assertTrue(text.startsWith(TASK), text);
+        assertTrue(text.contains("# 任务上下文与约束\n只改单测"), "上下文必须去空白后整段跟上: " + text);
+
+        AgentRequest withoutContext = buildWithCallerPrompt(factory, member, team, parentToolExecution(),
+                List.of(), "   ");
+        assertEquals(TASK, withoutContext.getContextSpec().getContext().getFirst().text(),
+                "没有上下文时不留空标题，也不给正文加分隔符");
+    }
+
+    @Test
     @DisplayName("子 Agent 未绑定模型：直接报错，不静默继承父任务模型")
     void missingModelFailsFast() {
         AgentVO member = agent(6L, "架构师", "你是架构师");
@@ -482,10 +551,17 @@ class SubAgentRequestFactoryTest {
 
     private AgentRequest build(SubAgentRequestFactory target, AgentVO member, TeamVO team,
                                ToolExecution toolExecution, List<Message> priorMessages) {
+        return buildWithCallerPrompt(target, member, team, toolExecution, priorMessages, CALLER_PROMPT);
+    }
+
+    /** 委派上下文随参数走：守卫用例要拿不同 prompt 组装两次，不能只靠固定夹具。 */
+    private AgentRequest buildWithCallerPrompt(SubAgentRequestFactory target, AgentVO member, TeamVO team,
+                                               ToolExecution toolExecution, List<Message> priorMessages,
+                                               String callerPrompt) {
         CallSubAgentToolArgument argument = new CallSubAgentToolArgument();
         argument.setAgentId(member.getId());
-        argument.setTask("请只回复一个词：ok");
-        argument.setPrompt("这是委派上下文");
+        argument.setTask(TASK);
+        argument.setPrompt(callerPrompt);
         return target.build(argument, member, team, toolExecution, null, "1234", null, priorMessages);
     }
 

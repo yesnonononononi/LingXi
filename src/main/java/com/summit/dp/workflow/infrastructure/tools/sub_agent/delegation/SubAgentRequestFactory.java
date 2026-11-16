@@ -110,9 +110,8 @@ public class SubAgentRequestFactory {
         Objects.requireNonNull(toolExecution);
         return builder
                 .contextSpec(ContextSpec.builder()
-                        .context(buildContext(priorMessages, task))
-                        .systemPrompt(systemPromptBuilder.buildMemberPrompt(
-                                subAgent, team, argument.getPrompt(), workspaceSpec))
+                        .context(buildContext(priorMessages, task, argument.getPrompt()))
+                        .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, workspaceSpec))
                         .memory(MemoryLoader.collect(memoryLoaders, workspaceSpec))
                         .build())
                 .modelConfigSpec(runtimeConfigurations.freezeModel(subAgent.getModelId(), childModel.config()))
@@ -142,14 +141,25 @@ public class SubAgentRequestFactory {
      * 两者都以「历史前缀与上次完全一致」为前提。开头的系统消息也在缓存前缀里，剥掉或替换它，
      * 后面每一轮都要重新计费并可能让签名失配。本次任务作为新的一条用户消息追加在末尾即可。</p>
      */
-    private static List<Message> buildContext(List<Message> priorMessages, String task) {
-        UserMessageEntity current = UserMessageEntity.from(task);
+    private static List<Message> buildContext(List<Message> priorMessages, String task, String callerPrompt) {
+        UserMessageEntity current = UserMessageEntity.from(renderTask(task, callerPrompt));
         if (priorMessages == null || priorMessages.isEmpty()) {
             return List.of(current);
         }
         List<Message> context = new ArrayList<>(priorMessages);
         context.add(current);
         return context;
+    }
+
+    /**
+     * 尾条用户消息正文：任务 + 主理人给的任务上下文与约束。
+     *
+     * <p>上下文必须走这里而不是系统提示词：复用时框架保留历史里那条旧系统消息、丢弃新生成的，
+     * 塞进系统提示词等于每次委派的约束都石沉大海。放在用户消息里还会被常规压缩保留。</p>
+     */
+    private static String renderTask(String task, String callerPrompt) {
+        String context = Objects.toString(callerPrompt, "").strip();
+        return context.isEmpty() ? task : task + "\n\n# 任务上下文与约束\n" + context;
     }
 
     /**

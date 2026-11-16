@@ -88,18 +88,18 @@ public class BusinessSystemPromptBuilder {
         return sections.isEmpty() ? "" : "# 用户个性化偏好\n\n" + String.join("\n\n", sections);
     }
 
-    /** 子委派沿用成员职责与主理人上下文，不额外继承根执行的全局规则。 */
-    public String buildMemberPrompt(AgentVO agent, TeamVO team, String callerPrompt) {
-        return buildMemberPrompt(agent, team, callerPrompt, null);
+    /** 子委派沿用成员职责，不额外继承根执行的全局规则。 */
+    public String buildMemberPrompt(AgentVO agent, TeamVO team) {
+        return buildMemberPrompt(agent, team, null);
     }
 
     /**
-     * 成员提示词：职责与名单 → 委派上下文 → 项目记忆。
+     * 成员提示词：职责与名单 → 项目记忆，全部是跨委派恒定的内容。
      *
-     * <p>刻意不带渲染语法段：成员产出是给主理人的报告，不是直接呈现给用户的正文，
-     * 把产品的渲染契约塞进去只会挤占成员自己的上下文。</p>
+     * <p>刻意不带渲染语法段与委派上下文：前者是给用户的正文契约；后者每次委派都不同，而复用
+     * 子会话时框架原样保留历史里那条旧系统消息、丢弃新生成的，放进来只会让本次约束整段丢失。</p>
      */
-    public String buildMemberPrompt(AgentVO agent, TeamVO team, String callerPrompt, WorkspaceSpec workspace) {
+    public String buildMemberPrompt(AgentVO agent, TeamVO team, WorkspaceSpec workspace) {
         String rolePrompt = TeamPromptComposer.memberPrompt(
                 agent.getPrompt(),
                 team == null ? null : team.getAgents(),
@@ -107,13 +107,7 @@ public class BusinessSystemPromptBuilder {
                 team == null ? null : team.getCommanderAgentId(),
                 team == null ? null : team.getDescription()
         );
-        String prompt = String.format("""
-                %s
-
-                # Commander 提供的任务上下文
-                %s
-                """, rolePrompt, Objects.toString(callerPrompt, "").trim());
         String memoryPrompt = projectMemoryPrompt.load(workspace);
-        return memoryPrompt.isEmpty() ? prompt : prompt + "\n" + memoryPrompt;
+        return memoryPrompt.isEmpty() ? rolePrompt : rolePrompt + "\n" + memoryPrompt;
     }
 }

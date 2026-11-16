@@ -65,7 +65,7 @@ class BusinessSystemPromptBuilderTest {
     }
 
     @Test
-    void memberKeepsRoleRosterAndDelegationContextInOrder() {
+    void memberKeepsRoleAndRosterWithoutPerDelegationContext() {
         AgentVO member = new AgentVO();
         member.setId(6L);
         member.setPrompt("成员人设");
@@ -75,28 +75,26 @@ class BusinessSystemPromptBuilderTest {
         TeamVO team = TeamVO.builder().commanderAgentId(5L).description("团队描述")
                 .agents(List.of(member, commander)).build();
 
-        String prompt = new BusinessSystemPromptBuilder("全局规则")
-                .buildMemberPrompt(member, team, "  本次任务上下文  ");
+        String prompt = new BusinessSystemPromptBuilder("全局规则").buildMemberPrompt(member, team);
 
         assertTrue(prompt.startsWith("成员人设\n"));
         assertTrue(prompt.contains("团队描述"));
         assertTrue(prompt.contains("- id: 5"));
         assertFalse(prompt.contains("- id: 6"));
-        assertTrue(prompt.endsWith("# Commander 提供的任务上下文\n本次任务上下文\n"));
-        assertTrue(prompt.indexOf("成员名单") < prompt.indexOf("# Commander 提供的任务上下文"));
+        assertFalse(prompt.contains("任务上下文"), "委派上下文每次委派都不同，不属于系统提示词: " + prompt);
         assertFalse(prompt.contains("全局规则"));
     }
 
     @Test
-    void memberAcceptsMissingTeamAndCallerContext() {
+    void memberAcceptsMissingTeam() {
         AgentVO member = new AgentVO();
         member.setId(6L);
         member.setPrompt("成员人设");
 
-        String prompt = new BusinessSystemPromptBuilder("").buildMemberPrompt(member, null, null);
+        String prompt = new BusinessSystemPromptBuilder("").buildMemberPrompt(member, null);
         assertTrue(prompt.contains("主理人的 agentId 是 未提供"));
         assertTrue(prompt.contains("（暂无其他团队成员）"));
-        assertTrue(prompt.endsWith("# Commander 提供的任务上下文\n\n"));
+        assertFalse(prompt.contains("任务上下文"));
     }
 
     @Test
