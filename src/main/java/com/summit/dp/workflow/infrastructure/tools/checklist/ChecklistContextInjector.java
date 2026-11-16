@@ -2,7 +2,8 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import com.summit.core.conversation.message.SystemMessageEntity;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.dp.checklist.application.ChecklistReminderText;
 import com.summit.dp.checklist.application.ChecklistService;
@@ -15,7 +16,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 正文按实际内容更新；压缩后缺消息时不能被旧版本标记挡住。 */
+/**
+ * 清单变化以用户消息追加，不改写已有消息。
+ *
+ * <p>已经发出去的消息就是服务端的提示前缀，替换其中一条会让它后面每个 token 的缓存作废。
+ * 所以这里只在版本变化（或消息被压缩带走）时追加一条带版本的通知，正文交给
+ * {@code get_current_checklist} —— 用户消息在压缩中会被保留，丢了也能重新拿到权威快照。</p>
+ */
 @Component
 @RequiredArgsConstructor
 public class ChecklistContextInjector {
@@ -25,20 +32,29 @@ public class ChecklistContextInjector {
 
     void injectIfNeeded(LoopContext context, Execution execution) {
         ChecklistVO snapshot = checklistService.findActive(ExecutionIdentity.sessionId(execution)).orElse(null);
-        String current = snapshot == null ? null : ChecklistReminderText.renderContext(snapshot);
+        String current = snapshot == null ? null : ChecklistReminderText.renderUpdate(snapshot);
         AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
         Object stored = parameters.getAttributes().get(CONTENT);
         String previous = stored instanceof String text ? text : null;
-        if (!ChecklistSystemMessages.synchronize(execution, previous, current) && current != null) {
-            context.appendMessage(List.of(SystemMessageEntity.builder().text(current).build()));
+
+        // 属性还在不代表模型还看得到那条消息：压缩与剪枝会把它带走，按上下文实况判断。
+        if (current != null && (!current.equals(previous) || !present(execution, current))) {
+            context.appendMessage(List.of(UserMessageEntity.from(current)));
         }
-        // 消息写入成功后才记录文本，失败重试仍能补入；不再依赖进展版本推测消息是否存在。
+
+        // 追加成功后才记录文本，失败重试仍能补入。
         Map<String, Object> attributes = new HashMap<>(parameters.getAttributes());
         attributes.remove("lingxi.checklist.injected");
         if (current == null) attributes.remove(CONTENT);
         else attributes.put(CONTENT, current);
         parameters.setAttributes(Map.copyOf(attributes));
         execution.getAgentRequest().setRuntimeParameters(parameters);
-        ChecklistReminderState.synchronize(execution, snapshot);
+
+        ChecklistReminderState.appendIfMissing(context, execution, snapshot);
+    }
+
+    private static boolean present(Execution execution, String text) {
+        List<Message> messages = execution.getMessages();
+        return messages != null && messages.stream().anyMatch(message -> text.equals(message.text()));
     }
 }

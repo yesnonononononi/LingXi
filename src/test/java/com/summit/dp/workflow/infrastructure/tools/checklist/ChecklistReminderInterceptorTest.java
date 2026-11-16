@@ -4,7 +4,7 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
-import com.summit.core.conversation.message.SystemMessageEntity;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
@@ -75,7 +75,7 @@ class ChecklistReminderInterceptorTest {
         assertFalse(result.next(), "必须短路当前拦截器链，不能再让后续链路改动结局");
         assertTrue(result.loopResult().shouldContinue(), "续轮必须是显式 CONTINUE");
         assertEquals(1, appended.size());
-        String text = ((SystemMessageEntity) appended.getFirst()).text();
+        String text = ((UserMessageEntity) appended.getFirst()).text();
         assertTrue(text.contains("本次任务"), text);
         assertTrue(text.contains("update_checklist_step"), text);
         assertTrue(text.contains(String.valueOf(created.getSteps().getFirst().getStepId())),
@@ -164,8 +164,8 @@ class ChecklistReminderInterceptorTest {
     }
 
     @Test
-    @DisplayName("上下文注入有界：相同内容不追加，推进后替换系统消息")
-    void contextInjectionReplacesTheCurrentSystemSnapshot() {
+    @DisplayName("上下文注入只追加：相同进度版本不重复，推进后新增用户消息且历史原样保留")
+    void contextInjectionAppendsWithoutRewritingHistory() {
         ChecklistVO created = service.create(ChecklistCommand.create(
                 SESSION_ID, null, "本次任务", List.of("写领域层", "跑测试")));
         Execution execution = execution(true);
@@ -174,14 +174,22 @@ class ChecklistReminderInterceptorTest {
         interceptor.onBeforeModelInvoke(context(execution, appended));
         interceptor.onBeforeModelInvoke(context(execution, appended));
         assertEquals(1, appended.size(), "同一进展版本的重复轮次不得重复注入");
+        assertInstanceOf(UserMessageEntity.class, appended.getFirst(), "清单通知按用户消息下发");
 
         service.updateStep(ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(),
                 created.getSteps().getFirst().getStepId(), "COMPLETED"));
+        List<Message> history = new ArrayList<>(execution.getMessages());
         interceptor.onBeforeModelInvoke(context(execution, appended));
-        assertEquals(1, appended.size(), "推进后替换已有系统消息，不堆积旧快照");
-        assertEquals(1, execution.getMessages().size());
-        assertTrue(execution.getMessages().getFirst() instanceof SystemMessageEntity);
-        assertTrue(execution.getMessages().getFirst().text().contains("COMPLETED"));
+        assertEquals(2, appended.size(), "推进后追加新通知，而不是就地改写旧消息");
+        assertEquals(history.size() + 1, execution.getMessages().size(), "历史只增不减");
+        for (int index = 0; index < history.size(); index++) {
+            assertSame(history.get(index), execution.getMessages().get(index),
+                    "历史前缀必须原样保留：就地改写会让其后每个 token 的缓存作废");
+        }
+        String latest = execution.getMessages().getLast().text();
+        assertTrue(latest.contains("进度版本=1"), latest);
+        assertTrue(latest.contains("仍有 1 个步骤未结束"), latest);
+        assertFalse(latest.contains("写领域层"), "通知不复制步骤正文，正文由 get_current_checklist 提供");
     }
 
     private Execution execution(boolean withChecklistTools) {

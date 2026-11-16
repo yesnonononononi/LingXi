@@ -2,7 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import com.summit.core.conversation.message.SystemMessageEntity;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.dp.checklist.application.ChecklistReminderContext;
@@ -30,7 +30,8 @@ public class ChecklistReminderDelivery {
         String marker = ChecklistReminderContext.buildDeliveryMarker(decision.checklist().getChecklistId(),
                 decision.checklist().getProgressVersion(), Long.parseLong(execution.getId()));
         String text = ChecklistReminderText.render(decision) + "\n" + marker;
-        context.appendMessage(List.of(SystemMessageEntity.builder().text(text).build()));
+        // 用户消息而非系统消息：追加即可，压缩也会保留它；改写历史里的旧提醒会让其后缓存全部失效。
+        context.appendMessage(List.of(UserMessageEntity.from(text)));
         // 追加成功后才登记，投递证据必须与对应消息一起保存。
         AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
         Map<String, Object> attributes = new HashMap<>(parameters.getAttributes());

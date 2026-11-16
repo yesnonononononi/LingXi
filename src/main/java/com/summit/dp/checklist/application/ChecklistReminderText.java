@@ -46,6 +46,22 @@ public final class ChecklistReminderText {
         return text.toString();
     }
 
+    /**
+     * 渲染「清单已更新」通知。
+     *
+     * <p>只带标识、版本与未结束步骤数，不复制步骤正文：消息每变一次就追加一条，塞全量正文等于
+     * 把过期快照、长内容重复计费；模型需要正文时用 {@code get_current_checklist} 读权威版本。</p>
+     */
+    public static String renderUpdate(ChecklistVO snapshot) {
+        long unresolved = snapshot.sortedSteps().stream()
+                .filter(step -> "PENDING".equals(step.getStatus()) || "IN_PROGRESS".equals(step.getStatus()))
+                .count();
+        return "执行清单已更新：「" + snapshot.getTitle() + "」（checklistId=" + snapshot.getChecklistId()
+                + "，进度版本=" + snapshot.getProgressVersion() + "），仍有 " + unresolved + " 个步骤未结束。\n"
+                + "需要最新步骤、状态与稳定 stepId 时调用 get_current_checklist；推进后用 update_checklist_step 如实标记。\n"
+                + "这份清单不是审批计划，不产生审批卡片。";
+    }
+
     /** 渲染清单上下文注入：让新执行与压缩后的模型拿到清单标识与稳定 stepId。 */
     public static String renderContext(ChecklistVO snapshot) {
         StringBuilder text = new StringBuilder();

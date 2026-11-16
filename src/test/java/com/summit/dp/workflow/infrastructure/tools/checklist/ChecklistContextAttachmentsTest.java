@@ -131,25 +131,30 @@ class ChecklistContextAttachmentsTest {
     }
 
     @Test
-    void systemSnapshotsFollowContentChangesWithoutGrowingOrTrustingAnOldInjectionMarker() {
+    void updateNoticesAppendOnlyWhenTheVersionOrTheTitleChangesOrTheMessageIsGone() {
         injector.injectIfNeeded(context(), execution);
         injector.injectIfNeeded(context(), execution);
         assertEquals(3, execution.getMessages().size());
-        assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getLast());
+        assertInstanceOf(UserMessageEntity.class, execution.getMessages().getLast(),
+                "清单通知按用户消息下发，后续轮次不再改写它");
+        assertTrue(execution.getMessages().getLast().text().contains("初始任务"));
+
         service.modify(ChecklistCommand.modify(SESSION, created.getChecklistId(), "修订任务",
                 List.of(new ChecklistCommand.StepContent(created.getSteps().getFirst().getStepId(), "编译全部模块")),
                 null, null, null));
         injector.injectIfNeeded(context(), execution);
         assertEquals(0L, service.findActive(SESSION).orElseThrow().getProgressVersion());
-        assertEquals(3, execution.getMessages().size());
+        assertEquals(4, execution.getMessages().size(), "标题变了就追加新通知，绝不改写历史那条");
         String text = execution.getMessages().getLast().text();
-        assertTrue(text.contains("修订任务")); assertTrue(text.contains("编译全部模块"));
-        assertFalse(text.contains("初始任务"));
+        assertTrue(text.contains("修订任务"));
+        assertFalse(text.contains("编译全部模块"), "通知不复制步骤正文");
+
         execution.setMessages(new ArrayList<>(execution.getMessages().subList(0, 2)));
         injector.injectIfNeeded(context(), execution);
-        assertEquals(3, execution.getMessages().size());
+        assertEquals(3, execution.getMessages().size(), "消息被压缩带走后必须补回一条");
         assertTrue(execution.getMessages().getLast().text().contains("修订任务"));
-        assertEquals(1, execution.getMessages().stream().filter(UserMessageEntity.class::isInstance).count());
+        assertEquals(2, execution.getMessages().stream().filter(UserMessageEntity.class::isInstance).count(),
+                "补回的是通知，用户原话不动");
     }
 
     @Test
@@ -159,17 +164,18 @@ class ChecklistContextAttachmentsTest {
                 List.of(new ChecklistCommand.StepContent(created.getSteps().getFirst().getStepId(), content)),
                 null, null, null));
         injector.injectIfNeeded(context(), execution);
-        assertTrue(execution.getMessages().getLast().text().contains(content));
+        assertFalse(execution.getMessages().getLast().text().contains(content),
+                "长正文不进每轮通知，否则同一份快照会被反复计费");
         saveCheckpoint();
         assertTrue(attachments.attachment("1001").orElseThrow().contains(content));
     }
 
     @Test
-    void failedSystemAppendDoesNotPreventTheNextAttemptFromRestoringTheSnapshot() {
+    void failedAppendDoesNotPreventTheNextAttemptFromRestoringTheNotice() {
         LoopContext rejected = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(), null, () -> 0, null, messages -> { throw new IllegalStateException("追加失败"); });
         assertThrows(IllegalStateException.class, () -> injector.injectIfNeeded(rejected, execution));
         injector.injectIfNeeded(context(), execution);
-        assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getLast());
+        assertInstanceOf(UserMessageEntity.class, execution.getMessages().getLast());
         assertTrue(execution.getMessages().getLast().text().contains("初始任务"));
     }
 
@@ -178,7 +184,8 @@ class ChecklistContextAttachmentsTest {
         injector.injectIfNeeded(context(), execution);
         ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(service, injector, delivery);
         assertTrue(reminder.onBeforeComplete(context()).loopResult().shouldContinue());
-        assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getLast());
+        assertInstanceOf(UserMessageEntity.class, execution.getMessages().getLast(),
+                "收尾提醒也按用户消息追加，压缩会保留它");
         saveCheckpoint();
         String attachment = attachments.attachment("1001").orElseThrow();
         assertTrue(attachment.startsWith("# 当前计划\n计划正文"));
@@ -209,13 +216,13 @@ class ChecklistContextAttachmentsTest {
             assertTrue(attachments.attachment("1001").orElseThrow().contains("更新任务" + round));
             pruner.compact(new ContextCompactRequest(execution));
             injector.injectIfNeeded(context(), execution);
-            assertCurrentAndBounded("更新任务" + round);
+            assertLatestNoticeBounded("更新任务" + round);
             saveCheckpoint();
             assertTrue(compacter.compact(new ContextCompactRequest(execution)));
             String input = compactRequest.get().getMessages().getLast().text();
             assertTrue(input.contains("[PROTECTED APPLICATION STATE]\n# 当前计划"));
             injector.injectIfNeeded(context(), execution);
-            assertCurrentAndBounded("更新任务" + round);
+            assertLatestNoticeBounded("更新任务" + round);
             assertTrue(delivery.buildContext(execution).wasDelivered(created.getChecklistId(), 0L));
             saveCheckpoint();
         }
@@ -227,9 +234,8 @@ class ChecklistContextAttachmentsTest {
     void missingMessagesCannotTurnAClaimedQuotaIntoProtectedDeliveryEvidence() throws Exception {
         ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(service, injector, delivery);
         reminder.onBeforeComplete(context());
-        String confirmed = execution.getMessages().getLast().text();
         assertTrue(delivery.buildContext(execution).wasDelivered(created.getChecklistId(), 0L));
-        execution.setMessages(new ArrayList<>(List.of(UserMessageEntity.from(confirmed))));
+        execution.setMessages(new ArrayList<>());
         saveCheckpoint();
         String state = attachments.attachment("1001").orElseThrow();
         assertTrue(state.contains("初始任务"));
@@ -238,28 +244,28 @@ class ChecklistContextAttachmentsTest {
     }
 
     @Test
-    void removedChecklistsAreNotReattachedAndKeepOtherProtectedContent() throws Exception {
+    void removedChecklistsStopAppendingWithoutRewritingWhatWasAlreadySent() throws Exception {
         injector.injectIfNeeded(context(), execution);
         saveCheckpoint();
         new DefaultConversationManager(attachments).rebuildContext("工作摘要", execution);
         injector.injectIfNeeded(context(), execution);
-        String old = ChecklistReminderText.renderContext(service.findActive(SESSION).orElseThrow());
-        assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().contains(old)));
+        String notice = ChecklistReminderText.renderUpdate(service.findActive(SESSION).orElseThrow());
+        assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().equals(notice)));
+        int before = execution.getMessages().size();
         service.delete(ChecklistCommand.delete(SESSION, created.getChecklistId()));
         injector.injectIfNeeded(context(), execution);
-        assertTrue(execution.getMessages().stream().noneMatch(message -> message.text().contains(old)));
+        assertEquals(before, execution.getMessages().size(), "清单删除不再新增通知，历史消息原样保留");
         assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().contains("计划正文")));
         assertEquals("# 当前计划\n计划正文", attachments.attachment("1001").orElseThrow());
     }
 
-    private void assertCurrentAndBounded(String title) {
-        String current = ChecklistReminderText.renderContext(service.findActive(SESSION).orElseThrow());
+    /** 通知只保留最近一份，且不复制步骤正文：每轮追加正文会把同一份快照反复计费。 */
+    private void assertLatestNoticeBounded(String title) {
+        String current = ChecklistReminderText.renderUpdate(service.findActive(SESSION).orElseThrow());
         assertTrue(current.contains(title));
-        assertEquals(1, execution.getMessages().stream().filter(SystemMessageEntity.class::isInstance)
-                .filter(message -> message.text().contains(current)).count());
-        assertEquals(1, execution.getMessages().stream().filter(SystemMessageEntity.class::isInstance)
-                .filter(message -> message.text().contains("\n[lingxi-checklist-reminder:")).count());
-        assertTrue(execution.getMessages().size() <= 6, execution.getMessages().toString());
+        assertEquals(1, execution.getMessages().stream().filter(UserMessageEntity.class::isInstance)
+                .filter(message -> message.text().equals(current)).count(), "同一版本的通知只留一条");
+        assertTrue(execution.getMessages().size() <= 12, execution.getMessages().toString());
     }
 
     private void saveCheckpoint() throws Exception {
