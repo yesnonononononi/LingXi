@@ -90,9 +90,14 @@ test('组合出来的键在两个语种里都必须真实存在', () => {
   }
 });
 
-test('「文件规则只在沙箱生效」必须写在安全中心提示里', () => {
-  assert.match(securityCopySource, /文件规则只在沙箱执行环境生效/);
-  assert.match(securityCopySource, /file rules apply only in the sandbox environment/);
+test('「文件规则只约束文件工具」必须写在安全中心提示里', () => {
+  // 规则消费者已从沙箱策略改为工具层 FileSecurityPolicy，两个执行环境都生效；
+  // 终端命令不吃这张表，提示里必须写明，别再回到「只在沙箱生效」的说法。
+  assert.match(securityCopySource, /只约束文件工具，终端命令不受其约束/);
+  assert.match(securityCopySource, /file tools only; terminal commands are not governed/);
+  // 上面两条正匹配同时是金丝雀：能命中说明读到的确实是安全中心文案，下面的「不存在」才不会假绿。
+  assert.doesNotMatch(securityCopySource, /只在沙箱执行环境生效/);
+  assert.doesNotMatch(securityCopySource, /apply only in the sandbox environment/);
 });
 
 test('档位说明不再按环境分身，环境差异收敛到标题旁的常驻悬停提示', () => {
