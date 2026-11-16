@@ -104,10 +104,16 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         <style>
           @keyframes lingxi-ring-pulse {
             0%, 100% {
-              box-shadow: inset 0 0 0 2.5px rgba(59, 130, 246, 0.85), inset 0 0 24px rgba(37, 99, 235, 0.42);
+              box-shadow:
+                inset 0 0 18px 2px rgba(59, 130, 246, 0.28),
+                inset 0 0 56px 12px rgba(37, 99, 235, 0.20),
+                inset 0 0 110px 24px rgba(59, 130, 246, 0.10);
             }
             50% {
-              box-shadow: inset 0 0 0 3px rgba(96, 165, 250, 0.95), inset 0 0 36px rgba(59, 130, 246, 0.58);
+              box-shadow:
+                inset 0 0 24px 4px rgba(96, 165, 250, 0.38),
+                inset 0 0 72px 18px rgba(59, 130, 246, 0.28),
+                inset 0 0 130px 32px rgba(37, 99, 235, 0.15);
             }
           }
           @keyframes lingxi-dot-pulse {
