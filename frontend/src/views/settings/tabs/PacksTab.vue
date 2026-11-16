@@ -16,12 +16,20 @@ const {
   remoteRegistryByCategory,
   remoteLoading,
   remoteError,
+  customPackSources,
+  customPacks,
+  customPackLoading,
+  customPackError,
   selectCategoryPack,
   resetAllPacks,
   refreshInstalledRemotePacks,
   fetchRemoteRegistry,
   installRemotePack,
   uninstallRemotePack,
+  addCustomPackDir,
+  pickAndAddCustomPackDir,
+  removeCustomPackDir,
+  refreshCustomPacks,
 } = usePackHost();
 
 const desktopAvailable = isElectron();
@@ -29,6 +37,7 @@ const isZh = computed(() => locale.value === 'zh-CN');
 
 const selectedCategory = ref<OfficialPackCategory | null>(null);
 const transitionName = ref<'pack-slide-forward' | 'pack-slide-back'>('pack-slide-forward');
+const customDirInput = ref('');
 
 interface CategoryDescriptor {
   readonly key: OfficialPackCategory;
@@ -73,15 +82,34 @@ const activeCategoryDescriptor = computed(() =>
   selectedCategory.value ? categories.value.find(c => c.key === selectedCategory.value) ?? null : null,
 );
 
-const listCategoryCards = (category: OfficialPackCategory): readonly { meta: OfficialPackMeta; isRemote: boolean }[] => {
+const listCategoryCards = (
+  category: OfficialPackCategory,
+): readonly { meta: OfficialPackMeta; isRemote: boolean; isCustom: boolean }[] => {
   const builtins = listOfficialPacksByCategory(category).map(entry => ({
     meta: entry.meta,
     isRemote: false,
+    isCustom: false,
   }));
   const remotes = installedRemotePacks.value
     .filter(meta => meta.category === category)
-    .map(meta => ({ meta, isRemote: true }));
-  return [...builtins, ...remotes];
+    .map(meta => ({ meta, isRemote: true, isCustom: false }));
+  const customs = customPacks.value
+    .filter(meta => meta.category === category)
+    .map(meta => ({ meta, isRemote: false, isCustom: true }));
+  return [...builtins, ...remotes, ...customs];
+};
+
+const handleAddCustomDir = async (): Promise<void> => {
+  const pathText = customDirInput.value.trim();
+  if (!pathText) return;
+  const ok = await addCustomPackDir(pathText);
+  if (ok) {
+    customDirInput.value = '';
+  }
+};
+
+const handlePickCustomDir = async (): Promise<void> => {
+  await pickAndAddCustomPackDir();
 };
 
 const resolveActivePackName = (category: OfficialPackCategory): string | null => {
@@ -133,7 +161,7 @@ const handleUninstall = async (packId: string): Promise<void> => {
 
 onMounted(() => {
   if (desktopAvailable) {
-    void refreshInstalledRemotePacks();
+    void Promise.all([refreshInstalledRemotePacks(), refreshCustomPacks()]);
   }
 });
 </script>
@@ -209,6 +237,86 @@ onMounted(() => {
             </div>
           </button>
         </div>
+
+        <!-- 自定义本地扩展包目录（输入绝对路径或选择文件夹） -->
+        <section
+          v-if="desktopAvailable"
+          data-testid="packs-custom-dir-section"
+          class="rounded-2xl border border-lx-border-subtle bg-lx-surface-sunken p-4 space-y-3"
+        >
+          <div class="flex flex-col">
+            <span class="text-xs font-semibold text-lx-primary-soft">
+              {{ isZh ? '自定义本地扩展包目录' : 'Custom Local Pack Directory' }}
+            </span>
+            <span class="text-lx-fs-xs text-lx-muted mt-0.5 leading-relaxed">
+              {{ isZh ? '输入包含扩展包或单个扩展包（含 manifest.json）的绝对路径，加载后会自动归类到上方对应类目。' : 'Enter an absolute path containing packs (with manifest.json). Loaded packs appear in their categories above.' }}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input
+              v-model="customDirInput"
+              type="text"
+              data-testid="packs-custom-dir-input"
+              :placeholder="isZh ? '例如：D:\\my-lingxi-packs' : 'e.g. D:\\my-lingxi-packs'"
+              @keydown.enter.prevent="handleAddCustomDir"
+              class="flex-1 min-w-0 h-8 px-3 rounded-xl border border-lx-border-subtle bg-lx-surface text-lx-fs-xs text-lx-primary placeholder:text-lx-faint focus:outline-none focus:border-lx-border-focus"
+            />
+            <button
+              type="button"
+              data-testid="packs-custom-dir-pick"
+              :disabled="customPackLoading"
+              @click="handlePickCustomDir"
+              class="shrink-0 h-8 px-2.5 rounded-xl border border-lx-border-subtle bg-lx-surface text-lx-fs-xs text-lx-secondary hover:text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer"
+            >
+              {{ isZh ? '选择文件夹' : 'Browse' }}
+            </button>
+            <button
+              type="button"
+              data-testid="packs-custom-dir-add"
+              :disabled="customPackLoading || !customDirInput.trim()"
+              @click="handleAddCustomDir"
+              class="shrink-0 h-8 px-3 rounded-xl bg-lx-accent text-lx-on-accent text-lx-fs-xs font-medium hover:bg-lx-accent-hover disabled:opacity-50 transition cursor-pointer"
+            >
+              {{ customPackLoading ? (isZh ? '加载中...' : 'Loading...') : (isZh ? '加载' : 'Load') }}
+            </button>
+          </div>
+
+          <p v-if="customPackError" class="text-lx-fs-xs text-lx-danger">{{ customPackError }}</p>
+
+          <div v-if="customPackSources.length > 0" class="space-y-1.5">
+            <div
+              v-for="src in customPackSources"
+              :key="src.dirPath"
+              class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-lx-border-faint bg-lx-surface"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-lx-fs-xs text-lx-primary truncate" :title="src.dirPath">{{ src.dirPath }}</span>
+                <span class="px-1.5 py-0.5 rounded-md bg-lx-surface-sunken text-lx-fs-2xs text-lx-tertiary shrink-0">
+                  {{ isZh ? `${src.packs.length} 个扩展包` : `${src.packs.length} packs` }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  :disabled="customPackLoading"
+                  @click="refreshCustomPacks"
+                  class="px-2 py-0.5 rounded-md text-lx-fs-2xs text-lx-secondary hover:text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer"
+                >
+                  {{ isZh ? '刷新' : 'Refresh' }}
+                </button>
+                <button
+                  type="button"
+                  :disabled="customPackLoading"
+                  @click="removeCustomPackDir(src.dirPath)"
+                  class="px-2 py-0.5 rounded-md text-lx-fs-2xs text-lx-muted hover:text-lx-danger hover:bg-lx-danger-soft transition cursor-pointer"
+                >
+                  {{ isZh ? '移除' : 'Remove' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- 二级页面：单个类目详情页（内置 + 按类目从 GitHub 拉取） -->

@@ -4,7 +4,7 @@ import type {ChatInputSlotOverrides} from '../types/chatInputSlots';
 import type {ChatMessageSlotOverrides} from '../types/chatMessageSlots';
 import type {SidebarSlotOverrides} from '../types/sidebarSlots';
 import {OFFICIAL_PACKS, findOfficialPack} from './packRegistry';
-import type {ElectronPacksAPI, RemotePackManifest} from '../utils/platform';
+import type {CustomScannedPackManifest, ElectronPacksAPI, RemotePackManifest} from '../utils/platform';
 import {
   PACK_CATEGORY_ORDER,
   type OfficialPackCategory,
@@ -15,6 +15,7 @@ import {
 } from './types';
 
 export const PACK_STORAGE_KEY = 'lx_active_packs';
+export const CUSTOM_PACK_DIRS_KEY = 'lx_custom_pack_dirs';
 export const LEGACY_PACK_STORAGE_KEY = 'lx_active_pack_id';
 export const PACK_STYLE_ATTR = 'data-lx-pack';
 
@@ -38,46 +39,80 @@ const remoteRegistryByCategory = ref<Partial<Record<OfficialPackCategory, Remote
 const remoteLoading = ref(false);
 const remoteError = ref<string | null>(null);
 
+export interface CustomPackSourceEntry {
+  readonly dirPath: string;
+  readonly packs: readonly (OfficialPackMeta & { readonly packDir: string })[];
+}
+
+const customPackSources = ref<CustomPackSourceEntry[]>([]);
+const customPackLoading = ref(false);
+const customPackError = ref<string | null>(null);
+
+const customPacks = computed(() =>
+  customPackSources.value.flatMap(source => source.packs),
+);
+
 function resolveElectronPacksApi(): ElectronPacksAPI | undefined {
   if (typeof window === 'undefined') return undefined;
   return window.electronAPI?.packs;
 }
 
-function toPackMeta(manifest: RemotePackManifest): OfficialPackMeta {
+function toPackMeta(manifest: RemotePackManifest, defaultCap = 'GitHub 远程'): OfficialPackMeta {
   return {
     id: manifest.id,
     category: manifest.category,
     name: manifest.name,
     description: manifest.description,
     version: manifest.version,
-    capabilities: manifest.capabilities ?? ['GitHub 远程'],
+    capabilities: manifest.capabilities && manifest.capabilities.length > 0 ? manifest.capabilities : [defaultCap],
     preview: manifest.preview,
     fontPreview: manifest.fontPreview,
   };
 }
 
-/** 统一查找入口：优先内置包，其次本地已安装的 GitHub 远程包。 */
+/** 统一查找入口：优先内置包，其次本地已安装的远程包，最后自定义绝对路径扩展包。 */
 function resolvePackEntry(packId: string): OfficialPackEntry | undefined {
   const builtin = findOfficialPack(packId);
   if (builtin) return builtin;
 
-  const remoteMeta = installedRemotePacks.value.find(item => item.id === packId);
   const api = resolveElectronPacksApi();
-  if (!remoteMeta || !api) return undefined;
+  if (!api) return undefined;
 
-  return {
-    meta: remoteMeta,
-    load: async () => {
-      const res = await api.load(packId);
-      if (!res.ok || typeof res.cssText !== 'string') {
-        throw new Error(res.error || `加载远程扩展包失败: ${packId}`);
-      }
-      return {
-        id: packId,
-        cssText: res.cssText,
-      };
-    },
-  };
+  const remoteMeta = installedRemotePacks.value.find(item => item.id === packId);
+  if (remoteMeta) {
+    return {
+      meta: remoteMeta,
+      load: async () => {
+        const res = await api.load(packId);
+        if (!res.ok || typeof res.cssText !== 'string') {
+          throw new Error(res.error || `加载远程扩展包失败: ${packId}`);
+        }
+        return {
+          id: packId,
+          cssText: res.cssText,
+        };
+      },
+    };
+  }
+
+  const customMeta = customPacks.value.find(item => item.id === packId);
+  if (customMeta) {
+    return {
+      meta: customMeta,
+      load: async () => {
+        const res = await api.loadCustom({ id: customMeta.id, packDir: customMeta.packDir });
+        if (!res.ok || typeof res.cssText !== 'string') {
+          throw new Error(res.error || `加载自定义扩展包失败: ${packId}`);
+        }
+        return {
+          id: customMeta.id,
+          cssText: res.cssText,
+        };
+      },
+    };
+  }
+
+  return undefined;
 }
 
 const packSlots: ActivePackSlotsState = {
@@ -323,7 +358,7 @@ export async function refreshInstalledRemotePacks(): Promise<void> {
   }
   const res = await api.listInstalled();
   if (res.ok && Array.isArray(res.packs)) {
-    installedRemotePacks.value = res.packs.map(toPackMeta);
+    installedRemotePacks.value = res.packs.map(item => toPackMeta(item));
   }
 }
 
@@ -407,9 +442,123 @@ export async function uninstallRemotePack(packId: string): Promise<boolean> {
   }
 }
 
+function readPersistedCustomDirs(storage: Storage | undefined): string[] {
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(CUSTOM_PACK_DIRS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomDirs(storage: Storage | undefined, dirs: readonly string[]): void {
+  if (!storage) return;
+  try {
+    if (dirs.length > 0) {
+      storage.setItem(CUSTOM_PACK_DIRS_KEY, JSON.stringify([...dirs]));
+    } else {
+      storage.removeItem(CUSTOM_PACK_DIRS_KEY);
+    }
+  } catch {
+    // 忽略存储限制错误
+  }
+}
+
+function toCustomSourceEntry(dirPath: string, packs: readonly CustomScannedPackManifest[]): CustomPackSourceEntry {
+  return {
+    dirPath,
+    packs: packs.map(item => ({
+      ...toPackMeta(item, '本地自定义'),
+      packDir: item.packDir,
+    })),
+  };
+}
+
+export async function refreshCustomPacks(): Promise<void> {
+  const api = resolveElectronPacksApi();
+  const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
+  const dirs = readPersistedCustomDirs(storage);
+  if (!api || dirs.length === 0) {
+    customPackSources.value = [];
+    return;
+  }
+  const nextSources: CustomPackSourceEntry[] = [];
+  for (const dirPath of dirs) {
+    const res = await api.scanCustomDir(dirPath);
+    if (res.ok && res.dirPath && Array.isArray(res.packs)) {
+      nextSources.push(toCustomSourceEntry(res.dirPath, res.packs));
+    }
+  }
+  customPackSources.value = nextSources;
+}
+
+export async function addCustomPackDir(rawDirPath: string): Promise<boolean> {
+  const api = resolveElectronPacksApi();
+  if (!api) {
+    customPackError.value = '仅桌面端支持加载本地绝对路径扩展包';
+    return false;
+  }
+  customPackLoading.value = true;
+  customPackError.value = null;
+  try {
+    const res = await api.scanCustomDir(rawDirPath);
+    if (!res.ok || !res.dirPath || !Array.isArray(res.packs)) {
+      customPackError.value = res.error || '扫描自定义扩展包目录失败';
+      return false;
+    }
+    if (res.packs.length === 0) {
+      customPackError.value = `目录下未发现包含合法 manifest.json 的扩展包: ${res.dirPath}`;
+      return false;
+    }
+    const entry = toCustomSourceEntry(res.dirPath, res.packs);
+    const filtered = customPackSources.value.filter(s => s.dirPath !== res.dirPath);
+    customPackSources.value = [...filtered, entry];
+
+    const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
+    persistCustomDirs(storage, customPackSources.value.map(s => s.dirPath));
+    return true;
+  } catch (err) {
+    customPackError.value = err instanceof Error ? err.message : String(err);
+    return false;
+  } finally {
+    customPackLoading.value = false;
+  }
+}
+
+export async function pickAndAddCustomPackDir(): Promise<boolean> {
+  const api = resolveElectronPacksApi();
+  if (!api) return false;
+  const picked = await api.pickCustomDir();
+  if (!picked.ok || picked.canceled || !picked.dirPath) {
+    return false;
+  }
+  return addCustomPackDir(picked.dirPath);
+}
+
+export async function removeCustomPackDir(dirPath: string): Promise<void> {
+  const targetSource = customPackSources.value.find(s => s.dirPath === dirPath);
+  if (targetSource) {
+    const packIds = new Set(targetSource.packs.map(p => p.id));
+    for (const category of PACK_CATEGORY_ORDER) {
+      const activeId = activePackIds.value[category];
+      if (activeId && packIds.has(activeId)) {
+        await selectCategoryPack(category, null);
+      }
+    }
+  }
+  customPackSources.value = customPackSources.value.filter(s => s.dirPath !== dirPath);
+  const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
+  persistCustomDirs(storage, customPackSources.value.map(s => s.dirPath));
+}
+
 /** 应用启动时按持久化配置恢复各分类已启用的扩展包。 */
 export async function initPackHost(): Promise<void> {
-  await refreshInstalledRemotePacks();
+  await Promise.all([refreshInstalledRemotePacks(), refreshCustomPacks()]);
   const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
   const saved = readPersistedSelectionMap(storage);
   for (const category of PACK_CATEGORY_ORDER) {
@@ -432,6 +581,10 @@ export function usePackHost() {
     remoteRegistryByCategory,
     remoteLoading,
     remoteError,
+    customPackSources,
+    customPacks,
+    customPackLoading,
+    customPackError,
     packSlots,
     selectCategoryPack,
     resetAllPacks,
@@ -439,5 +592,9 @@ export function usePackHost() {
     fetchRemoteRegistry,
     installRemotePack,
     uninstallRemotePack,
+    addCustomPackDir,
+    pickAndAddCustomPackDir,
+    removeCustomPackDir,
+    refreshCustomPacks,
   };
 }

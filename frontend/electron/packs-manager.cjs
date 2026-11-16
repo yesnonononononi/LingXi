@@ -158,19 +158,14 @@ function listInstalledPacksFromDir(packsRoot) {
   return list;
 }
 
-function loadInstalledPackFromDir(packsRoot, rawId) {
-  const id = sanitizePackId(rawId);
-  if (!id) {
-    return { ok: false, error: '扩展包 ID 非法' };
-  }
-  const packDir = path.resolve(packsRoot, id);
+function loadPackFromDir(packDir, expectedId) {
   const manifestPath = path.join(packDir, 'manifest.json');
   if (!fs.existsSync(manifestPath)) {
-    return { ok: false, error: `扩展包未安装: ${id}` };
+    return { ok: false, error: `缺少 manifest.json: ${packDir}` };
   }
   try {
     const manifest = normalizeRemoteManifest(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
-    if (!manifest) {
+    if (!manifest || (expectedId && manifest.id !== expectedId)) {
       return { ok: false, error: '扩展包 manifest 格式无效或版本不兼容' };
     }
     const cssPath = path.resolve(packDir, manifest.entryCss);
@@ -185,8 +180,72 @@ function loadInstalledPackFromDir(packsRoot, rawId) {
   }
 }
 
+function loadInstalledPackFromDir(packsRoot, rawId) {
+  const id = sanitizePackId(rawId);
+  if (!id) {
+    return { ok: false, error: '扩展包 ID 非法' };
+  }
+  const packDir = path.resolve(packsRoot, id);
+  if (!fs.existsSync(path.join(packDir, 'manifest.json'))) {
+    return { ok: false, error: `扩展包未安装: ${id}` };
+  }
+  return loadPackFromDir(packDir, id);
+}
+
+/**
+ * 扫描用户输入的绝对路径：
+ * 1. 若该目录根下直接存在 manifest.json，按单个扩展包加载；
+ * 2. 否则扫描直接子目录，收集所有包含合法 manifest.json 的扩展包。
+ */
+function scanCustomPacksDir(rawDirPath) {
+  if (typeof rawDirPath !== 'string' || !rawDirPath.trim()) {
+    return { ok: false, error: '请输入扩展包目录的绝对路径' };
+  }
+  const trimmed = rawDirPath.trim();
+  if (!path.isAbsolute(trimmed)) {
+    return { ok: false, error: '必须输入绝对路径（例如 D:\\my-packs）' };
+  }
+  const resolvedDir = path.resolve(trimmed);
+  if (!fs.existsSync(resolvedDir) || !fs.statSync(resolvedDir).isDirectory()) {
+    return { ok: false, error: `目录不存在或不可访问: ${resolvedDir}` };
+  }
+
+  const packs = [];
+  const rootManifestPath = path.join(resolvedDir, 'manifest.json');
+  if (fs.existsSync(rootManifestPath)) {
+    try {
+      const normalized = normalizeRemoteManifest(JSON.parse(fs.readFileSync(rootManifestPath, 'utf8')));
+      if (normalized) {
+        packs.push({ ...normalized, packDir: resolvedDir });
+      }
+    } catch {
+      return { ok: false, error: '根目录 manifest.json 解析失败' };
+    }
+  } else {
+    const entries = fs.readdirSync(resolvedDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const subDir = path.join(resolvedDir, entry.name);
+      const subManifest = path.join(subDir, 'manifest.json');
+      if (!fs.existsSync(subManifest)) continue;
+      try {
+        const normalized = normalizeRemoteManifest(JSON.parse(fs.readFileSync(subManifest, 'utf8')));
+        if (normalized) {
+          packs.push({ ...normalized, packDir: subDir });
+        }
+      } catch {
+        // 单个损坏子目录跳过，不影响其余扩展包
+      }
+    }
+  }
+
+  return { ok: true, dirPath: resolvedDir, packs };
+}
+
 function registerPacksManager({
   ipcMain,
+  dialog,
+  getWindow,
   userDataDir,
   assertTrustedSender,
   categoriesRawBase = DEFAULT_CATEGORIES_RAW_BASE,
@@ -199,6 +258,9 @@ function registerPacksManager({
     'packs:install',
     'packs:load',
     'packs:uninstall',
+    'packs:pick-custom-dir',
+    'packs:scan-custom-dir',
+    'packs:load-custom',
   ];
   const packsRoot = path.resolve(userDataDir, 'packs');
 
@@ -301,6 +363,40 @@ function registerPacksManager({
     }
   });
 
+  ipcMain.handle('packs:pick-custom-dir', async (event) => {
+    assertTrustedSender(event, 'packs:pick-custom-dir');
+    if (!dialog) {
+      return { ok: false, error: '当前环境不支持目录选择对话框' };
+    }
+    const win = typeof getWindow === 'function' ? getWindow() : undefined;
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths?.length) {
+      return { ok: false, canceled: true };
+    }
+    return { ok: true, dirPath: result.filePaths[0] };
+  });
+
+  ipcMain.handle('packs:scan-custom-dir', async (event, dirPath) => {
+    assertTrustedSender(event, 'packs:scan-custom-dir');
+    try {
+      return scanCustomPacksDir(dirPath);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('packs:load-custom', async (event, request) => {
+    assertTrustedSender(event, 'packs:load-custom');
+    const rawDir = request?.packDir;
+    const rawId = sanitizePackId(request?.id);
+    if (typeof rawDir !== 'string' || !path.isAbsolute(rawDir.trim()) || !rawId) {
+      return { ok: false, error: '自定义扩展包路径或 ID 非法' };
+    }
+    return loadPackFromDir(path.resolve(rawDir.trim()), rawId);
+  });
+
   return {
     close() {
       for (const channel of CHANNELS) {
@@ -318,5 +414,6 @@ module.exports = {
   inlineCssLocalAssets,
   listInstalledPacksFromDir,
   loadInstalledPackFromDir,
+  scanCustomPacksDir,
   registerPacksManager,
 };

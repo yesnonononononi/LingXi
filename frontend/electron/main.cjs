@@ -313,6 +313,8 @@ const backgroundImages = registerBackgroundImages({
 
 const packsManager = registerPacksManager({
   ipcMain,
+  dialog,
+  getWindow: () => mainWindow,
   userDataDir,
   assertTrustedSender,
 });

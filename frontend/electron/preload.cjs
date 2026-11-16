@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     install: (request) => ipcRenderer.invoke('packs:install', request),
     load: (packId) => ipcRenderer.invoke('packs:load', packId),
     uninstall: (packId) => ipcRenderer.invoke('packs:uninstall', packId),
+    pickCustomDir: () => ipcRenderer.invoke('packs:pick-custom-dir'),
+    scanCustomDir: (dirPath) => ipcRenderer.invoke('packs:scan-custom-dir', dirPath),
+    loadCustom: (request) => ipcRenderer.invoke('packs:load-custom', request),
   },
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   /** 仅主页面使用，网页视图不加载此 preload。 */

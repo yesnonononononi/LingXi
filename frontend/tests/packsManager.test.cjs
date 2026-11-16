@@ -10,6 +10,7 @@ const {
   inlineCssLocalAssets,
   listInstalledPacksFromDir,
   loadInstalledPackFromDir,
+  scanCustomPacksDir,
   registerPacksManager,
 } = require('../electron/packs-manager.cjs');
 
@@ -147,6 +148,62 @@ test('registerPacksManager 支持拉取清单、安装落盘、读取、卸载�
   } finally {
     mgr.close();
     assert.equal(handlers.size, 0);
+    fs.rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test('scanCustomPacksDir 支持单包目录、多包合集目录并拦截相对路径', async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-custom-packs-'));
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lx-custom-ud-'));
+  const handlers = new Map();
+  const mgr = registerPacksManager({
+    ipcMain: {
+      handle: (ch, fn) => handlers.set(ch, fn),
+      removeHandler: (ch) => handlers.delete(ch),
+    },
+    userDataDir,
+    assertTrustedSender: () => {},
+  });
+
+  try {
+    // 1. 相对路径直接拒绝
+    const relRes = scanCustomPacksDir('relative/path');
+    assert.equal(relRes.ok, false);
+
+    // 2. 多包合集目录
+    const multiDir = path.join(tmpRoot, 'multi');
+    const pack1Dir = path.join(multiDir, 'custom-theme');
+    fs.mkdirSync(pack1Dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(pack1Dir, 'manifest.json'),
+      JSON.stringify({
+        id: 'custom-theme',
+        category: 'theme',
+        name: '自定义主题',
+        version: '1.0.0',
+        hostApiVersion: '1',
+      }),
+    );
+    fs.writeFileSync(path.join(pack1Dir, 'pack.css'), ':root { --lx-accent: #123456; }');
+
+    const scanMulti = await handlers.get('packs:scan-custom-dir')({}, multiDir);
+    assert.equal(scanMulti.ok, true);
+    assert.equal(scanMulti.packs.length, 1);
+    assert.equal(scanMulti.packs[0].id, 'custom-theme');
+
+    // 3. 单包目录（manifest.json 直接在根下）
+    const scanSingle = await handlers.get('packs:scan-custom-dir')({}, pack1Dir);
+    assert.equal(scanSingle.ok, true);
+    assert.equal(scanSingle.packs.length, 1);
+    assert.equal(scanSingle.packs[0].packDir, pack1Dir);
+
+    // 4. 加载自定义包样式
+    const loaded = await handlers.get('packs:load-custom')({}, { id: 'custom-theme', packDir: pack1Dir });
+    assert.equal(loaded.ok, true);
+    assert.match(loaded.cssText, /--lx-accent: #123456/);
+  } finally {
+    mgr.close();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
     fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 });

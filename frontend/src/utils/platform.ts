@@ -143,12 +143,19 @@ export interface ElectronAPI {
  * ⚠️ 这里刻意只有「读状态」和「发意图」两类方法，没有任何涉及 URL 或文件的方法。
  *    下载、校验、安装全部在主进程完成 —— 渲染层接触不到，也就无法被注入利用。
  */
+export interface CustomScannedPackManifest extends RemotePackManifest {
+  readonly packDir: string;
+}
+
 export interface ElectronPacksAPI {
   fetchRegistry: (category: RemotePackManifest['category']) => Promise<{ ok: boolean; packs?: RemotePackManifest[]; error?: string }>;
   listInstalled: () => Promise<{ ok: boolean; packs?: RemotePackManifest[]; error?: string }>;
   install: (request: { id: string; files?: readonly string[] }) => Promise<{ ok: boolean; manifest?: RemotePackManifest; error?: string }>;
   load: (packId: string) => Promise<{ ok: boolean; manifest?: RemotePackManifest; cssText?: string; error?: string }>;
   uninstall: (packId: string) => Promise<{ ok: boolean; error?: string }>;
+  pickCustomDir: () => Promise<{ ok: boolean; canceled?: boolean; dirPath?: string; error?: string }>;
+  scanCustomDir: (dirPath: string) => Promise<{ ok: boolean; dirPath?: string; packs?: CustomScannedPackManifest[]; error?: string }>;
+  loadCustom: (request: { id: string; packDir: string }) => Promise<{ ok: boolean; manifest?: RemotePackManifest; cssText?: string; error?: string }>;
 }
 
 export interface RemotePackManifest {
