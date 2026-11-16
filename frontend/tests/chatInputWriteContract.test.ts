@@ -82,6 +82,14 @@ const MUTATIONS: MutationTable = {
       'const showStop = computed(() => !!props.isSending && !hasQueueableInput.value);',
       'const showStop = computed(() => !!props.isSending);');
   },
+  // 菜单形态判据注回：去掉 startsWith('/')，任何用户输入都弹菜单
+  'menu-ignores-text-shape': source => {
+    // 源码是 CRLF：先归一成 LF 再按带换行的锚点做手术（否则锚点永远匹配不上）。
+    const normalized = source.replace(/\r\n/g, '\n');
+    const anchor = "if (typedByUser && inputText.value.startsWith('/') && !isAgentMenuOpen.value) {";
+    assert.ok(normalized.includes(anchor), '补丁锚点失效：找不到快捷指令菜单的形态判据');
+    return normalized.replace(anchor, 'if (typedByUser && !isAgentMenuOpen.value) {');
+  },
 };
 
 /** 各文件适用的变异集合（其余变异名按正常源码返回）。 */
@@ -89,6 +97,7 @@ const INPUT_AREA_MUTATIONS: MutationTable = {
   'marker-on-same-value': MUTATIONS['marker-on-same-value']!,
   'no-programmatic-marker': MUTATIONS['no-programmatic-marker']!,
   'keep-stop-when-input-present': MUTATIONS['keep-stop-when-input-present']!,
+  'menu-ignores-text-shape': MUTATIONS['menu-ignores-text-shape']!,
 };
 const OPTIMIZATION_MUTATIONS: MutationTable = {
   'bypass-replace-input': MUTATIONS['bypass-replace-input']!,
@@ -337,6 +346,25 @@ test('程序写入同值文本后，用户敲 / 必须弹出快捷指令菜单',
   // 再敲一个字符仍应保持展开（不是只有第一次侥幸生效）
   await typeInto(findTextarea(root), '/p');
   assert.equal(commandMenuOpen(root), true, '继续输入时菜单必须仍然是展开的');
+});
+
+test('快捷指令菜单只由文本形态决定：敲 / 弹出，非 / 文本收起', async t => {
+  const source = readMutantSource(INPUT_AREA, mutation, INPUT_AREA_MUTATIONS);
+  const root = mountInputArea(t, source);
+  await nextTick();
+  const textarea = findTextarea(root);
+
+  await typeInto(textarea, '帮我修个 bug');
+  assert.equal(commandMenuOpen(root), false, '普通文本不得弹出快捷指令菜单');
+
+  await typeInto(textarea, '/');
+  assert.equal(commandMenuOpen(root), true, '敲 / 必须弹出快捷指令菜单');
+
+  await typeInto(textarea, '/plan');
+  assert.equal(commandMenuOpen(root), true, '筛选过程中菜单必须保持展开');
+
+  await typeInto(textarea, '');
+  assert.equal(commandMenuOpen(root), false, '删掉 / 之后菜单必须收起');
 });
 
 test('程序写入不同值时不触发命令副作用：回填 /plan 文本不得自己弹菜单', async t => {

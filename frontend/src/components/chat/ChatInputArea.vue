@@ -314,7 +314,6 @@ const handleBeforeInput = (event: Event) => {
 /** 收起斜杠指令 / Agent / Skill 三层浮层（只动浮层，绝不触碰输入文本）。 */
 const closeCommandLayer = () => {
   isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
 };
 
@@ -331,7 +330,7 @@ watch(inputText, () => {
     activeCommandIndex.value = 0;
     return;
   }
-  if (!inputText.value.startsWith('/') && !isCommandMenuClickedOpen.value && !isAgentMenuOpen.value) {
+  if (!inputText.value.startsWith('/') && !isAgentMenuOpen.value) {
     isCommandMenuOpen.value = false;
   }
 });
@@ -490,7 +489,6 @@ const effortStyle = computed(
 
 const toggleEffort = () => {
   isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
   effortOpen.value = !effortOpen.value;
 };
@@ -661,7 +659,6 @@ watch(agentSearchQuery, () => {
 const openAgentMenu = () => {
   isAgentMenuOpen.value = true;
   isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
   effortOpen.value = false;
   agentSearchQuery.value = '';
   const currentIdx = filteredAgentList.value.findIndex(a => String(a.id) === String(selectedAgent.value));
@@ -803,7 +800,6 @@ interface CommandItem {
 }
 
 const isCommandMenuOpen = ref(false);
-const isCommandMenuClickedOpen = ref(false);
 const activeCommandIndex = ref(0);
 const commandRowRefs: (HTMLButtonElement | null)[] = [];
 const commandGlowRef = ref<HTMLSpanElement | null>(null);
@@ -997,7 +993,6 @@ const closePlusMenu = () => {
 
 const openPlusMenu = (group?: string) => {
   isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
   isAccessMenuOpen.value = false;
   effortOpen.value = false;
@@ -1138,7 +1133,6 @@ const toggleAccessMenu = () => {
   const willOpen = !isAccessMenuOpen.value;
   closePlusMenu();
   isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
   effortOpen.value = false;
   isAccessMenuOpen.value = willOpen;
@@ -1166,7 +1160,6 @@ const handleOpenSecurity = () => {
 const selectCommand = (cmd: CommandItem) => {
   writeInputText(resolveTextAfterCommandSelect(inputText.value));
   isCommandMenuOpen.value = false;
-  isCommandMenuClickedOpen.value = false;
   cmd.action();
   nextTick(() => {
     if (!isAgentMenuOpen.value) {
@@ -1179,7 +1172,6 @@ const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as Node;
   if (commandContainerRef.value && !commandContainerRef.value.contains(target)) {
     isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
     isAgentMenuOpen.value = false;
     effortOpen.value = false;
       closePlusMenu();
@@ -1414,7 +1406,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       isCommandMenuOpen.value = false;
-      isCommandMenuClickedOpen.value = false;
       return;
     }
   }
@@ -1469,7 +1460,6 @@ const handleSend = () => {
   if (confirmationState.value.isOpen) return;
   if (isPromptOptimizationCommand(inputText.value)) {
     isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
     void promptOptimization.optimize();
     return;
   }
