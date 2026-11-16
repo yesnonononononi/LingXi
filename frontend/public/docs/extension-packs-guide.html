@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LingXi 扩展包开发与加载指南</title>
+  <style>
+    :root {
+      --bg-page: #ffffff;
+      --bg-sidebar: #f8f9fb;
+      --bg-card: #f5f6f7;
+      --bg-code: #f6f8fa;
+      --bg-callout-info: #eff6ff;
+      --bg-callout-warn: #fffbeb;
+      --bg-callout-tip: #ecfdf5;
+      --border-subtle: #e5e6eb;
+      --border-strong: #d0d3d9;
+      --text-primary: #1f2329;
+      --text-secondary: #4e5969;
+      --text-muted: #86909c;
+      --accent: #3370ff;
+      --accent-soft: rgba(51, 112, 255, 0.1);
+      --warn-accent: #d97706;
+      --tip-accent: #059669;
+      --shadow-sm: 0 1px 2px rgba(31, 35, 41, 0.04);
+    }
+
+    html.dark {
+      --bg-page: #141518;
+      --bg-sidebar: #1a1b1f;
+      --bg-card: #1f2126;
+      --bg-code: #1d1f24;
+      --bg-callout-info: rgba(51, 112, 255, 0.12);
+      --bg-callout-warn: rgba(245, 158, 11, 0.12);
+      --bg-callout-tip: rgba(16, 185, 129, 0.12);
+      --border-subtle: #2b2d33;
+      --border-strong: #3a3d45;
+      --text-primary: #f2f3f5;
+      --text-secondary: #c9cdd4;
+      --text-muted: #86909c;
+      --accent: #4d83ff;
+      --accent-soft: rgba(77, 131, 255, 0.16);
+      --warn-accent: #fbbf24;
+      --tip-accent: #34d399;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      line-height: 1.72;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 飞书风格顶部栏 */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      height: 54px;
+      padding: 0 24px;
+      background: color-mix(in srgb, var(--bg-page) 92%, transparent);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .doc-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .breadcrumb strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .btn {
+      height: 30px;
+      padding: 0 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-page);
+      color: var(--text-secondary);
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+    .btn:hover {
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+      background: var(--bg-card);
+    }
+
+    /* 飞书两栏文档布局 */
+    .layout {
+      display: flex;
+      max-width: 1260px;
+      margin: 0 auto;
+      min-height: calc(100vh - 54px);
+    }
+
+    .sidebar {
+      width: 268px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border-subtle);
+      background: var(--bg-sidebar);
+      padding: 24px 14px;
+      position: sticky;
+      top: 54px;
+      height: calc(100vh - 54px);
+      overflow-y: auto;
+    }
+    .outline-title {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      padding: 0 10px 8px;
+      text-transform: uppercase;
+    }
+    .outline-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .outline-link {
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: background 140ms ease, color 140ms ease;
+    }
+    .outline-link:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+    .outline-link.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .outline-sub {
+      padding-left: 22px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    /* 正文区 */
+    .content {
+      flex: 1;
+      min-width: 0;
+      padding: 40px 56px 96px;
+    }
+    .doc-container {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+    .doc-cover-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      line-height: 1.3;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .doc-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 28px;
+    }
+
+    h2 {
+      margin: 40px 0 14px;
+      font-size: 22px;
+      line-height: 1.4;
+      font-weight: 650;
+      scroll-margin-top: 72px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 16.5px;
+      font-weight: 600;
+      scroll-margin-top: 72px;
+    }
+    p { margin: 10px 0; color: var(--text-secondary); font-size: 15px; }
+    ul, ol { margin: 10px 0; padding-left: 22px; color: var(--text-secondary); font-size: 15px; }
+    li { margin: 5px 0; }
+    code {
+      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 13px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: var(--text-primary);
+    }
+
+    /* 飞书 Callout 高亮块 */
+    .callout {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border-left: 3.5px solid var(--accent);
+      background: var(--bg-callout-info);
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    .callout.warn { border-left-color: var(--warn-accent); background: var(--bg-callout-warn); }
+    .callout.tip { border-left-color: var(--tip-accent); background: var(--bg-callout-tip); }
+    .callout-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    /* 代码块 */
+    .code-wrap {
+      position: relative;
+      margin: 14px 0 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-code);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .copy-btn {
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-page);
+      color: var(--text-secondary);
+      border-radius: 5px;
+      padding: 2px 9px;
+      font-size: 11.5px;
+      cursor: pointer;
+    }
+    .copy-btn:hover { color: var(--text-primary); border-color: var(--border-strong); }
+    pre {
+      margin: 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-primary);
+    }
+
+    /* 表格 */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 22px;
+      font-size: 14px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg-card);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    td { color: var(--text-secondary); }
+    tr:last-child td { border-bottom: none; }
+
+    /* 类目卡片网格 */
+    .cat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .cat-card {
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+    }
+    .cat-card strong { display: block; font-size: 14.5px; margin-bottom: 4px; color: var(--text-primary); }
+    .cat-card span { font-size: 13px; color: var(--text-secondary); }
+
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .content { padding: 28px 20px 64px; }
+      .cat-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="doc-icon">LX</div>
+      <div class="breadcrumb">
+        <span>LingXi 文档中心</span>
+        <span>/</span>
+        <span>外观扩展包</span>
+        <span>/</span>
+        <strong>开发与加载指南</strong>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" class="btn" id="toggle-theme-btn">切换亮 / 暗主题</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="文档目录">
+      <div class="outline-title">目录大纲</div>
+      <ul class="outline-list" id="outline-list">
+        <li><a class="outline-link active" href="#quick-start">1. 快速加载自定义扩展包</a></li>
+        <li><a class="outline-link" href="#directory-spec">2. 目录结构与 manifest.json</a></li>
+        <li><a class="outline-link" href="#category-guides">3. 六大类目开发指南</a></li>
+        <li><a class="outline-link outline-sub" href="#cat-theme">3.1 theme · 主题皮肤</a></li>
+        <li><a class="outline-link outline-sub" href="#cat-font">3.2 font · 文字字体</a></li>
+        <li><a class="outline-link outline-sub" href="#cat-background">3.3 background · 主页背景</a></li>
+        <li><a class="outline-link outline-sub" href="#cat-sidebar">3.4 sidebar · 侧边栏</a></li>
+        <li><a class="outline-link outline-sub" href="#cat-input">3.5 input · 输入框</a></li>
+        <li><a class="outline-link outline-sub" href="#cat-component">3.6 component · 组件与动效</a></li>
+        <li><a class="outline-link" href="#assets-inline">4. 静态资源引用与内联</a></li>
+        <li><a class="outline-link" href="#security-limits">5. 安全边界与限制</a></li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <article class="doc-container">
+        <div class="doc-cover-badge">官方开发文档 · hostApiVersion 1</div>
+        <h1>LingXi 自定义扩展包开发与加载指南</h1>
+        <div class="doc-meta">
+          适用于桌面端自定义本地扩展包（纯静态资源包：CSS / 字体 / 图片），支持跨类目自由叠加与热切换。
+        </div>
+
+        <section id="quick-start">
+          <h2>1. 快速加载自定义扩展包</h2>
+          <p>在客户端打开 <strong>设置 → 扩展包</strong>，底部的「自定义本地扩展包目录」支持以下两种目录形态，只需输入绝对路径（或点击「选择文件夹」）即可加载：</p>
+          <ul>
+            <li><strong>多包合集目录</strong>（推荐）：例如 <code>D:\my-lingxi-packs</code>，其下每个子目录为一个独立扩展包（均含 <code>manifest.json</code>）。系统会一次性扫描所有合法子包，并按 <code>category</code> 自动分发到对应类目。</li>
+            <li><strong>单个扩展包目录</strong>：例如 <code>D:\my-lingxi-packs\my-theme</code>，目录根下直接放置 <code>manifest.json</code>。</li>
+          </ul>
+
+          <div class="callout tip">
+            <span class="callout-title">持久化与自动恢复</span>
+            已添加的自定义目录会保存在本机配置中，重启客户端时会自动重新扫描并恢复你启用的扩展包。若修改了本地 <code>pack.css</code>，点击目录旁的「刷新」并重新点选一次即可立即生效。
+          </div>
+        </section>
+
+        <section id="directory-spec">
+          <h2>2. 目录结构与 manifest.json 规范</h2>
+          <p>一个标准的纯资源扩展包目录结构如下：</p>
+
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>目录结构示例</span>
+              <button type="button" class="copy-btn" data-copy-target="code-tree">复制</button>
+            </div>
+            <pre id="code-tree">D:\my-lingxi-packs\
+├── my-ocean-theme\
+│   ├── manifest.json       # 必填：元数据与类目声明
+│   ├── pack.css            # 必填：样式入口（可在 manifest.json 中指定 entryCss）
+│   └── assets\             # 可选：图片、背景或字体资源（自动内联为 data URL）
+│       └── bg.webp
+└── my-font-pack\
+    ├── manifest.json
+    ├── pack.css
+    └── fonts\
+        └── custom.woff2</pre>
+          </div>
+
+          <p><code>manifest.json</code> 完整字段说明：</p>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 150px;">字段</th>
+                <th style="width: 90px;">必填</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>id</code></td>
+                <td>是</td>
+                <td>唯一标识，仅允许小写字母、数字和短横线 <code>^[a-z0-9][a-z0-9-]{0,62}$</code>。</td>
+              </tr>
+              <tr>
+                <td><code>category</code></td>
+                <td>是</td>
+                <td>所属类目：<code>theme</code> | <code>font</code> | <code>background</code> | <code>sidebar</code> | <code>input</code> | <code>component</code>。</td>
+              </tr>
+              <tr>
+                <td><code>name</code></td>
+                <td>是</td>
+                <td>扩展包展示名称。</td>
+              </tr>
+              <tr>
+                <td><code>hostApiVersion</code></td>
+                <td>是</td>
+                <td>固定填 <code>"1"</code>，版本不匹配时宿主会安全拒绝加载。</td>
+              </tr>
+              <tr>
+                <td><code>version</code></td>
+                <td>否</td>
+                <td>版本号（如 <code>"1.0.0"</code>），默认 <code>"1.0.0"</code>。</td>
+              </tr>
+              <tr>
+                <td><code>description</code></td>
+                <td>否</td>
+                <td>扩展包一句话介绍。</td>
+              </tr>
+              <tr>
+                <td><code>entryCss</code></td>
+                <td>否</td>
+                <td>样式入口相对路径，默认为 <code>"pack.css"</code>。</td>
+              </tr>
+              <tr>
+                <td><code>capabilities</code></td>
+                <td>否</td>
+                <td>能力标签数组，如 <code>["明暗配色", "本地定制"]</code>。</td>
+              </tr>
+              <tr>
+                <td><code>preview</code></td>
+                <td>否</td>
+                <td>卡片右上角三色预览点：<code>{ canvas, surface, accent, text }</code>。</td>
+              </tr>
+              <tr>
+                <td><code>fontPreview</code></td>
+                <td>否</td>
+                <td>字体包预览样本：<code>{ sample, family }</code>。</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>manifest.json 最小模板</span>
+              <button type="button" class="copy-btn" data-copy-target="code-manifest">复制</button>
+            </div>
+            <pre id="code-manifest">{
+  "id": "my-ocean-theme",
+  "category": "theme",
+  "name": "深海蔚蓝",
+  "description": "自定义深海蓝明暗双态主题包",
+  "version": "1.0.0",
+  "hostApiVersion": "1",
+  "capabilities": ["明暗配色", "自定义"],
+  "preview": {
+    "canvas": "#06111c",
+    "surface": "#0b1c2c",
+    "accent": "#38bdf8",
+    "text": "#f0f9ff"
+  },
+  "entryCss": "pack.css"
+}</pre>
+          </div>
+        </section>
+
+        <section id="category-guides">
+          <h2>3. 六大类目开发指南</h2>
+          <p>不同类目之间<strong>互不冲突、可同时叠加生效</strong>，同一类目内互斥单选。建议每个扩展包只专注于自身类目的职责。</p>
+
+          <div class="cat-grid">
+            <div class="cat-card">
+              <strong>theme · 主题皮肤</strong>
+              <span>覆盖全局 <code>--lx-*</code> 颜色、表面、边框与强调色变量。</span>
+            </div>
+            <div class="cat-card">
+              <strong>font · 文字字体</strong>
+              <span>通过 <code>@font-face</code> 与 <code>--font-sans</code> / <code>--font-lx-code</code> 定制字体。</span>
+            </div>
+            <div class="cat-card">
+              <strong>background · 主页背景</strong>
+              <span>针对 <code>.lx-chat-background</code> 添加渐变或本地背景图。</span>
+            </div>
+            <div class="cat-card">
+              <strong>sidebar · 侧边栏</strong>
+              <span>针对 <code>aside.border-r</code> 定制侧边栏圆角、毛玻璃与导轨效果。</span>
+            </div>
+            <div class="cat-card">
+              <strong>input · 输入框</strong>
+              <span>针对 <code>[data-slot="chat-input-card"]</code> 定制输入卡片质感与聚焦光环。</span>
+            </div>
+            <div class="cat-card">
+              <strong>component · 组件与动效</strong>
+              <span>定制流式文字 arrival、思维链呼吸等动效时长与曲线。</span>
+            </div>
+          </div>
+
+          <h3 id="cat-theme">3.1 theme · 主题皮肤</h3>
+          <p>LingXi 默认暗色，亮色模式通过 <code>html.light, html[data-theme="light"]</code> 切换，建议同时提供暗色与亮色两套变量：</p>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>packs/my-ocean-theme/pack.css</span>
+              <button type="button" class="copy-btn" data-copy-target="code-theme">复制</button>
+            </div>
+            <pre id="code-theme">:root {
+  --lx-canvas: #06111c;
+  --lx-canvas-subtle: #091826;
+  --lx-surface: #0b1c2c;
+  --lx-surface-elevated: rgba(13, 32, 50, 0.94);
+  --lx-surface-sunken: #07131f;
+  --lx-border-subtle: rgba(56, 189, 248, 0.16);
+  --lx-border-default: rgba(56, 189, 248, 0.24);
+  --lx-border-focus: rgba(56, 189, 248, 0.85);
+  --lx-accent: #0ea5e9;
+  --lx-accent-hover: #38bdf8;
+  --lx-accent-pressed: #0284c7;
+  --lx-accent-soft: rgba(14, 165, 233, 0.16);
+}
+
+html.light,
+html[data-theme="light"] {
+  --lx-canvas: #f2f9ff;
+  --lx-canvas-subtle: #e6f3ff;
+  --lx-surface: #ffffff;
+  --lx-surface-elevated: #ffffff;
+  --lx-surface-sunken: #eaf4ff;
+  --lx-accent: #0284c7;
+  --lx-accent-hover: #0ea5e9;
+  --lx-accent-soft: rgba(2, 132, 199, 0.12);
+}</pre>
+          </div>
+
+          <h3 id="cat-font">3.2 font · 文字字体</h3>
+          <p>支持引用扩展包目录下的 <code>.woff2</code> / <code>.woff</code> / <code>.ttf</code> 字体文件（加载器会自动内联）：</p>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>packs/my-font-pack/pack.css</span>
+              <button type="button" class="copy-btn" data-copy-target="code-font">复制</button>
+            </div>
+            <pre id="code-font">@font-face {
+  font-family: 'MyCustomSans';
+  src: url('./fonts/custom-sans.woff2');
+  font-display: swap;
+}
+
+:root {
+  --font-sans: 'MyCustomSans', 'PingFang SC', ui-sans-serif, sans-serif;
+  --font-lx-code: 'JetBrains Mono', 'Cascadia Mono', ui-monospace, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+}</pre>
+          </div>
+
+          <h3 id="cat-background">3.3 background · 主页背景</h3>
+          <p>主页背景容器类名为 <code>.lx-chat-background</code>。若使用本地图片，建议保留 <code>var(--lx-canvas-image, none)</code> 以兼容用户在通用设置里手动上传的自定义图片：</p>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>packs/my-bg/pack.css</span>
+              <button type="button" class="copy-btn" data-copy-target="code-bg">复制</button>
+            </div>
+            <pre id="code-bg">.lx-chat-background {
+  background-image:
+    var(--lx-canvas-image, none),
+    url('./assets/wallpaper.webp');
+  background-size: cover;
+  background-position: center;
+}</pre>
+          </div>
+
+          <h3 id="cat-sidebar">3.4 sidebar · 侧边栏</h3>
+          <p>侧边栏根节点可通过 <code>aside.border-r</code> 命中，推荐复用 <code>--lx-*</code> 变量以自动适配亮/暗主题：</p>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>packs/my-sidebar/pack.css</span>
+              <button type="button" class="copy-btn" data-copy-target="code-sidebar">复制</button>
+            </div>
+            <pre id="code-sidebar">aside.border-r {
+  margin: 8px 0 8px 8px;
+  height: calc(100% - 16px) !important;
+  border-radius: 18px;
+  border: 1px solid var(--lx-border-subtle) !important;
+  background-color: color-mix(in srgb, var(--lx-surface) 84%, transparent) !important;
+  backdrop-filter: blur(18px);
+  box-shadow: var(--lx-shadow-2);
+}</pre>
+          </div>
+
+          <h3 id="cat-input">3.5 input · 输入框</h3>
+          <p>输入框卡片根节点带有稳定锚点 <code>[data-slot="chat-input-card"]</code>，可自定义圆角、毛玻璃与聚焦态：</p>
+          <div class="callout warn">
+            <span class="callout-title">布局约束提醒</span>
+            请勿修改输入区外层的 <code>max-w-lx-chat</code> 列宽，否则会导致输入框与上方消息列表左右不对齐。
+          </div>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>packs/my-input/pack.css</span>
+              <button type="button" class="copy-btn" data-copy-target="code-input">复制</button>
+            </div>
+            <pre id="code-input">[data-slot="chat-input-card"] {
+  --pb-radius: 22px;
+  border-radius: 22px !important;
+  background: color-mix(in srgb, var(--lx-surface-elevated) 80%, transparent) !important;
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--lx-border-default) !important;
+}
+
+[data-slot="chat-input-card"]:focus-within {
+  border-color: var(--lx-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lx-accent) 20%, transparent);
+}</pre>
+          </div>
+
+          <h3 id="cat-component">3.6 component · 组件与动效</h3>
+          <p>可覆盖流式输出与思维链动画类名：</p>
+          <div class="code-wrap">
+            <div class="code-header">
+              <span>packs/my-stream/pack.css</span>
+              <button type="button" class="copy-btn" data-copy-target="code-comp">复制</button>
+            </div>
+            <pre id="code-comp">/* 流式新增文字渐显 */
+.codex-text-arrival {
+  animation-duration: 180ms !important;
+}
+
+/* 思维链运行态呼吸 */
+.stream-thinking-content.is-running {
+  animation-duration: 240ms !important;
+}
+
+/* 卡片入场动效 */
+.animate-blur-in {
+  animation-duration: 200ms !important;
+}</pre>
+          </div>
+        </section>
+
+        <section id="assets-inline">
+          <h2>4. 静态资源引用与内联</h2>
+          <p>主进程在读取本地自定义扩展包的 <code>pack.css</code> 时，会自动扫描以 <code>./</code> 开头的相对路径 <code>url('./...')</code>，并将其转换为 <code>data:</code> Base64 内联到样式表中。</p>
+          <ul>
+            <li>支持的静态资源扩展名：<code>.woff2</code>、<code>.woff</code>、<code>.ttf</code>、<code>.png</code>、<code>.jpg</code>、<code>.jpeg</code>、<code>.webp</code>、<code>.svg</code>。</li>
+            <li>请使用相对路径（如 <code>url('./assets/bg.webp')</code>），不要写死本机磁盘绝对路径（<code>C:\...</code>）。</li>
+          </ul>
+        </section>
+
+        <section id="security-limits">
+          <h2>5. 安全边界与限制</h2>
+          <ul>
+            <li>本地自定义目录<strong>仅支持纯资源包</strong>（<code>manifest.json</code> + CSS + 静态字体/图片），主进程会自动拦截并拒绝执行外部 <code>.js</code> / <code>.mjs</code> 脚本。</li>
+            <li>所有资源路径均做目录穿越校验，禁止访问扩展包目录以外的文件；单个静态资源上限为 <strong>10 MB</strong>。</li>
+            <li>自定义目录中的包 <code>id</code> 建议使用独特前缀（如 <code>custom-xxx</code>），避免与内置扩展包重名。</li>
+          </ul>
+        </section>
+      </article>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var themeBtn = document.getElementById('toggle-theme-btn');
+      themeBtn.addEventListener('click', function () {
+        document.documentElement.classList.toggle('dark');
+      });
+
+      var copyButtons = document.querySelectorAll('.copy-btn');
+      copyButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var targetId = btn.getAttribute('data-copy-target');
+          var el = targetId ? document.getElementById(targetId) : null;
+          if (!el) return;
+          navigator.clipboard.writeText(el.textContent || '').then(function () {
+            var prev = btn.textContent;
+            btn.textContent = '已复制';
+            setTimeout(function () { btn.textContent = prev; }, 1400);
+          });
+        });
+      });
+
+      var links = Array.prototype.slice.call(document.querySelectorAll('.outline-link'));
+      var sections = links.map(function (link) {
+        var id = (link.getAttribute('href') || '').slice(1);
+        return { link: link, target: document.getElementById(id) };
+      }).filter(function (item) { return Boolean(item.target); });
+
+      window.addEventListener('scroll', function () {
+        var current = sections[0];
+        var offset = 110;
+        for (var i = 0; i < sections.length; i++) {
+          var rect = sections[i].target.getBoundingClientRect();
+          if (rect.top <= offset) current = sections[i];
+        }
+        links.forEach(function (l) { l.classList.remove('active'); });
+        if (current) current.link.classList.add('active');
+      }, { passive: true });
+    })();
+  </script>
+</body>
+</html>

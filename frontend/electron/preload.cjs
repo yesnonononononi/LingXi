@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     pickCustomDir: () => ipcRenderer.invoke('packs:pick-custom-dir'),
     scanCustomDir: (dirPath) => ipcRenderer.invoke('packs:scan-custom-dir', dirPath),
     loadCustom: (request) => ipcRenderer.invoke('packs:load-custom', request),
+    openGuide: () => ipcRenderer.invoke('packs:open-guide'),
   },
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   /** 仅主页面使用，网页视图不加载此 preload。 */

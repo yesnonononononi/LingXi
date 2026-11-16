@@ -112,6 +112,17 @@ const handlePickCustomDir = async (): Promise<void> => {
   await pickAndAddCustomPackDir();
 };
 
+const handleOpenPacksGuide = async (): Promise<void> => {
+  const api = typeof window !== 'undefined' ? window.electronAPI?.packs : undefined;
+  if (api?.openGuide) {
+    await api.openGuide();
+    return;
+  }
+  if (typeof window !== 'undefined') {
+    window.open('/docs/extension-packs-guide.html', '_blank', 'noopener');
+  }
+};
+
 const resolveActivePackName = (category: OfficialPackCategory): string | null => {
   const activeId = activePackIds.value[category];
   if (!activeId) return null;
@@ -244,13 +255,26 @@ onMounted(() => {
           data-testid="packs-custom-dir-section"
           class="rounded-2xl border border-lx-border-subtle bg-lx-surface-sunken p-4 space-y-3"
         >
-          <div class="flex flex-col">
-            <span class="text-xs font-semibold text-lx-primary-soft">
-              {{ isZh ? '自定义本地扩展包目录' : 'Custom Local Pack Directory' }}
-            </span>
-            <span class="text-lx-fs-xs text-lx-muted mt-0.5 leading-relaxed">
-              {{ isZh ? '输入包含扩展包或单个扩展包（含 manifest.json）的绝对路径，加载后会自动归类到上方对应类目。' : 'Enter an absolute path containing packs (with manifest.json). Loaded packs appear in their categories above.' }}
-            </span>
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex flex-col min-w-0">
+              <span class="text-xs font-semibold text-lx-primary-soft">
+                {{ isZh ? '自定义本地扩展包目录' : 'Custom Local Pack Directory' }}
+              </span>
+              <span class="text-lx-fs-xs text-lx-muted mt-0.5 leading-relaxed">
+                {{ isZh ? '输入包含扩展包或单个扩展包（含 manifest.json）的绝对路径，加载后会自动归类到上方对应类目。' : 'Enter an absolute path containing packs (with manifest.json). Loaded packs appear in their categories above.' }}
+              </span>
+            </div>
+            <button
+              type="button"
+              data-testid="packs-open-guide"
+              @click="handleOpenPacksGuide"
+              class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-lx-border bg-lx-surface text-lx-fs-xs font-medium text-lx-accent hover:bg-lx-surface-hover transition cursor-pointer"
+            >
+              <span>{{ isZh ? '开发指南' : 'Dev Guide' }}</span>
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </button>
           </div>
 
           <div class="flex items-center gap-2">

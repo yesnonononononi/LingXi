@@ -245,6 +245,8 @@ function scanCustomPacksDir(rawDirPath) {
 function registerPacksManager({
   ipcMain,
   dialog,
+  shell,
+  appPath,
   getWindow,
   userDataDir,
   assertTrustedSender,
@@ -261,6 +263,7 @@ function registerPacksManager({
     'packs:pick-custom-dir',
     'packs:scan-custom-dir',
     'packs:load-custom',
+    'packs:open-guide',
   ];
   const packsRoot = path.resolve(userDataDir, 'packs');
 
@@ -395,6 +398,41 @@ function registerPacksManager({
       return { ok: false, error: '自定义扩展包路径或 ID 非法' };
     }
     return loadPackFromDir(path.resolve(rawDir.trim()), rawId);
+  });
+
+  ipcMain.handle('packs:open-guide', async (event) => {
+    assertTrustedSender(event, 'packs:open-guide');
+    if (!shell) {
+      return { ok: false, error: '当前环境不支持打开外部浏览器' };
+    }
+    try {
+      const win = typeof getWindow === 'function' ? getWindow() : undefined;
+      const currentUrl = win?.webContents?.getURL?.() ?? '';
+      if (/^https?:\/\//i.test(currentUrl)) {
+        const origin = new URL(currentUrl).origin;
+        await shell.openExternal(`${origin}/docs/extension-packs-guide.html`);
+        return { ok: true };
+      }
+
+      // 打包态位于 app.asar 内，外部浏览器无法直接读取 asar 路径，先落地到 userData/docs
+      const sourcePath = appPath
+        ? path.join(appPath, 'dist', 'docs', 'extension-packs-guide.html')
+        : path.resolve(__dirname, '..', 'dist', 'docs', 'extension-packs-guide.html');
+      if (!fs.existsSync(sourcePath)) {
+        return { ok: false, error: `未找到指南文档: ${sourcePath}` };
+      }
+      const docsDir = path.join(userDataDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      const targetPath = path.join(docsDir, 'extension-packs-guide.html');
+      fs.writeFileSync(targetPath, fs.readFileSync(sourcePath));
+      const openErr = await shell.openPath(targetPath);
+      if (openErr) {
+        return { ok: false, error: openErr };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   return {

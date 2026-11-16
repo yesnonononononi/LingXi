@@ -156,6 +156,7 @@ export interface ElectronPacksAPI {
   pickCustomDir: () => Promise<{ ok: boolean; canceled?: boolean; dirPath?: string; error?: string }>;
   scanCustomDir: (dirPath: string) => Promise<{ ok: boolean; dirPath?: string; packs?: CustomScannedPackManifest[]; error?: string }>;
   loadCustom: (request: { id: string; packDir: string }) => Promise<{ ok: boolean; manifest?: RemotePackManifest; cssText?: string; error?: string }>;
+  openGuide: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 export interface RemotePackManifest {
