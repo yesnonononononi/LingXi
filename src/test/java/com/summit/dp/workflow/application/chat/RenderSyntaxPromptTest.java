@@ -58,5 +58,6 @@ class RenderSyntaxPromptTest {
         // 前端类名与属性名是实现细节，写进提示词只会诱导模型去猜 DOM。
         assertFalse(section.contains("data-local-file"), "不应把前端属性名写进提示词");
         assertFalse(section.contains("lx-local-file"), "不应把前端类名写进提示词");
+        assertFalse(section.contains("看一张图"), "界面不渲染本地图片，不应诱导模型输出本地图片 Markdown");
     }
 }
