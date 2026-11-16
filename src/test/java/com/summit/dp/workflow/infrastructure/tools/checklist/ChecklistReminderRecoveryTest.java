@@ -179,7 +179,7 @@ class ChecklistReminderRecoveryTest {
     private Execution execution(String id) {
         List<Message> messages = new ArrayList<>(List.of(UserMessageEntity.from("继续")));
         return Execution.builder().id(id).messages(messages).agentRequest(AgentRequest.builder()
-                .toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP))
+                .toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION))).build())
                 .build()).build();

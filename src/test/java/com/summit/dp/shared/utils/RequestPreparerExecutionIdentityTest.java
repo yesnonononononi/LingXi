@@ -142,10 +142,11 @@ class RequestPreparerExecutionIdentityTest {
         when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.LOCAL,
                 AgentPermissionMode.READ_ONLY_REVIEW, null, null, null, null, null, null, 10)));
         RuntimeContext context = preparer.prepare(command());
-        List<String> tools = preparer.buildRequest("prompt", context, ToolCatalog.DEFAULT_AGENT_TOOLS).getToolList();
-        assertFalse(tools.contains(ToolCatalog.EXECUTE_COMMAND));
-        assertFalse(tools.contains(ToolCatalog.MANAGE_COMMAND));
-        assertFalse(tools.contains(ToolCatalog.EDIT_FILE));
+        var spec = preparer.buildRequest("prompt", context, ToolCatalog.DEFAULT_AGENT_TOOLS).getToolSpec();
+        assertTrue(spec.getToolList().contains(ToolCatalog.EDIT_FILE));
+        assertTrue(spec.getForbiddenTools().contains(ToolCatalog.EXECUTE_COMMAND));
+        assertTrue(spec.getForbiddenTools().contains(ToolCatalog.MANAGE_COMMAND));
+        assertTrue(spec.getForbiddenTools().contains(ToolCatalog.EDIT_FILE));
     }
 
     @Test

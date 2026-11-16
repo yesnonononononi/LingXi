@@ -198,7 +198,7 @@ class ChecklistReminderInterceptorTest {
                     ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)
                 : List.of(ToolCatalog.READ_FILE);
         AgentRequest request = AgentRequest.builder()
-                .toolList(tools)
+                .toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(tools).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID)))
                         .build())

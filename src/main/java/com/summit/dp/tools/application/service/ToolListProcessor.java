@@ -1,5 +1,6 @@
 package com.summit.dp.tools.application.service;
 
+import com.summit.core.agent.ToolSpec;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +16,23 @@ import java.util.Set;
 public class ToolListProcessor {
     private final ToolCatalog toolCatalog;
 
+    public ToolSpec processSpec(List<String> configured, ToolProcessingContext context) {
+        Set<String> tools = collectEligibleTools(configured, context);
+        Set<String> forbidden = collectForbiddenTools(tools, context);
+        return ToolSpec.builder()
+                .toolList(List.copyOf(tools))
+                .forbiddenTools(List.copyOf(forbidden))
+                .build();
+    }
+
     public List<String> process(List<String> configured, ToolProcessingContext context) {
+        Set<String> tools = collectEligibleTools(configured, context);
+        Set<String> forbidden = collectForbiddenTools(tools, context);
+        tools.removeAll(forbidden);
+        return List.copyOf(tools);
+    }
+
+    private Set<String> collectEligibleTools(List<String> configured, ToolProcessingContext context) {
         Set<String> tools = new LinkedHashSet<>();
         if (context.defaultAgent()) tools.addAll(ToolCatalog.DEFAULT_AGENT_TOOLS);
         if (configured != null) {
@@ -45,29 +62,39 @@ public class ToolListProcessor {
         else tools.remove(ToolCatalog.READ_IMAGE);
         if (context.imageGeneration()) tools.add(ToolCatalog.GENERATE_IMAGE);
         else tools.remove(ToolCatalog.GENERATE_IMAGE);
-
-        AgentPermissionMode effectiveMode = AgentPermissionMode.resolveEffective(
-                context.permissionMode(), context.requirePlan());
-        if (!effectiveMode.allowsWriteTools()) {
-            Set<String> readOnly = toolCatalog.readOnlyNames();
-            // 只读审阅（Plan 语义）下同步剔除文件写工具与终端工具，避免经终端绕过只读边界。
-            // 内核工具不参与此过滤——框架侧恒准入，名单里本来也没有它们。
-            tools.removeIf(name -> {
-                boolean isTerminal = ToolCatalog.EXECUTE_COMMAND.equals(name) || ToolCatalog.MANAGE_COMMAND.equals(name);
-                if (isTerminal) {
-                    return !effectiveMode.allowsTerminalTools();
-                }
-                return !readOnly.contains(name);
-            });
-        } else if (!effectiveMode.allowsTerminalTools()) {
-            tools.remove(ToolCatalog.EXECUTE_COMMAND);
-            tools.remove(ToolCatalog.MANAGE_COMMAND);
-        }
         if (context.member() || context.teamId() == null) {
             tools.remove(ToolCatalog.CALL_SUB_AGENT);
             tools.remove(ToolCatalog.PEEK_TEAMMATE_STATE);
         }
         if (!context.member() && context.agentId() == null) tools.remove(ToolCatalog.SEND_MAIL_TO_AGENT);
-        return List.copyOf(tools);
+        return tools;
+    }
+
+    private Set<String> collectForbiddenTools(Set<String> tools, ToolProcessingContext context) {
+        Set<String> forbidden = new LinkedHashSet<>();
+        AgentPermissionMode effectiveMode = AgentPermissionMode.resolveEffective(
+                context.permissionMode(), context.requirePlan());
+        if (!effectiveMode.allowsWriteTools()) {
+            Set<String> readOnly = toolCatalog.readOnlyNames();
+            // 只读审阅（Plan 语义）下禁用文件写工具与终端工具，经黑名单拦截而非改写静态 toolList。
+            for (String name : tools) {
+                boolean isTerminal = ToolCatalog.EXECUTE_COMMAND.equals(name) || ToolCatalog.MANAGE_COMMAND.equals(name);
+                if (isTerminal) {
+                    if (!effectiveMode.allowsTerminalTools()) {
+                        forbidden.add(name);
+                    }
+                } else if (!readOnly.contains(name)) {
+                    forbidden.add(name);
+                }
+            }
+        } else if (!effectiveMode.allowsTerminalTools()) {
+            if (tools.contains(ToolCatalog.EXECUTE_COMMAND)) {
+                forbidden.add(ToolCatalog.EXECUTE_COMMAND);
+            }
+            if (tools.contains(ToolCatalog.MANAGE_COMMAND)) {
+                forbidden.add(ToolCatalog.MANAGE_COMMAND);
+            }
+        }
+        return forbidden;
     }
 }

@@ -239,7 +239,7 @@ class ChecklistLoopIntegrationTest {
         return Execution.builder().id("1001").executionState(ExecutionState.RUNNING)
                 .messages(new ArrayList<>(List.of(UserMessageEntity.from("执行任务"))))
                 .tokenUsage(TokenUsageEntity.empty()).agentRequest(AgentRequest.builder()
-                        .toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP))
+                        .toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP)).build())
                         .runtimeParameters(AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION))).build())
                         .build()).build();

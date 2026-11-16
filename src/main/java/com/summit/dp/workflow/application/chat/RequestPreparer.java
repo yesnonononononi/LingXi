@@ -418,7 +418,7 @@ public class RequestPreparer {
                         .memory(MemoryLoader.collect(memoryLoaders, context.workspace()))
                         .build())
                 .workspaceSpec(context.workspace())
-                .toolList(toolListProcessor.process(toolList, ToolProcessingContext.builder()
+                .toolSpec(toolListProcessor.processSpec(toolList, ToolProcessingContext.builder()
                         .defaultAgent(defaultAgent)
                         .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
                                 && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))

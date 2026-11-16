@@ -108,7 +108,7 @@ class ReadImageLoopIntegrationTest {
             ChatModel model = localChatModel("http://127.0.0.1:" + server.getAddress().getPort() + "/v1", "arbitrary-vision-model");
             List<Image> history = IntStream.range(0, 15)
                     .mapToObj(index -> Image.from(URI.create("https://example.test/old-" + index))).toList();
-            AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.READ_IMAGE))
+            AgentRequest request = AgentRequest.builder().toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(List.of(ToolCatalog.READ_IMAGE)).build())
                     .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                             ExecutionAttributes.SESSION_ID, "42", ExecutionAttributes.MODEL_VISION, true)).build())
                     .contextSpec(ContextSpec.builder()

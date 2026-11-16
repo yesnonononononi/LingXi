@@ -120,8 +120,8 @@ class RequestPreparerModelFallbackTest {
                 new LingXiWorkspaceSpec("local", System.getProperty("user.dir"), Map.of()), modelConfig(SETTINGS_MODEL_ID),
                 AgentPermissionMode.FULL_ACCESS, false, UserMessageEntity.from("任务"));
         AgentRequest request = preparer.buildRequest("", context, List.of(ToolCatalog.READ_FILE));
-        assertTrue(request.getToolList().contains(ToolCatalog.LOAD_MEMORY));
-        assertTrue(request.getToolList().contains(ToolCatalog.SEARCH_WIKI));
+        assertTrue(request.getToolSpec().getToolList().contains(ToolCatalog.LOAD_MEMORY));
+        assertTrue(request.getToolSpec().getToolList().contains(ToolCatalog.SEARCH_WIKI));
         assertTrue(request.getContextSpec().getSystemPrompt().contains("wiki=" + context.workspace().workDir()));
     }
 
@@ -139,7 +139,7 @@ class RequestPreparerModelFallbackTest {
                 .agentId("test").agentRequest(AgentRequest.builder().build()).build());
         assertTrue(admitted.vision());
         AgentRequest request = preparer.buildRequest("", admitted, List.of(ToolCatalog.READ_FILE));
-        assertTrue(request.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertTrue(request.getToolSpec().getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(true, request.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
     }
 

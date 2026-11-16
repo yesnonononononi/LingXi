@@ -64,7 +64,7 @@ class ChecklistContextAttachmentsTest {
         injector = new ChecklistContextInjector(service);
         delivery = new ChecklistReminderDelivery(executions);
         execution = Execution.builder().id("1001").agentRequest(AgentRequest.builder()
-                .toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP))
+                .toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP)).build())
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(
                         Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION))).build()).build())
                 .messages(new ArrayList<>(List.of(SystemMessageEntity.builder().text("基础系统指令").build(),

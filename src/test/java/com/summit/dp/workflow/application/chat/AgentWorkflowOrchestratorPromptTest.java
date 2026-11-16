@@ -76,7 +76,7 @@ class AgentWorkflowOrchestratorPromptTest {
                 ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
                 ToolCatalog.REQUIRE_CHOICE,
                 ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
-                ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST), request.getToolList());
+                ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST), request.getToolSpec().getToolList());
         verifyNoInteractions(subAgent, agentService, teamService);
     }
 
@@ -97,7 +97,7 @@ class AgentWorkflowOrchestratorPromptTest {
         assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n代码审查助手",
                 request.getContextSpec().getSystemPrompt());
         assertEquals(context.messageList(), request.getContextSpec().getContext());
-        assertEquals(selected.getToolList(), request.getToolList());
+        assertEquals(selected.getToolList(), request.getToolSpec().getToolList());
         verifyNoInteractions(chatAgent, teamService);
     }
 
@@ -129,7 +129,7 @@ class AgentWorkflowOrchestratorPromptTest {
         assertEquals(context.messageList(), request.getContextSpec().getContext());
         assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.CALL_SUB_AGENT,
                         ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT),
-                request.getToolList());
+                request.getToolSpec().getToolList());
         verifyNoInteractions(chatAgent);
     }
 

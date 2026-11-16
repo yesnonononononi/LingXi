@@ -119,7 +119,7 @@ public class SubAgentRequestFactory {
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel, resolvedWorkspace.id()))
                         .build())
-                .toolList(toolListProcessor.process(subAgent.getToolList(), ToolProcessingContext.builder()
+                .toolSpec(toolListProcessor.processSpec(subAgent.getToolList(), ToolProcessingContext.builder()
                         .member(true).agentId(subAgent.getId())
                         .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
                                 && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))

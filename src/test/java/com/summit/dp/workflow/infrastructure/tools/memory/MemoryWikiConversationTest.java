@@ -50,7 +50,7 @@ class MemoryWikiConversationTest {
         when(boundary.after(any(), any())).thenReturn(CheckPointResult.continueWith());
         DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
         AtomicInteger modelCalls = new AtomicInteger();
-        AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.LOAD_MEMORY)).build();
+        AgentRequest request = AgentRequest.builder().toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(List.of(ToolCatalog.LOAD_MEMORY)).build()).build();
         Execution execution = Execution.builder().id("wiki-conversation")
                 .agentRequest(request).tokenUsage(TokenUsageEntity.empty())
                 .messages(new ArrayList<Message>(List.of(UserMessageEntity.from("没有选择项目，也可以先聊聊吗？"))))

@@ -58,22 +58,23 @@ class CollaborationToolExposureTest {
     void imageToolFollowsTheVisionDeclarationRatherThanTheName() {
         AgentRequest supported = request(null, null, List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE),
                 REGISTERED, false, AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
-        assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertTrue(supported.getToolSpec().getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         AgentRequest unsupported = request(null, null, List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE),
                 REGISTERED, false, AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(""), "claude-opus", false);
-        assertEquals(List.of(ToolCatalog.READ_FILE), unsupported.getToolList());
+        assertEquals(List.of(ToolCatalog.READ_FILE), unsupported.getToolSpec().getToolList());
         assertEquals(false, unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         AgentRequest explicitlySelected = request(7L, null, List.of(ToolCatalog.READ_FILE),
                 REGISTERED, false, AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
-        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE), explicitlySelected.getToolList());
+        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE), explicitlySelected.getToolSpec().getToolList());
 
         AgentRequest readOnly = request(null, null, List.of(ToolCatalog.READ_IMAGE, ToolCatalog.EDIT_FILE),
                 REGISTERED, false, AgentPermissionMode.READ_ONLY_REVIEW, Set.of(ToolCatalog.READ_IMAGE),
                 new SkillRootResolver(""), "arbitrary-model", true);
-        assertEquals(List.of(ToolCatalog.READ_IMAGE), readOnly.getToolList());
+        assertEquals(List.of(ToolCatalog.READ_IMAGE, ToolCatalog.EDIT_FILE), readOnly.getToolSpec().getToolList());
+        assertEquals(List.of(ToolCatalog.EDIT_FILE), readOnly.getToolSpec().getForbiddenTools());
     }
 
     @Test
@@ -81,7 +82,7 @@ class CollaborationToolExposureTest {
     void absentWhitelistGrantsNoStaticTool() {
         AgentRequest request = request(null, null, null);
 
-        assertEquals(List.of(), request.getToolList(),
+        assertEquals(List.of(), request.getToolSpec().getToolList(),
                 "未显式授权就不该有工具；返回 null 会静默放大为进程内全部能力");
     }
 
@@ -90,7 +91,7 @@ class CollaborationToolExposureTest {
     void mcpPresenceFallsBackToTheMcpEntries() {
         AgentRequest request = request(null, null, null, REGISTERED, true);
 
-        assertEquals(List.of(), request.getToolList(),
+        assertEquals(List.of(), request.getToolSpec().getToolList(),
                 "内核工具不再由业务侧补：框架默认注册且恒准入；静态工具仍须显式授权");
     }
 
@@ -99,7 +100,7 @@ class CollaborationToolExposureTest {
     void emptyMcpConfigIsNotPresence() {
         AgentRequest request = request(null, null, null, REGISTERED, false);
 
-        assertEquals(List.of(), request.getToolList(),
+        assertEquals(List.of(), request.getToolSpec().getToolList(),
                 "空 mcpConfig 与无 mcpConfig 一视同仁，不该凭空塞一个检索工具");
     }
 
@@ -109,7 +110,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null,
                 List.of("read_file", "edit_file"), REGISTERED, true);
 
-        assertEquals(List.of("read_file", "edit_file"), request.getToolList(),
+        assertEquals(List.of("read_file", "edit_file"), request.getToolSpec().getToolList(),
                 "内核工具不进名单：框架默认注册且恒准入");
     }
 
@@ -119,7 +120,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null,
                 List.of("read_file", "edit_file"), REGISTERED, false);
 
-        assertEquals(List.of("read_file", "edit_file"), request.getToolList());
+        assertEquals(List.of("read_file", "edit_file"), request.getToolSpec().getToolList());
     }
 
     // --- 默认档位：基础工具集 --------------------------------------------------------------
@@ -129,10 +130,11 @@ class CollaborationToolExposureTest {
         for (String writer : List.of(ToolCatalog.CREATE_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
                 ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)) {
             AgentRequest request = request(null, null, List.of(writer), REGISTERED, false);
-            assertEquals(List.of(writer, ToolCatalog.GET_CURRENT_CHECKLIST), request.getToolList());
+            assertEquals(List.of(writer, ToolCatalog.GET_CURRENT_CHECKLIST), request.getToolSpec().getToolList());
             AgentRequest readOnly = request(null, null, List.of(writer), REGISTERED, false,
                     AgentPermissionMode.READ_ONLY_REVIEW, Set.of(ToolCatalog.GET_CURRENT_CHECKLIST));
-            assertEquals(List.of(ToolCatalog.GET_CURRENT_CHECKLIST), readOnly.getToolList());
+            assertEquals(List.of(writer, ToolCatalog.GET_CURRENT_CHECKLIST), readOnly.getToolSpec().getToolList());
+            assertEquals(List.of(writer), readOnly.getToolSpec().getForbiddenTools());
         }
     }
 
@@ -147,7 +149,7 @@ class CollaborationToolExposureTest {
                         ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
-                request.getToolList(),
+                request.getToolSpec().getToolList(),
                 "基础工具包含用户确认、执行清单、文件检索写入删除与项目记忆读取/检索；内核工具不进名单，协作工具不该出现");
     }
 
@@ -162,7 +164,7 @@ class CollaborationToolExposureTest {
                         ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
-                request.getToolList());
+                request.getToolSpec().getToolList());
     }
 
     @Test
@@ -172,9 +174,12 @@ class CollaborationToolExposureTest {
                 AgentPermissionMode.READ_ONLY_REVIEW, Set.of("read_file", "search_files", "require_choice",
                         ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST));
 
-        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.SEARCH_FILES,
-                        ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST),
-                request.getToolList(), "只读审阅档禁用写工具与终端工具");
+        List<String> forbidden = request.getToolSpec().getForbiddenTools();
+        assertTrue(request.getToolSpec().getToolList().containsAll(List.of(ToolCatalog.READ_FILE, ToolCatalog.EDIT_FILE, ToolCatalog.EXECUTE_COMMAND)),
+                "静态 toolList 保持不变以保护前缀缓存");
+        assertFalse(forbidden.contains(ToolCatalog.READ_FILE));
+        assertTrue(forbidden.containsAll(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND,
+                ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE)), "只读审阅档通过黑名单禁用写工具与终端工具");
     }
 
     // --- 身份剔除：模型看不到它用不了的能力 ----------------------------------------------
@@ -185,7 +190,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null,
                 List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT, "read_file"));
 
-        List<String> tools = request.getToolList();
+        List<String> tools = request.getToolSpec().getToolList();
         assertNotNull(tools);
         assertFalse(tools.contains(ToolCatalog.CALL_SUB_AGENT), "没有团队就没有可委派对象");
         assertFalse(tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT), "没有 Agent 就没有发件人");
@@ -198,7 +203,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(5L, null,
                 List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT));
 
-        List<String> tools = request.getToolList();
+        List<String> tools = request.getToolSpec().getToolList();
         assertNotNull(tools);
         assertTrue(tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT),
                 "发件人身份来自当前执行，已绑定 Agent 即可发信");
@@ -211,7 +216,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(7L, 3L,
                 List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT));
 
-        List<String> tools = request.getToolList();
+        List<String> tools = request.getToolSpec().getToolList();
         assertNotNull(tools);
         assertTrue(tools.contains(ToolCatalog.CALL_SUB_AGENT));
         assertTrue(tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT));
@@ -228,7 +233,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null, List.of("read_file"), REGISTERED, false,
                 AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(skillDir.toString()));
 
-        assertEquals(List.of("read_file"), request.getToolList(),
+        assertEquals(List.of("read_file"), request.getToolSpec().getToolList(),
                 "read_skill 是内核工具，框架默认注册且恒准入，业务侧不再补进名单");
         assertNotNull(request.getSkillConfig(), "必须下发 skillConfig，否则框架压根不会渲染 Skill 提示词");
         assertEquals(skillDir.toAbsolutePath().normalize(), request.getSkillConfig().getPath(),
@@ -242,8 +247,9 @@ class CollaborationToolExposureTest {
                 AgentPermissionMode.READ_ONLY_REVIEW, Set.of("read_file", ToolCatalog.READ_SKILL),
                 new SkillRootResolver(skillDir.toString()));
 
-        assertEquals(List.of("read_file"), request.getToolList(),
-                "只读滤网按注册表剔除写工具；read_skill 不在名单里，框架侧恒准入且只读");
+        assertEquals(List.of("read_file", "edit_file"), request.getToolSpec().getToolList());
+        assertEquals(List.of("edit_file"), request.getToolSpec().getForbiddenTools(),
+                "只读滤网按注册表将写工具列入黑名单；read_skill 不在名单里，框架侧恒准入且只读");
     }
 
     @Test
@@ -251,7 +257,7 @@ class CollaborationToolExposureTest {
     void absentSkillRootAddsNothing() {
         AgentRequest request = request(null, null, List.of("read_file"));
 
-        assertEquals(List.of("read_file"), request.getToolList(),
+        assertEquals(List.of("read_file"), request.getToolSpec().getToolList(),
                 "目录不可用时不下发：框架把「配了目录却不存在」判为错误，不能凭空造一个");
         assertNull(request.getSkillConfig());
     }

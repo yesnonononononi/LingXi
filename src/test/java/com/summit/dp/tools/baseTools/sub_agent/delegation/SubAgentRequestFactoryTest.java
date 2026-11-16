@@ -175,7 +175,7 @@ class SubAgentRequestFactoryTest {
         AgentVO member = agent(6L, "工程师", "执行主理人交付的任务");
         // 复用会话的历史是同一个子 Agent 自己的前缀：开头那条系统消息必须原样留着，
         // 它是缓存前缀与 thinking 签名绑定的起点，改写它等于让复用每轮重新计费。
-        String previousPrompt = "上一轮的系统提示词：核查旧端口";
+        String previousPrompt = "## Business Prompt\n" + new BusinessSystemPromptBuilder("").buildMemberPrompt(member, buildTeam(member), null).strip();
         List<Message> prior = reused ? List.of(SystemMessageEntity.builder().text(previousPrompt).build(),
                 UserMessageEntity.from("旧轮用户输入"),
                 AiMessageEntity.builder().text("旧轮回复").build()) : List.of();
@@ -289,13 +289,13 @@ class SubAgentRequestFactoryTest {
         assertNotNull(supported.getModelConfigSpec());
         assertEquals(member.getModelId().longValue(), supported.getModelConfigSpec().getId().longValue());
         assertTrue(supported.getRetryConfig().isEnabled());
-        assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertTrue(supported.getToolSpec().getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("claude-opus").build(), false));
         AgentRequest unsupported = build(target, member, buildTeam(member), ToolExecution.builder().executionId("900")
                 .attributes(Map.of(ExecutionAttributes.MODEL_VISION, true)).build(), List.of());
-        assertFalse(unsupported.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertFalse(unsupported.getToolSpec().getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(false, unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
     }
 
@@ -310,9 +310,12 @@ class SubAgentRequestFactoryTest {
                     .attributes(AgentPermissionMode.toAttributes(mode)).build();
             AgentRequest request = build(member, buildTeam(member), parent);
             assertEquals(mode, AgentPermissionMode.from(request.runtimeParametersOrDefault().getAttributes()));
-            assertEquals(mode.allowsWriteTools(), request.getToolList().contains(ToolCatalog.EDIT_FILE));
-            assertEquals(mode.allowsTerminalTools(), request.getToolList().contains(ToolCatalog.EXECUTE_COMMAND));
-            assertTrue(request.getToolList().contains(ToolCatalog.READ_FILE));
+            assertTrue(request.getToolSpec().getToolList().contains(ToolCatalog.EDIT_FILE));
+            assertTrue(request.getToolSpec().getToolList().contains(ToolCatalog.EXECUTE_COMMAND));
+            assertEquals(!mode.allowsWriteTools(), request.getToolSpec().getForbiddenTools().contains(ToolCatalog.EDIT_FILE));
+            assertEquals(!mode.allowsTerminalTools(), request.getToolSpec().getForbiddenTools().contains(ToolCatalog.EXECUTE_COMMAND));
+            assertTrue(request.getToolSpec().getToolList().contains(ToolCatalog.READ_FILE));
+            assertFalse(request.getToolSpec().getForbiddenTools().contains(ToolCatalog.READ_FILE));
         }
     }
 
@@ -343,7 +346,7 @@ class SubAgentRequestFactoryTest {
                 "邮箱业务键是协作根会话 id，子执行必须带上父执行的根会话 id");
 
         // 2) 工具清单：给发信，绝不给委派
-        List<String> tools = request.getToolList();
+        List<String> tools = request.getToolSpec().getToolList();
         assertTrue(tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT), "成员要能和队友同步信息");
         assertFalse(tools.contains(ToolCatalog.CALL_SUB_AGENT), "委派只发生在指挥者这一层");
         assertTrue(tools.contains("read_file"), "Agent 自身配置的工具保留");
@@ -391,7 +394,7 @@ class SubAgentRequestFactoryTest {
                 .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3"))
                 .build());
 
-        assertEquals(List.of(ToolCatalog.SEND_MAIL_TO_AGENT), request.getToolList());
+        assertEquals(List.of(ToolCatalog.SEND_MAIL_TO_AGENT), request.getToolSpec().getToolList());
     }
 
     @Test
@@ -511,7 +514,7 @@ class SubAgentRequestFactoryTest {
 
         // read_skill 是框架内核工具，默认注册且恒准入：业务侧只负责把 skillConfig 交出去。
         AgentRequest withSkills = build(factoryWithSkills(), member, team, parentToolExecution(), List.of());
-        assertFalse(withSkills.getToolList().contains(ToolCatalog.READ_SKILL),
+        assertFalse(withSkills.getToolSpec().getToolList().contains(ToolCatalog.READ_SKILL),
                 "内核工具不进名单：框架默认注册，业务侧多写一遍只会在改名时漂移");
         assertNotNull(withSkills.getSkillConfig(), "必须下发 skillConfig，否则框架不会渲染 Skill 提示词");
         assertEquals(skillDir.toAbsolutePath().normalize(), withSkills.getSkillConfig().getPath(),
@@ -519,7 +522,7 @@ class SubAgentRequestFactoryTest {
 
         // 关闭：目录不可用时不下发，避免框架把「配了目录却不存在」判为错误
         AgentRequest withoutSkills = build(member, team, parentToolExecution(), List.of());
-        assertFalse(withoutSkills.getToolList().contains(ToolCatalog.READ_SKILL));
+        assertFalse(withoutSkills.getToolSpec().getToolList().contains(ToolCatalog.READ_SKILL));
         assertNull(withoutSkills.getSkillConfig());
     }
 

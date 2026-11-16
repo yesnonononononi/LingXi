@@ -100,7 +100,10 @@ public class ChecklistReminderInterceptor implements LoopInterceptor {
         if (request == null) {
             return false;
         }
-        List<String> tools = request.getToolList();
-        return tools != null && tools.contains(ToolCatalog.UPDATE_CHECKLIST_STEP);
+        var spec = request.toolSpecOrDefault();
+        List<String> tools = spec.getToolList();
+        List<String> forbidden = spec.getForbiddenTools();
+        return tools != null && tools.contains(ToolCatalog.UPDATE_CHECKLIST_STEP)
+                && (forbidden == null || !forbidden.contains(ToolCatalog.UPDATE_CHECKLIST_STEP));
     }
 }
