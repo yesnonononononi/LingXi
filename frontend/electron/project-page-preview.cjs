@@ -78,9 +78,113 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
   };
 
   const clearTimer = tab => { clearTimeout(tab.timer); tab.timer = undefined; };
+  const clearAgentOverlayTimer = tab => { clearTimeout(tab.agentOverlayTimer); tab.agentOverlayTimer = undefined; };
+  const setAgentOverlayVisible = async (tab, visible) => {
+    const contents = tab?.contents;
+    if (!contents || contents.isDestroyed() || typeof contents.executeJavaScript !== 'function') return;
+    const script = `(() => {
+      const HOST_ID = '__lingxi_agent_overlay_host__';
+      const existing = document.getElementById(HOST_ID);
+      if (!${Boolean(visible)}) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (existing) {
+        existing.style.display = 'block';
+        return;
+      }
+      const rootEl = document.documentElement || document.body;
+      if (!rootEl) return;
+      const host = document.createElement('div');
+      host.id = HOST_ID;
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;margin:0;padding:0;border:0;background:transparent;';
+      const shadow = host.attachShadow({ mode: 'closed' });
+      shadow.innerHTML = \`
+        <style>
+          @keyframes lingxi-ring-pulse {
+            0%, 100% {
+              box-shadow: inset 0 0 0 2.5px rgba(59, 130, 246, 0.85), inset 0 0 24px rgba(37, 99, 235, 0.42);
+            }
+            50% {
+              box-shadow: inset 0 0 0 3px rgba(96, 165, 250, 0.95), inset 0 0 36px rgba(59, 130, 246, 0.58);
+            }
+          }
+          @keyframes lingxi-dot-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.45; transform: scale(0.82); }
+          }
+          .ring {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            animation: lingxi-ring-pulse 2s ease-in-out infinite;
+          }
+          .banner {
+            position: fixed;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            background: rgba(15, 23, 42, 0.86);
+            border: 1px solid rgba(96, 165, 250, 0.55);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.28);
+            backdrop-filter: blur(8px);
+            color: #eff6ff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            pointer-events: none;
+            user-select: none;
+          }
+          .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #60a5fa;
+            box-shadow: 0 0 8px #3b82f6;
+            animation: lingxi-dot-pulse 1.4s ease-in-out infinite;
+          }
+        </style>
+        <div class="ring">
+          <div class="banner">
+            <span class="dot"></span>
+            <span>浏览器正在被 LingXi 操控</span>
+          </div>
+        </div>
+      \`;
+      rootEl.appendChild(host);
+    })()`;
+    try {
+      await contents.executeJavaScript(script, true);
+    } catch {
+      // 忽略页面尚未就绪或已销毁时的注入异常
+    }
+  };
+  const beginAgentControl = tab => {
+    clearAgentOverlayTimer(tab);
+    tab.agentOverlayActive = true;
+    void setAgentOverlayVisible(tab, true);
+  };
+  const endAgentControl = (tab, holdMs = 1800) => {
+    clearAgentOverlayTimer(tab);
+    tab.agentOverlayTimer = setTimeout(() => {
+      tab.agentOverlayTimer = undefined;
+      tab.agentOverlayActive = false;
+      void setAgentOverlayVisible(tab, false);
+    }, holdMs);
+  };
+
   const destroyTab = (state, tab) => {
     state.tabs.delete(tab.id);
     clearTimer(tab);
+    clearAgentOverlayTimer(tab);
     if (!state.window.isDestroyed()) state.window.contentView.removeChildView(tab.view);
     if (!tab.contents.isDestroyed()) tab.contents.close({waitForBeforeUnload: false});
   };
@@ -284,6 +388,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       if (!current()) return;
       applyViewTheme(tab.view);
       applyLayout(state);
+      if (tab.agentOverlayActive) void setAgentOverlayVisible(tab, true);
     });
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) updateUrl(url); });
     contents.on('page-title-updated', (_event, title) => { tab.title = title; send(); });
@@ -490,6 +595,15 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     return contents.executeJavaScript(script, true);
   };
 
+  const withAgentControl = async (tab, fn) => {
+    beginAgentControl(tab);
+    try {
+      return await fn();
+    } finally {
+      endAgentControl(tab);
+    }
+  };
+
   const automation = {
     listTabs: async () => {
       const state = await ensureAutomationState();
@@ -500,24 +614,47 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const normalizedAction = typeof action === 'string' ? action.trim().toLowerCase() : 'goto';
       if (normalizedAction === 'back' || normalizedAction === 'forward' || normalizedAction === 'reload') {
         const tab = resolveAutomationTab(state, tabId);
+        return withAgentControl(tab, async () => {
+          state.activeTabId = tab.id;
+          const contents = tab.contents;
+          if (!contents || contents.isDestroyed()) throw new Error('网页实例已销毁');
+          const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
+          if (normalizedAction === 'back') {
+            if (!contents.navigationHistory.canGoBack()) throw new Error('当前标签页无法后退');
+            contents.navigationHistory.goBack();
+          } else if (normalizedAction === 'forward') {
+            if (!contents.navigationHistory.canGoForward()) throw new Error('当前标签页无法前进');
+            contents.navigationHistory.goForward();
+          } else {
+            if (!tab.url) throw new Error('当前标签页尚未打开任何地址');
+            contents.reload();
+          }
+          publish(state);
+          const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
+          return {
+            action: normalizedAction,
+            tabId: tab.id,
+            url: tab.url,
+            title: tab.title,
+            loadState: loadResult.loadState ?? tab.loadState,
+            errorCode: loadResult.errorCode ?? tab.errorCode,
+            errorDescription: loadResult.errorDescription ?? tab.errorDescription,
+          };
+        });
+      }
+      if (normalizedAction !== 'goto') {
+        throw new Error(`不支持的导航动作: ${action}`);
+      }
+      const targetUrl = normalizeTargetUrl(url);
+      const tab = newTab ? createTab(state) : resolveAutomationTab(state, tabId);
+      return withAgentControl(tab, async () => {
         state.activeTabId = tab.id;
-        const contents = tab.contents;
-        if (!contents || contents.isDestroyed()) throw new Error('网页实例已销毁');
         const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
-        if (normalizedAction === 'back') {
-          if (!contents.navigationHistory.canGoBack()) throw new Error('当前标签页无法后退');
-          contents.navigationHistory.goBack();
-        } else if (normalizedAction === 'forward') {
-          if (!contents.navigationHistory.canGoForward()) throw new Error('当前标签页无法前进');
-          contents.navigationHistory.goForward();
-        } else {
-          if (!tab.url) throw new Error('当前标签页尚未打开任何地址');
-          contents.reload();
-        }
+        load(state, tab, targetUrl);
         publish(state);
         const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
         return {
-          action: normalizedAction,
+          action: 'goto',
           tabId: tab.id,
           url: tab.url,
           title: tab.title,
@@ -525,26 +662,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           errorCode: loadResult.errorCode ?? tab.errorCode,
           errorDescription: loadResult.errorDescription ?? tab.errorDescription,
         };
-      }
-      if (normalizedAction !== 'goto') {
-        throw new Error(`不支持的导航动作: ${action}`);
-      }
-      const targetUrl = normalizeTargetUrl(url);
-      const tab = newTab ? createTab(state) : resolveAutomationTab(state, tabId);
-      state.activeTabId = tab.id;
-      const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
-      load(state, tab, targetUrl);
-      publish(state);
-      const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
-      return {
-        action: 'goto',
-        tabId: tab.id,
-        url: tab.url,
-        title: tab.title,
-        loadState: loadResult.loadState ?? tab.loadState,
-        errorCode: loadResult.errorCode ?? tab.errorCode,
-        errorDescription: loadResult.errorDescription ?? tab.errorDescription,
-      };
+      });
     },
     activateTab: async tabId => {
       const state = await ensureAutomationState();
@@ -608,7 +726,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           currentTitle: document.title,
         };
       })()`;
-      const result = await runTabScript(tab, script);
+      const result = await withAgentControl(tab, () => runTabScript(tab, script));
       if (!result?.ok) throw new Error(result?.error || '点击元素失败');
       return {...result, tabId: tab.id, url: result.currentUrl || tab.url, title: result.currentTitle || tab.title};
     },
@@ -673,7 +791,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           valueLength: (el.value ?? el.textContent ?? '').length,
         };
       })()`;
-      const result = await runTabScript(tab, script);
+      const result = await withAgentControl(tab, () => runTabScript(tab, script));
       if (!result?.ok) throw new Error(result?.error || '填充元素失败');
       return {...result, tabId: tab.id, url: tab.url, title: tab.title};
     },
@@ -683,48 +801,50 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const fixedMs = Number.isFinite(ms) && ms > 0 ? Math.min(Math.round(ms), 15000) : 0;
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
-      if (!rawSelector && !rawText) {
-        const delayMs = fixedMs || 1000;
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        return {ok: true, waitedMs: delayMs, tabId: tab.id, url: tab.url, title: tab.title};
-      }
-      const maxWait = Number.isFinite(waitLimitMs) && waitLimitMs > 0 ? Math.min(Math.round(waitLimitMs), 15000) : 10000;
-      const startedAt = Date.now();
-      const deadline = startedAt + maxWait;
-      while (Date.now() < deadline) {
-        const checkScript = `(() => {
-          const sel = ${JSON.stringify(rawSelector)};
-          const txt = ${JSON.stringify(rawText)};
-          let selectorOk = !sel;
-          if (sel) {
-            const nodes = Array.from(document.querySelectorAll(sel));
-            selectorOk = nodes.some(el => {
-              const style = window.getComputedStyle(el);
-              if (style.display === 'none' || style.visibility === 'hidden') return false;
-              const rect = el.getBoundingClientRect();
-              return rect.width > 0 && rect.height > 0;
-            });
-          }
-          let textOk = !txt;
-          if (txt) {
-            const bodyText = (document.body?.innerText || '').trim();
-            textOk = bodyText.includes(txt);
-          }
-          return { matched: selectorOk && textOk, url: window.location.href, title: document.title };
-        })()`;
-        const status = await runTabScript(tab, checkScript);
-        if (status?.matched) {
-          return {
-            ok: true,
-            waitedMs: Date.now() - startedAt,
-            tabId: tab.id,
-            url: status.url || tab.url,
-            title: status.title || tab.title,
-          };
+      return withAgentControl(tab, async () => {
+        if (!rawSelector && !rawText) {
+          const delayMs = fixedMs || 1000;
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          return {ok: true, waitedMs: delayMs, tabId: tab.id, url: tab.url, title: tab.title};
         }
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-      throw new Error(`等待超时（${maxWait}ms）未满足条件: ${rawSelector || rawText}`);
+        const maxWait = Number.isFinite(waitLimitMs) && waitLimitMs > 0 ? Math.min(Math.round(waitLimitMs), 15000) : 10000;
+        const startedAt = Date.now();
+        const deadline = startedAt + maxWait;
+        while (Date.now() < deadline) {
+          const checkScript = `(() => {
+            const sel = ${JSON.stringify(rawSelector)};
+            const txt = ${JSON.stringify(rawText)};
+            let selectorOk = !sel;
+            if (sel) {
+              const nodes = Array.from(document.querySelectorAll(sel));
+              selectorOk = nodes.some(el => {
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              });
+            }
+            let textOk = !txt;
+            if (txt) {
+              const bodyText = (document.body?.innerText || '').trim();
+              textOk = bodyText.includes(txt);
+            }
+            return { matched: selectorOk && textOk, url: window.location.href, title: document.title };
+          })()`;
+          const status = await runTabScript(tab, checkScript);
+          if (status?.matched) {
+            return {
+              ok: true,
+              waitedMs: Date.now() - startedAt,
+              tabId: tab.id,
+              url: status.url || tab.url,
+              title: status.title || tab.title,
+            };
+          }
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        throw new Error(`等待超时（${maxWait}ms）未满足条件: ${rawSelector || rawText}`);
+      });
     },
     scroll: async ({direction = 'down', amount, selector, tabId} = {}) => {
       const normalizedDirection = typeof direction === 'string' ? direction.trim().toLowerCase() : 'down';
@@ -759,7 +879,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           title: document.title,
         };
       })()`;
-      const result = await runTabScript(tab, script);
+      const result = await withAgentControl(tab, () => runTabScript(tab, script));
       if (!result?.ok) throw new Error(result?.error || '滚动页面失败');
       return {...result, tabId: tab.id};
     },
@@ -803,15 +923,22 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           textExcerpt: bodyText,
         };
       })()`;
-      const result = await runTabScript(tab, script);
+      const result = await withAgentControl(tab, () => runTabScript(tab, script));
       return {...result, tabId: tab.id};
     },
-    screenshot: async ({tabId, maxWidth = 1280, saveToTemp = true} = {}) => {
+    screenshot: async ({tabId, maxWidth = 1280, saveToTemp = true, savePath} = {}) => {
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
       const contents = tab.contents;
       if (!contents || contents.isDestroyed()) throw new Error('网页实例不可用');
-      let image = await contents.capturePage();
+      return withAgentControl(tab, async () => {
+        await setAgentOverlayVisible(tab, false);
+        let image;
+        try {
+          image = await contents.capturePage();
+        } finally {
+          await setAgentOverlayVisible(tab, true);
+        }
       const size = image.getSize();
       if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
         image = image.resize({width: Math.round(maxWidth)});
@@ -819,22 +946,33 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const finalSize = image.getSize();
       const pngBuffer = image.toPNG();
       let filePath = '';
-      if (saveToTemp) {
-        const dir = path.join(os.tmpdir(), 'lingxi-browser-mcp');
+      const rawSavePath = typeof savePath === 'string' ? savePath.trim() : '';
+      if (rawSavePath) {
+        if (!path.isAbsolute(rawSavePath)) {
+          throw new Error('savePath 必须是绝对路径');
+        }
+        filePath = path.normalize(rawSavePath);
+        fs.mkdirSync(path.dirname(filePath), {recursive: true});
+        fs.writeFileSync(filePath, pngBuffer);
+      } else if (saveToTemp) {
+        const dir = process.platform === 'win32' && process.env.PUBLIC
+          ? path.join(process.env.PUBLIC, 'lingxi-browser-mcp')
+          : path.join(os.tmpdir(), 'lingxi-browser-mcp');
         fs.mkdirSync(dir, {recursive: true});
         filePath = path.join(dir, `shot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
         fs.writeFileSync(filePath, pngBuffer);
       }
-      return {
-        tabId: tab.id,
-        url: tab.url,
-        title: tab.title,
-        mimeType: 'image/png',
-        width: finalSize.width,
-        height: finalSize.height,
-        base64: pngBuffer.toString('base64'),
-        filePath,
-      };
+        return {
+          tabId: tab.id,
+          url: tab.url,
+          title: tab.title,
+          mimeType: 'image/png',
+          width: finalSize.width,
+          height: finalSize.height,
+          base64: pngBuffer.toString('base64'),
+          filePath,
+        };
+      });
     },
   };
 

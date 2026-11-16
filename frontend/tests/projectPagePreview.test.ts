@@ -583,3 +583,37 @@ test('发起导航及新开前台标签时在 loadURL 前先落定非零视口�
   assert.equal(popupView.visible, true);
   assert.deepEqual(popupView.bounds, {x: 20, y: 40, width: 600, height: 760});
 });
+
+test('Agent 操控内置浏览器时注入环绕蓝色光效与操控提示浮层，截图前瞬时隐藏并恢复', async t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 400, height: 300}});
+  const view = h.views[0]!;
+  const executedScripts: string[] = [];
+  const origExec = view.webContents.executeJavaScript.bind(view.webContents);
+  view.webContents.executeJavaScript = async (script: string, userGesture?: boolean) => {
+    executedScripts.push(script);
+    if (script.includes('__lingxi_agent_overlay_host__')) return undefined;
+    if (script.includes('document.querySelectorAll')) {
+      return {ok: true, matchedCount: 1, visibleCount: 1, tag: 'button', id: 'ok', className: 'btn', text: 'OK'};
+    }
+    return origExec(script, userGesture);
+  };
+  await h.registration.automation.click({selector: '.btn'});
+  assert.ok(
+    executedScripts.some(s => s.includes('__lingxi_agent_overlay_host__') && s.includes('浏览器正在被 LingXi 操控')),
+    '点击操控期间应注入环绕蓝色光效与中央偏上方提示浮层',
+  );
+
+  executedScripts.length = 0;
+  view.webContents.capturePage = async () => ({
+    getSize: () => ({width: 800, height: 600}),
+    resize: () => ({getSize: () => ({width: 800, height: 600}), toPNG: () => Buffer.from('png')}),
+    toPNG: () => Buffer.from('png'),
+  });
+  await h.registration.automation.screenshot({saveToTemp: false});
+  const overlayCalls = executedScripts.filter(s => s.includes('__lingxi_agent_overlay_host__'));
+  assert.ok(overlayCalls.length >= 3, '截图应先显示浮层、截屏前隐藏、截屏后恢复');
+  assert.ok(overlayCalls.some(s => s.includes('!false')), '截屏前应瞬时隐藏操控浮层');
+  assert.ok(overlayCalls.some(s => s.includes('!true')), '截屏后应恢复操控浮层');
+});
