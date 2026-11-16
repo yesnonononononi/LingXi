@@ -39,13 +39,17 @@ const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Native preview</title><link rel="icon" href="/icon.svg">
 <style>body{font:16px sans-serif;margin:24px}#tall{height:3200px}</style></head><body>
 <h1 id="heading">native project page</h1><button id="inc">+1</button><span id="count">0</span>
-<input id="name"><span id="echo"></span><button id="nav">next</button><span id="route"></span>
+<input id="name"><span id="echo"></span><textarea id="trusted-ta"></textarea><span id="trusted-echo"></span><button id="nav">next</button><span id="route"></span>
 <p><a id="remote" href="${remoteOrigin}/landing">remote</a></p>
 <p><a id="popup" href="${remoteOrigin}/popup" target="_blank">popup</a></p><div id="tall">scroll</div>
 <script>
 let count = 0;
 document.getElementById('inc').onclick = () => document.getElementById('count').textContent = String(++count);
 document.getElementById('name').oninput = event => document.getElementById('echo').textContent = event.target.value;
+document.getElementById('trusted-ta').oninput = event => {
+  if (!event.isTrusted) { event.target.value = ''; return; }
+  document.getElementById('trusted-echo').textContent = event.target.value;
+};
 document.getElementById('nav').onclick = () => { history.pushState({}, '', '/next'); document.getElementById('route').textContent = location.pathname; };
 </script></body></html>`;
 async function serve(handler) {
@@ -186,6 +190,9 @@ window.__demo = {page, activeTabKey, visible, modal};
   assert.equal(await runPage("document.getElementById('count').textContent"), '2');
   await runPage("document.getElementById('name').value='kept'; document.getElementById('name').dispatchEvent(new Event('input'))");
   assert.equal(await runPage("document.getElementById('echo').textContent"), 'kept');
+  const trustedFill = await registration.automation.fill({selector: '#trusted-ta', value: 'hello deepseek'});
+  assert.equal(trustedFill.valueLength, 14);
+  assert.equal(await runPage("document.getElementById('trusted-echo').textContent"), 'hello deepseek');
   await runPage('window.scrollTo(0,500)');
   await waitFor(() => runPage('window.scrollY > 0'), '网页滚动');
   await runPage("document.getElementById('nav').click()");

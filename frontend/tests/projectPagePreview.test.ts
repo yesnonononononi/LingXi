@@ -617,3 +617,83 @@ test('Agent 操控内置浏览器时注入环绕蓝色光效与操控提示浮�
   assert.ok(overlayCalls.some(s => s.includes('!false')), '截屏前应瞬时隐藏操控浮层');
   assert.ok(overlayCalls.some(s => s.includes('!true')), '截屏后应恢复操控浮层');
 });
+
+test('Agent browser_fill 优先走原生 insertText 与 sendInputEvent，失焦未写入时兜底 CDP Input.insertText', async t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 400, height: 300}});
+  const view = h.views[0] as unknown as {
+    webContents: {
+      executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
+      focus?: () => void;
+      insertText?: (text: string) => Promise<void>;
+      sendInputEvent?: (event: Record<string, unknown>) => void;
+      debugger?: {
+        isAttached: () => boolean;
+        attach: (version?: string) => void;
+        detach: () => void;
+        sendCommand: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      };
+    };
+  };
+
+  let insertedByNative = '';
+  const inputEvents: Array<Record<string, unknown>> = [];
+  let focusCalls = 0;
+  let valueLen = 0;
+  view.webContents.focus = () => {
+    focusCalls += 1;
+  };
+  view.webContents.insertText = async (text: string) => {
+    insertedByNative += text;
+    valueLen = text.length;
+  };
+  view.webContents.sendInputEvent = event => {
+    inputEvents.push(event);
+  };
+  view.webContents.executeJavaScript = async script => {
+    if (script.includes('__lingxi_agent_overlay_host__')) return undefined;
+    if (script.includes('isEmptyBefore')) return {ok: true, handled: false, isEmptyBefore: true};
+    if (script.includes('valueLength')) return {ok: true, tag: 'textarea', id: '', className: '', valueLength: valueLen};
+    return undefined;
+  };
+
+  const filled = await h.registration.automation.fill({selector: 'textarea', value: 'hello', submit: true});
+  assert.equal(focusCalls, 1);
+  assert.equal(insertedByNative, 'hello');
+  assert.equal(filled.valueLength, 5);
+  assert.deepEqual(
+    inputEvents.map(e => `${e.type}:${e.keyCode}`),
+    ['keyDown:Return', 'char:Return', 'keyUp:Return'],
+  );
+
+  // 失焦/隐藏导致 insertText 未落盘（valueLength === 0）时，必须触发 CDP Input.insertText 兜底并清理临时 attach。
+  let attached = false;
+  let cdpText = '';
+  let detached = false;
+  valueLen = 0;
+  view.webContents.insertText = async () => {
+    // 模拟视图失焦被 Chromium 忽略
+  };
+  view.webContents.debugger = {
+    isAttached: () => attached,
+    attach: () => {
+      attached = true;
+    },
+    detach: () => {
+      attached = false;
+      detached = true;
+    },
+    sendCommand: async (method, params) => {
+      if (method === 'Input.insertText') {
+        cdpText = String(params?.text ?? '');
+        valueLen = cdpText.length;
+      }
+      return {};
+    },
+  };
+  const fallbackFilled = await h.registration.automation.fill({selector: 'textarea', value: 'world'});
+  assert.equal(cdpText, 'world');
+  assert.equal(fallbackFilled.valueLength, 5);
+  assert.equal(detached, true);
+});

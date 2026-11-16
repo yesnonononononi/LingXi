@@ -740,14 +740,14 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       if (typeof selector !== 'string' || !selector.trim()) throw new Error('selector 不能为空');
       const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
       const textValue = value === undefined || value === null ? '' : String(value);
+      const shouldClear = Boolean(clear);
+      const shouldSubmit = Boolean(submit);
+      const normalizedSelector = selector.trim();
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
-      const script = `(() => {
-        const selector = ${JSON.stringify(selector.trim())};
-        const nextValue = ${JSON.stringify(textValue)};
+      const resolveTargetSnippet = `
+        const selector = ${JSON.stringify(normalizedSelector)};
         const targetIndex = ${targetIndex};
-        const shouldClear = ${Boolean(clear)};
-        const shouldSubmit = ${Boolean(submit)};
         const nodes = Array.from(document.querySelectorAll(selector));
         const visible = nodes.filter(el => {
           const style = window.getComputedStyle(el);
@@ -758,6 +758,115 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         const candidates = visible.length > 0 ? visible : nodes;
         const el = candidates[targetIndex];
         if (!el) return { ok: false, error: '未找到匹配输入元素: ' + selector, matchedCount: nodes.length };
+      `;
+
+      // 优先走 Electron 原生输入通道（isTrusted: true），避免 React 受控组件忽略合成 Event 导致输入回退为空。
+      if (typeof tab.contents?.insertText === 'function') {
+        const result = await withAgentControl(tab, async () => {
+          const prepScript = `(() => {
+            ${resolveTargetSnippet}
+            const nextValue = ${JSON.stringify(textValue)};
+            const shouldClear = ${shouldClear};
+            const shouldSubmit = ${shouldSubmit};
+            el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            el.focus?.();
+            if (el.tagName === 'SELECT') {
+              const options = Array.from(el.options || []);
+              const byValue = options.find(opt => opt.value === nextValue);
+              const byText = byValue || options.find(opt => (opt.textContent || '').trim() === nextValue)
+                || options.find(opt => (opt.textContent || '').trim().includes(nextValue));
+              const resolved = byText ? byText.value : nextValue;
+              const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+              if (descriptor && descriptor.set) descriptor.set.call(el, resolved);
+              else el.value = resolved;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              if (shouldSubmit && el.form && typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
+              return {
+                ok: true,
+                handled: true,
+                tag: el.tagName.toLowerCase(),
+                id: el.id || '',
+                className: typeof el.className === 'string' ? el.className : '',
+                valueLength: (el.value ?? el.textContent ?? '').length,
+              };
+            }
+            const isEmptyBefore = (el.value ?? el.textContent ?? '').length === 0;
+            if (el.isContentEditable) {
+              const range = document.createRange();
+              range.selectNodeContents(el);
+              if (!shouldClear) range.collapse(false);
+              const selection = window.getSelection();
+              selection?.removeAllRanges();
+              selection?.addRange(range);
+            } else if (shouldClear) {
+              if (typeof el.select === 'function') el.select();
+              else if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, (el.value || '').length);
+            } else if (typeof el.setSelectionRange === 'function') {
+              const len = (el.value || '').length;
+              el.setSelectionRange(len, len);
+            }
+            return { ok: true, handled: false, isEmptyBefore };
+          })()`;
+          const prep = await runTabScript(tab, prepScript);
+          if (!prep?.ok) throw new Error(prep?.error || '填充元素失败');
+          if (prep.handled) return prep;
+
+          if (typeof tab.contents.focus === 'function') tab.contents.focus();
+          if (shouldClear && textValue === '') {
+            if (!prep.isEmptyBefore) {
+              if (typeof tab.contents.delete === 'function') {
+                tab.contents.delete();
+              } else if (typeof tab.contents.sendInputEvent === 'function') {
+                tab.contents.sendInputEvent({type: 'keyDown', keyCode: 'Backspace'});
+                tab.contents.sendInputEvent({type: 'keyUp', keyCode: 'Backspace'});
+              }
+            }
+          } else if (textValue !== '') {
+            await tab.contents.insertText(textValue);
+          }
+
+          const readScript = `(() => {
+            ${resolveTargetSnippet}
+            return {
+              ok: true,
+              tag: el.tagName.toLowerCase(),
+              id: el.id || '',
+              className: typeof el.className === 'string' ? el.className : '',
+              valueLength: (el.value ?? el.textContent ?? '').length,
+            };
+          })()`;
+          let readResult = await runTabScript(tab, readScript);
+
+          // 面板收起/失焦时 insertText 可能被 Chromium 忽略，兜底用 CDP Input.insertText 写入。
+          if (textValue !== '' && readResult?.ok && readResult.valueLength === 0 && tab.contents.debugger) {
+            const dbg = tab.contents.debugger;
+            const attachedByUs = typeof dbg.isAttached === 'function' ? !dbg.isAttached() : false;
+            try {
+              if (attachedByUs) dbg.attach('1.3');
+              await dbg.sendCommand('Input.insertText', {text: textValue});
+            } finally {
+              if (attachedByUs && typeof dbg.isAttached === 'function' && dbg.isAttached()) dbg.detach();
+            }
+            readResult = await runTabScript(tab, readScript);
+          }
+
+          if (shouldSubmit && typeof tab.contents.sendInputEvent === 'function') {
+            tab.contents.sendInputEvent({type: 'keyDown', keyCode: 'Return'});
+            tab.contents.sendInputEvent({type: 'char', keyCode: 'Return'});
+            tab.contents.sendInputEvent({type: 'keyUp', keyCode: 'Return'});
+          }
+          return readResult;
+        });
+        if (!result?.ok) throw new Error(result?.error || '填充元素失败');
+        return {...result, tabId: tab.id, url: tab.url, title: tab.title};
+      }
+
+      const script = `(() => {
+        ${resolveTargetSnippet}
+        const nextValue = ${JSON.stringify(textValue)};
+        const shouldClear = ${shouldClear};
+        const shouldSubmit = ${shouldSubmit};
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         el.focus?.();
         if (el.isContentEditable) {
