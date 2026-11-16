@@ -41,6 +41,7 @@ const {
   mcpConnectionError,
   mcpRowConnections,
   mcpStates,
+  isMcpStatesLoading,
   mcpReconnecting,
   mcpAuthorizing,
   handleReconnectMcp,
@@ -152,6 +153,7 @@ watch(isEditingOrAddingMcp, (editing) => {
           :key="item.id"
           :item="item"
           :state="mcpStates[item.id] ?? null"
+          :states-loading="isMcpStatesLoading"
           :row-connection="mcpRowConnections[item.id] ?? null"
           :reconnecting="!!mcpReconnecting[item.id]"
           :authorizing="!!mcpAuthorizing[item.id]"

@@ -25,6 +25,8 @@ const props = withDefaults(
     item: McpVO;
     /** 共享连接表的实时状态；停用服务不会有状态行 */
     state?: McpConnectionStateVO | null;
+    /** 状态表请求在途：此时 state 为空只代表「还不知道」，不代表未连接 */
+    statesLoading?: boolean;
     /** 本行「测试连接」按钮的独立状态 */
     rowConnection?: { loading?: boolean; success?: boolean; error?: string | null } | null;
     /** 「重新连接」进行中 */
@@ -33,7 +35,7 @@ const props = withDefaults(
     authorizing?: boolean;
     isDark?: boolean;
   }>(),
-  {state: null, rowConnection: null, reconnecting: false, authorizing: false}
+  {state: null, statesLoading: false, rowConnection: null, reconnecting: false, authorizing: false}
 );
 
 const emit = defineEmits<{
@@ -47,12 +49,14 @@ const emit = defineEmits<{
 
 const {t} = useI18n();
 
-/** 状态机：停用优先（配置态），否则按连接表（运行态）。 */
-const statusKind = computed<'DISABLED' | 'CONNECTED' | 'FAILED' | 'AUTHORIZATION_REQUIRED' | 'DISCONNECTED'>(() => {
+/** 状态机：停用优先（配置态），否则按连接表（运行态）；状态表未回时是「不知道自己是谁」。 */
+const statusKind = computed<'DISABLED' | 'PENDING' | 'CONNECTED' | 'FAILED' | 'AUTHORIZATION_REQUIRED' | 'DISCONNECTED'>(() => {
   if (props.item.status === 0) return 'DISABLED';
   if (props.state?.state === 'CONNECTED') return 'CONNECTED';
   if (props.state?.state === 'FAILED') return 'FAILED';
   if (isMcpAuthorizationRequired(props.state?.state)) return 'AUTHORIZATION_REQUIRED';
+  // 无状态行 + 查询在途 = 未知；把未知渲染成「未连接」就是在编事实。
+  if (!props.state && props.statesLoading) return 'PENDING';
   return 'DISCONNECTED';
 });
 
@@ -62,6 +66,7 @@ const statusTone = computed(() => {
     case 'FAILED': return 'danger' as const;
     case 'AUTHORIZATION_REQUIRED': return 'warn' as const;
     case 'DISABLED': return 'muted' as const;
+    case 'PENDING': return 'muted' as const;
     default: return 'warn' as const;
   }
 });
@@ -72,6 +77,7 @@ const statusLabel = computed(() => {
     case 'FAILED': return t('settings.mcp.stateFailed');
     case 'AUTHORIZATION_REQUIRED': return t('settings.mcp.stateAuthorizationRequired');
     case 'DISABLED': return t('settings.mcp.disabled');
+    case 'PENDING': return t('settings.mcp.stateChecking');
     default: return t('settings.mcp.stateDisconnected');
   }
 });
@@ -114,8 +120,14 @@ const failureReason = computed(() => (
           {{ item.name }}
         </span>
         <span data-testid="mcp-connection-state" :class="chipClass(statusTone)">
+          <!-- 检查中：转圈代替实心点，表示这是「进行中的观测」而不是已定论的连接状态 -->
           <span
-            v-if="statusKind !== 'DISABLED'"
+            v-if="statusKind === 'PENDING'"
+            class="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent"
+            :aria-label="t('settings.mcp.stateChecking')"
+          ></span>
+          <span
+            v-else-if="statusKind !== 'DISABLED'"
             class="h-1.5 w-1.5 rounded-full bg-current"
             aria-hidden="true"
           ></span>

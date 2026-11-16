@@ -68,6 +68,13 @@ export function useMcpTab() {
   const mcpRowConnections = ref<Record<string, { loading: boolean; success: boolean; error: string }>>({});
   /** 共享连接运行状态，按 id 索引；与「测试连接」结果分开，后者不代表运行中的连接。 */
   const mcpStates = ref<Record<string, McpConnectionStateVO>>({});
+  /**
+   * 状态表请求是否在途。
+   *
+   * 列表与状态是两次请求：列表先回、卡片先渲染，此时 `mcpStates` 还是空的。
+   * 不把这段空窗期显式标成「检查中」，卡片只能落到兜底的「未连接」——那是假事实。
+   */
+  const isMcpStatesLoading = ref(false);
   const mcpReconnecting = ref<Record<string, boolean>>({});
   /** 授权进行中的行：等待回调期间按钮保持 busy，避免连点开出多个浏览器窗口 */
   const mcpAuthorizing = ref<Record<string, boolean>>({});
@@ -173,6 +180,7 @@ export function useMcpTab() {
       mcpStates.value = {};
       return;
     }
+    isMcpStatesLoading.value = true;
     try {
       const res = await McpAPI.listStates(ids);
       if (!isOk(res.code)) return;
@@ -181,6 +189,8 @@ export function useMcpTab() {
       mcpStates.value = next;
     } catch {
       // 保留上一次状态，避免一次抖动把徽标全部清空。
+    } finally {
+      isMcpStatesLoading.value = false;
     }
   };
 
@@ -723,6 +733,7 @@ export function useMcpTab() {
     mcpConnectionError,
     mcpRowConnections,
     mcpStates,
+    isMcpStatesLoading,
     mcpReconnecting,
     mcpAuthorizing,
     loadMcpStates,
