@@ -151,3 +151,27 @@ test('保存成功后广播；收到广播方回读（广播不传值）', async
     resetSettingsBroadcastForTest();
   }
 });
+
+test('后端返回未知非空权限档位（如 READ_ONLY_REVIEW）时拒绝静默回落为审批模式', async (t) => {
+  const store = useUserConfigStore();
+  assert.doesNotThrow(() => store.applyConfig({permissionMode: ''} as UserConfigVO));
+  assert.equal(store.permissionMode, 'APPROVAL_REQUIRED', '未配置时允许走默认审批模式');
+
+  assert.throws(
+    () => store.applyConfig({permissionMode: 'READ_ONLY_REVIEW'} as UserConfigVO),
+    /READ_ONLY_REVIEW/,
+    '非空未知档位不得静默伪装成 APPROVAL_REQUIRED'
+  );
+
+  t.mock.method(UserConfigAPI, 'current', async () => ({
+    code: 1,
+    data: {permissionMode: 'READ_ONLY_REVIEW'} as UserConfigVO,
+  }));
+  const ok = await store.load(true);
+  assert.equal(ok, false);
+  assert.ok(store.loadError.length > 0, '载入失败必须显式暴露 loadError');
+
+  loadConfig(store, {permissionMode: 'FULL_ACCESS'});
+  await store.reconcile();
+  assert.equal(store.permissionMode, 'FULL_ACCESS', '回读遇到非法档位不得覆盖现有状态');
+});

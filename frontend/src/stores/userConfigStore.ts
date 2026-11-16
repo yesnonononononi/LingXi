@@ -6,15 +6,13 @@ import {isOk} from '../utils/api';
 import {t} from '../i18n';
 import type {FontScalePreset} from '../utils/enum';
 import {
-    normalizeAccessMode,
-    normalizeCommandApprovalPolicy,
     normalizeFontScale,
+    normalizePermissionMode,
     normalizeReasoningEffort,
     normalizeWorkspaceEnvType,
 } from '../utils/enum';
 import type {
-    AgentAccessMode,
-    CommandApprovalPolicyType,
+    AgentPermissionMode,
     ReasoningEffort,
     UserConfigVO,
     WorkspaceEnvType,
@@ -42,10 +40,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
 
   const modelId = ref<string | number | null>(null);
   const agentId = ref<string | number | null>(null);
-  const accessMode = ref<AgentAccessMode>('IN_WORKSPACE');
+  const permissionMode = ref<AgentPermissionMode>('APPROVAL_REQUIRED');
   const reasoningEffort = ref<ReasoningEffort>('low');
   const maxTokens = ref<number | null>(null);
-  const commandApprovalPolicy = ref<CommandApprovalPolicyType | null>(null);
   const planMaxReminders = ref<number>(3);
   const envType = ref<WorkspaceEnvType>('SAND_BOX');
   const renderTheme = ref<'LIGHT' | 'DARK'>('LIGHT');
@@ -120,12 +117,18 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const applyConfig = (config?: UserConfigVO | null): void => {
     modelId.value = config?.modelId ?? null;
     agentId.value = config?.agentId ?? null;
-    accessMode.value = normalizeAccessMode(config?.accessMode, 'IN_WORKSPACE') ?? 'IN_WORKSPACE';
+    const rawPermissionMode = config?.permissionMode;
+    const hasPermissionMode = typeof rawPermissionMode === 'string'
+      ? rawPermissionMode.trim() !== ''
+      : rawPermissionMode != null;
+    const normalizedPermissionMode = normalizePermissionMode(rawPermissionMode);
+    if (hasPermissionMode && !normalizedPermissionMode) {
+      throw new Error(`后端返回未知权限档位: ${String(rawPermissionMode)}`);
+    }
+    permissionMode.value = normalizedPermissionMode ?? 'APPROVAL_REQUIRED';
     reasoningEffort.value = normalizeReasoningEffort(config?.reasoningEffort, 'low') ?? 'low';
     persistedEffort = reasoningEffort.value;
     maxTokens.value = config?.maxTokens ?? null;
-    commandApprovalPolicy.value =
-      normalizeCommandApprovalPolicy(config?.commandApprovalPolicy) ?? null;
     planMaxReminders.value = config?.planMaxReminders ?? 3;
     // NONE = 未设置，语义上不同于沙箱，界面据此显示「未知」而不是假装沙箱
     envType.value = normalizeWorkspaceEnvType(config?.type) ?? 'NONE';
@@ -200,10 +203,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   type PatchableField =
     | 'modelId'
     | 'agentId'
-    | 'accessMode'
+    | 'permissionMode'
     | 'reasoningEffort'
     | 'maxTokens'
-    | 'commandApprovalPolicy'
     | 'planMaxReminders'
     | 'envType'
     | 'renderTheme'
@@ -222,10 +224,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     switch (field) {
       case 'modelId': return modelId.value;
       case 'agentId': return agentId.value;
-      case 'accessMode': return accessMode.value;
+      case 'permissionMode': return permissionMode.value;
       case 'reasoningEffort': return reasoningEffort.value;
       case 'maxTokens': return maxTokens.value;
-      case 'commandApprovalPolicy': return commandApprovalPolicy.value;
       case 'planMaxReminders': return planMaxReminders.value;
       case 'envType': return envType.value;
       case 'renderTheme': return renderTheme.value;
@@ -246,10 +247,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     switch (field) {
       case 'modelId': modelId.value = value as string | number | null; break;
       case 'agentId': agentId.value = value as string | number | null; break;
-      case 'accessMode': accessMode.value = value as AgentAccessMode; break;
+      case 'permissionMode': permissionMode.value = value as AgentPermissionMode; break;
       case 'reasoningEffort': reasoningEffort.value = value as ReasoningEffort; break;
       case 'maxTokens': maxTokens.value = value as number | null; break;
-      case 'commandApprovalPolicy': commandApprovalPolicy.value = value as CommandApprovalPolicyType | null; break;
       case 'planMaxReminders': planMaxReminders.value = value as number; break;
       case 'envType': envType.value = value as WorkspaceEnvType; break;
       case 'renderTheme': renderTheme.value = value as 'LIGHT' | 'DARK'; break;
@@ -370,10 +370,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     savingKeys,
     modelId,
     agentId,
-    accessMode,
+    permissionMode,
     reasoningEffort,
     maxTokens,
-    commandApprovalPolicy,
     planMaxReminders,
     envType,
     renderTheme,
