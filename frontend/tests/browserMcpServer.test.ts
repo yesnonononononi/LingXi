@@ -43,6 +43,14 @@ function createMockAutomation() {
       calls.push({method: 'query', args});
       return {url: 'https://example.com', title: 'Example', elements: [{index: 0, tag: 'button', className: 'submit-btn'}]};
     },
+    wait: async (args: unknown) => {
+      calls.push({method: 'wait', args});
+      return {ok: true, waitedMs: 120};
+    },
+    scroll: async (args: unknown) => {
+      calls.push({method: 'scroll', args});
+      return {ok: true, scrollTop: 400, atBottom: false};
+    },
     screenshot: async (args: unknown) => {
       calls.push({method: 'screenshot', args});
       return {
@@ -121,10 +129,19 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
     assert.equal(listJson.result.tools.length, TOOL_DEFINITIONS.length);
     assert.deepEqual(
       listJson.result.tools.map(item => item.name),
-      ['browser_navigate', 'browser_click', 'browser_fill', 'browser_query', 'browser_screenshot', 'browser_tabs'],
+      [
+        'browser_navigate',
+        'browser_click',
+        'browser_fill',
+        'browser_query',
+        'browser_screenshot',
+        'browser_tabs',
+        'browser_wait',
+        'browser_scroll',
+      ],
     );
 
-    // 5. tools/call: click + screenshot
+    // 5. tools/call: click + wait + scroll + screenshot
     const clickRes = await fetch(status.url, {
       method: 'POST',
       headers: {
@@ -135,12 +152,46 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
         jsonrpc: '2.0',
         id: 3,
         method: 'tools/call',
-        params: {name: 'browser_click', arguments: {selector: '.submit-btn'}},
+        params: {name: 'browser_click', arguments: {selector: '.submit-btn', text: '提交'}},
       }),
     });
     const clickJson = await clickRes.json() as {result: {isError: boolean; content: Array<{type: string; text: string}>}};
     assert.equal(clickJson.result.isError, false);
     assert.equal(automation.calls.at(-1)?.method, 'click');
+
+    const waitRes = await fetch(status.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${status.token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: {name: 'browser_wait', arguments: {selector: '.toast-success', timeoutMs: 3000}},
+      }),
+    });
+    const waitJson = await waitRes.json() as {result: {isError: boolean}};
+    assert.equal(waitJson.result.isError, false);
+    assert.equal(automation.calls.at(-1)?.method, 'wait');
+
+    const scrollRes = await fetch(status.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${status.token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: {name: 'browser_scroll', arguments: {direction: 'down'}},
+      }),
+    });
+    const scrollJson = await scrollRes.json() as {result: {isError: boolean}};
+    assert.equal(scrollJson.result.isError, false);
+    assert.equal(automation.calls.at(-1)?.method, 'scroll');
 
     const shotRes = await fetch(status.url, {
       method: 'POST',

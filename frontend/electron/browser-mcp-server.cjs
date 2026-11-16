@@ -14,40 +14,40 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const TOOL_DEFINITIONS = Object.freeze([
   {
     name: 'browser_navigate',
-    description: 'Open a URL in the built-in desktop browser (or navigate the active tab) and wait for page load.',
+    description: 'Navigate the built-in desktop browser: open a URL (goto) or go back, forward, or reload.',
     inputSchema: {
       type: 'object',
       properties: {
-        url: {type: 'string', description: 'Target http/https URL to open.'},
+        action: {type: 'string', enum: ['goto', 'back', 'forward', 'reload'], description: 'Navigation action. Defaults to goto.'},
+        url: {type: 'string', description: 'Target http/https URL (required when action is goto).'},
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-        newTab: {type: 'boolean', description: 'Whether to open in a new tab. Defaults to false.'},
+        newTab: {type: 'boolean', description: 'Whether to open in a new tab (only for goto). Defaults to false.'},
         waitUntilLoad: {type: 'boolean', description: 'Wait for page load completion. Defaults to true.'},
         waitTimeoutMs: {type: 'integer', description: 'Load wait timeout in milliseconds (max 30000).'},
       },
-      required: ['url'],
     },
   },
   {
     name: 'browser_click',
-    description: 'Click an element in the built-in browser page by CSS selector (supports .className, #id, etc.).',
+    description: 'Click an element in the built-in browser page by CSS selector (supports .className, #id) and/or visible text.',
     inputSchema: {
       type: 'object',
       properties: {
-        selector: {type: 'string', description: 'CSS selector matching the target element (e.g. ".submit-btn", "#login").'},
+        selector: {type: 'string', description: 'Optional CSS selector (e.g. ".submit-btn", "#login", "button").'},
+        text: {type: 'string', description: 'Optional visible text substring to match clickable elements (useful when classes are obfuscated or Tailwind-based).'},
         index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
       },
-      required: ['selector'],
     },
   },
   {
     name: 'browser_fill',
-    description: 'Fill text into an input, textarea, select, or contenteditable element by CSS selector.',
+    description: 'Fill text into an input, textarea, contenteditable, or select an option in a <select> by value or visible label.',
     inputSchema: {
       type: 'object',
       properties: {
-        selector: {type: 'string', description: 'CSS selector matching the input element.'},
-        value: {type: 'string', description: 'Text value to fill into the element.'},
+        selector: {type: 'string', description: 'CSS selector matching the input/select element.'},
+        value: {type: 'string', description: 'Text value to fill (or option value/label for <select>).'},
         index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
         clear: {type: 'boolean', description: 'Clear existing content before filling. Defaults to true.'},
         submit: {type: 'boolean', description: 'Dispatch Enter key and submit enclosing form after filling. Defaults to false.'},
@@ -87,6 +87,33 @@ const TOOL_DEFINITIONS = Object.freeze([
       properties: {
         action: {type: 'string', enum: ['list', 'activate', 'close'], description: 'Tab operation. Defaults to list.'},
         tabId: {type: 'string', description: 'Target tab ID for activate or close.'},
+      },
+    },
+  },
+  {
+    name: 'browser_wait',
+    description: 'Wait for a visible selector, page text, or a fixed delay in milliseconds (useful for SPA async updates).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: {type: 'string', description: 'Optional CSS selector to wait for until visible.'},
+        text: {type: 'string', description: 'Optional text substring to wait for in page body.'},
+        ms: {type: 'integer', description: 'Fixed delay in milliseconds (used when selector and text are omitted, max 15000).'},
+        timeoutMs: {type: 'integer', description: 'Maximum wait timeout in milliseconds (default 10000, max 15000).'},
+        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
+      },
+    },
+  },
+  {
+    name: 'browser_scroll',
+    description: 'Scroll the page or a specific scrollable container (down, up, top, bottom, or by pixel amount).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        direction: {type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Defaults to down.'},
+        amount: {type: 'integer', description: 'Optional pixel offset for up/down scrolling. Defaults to 80% of viewport height.'},
+        selector: {type: 'string', description: 'Optional CSS selector of a target container or element to scroll.'},
+        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
       },
     },
   },
@@ -183,6 +210,14 @@ function createBrowserMcpServer({automation}) {
         if (action === 'activate') data = await automation.activateTab(args.tabId);
         else if (action === 'close') data = await automation.closeTab(args.tabId);
         else data = await automation.listTabs();
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'browser_wait': {
+        const data = await automation.wait(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'browser_scroll': {
+        const data = await automation.scroll(args);
         return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
       }
       default:

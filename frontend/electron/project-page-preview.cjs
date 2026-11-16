@@ -495,9 +495,41 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const state = await ensureAutomationState();
       return snapshot(state);
     },
-    navigate: async ({url, tabId, newTab = false, waitUntilLoad = true, waitTimeoutMs} = {}) => {
-      const targetUrl = normalizeTargetUrl(url);
+    navigate: async ({action = 'goto', url, tabId, newTab = false, waitUntilLoad = true, waitTimeoutMs} = {}) => {
       const state = await ensureAutomationState();
+      const normalizedAction = typeof action === 'string' ? action.trim().toLowerCase() : 'goto';
+      if (normalizedAction === 'back' || normalizedAction === 'forward' || normalizedAction === 'reload') {
+        const tab = resolveAutomationTab(state, tabId);
+        state.activeTabId = tab.id;
+        const contents = tab.contents;
+        if (!contents || contents.isDestroyed()) throw new Error('网页实例已销毁');
+        const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
+        if (normalizedAction === 'back') {
+          if (!contents.navigationHistory.canGoBack()) throw new Error('当前标签页无法后退');
+          contents.navigationHistory.goBack();
+        } else if (normalizedAction === 'forward') {
+          if (!contents.navigationHistory.canGoForward()) throw new Error('当前标签页无法前进');
+          contents.navigationHistory.goForward();
+        } else {
+          if (!tab.url) throw new Error('当前标签页尚未打开任何地址');
+          contents.reload();
+        }
+        publish(state);
+        const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
+        return {
+          action: normalizedAction,
+          tabId: tab.id,
+          url: tab.url,
+          title: tab.title,
+          loadState: loadResult.loadState ?? tab.loadState,
+          errorCode: loadResult.errorCode ?? tab.errorCode,
+          errorDescription: loadResult.errorDescription ?? tab.errorDescription,
+        };
+      }
+      if (normalizedAction !== 'goto') {
+        throw new Error(`不支持的导航动作: ${action}`);
+      }
+      const targetUrl = normalizeTargetUrl(url);
       const tab = newTab ? createTab(state) : resolveAutomationTab(state, tabId);
       state.activeTabId = tab.id;
       const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
@@ -505,6 +537,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       publish(state);
       const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
       return {
+        action: 'goto',
         tabId: tab.id,
         url: tab.url,
         title: tab.title,
@@ -531,15 +564,26 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       applyLayout(state);
       return publish(state);
     },
-    click: async ({selector, index = 0, tabId} = {}) => {
-      if (typeof selector !== 'string' || !selector.trim()) throw new Error('selector 不能为空');
+    click: async ({selector, text, index = 0, tabId} = {}) => {
+      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
+      const rawText = typeof text === 'string' ? text.trim() : '';
+      if (!rawSelector && !rawText) throw new Error('selector 与 text 不能同时为空');
       const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
       const script = `(() => {
-        const selector = ${JSON.stringify(selector.trim())};
+        const rawSelector = ${JSON.stringify(rawSelector)};
+        const rawText = ${JSON.stringify(rawText)};
         const targetIndex = ${targetIndex};
-        const nodes = Array.from(document.querySelectorAll(selector));
+        const baseSelector = rawSelector || 'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"], [tabindex]';
+        let nodes = Array.from(document.querySelectorAll(baseSelector));
+        if (rawText) {
+          const needle = rawText.toLowerCase();
+          nodes = nodes.filter(el => {
+            const label = (el.innerText || el.textContent || el.getAttribute('aria-label') || el.value || '').trim().replace(/\\s+/g, ' ').toLowerCase();
+            return label.includes(needle);
+          });
+        }
         const visible = nodes.filter(el => {
           const style = window.getComputedStyle(el);
           if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
@@ -548,7 +592,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         });
         const candidates = visible.length > 0 ? visible : nodes;
         const el = candidates[targetIndex];
-        if (!el) return { ok: false, error: '未找到匹配元素: ' + selector, matchedCount: nodes.length, visibleCount: visible.length };
+        if (!el) return { ok: false, error: '未找到匹配元素: ' + (rawSelector || rawText), matchedCount: nodes.length, visibleCount: visible.length };
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         el.focus?.();
         el.click();
@@ -560,11 +604,13 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           id: el.id || '',
           className: typeof el.className === 'string' ? el.className : '',
           text: (el.innerText || el.textContent || '').trim().slice(0, 120),
+          currentUrl: window.location.href,
+          currentTitle: document.title,
         };
       })()`;
       const result = await runTabScript(tab, script);
       if (!result?.ok) throw new Error(result?.error || '点击元素失败');
-      return {...result, tabId: tab.id, url: tab.url};
+      return {...result, tabId: tab.id, url: result.currentUrl || tab.url, title: result.currentTitle || tab.title};
     },
     fill: async ({selector, value = '', index = 0, clear = true, submit = false, tabId} = {}) => {
       if (typeof selector !== 'string' || !selector.trim()) throw new Error('selector 不能为空');
@@ -593,8 +639,19 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         if (el.isContentEditable) {
           el.textContent = shouldClear ? nextValue : ((el.textContent || '') + nextValue);
           el.dispatchEvent(new InputEvent('input', { bubbles: true, data: nextValue, inputType: 'insertText' }));
+        } else if (el.tagName === 'SELECT') {
+          const options = Array.from(el.options || []);
+          const byValue = options.find(opt => opt.value === nextValue);
+          const byText = byValue || options.find(opt => (opt.textContent || '').trim() === nextValue)
+            || options.find(opt => (opt.textContent || '').trim().includes(nextValue));
+          const resolved = byText ? byText.value : nextValue;
+          const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+          if (descriptor && descriptor.set) descriptor.set.call(el, resolved);
+          else el.value = resolved;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
         } else {
-          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
           const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
           const finalValue = shouldClear ? nextValue : ((el.value || '') + nextValue);
           if (descriptor && descriptor.set) descriptor.set.call(el, finalValue);
@@ -618,7 +675,93 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       })()`;
       const result = await runTabScript(tab, script);
       if (!result?.ok) throw new Error(result?.error || '填充元素失败');
-      return {...result, tabId: tab.id, url: tab.url};
+      return {...result, tabId: tab.id, url: tab.url, title: tab.title};
+    },
+    wait: async ({selector, text, ms, timeoutMs: waitLimitMs = 10000, tabId} = {}) => {
+      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
+      const rawText = typeof text === 'string' ? text.trim() : '';
+      const fixedMs = Number.isFinite(ms) && ms > 0 ? Math.min(Math.round(ms), 15000) : 0;
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      if (!rawSelector && !rawText) {
+        const delayMs = fixedMs || 1000;
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        return {ok: true, waitedMs: delayMs, tabId: tab.id, url: tab.url, title: tab.title};
+      }
+      const maxWait = Number.isFinite(waitLimitMs) && waitLimitMs > 0 ? Math.min(Math.round(waitLimitMs), 15000) : 10000;
+      const startedAt = Date.now();
+      const deadline = startedAt + maxWait;
+      while (Date.now() < deadline) {
+        const checkScript = `(() => {
+          const sel = ${JSON.stringify(rawSelector)};
+          const txt = ${JSON.stringify(rawText)};
+          let selectorOk = !sel;
+          if (sel) {
+            const nodes = Array.from(document.querySelectorAll(sel));
+            selectorOk = nodes.some(el => {
+              const style = window.getComputedStyle(el);
+              if (style.display === 'none' || style.visibility === 'hidden') return false;
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            });
+          }
+          let textOk = !txt;
+          if (txt) {
+            const bodyText = (document.body?.innerText || '').trim();
+            textOk = bodyText.includes(txt);
+          }
+          return { matched: selectorOk && textOk, url: window.location.href, title: document.title };
+        })()`;
+        const status = await runTabScript(tab, checkScript);
+        if (status?.matched) {
+          return {
+            ok: true,
+            waitedMs: Date.now() - startedAt,
+            tabId: tab.id,
+            url: status.url || tab.url,
+            title: status.title || tab.title,
+          };
+        }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      throw new Error(`等待超时（${maxWait}ms）未满足条件: ${rawSelector || rawText}`);
+    },
+    scroll: async ({direction = 'down', amount, selector, tabId} = {}) => {
+      const normalizedDirection = typeof direction === 'string' ? direction.trim().toLowerCase() : 'down';
+      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
+      const px = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const script = `(() => {
+        const dir = ${JSON.stringify(normalizedDirection)};
+        const px = ${px};
+        const sel = ${JSON.stringify(rawSelector)};
+        const target = sel ? document.querySelector(sel) : null;
+        if (sel && !target) return { ok: false, error: '未找到滚动目标元素: ' + sel };
+        if (target && !px && dir === 'down') {
+          target.scrollIntoView({ block: 'center', behavior: 'instant' });
+        } else {
+          const step = px || Math.round(window.innerHeight * 0.8);
+          const container = target || document.scrollingElement || document.documentElement;
+          if (dir === 'top') container.scrollTop = 0;
+          else if (dir === 'bottom') container.scrollTop = container.scrollHeight;
+          else if (dir === 'up') container.scrollTop = Math.max(0, container.scrollTop - step);
+          else container.scrollTop = Math.min(container.scrollHeight, container.scrollTop + step);
+        }
+        const root = target || document.scrollingElement || document.documentElement;
+        return {
+          ok: true,
+          scrollTop: Math.round(root.scrollTop),
+          scrollHeight: Math.round(root.scrollHeight),
+          clientHeight: Math.round(root.clientHeight),
+          atBottom: root.scrollTop + root.clientHeight >= root.scrollHeight - 2,
+          url: window.location.href,
+          title: document.title,
+        };
+      })()`;
+      const result = await runTabScript(tab, script);
+      if (!result?.ok) throw new Error(result?.error || '滚动页面失败');
+      return {...result, tabId: tab.id};
     },
     query: async ({selector, limit = 40, tabId} = {}) => {
       const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 40;
