@@ -188,7 +188,9 @@ class MemoryMonitorTest {
             List<SystemMessageEntity> reminders = context.getBean(MemoryMonitor.class).checkMemoryLimits();
             assertEquals(1, reminders.size());
             assertTrue(reminders.getFirst().text().contains("上限 2000 token"));
-            assertNotNull(context.getBean(MemoryMonitorInterceptor.class));
+            assertEquals("false", context.getEnvironment().getProperty("lingxi.memory.reminder.enabled"));
+            assertTrue(context.getBeansOfType(MemoryMonitorInterceptor.class).isEmpty(),
+                    "容量提醒默认不得注册：它每轮改写历史会打断前缀缓存");
             assertTrue(context.getBeansOfType(LoopInterceptor.class).isEmpty());
             String instructions = context.getEnvironment().getProperty("lingxi.memory.instructions");
             assertTrue(instructions.contains(globalMemory.toString()));
@@ -206,9 +208,28 @@ class MemoryMonitorTest {
     }
 
     @Test
-    void annotatedMemoryHookRegistersAfterProcessorCreationAndKeepsReminderLifecycle() throws IOException {
+    void disabledReminderSwitchKeepsTheHookOutOfTheLoop() throws IOException {
         write(globalMemory, "b".repeat(11));
-        try (AnnotationConfigApplicationContext spring = annotationContext()) {
+        try (AnnotationConfigApplicationContext spring = annotationContext(false)) {
+            LoopInterceptorProcessor processor = spring.getBean(LoopInterceptorProcessor.class);
+            LoopInterceptorFactory factory = spring.getBean(LoopInterceptorFactory.class);
+            spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
+            assertNull(factory.get().get("memoryMonitorInterceptor"),
+                    "开关关闭时不得注册提醒钩子，否则每轮都会改写历史消息");
+            assertTrue(spring.getBeansOfType(MemoryMonitorInterceptor.class).isEmpty());
+
+            Execution execution = execution(projectRoot);
+            AtomicInteger appends = new AtomicInteger();
+            processor.onBeforeModelInvoke(context(execution, appends));
+            assertEquals(0, appends.get());
+            assertEquals(List.of("业务规则", "用户任务"), execution.getMessages().stream().map(Message::text).toList());
+        }
+    }
+
+    @Test
+    void enablingTheReminderSwitchRestoresTheHook() throws IOException {
+        write(globalMemory, "b".repeat(11));
+        try (AnnotationConfigApplicationContext spring = annotationContext(true)) {
             LoopInterceptorProcessor processor = spring.getBean(LoopInterceptorProcessor.class);
             LoopInterceptorFactory factory = spring.getBean(LoopInterceptorFactory.class);
             assertFalse(factory.get().containsKey("memoryMonitorInterceptor"));
@@ -236,7 +257,7 @@ class MemoryMonitorTest {
     @Test
     void annotatedMemoryHookPropagatesAppendFailuresThroughTheProcessor() throws IOException {
         write(globalMemory, "b".repeat(11));
-        try (AnnotationConfigApplicationContext spring = annotationContext()) {
+        try (AnnotationConfigApplicationContext spring = annotationContext(true)) {
             spring.getBean(LoopInterceptorHandler.class).run(new DefaultApplicationArguments());
             Execution execution = execution(projectRoot);
             IllegalStateException failure = new IllegalStateException("注入失败");
@@ -247,8 +268,12 @@ class MemoryMonitorTest {
         }
     }
 
-    private AnnotationConfigApplicationContext annotationContext() {
+    private AnnotationConfigApplicationContext annotationContext(boolean reminderEnabled) {
         AnnotationConfigApplicationContext spring = new AnnotationConfigApplicationContext();
+        if (reminderEnabled) {
+            spring.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                    "容量提醒开关", Map.of("lingxi.memory.reminder.enabled", "true")));
+        }
         spring.registerBean(MemoryMonitor.class, this::monitor);
         spring.registerBean(Tokenizer.class, () -> mock(Tokenizer.class));
         spring.register(MemoryMonitorInterceptor.class, InterceptorConfig.class);

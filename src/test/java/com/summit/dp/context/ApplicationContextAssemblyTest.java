@@ -135,10 +135,8 @@ class ApplicationContextAssemblyTest {
                 "SubAgentWaitInterceptor 必须被 DefaultLoopInterceptorProcessor 收集，实际=" + collected);
         assertTrue(collected.stream().anyMatch(i -> i instanceof BackgroundTaskLoopInterceptor),
                 "后台终端通知拦截器必须进入实际执行链");
-        LoopInterceptor memory = factory.get().get("memoryMonitorInterceptor");
-        assertNotNull(memory, "记忆容量提醒必须由注解扫描注册到共享工厂");
-        assertEquals(-825, memory.order());
-        assertFalse(memory.catchErr());
+        assertNull(factory.get().get("memoryMonitorInterceptor"),
+                "容量提醒已移出运行链：默认不注册，避免每轮删除历史里的旧提醒打断前缀缓存");
     }
 
     @Test

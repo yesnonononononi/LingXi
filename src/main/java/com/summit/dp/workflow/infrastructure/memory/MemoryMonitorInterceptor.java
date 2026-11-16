@@ -8,6 +8,7 @@ import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.InterceptorType;
 import com.summit.core.runtime.loop.LoopContext;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -15,9 +16,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 每次调用前检查真实文件，续轮与恢复共用同一个入口。 */
+/**
+ * 每次调用前检查真实文件，续轮与恢复共用同一个入口。
+ *
+ * <p><b>默认不注册</b>（{@code lingxi.memory.reminder.enabled} 缺省为关）：它每轮都会把旧提醒从历史里删掉
+ * 再追加新的，等于改写已经发给服务端的消息，整段提示前缀随之作废。机制重新设计前先移出运行链，
+ * 开关保留是为了让这段逻辑可验证、可恢复，而不是悄悄烂在代码里。</p>
+ */
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "lingxi.memory.reminder", name = "enabled", havingValue = "true")
 public class MemoryMonitorInterceptor {
     private final MemoryMonitor monitor;
 
