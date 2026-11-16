@@ -80,7 +80,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
   const clearTimer = tab => { clearTimeout(tab.timer); tab.timer = undefined; };
   const clearAgentOverlayTimer = tab => { clearTimeout(tab.agentOverlayTimer); tab.agentOverlayTimer = undefined; };
   const isAgentGlowActive = tab => Boolean(tab?.openedByAgent && !tab?.agentGlowDismissed);
-  const syncAgentOverlay = async (tab, {forceHide = false} = {}) => {
+  const syncAgentOverlay = async (tab, {forceHide = false, waitForPaint = false} = {}) => {
     const contents = tab?.contents;
     if (!contents || contents.isDestroyed() || typeof contents.executeJavaScript !== 'function') return;
     const glowVisible = !forceHide && isAgentGlowActive(tab);
@@ -92,6 +92,9 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const existing = document.getElementById(HOST_ID);
       if (!glowVisible && !busyVisible) {
         if (existing) existing.remove();
+        if (${Boolean(waitForPaint)} && typeof requestAnimationFrame === 'function') {
+          return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        }
         return;
       }
       const rootEl = document.documentElement || document.body;
@@ -1069,7 +1072,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const contents = tab.contents;
       if (!contents || contents.isDestroyed()) throw new Error('网页实例不可用');
       return withAgentControl(tab, async () => {
-        await syncAgentOverlay(tab, {forceHide: true});
+        await syncAgentOverlay(tab, {forceHide: true, waitForPaint: true});
         let image;
         try {
           image = await contents.capturePage();

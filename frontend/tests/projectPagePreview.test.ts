@@ -630,11 +630,14 @@ test('Agent 仅在自己打开的标签产生持久蓝色光晕，用户可手�
   const agentTab = stateAfterAgentOpen.tabs.find((tab: ProjectPageTab) => tab.id === navRes.tabId)!;
   assert.equal(agentTab.agentGlowActive, true);
 
-  // 3. 截图前瞬时隐藏，截完恢复
+  // 3. 截图前瞬时隐藏并等待渲染帧提交，截完恢复
   executedScripts.length = 0;
   await h.registration.automation.screenshot({tabId: navRes.tabId, saveToTemp: false});
   const overlayCalls = executedScripts.filter(s => s.includes('__lingxi_agent_overlay_host__'));
-  assert.ok(overlayCalls.some(s => s.includes('glowVisible = false') && s.includes('busyVisible = false')), '截屏前应瞬时隐藏浮层');
+  assert.ok(
+    overlayCalls.some(s => s.includes('glowVisible = false') && s.includes('busyVisible = false') && s.includes('true && typeof requestAnimationFrame')),
+    '截屏前应瞬时隐藏浮层并等待 requestAnimationFrame 提交新帧',
+  );
   assert.ok(overlayCalls.some(s => s.includes('glowVisible = true')), '截屏后应恢复持久光晕');
 
   // 4. 用户手动关闭光晕
