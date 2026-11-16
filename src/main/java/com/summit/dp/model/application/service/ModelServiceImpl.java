@@ -6,6 +6,7 @@ import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.command.ModelConfigCommand;
 import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.dp.model.application.vo.PromptCacheOptions;
 import com.summit.dp.model.application.vo.ProviderModelGroupVO;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
@@ -178,7 +179,17 @@ public class ModelServiceImpl implements ModelService {
                 || apiKey == null || apiKey.isBlank()
                 || model.getModelName() == null || model.getModelName().isBlank(), "模型连接配置不完整: " + id);
         return RuntimeModel.create(model.getBaseUrl(), apiKey, model.getModelName(), model.getProvider(),
-                model.isVision(), settings, chatProperties.getTimeout(), resolveCompactModel(settings));
+                model.isVision(), settings, chatProperties.getTimeout(), resolveCompactModel(settings),
+                promptCacheOptions());
+    }
+
+    /**
+     * 缓存开关与 yaml 同源：真实对话用请求级配置，框架不会回填应用级 anthropicOptions，
+     * 不在这里显式下发，Anthropic 侧永远拿不到 cache_control。
+     */
+    private PromptCacheOptions promptCacheOptions() {
+        return new PromptCacheOptions(chatProperties.isPromptCache(), chatProperties.getPromptCacheTtl(),
+                chatProperties.isPromptCacheConversation());
     }
 
     /** 专用模型被删除时沿用对话模型；指定提供方的密钥失效必须报错。 */

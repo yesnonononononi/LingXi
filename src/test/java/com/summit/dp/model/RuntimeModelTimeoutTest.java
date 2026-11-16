@@ -1,6 +1,7 @@
 package com.summit.dp.model;
 
 import com.summit.dp.model.application.service.ModelServiceImpl;
+import com.summit.dp.model.application.vo.PromptCacheOptions;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
@@ -81,6 +82,36 @@ class RuntimeModelTimeoutTest {
                 null, null, null, true);
         assertTrue(RuntimeModel.create("https://example.invalid/v1", "k", "m", null, false,
                 streamOn, Duration.ofSeconds(30)).config().isStream());
+    }
+
+    @Test
+    void promptCacheOptionsReachTheRequestLevelModelConfig() {
+        // 框架只在请求级配置带 anthropicOptions 时打 cache_control；进程内构造也必须带上。
+        RuntimeModel direct = RuntimeModel.create("https://example.invalid/v1", "k", "claude-sonnet-4-6", null,
+                false, null, Duration.ofSeconds(30), null, new PromptCacheOptions(true, "1h", true));
+        assertNotNull(direct.config().getAnthropicOptions(), "请求级配置缺 anthropicOptions 时不会发 cache_control");
+        assertTrue(direct.config().getAnthropicOptions().promptCache());
+        assertEquals("1h", direct.config().getAnthropicOptions().promptCacheTtl());
+        assertTrue(direct.config().getAnthropicOptions().promptCacheConversation());
+        assertNull(direct.config().getAnthropicOptions().thinkingType(), "思考模式仍由框架按 reasoningEffort 推断");
+
+        assertNull(RuntimeModel.create("https://example.invalid/v1", "k", "m", null, false, null,
+                Duration.ofSeconds(30)).config().getAnthropicOptions(), "未声明缓存时不得凭空写入选项");
+    }
+
+    @Test
+    void chatYamlPromptCacheSwitchReachesRuntimeRequests() {
+        when(repository.findById(7L)).thenReturn(Optional.of(
+                new ModelConfig(7L, "https://example.invalid/v1", "test-key", "claude-sonnet-4-6", null, false)));
+        contextRunner.withPropertyValues("lingxi.agent.model.conf.chat.prompt-cache=false",
+                "lingxi.agent.model.conf.chat.prompt-cache-ttl=5m").run(context -> {
+            assertNotNull(context.getBean(ModelServiceImpl.class).runtimeConfig(7L, null).getAnthropicOptions(),
+                    "yaml 开关必须落到请求级配置，否则整组缓存配置等于没配");
+            assertFalse(context.getBean(ModelServiceImpl.class).runtimeConfig(7L, null)
+                    .getAnthropicOptions().promptCache());
+            assertEquals("5m", context.getBean(ModelServiceImpl.class).runtimeConfig(7L, null)
+                    .getAnthropicOptions().promptCacheTtl());
+        });
     }
 
     @Test

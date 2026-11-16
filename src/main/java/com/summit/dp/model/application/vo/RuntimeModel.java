@@ -28,6 +28,16 @@ public record RuntimeModel(ModelConfig config, boolean vision) {
     public static RuntimeModel create(String baseUrl, String apiKey, String modelName, String provider,
                                       boolean vision, SettingsView settings, Duration timeout,
                                       CompactModel compactModel) {
+        return create(baseUrl, apiKey, modelName, provider, vision, settings, timeout, compactModel, null);
+    }
+
+    /**
+     * @param compactModel 专用压缩模型；{@code null} 表示沿用对话模型
+     * @param promptCache  前缀缓存开关；{@code null} 表示不下发 anthropicOptions（服务端按不缓存处理）
+     */
+    public static RuntimeModel create(String baseUrl, String apiKey, String modelName, String provider,
+                                      boolean vision, SettingsView settings, Duration timeout,
+                                      CompactModel compactModel, PromptCacheOptions promptCache) {
         boolean imageModel = DefaultModelProviderNames.DEFAULT_IMAGE.equals(provider);
         // 流式开关来自设置（未设置归一为 true）。它是连接级属性：决定对话走 streaming 还是同步 invoker，
         // 与「思考内容是否回传」（returnThinking/sendThinking）无关，后者保持恒 true。
@@ -44,6 +54,11 @@ public record RuntimeModel(ModelConfig config, boolean vision) {
             builder.reuseModelForCompaction(false)
                     .compactModel(new ModelConfig.CompactModelConfig(
                             compactModel.baseUrl(), compactModel.apiKey(), compactModel.modelName()));
+        }
+        if (promptCache != null) {
+            // 思考模式仍交给框架按 reasoningEffort 推断，这里只带缓存三项。
+            builder.anthropicOptions(new ModelConfig.AnthropicOptions(null, null,
+                    promptCache.enabled(), promptCache.ttl(), promptCache.conversation()));
         }
         return new RuntimeModel(builder.build(), vision);
     }
