@@ -17,13 +17,13 @@ import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
 import type {AgentPermissionMode, WorkspaceEnvType} from '../../types/chat';
 import {
   isAccessModeMismatch,
-  isFullAccessMode,
   isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
   resolveAccessMenuDescKey,
   resolveAccessPreset,
   resolveSandboxState,
   resolveTerminalCaveatKey,
+  showFullAccessTerminalCaveat,
 } from '../../utils/accessModePresentation';
 import {MUTED} from '../../utils/promptBarStyles';
 import {t} from '../../i18n';
@@ -52,6 +52,10 @@ const terminalCaveatVisible = computed<boolean>(() => isTerminalOutsideAccessCon
 
 /** 悬停文案随环境切换：沙箱只拦终端，本地谁都拦不住。 */
 const terminalCaveat = computed<string>(() => t(resolveTerminalCaveatKey(sandboxState.value)));
+
+/** 完全访问行的终端提示：只在沙箱开着时出现，本地说了也没人拦。 */
+const fullCaveatVisible = (mode: AgentPermissionMode): boolean =>
+  showFullAccessTerminalCaveat(mode, sandboxState.value);
 
 const modeLabel = (mode: AgentPermissionMode): string => t(resolveAccessBadgeKey(mode));
 
@@ -104,9 +108,9 @@ const modeWarn = (mode: AgentPermissionMode): boolean => isAccessModeMismatch(mo
         :stroke-width="2.5"
         class="shrink-0 mt-0.5 [color:var(--pb-ink)]"
       />
-      <!-- 完全访问只放开文件工具，终端命令仍在沙箱与终端规则手里：行右侧常驻说明，别让人以为「免审批 = 无所不能」 -->
+      <!-- 完全访问只放开文件工具，终端命令仍在沙箱手里：沙箱开着时行右侧给说明，别让人以为「免审批 = 无所不能」 -->
       <span
-        v-if="isFullAccessMode(mode)"
+        v-if="fullCaveatVisible(mode)"
         class="inline-grid shrink-0 place-items-center mt-0.5 cursor-help"
         :class="MUTED"
         :title="t('chat.input.accessMenuFullTerminalCaveat')"

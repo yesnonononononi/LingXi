@@ -25,9 +25,12 @@ export function resolveAccessPreset(mode?: AgentPermissionMode | string | null):
   return 'ApprovalRequired';
 }
 
-/** 「完全访问」也不等于终端免限：终端命令照样可能被沙箱与终端规则拦住，行右侧要常驻说明。 */
-export function isFullAccessMode(mode?: AgentPermissionMode | string | null): boolean {
-  return resolveAccessPreset(mode) === 'Full';
+/**
+ * 「完全访问」行的终端提示：只有沙箱开着时「终端会被沙箱拦」这句才成立，本地环境不显示。
+ * 该档只放开文件工具，别让人把「命令免审批」读成终端也免限。
+ */
+export function showFullAccessTerminalCaveat(mode?: AgentPermissionMode | string | null, state?: SandboxState): boolean {
+  return resolveAccessPreset(mode) === 'Full' && state === 'ON';
 }
 
 /**

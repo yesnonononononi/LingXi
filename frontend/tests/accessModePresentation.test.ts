@@ -17,7 +17,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   isAccessModeMismatch,
-  isFullAccessMode,
   isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
   resolveAccessImpactKey,
@@ -26,6 +25,7 @@ import {
   resolveAccessTipKey,
   resolveSandboxState,
   resolveTerminalCaveatKey,
+  showFullAccessTerminalCaveat,
 } from '../src/utils/accessModePresentation';
 
 const messagesSource = readFileSync(resolve(process.cwd(), 'src/i18n/messages.ts'), 'utf8');
@@ -133,16 +133,34 @@ test('悬停说明按环境分开讲「沙箱拦谁」，不得再用一句糊�
   }
 });
 
-test('「完全访问」行右侧必须常驻终端限制说明', () => {
-  // 完全访问只放开文件工具，终端命令仍在沙箱与终端规则里：没有这枚提示，档位说明就是在撒谎
-  assert.equal(isFullAccessMode('FULL_ACCESS'), true);
-  assert.equal(isFullAccessMode('APPROVAL_REQUIRED'), false);
-  assert.equal(isFullAccessMode('DELEGATED_APPROVAL'), false);
-  assert.equal(isFullAccessMode(undefined), false);
+test('「完全访问」行的终端提示只在沙箱开启时出现', () => {
+  // 完全访问只放开文件工具；「终端会被沙箱拦」这句只有沙箱开着才成立，本地环境显示它等于乱吓人
+  assert.equal(showFullAccessTerminalCaveat('FULL_ACCESS', 'ON'), true);
+  assert.equal(showFullAccessTerminalCaveat('FULL_ACCESS', 'OFF'), false);
+  assert.equal(showFullAccessTerminalCaveat('FULL_ACCESS', 'UNSET'), false);
+  assert.equal(showFullAccessTerminalCaveat('APPROVAL_REQUIRED', 'ON'), false);
+  assert.equal(showFullAccessTerminalCaveat('DELEGATED_APPROVAL', 'ON'), false);
+  assert.equal(showFullAccessTerminalCaveat(undefined, 'ON'), false);
   assert.match(menuSource, /data-testid="chat-access-full-terminal-caveat"/, '完全访问行缺少终端限制提示');
-  assert.match(menuSource, /isFullAccessMode\(/, '完全访问判定必须走真源，不得内联比较档位字面量');
+  assert.match(menuSource, /showFullAccessTerminalCaveat\(/, '判定必须走真源，不得内联比较档位与环境');
+  assert.doesNotMatch(menuSource, /=== 'FULL_ACCESS'/, '档位判断应集中在 accessModePresentation');
   const hits = messagesSource.match(/\baccessMenuFullTerminalCaveat:/g) ?? [];
   assert.equal(hits.length, 2, `accessMenuFullTerminalCaveat 应在两个语种里各出现一次，实际 ${hits.length} 次`);
+});
+
+test('安全中心沙箱档文案必须承认「沙箱不另行限制文件读写」', () => {
+  // 沙箱写授权来自 File.listRoots()，实质整盘可写；再说「沙箱把文件锁在工作区」就是假话。
+  // 金丝雀：先证明读到了中文键，下面的「都在」才不是假绿
+  assert.match(messagesSource, /impactApprovalRequiredSandbox:/, 'messages.ts 未读到沙箱档文案');
+  for (const key of ['impactApprovalRequiredSandbox', 'impactDelegatedApprovalSandbox']) {
+    const hits = messagesSource.match(new RegExp(`${key}: '[^']*沙箱不另行限制文件读写[^']*'`, 'g')) ?? [];
+    assert.equal(hits.length, 1, `${key} 必须在 zh-CN 里写清沙箱不另行限制文件读写，实际命中 ${hits.length} 次`);
+  }
+  assert.match(messagesSource, /impactFullSandbox: '[^']*终端命令仍在沙箱内执行/, '完全访问沙箱档必须保留终端约束说明');
+  assert.doesNotMatch(messagesSource, /沙箱终端受工作区隔离保护/, '不得再声称沙箱把文件或终端锁在工作区');
+  for (const key of ['impactApprovalRequiredSandbox', 'impactDelegatedApprovalSandbox', 'impactFullSandbox']) {
+    assert.match(messagesSource, new RegExp(`${key}: '[^']*沙箱[^']*'`), `${key} 必须如实提到沙箱`);
+  }
 });
 
 test('安全中心与输入区消费同一份真源，不得各自硬编码档位判断', () => {
