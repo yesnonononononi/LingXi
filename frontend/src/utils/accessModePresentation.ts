@@ -26,14 +26,6 @@ export function resolveAccessPreset(mode?: AgentPermissionMode | string | null):
 }
 
 /**
- * 「完全访问」行的终端提示：只有沙箱开着时「终端会被沙箱拦」这句才成立，本地环境不显示。
- * 该档只放开文件工具，别让人把「命令免审批」读成终端也免限。
- */
-export function showFullAccessTerminalCaveat(mode?: AgentPermissionMode | string | null, state?: SandboxState): boolean {
-  return resolveAccessPreset(mode) === 'Full' && state === 'ON';
-}
-
-/**
  * 可选三档均允许在工作区内写入，不存在「以为只读其实可写」的误导组合。
  */
 export function isAccessModeMismatch(

@@ -25,7 +25,6 @@ import {
   resolveAccessTipKey,
   resolveSandboxState,
   resolveTerminalCaveatKey,
-  showFullAccessTerminalCaveat,
 } from '../src/utils/accessModePresentation';
 
 const messagesSource = readFileSync(resolve(process.cwd(), 'src/i18n/messages.ts'), 'utf8');
@@ -133,19 +132,11 @@ test('悬停说明按环境分开讲「沙箱拦谁」，不得再用一句糊�
   }
 });
 
-test('「完全访问」行的终端提示只在沙箱开启时出现', () => {
-  // 完全访问只放开文件工具；「终端会被沙箱拦」这句只有沙箱开着才成立，本地环境显示它等于乱吓人
-  assert.equal(showFullAccessTerminalCaveat('FULL_ACCESS', 'ON'), true);
-  assert.equal(showFullAccessTerminalCaveat('FULL_ACCESS', 'OFF'), false);
-  assert.equal(showFullAccessTerminalCaveat('FULL_ACCESS', 'UNSET'), false);
-  assert.equal(showFullAccessTerminalCaveat('APPROVAL_REQUIRED', 'ON'), false);
-  assert.equal(showFullAccessTerminalCaveat('DELEGATED_APPROVAL', 'ON'), false);
-  assert.equal(showFullAccessTerminalCaveat(undefined, 'ON'), false);
-  assert.match(menuSource, /data-testid="chat-access-full-terminal-caveat"/, '完全访问行缺少终端限制提示');
-  assert.match(menuSource, /showFullAccessTerminalCaveat\(/, '判定必须走真源，不得内联比较档位与环境');
-  assert.doesNotMatch(menuSource, /=== 'FULL_ACCESS'/, '档位判断应集中在 accessModePresentation');
-  const hits = messagesSource.match(/\baccessMenuFullTerminalCaveat:/g) ?? [];
-  assert.equal(hits.length, 2, `accessMenuFullTerminalCaveat 应在两个语种里各出现一次，实际 ${hits.length} 次`);
+test('完全访问行不挂额外提示图标', () => {
+  // 沙箱开关环境差异已由标题旁那枚的环境判据兜住；行内再挂一枚纯属重复，别再塞回来
+  assert.match(menuSource, /data-testid="chat-access-terminal-caveat"/, '金丝雀：标题旁的终端提示图标应当仍在');
+  assert.doesNotMatch(menuSource, /chat-access-full-terminal-caveat/, '完全访问行不该再挂额外图标');
+  assert.doesNotMatch(messagesSource, /accessMenuFullTerminalCaveat/, '完全访问行的提示文案键应已删除');
 });
 
 test('安全中心沙箱档文案必须承认「沙箱不另行限制文件读写」', () => {
