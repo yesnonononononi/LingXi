@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue';
+import {computed, onMounted, ref, watch} from 'vue';
 import {useMcpTab, type McpTriState} from './useMcpTab';
+import {findBrowserMcpRecord, useBrowserMcp} from '../../../composables/useBrowserMcp';
 import {MCP_AUTH_MODES, MCP_TRANSPORTS} from '../../../types/chat';
 import McpServiceCard from './McpServiceCard.vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
@@ -65,6 +66,21 @@ const {
   handleToggleMcp,
 } = useMcpTab();
 
+const browserMcpRecord = computed(() => findBrowserMcpRecord(mcpList.value));
+const {
+  supported: browserMcpSupported,
+  isBusy: isBrowserMcpBusy,
+  errorMsg: browserMcpError,
+  serverStatus: browserMcpStatus,
+  refreshStatus: refreshBrowserMcpStatus,
+  enableBrowserMcp,
+  disableBrowserMcp,
+} = useBrowserMcp({ onChanged: loadMcp });
+
+onMounted(() => {
+  void refreshBrowserMcpStatus();
+});
+
 /** 「高级选项」折叠面板的开合状态：默认收起，主区只留必填项，避免一屏塞满选填框。 */
 const isAdvancedOpen = ref(false);
 
@@ -118,6 +134,52 @@ watch(isEditingOrAddingMcp, (editing) => {
           </svg>
           <span class="whitespace-nowrap">{{ t('settings.mcp.add') }}</span>
         </button>
+      </div>
+
+      <!-- 内置浏览器可选本地 MCP 能力开关（仅 Electron 桌面端） -->
+      <div
+        v-if="browserMcpSupported"
+        class="p-3.5 rounded-2xl border transition-all space-y-2"
+        :class="isDark ? 'bg-white/[0.03] border-white/10' : 'bg-zinc-50/70 border-zinc-200/80'"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-zinc-900 dark:text-white">{{ t('settings.mcp.browserMcpTitle') }}</span>
+              <span
+                class="px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                :class="browserMcpRecord && browserMcpStatus?.running
+                  ? 'bg-emerald-500/15 text-emerald-500'
+                  : 'bg-zinc-500/15 text-lx-muted'"
+              >
+                {{ browserMcpRecord && browserMcpStatus?.running ? t('settings.mcp.browserMcpActive') : t('settings.mcp.browserMcpInactive') }}
+              </span>
+            </div>
+            <p class="text-xs text-lx-muted mt-1 leading-relaxed">
+              {{ t('settings.mcp.browserMcpDesc') }}
+            </p>
+          </div>
+          <button
+            v-if="!browserMcpRecord"
+            type="button"
+            :disabled="isBrowserMcpBusy"
+            @click="enableBrowserMcp()"
+            class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-medium cursor-pointer shrink-0 transition"
+          >
+            {{ isBrowserMcpBusy ? t('settings.mcp.browserMcpEnabling') : t('settings.mcp.browserMcpEnable') }}
+          </button>
+          <button
+            v-else
+            type="button"
+            :disabled="isBrowserMcpBusy"
+            @click="disableBrowserMcp(browserMcpRecord)"
+            class="px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer shrink-0 transition disabled:opacity-50"
+            :class="isDark ? 'border-red-500/30 text-red-400 hover:bg-red-500/10' : 'border-red-200 text-red-600 hover:bg-red-50'"
+          >
+            {{ isBrowserMcpBusy ? t('settings.mcp.browserMcpDisabling') : t('settings.mcp.browserMcpDisable') }}
+          </button>
+        </div>
+        <p v-if="browserMcpError" class="text-xs text-red-400">{{ browserMcpError }}</p>
       </div>
 
       <!-- 加载中 -->

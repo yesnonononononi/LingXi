@@ -55,6 +55,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('project-page:show-with-agent', listener);
       return () => ipcRenderer.removeListener('project-page:show-with-agent', listener);
     },
+    onEnsureOpen: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('project-page:ensure-open', listener);
+      return () => ipcRenderer.removeListener('project-page:ensure-open', listener);
+    },
+  },
+  browserMcp: {
+    getStatus: () => ipcRenderer.invoke('browser-mcp:get-status'),
+    start: () => ipcRenderer.invoke('browser-mcp:start'),
+    stop: () => ipcRenderer.invoke('browser-mcp:stop'),
   },
   /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */
   notify: (options) => ipcRenderer.invoke('notify', options),

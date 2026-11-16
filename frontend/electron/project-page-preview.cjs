@@ -1,11 +1,15 @@
 /** 标签与网页实例由主进程持有，远程内容不能继承主页面的系统能力。 */
 const {randomUUID} = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const CHANNELS = Object.freeze({
   command: 'project-page:command',
   layout: 'project-page:layout',
   labels: 'project-page:labels',
   event: 'project-page:event',
   showWithAgent: 'project-page:show-with-agent',
+  ensureOpen: 'project-page:ensure-open',
 });
 const PARTITION = 'persist:lingxi-project-pages';
 const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
@@ -404,8 +408,296 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       for (const tab of state.tabs.values()) applyViewTheme(tab.view);
     }
   };
+
+  /** 确保主窗口存在且预览面板已就绪（供本地 MCP 等主进程调用方使用）。 */
+  const ensureAutomationState = async () => {
+    const window = getWindow();
+    if (!window || window.isDestroyed()) {
+      throw new Error('主窗口未就绪或已关闭');
+    }
+    const state = getState(window);
+    if (!state.host.isDestroyed()) {
+      state.host.send(CHANNELS.ensureOpen, {});
+    }
+    const deadline = Date.now() + 2000;
+    while ((state.closed || state.generation <= 0 || !state.layout?.visible) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    if (state.closed || state.generation <= 0) {
+      state.closed = false;
+      if (state.generation <= 0) state.generation = 1;
+      if (!state.tabs.size) createTab(state);
+    }
+    applyLayout(state);
+    return state;
+  };
+
+  const resolveAutomationTab = (state, tabId) => {
+    if (typeof tabId === 'string' && tabId.trim()) {
+      return requireTab(state, tabId.trim());
+    }
+    const active = state.tabs.get(state.activeTabId);
+    if (active) return active;
+    const first = state.tabs.values().next().value;
+    if (first) {
+      state.activeTabId = first.id;
+      return first;
+    }
+    return createTab(state);
+  };
+
+  const waitForTabLoad = (tab, waitMs) => new Promise(resolve => {
+    const contents = tab.contents;
+    if (!contents || contents.isDestroyed()) {
+      resolve({loadState: 'failed', errorDescription: '网页实例已销毁'});
+      return;
+    }
+    const effectiveWaitMs = Number.isFinite(waitMs) && waitMs > 0 ? Math.min(waitMs, 30000) : timeoutMs;
+    let settled = false;
+    let timer;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      contents.removeListener('did-finish-load', onFinish);
+      contents.removeListener('did-fail-load', onFail);
+      contents.removeListener('did-stop-loading', onStop);
+    };
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+    const onFinish = () => {
+      if (tab.committedNavigation) finish({loadState: tab.loadState || 'loaded'});
+    };
+    const onFail = (_event, code, description, _url, mainFrame) => {
+      if (mainFrame && code !== -3) finish({loadState: 'failed', errorCode: code, errorDescription: description});
+    };
+    const onStop = () => {
+      if (!contents.isLoadingMainFrame()) finish({loadState: tab.loadState || 'stopped'});
+    };
+    contents.on('did-finish-load', onFinish);
+    contents.on('did-fail-load', onFail);
+    contents.on('did-stop-loading', onStop);
+    timer = setTimeout(() => finish({loadState: 'timeout'}), effectiveWaitMs);
+  });
+
+  const runTabScript = async (tab, script) => {
+    const contents = tab.contents;
+    if (!contents || contents.isDestroyed() || typeof contents.executeJavaScript !== 'function') {
+      throw new Error('当前网页标签不可执行脚本');
+    }
+    return contents.executeJavaScript(script, true);
+  };
+
+  const automation = {
+    listTabs: async () => {
+      const state = await ensureAutomationState();
+      return snapshot(state);
+    },
+    navigate: async ({url, tabId, newTab = false, waitUntilLoad = true, waitTimeoutMs} = {}) => {
+      const targetUrl = normalizeTargetUrl(url);
+      const state = await ensureAutomationState();
+      const tab = newTab ? createTab(state) : resolveAutomationTab(state, tabId);
+      state.activeTabId = tab.id;
+      const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
+      load(state, tab, targetUrl);
+      publish(state);
+      const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
+      return {
+        tabId: tab.id,
+        url: tab.url,
+        title: tab.title,
+        loadState: loadResult.loadState ?? tab.loadState,
+        errorCode: loadResult.errorCode ?? tab.errorCode,
+        errorDescription: loadResult.errorDescription ?? tab.errorDescription,
+      };
+    },
+    activateTab: async tabId => {
+      const state = await ensureAutomationState();
+      const tab = requireTab(state, tabId);
+      state.activeTabId = tab.id;
+      applyLayout(state);
+      return publish(state);
+    },
+    closeTab: async tabId => {
+      const state = await ensureAutomationState();
+      const tab = requireTab(state, tabId);
+      const ids = [...state.tabs.keys()];
+      const index = ids.indexOf(tab.id);
+      destroyTab(state, tab);
+      if (state.activeTabId === tab.id) state.activeTabId = ids[index + 1] ?? ids[index - 1] ?? '';
+      if (!state.tabs.size) createTab(state);
+      applyLayout(state);
+      return publish(state);
+    },
+    click: async ({selector, index = 0, tabId} = {}) => {
+      if (typeof selector !== 'string' || !selector.trim()) throw new Error('selector 不能为空');
+      const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const script = `(() => {
+        const selector = ${JSON.stringify(selector.trim())};
+        const targetIndex = ${targetIndex};
+        const nodes = Array.from(document.querySelectorAll(selector));
+        const visible = nodes.filter(el => {
+          const style = window.getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        const candidates = visible.length > 0 ? visible : nodes;
+        const el = candidates[targetIndex];
+        if (!el) return { ok: false, error: '未找到匹配元素: ' + selector, matchedCount: nodes.length, visibleCount: visible.length };
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        el.focus?.();
+        el.click();
+        return {
+          ok: true,
+          matchedCount: nodes.length,
+          visibleCount: visible.length,
+          tag: el.tagName.toLowerCase(),
+          id: el.id || '',
+          className: typeof el.className === 'string' ? el.className : '',
+          text: (el.innerText || el.textContent || '').trim().slice(0, 120),
+        };
+      })()`;
+      const result = await runTabScript(tab, script);
+      if (!result?.ok) throw new Error(result?.error || '点击元素失败');
+      return {...result, tabId: tab.id, url: tab.url};
+    },
+    fill: async ({selector, value = '', index = 0, clear = true, submit = false, tabId} = {}) => {
+      if (typeof selector !== 'string' || !selector.trim()) throw new Error('selector 不能为空');
+      const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+      const textValue = value === undefined || value === null ? '' : String(value);
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const script = `(() => {
+        const selector = ${JSON.stringify(selector.trim())};
+        const nextValue = ${JSON.stringify(textValue)};
+        const targetIndex = ${targetIndex};
+        const shouldClear = ${Boolean(clear)};
+        const shouldSubmit = ${Boolean(submit)};
+        const nodes = Array.from(document.querySelectorAll(selector));
+        const visible = nodes.filter(el => {
+          const style = window.getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        const candidates = visible.length > 0 ? visible : nodes;
+        const el = candidates[targetIndex];
+        if (!el) return { ok: false, error: '未找到匹配输入元素: ' + selector, matchedCount: nodes.length };
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        el.focus?.();
+        if (el.isContentEditable) {
+          el.textContent = shouldClear ? nextValue : ((el.textContent || '') + nextValue);
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, data: nextValue, inputType: 'insertText' }));
+        } else {
+          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+          const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+          const finalValue = shouldClear ? nextValue : ((el.value || '') + nextValue);
+          if (descriptor && descriptor.set) descriptor.set.call(el, finalValue);
+          else el.value = finalValue;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (shouldSubmit) {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          if (el.form && typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
+        }
+        return {
+          ok: true,
+          tag: el.tagName.toLowerCase(),
+          id: el.id || '',
+          className: typeof el.className === 'string' ? el.className : '',
+          valueLength: (el.value ?? el.textContent ?? '').length,
+        };
+      })()`;
+      const result = await runTabScript(tab, script);
+      if (!result?.ok) throw new Error(result?.error || '填充元素失败');
+      return {...result, tabId: tab.id, url: tab.url};
+    },
+    query: async ({selector, limit = 40, tabId} = {}) => {
+      const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 40;
+      const customSelector = typeof selector === 'string' && selector.trim() ? selector.trim() : '';
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const script = `(() => {
+        const customSelector = ${JSON.stringify(customSelector)};
+        const maxItems = ${maxItems};
+        const targetSelector = customSelector || 'a, button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]';
+        const nodes = Array.from(document.querySelectorAll(targetSelector));
+        const items = [];
+        for (let i = 0; i < nodes.length && items.length < maxItems; i++) {
+          const el = nodes[i];
+          const style = window.getComputedStyle(el);
+          if (style.display === 'none' || style.visibility === 'hidden') continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          items.push({
+            index: items.length,
+            tag: el.tagName.toLowerCase(),
+            id: el.id || '',
+            className: typeof el.className === 'string' ? el.className.trim() : '',
+            type: el.getAttribute('type') || '',
+            name: el.getAttribute('name') || '',
+            placeholder: el.getAttribute('placeholder') || '',
+            ariaLabel: el.getAttribute('aria-label') || '',
+            href: el.getAttribute('href') || '',
+            disabled: Boolean(el.disabled),
+            text: (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 100),
+          });
+        }
+        const bodyText = (document.body?.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 1500);
+        return {
+          url: window.location.href,
+          title: document.title,
+          totalMatched: nodes.length,
+          elements: items,
+          textExcerpt: bodyText,
+        };
+      })()`;
+      const result = await runTabScript(tab, script);
+      return {...result, tabId: tab.id};
+    },
+    screenshot: async ({tabId, maxWidth = 1280, saveToTemp = true} = {}) => {
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const contents = tab.contents;
+      if (!contents || contents.isDestroyed()) throw new Error('网页实例不可用');
+      let image = await contents.capturePage();
+      const size = image.getSize();
+      if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
+        image = image.resize({width: Math.round(maxWidth)});
+      }
+      const finalSize = image.getSize();
+      const pngBuffer = image.toPNG();
+      let filePath = '';
+      if (saveToTemp) {
+        const dir = path.join(os.tmpdir(), 'lingxi-browser-mcp');
+        fs.mkdirSync(dir, {recursive: true});
+        filePath = path.join(dir, `shot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
+        fs.writeFileSync(filePath, pngBuffer);
+      }
+      return {
+        tabId: tab.id,
+        url: tab.url,
+        title: tab.title,
+        mimeType: 'image/png',
+        width: finalSize.width,
+        height: finalSize.height,
+        base64: pngBuffer.toString('base64'),
+        filePath,
+      };
+    },
+  };
+
   return {
     setTheme,
+    automation,
     close: () => {
       for (const state of [...states.values()]) release(state);
       ipcMain.removeHandler(CHANNELS.command);

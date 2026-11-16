@@ -56,6 +56,7 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
   const loadState = computed(() => activeTab.value?.loadState ?? 'idle');
   let revision = 0;
   let unsubscribe: (() => void) | undefined;
+  let unsubscribeEnsureOpen: (() => void) | undefined;
   /**
    * 主进程是否仍持有当前代次的会话。
    *
@@ -85,6 +86,9 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
     }).catch(() => undefined);
   };
   watch(locale, syncMenuLabels, {immediate: true});
+  unsubscribeEnsureOpen = getBridge()?.onEnsureOpen?.(() => {
+    if (!open.value) open.value = true;
+  });
 
   const applyState = (state: ProjectPageState): void => {
     if (!open.value || state.generation !== generation.value || state.revision <= revision) return;
@@ -208,7 +212,13 @@ export function useProjectPagePreview(): ProjectPagePreviewApi {
     const hint = t(FAILURE_HINT_KEYS[tab?.errorCode ?? 0] ?? 'projectPagePreview.failureGeneric');
     return tab?.errorDescription ? `${hint}（${tab.errorDescription}）` : hint;
   });
-  if (getCurrentInstance()) onBeforeUnmount(close);
+  if (getCurrentInstance()) {
+    onBeforeUnmount(() => {
+      unsubscribeEnsureOpen?.();
+      unsubscribeEnsureOpen = undefined;
+      close();
+    });
+  }
   return {open, tabs, activeTabId, activeTab, addressInput, committedUrl, loadState, generation, addressError, statusText, diagnoseText,
     openAddress, updateAddress, createTab, activateTab, closeTab, goBack: () => control('back'), goForward: () => control('forward'),
     reload: () => control('reload'), stop: () => control('stop'), showWithAgent, hide, close, updateLayout, applyState};

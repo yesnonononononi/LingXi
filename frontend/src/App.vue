@@ -7,6 +7,7 @@ import DesktopTitleBar from './components/common/DesktopTitleBar.vue'
 import {isElectron} from './utils/platform'
 import {useSettingsSync} from './composables/useSettingsSync'
 import {useProjectPagePreview} from './composables/useProjectPagePreview'
+import {syncBrowserMcpOnStartup} from './composables/useBrowserMcp'
 import {PROJECT_PAGE_PREVIEW_KEY} from './types/projectPagePreview'
 
 const hasDesktopTitleBar = isElectron() && window.electronAPI?.customTitleBar === true
@@ -17,7 +18,10 @@ useSettingsSync()
 const pagePreview = useProjectPagePreview()
 provide(PROJECT_PAGE_PREVIEW_KEY, pagePreview)
 
-onMounted(() => applicationSessions.start())
+onMounted(() => {
+  applicationSessions.start()
+  void syncBrowserMcpOnStartup()
+})
 onBeforeUnmount(() => applicationSessions.close())
 </script>
 

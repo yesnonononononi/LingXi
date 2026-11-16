@@ -4,6 +4,7 @@ const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
 const { registerProjectPagePreview } = require('./project-page-preview.cjs');
+const { createBrowserMcpServer } = require('./browser-mcp-server.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerPacksManager } = require('./packs-manager.cjs');
 const { registerImageActions } = require('./image-actions.cjs');
@@ -53,6 +54,40 @@ const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () =>
 
 /** 网页独立于主页面，保留主窗口原有外链策略。 */
 const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme });
+const browserMcpServer = createBrowserMcpServer({ automation: projectPagePreview.automation });
+
+const assertMainFrameSender = (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || !event.senderFrame || event.senderFrame !== mainWindow.webContents.mainFrame) {
+    throw new Error('仅允许主窗口主框架调用');
+  }
+};
+
+ipcMain.handle('browser-mcp:get-status', (event) => {
+  try {
+    assertMainFrameSender(event);
+    return { ok: true, data: browserMcpServer.getStatus() };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-mcp:start', async (event) => {
+  try {
+    assertMainFrameSender(event);
+    return { ok: true, data: await browserMcpServer.start() };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-mcp:stop', async (event) => {
+  try {
+    assertMainFrameSender(event);
+    return { ok: true, data: await browserMcpServer.stop() };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
@@ -800,6 +835,7 @@ app.on('before-quit', () => {
   closeFilePreviews();
   // 页面预览只是摘掉 webContents 监听器与 IPC handler，没有需要落盘的状态
   projectPagePreview.close();
+  void browserMcpServer.stop();
   // 背景 IPC 只是注销通道，不删用户图片（图片要跨重启保留）
   backgroundImages.close();
   packsManager.close();

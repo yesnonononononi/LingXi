@@ -136,6 +136,19 @@ export function useUnifiedPreviewTabs(options: UseUnifiedPreviewTabsOptions) {
   );
 
   watch(
+    () => pagePreview.open.value,
+    (isOpen) => {
+      if (!isOpen) return;
+      showPreviewPanel();
+      if (!activeTabKey.value.startsWith('page:') && pagePreview.activeTabId.value) {
+        const key = `page:${pagePreview.activeTabId.value}`;
+        ensureInOrder(key);
+        activeTabKey.value = key;
+      }
+    }
+  );
+
+  watch(
     () => pagePreview.activeTabId.value,
     (id) => {
       if (!id) return;

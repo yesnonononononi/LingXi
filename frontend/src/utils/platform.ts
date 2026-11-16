@@ -91,6 +91,20 @@ export interface ElectronProjectPageAPI {
   setLabels?: (labels: ProjectPageMenuLabels) => Promise<ProjectPageIpcResult<{applied: boolean}>>;
   onEvent: (callback: (event: ProjectPageState) => void) => () => void;
   onShowWithAgent?: (callback: (payload: ShowWithAgentPayload) => void) => () => void;
+  onEnsureOpen?: (callback: () => void) => () => void;
+}
+
+export interface BrowserMcpServerStatus {
+  running: boolean;
+  port: number;
+  url: string;
+  token: string;
+}
+
+export interface ElectronBrowserMcpAPI {
+  getStatus: () => Promise<ProjectPageIpcResult<BrowserMcpServerStatus>>;
+  start: () => Promise<ProjectPageIpcResult<BrowserMcpServerStatus>>;
+  stop: () => Promise<ProjectPageIpcResult<BrowserMcpServerStatus>>;
 }
 
 export interface ElectronAPI {
@@ -118,6 +132,8 @@ export interface ElectronAPI {
   packs?: ElectronPacksAPI;
   /** 项目页面原生视图通道。Web 端为 undefined，调用方需判空。 */
   projectPage?: ElectronProjectPageAPI;
+  /** 内置浏览器本地 MCP 服务通道。Web 端为 undefined，调用方需判空。 */
+  browserMcp?: ElectronBrowserMcpAPI;
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
   updater?: ElectronUpdaterAPI;
   /**
