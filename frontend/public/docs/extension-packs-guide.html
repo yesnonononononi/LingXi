@@ -3,754 +3,744 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LingXi 扩展包开发与加载指南</title>
+  <title>LingXi 扩展包开放文档</title>
   <style>
     :root {
       --bg-page: #ffffff;
-      --bg-sidebar: #f8f9fb;
-      --bg-card: #f5f6f7;
+      --bg-sidebar: #ffffff;
+      --bg-table-head: #f5f6f7;
+      --bg-hover: #f2f3f5;
       --bg-code: #f6f8fa;
-      --bg-callout-info: #eff6ff;
-      --bg-callout-warn: #fffbeb;
-      --bg-callout-tip: #ecfdf5;
-      --border-subtle: #e5e6eb;
-      --border-strong: #d0d3d9;
+      --border-line: #dee0e3;
+      --border-soft: #ebedf0;
       --text-primary: #1f2329;
-      --text-secondary: #4e5969;
-      --text-muted: #86909c;
-      --accent: #3370ff;
-      --accent-soft: rgba(51, 112, 255, 0.1);
-      --warn-accent: #d97706;
-      --tip-accent: #059669;
-      --shadow-sm: 0 1px 2px rgba(31, 35, 41, 0.04);
-    }
-
-    html.dark {
-      --bg-page: #141518;
-      --bg-sidebar: #1a1b1f;
-      --bg-card: #1f2126;
-      --bg-code: #1d1f24;
-      --bg-callout-info: rgba(51, 112, 255, 0.12);
-      --bg-callout-warn: rgba(245, 158, 11, 0.12);
-      --bg-callout-tip: rgba(16, 185, 129, 0.12);
-      --border-subtle: #2b2d33;
-      --border-strong: #3a3d45;
-      --text-primary: #f2f3f5;
-      --text-secondary: #c9cdd4;
-      --text-muted: #86909c;
-      --accent: #4d83ff;
-      --accent-soft: rgba(77, 131, 255, 0.16);
-      --warn-accent: #fbbf24;
-      --tip-accent: #34d399;
-      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+      --text-secondary: #646a73;
+      --text-muted: #8f959e;
+      --feishu-blue: #3370ff;
+      --feishu-blue-soft: #f0f4ff;
+      --badge-green-bg: #e8f8f0;
+      --badge-green-text: #008a4b;
+      --badge-cyan-bg: #e6f7f7;
+      --badge-cyan-text: #007a7c;
+      --badge-gray-bg: #f2f3f5;
     }
 
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
+
+    html, body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      padding: 0;
       background: var(--bg-page);
       color: var(--text-primary);
-      line-height: 1.72;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.65;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 飞书风格顶部栏 */
-    .topbar {
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+      width: 100%;
+    }
+
+    /* 左侧飞书开放平台风格导航树 */
+    .nav-sidebar {
+      width: 276px;
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-soft);
       position: sticky;
       top: 0;
-      z-index: 40;
-      height: 54px;
-      padding: 0 24px;
-      background: color-mix(in srgb, var(--bg-page) 92%, transparent);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border-subtle);
+      height: 100vh;
+      overflow-y: auto;
+      padding: 12px 0 28px;
+      user-select: none;
+    }
+
+    .nav-section {
+      border-bottom: 1px solid var(--border-soft);
+      padding: 4px 0;
+    }
+
+    .nav-section:last-child {
+      border-bottom: none;
+    }
+
+    .nav-section-btn {
+      width: 100%;
+      background: transparent;
+      border: none;
+      padding: 10px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      text-align: left;
     }
-    .topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
+
+    .nav-section-btn:hover {
+      background: var(--bg-hover);
     }
-    .doc-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 7px;
-      background: var(--accent);
-      color: #fff;
-      display: grid;
-      place-items: center;
-      font-weight: 700;
-      font-size: 13px;
+
+    .nav-chevron {
+      width: 14px;
+      height: 14px;
+      color: var(--text-muted);
+      transition: transform 150ms ease;
       flex-shrink: 0;
     }
-    .breadcrumb {
+
+    .nav-section.is-collapsed .nav-chevron {
+      transform: rotate(180deg);
+    }
+
+    .nav-section-body {
+      padding: 2px 0 6px;
+    }
+
+    .nav-section.is-collapsed .nav-section-body {
+      display: none;
+    }
+
+    .nav-group-btn {
+      width: 100%;
+      background: transparent;
+      border: none;
+      padding: 7px 16px 7px 20px;
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 13px;
-      color: var(--text-muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .breadcrumb strong {
+      font-size: 13.5px;
       color: var(--text-primary);
-      font-weight: 600;
-    }
-    .topbar-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-    .btn {
-      height: 30px;
-      padding: 0 12px;
-      border-radius: 6px;
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-page);
-      color: var(--text-secondary);
-      font-size: 12.5px;
-      font-weight: 500;
       cursor: pointer;
-      transition: all 150ms ease;
-    }
-    .btn:hover {
-      border-color: var(--border-strong);
-      color: var(--text-primary);
-      background: var(--bg-card);
+      text-align: left;
     }
 
-    /* 飞书两栏文档布局 */
-    .layout {
-      display: flex;
-      max-width: 1260px;
-      margin: 0 auto;
-      min-height: calc(100vh - 54px);
+    .nav-group-btn:hover {
+      background: var(--bg-hover);
     }
 
-    .sidebar {
-      width: 268px;
-      flex-shrink: 0;
-      border-right: 1px solid var(--border-subtle);
-      background: var(--bg-sidebar);
-      padding: 24px 14px;
-      position: sticky;
-      top: 54px;
-      height: calc(100vh - 54px);
-      overflow-y: auto;
-    }
-    .outline-title {
-      font-size: 11.5px;
-      font-weight: 600;
+    .nav-tri {
+      width: 10px;
+      height: 10px;
       color: var(--text-muted);
-      letter-spacing: 0.04em;
-      padding: 0 10px 8px;
-      text-transform: uppercase;
+      transition: transform 120ms ease;
+      flex-shrink: 0;
     }
-    .outline-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+
+    .nav-group.is-open > .nav-group-btn .nav-tri {
+      transform: rotate(90deg);
     }
-    .outline-link {
+
+    .nav-group-children {
+      display: none;
+    }
+
+    .nav-group.is-open > .nav-group-children {
       display: block;
-      padding: 6px 10px;
-      border-radius: 6px;
+    }
+
+    .nav-leaf {
+      width: 100%;
+      background: transparent;
+      border: none;
+      padding: 7px 16px 7px 36px;
+      display: block;
       font-size: 13.5px;
       color: var(--text-secondary);
-      text-decoration: none;
-      transition: background 140ms ease, color 140ms ease;
+      cursor: pointer;
+      text-align: left;
+      transition: background 120ms ease, color 120ms ease;
     }
-    .outline-link:hover {
-      background: var(--bg-card);
+
+    .nav-leaf.depth-3 {
+      padding-left: 50px;
+    }
+
+    .nav-leaf:hover {
+      background: var(--bg-hover);
       color: var(--text-primary);
     }
-    .outline-link.active {
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-weight: 600;
+
+    .nav-leaf.is-active {
+      color: var(--feishu-blue);
+      font-weight: 500;
     }
-    .outline-sub {
-      padding-left: 22px;
+
+    /* 右侧主文档阅读区 */
+    .doc-main {
+      flex: 1;
+      min-width: 0;
+      padding: 24px 64px 88px;
+      max-width: 1080px;
+    }
+
+    .breadcrumb {
       font-size: 12.5px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .breadcrumb .sep {
       color: var(--text-muted);
     }
 
-    /* 正文区 */
-    .content {
-      flex: 1;
-      min-width: 0;
-      padding: 40px 56px 96px;
-    }
-    .doc-container {
-      max-width: 820px;
-      margin: 0 auto;
-    }
-    .doc-cover-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 10px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 12px;
+    .doc-title {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.35;
       font-weight: 600;
-      margin-bottom: 12px;
+      color: var(--text-primary);
     }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 32px;
-      line-height: 1.3;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .doc-meta {
-      font-size: 13px;
+
+    .doc-updated {
+      font-size: 12.5px;
       color: var(--text-muted);
-      padding-bottom: 24px;
-      border-bottom: 1px solid var(--border-subtle);
-      margin-bottom: 28px;
+      margin-bottom: 22px;
+    }
+
+    .doc-lead {
+      font-size: 14.5px;
+      color: var(--text-primary);
+      margin: 0 0 28px;
     }
 
     h2 {
-      margin: 40px 0 14px;
-      font-size: 22px;
-      line-height: 1.4;
-      font-weight: 650;
-      scroll-margin-top: 72px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-    h3 {
-      margin: 26px 0 10px;
-      font-size: 16.5px;
+      margin: 34px 0 14px;
+      font-size: 20px;
       font-weight: 600;
-      scroll-margin-top: 72px;
-    }
-    p { margin: 10px 0; color: var(--text-secondary); font-size: 15px; }
-    ul, ol { margin: 10px 0; padding-left: 22px; color: var(--text-secondary); font-size: 15px; }
-    li { margin: 5px 0; }
-    code {
-      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
-      font-size: 13px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      padding: 1px 5px;
-      border-radius: 4px;
       color: var(--text-primary);
     }
 
-    /* 飞书 Callout 高亮块 */
-    .callout {
-      margin: 16px 0;
-      padding: 14px 16px;
-      border-radius: 8px;
-      border-left: 3.5px solid var(--accent);
-      background: var(--bg-callout-info);
-      font-size: 14px;
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 15.5px;
+      font-weight: 600;
       color: var(--text-primary);
     }
-    .callout.warn { border-left-color: var(--warn-accent); background: var(--bg-callout-warn); }
-    .callout.tip { border-left-color: var(--tip-accent); background: var(--bg-callout-tip); }
-    .callout-title {
-      font-weight: 600;
-      margin-bottom: 4px;
+
+    p {
+      margin: 8px 0 12px;
+      color: var(--text-primary);
+    }
+
+    ul, ol {
+      margin: 8px 0 14px;
+      padding-left: 20px;
+    }
+
+    li {
+      margin: 4px 0;
+      color: var(--text-primary);
+    }
+
+    /* 飞书开放平台结构化表格 */
+    .feishu-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 24px;
+      border: 1px solid var(--border-line);
+      font-size: 13.5px;
+    }
+
+    .feishu-table th,
+    .feishu-table td {
+      border-bottom: 1px solid var(--border-line);
+      padding: 11px 16px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .feishu-table th {
+      background: var(--bg-table-head);
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .feishu-table td.kv-key {
+      width: 220px;
+      color: var(--text-primary);
+    }
+
+    .feishu-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .sub-note {
       display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* 飞书风格徽章与胶囊 */
+    .badge-green {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: var(--badge-green-bg);
+      color: var(--badge-green-text);
+      font-size: 12px;
+      font-weight: 500;
+      margin-right: 6px;
+    }
+
+    .badge-cyan {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--badge-cyan-bg);
+      color: var(--badge-cyan-text);
+      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .code-inline {
+      display: inline-block;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: var(--badge-gray-bg);
+      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 12.5px;
+      color: var(--text-primary);
+    }
+
+    .perm-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 2px 0;
+    }
+
+    .perm-key {
+      color: var(--text-muted);
+      font-size: 12px;
     }
 
     /* 代码块 */
-    .code-wrap {
-      position: relative;
-      margin: 14px 0 18px;
-      border-radius: 8px;
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-code);
+    .code-block {
+      margin: 12px 0 22px;
+      border: 1px solid var(--border-line);
+      border-radius: 6px;
       overflow: hidden;
-      box-shadow: var(--shadow-sm);
+      background: var(--bg-code);
     }
-    .code-header {
+
+    .code-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 7px 12px;
-      border-bottom: 1px solid var(--border-subtle);
+      padding: 6px 12px;
+      background: var(--bg-table-head);
+      border-bottom: 1px solid var(--border-line);
       font-size: 12px;
-      color: var(--text-muted);
-    }
-    .copy-btn {
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-page);
       color: var(--text-secondary);
-      border-radius: 5px;
-      padding: 2px 9px;
-      font-size: 11.5px;
+    }
+
+    .copy-btn {
+      border: 1px solid var(--border-line);
+      background: #ffffff;
+      color: var(--text-secondary);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
       cursor: pointer;
     }
-    .copy-btn:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+    .copy-btn:hover {
+      color: var(--feishu-blue);
+      border-color: var(--feishu-blue);
+    }
+
     pre {
       margin: 0;
       padding: 14px 16px;
       overflow-x: auto;
       font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
-      font-size: 13px;
+      font-size: 12.5px;
       line-height: 1.6;
       color: var(--text-primary);
     }
 
-    /* 表格 */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 16px 0 22px;
-      font-size: 14px;
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    th, td {
-      text-align: left;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border-subtle);
-      vertical-align: top;
-    }
-    th {
-      background: var(--bg-card);
-      font-weight: 600;
+    .callout-box {
+      margin: 14px 0 20px;
+      padding: 12px 16px;
+      border-radius: 6px;
+      background: var(--feishu-blue-soft);
+      border-left: 3px solid var(--feishu-blue);
+      font-size: 13.5px;
       color: var(--text-primary);
     }
-    td { color: var(--text-secondary); }
-    tr:last-child td { border-bottom: none; }
-
-    /* 类目卡片网格 */
-    .cat-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin: 16px 0;
-    }
-    .cat-card {
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-card);
-    }
-    .cat-card strong { display: block; font-size: 14.5px; margin-bottom: 4px; color: var(--text-primary); }
-    .cat-card span { font-size: 13px; color: var(--text-secondary); }
 
     @media (max-width: 900px) {
-      .sidebar { display: none; }
-      .content { padding: 28px 20px 64px; }
-      .cat-grid { grid-template-columns: 1fr; }
+      .nav-sidebar { width: 220px; }
+      .doc-main { padding: 20px 24px 64px; }
     }
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="doc-icon">LX</div>
-      <div class="breadcrumb">
-        <span>LingXi 文档中心</span>
-        <span>/</span>
-        <span>外观扩展包</span>
-        <span>/</span>
-        <strong>开发与加载指南</strong>
-      </div>
-    </div>
-    <div class="topbar-actions">
-      <button type="button" class="btn" id="toggle-theme-btn">切换亮 / 暗主题</button>
-    </div>
-  </header>
-
-  <div class="layout">
-    <aside class="sidebar" aria-label="文档目录">
-      <div class="outline-title">目录大纲</div>
-      <ul class="outline-list" id="outline-list">
-        <li><a class="outline-link active" href="#quick-start">1. 快速加载自定义扩展包</a></li>
-        <li><a class="outline-link" href="#directory-spec">2. 目录结构与 manifest.json</a></li>
-        <li><a class="outline-link" href="#category-guides">3. 六大类目开发指南</a></li>
-        <li><a class="outline-link outline-sub" href="#cat-theme">3.1 theme · 主题皮肤</a></li>
-        <li><a class="outline-link outline-sub" href="#cat-font">3.2 font · 文字字体</a></li>
-        <li><a class="outline-link outline-sub" href="#cat-background">3.3 background · 主页背景</a></li>
-        <li><a class="outline-link outline-sub" href="#cat-sidebar">3.4 sidebar · 侧边栏</a></li>
-        <li><a class="outline-link outline-sub" href="#cat-input">3.5 input · 输入框</a></li>
-        <li><a class="outline-link outline-sub" href="#cat-component">3.6 component · 组件与动效</a></li>
-        <li><a class="outline-link" href="#assets-inline">4. 静态资源引用与内联</a></li>
-        <li><a class="outline-link" href="#security-limits">5. 安全边界与限制</a></li>
-      </ul>
-    </aside>
-
-    <main class="content">
-      <article class="doc-container">
-        <div class="doc-cover-badge">官方开发文档 · hostApiVersion 1</div>
-        <h1>LingXi 自定义扩展包开发与加载指南</h1>
-        <div class="doc-meta">
-          适用于桌面端自定义本地扩展包（纯静态资源包：CSS / 字体 / 图片），支持跨类目自由叠加与热切换。
+  <div class="app-shell">
+    <!-- 左侧飞书多级文档树 -->
+    <nav class="nav-sidebar" aria-label="文档目录">
+      <div class="nav-section" data-section>
+        <button type="button" class="nav-section-btn">
+          <span>快速开始</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 15l-6-6-6 6" />
+          </svg>
+        </button>
+        <div class="nav-section-body">
+          <button type="button" class="nav-leaf is-active" data-doc="load-guide">加载自定义扩展包</button>
+          <button type="button" class="nav-leaf" data-doc="dir-structure">目录结构与约定</button>
+          <button type="button" class="nav-leaf" data-doc="security-limits">安全边界与限制</button>
         </div>
+      </div>
 
-        <section id="quick-start">
-          <h2>1. 快速加载自定义扩展包</h2>
-          <p>在客户端打开 <strong>设置 → 扩展包</strong>，底部的「自定义本地扩展包目录」支持以下两种目录形态，只需输入绝对路径（或点击「选择文件夹」）即可加载：</p>
-          <ul>
-            <li><strong>多包合集目录</strong>（推荐）：例如 <code>D:\my-lingxi-packs</code>，其下每个子目录为一个独立扩展包（均含 <code>manifest.json</code>）。系统会一次性扫描所有合法子包，并按 <code>category</code> 自动分发到对应类目。</li>
-            <li><strong>单个扩展包目录</strong>：例如 <code>D:\my-lingxi-packs\my-theme</code>，目录根下直接放置 <code>manifest.json</code>。</li>
-          </ul>
+      <div class="nav-section" data-section>
+        <button type="button" class="nav-section-btn">
+          <span>核心规范</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 15l-6-6-6 6" />
+          </svg>
+        </button>
+        <div class="nav-section-body">
+          <button type="button" class="nav-leaf" data-doc="manifest-spec">manifest.json 清单规范</button>
+          <button type="button" class="nav-leaf" data-doc="assets-inline">静态资源引用与内联</button>
+        </div>
+      </div>
 
-          <div class="callout tip">
-            <span class="callout-title">持久化与自动恢复</span>
-            已添加的自定义目录会保存在本机配置中，重启客户端时会自动重新扫描并恢复你启用的扩展包。若修改了本地 <code>pack.css</code>，点击目录旁的「刷新」并重新点选一次即可立即生效。
-          </div>
-        </section>
-
-        <section id="directory-spec">
-          <h2>2. 目录结构与 manifest.json 规范</h2>
-          <p>一个标准的纯资源扩展包目录结构如下：</p>
-
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>目录结构示例</span>
-              <button type="button" class="copy-btn" data-copy-target="code-tree">复制</button>
-            </div>
-            <pre id="code-tree">D:\my-lingxi-packs\
-├── my-ocean-theme\
-│   ├── manifest.json       # 必填：元数据与类目声明
-│   ├── pack.css            # 必填：样式入口（可在 manifest.json 中指定 entryCss）
-│   └── assets\             # 可选：图片、背景或字体资源（自动内联为 data URL）
-│       └── bg.webp
-└── my-font-pack\
-    ├── manifest.json
-    ├── pack.css
-    └── fonts\
-        └── custom.woff2</pre>
-          </div>
-
-          <p><code>manifest.json</code> 完整字段说明：</p>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 150px;">字段</th>
-                <th style="width: 90px;">必填</th>
-                <th>说明</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>id</code></td>
-                <td>是</td>
-                <td>唯一标识，仅允许小写字母、数字和短横线 <code>^[a-z0-9][a-z0-9-]{0,62}$</code>。</td>
-              </tr>
-              <tr>
-                <td><code>category</code></td>
-                <td>是</td>
-                <td>所属类目：<code>theme</code> | <code>font</code> | <code>background</code> | <code>sidebar</code> | <code>input</code> | <code>component</code>。</td>
-              </tr>
-              <tr>
-                <td><code>name</code></td>
-                <td>是</td>
-                <td>扩展包展示名称。</td>
-              </tr>
-              <tr>
-                <td><code>hostApiVersion</code></td>
-                <td>是</td>
-                <td>固定填 <code>"1"</code>，版本不匹配时宿主会安全拒绝加载。</td>
-              </tr>
-              <tr>
-                <td><code>version</code></td>
-                <td>否</td>
-                <td>版本号（如 <code>"1.0.0"</code>），默认 <code>"1.0.0"</code>。</td>
-              </tr>
-              <tr>
-                <td><code>description</code></td>
-                <td>否</td>
-                <td>扩展包一句话介绍。</td>
-              </tr>
-              <tr>
-                <td><code>entryCss</code></td>
-                <td>否</td>
-                <td>样式入口相对路径，默认为 <code>"pack.css"</code>。</td>
-              </tr>
-              <tr>
-                <td><code>capabilities</code></td>
-                <td>否</td>
-                <td>能力标签数组，如 <code>["明暗配色", "本地定制"]</code>。</td>
-              </tr>
-              <tr>
-                <td><code>preview</code></td>
-                <td>否</td>
-                <td>卡片右上角三色预览点：<code>{ canvas, surface, accent, text }</code>。</td>
-              </tr>
-              <tr>
-                <td><code>fontPreview</code></td>
-                <td>否</td>
-                <td>字体包预览样本：<code>{ sample, family }</code>。</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>manifest.json 最小模板</span>
-              <button type="button" class="copy-btn" data-copy-target="code-manifest">复制</button>
-            </div>
-            <pre id="code-manifest">{
-  "id": "my-ocean-theme",
-  "category": "theme",
-  "name": "深海蔚蓝",
-  "description": "自定义深海蓝明暗双态主题包",
-  "version": "1.0.0",
-  "hostApiVersion": "1",
-  "capabilities": ["明暗配色", "自定义"],
-  "preview": {
-    "canvas": "#06111c",
-    "surface": "#0b1c2c",
-    "accent": "#38bdf8",
-    "text": "#f0f9ff"
-  },
-  "entryCss": "pack.css"
-}</pre>
-          </div>
-        </section>
-
-        <section id="category-guides">
-          <h2>3. 六大类目开发指南</h2>
-          <p>不同类目之间<strong>互不冲突、可同时叠加生效</strong>，同一类目内互斥单选。建议每个扩展包只专注于自身类目的职责。</p>
-
-          <div class="cat-grid">
-            <div class="cat-card">
-              <strong>theme · 主题皮肤</strong>
-              <span>覆盖全局 <code>--lx-*</code> 颜色、表面、边框与强调色变量。</span>
-            </div>
-            <div class="cat-card">
-              <strong>font · 文字字体</strong>
-              <span>通过 <code>@font-face</code> 与 <code>--font-sans</code> / <code>--font-lx-code</code> 定制字体。</span>
-            </div>
-            <div class="cat-card">
-              <strong>background · 主页背景</strong>
-              <span>针对 <code>.lx-chat-background</code> 添加渐变或本地背景图。</span>
-            </div>
-            <div class="cat-card">
-              <strong>sidebar · 侧边栏</strong>
-              <span>针对 <code>aside.border-r</code> 定制侧边栏圆角、毛玻璃与导轨效果。</span>
-            </div>
-            <div class="cat-card">
-              <strong>input · 输入框</strong>
-              <span>针对 <code>[data-slot="chat-input-card"]</code> 定制输入卡片质感与聚焦光环。</span>
-            </div>
-            <div class="cat-card">
-              <strong>component · 组件与动效</strong>
-              <span>定制流式文字 arrival、思维链呼吸等动效时长与曲线。</span>
+      <div class="nav-section" data-section>
+        <button type="button" class="nav-section-btn">
+          <span>扩展包开发</span>
+          <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 15l-6-6-6 6" />
+          </svg>
+        </button>
+        <div class="nav-section-body">
+          <div class="nav-group is-open" data-group>
+            <button type="button" class="nav-group-btn">
+              <svg class="nav-tri" viewBox="0 0 12 12" fill="currentColor"><path d="M4 2l5 4-5 4V2z" /></svg>
+              <span>开发前必读</span>
+            </button>
+            <div class="nav-group-children">
+              <button type="button" class="nav-leaf depth-3" data-doc="overview">架构概述</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="faq">常见问题</button>
             </div>
           </div>
 
-          <h3 id="cat-theme">3.1 theme · 主题皮肤</h3>
-          <p>LingXi 默认暗色，亮色模式通过 <code>html.light, html[data-theme="light"]</code> 切换，建议同时提供暗色与亮色两套变量：</p>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>packs/my-ocean-theme/pack.css</span>
-              <button type="button" class="copy-btn" data-copy-target="code-theme">复制</button>
+          <div class="nav-group is-open" data-group>
+            <button type="button" class="nav-group-btn">
+              <svg class="nav-tri" viewBox="0 0 12 12" fill="currentColor"><path d="M4 2l5 4-5 4V2z" /></svg>
+              <span>类目开发指南</span>
+            </button>
+            <div class="nav-group-children">
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-theme">主题皮肤 (theme)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-font">文字字体 (font)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-background">主页背景 (background)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-sidebar">侧边栏 (sidebar)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-input">输入框 (input)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-component">组件与动效 (component)</button>
             </div>
-            <pre id="code-theme">:root {
-  --lx-canvas: #06111c;
-  --lx-canvas-subtle: #091826;
-  --lx-surface: #0b1c2c;
-  --lx-surface-elevated: rgba(13, 32, 50, 0.94);
-  --lx-surface-sunken: #07131f;
-  --lx-border-subtle: rgba(56, 189, 248, 0.16);
-  --lx-border-default: rgba(56, 189, 248, 0.24);
-  --lx-border-focus: rgba(56, 189, 248, 0.85);
-  --lx-accent: #0ea5e9;
-  --lx-accent-hover: #38bdf8;
-  --lx-accent-pressed: #0284c7;
-  --lx-accent-soft: rgba(14, 165, 233, 0.16);
-}
-
-html.light,
-html[data-theme="light"] {
-  --lx-canvas: #f2f9ff;
-  --lx-canvas-subtle: #e6f3ff;
-  --lx-surface: #ffffff;
-  --lx-surface-elevated: #ffffff;
-  --lx-surface-sunken: #eaf4ff;
-  --lx-accent: #0284c7;
-  --lx-accent-hover: #0ea5e9;
-  --lx-accent-soft: rgba(2, 132, 199, 0.12);
-}</pre>
           </div>
+        </div>
+      </div>
+    </nav>
 
-          <h3 id="cat-font">3.2 font · 文字字体</h3>
-          <p>支持引用扩展包目录下的 <code>.woff2</code> / <code>.woff</code> / <code>.ttf</code> 字体文件（加载器会自动内联）：</p>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>packs/my-font-pack/pack.css</span>
-              <button type="button" class="copy-btn" data-copy-target="code-font">复制</button>
-            </div>
-            <pre id="code-font">@font-face {
-  font-family: 'MyCustomSans';
-  src: url('./fonts/custom-sans.woff2');
-  font-display: swap;
-}
-
-:root {
-  --font-sans: 'MyCustomSans', 'PingFang SC', ui-sans-serif, sans-serif;
-  --font-lx-code: 'JetBrains Mono', 'Cascadia Mono', ui-monospace, monospace;
-}
-
-body {
-  font-family: var(--font-sans);
-}</pre>
-          </div>
-
-          <h3 id="cat-background">3.3 background · 主页背景</h3>
-          <p>主页背景容器类名为 <code>.lx-chat-background</code>。若使用本地图片，建议保留 <code>var(--lx-canvas-image, none)</code> 以兼容用户在通用设置里手动上传的自定义图片：</p>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>packs/my-bg/pack.css</span>
-              <button type="button" class="copy-btn" data-copy-target="code-bg">复制</button>
-            </div>
-            <pre id="code-bg">.lx-chat-background {
-  background-image:
-    var(--lx-canvas-image, none),
-    url('./assets/wallpaper.webp');
-  background-size: cover;
-  background-position: center;
-}</pre>
-          </div>
-
-          <h3 id="cat-sidebar">3.4 sidebar · 侧边栏</h3>
-          <p>侧边栏根节点可通过 <code>aside.border-r</code> 命中，推荐复用 <code>--lx-*</code> 变量以自动适配亮/暗主题：</p>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>packs/my-sidebar/pack.css</span>
-              <button type="button" class="copy-btn" data-copy-target="code-sidebar">复制</button>
-            </div>
-            <pre id="code-sidebar">aside.border-r {
-  margin: 8px 0 8px 8px;
-  height: calc(100% - 16px) !important;
-  border-radius: 18px;
-  border: 1px solid var(--lx-border-subtle) !important;
-  background-color: color-mix(in srgb, var(--lx-surface) 84%, transparent) !important;
-  backdrop-filter: blur(18px);
-  box-shadow: var(--lx-shadow-2);
-}</pre>
-          </div>
-
-          <h3 id="cat-input">3.5 input · 输入框</h3>
-          <p>输入框卡片根节点带有稳定锚点 <code>[data-slot="chat-input-card"]</code>，可自定义圆角、毛玻璃与聚焦态：</p>
-          <div class="callout warn">
-            <span class="callout-title">布局约束提醒</span>
-            请勿修改输入区外层的 <code>max-w-lx-chat</code> 列宽，否则会导致输入框与上方消息列表左右不对齐。
-          </div>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>packs/my-input/pack.css</span>
-              <button type="button" class="copy-btn" data-copy-target="code-input">复制</button>
-            </div>
-            <pre id="code-input">[data-slot="chat-input-card"] {
-  --pb-radius: 22px;
-  border-radius: 22px !important;
-  background: color-mix(in srgb, var(--lx-surface-elevated) 80%, transparent) !important;
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--lx-border-default) !important;
-}
-
-[data-slot="chat-input-card"]:focus-within {
-  border-color: var(--lx-accent) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lx-accent) 20%, transparent);
-}</pre>
-          </div>
-
-          <h3 id="cat-component">3.6 component · 组件与动效</h3>
-          <p>可覆盖流式输出与思维链动画类名：</p>
-          <div class="code-wrap">
-            <div class="code-header">
-              <span>packs/my-stream/pack.css</span>
-              <button type="button" class="copy-btn" data-copy-target="code-comp">复制</button>
-            </div>
-            <pre id="code-comp">/* 流式新增文字渐显 */
-.codex-text-arrival {
-  animation-duration: 180ms !important;
-}
-
-/* 思维链运行态呼吸 */
-.stream-thinking-content.is-running {
-  animation-duration: 240ms !important;
-}
-
-/* 卡片入场动效 */
-.animate-blur-in {
-  animation-duration: 200ms !important;
-}</pre>
-          </div>
-        </section>
-
-        <section id="assets-inline">
-          <h2>4. 静态资源引用与内联</h2>
-          <p>主进程在读取本地自定义扩展包的 <code>pack.css</code> 时，会自动扫描以 <code>./</code> 开头的相对路径 <code>url('./...')</code>，并将其转换为 <code>data:</code> Base64 内联到样式表中。</p>
-          <ul>
-            <li>支持的静态资源扩展名：<code>.woff2</code>、<code>.woff</code>、<code>.ttf</code>、<code>.png</code>、<code>.jpg</code>、<code>.jpeg</code>、<code>.webp</code>、<code>.svg</code>。</li>
-            <li>请使用相对路径（如 <code>url('./assets/bg.webp')</code>），不要写死本机磁盘绝对路径（<code>C:\...</code>）。</li>
-          </ul>
-        </section>
-
-        <section id="security-limits">
-          <h2>5. 安全边界与限制</h2>
-          <ul>
-            <li>本地自定义目录<strong>仅支持纯资源包</strong>（<code>manifest.json</code> + CSS + 静态字体/图片），主进程会自动拦截并拒绝执行外部 <code>.js</code> / <code>.mjs</code> 脚本。</li>
-            <li>所有资源路径均做目录穿越校验，禁止访问扩展包目录以外的文件；单个静态资源上限为 <strong>10 MB</strong>。</li>
-            <li>自定义目录中的包 <code>id</code> 建议使用独特前缀（如 <code>custom-xxx</code>），避免与内置扩展包重名。</li>
-          </ul>
-        </section>
-      </article>
-    </main>
+    <!-- 右侧正文容器 -->
+    <main class="doc-main" id="doc-content"></main>
   </div>
 
   <script>
     (function () {
-      var themeBtn = document.getElementById('toggle-theme-btn');
-      themeBtn.addEventListener('click', function () {
-        document.documentElement.classList.toggle('dark');
-      });
+      var DOCS = {
+        'load-guide': {
+          breadcrumb: ['开放文档', '快速开始', '加载自定义扩展包'],
+          title: '加载自定义扩展包',
+          updated: '最后更新于 2026-11-16',
+          lead: '通过本指南可在 LingXi 客户端中直接输入本机绝对路径或选择文件夹，加载并调试你编写的纯资源扩展包。',
+          html: [
+            '<h2>能力说明</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th colspan="2">基本</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td class="kv-key">入口位置</td><td>设置 &gt; 扩展包 &gt; 自定义本地扩展包目录</td></tr>',
+            '    <tr><td class="kv-key">加载方式</td><td><span class="badge-green">● 多包合集目录</span><span class="badge-green">● 单包根目录</span></td></tr>',
+            '    <tr><td class="kv-key">必备文件<span class="sub-note">缺一不可</span></td><td><div class="perm-item"><span class="perm-key">①</span> 扩展包清单文件 <span class="badge-cyan">manifest.json</span></div><div class="perm-item"><span class="perm-key">②</span> 样式入口文件 <span class="badge-cyan">pack.css</span></div></td></tr>',
+            '    <tr><td class="kv-key">生效机制</td><td>自动按 <span class="code-inline">category</span> 归类展示，支持跨类目叠加与重启自动恢复</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>操作步骤</h2>',
+            '<ol>',
+            '  <li>在本地磁盘准备一个目录（例如 <span class="code-inline">D:\\my-lingxi-packs</span>），放入一个或多个扩展包文件夹。</li>',
+            '  <li>打开客户端 <strong>设置 → 扩展包</strong>，在「自定义本地扩展包目录」输入框填入该绝对路径（或点击「选择文件夹」）。</li>',
+            '  <li>点击「加载」，系统会扫描目录下的全部合法扩展包，并按类目归类到上方列表。</li>',
+            '  <li>点进对应类目卡片，选择你的扩展包即可实时生效。修改本地 CSS 后，点击目录行右侧的「刷新」并重新点选一次即可热更新。</li>',
+            '</ol>',
+            '<div class="callout-box">提示：同一类目内扩展包互斥单选；不同类目（如主题 + 字体 + 背景 + 侧边栏 + 输入框）可同时叠加生效。</div>'
+          ].join('')
+        },
+        'dir-structure': {
+          breadcrumb: ['开放文档', '快速开始', '目录结构与约定'],
+          title: '目录结构与约定',
+          updated: '最后更新于 2026-11-16',
+          lead: '扩展包采用零构建、纯静态资源目录约定，无需安装 Node 或打包工具即可直接被客户端加载。',
+          html: [
+            '<h2>多包合集目录（推荐）</h2>',
+            '<p>将多个自定义扩展包放在同一个父目录下，输入父目录路径即可一次导入全部类目：</p>',
+            '<div class="code-block"><div class="code-bar"><span>目录树</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>D:\\my-lingxi-packs\\\n├── custom-ocean-theme\\\n│   ├── manifest.json\n│   └── pack.css\n├── custom-reading-font\\\n│   ├── manifest.json\n│   ├── pack.css\n│   └── fonts\\\n│       └── reading.woff2\n└── custom-wallpaper-bg\\\n    ├── manifest.json\n    ├── pack.css\n    └── assets\\\n        └── bg.webp</pre></div>',
+            '<h2>单包根目录</h2>',
+            '<p>如果只调试单个扩展包，也可以直接输入包含 <span class="code-inline">manifest.json</span> 的目录本身（例如 <span class="code-inline">D:\\my-lingxi-packs\\custom-ocean-theme</span>）。</p>'
+          ].join('')
+        },
+        'security-limits': {
+          breadcrumb: ['开放文档', '快速开始', '安全边界与限制'],
+          title: '安全边界与限制',
+          updated: '最后更新于 2026-11-16',
+          lead: '为保障桌面客户端运行安全，Electron 主进程在扫描与读取本地自定义目录时会执行严格的白名单校验。',
+          html: [
+            '<h2>校验规则</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th style="width:180px">校验项</th><th style="width:140px">约束</th><th>说明</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td>路径形式</td><td>必须为绝对路径</td><td>拒绝相对路径与包含 <span class="code-inline">..</span> 的路径穿越。</td></tr>',
+            '    <tr><td>文件类型白名单</td><td>仅静态资源</td><td>仅允许 <span class="code-inline">.json</span>、<span class="code-inline">.css</span>、字体（<span class="code-inline">.woff2/.woff/.ttf</span>）与图片，拒绝执行任何 <span class="code-inline">.js/.mjs</span> 脚本。</td></tr>',
+            '    <tr><td>单文件体积</td><td>&le; 10 MB</td><td>超出限制的字体或壁纸文件将被拒绝读取。</td></tr>',
+            '    <tr><td>包 ID 格式</td><td>小写字母与短横线</td><td>必须匹配 <span class="code-inline">^[a-z0-9][a-z0-9-]{0,62}$</span>，建议加自定义前缀防重名。</td></tr>',
+            '  </tbody>',
+            '</table>'
+          ].join('')
+        },
+        'manifest-spec': {
+          breadcrumb: ['开放文档', '核心规范', 'manifest.json 清单规范'],
+          title: 'manifest.json 清单规范',
+          updated: '最后更新于 2026-11-16',
+          lead: '每个扩展包根目录必须包含 manifest.json，用于声明扩展包元信息、所属类目以及兼容的宿主 API 版本。',
+          html: [
+            '<h2>基本</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td class="kv-key">文件位置</td><td>扩展包根目录 <span class="badge-cyan">manifest.json</span></td></tr>',
+            '    <tr><td class="kv-key">字符编码</td><td>UTF-8（无 BOM）</td></tr>',
+            '    <tr><td class="kv-key">兼容声明</td><td><span class="badge-green">● hostApiVersion: "1"</span></td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>字段说明</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th style="width:150px">名称</th><th style="width:100px">类型</th><th style="width:70px">必填</th><th>描述</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td>id</td><td>string</td><td>是</td><td>唯一标识。<br><span class="sub-note">示例值："custom-ocean-theme"</span></td></tr>',
+            '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">component</span></td></tr>',
+            '    <tr><td>name</td><td>string</td><td>是</td><td>设置页卡片展示名称。</td></tr>',
+            '    <tr><td>hostApiVersion</td><td>string</td><td>是</td><td>宿主契约版本，当前固定为 <span class="code-inline">"1"</span>。</td></tr>',
+            '    <tr><td>version</td><td>string</td><td>否</td><td>语义化版本号，默认 <span class="code-inline">"1.0.0"</span>。</td></tr>',
+            '    <tr><td>description</td><td>string</td><td>否</td><td>扩展包简要描述。</td></tr>',
+            '    <tr><td>entryCss</td><td>string</td><td>否</td><td>样式入口相对路径，默认 <span class="code-inline">"pack.css"</span>。</td></tr>',
+            '    <tr><td>capabilities</td><td>string[]</td><td>否</td><td>卡片底部展示的能力标签数组。</td></tr>',
+            '    <tr><td>preview</td><td>object</td><td>否</td><td>三色预览点：<span class="code-inline">{ canvas, surface, accent, text }</span>。</td></tr>',
+            '    <tr><td>fontPreview</td><td>object</td><td>否</td><td>字体类目样本预览：<span class="code-inline">{ sample, family }</span>。</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>manifest.json</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>{\n  "id": "custom-ocean-theme",\n  "category": "theme",\n  "name": "深海蔚蓝",\n  "description": "自定义深海蓝明暗双态主题包",\n  "version": "1.0.0",\n  "hostApiVersion": "1",\n  "capabilities": ["明暗配色", "本地定制"],\n  "preview": {\n    "canvas": "#06111c",\n    "surface": "#0b1c2c",\n    "accent": "#38bdf8",\n    "text": "#f0f9ff"\n  },\n  "entryCss": "pack.css"\n}</pre></div>'
+          ].join('')
+        },
+        'assets-inline': {
+          breadcrumb: ['开放文档', '核心规范', '静态资源引用与内联'],
+          title: '静态资源引用与内联',
+          updated: '最后更新于 2026-11-16',
+          lead: '为了在开发态（http://localhost）与打包态（file://）下均能稳定加载本地字体与图片，主进程会在读取 pack.css 时自动内联相对资源。',
+          html: [
+            '<h2>写法约定</h2>',
+            '<ul>',
+            '  <li>CSS 中引用同包目录下的字体或图片时，必须使用以 <span class="code-inline">./</span> 开头的相对路径。</li>',
+            '  <li>主进程会自动把 <span class="code-inline">url(\'./assets/bg.webp\')</span> 转换为 <span class="code-inline">url(\'data:image/webp;base64,...\')</span>。</li>',
+            '</ul>',
+            '<div class="code-block"><div class="code-bar"><span>正确的相对路径写法</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>@font-face {\n  font-family: \'CustomSans\';\n  src: url(\'./fonts/custom.woff2\');\n  font-display: swap;\n}\n\n.lx-chat-background {\n  background-image: var(--lx-canvas-image, none), url(\'./assets/wallpaper.webp\');\n}</pre></div>'
+          ].join('')
+        },
+        'overview': {
+          breadcrumb: ['开放文档', '扩展包开发', '开发前必读', '架构概述'],
+          title: '架构概述',
+          updated: '最后更新于 2026-11-16',
+          lead: 'LingXi 扩展包采用「按类目正交隔离 + 运行时单标签挂载」模型，确保任意组合切换与卸载均无样式残留。',
+          html: [
+            '<h2>核心机制</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td class="kv-key">样式挂载</td><td>每个类目分配独立 <span class="code-inline">&lt;style data-lx-pack="&lt;category&gt;"&gt;</span>，切换或停用时整块移除</td></tr>',
+            '    <tr><td class="kv-key">叠加优先级</td><td><span class="badge-cyan">theme</span> &rarr; <span class="badge-cyan">font</span> &rarr; <span class="badge-cyan">background</span> &rarr; <span class="badge-cyan">sidebar</span> &rarr; <span class="badge-cyan">input</span> &rarr; <span class="badge-cyan">component</span></td></tr>',
+            '    <tr><td class="kv-key">明暗双态</td><td>暗色变量写在 <span class="code-inline">:root</span>，亮色变量写在 <span class="code-inline">html.light, html[data-theme="light"]</span></td></tr>',
+            '  </tbody>',
+            '</table>'
+          ].join('')
+        },
+        'faq': {
+          breadcrumb: ['开放文档', '扩展包开发', '开发前必读', '常见问题'],
+          title: '常见问题',
+          updated: '最后更新于 2026-11-16',
+          lead: '整理了开发与加载自定义扩展包时的常见疑问。',
+          html: [
+            '<h3>Q1：为什么加载目录后提示「未发现合法扩展包」？</h3>',
+            '<p>请检查 <span class="code-inline">manifest.json</span> 是否包含必填字段（<span class="code-inline">id</span>、<span class="code-inline">category</span>、<span class="code-inline">name</span>），且 <span class="code-inline">hostApiVersion</span> 必须为 <span class="code-inline">"1"</span>，同时确认 JSON 语法无尾逗号或注释。</p>',
+            '<h3>Q2：为什么设置了背景扩展包却没显示？</h3>',
+            '<p>若你在「通用设置 → 主页背景」里上传过自定义图片，用户图片优先级高于扩展包背景。清除自定义背景图片后即可看到扩展包效果。</p>',
+            '<h3>Q3：为什么不建议在扩展包里修改对话区宽度？</h3>',
+            '<p>消息列表、输入区与执行控制条共用单一真源 <span class="code-inline">--container-lx-chat</span>，私自覆盖会导致上下左右不对齐。</p>'
+          ].join('')
+        },
+        'cat-theme': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '主题皮肤 (theme)'],
+          title: '主题皮肤 (theme)',
+          updated: '最后更新于 2026-11-16',
+          lead: '主题皮肤包通过覆盖 --lx-* 语义色彩令牌，同时适配暗色与亮色两种外观模式。',
+          html: [
+            '<h2>常用可覆盖令牌</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th style="width:210px">CSS 变量</th><th>用途说明</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td><span class="code-inline">--lx-canvas</span> / <span class="code-inline">--lx-canvas-subtle</span></td><td>最底层整窗画布与次级区块背景</td></tr>',
+            '    <tr><td><span class="code-inline">--lx-surface</span> / <span class="code-inline">--lx-surface-elevated</span></td><td>常规卡片表面与浮层/弹窗表面</td></tr>',
+            '    <tr><td><span class="code-inline">--lx-border-subtle</span> / <span class="code-inline">--lx-border-focus</span></td><td>分隔线边框与聚焦高亮边框</td></tr>',
+            '    <tr><td><span class="code-inline">--lx-accent</span> / <span class="code-inline">--lx-accent-soft</span></td><td>品牌强调色（按钮、选中态）与柔和底色</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>theme / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>:root {\n  --lx-canvas: #06111c;\n  --lx-surface: #0b1c2c;\n  --lx-accent: #0ea5e9;\n  --lx-accent-hover: #38bdf8;\n  --lx-accent-soft: rgba(14, 165, 233, 0.16);\n}\n\nhtml.light,\nhtml[data-theme="light"] {\n  --lx-canvas: #f2f9ff;\n  --lx-surface: #ffffff;\n  --lx-accent: #0284c7;\n  --lx-accent-soft: rgba(2, 132, 199, 0.12);\n}</pre></div>'
+          ].join('')
+        },
+        'cat-font': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '文字字体 (font)'],
+          title: '文字字体 (font)',
+          updated: '最后更新于 2026-11-16',
+          lead: '字体包可独立替换正文字体与代码等宽字体族，与任何主题皮肤叠加生效。',
+          html: [
+            '<h2>核心变量</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td class="kv-key">正文字体变量</td><td><span class="code-inline">--font-sans</span>（同时建议配合 <span class="code-inline">body { font-family: var(--font-sans); }</span>）</td></tr>',
+            '    <tr><td class="kv-key">代码字体变量</td><td><span class="code-inline">--font-lx-code</span>（作用于 Markdown 代码块与 Diff 视图）</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>font / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>@font-face {\n  font-family: \'CustomReadingSans\';\n  src: url(\'./fonts/reading.woff2\');\n  font-display: swap;\n}\n\n:root {\n  --font-sans: \'CustomReadingSans\', \'PingFang SC\', sans-serif;\n  --font-lx-code: \'JetBrains Mono\', Consolas, monospace;\n}\n\nbody {\n  font-family: var(--font-sans);\n}</pre></div>'
+          ].join('')
+        },
+        'cat-background': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '主页背景 (background)'],
+          title: '主页背景 (background)',
+          updated: '最后更新于 2026-11-16',
+          lead: '主页背景容器由 .lx-chat-background 承担，支持渐变光晕、点阵图案或本地图片壁纸。',
+          html: [
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>background / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>.lx-chat-background {\n  background-image:\n    var(--lx-canvas-image, none),\n    radial-gradient(circle at 20% 15%, color-mix(in srgb, var(--lx-accent) 26%, transparent) 0%, transparent 45%),\n    radial-gradient(circle at 80% 85%, color-mix(in srgb, var(--lx-info) 20%, transparent) 0%, transparent 50%);\n}</pre></div>'
+          ].join('')
+        },
+        'cat-sidebar': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '侧边栏 (sidebar)'],
+          title: '侧边栏 (sidebar)',
+          updated: '最后更新于 2026-11-16',
+          lead: '侧边栏扩展包用于调整侧边栏容器的圆角、毛玻璃、边框或导轨样式。',
+          html: [
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>sidebar / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>aside.border-r {\n  margin: 8px 0 8px 8px;\n  height: calc(100% - 16px) !important;\n  border-radius: 18px;\n  border: 1px solid var(--lx-border-subtle) !important;\n  background-color: color-mix(in srgb, var(--lx-surface) 82%, transparent) !important;\n  backdrop-filter: blur(18px);\n  box-shadow: var(--lx-shadow-2);\n}</pre></div>'
+          ].join('')
+        },
+        'cat-input': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '输入框 (input)'],
+          title: '输入框 (input)',
+          updated: '最后更新于 2026-11-16',
+          lead: '输入框扩展包通过 [data-slot="chat-input-card"] 锚点定制输入卡片的圆角、毛玻璃与聚焦态效果。',
+          html: [
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>input / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>[data-slot="chat-input-card"] {\n  --pb-radius: 24px;\n  border-radius: 24px !important;\n  background: color-mix(in srgb, var(--lx-surface-elevated) 78%, transparent) !important;\n  backdrop-filter: blur(18px);\n  border: 1px solid var(--lx-border-default) !important;\n}\n\n[data-slot="chat-input-card"]:focus-within {\n  border-color: var(--lx-accent) !important;\n  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lx-accent) 20%, transparent);\n}</pre></div>'
+          ].join('')
+        },
+        'cat-component': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '组件与动效 (component)'],
+          title: '组件与动效 (component)',
+          updated: '最后更新于 2026-11-16',
+          lead: '组件与动效类目可覆盖流式输出、思维链呼吸与卡片入场动画的节奏。',
+          html: [
+            '<h2>可用动画类名</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th style="width:260px">类名</th><th>对应效果</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td><span class="code-inline">.codex-text-arrival</span></td><td>流式新增文本片段的渐显入场动画</td></tr>',
+            '    <tr><td><span class="code-inline">.stream-thinking-content.is-running</span></td><td>思维链折叠块运行态呼吸动画</td></tr>',
+            '    <tr><td><span class="code-inline">.animate-blur-in</span></td><td>独立消息卡片与流程块入场动画</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>component / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>.codex-text-arrival {\n  animation-duration: 120ms !important;\n}\n\n.stream-thinking-content.is-running {\n  animation-duration: 160ms !important;\n}</pre></div>'
+          ].join('')
+        }
+      };
 
-      var copyButtons = document.querySelectorAll('.copy-btn');
-      copyButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var targetId = btn.getAttribute('data-copy-target');
-          var el = targetId ? document.getElementById(targetId) : null;
-          if (!el) return;
-          navigator.clipboard.writeText(el.textContent || '').then(function () {
-            var prev = btn.textContent;
-            btn.textContent = '已复制';
-            setTimeout(function () { btn.textContent = prev; }, 1400);
+      var contentEl = document.getElementById('doc-content');
+      var leafButtons = Array.prototype.slice.call(document.querySelectorAll('.nav-leaf[data-doc]'));
+
+      function renderDoc(docId) {
+        var doc = DOCS[docId] || DOCS['load-guide'];
+        var crumbs = doc.breadcrumb.map(function (item, idx) {
+          return idx === 0 ? '<span>' + item + '</span>' : '<span class="sep">&gt;</span><span>' + item + '</span>';
+        }).join('');
+
+        contentEl.innerHTML =
+          '<div class="breadcrumb">' + crumbs + '</div>' +
+          '<h1 class="doc-title">' + doc.title + '</h1>' +
+          '<div class="doc-updated">' + doc.updated + '</div>' +
+          '<p class="doc-lead">' + doc.lead + '</p>' +
+          doc.html;
+
+        leafButtons.forEach(function (btn) {
+          btn.classList.toggle('is-active', btn.getAttribute('data-doc') === docId);
+        });
+
+        var copyButtons = contentEl.querySelectorAll('[data-copy]');
+        copyButtons.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var block = btn.closest('.code-block');
+            var pre = block ? block.querySelector('pre') : null;
+            if (!pre) return;
+            navigator.clipboard.writeText(pre.textContent || '').then(function () {
+              btn.textContent = '已复制';
+              setTimeout(function () { btn.textContent = '复制'; }, 1200);
+            });
           });
+        });
+
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }
+
+      document.querySelectorAll('[data-section] > .nav-section-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          btn.parentElement.classList.toggle('is-collapsed');
         });
       });
 
-      var links = Array.prototype.slice.call(document.querySelectorAll('.outline-link'));
-      var sections = links.map(function (link) {
-        var id = (link.getAttribute('href') || '').slice(1);
-        return { link: link, target: document.getElementById(id) };
-      }).filter(function (item) { return Boolean(item.target); });
+      document.querySelectorAll('[data-group] > .nav-group-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          btn.parentElement.classList.toggle('is-open');
+        });
+      });
 
-      window.addEventListener('scroll', function () {
-        var current = sections[0];
-        var offset = 110;
-        for (var i = 0; i < sections.length; i++) {
-          var rect = sections[i].target.getBoundingClientRect();
-          if (rect.top <= offset) current = sections[i];
-        }
-        links.forEach(function (l) { l.classList.remove('active'); });
-        if (current) current.link.classList.add('active');
-      }, { passive: true });
+      leafButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          renderDoc(btn.getAttribute('data-doc'));
+        });
+      });
+
+      renderDoc('load-guide');
     })();
   </script>
 </body>
