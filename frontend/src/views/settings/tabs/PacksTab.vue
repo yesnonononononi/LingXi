@@ -115,8 +115,12 @@ const handlePickCustomDir = async (): Promise<void> => {
 const handleOpenPacksGuide = async (): Promise<void> => {
   const api = typeof window !== 'undefined' ? window.electronAPI?.packs : undefined;
   if (api?.openGuide) {
-    await api.openGuide();
-    return;
+    try {
+      const res = await api.openGuide();
+      if (res?.ok) return;
+    } catch {
+      // 主进程未重启导致新 IPC 尚未注册时，退回 window.open 由 setWindowOpenHandler 转调系统浏览器
+    }
   }
   if (typeof window !== 'undefined') {
     window.open('/docs/extension-packs-guide.html', '_blank', 'noopener');
