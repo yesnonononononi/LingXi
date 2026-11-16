@@ -6,7 +6,7 @@
  * 整盘普通目录可写。安全中心的「实际效果」文案键因此按 {@code 档位 + 环境} 组合生成。</p>
  *
  * <p>输入区上拉框是例外：档位说明只讲档位本身（`accessMenuDesc*`），环境差异收敛到标题旁的
- * 常驻感叹号悬停提示，免得每档都拖一条长尾巴。</p>
+ * 常驻感叹号悬停提示（按环境分身：沙箱只拦终端、不拦文件读写），免得每档都拖一条长尾巴。</p>
  *
  * <p>组合式文案键绕过了 TS 的字面量检查，所以这里同时断言 messages.ts 里**两个语种**都真有这些键，
  * 否则界面会渲染出裸键名而不是文案。</p>
@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   isAccessModeMismatch,
+  isFullAccessMode,
   isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
   resolveAccessImpactKey,
@@ -24,6 +25,7 @@ import {
   resolveAccessPreset,
   resolveAccessTipKey,
   resolveSandboxState,
+  resolveTerminalCaveatKey,
 } from '../src/utils/accessModePresentation';
 
 const messagesSource = readFileSync(resolve(process.cwd(), 'src/i18n/messages.ts'), 'utf8');
@@ -115,8 +117,32 @@ test('「终端在非沙箱环境不受档位约束」必须由真源判定', ()
   assert.equal(isTerminalOutsideAccessControl('UNSET'), true);
   assert.equal(isTerminalOutsideAccessControl('ON'), false);
   assert.match(menuSource, /isTerminalOutsideAccessControl\(/, '菜单必须走真源判据');
-  const caveatHits = messagesSource.match(/\baccessMenuTerminalCaveat:/g) ?? [];
-  assert.equal(caveatHits.length, 2, `accessMenuTerminalCaveat 应在两个语种里各出现一次，实际 ${caveatHits.length} 次`);
+});
+
+test('悬停说明按环境分开讲「沙箱拦谁」，不得再用一句糊住两种环境', () => {
+  assert.equal(resolveTerminalCaveatKey('ON'), 'chat.input.accessMenuTerminalCaveatSandbox');
+  assert.equal(resolveTerminalCaveatKey('OFF'), 'chat.input.accessMenuTerminalCaveatLocal');
+  assert.equal(resolveTerminalCaveatKey('UNSET'), 'chat.input.accessMenuTerminalCaveatLocal');
+  // 金丝雀：先证明读到了组件源码，否则下面的「走真源」可能是假绿
+  assert.match(menuSource, /data-testid="chat-access-terminal-caveat"/, '菜单缺少终端提示图标');
+  assert.match(menuSource, /resolveTerminalCaveatKey\(/, '悬停说明必须走按环境分身的真源');
+  assert.doesNotMatch(menuSource, /accessMenuTerminalCaveat/, '组件不得直连悬停文案键（等于把环境判断写死）');
+  for (const key of ['accessMenuTerminalCaveatSandbox', 'accessMenuTerminalCaveatLocal']) {
+    const hits = messagesSource.match(new RegExp(`\\b${key}:`, 'g')) ?? [];
+    assert.equal(hits.length, 2, `文案键 ${key} 应在 zh-CN 与 en-US 里各出现一次，实际 ${hits.length} 次`);
+  }
+});
+
+test('「完全访问」行右侧必须常驻终端限制说明', () => {
+  // 完全访问只放开文件工具，终端命令仍在沙箱与终端规则里：没有这枚提示，档位说明就是在撒谎
+  assert.equal(isFullAccessMode('FULL_ACCESS'), true);
+  assert.equal(isFullAccessMode('APPROVAL_REQUIRED'), false);
+  assert.equal(isFullAccessMode('DELEGATED_APPROVAL'), false);
+  assert.equal(isFullAccessMode(undefined), false);
+  assert.match(menuSource, /data-testid="chat-access-full-terminal-caveat"/, '完全访问行缺少终端限制提示');
+  assert.match(menuSource, /isFullAccessMode\(/, '完全访问判定必须走真源，不得内联比较档位字面量');
+  const hits = messagesSource.match(/\baccessMenuFullTerminalCaveat:/g) ?? [];
+  assert.equal(hits.length, 2, `accessMenuFullTerminalCaveat 应在两个语种里各出现一次，实际 ${hits.length} 次`);
 });
 
 test('安全中心与输入区消费同一份真源，不得各自硬编码档位判断', () => {

@@ -5,8 +5,8 @@
  * <p>档位名与警示判据全部读 `accessModePresentation`，与安全中心共用同一份真源：
  * 本地环境没有沙箱，只读档只剩「文件工具被禁用」，这里也必须照实说。</p>
  *
- * <p>「终端管不住」这条约束对所有本地档位都成立，所以不写在每一档下面，改成标题旁常驻的感叹号悬停说明；
- * 非沙箱环境下图标转成警示色，提示这份权限清单本身就是漏的。</p>
+ * <p>「沙箱拦得住谁」这条约束不分档位、只分环境，所以不写在每一档下面，改成标题旁常驻的感叹号悬停说明：
+ * 沙箱里它拦终端不拦文件，本地两个都不拦。非沙箱环境下图标转成警示色，提示这份权限清单本身就是漏的。</p>
  *
  * <p>本组件不写配置：选中只是 emit 意图，由宿主落到 userConfig。档位是全局安全策略，
  * 输入区自己缓存一份就会和安全中心分叉。</p>
@@ -17,11 +17,13 @@ import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
 import type {AgentPermissionMode, WorkspaceEnvType} from '../../types/chat';
 import {
   isAccessModeMismatch,
+  isFullAccessMode,
   isTerminalOutsideAccessControl,
   resolveAccessBadgeKey,
   resolveAccessMenuDescKey,
   resolveAccessPreset,
   resolveSandboxState,
+  resolveTerminalCaveatKey,
 } from '../../utils/accessModePresentation';
 import {MUTED} from '../../utils/promptBarStyles';
 import {t} from '../../i18n';
@@ -48,6 +50,9 @@ const isSelected = (mode: AgentPermissionMode): boolean =>
 /** 终端不受档位约束时的悬停提示：档位文案里不再重复这段长句，改成标题旁常驻感叹号的悬停说明。 */
 const terminalCaveatVisible = computed<boolean>(() => isTerminalOutsideAccessControl(sandboxState.value));
 
+/** 悬停文案随环境切换：沙箱只拦终端，本地谁都拦不住。 */
+const terminalCaveat = computed<string>(() => t(resolveTerminalCaveatKey(sandboxState.value)));
+
 const modeLabel = (mode: AgentPermissionMode): string => t(resolveAccessBadgeKey(mode));
 
 const modeImpact = (mode: AgentPermissionMode): string => t(resolveAccessMenuDescKey(mode));
@@ -68,8 +73,8 @@ const modeWarn = (mode: AgentPermissionMode): boolean => isAccessModeMismatch(mo
       <span
         class="inline-grid shrink-0 place-items-center cursor-help"
         :class="terminalCaveatVisible ? 'text-amber-500' : MUTED"
-        :title="t('chat.input.accessMenuTerminalCaveat')"
-        :aria-label="t('chat.input.accessMenuTerminalCaveat')"
+        :title="terminalCaveat"
+        :aria-label="terminalCaveat"
         data-testid="chat-access-terminal-caveat"
       >
         <HugeiconsIcon :icon="AlertCircleIcon as IconArray" :size="12" :stroke-width="2" />
@@ -99,6 +104,17 @@ const modeWarn = (mode: AgentPermissionMode): boolean => isAccessModeMismatch(mo
         :stroke-width="2.5"
         class="shrink-0 mt-0.5 [color:var(--pb-ink)]"
       />
+      <!-- 完全访问只放开文件工具，终端命令仍在沙箱与终端规则手里：行右侧常驻说明，别让人以为「免审批 = 无所不能」 -->
+      <span
+        v-if="isFullAccessMode(mode)"
+        class="inline-grid shrink-0 place-items-center mt-0.5 cursor-help"
+        :class="MUTED"
+        :title="t('chat.input.accessMenuFullTerminalCaveat')"
+        :aria-label="t('chat.input.accessMenuFullTerminalCaveat')"
+        data-testid="chat-access-full-terminal-caveat"
+      >
+        <HugeiconsIcon :icon="AlertCircleIcon as IconArray" :size="11" :stroke-width="2" />
+      </span>
     </button>
 
     <div class="mt-1 pt-1 border-t border-black/5 dark:border-white/5">

@@ -25,6 +25,11 @@ export function resolveAccessPreset(mode?: AgentPermissionMode | string | null):
   return 'ApprovalRequired';
 }
 
+/** 「完全访问」也不等于终端免限：终端命令照样可能被沙箱与终端规则拦住，行右侧要常驻说明。 */
+export function isFullAccessMode(mode?: AgentPermissionMode | string | null): boolean {
+  return resolveAccessPreset(mode) === 'Full';
+}
+
 /**
  * 可选三档均允许在工作区内写入，不存在「以为只读其实可写」的误导组合。
  */
@@ -41,6 +46,14 @@ export function isAccessModeMismatch(
  */
 export function isTerminalOutsideAccessControl(state: SandboxState): boolean {
   return state !== 'ON';
+}
+
+/**
+ * 标题旁感叹号的悬停说明：两个环境下「拦得住谁」正好相反，必须分开说。
+ * 沙箱不拦文件读写（边界只由档位管的文件工具把着），终端命令才在沙箱里受约束。
+ */
+export function resolveTerminalCaveatKey(state: SandboxState): string {
+  return `chat.input.accessMenuTerminalCaveat${state === 'ON' ? 'Sandbox' : 'Local'}`;
 }
 
 /** 安全中心「实际效果」说明的文案键。 */
