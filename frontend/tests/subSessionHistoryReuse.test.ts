@@ -159,8 +159,10 @@ test('3. useChatHistory.reconcileSessionAfterStream：树对账不丢子会话�
     data: { records: [], messages: [], turns: {}, nextCursor: null, hasMore: false }
   });
 
+  const messagesBefore = localSessions.value[0].messages;
   await history.reconcileSessionAfterStream('root-1');
 
+  assert.equal(localSessions.value[0].messages, messagesBefore, '无合成失败气泡时对账应保留原消息数组引用');
   const sub = localSessions.value[0].subSessions?.[0];
   assert.ok(sub);
   assert.equal(sub.messages?.length, 1, '子会话已加载历史必须在对账后保留');

@@ -17,8 +17,7 @@ import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.*;
@@ -129,7 +128,7 @@ class RequestPreparerExecutionIdentityTest {
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(mcpService.currentConfig()).thenReturn(null);
         when(workspaceConverter.toSpec(any(com.summit.dp.shared.vo.WorkspaceVO.class),
-                any(com.summit.dp.shared.model.WorkspaceType.class), any(AgentAccessMode.class))).thenReturn(null);
+                any(com.summit.dp.shared.model.WorkspaceType.class), any(AgentPermissionMode.class))).thenReturn(null);
         when(toolCatalog.names()).thenReturn(java.util.Set.of());
         when(toolCatalog.readOnlyNames()).thenReturn(java.util.Set.of());
     }
@@ -139,30 +138,30 @@ class RequestPreparerExecutionIdentityTest {
     }
 
     @Test
-    void readOnlyModeRetainsBackgroundControlAlongsideTerminalExecution() {
+    void readOnlyReviewModeStripsTerminalAndEditTools() {
         when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.LOCAL,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, null, null, null, null, null, null, 10)));
+                AgentPermissionMode.READ_ONLY_REVIEW, null, null, null, null, null, null, 10)));
         RuntimeContext context = preparer.prepare(command());
         List<String> tools = preparer.buildRequest("prompt", context, ToolCatalog.DEFAULT_AGENT_TOOLS).getToolList();
-        assertTrue(tools.contains(ToolCatalog.EXECUTE_COMMAND));
-        assertTrue(tools.contains(ToolCatalog.MANAGE_COMMAND));
-        assertTrue(!tools.contains(ToolCatalog.EDIT_FILE));
+        assertFalse(tools.contains(ToolCatalog.EXECUTE_COMMAND));
+        assertFalse(tools.contains(ToolCatalog.MANAGE_COMMAND));
+        assertFalse(tools.contains(ToolCatalog.EDIT_FILE));
     }
 
     @Test
     void sandboxFullAccessSurvivesPreparationAndRequestAttributes() {
         WorkspaceVO workspace = WorkspaceVO.builder().id(9L).name("project").hostDir("/project").workDir("/project").build();
         when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.SAND_BOX,
-                AgentAccessMode.OUT_OF_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, null, null, null, null, null, null, 10)));
+                AgentPermissionMode.FULL_ACCESS, null, null, null, null, null, null, 10)));
         when(sessionService.findById(SESSION_ID)).thenReturn(Result.success(SessionVO.builder().id(SESSION_ID).workspaceId(9L).build()));
         when(workspaceService.findById(9L)).thenReturn(Result.success(workspace));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.SAND_BOX);
         RuntimeContext context = preparer.prepare(command());
-        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE, context.accessMode());
-        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE, context.executionContext().accessMode());
-        verify(workspaceConverter).toSpec(workspace, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
-        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE,
-                AgentAccessMode.from(preparer.buildRequest("prompt", context, List.of()).runtimeParametersOrDefault().getAttributes()));
+        assertEquals(AgentPermissionMode.FULL_ACCESS, context.permissionMode());
+        assertEquals(AgentPermissionMode.FULL_ACCESS, context.executionContext().permissionMode());
+        verify(workspaceConverter).toSpec(workspace, WorkspaceType.SAND_BOX, AgentPermissionMode.FULL_ACCESS);
+        assertEquals(AgentPermissionMode.FULL_ACCESS,
+                AgentPermissionMode.from(preparer.buildRequest("prompt", context, List.of()).runtimeParametersOrDefault().getAttributes()));
     }
 
     @Test
@@ -227,10 +226,10 @@ class RequestPreparerExecutionIdentityTest {
     @DisplayName("执行身份缺失时直接失败：不悄悄另造一个（否则消息与执行会对不上）")
     void buildRequestRejectsMissingExecutionId() {
         ExecutionContext identity = ExecutionContext.root(SESSION_ID, null, null, MODEL_ID,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                AgentPermissionMode.FULL_ACCESS);
         RuntimeContext context = new RuntimeContext(identity, null, null,
                 SessionVO.builder().id(SESSION_ID).build(), List.of(), null, null,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false, null);
+                AgentPermissionMode.FULL_ACCESS, false, null);
 
         assertThrows(IllegalStateException.class, () -> preparer.buildRequest("prompt", context, List.of()));
     }
@@ -241,7 +240,7 @@ class RequestPreparerExecutionIdentityTest {
         RuntimeContext context = preparer.prepare(command());
         RuntimeContext withoutPending = new RuntimeContext(context.executionContext(), context.agentId(),
                 context.teamId(), context.session(), context.messageList(), context.workspace(),
-                context.modelConfig(), context.accessMode(), context.commandApprovalPolicy(),
+                context.modelConfig(), context.permissionMode(),
                 context.requirePlan(), null);
 
         preparer.commitUserMessage(withoutPending);

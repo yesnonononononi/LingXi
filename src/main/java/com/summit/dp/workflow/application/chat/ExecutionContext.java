@@ -1,8 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,31 +28,29 @@ public record ExecutionContext(
         Long workspaceId,
         /* 本次生效的模型配置 ID；可为 null（走兜底）。 */
         Long modelConfigId,
-        /* 生效的访问权限档位。 */
-        AgentAccessMode accessMode,
-        /* 生效的命令审批档位。 */
-        CommandApprovalPolicy approvalPolicy
+        /* 生效的统一总权限档位。 */
+        AgentPermissionMode permissionMode
 ) {
 
     /** 根任务上下文：rootSessionId 即 sessionId，rootExecutionId 为 null。 */
     public static ExecutionContext root(long sessionId, String executionId,
                                         Long workspaceId, Long modelConfigId,
-                                        AgentAccessMode mode, CommandApprovalPolicy policy) {
+                                        AgentPermissionMode permissionMode) {
         return new ExecutionContext(sessionId, sessionId, executionId, null,
-                workspaceId, modelConfigId, mode, policy);
+                workspaceId, modelConfigId, permissionMode);
     }
 
     /** 派生：补齐执行 ID（{@code buildRequest} 生成雪花 ID 后的不可变更新）。 */
     public ExecutionContext withExecutionId(String executionId) {
         return new ExecutionContext(sessionId, rootSessionId, executionId, rootExecutionId,
-                workspaceId, modelConfigId, accessMode, approvalPolicy);
+                workspaceId, modelConfigId, permissionMode);
     }
 
     /** 子任务上下文：回指父任务的根会话与根执行。 */
     public ExecutionContext child(long childSessionId, String childExecutionId, Long childWorkspaceId,
-                                  Long childModelConfigId, AgentAccessMode mode, CommandApprovalPolicy policy) {
+                                  Long childModelConfigId, AgentPermissionMode permissionMode) {
         return new ExecutionContext(childSessionId, this.rootSessionId, childExecutionId, this.executionId,
-                childWorkspaceId, childModelConfigId, mode, policy);
+                childWorkspaceId, childModelConfigId, permissionMode);
     }
 
     /**
@@ -74,8 +71,7 @@ public record ExecutionContext(
         if (modelConfigId != null) {
             attributes.put(ExecutionAttributes.MODEL_CONFIG_ID, modelConfigId.toString());
         }
-        attributes.putAll(AgentAccessMode.toAttributes(accessMode));
-        attributes.putAll(CommandApprovalPolicy.toAttributes(approvalPolicy));
+        attributes.putAll(AgentPermissionMode.toAttributes(permissionMode));
         return Map.copyOf(attributes);
     }
 }

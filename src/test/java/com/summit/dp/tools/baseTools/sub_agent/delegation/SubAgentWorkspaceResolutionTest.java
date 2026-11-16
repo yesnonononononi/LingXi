@@ -16,7 +16,7 @@ import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
@@ -71,7 +71,7 @@ class SubAgentWorkspaceResolutionTest {
         when(workspaceService.findByDir("/t05_ws")).thenReturn(Result.success(null));
         when(workspaceService.findById(1L)).thenReturn(Result.success(parentVo));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.SAND_BOX);
-        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class), any(AgentAccessMode.class))).thenReturn(spec);
+        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class), any(AgentPermissionMode.class))).thenReturn(spec);
 
         WorkspaceSpec resolved = buildWithWorkDir("/t05_ws", parent, 1L);
 
@@ -91,7 +91,7 @@ class SubAgentWorkspaceResolutionTest {
 
         when(workspaceService.findByDir("/host/dir")).thenReturn(Result.success(matched));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.LOCAL);
-        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class), any(AgentAccessMode.class))).thenReturn(spec);
+        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class), any(AgentPermissionMode.class))).thenReturn(spec);
 
         WorkspaceSpec resolved = buildWithWorkDir("/host/dir", parent, 1L);
 
@@ -110,10 +110,10 @@ class SubAgentWorkspaceResolutionTest {
         when(parent.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().isolated(true).build());
         when(workspaceService.findById(1L)).thenReturn(Result.success(parentVo));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.LOCAL);
-        when(workspaceConverter.toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE)).thenReturn(spec);
-        WorkspaceSpec resolved = buildWithWorkDir(null, parent, 1L, AgentAccessMode.READ_ONLY_IN_WORKSPACE);
+        when(workspaceConverter.toSpec(parentVo, WorkspaceType.SAND_BOX, AgentPermissionMode.READ_ONLY_REVIEW)).thenReturn(spec);
+        WorkspaceSpec resolved = buildWithWorkDir(null, parent, 1L, AgentPermissionMode.READ_ONLY_REVIEW);
         assertSame(spec, resolved);
-        verify(workspaceConverter).toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE);
+        verify(workspaceConverter).toSpec(parentVo, WorkspaceType.SAND_BOX, AgentPermissionMode.READ_ONLY_REVIEW);
     }
 
     @Test
@@ -124,9 +124,9 @@ class SubAgentWorkspaceResolutionTest {
         when(parent.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().isolated(true).build());
         when(workspaceService.findById(1L)).thenReturn(Result.success(parentVo));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.LOCAL);
-        when(workspaceConverter.toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE)).thenReturn(spec);
-        assertSame(spec, buildWithWorkDir(null, parent, 1L, AgentAccessMode.OUT_OF_WORKSPACE));
-        verify(workspaceConverter).toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
+        when(workspaceConverter.toSpec(parentVo, WorkspaceType.SAND_BOX, AgentPermissionMode.FULL_ACCESS)).thenReturn(spec);
+        assertSame(spec, buildWithWorkDir(null, parent, 1L, AgentPermissionMode.FULL_ACCESS));
+        verify(workspaceConverter).toSpec(parentVo, WorkspaceType.SAND_BOX, AgentPermissionMode.FULL_ACCESS);
     }
 
     @Test
@@ -141,10 +141,10 @@ class SubAgentWorkspaceResolutionTest {
 
     /** 经 build 走完整链路，断言最终落到请求上的 workspaceSpec。 */
     private WorkspaceSpec buildWithWorkDir(String workDir, Workspace parentWorkspace, Long parentWorkspaceId) {
-        return buildWithWorkDir(workDir, parentWorkspace, parentWorkspaceId, AgentAccessMode.IN_WORKSPACE);
+        return buildWithWorkDir(workDir, parentWorkspace, parentWorkspaceId, AgentPermissionMode.APPROVAL_REQUIRED);
     }
 
-    private WorkspaceSpec buildWithWorkDir(String workDir, Workspace parentWorkspace, Long parentWorkspaceId, AgentAccessMode accessMode) {
+    private WorkspaceSpec buildWithWorkDir(String workDir, Workspace parentWorkspace, Long parentWorkspaceId, AgentPermissionMode accessMode) {
         AgentVO member = new AgentVO();
         member.setId(6L);
         member.setName("架构师");
@@ -160,13 +160,13 @@ class SubAgentWorkspaceResolutionTest {
                 .executionId("900")
                 .workspace(parentWorkspace)
                 .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3",
-                        AgentAccessMode.ATTRIBUTE_KEY, accessMode.name()))
+                        AgentPermissionMode.ATTRIBUTE_KEY, accessMode.name()))
                 .build();
 
         AgentRequest request = factory.build(argument, member, TeamVO.builder().id(3L).commanderAgentId(5L)
                 .agents(List.of(member)).build(), toolExecution, workDir, "1234", parentWorkspaceId, List.of());
         lastRequest = request;
-        assertEquals(accessMode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
+        assertEquals(accessMode, AgentPermissionMode.from(request.runtimeParametersOrDefault().getAttributes()));
         return request.getWorkspaceSpec();
     }
 }

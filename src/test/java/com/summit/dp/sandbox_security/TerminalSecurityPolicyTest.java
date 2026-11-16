@@ -16,7 +16,7 @@ import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.decision.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
@@ -118,15 +118,15 @@ class TerminalSecurityPolicyTest {
     }
     @Test void fullAccessIgnoresPresetsButRetainsCustomDenials() {
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(SecurityRulePresets.defaults(SecurityCategory.TERMINAL));
-        assertNull(policy.evaluate("wsl --status", CommandApprovalPolicy.FULL_ACCESS));
-        assertNull(policy.evaluate("reg query HKCU", CommandApprovalPolicy.FULL_ACCESS));
+        assertNull(policy.evaluate("wsl --status", AgentPermissionMode.FULL_ACCESS));
+        assertNull(policy.evaluate("reg query HKCU", AgentPermissionMode.FULL_ACCESS));
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(rule("reg query", "PREFIX", SecurityAction.DENY)));
-        assertEquals(SecurityAction.DENY, policy.evaluate("reg query HKCU", CommandApprovalPolicy.FULL_ACCESS).action());
+        assertEquals(SecurityAction.DENY, policy.evaluate("reg query HKCU", AgentPermissionMode.FULL_ACCESS).action());
     }
     @Test void approvedWslInFullAccessReachesTheMockBridgeDespiteOldPresets() throws Exception {
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(SecurityRulePresets.defaults(SecurityCategory.TERMINAL));
         ToolExecution call = call("wsl --status");
-        call.setAttributes(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.FULL_ACCESS));
+        call.setAttributes(AgentPermissionMode.toAttributes(AgentPermissionMode.FULL_ACCESS));
         WorkspaceCommands commands = mock(WorkspaceCommands.class);
         when(call.getWorkspace().bridge().commands()).thenReturn(commands);
         when(commands.execute(anyString(), any(), any(), any(), anyLong(), any(), anyLong()))

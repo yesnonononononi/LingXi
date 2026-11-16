@@ -4,7 +4,7 @@ import type {SecurityAction, SecurityCategory, SecurityRule, SecurityRuleView} f
 import {SecurityRulesAPI} from '../../../services/securityRules';
 import {isOk} from '../../../utils/api';
 import {useI18n} from '../../../i18n';
-import type {AgentAccessMode, CommandApprovalPolicyType} from '../../../types/chat';
+import type {AgentPermissionMode} from '../../../types/chat';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import {useSecurityCopy} from './securityCopy';
 import {useSandboxSettings} from './useSandboxSettings';
@@ -16,18 +16,10 @@ const {
   sandboxState,
   isSavingEnv,
   setSandboxEnabled,
-  sandboxStatus,
-  isCheckingSandbox,
-  sandboxError,
-  sandboxNotice,
-  checkSandboxService,
-  accessMode,
-  accessModeOptions,
-  accessModeImpact,
-  handleSelectAccessMode,
-  commandApprovalPolicy,
-  commandApprovalPolicyOptions,
-  handleSelectCommandApprovalPolicy,
+  permissionMode,
+  permissionModeOptions,
+  permissionModeImpact,
+  handleSelectPermissionMode,
 } = useSandboxSettings(() => emit('modelUpdated'));
 
 /* 首层是策略清单，第二层才是某一类规则的编辑器 */
@@ -102,8 +94,7 @@ function setAccess(rule: SecurityRule, value: string) { rule.read = value as Sec
 function setAction(rule: SecurityRule, value: string) { rule.action = value as SecurityAction; change(); }
 /* 下拉回传的是字符串，收窄成联合类型这件事放在这里做，模板里不写类型断言 */
 function selectMatchType(value: string) { matchType.value = value === 'PROGRAM' ? 'PROGRAM' : 'PREFIX'; }
-function selectAccessMode(value: string) { void handleSelectAccessMode(value as AgentAccessMode); }
-function selectCommandPolicy(value: string) { void handleSelectCommandApprovalPolicy(value as CommandApprovalPolicyType); }
+function selectPermissionMode(value: string) { void handleSelectPermissionMode(value as AgentPermissionMode); }
 function add() {
   if (!pattern.value.trim()) { error.value = copy.value.invalidPattern; return; }
   if (!current.value || category.value === 'net') return;
@@ -172,19 +163,6 @@ void load();
           </div>
         </div>
 
-        <!-- 沙箱服务能力检查（随沙箱设置一起从通用页搬来） -->
-        <div class="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
-          <span class="flex min-w-0 items-center gap-1.5 text-lx-fs-sm leading-5 text-lx-muted">
-            <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-white/20']" aria-hidden="true" />
-            <span class="min-w-0">{{ t('settings.general.sandboxService') }}：{{ sandboxStatus?.message || t('settings.general.sandboxServiceDesc') }}</span>
-          </span>
-          <button type="button" :class="[button, 'shrink-0']" :disabled="isCheckingSandbox" data-testid="security-check-service" @click="checkSandboxService">
-            {{ isCheckingSandbox ? t('settings.general.sandboxChecking') : t('settings.general.sandboxCheck') }}
-          </button>
-        </div>
-        <p v-if="isCheckingSandbox" class="mt-2 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
-        <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-lx-fs-sm text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
-        <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-lx-fs-sm text-red-600 dark:text-red-400">{{ sandboxError }}</div>
         <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-zinc-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
           <p class="text-lx-fs-sm font-medium text-lx-tertiary">{{ copy.scope }}</p>
           <p class="mt-1 text-lx-fs-sm leading-5 text-lx-muted">{{ copy.fileLimits }}</p>
@@ -217,41 +195,29 @@ void load();
       </div>
       <p class="sec-rise text-lx-fs-sm leading-5 text-lx-muted" :style="{ '--sec-delay': '40ms' }">{{ hint }}</p>
 
-      <!-- 该类规则的默认策略（随沙箱设置一起从通用页搬来）：规则未命中时按它执行 -->
-      <section v-if="category === 'files'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
+      <!-- 统一会话权限策略：同时控制命令审批与工作区边界 -->
+      <section v-if="category === 'files' || category === 'terminal'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
-            <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
-            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
+            <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.permissionMode') }}</span>
+            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.permissionModeDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
-            <SettingsSelect id="security-access-mode" data-testid="security-access-mode" :label="t('settings.general.accessMode')"
-              :model-value="accessMode" :options="accessModeOptions" @update:model-value="selectAccessMode" />
+            <SettingsSelect id="security-permission-mode" data-testid="security-permission-mode" :label="t('settings.general.permissionMode')"
+              :model-value="permissionMode" :options="permissionModeOptions" @update:model-value="selectPermissionMode" />
           </div>
         </div>
         <!-- 档位单独看会骗人：同一档位在本地与沙箱下能写到哪儿不同，这里把组合后的实际效果写出来 -->
         <p
           class="mt-2 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-lx-fs-sm leading-snug"
-          :class="accessModeImpact.warn
+          :class="permissionModeImpact.warn
             ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
             : 'bg-black/[0.03] text-lx-muted dark:bg-white/[0.05]'"
           data-testid="security-access-impact"
         >
           <span class="shrink-0 font-medium">{{ t('settings.general.accessImpact') }}：</span>
-          <span class="min-w-0">{{ accessModeImpact.text }}</span>
+          <span class="min-w-0">{{ permissionModeImpact.text }}</span>
         </p>
-      </section>
-      <section v-else-if="category === 'terminal'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <div class="flex min-w-0 flex-col">
-            <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
-            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
-          </div>
-          <div class="w-full min-w-0 shrink-0 sm:w-64">
-            <SettingsSelect id="security-command-policy" data-testid="security-command-policy" :label="t('settings.general.toolPermission')"
-              :model-value="commandApprovalPolicy" :options="commandApprovalPolicyOptions" @update:model-value="selectCommandPolicy" />
-          </div>
-        </div>
       </section>
 
       <div v-if="error" role="alert" :class="['sec-rise flex flex-wrap items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-600 dark:text-red-400']" data-testid="security-error">

@@ -7,8 +7,7 @@ import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.input.InputWakeupService;
@@ -82,10 +81,10 @@ class ChatAcceptanceEndpointTest {
 
     private static RuntimeContext context(String executionId) {
         ExecutionContext executionContext = ExecutionContext.root(ROOT_SESSION_ID, executionId,
-                null, 7L, AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                null, 7L, AgentPermissionMode.FULL_ACCESS);
         return new RuntimeContext(executionContext, null, null,
                 SessionVO.builder().id(ROOT_SESSION_ID).build(), List.of(), null, null,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false, null);
+                AgentPermissionMode.FULL_ACCESS, false, null);
     }
 
     @Test

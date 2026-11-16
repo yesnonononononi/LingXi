@@ -30,8 +30,7 @@ import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
@@ -146,10 +145,10 @@ class ChatAdmissionTransactionTest {
 
     private static RuntimeContext context() {
         ExecutionContext executionContext = ExecutionContext.root(SESSION_ID, EXECUTION_ID,
-                null, MODEL_ID, AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                null, MODEL_ID, AgentPermissionMode.FULL_ACCESS);
         return new RuntimeContext(executionContext, null, null,
                 SessionVO.builder().id(SESSION_ID).build(), List.of(UserMessageEntity.from("你好")),
-                null, null, AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false,
+                null, null, AgentPermissionMode.FULL_ACCESS, false,
                 UserMessageEntity.from("你好"));
     }
 

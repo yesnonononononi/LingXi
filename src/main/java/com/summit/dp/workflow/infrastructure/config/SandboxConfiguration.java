@@ -1,29 +1,23 @@
 package com.summit.dp.workflow.infrastructure.config;
 
-import com.summit.dp.sandbox_security.application.SecurityRuleService;
-import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.core.workspace.WorkspaceProvider;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
-import org.springframework.beans.factory.annotation.Value;
+import com.summit.sandbox.windows.WindowsWorkspaceProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.nio.file.Path;
 
 /** 运行资源延迟校验，缺少依赖不影响本地模式启动。 */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(SandboxProperties.class)
 public class SandboxConfiguration {
-    @Bean public ConfiguredSandboxWorkspaceProvider sandboxWorkspaceProvider(SandboxProperties properties) {
-        return new ConfiguredSandboxWorkspaceProvider(properties);
-    }
     @Bean
-    public SandboxPolicyFactory sandboxPolicyFactory(SandboxProperties properties, SecurityRuleService rules,
-            @Value("${lingxi.config.sandbox-security.directory:${user.home}/.lingxi/config}") String directory) {
-        return new SandboxPolicyFactory(properties.environment(), () -> {
-                    rules.rules(SecurityCategory.NET);
-                    return rules.rules(SecurityCategory.FILES);
-                },
-                Path.of(directory), properties.runtimeDirectory(), properties.stateDirectory());
+    public WorkspaceProvider windowsWorkspaceProvider() {
+        return new WindowsWorkspaceProvider();
+    }
+
+    @Bean
+    public SandboxPolicyFactory sandboxPolicyFactory(SandboxProperties properties) {
+        return new SandboxPolicyFactory(properties.environment());
     }
 }

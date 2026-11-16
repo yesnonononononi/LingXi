@@ -5,8 +5,7 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -47,7 +46,7 @@ class PreparedChatExecutorLinkageTest {
         context = mock(RuntimeContext.class);
         when(context.execution()).thenReturn(execution);
         when(context.executionContext()).thenReturn(ExecutionContext.root(10L, "12", null, null,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.DANGEROUS_BLOCK));
+                AgentPermissionMode.DELEGATED_APPROVAL));
         when(orchestrator.execute(context, execution)).thenThrow(linkage);
         when(control.fail(eq(execution), any(Exception.class))).thenAnswer(invocation -> {
             Exception failure = invocation.getArgument(1);

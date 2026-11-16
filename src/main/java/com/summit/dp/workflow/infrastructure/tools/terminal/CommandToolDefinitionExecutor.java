@@ -15,7 +15,7 @@ import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
@@ -108,8 +108,11 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                 return ToolExecuteResult.err(unsupported.getMessage(), ToolResultType.NORMAL, buildMetadata(request));
             }
             // 审批后再次执行也走这里，最新禁止规则不能被旧审批绕过。
-            SecurityDecision decision = security == null ? null : security.evaluate(request.getCommand(),
-                    CommandApprovalPolicy.from(toolExecution.getAttributes()));
+            AgentPermissionMode permissionMode = AgentPermissionMode.from(toolExecution.getAttributes());
+            if (!permissionMode.allowsTerminalTools()) {
+                return ToolExecuteResult.err("只读审阅模式下禁止执行终端命令");
+            }
+            SecurityDecision decision = security == null ? null : security.evaluate(request.getCommand(), permissionMode);
             if (decision != null && decision.action() == SecurityAction.DENY) {
                 return ToolExecuteResult.err(decision.describe());
             }

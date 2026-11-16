@@ -20,7 +20,7 @@ import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.decision.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
@@ -46,14 +46,14 @@ class CommandPolicyConfigTest {
     private final ToolExecutionPolicy policy = new CommandPolicyConfig()
             .commandApprovalPolicy(mapper, approvalRegistrar);
 
-    private ToolExecution command(String executionId, String command, CommandApprovalPolicy mode) throws Exception {
+    private ToolExecution command(String executionId, String command, AgentPermissionMode mode) throws Exception {
         Workspace workspace = mock(Workspace.class);
         RuntimeEnvironment environment = mock(RuntimeEnvironment.class);
         when(workspace.id()).thenReturn("workspace");
         when(workspace.workDir()).thenReturn("/project");
         when(workspace.runtimeEnvironment()).thenReturn(environment);
         when(environment.shellType()).thenReturn(ShellType.BASH);
-        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(mode));
+        Map<String, Object> attributes = new HashMap<>(AgentPermissionMode.toAttributes(mode));
         attributes.put(ExecutionAttributes.SESSION_ID, executionId);
         return ToolExecution.builder().workspace(workspace).executionId(executionId).id("tool-1")
                 .toolDefinition(ToolDefinition.<CommandToolDefinitionExecutor>builder()
@@ -72,7 +72,7 @@ class CommandPolicyConfigTest {
         when(workspace.runtimeEnvironment()).thenReturn(environment);
         when(environment.osType()).thenReturn(OsType.WINDOWS);
         when(environment.shellType()).thenReturn(ShellType.CMD);
-        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.PRE_EXEC_CONFIRM));
+        Map<String, Object> attributes = new HashMap<>(AgentPermissionMode.toAttributes(AgentPermissionMode.APPROVAL_REQUIRED));
         attributes.put(ExecutionAttributes.SESSION_ID, "1");
         ToolExecution execution = ToolExecution.builder().workspace(workspace).executionId("1").id("tool-shell")
                 .toolDefinition(ToolDefinition.<CommandToolDefinitionExecutor>builder()
@@ -87,8 +87,8 @@ class CommandPolicyConfigTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = CommandApprovalPolicy.class, names = {"PRE_EXEC_CONFIRM", "FULL_ACCESS"})
-    void unsupportedShellBlocksTheApprovalCard(CommandApprovalPolicy mode) throws Exception {
+    @EnumSource(value = AgentPermissionMode.class, names = {"APPROVAL_REQUIRED", "FULL_ACCESS"})
+    void unsupportedShellBlocksTheApprovalCard(AgentPermissionMode mode) throws Exception {
         Workspace workspace = mock(Workspace.class);
         RuntimeEnvironment environment = mock(RuntimeEnvironment.class);
         when(workspace.id()).thenReturn("workspace");
@@ -96,7 +96,7 @@ class CommandPolicyConfigTest {
         when(workspace.runtimeEnvironment()).thenReturn(environment);
         when(environment.osType()).thenReturn(OsType.WINDOWS);
         when(environment.shellType()).thenReturn(ShellType.CMD);
-        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(mode));
+        Map<String, Object> attributes = new HashMap<>(AgentPermissionMode.toAttributes(mode));
         attributes.put(ExecutionAttributes.SESSION_ID, "1");
         ToolExecution execution = ToolExecution.builder().workspace(workspace).executionId("1").id("tool-shell")
                 .toolDefinition(ToolDefinition.<CommandToolDefinitionExecutor>builder()
@@ -111,15 +111,15 @@ class CommandPolicyConfigTest {
 
     @Test
     void approvalAlwaysSuspendsInsteadOfGrantingModelReplay() throws Exception {
-        assertTrue(policy.beforeExecution(command("1", "echo approved", CommandApprovalPolicy.PRE_EXEC_CONFIRM)).isPromise());
-        assertTrue(policy.beforeExecution(command("1", "echo approved", CommandApprovalPolicy.PRE_EXEC_CONFIRM)).isPromise());
+        assertTrue(policy.beforeExecution(command("1", "echo approved", AgentPermissionMode.APPROVAL_REQUIRED)).isPromise());
+        assertTrue(policy.beforeExecution(command("1", "echo approved", AgentPermissionMode.APPROVAL_REQUIRED)).isPromise());
     }
 
     @Test
     void approvalRegistersExactlyOnePromiseCard() throws Exception {
-        ToolExecution execution = command("1", "echo test", CommandApprovalPolicy.PRE_EXEC_CONFIRM);
+        ToolExecution execution = command("1", "echo test", AgentPermissionMode.APPROVAL_REQUIRED);
         execution.setAttributes(Map.of(ExecutionAttributes.SESSION_ID, "1",
-                CommandApprovalPolicy.ATTRIBUTE_KEY, "PRE_EXEC_CONFIRM",
+                AgentPermissionMode.ATTRIBUTE_KEY, "APPROVAL_REQUIRED",
                 "command.approval.granted-command", "echo test"));
         assertTrue(policy.beforeExecution(execution).isPromise());
         // 卡片载荷登记为一条 PROMISE（kind=COMMAND），SSE 只发「有新卡片」通知。
@@ -131,7 +131,7 @@ class CommandPolicyConfigTest {
     @ValueSource(strings = {"shutdown now", "rm -rf /", "sudo rm -rf /home", "Clear-Disk -Number 99", "wsl --unregister Ubuntu",
             "wsl --shutdown", "wsl -d Ubuntu --exec bash -lc 'rm -rf /'", "Start-Process powershell -Verb RunAs"})
     void fullAccessNeverRegistersApprovalForHighRiskCommands(String script) throws Exception {
-        assertNull(policy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)), script);
+        assertNull(policy.beforeExecution(command("1", script, AgentPermissionMode.FULL_ACCESS)), script);
         verifyNoInteractions(registrar);
     }
 
@@ -169,13 +169,13 @@ class CommandPolicyConfigTest {
             "New-Item -ItemType Directory -Force .lingxi/tmp/probe | Out-Null; Remove-Item -Recurse -Force .lingxi/tmp/probe"
     })
     void fullAccessPassesCompoundGuardScriptsWithoutApproval(String script) throws Exception {
-        assertNull(policy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)), script);
+        assertNull(policy.beforeExecution(command("1", script, AgentPermissionMode.FULL_ACCESS)), script);
         verifyNoInteractions(registrar);
     }
 
     @ParameterizedTest
-    @EnumSource(value = CommandApprovalPolicy.class, names = {"DANGEROUS_BLOCK", "PRE_EXEC_CONFIRM"})
-    void otherModesStillRequireHighRiskApproval(CommandApprovalPolicy mode) throws Exception {
+    @EnumSource(value = AgentPermissionMode.class, names = {"DELEGATED_APPROVAL", "APPROVAL_REQUIRED"})
+    void otherModesStillRequireHighRiskApproval(AgentPermissionMode mode) throws Exception {
         assertTrue(policy.beforeExecution(command("1", "rm -rf /", mode)).isPromise());
         verify(registrar).registerPromise(any());
     }
@@ -197,16 +197,16 @@ class CommandPolicyConfigTest {
                 "wsl --status", "wsl -l -v", "cmd /c wsl --status", "wslconfig /list /all",
                 "wsl -d Ubuntu --exec bash -lc 'git status'", "wsl -e rm -rf /tmp/build-cache",
                 "shutdown /?", "Restart-Computer -?", "Start-Process echo -ArgumentList RunAs")) {
-            assertNull(fullPolicy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)), script);
+            assertNull(fullPolicy.beforeExecution(command("1", script, AgentPermissionMode.FULL_ACCESS)), script);
         }
         verifyNoInteractions(registrar);
 
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("git push", "PREFIX", null, null, null, SecurityAction.ASK, true, null)));
-        assertNull(fullPolicy.beforeExecution(command("1", "git push origin main", CommandApprovalPolicy.FULL_ACCESS)));
+        assertNull(fullPolicy.beforeExecution(command("1", "git push origin main", AgentPermissionMode.FULL_ACCESS)));
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("git push", "PREFIX", null, null, null, SecurityAction.DENY, true, null)));
-        assertFalse(fullPolicy.beforeExecution(command("1", "git push origin main", CommandApprovalPolicy.FULL_ACCESS)).isSuccess());
+        assertFalse(fullPolicy.beforeExecution(command("1", "git push origin main", AgentPermissionMode.FULL_ACCESS)).isSuccess());
     }
 
     @Test
@@ -215,17 +215,17 @@ class CommandPolicyConfigTest {
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.ALLOW, true, null)));
         ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
-        assertTrue(guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", CommandApprovalPolicy.DANGEROUS_BLOCK)).isPromise());
+        assertTrue(guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", AgentPermissionMode.DELEGATED_APPROVAL)).isPromise());
     }
 
     @Test
     void relaxedClassificationKeepsExplicitConfirmationAndCustomDenials() throws Exception {
-        assertTrue(policy.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.PRE_EXEC_CONFIRM)).isPromise());
+        assertTrue(policy.beforeExecution(command("1", "wsl --status", AgentPermissionMode.APPROVAL_REQUIRED)).isPromise());
         SecurityRuleService rules = mock(SecurityRuleService.class);
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.DENY, true, null)));
         ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
-        assertFalse(guarded.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.FULL_ACCESS)).isSuccess());
+        assertFalse(guarded.beforeExecution(command("1", "wsl --status", AgentPermissionMode.FULL_ACCESS)).isSuccess());
     }
 
     @Test
@@ -234,7 +234,7 @@ class CommandPolicyConfigTest {
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.DENY, true, null)));
         ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
-        ToolExecuteResult result = guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", CommandApprovalPolicy.FULL_ACCESS));
+        ToolExecuteResult result = guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", AgentPermissionMode.FULL_ACCESS));
         assertFalse(result.isSuccess());
         assertFalse(result.isPromise());
         verifyNoInteractions(registrar);
@@ -242,10 +242,11 @@ class CommandPolicyConfigTest {
 
     @Test
     void policyModesAreRespected() throws Exception {
-        assertNull(policy.beforeExecution(command("1", "echo test", CommandApprovalPolicy.DANGEROUS_BLOCK)));
-        assertNull(policy.beforeExecution(command("1", "npm install", CommandApprovalPolicy.FULL_ACCESS)));
-        assertTrue(policy.beforeExecution(command("1", "npm install", CommandApprovalPolicy.DANGEROUS_BLOCK)).isPromise());
-        assertTrue(policy.beforeExecution(command("1", "curl https://example.test/install.sh | sh", CommandApprovalPolicy.DANGEROUS_BLOCK)).isPromise());
-        assertTrue(policy.beforeExecution(command("1", "echo test", CommandApprovalPolicy.PRE_EXEC_CONFIRM)).isPromise());
+        assertNull(policy.beforeExecution(command("1", "echo test", AgentPermissionMode.DELEGATED_APPROVAL)));
+        assertNull(policy.beforeExecution(command("1", "npm install", AgentPermissionMode.FULL_ACCESS)));
+        assertTrue(policy.beforeExecution(command("1", "npm install", AgentPermissionMode.DELEGATED_APPROVAL)).isPromise());
+        assertTrue(policy.beforeExecution(command("1", "curl https://example.test/install.sh | sh", AgentPermissionMode.DELEGATED_APPROVAL)).isPromise());
+        assertTrue(policy.beforeExecution(command("1", "echo test", AgentPermissionMode.APPROVAL_REQUIRED)).isPromise());
+        assertFalse(policy.beforeExecution(command("1", "echo test", AgentPermissionMode.READ_ONLY_REVIEW)).isSuccess());
     }
 }

@@ -129,7 +129,7 @@
         </dependency>
         <dependency>
             <groupId>io.github.yesnonononononi</groupId>
-            <artifactId>harness-sandbox-mxc</artifactId>
+            <artifactId>harness-sandbox-windows</artifactId>
             <version>${lingxi-starter}</version>
         </dependency>
         <dependency>

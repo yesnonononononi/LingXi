@@ -1,8 +1,7 @@
 package com.summit.dp.user_configs.application.vo;
 
 import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.domain.model.UserConfig;
 
 /**
@@ -15,10 +14,8 @@ import com.summit.dp.user_configs.domain.model.UserConfig;
 public record SettingsView(
         /* 工作空间运行类型；null 表示未配置，由使用方按各自缺省兜底。 */
         WorkspaceType workspaceType,
-        /* 会话访问档位；null 表示未配置。 */
-        AgentAccessMode accessMode,
-        /* 命令审批档位；null 表示未配置。 */
-        CommandApprovalPolicy commandApprovalPolicy,
+        /* 统一总权限档位；null 表示未配置。 */
+        AgentPermissionMode permissionMode,
         /* 计划提醒上限；null 表示未配置。 */
         Integer planMaxReminders,
         /* 选中的模型 ID；null 表示未选择。 */
@@ -46,27 +43,27 @@ public record SettingsView(
      * <p>投影对象多一个可选字段，不该逼着每个只关心「模型/权限」的调用方也写一个 null；
      * 但新增字段时必须检查这里，别让「不传」被误读成「显式关闭」。</p>
      */
-    public SettingsView(WorkspaceType workspaceType, AgentAccessMode accessMode,
-                        CommandApprovalPolicy commandApprovalPolicy, Integer planMaxReminders, Long modelId,
+    public SettingsView(WorkspaceType workspaceType, AgentPermissionMode permissionMode,
+                        Integer planMaxReminders, Long modelId,
                         Long agentId, Integer maxTokens, String reasoningEffort, String skillDir,
                         Integer teamSize) {
-        this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
+        this(workspaceType, permissionMode, planMaxReminders, modelId, agentId, maxTokens,
                 reasoningEffort, skillDir, teamSize, null);
     }
 
-    public SettingsView(WorkspaceType workspaceType, AgentAccessMode accessMode,
-                        CommandApprovalPolicy commandApprovalPolicy, Integer planMaxReminders, Long modelId,
+    public SettingsView(WorkspaceType workspaceType, AgentPermissionMode permissionMode,
+                        Integer planMaxReminders, Long modelId,
                         Long agentId, Integer maxTokens, String reasoningEffort, String skillDir,
                         Integer teamSize, Long compactModelId) {
-        this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
+        this(workspaceType, permissionMode, planMaxReminders, modelId, agentId, maxTokens,
                 reasoningEffort, skillDir, teamSize, compactModelId, null, UserConfig.DEFAULT_IMAGE_GENERATION_MAX_CALLS);
     }
 
-    public SettingsView(WorkspaceType workspaceType, AgentAccessMode accessMode,
-                        CommandApprovalPolicy commandApprovalPolicy, Integer planMaxReminders, Long modelId,
+    public SettingsView(WorkspaceType workspaceType, AgentPermissionMode permissionMode,
+                        Integer planMaxReminders, Long modelId,
                         Long agentId, Integer maxTokens, String reasoningEffort, String skillDir,
                         Integer teamSize, Long compactModelId, Long imageModelId, Integer imageGenerationMaxCalls) {
-        this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
+        this(workspaceType, permissionMode, planMaxReminders, modelId, agentId, maxTokens,
                 reasoningEffort, skillDir, teamSize, compactModelId, imageModelId, imageGenerationMaxCalls,
                 UserConfig.DEFAULT_STREAM_CHAT);
     }

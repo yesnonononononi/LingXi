@@ -52,7 +52,7 @@ class PromptOptimizationTest {
     private final SettingsProvider settings = mock(SettingsProvider.class);
     private final ModelChatGateway gateway = mock(ModelChatGateway.class);
     private final PromptOptimizationService service = new PromptOptimizationService(models, settings, gateway);
-    private final SettingsView current = new SettingsView(null, null, null, null, 7L, 99L, 258000, "medium", null, 10);
+    private final SettingsView current = new SettingsView(null, null, null, 7L, 99L, 258000, "medium", null, 10);
 
     @BeforeEach
     void configureModel() throws Exception {

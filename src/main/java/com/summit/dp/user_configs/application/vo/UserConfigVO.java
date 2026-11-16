@@ -18,10 +18,8 @@ public class UserConfigVO {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long agentId;
     private WorkspaceType type;
-    /** 命令放行档位：FULL_ACCESS/PRE_EXEC_CONFIRM/DANGEROUS_BLOCK；空值表示沿用缺省。 */
-    private String commandApprovalPolicy;
-    /** 会话访问档位：IN_WORKSPACE/READ_ONLY_IN_WORKSPACE/OUT_OF_WORKSPACE；空值表示沿用缺省。 */
-    private String accessMode;
+    /** 统一总权限档位：APPROVAL_REQUIRED/DELEGATED_APPROVAL/FULL_ACCESS；空值表示沿用缺省。 */
+    private String permissionMode;
     private Integer planMaxReminders;
     /** 模型最大 Token 数；空值表示沿用模型/框架缺省。 */
     private Integer maxTokens;

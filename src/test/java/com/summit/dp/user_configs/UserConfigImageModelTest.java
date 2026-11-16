@@ -65,7 +65,7 @@ class UserConfigImageModelTest {
     }
 
     private UserConfigCommand command(Long id,boolean present,Integer limit) {
-        return new UserConfigCommand(null,null,null,null,null,null,false,null,null,null,null,null,null,null,
+        return new UserConfigCommand(null,null,null,null,null,false,null,null,null,null,null,null,null,
                 null,false,null,false,id,present,limit);
     }
 }

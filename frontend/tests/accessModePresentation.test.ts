@@ -44,37 +44,37 @@ test('执行环境三态：NONE 不得被折叠成已关闭', () => {
 });
 
 test('档位短名：未知值不得被当成完全访问', () => {
-  assert.equal(resolveAccessPreset('READ_ONLY_IN_WORKSPACE'), 'ReadOnly');
-  assert.equal(resolveAccessPreset('OUT_OF_WORKSPACE'), 'Full');
-  assert.equal(resolveAccessPreset('IN_WORKSPACE'), 'InWorkspace');
-  assert.equal(resolveAccessPreset(undefined), 'InWorkspace');
-  assert.equal(resolveAccessPreset('垃圾值'), 'InWorkspace');
+  assert.equal(resolveAccessPreset('APPROVAL_REQUIRED'), 'ApprovalRequired');
+  assert.equal(resolveAccessPreset('DELEGATED_APPROVAL'), 'DelegatedApproval');
+  assert.equal(resolveAccessPreset('FULL_ACCESS'), 'Full');
+  assert.equal(resolveAccessPreset(undefined), 'ApprovalRequired');
+  assert.equal(resolveAccessPreset('垃圾值'), 'ApprovalRequired');
 });
 
-test('本地/未设置 + 只读必须给出警示，沙箱下的只读才是真只读', () => {
-  assert.equal(isAccessModeMismatch('READ_ONLY_IN_WORKSPACE', 'OFF'), true);
-  assert.equal(isAccessModeMismatch('READ_ONLY_IN_WORKSPACE', 'UNSET'), true);
-  assert.equal(isAccessModeMismatch('READ_ONLY_IN_WORKSPACE', 'ON'), false);
-  assert.equal(isAccessModeMismatch('IN_WORKSPACE', 'OFF'), false);
-  assert.equal(isAccessModeMismatch('OUT_OF_WORKSPACE', 'OFF'), false);
+test('可选三档均允许工作区内写入，不存在只读误导组合', () => {
+  assert.equal(isAccessModeMismatch('APPROVAL_REQUIRED', 'OFF'), false);
+  assert.equal(isAccessModeMismatch('APPROVAL_REQUIRED', 'UNSET'), false);
+  assert.equal(isAccessModeMismatch('DELEGATED_APPROVAL', 'ON'), false);
+  assert.equal(isAccessModeMismatch('FULL_ACCESS', 'OFF'), false);
 });
 
 test('文案键按「档位 + 环境」组合，不得出现无环境后缀的单一键', () => {
-  assert.equal(resolveAccessImpactKey('READ_ONLY_IN_WORKSPACE', 'ON'), 'settings.general.impactReadOnlySandbox');
-  assert.equal(resolveAccessImpactKey('READ_ONLY_IN_WORKSPACE', 'OFF'), 'settings.general.impactReadOnlyLocal');
-  assert.equal(resolveAccessImpactKey('OUT_OF_WORKSPACE', 'UNSET'), 'settings.general.impactFullLocal');
-  assert.equal(resolveAccessTipKey('IN_WORKSPACE', 'ON'), 'chat.input.accessModeTipInWorkspaceSandbox');
-  assert.equal(resolveAccessTipKey('IN_WORKSPACE', 'OFF'), 'chat.input.accessModeTipInWorkspaceLocal');
-  assert.equal(resolveAccessBadgeKey('OUT_OF_WORKSPACE'), 'chat.input.accessModeBadgeFull');
-  assert.equal(resolveAccessMenuDescKey('READ_ONLY_IN_WORKSPACE'), 'chat.input.accessMenuDescReadOnly');
-  assert.equal(resolveAccessMenuDescKey('IN_WORKSPACE'), 'chat.input.accessMenuDescInWorkspace');
-  assert.equal(resolveAccessMenuDescKey('OUT_OF_WORKSPACE'), 'chat.input.accessMenuDescFull');
-  assert.equal(resolveAccessMenuDescKey(undefined), 'chat.input.accessMenuDescInWorkspace');
+  assert.equal(resolveAccessImpactKey('APPROVAL_REQUIRED', 'ON'), 'settings.general.impactApprovalRequiredSandbox');
+  assert.equal(resolveAccessImpactKey('APPROVAL_REQUIRED', 'OFF'), 'settings.general.impactApprovalRequiredLocal');
+  assert.equal(resolveAccessImpactKey('DELEGATED_APPROVAL', 'ON'), 'settings.general.impactDelegatedApprovalSandbox');
+  assert.equal(resolveAccessImpactKey('FULL_ACCESS', 'UNSET'), 'settings.general.impactFullLocal');
+  assert.equal(resolveAccessTipKey('APPROVAL_REQUIRED', 'ON'), 'chat.input.accessModeTipApprovalRequiredSandbox');
+  assert.equal(resolveAccessTipKey('APPROVAL_REQUIRED', 'OFF'), 'chat.input.accessModeTipApprovalRequiredLocal');
+  assert.equal(resolveAccessBadgeKey('FULL_ACCESS'), 'chat.input.accessModeBadgeFull');
+  assert.equal(resolveAccessMenuDescKey('APPROVAL_REQUIRED'), 'chat.input.accessMenuDescApprovalRequired');
+  assert.equal(resolveAccessMenuDescKey('DELEGATED_APPROVAL'), 'chat.input.accessMenuDescDelegatedApproval');
+  assert.equal(resolveAccessMenuDescKey('FULL_ACCESS'), 'chat.input.accessMenuDescFull');
+  assert.equal(resolveAccessMenuDescKey(undefined), 'chat.input.accessMenuDescApprovalRequired');
 });
 
 test('组合出来的键在两个语种里都必须真实存在', () => {
   const keys = new Set<string>();
-  for (const mode of ['READ_ONLY_IN_WORKSPACE', 'IN_WORKSPACE', 'OUT_OF_WORKSPACE']) {
+  for (const mode of ['APPROVAL_REQUIRED', 'DELEGATED_APPROVAL', 'FULL_ACCESS']) {
     for (const state of ['ON', 'OFF', 'UNSET'] as const) {
       keys.add(resolveAccessImpactKey(mode, state).split('.').pop() as string);
       keys.add(resolveAccessTipKey(mode, state).split('.').pop() as string);
@@ -83,7 +83,7 @@ test('组合出来的键在两个语种里都必须真实存在', () => {
     keys.add(resolveAccessMenuDescKey(mode).split('.').pop() as string);
   }
   // 金丝雀：先证明扫描器能命中，否则下面的「都在」可能假绿
-  assert.match(messagesSource, /accessModeBadgeReadOnly:/, '金丝雀：messages.ts 未读到档位文案');
+  assert.match(messagesSource, /accessModeBadgeApprovalRequired:/, '金丝雀：messages.ts 未读到档位文案');
   for (const key of keys) {
     const hits = messagesSource.match(new RegExp(`\\b${key}:`, 'g')) ?? [];
     assert.equal(hits.length, 2, `文案键 ${key} 应在 zh-CN 与 en-US 里各出现一次，实际 ${hits.length} 次`);
@@ -118,8 +118,8 @@ test('安全中心与输入区消费同一份真源，不得各自硬编码档�
   assert.match(settingsSource, /resolveAccessImpactKey\(/, '安全中心未使用组合文案键');
   assert.match(settingsSource, /isAccessModeMismatch\(/, '安全中心未使用警示判据');
   assert.match(inputSource, /resolveAccessBadgeKey\(/, '输入区徽标未使用组合标签键');
-  assert.doesNotMatch(settingsSource, /=== 'READ_ONLY_IN_WORKSPACE'/, '档位判断应集中在 accessModePresentation');
-  assert.doesNotMatch(inputSource, /=== 'READ_ONLY_IN_WORKSPACE'/, '档位判断应集中在 accessModePresentation');
+  assert.doesNotMatch(settingsSource, /=== 'READ_ONLY_REVIEW'/, '档位判断应集中在 accessModePresentation');
+  assert.doesNotMatch(inputSource, /=== 'READ_ONLY_REVIEW'/, '档位判断应集中在 accessModePresentation');
   assert.match(tabSource, /data-testid="security-access-impact"/, '缺少「实际效果」说明');
   assert.match(inputSource, /data-testid="chat-access-mode"/, '缺少输入区档位徽标');
 });
@@ -136,6 +136,6 @@ test('输入区档位切换必须端到端接通，不得再出现死事件', ()
   assert.match(inputSource, /@select="handleSelectAccessMode"/, '权限上拉框的选中必须接到处理器上');
   assert.match(viewSource, /@updateAccessMode="handleUpdateAccessMode"/, 'ChatView 必须绑定档位处理函数');
   assert.match(viewSource, /handleUpdateAccessMode,/, 'ChatView 必须从 useChatView 取到该处理函数');
-  assert.match(viewModelSource, /userConfig\.patch\('accessMode'/, '切档必须写 userConfig，不得只改本地状态');
+  assert.match(viewModelSource, /userConfig\.patch\('permissionMode'/, '切档必须写 userConfig，不得只改本地状态');
   assert.doesNotMatch(workspaceSource, /handleUpdateAccessMode/, '档位切换不属于工作空间模块');
 });

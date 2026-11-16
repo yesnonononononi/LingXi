@@ -1,6 +1,8 @@
 package com.summit.dp.session.domain.exception;
 
-public class SessionNoFoundException extends RuntimeException {
+import com.summit.dp.shared.exception.ClientException;
+
+public class SessionNoFoundException extends ClientException {
     public SessionNoFoundException(String message) {
         super(message);
     }

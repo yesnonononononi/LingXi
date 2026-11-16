@@ -98,7 +98,7 @@ test('新增表单测试当前 HTTP 请求头，显示工具数量和耗时', as
   const add = t.mock.method(McpAPI, 'add', async () => ({ code: 1 }));
   const { value, scope } = state();
   try {
-    value.mcpForm.value.headerLines = 'Authorization: Bearer test';
+    value.mcpForm.value.headerItems = [{ key: 'Authorization', value: 'Bearer test' }];
     await value.handleConnectMcp();
     assert.equal(payload?.headers?.Authorization, 'Bearer test');
     assert.equal(payload?.id, undefined);
@@ -250,6 +250,80 @@ test('列表内启停：停用下 1 提示已启用，启用下 0 提示已停�
     assert.equal(update.mock.calls[2]!.arguments[0].status, 0,
       'status 缺省按已启用处理，下发 0，不得回写 1');
     assert.equal(value.mcpToast.value, translate('settings.mcp.toastDisabled'));
+  } finally {
+    scope.stop();
+  }
+});
+
+test('请求头按 Key/Value 框填入：忽略空行、自动清理 Key 末尾冒号并拦截半空项', async (t) => {
+  let payload: McpRequest | undefined;
+  t.mock.method(McpAPI, 'connect', async (data: McpRequest) => { payload = data; return connected; });
+  const { value, scope } = state();
+  try {
+    value.startAddMcp();
+    value.mcpForm.value.name = 'github';
+    value.mcpForm.value.url = 'https://api.githubcopilot.com/mcp/';
+    value.mcpForm.value.headerItems = [
+      { key: '', value: '' },
+      { key: 'Authorization:', value: 'Bearer token-1' },
+      { key: 'X-Custom：', value: 'abc' },
+    ];
+    await value.handleConnectMcp();
+    assert.deepEqual(payload?.headers, { Authorization: 'Bearer token-1', 'X-Custom': 'abc' });
+
+    value.mcpForm.value.headerItems = [{ key: '', value: 'only-value' }];
+    await value.handleConnectMcp();
+    assert.ok(value.mcpFormError.value.includes('only-value'), '有值缺键必须拦截并报错');
+
+    value.mcpForm.value.headerItems = [{ key: 'X-Empty-Val', value: '' }];
+    await value.handleConnectMcp();
+    assert.ok(value.mcpFormError.value.includes('X-Empty-Val'), '有键缺值必须拦截并报错');
+  } finally {
+    scope.stop();
+  }
+});
+
+test('请求头编辑态：未改动不提交 headers，新增行时保留原有脱敏掩码', async (t) => {
+  const savedPayloads: McpRequest[] = [];
+  t.mock.method(McpAPI, 'update', async (data: McpRequest) => {
+    savedPayloads.push(data);
+    return { code: 1 };
+  });
+  t.mock.method(McpAPI, 'list', async () => ({
+    code: 1, data: { records: [], total: 0, current: 1, size: 100 },
+  }));
+  const { value, scope } = state();
+  try {
+    value.startEditMcp({
+      id: '91',
+      name: 'github',
+      transport: 'streamable-http',
+      url: 'https://api.githubcopilot.com/mcp/',
+      headers: { Authorization: '__MCP_HEADER_UNCHANGED__' },
+    });
+    assert.equal(value.mcpHeadersPristine.value, true);
+    assert.deepEqual(value.mcpForm.value.headerItems, [
+      { key: 'Authorization', value: '__MCP_HEADER_UNCHANGED__' },
+    ]);
+
+    await value.handleSaveMcp();
+    assert.equal(savedPayloads[0]?.headers, undefined, '未改动请求头时不提交 headers');
+
+    value.startEditMcp({
+      id: '91',
+      name: 'github',
+      transport: 'streamable-http',
+      url: 'https://api.githubcopilot.com/mcp/',
+      headers: { Authorization: '__MCP_HEADER_UNCHANGED__' },
+    });
+    value.addMcpHeader();
+    value.mcpForm.value.headerItems[1] = { key: 'X-Trace', value: '123' };
+    assert.equal(value.mcpHeadersPristine.value, false);
+    await value.handleSaveMcp();
+    assert.deepEqual(savedPayloads[1]?.headers, {
+      Authorization: '__MCP_HEADER_UNCHANGED__',
+      'X-Trace': '123',
+    });
   } finally {
     scope.stop();
   }

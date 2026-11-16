@@ -121,7 +121,7 @@ class UserConfigDirectorySettingsTest {
     }
 
     private static UserConfigCommand command(String skillDir, String dataDir, Integer teamSize) {
-        return new UserConfigCommand(null, null, null, null, null, null, false, null, null, null, null,
+        return new UserConfigCommand(null, null, null, null, null, false, null, null, null, null,
                 dataDir, skillDir, teamSize, null, false, null, false);
     }
 }

@@ -571,7 +571,8 @@ import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
 import {PROJECT_PAGE_PREVIEW_KEY} from '../../types/projectPagePreview';
 import {PLAN_PREVIEW_KEY} from '../../types/previewPanel';
-import ShowWithAgentModal from '../../components/chat/ShowWithAgentModal.vue';
+import ShowWithAgentModal, {type ShowWithAgentSubmitData} from '../../components/chat/ShowWithAgentModal.vue';
+import {composeMessageWithDocuments} from '../../utils/pastedDocument';
 import {ANSWER_CHOICES_KEY, DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
@@ -645,14 +646,22 @@ provideChatInputFocus(() => inputAreaRef.value?.focusInput?.());
 const showWithAgentOpen = ref(false);
 const showWithAgentPayload = ref<ShowWithAgentPayload | null>(null);
 
-const handleShowWithAgentSend = (data: { text: string; file: File }) => {
+const handleShowWithAgentSend = (data: ShowWithAgentSubmitData) => {
   showWithAgentOpen.value = false;
-  handleSendMessage(data.text, chatMode.value === 'plan', null, null, [data.file]);
+  const finalText = data.htmlDocument
+    ? composeMessageWithDocuments(data.text, [data.htmlDocument])
+    : data.text;
+  handleSendMessage(finalText, chatMode.value === 'plan', null, null, data.files);
 };
 
-const handleShowWithAgentInsert = (data: { text: string; file: File }) => {
+const handleShowWithAgentInsert = (data: ShowWithAgentSubmitData) => {
   showWithAgentOpen.value = false;
-  inputAreaRef.value?.setAttachedImages([data.file]);
+  if (data.files.length > 0) {
+    inputAreaRef.value?.setAttachedImages(data.files);
+  }
+  if (data.htmlDocument) {
+    inputAreaRef.value?.addPastedDocument(data.htmlDocument.content, { title: data.htmlDocument.title });
+  }
   inputAreaRef.value?.setInputText(data.text);
   inputAreaRef.value?.focusInput?.();
 };

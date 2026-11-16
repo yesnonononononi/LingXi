@@ -1,9 +1,22 @@
 <script setup lang="ts">
-/** 内置浏览器「Show with Agent」弹窗：展示视口截图与选中文本，收集用户需求后发往 Agent。 */
+/** 内置浏览器「Show with Agent」弹窗：展示视口截图与选中文本，支持按需勾选截图/HTML 并校验长度后发往 Agent。 */
 import {computed, nextTick, ref, watch} from 'vue';
 import {t} from '../../i18n';
 import LxModal from '../common/LxModal.vue';
 import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
+import {
+  MAX_CHAT_INPUT_CHARS,
+  MAX_SHOW_WITH_AGENT_HTML_CHARS,
+  sanitizePageHtml,
+  validateShowWithAgentHtml,
+} from '../../utils/htmlSanitizer';
+import {composeMessageWithDocuments, createPastedDocument, type PastedDocument} from '../../utils/pastedDocument';
+
+export interface ShowWithAgentSubmitData {
+  text: string;
+  files: File[];
+  htmlDocument: PastedDocument | null;
+}
 
 const props = defineProps<{
   open: boolean;
@@ -12,17 +25,30 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'send', data: { text: string; file: File }): void;
-  (e: 'insert', data: { text: string; file: File }): void;
+  (e: 'send', data: ShowWithAgentSubmitData): void;
+  (e: 'insert', data: ShowWithAgentSubmitData): void;
 }>();
 
 const requirement = ref('');
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const imageSrc = ref('');
+const includeImage = ref(true);
+const includeHtml = ref(false);
+const validationError = ref('');
+
+const cleanedHtml = computed(() => sanitizePageHtml(props.payload?.html ?? ''));
+const hasHtml = computed(() => cleanedHtml.value.length > 0);
+const htmlValidation = computed(() => validateShowWithAgentHtml(cleanedHtml.value));
+const htmlTooltip = computed(() =>
+  t('projectPagePreview.showWithAgentHtmlHint', { limit: MAX_SHOW_WITH_AGENT_HTML_CHARS }),
+);
 
 watch(() => [props.open, props.payload], () => {
   if (props.open && props.payload) {
     requirement.value = '';
+    validationError.value = '';
+    includeImage.value = true;
+    includeHtml.value = cleanedHtml.value.length > 0;
     if (imageSrc.value) {
       URL.revokeObjectURL(imageSrc.value);
       imageSrc.value = '';
@@ -40,6 +66,10 @@ watch(() => [props.open, props.payload], () => {
   }
 }, { immediate: true });
 
+watch([includeImage, includeHtml, requirement], () => {
+  if (validationError.value) validationError.value = '';
+});
+
 const pageTitle = computed(() => {
   if (!props.payload) return '';
   return props.payload.title?.trim() || props.payload.url || '';
@@ -55,31 +85,75 @@ const buildPrompt = (): string => {
   if (selection) {
     return text
       ? `针对页面【${title}】(${url}) 中选中的内容：\n> ${selection}\n\n需求：${text}`
-      : `针对页面【${title}】(${url}) 中选中的内容：\n> ${selection}\n\n请结合截图进行分析并提出修改建议。`;
+      : `针对页面【${title}】(${url}) 中选中的内容：\n> ${selection}\n\n请结合页面上下文进行分析并提出修改建议。`;
   }
   return text
-    ? `针对页面【${title}】(${url})，结合截图，需求如下：\n${text}`
-    : `针对页面【${title}】(${url})，请结合截图分析当前页面并提出优化与修改建议。`;
+    ? `针对页面【${title}】(${url})，需求如下：\n${text}`
+    : `针对页面【${title}】(${url})，请分析当前页面并提出优化与修改建议。`;
 };
 
-const createFile = (): File | null => {
+const createImageFile = (): File | null => {
   if (!props.payload) return null;
   const blob = new Blob([props.payload.imageBuffer], { type: 'image/png' });
   return new File([blob], `page-preview-${Date.now()}.png`, { type: 'image/png' });
 };
 
-const handleSend = () => {
-  const file = createFile();
-  if (!file) return;
+const resolveHtmlDocTitle = (): string => {
+  const title = pageTitle.value.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40).trim();
+  return title ? `${title}.html` : 'page.html';
+};
+
+const buildSubmitData = (): ShowWithAgentSubmitData | null => {
+  if (!props.payload) return null;
+
+  if (!includeImage.value && !includeHtml.value && !requirement.value.trim()) {
+    validationError.value = t('projectPagePreview.showWithAgentEmptyContent');
+    return null;
+  }
+
+  if (includeHtml.value && !htmlValidation.value.valid) {
+    validationError.value = t('projectPagePreview.showWithAgentHtmlTooLong', {
+      count: htmlValidation.value.charCount,
+      limit: htmlValidation.value.limit,
+    });
+    return null;
+  }
+
+  const files: File[] = [];
+  if (includeImage.value) {
+    const file = createImageFile();
+    if (file) files.push(file);
+  }
+
+  const htmlDocument = includeHtml.value && cleanedHtml.value
+    ? createPastedDocument(cleanedHtml.value, { title: resolveHtmlDocTitle() })
+    : null;
+
   const text = buildPrompt();
-  emit('send', { text, file });
+  if (htmlDocument) {
+    const composed = composeMessageWithDocuments(text, [htmlDocument]);
+    if (composed.length > MAX_CHAT_INPUT_CHARS) {
+      validationError.value = t('projectPagePreview.showWithAgentHtmlTooLong', {
+        count: composed.length,
+        limit: MAX_CHAT_INPUT_CHARS,
+      });
+      return null;
+    }
+  }
+
+  return { text, files, htmlDocument };
+};
+
+const handleSend = () => {
+  const data = buildSubmitData();
+  if (!data) return;
+  emit('send', data);
 };
 
 const handleInsert = () => {
-  const file = createFile();
-  if (!file) return;
-  const text = buildPrompt();
-  emit('insert', { text, file });
+  const data = buildSubmitData();
+  if (!data) return;
+  emit('insert', data);
 };
 
 const handleKeydown = (event: KeyboardEvent) => {
@@ -128,6 +202,53 @@ const handleKeydown = (event: KeyboardEvent) => {
           {{ payload.selectionText }}
         </div>
       </div>
+    </div>
+
+    <div class="space-y-1.5">
+      <div class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+        {{ t('projectPagePreview.showWithAgentAttachmentsLabel') }}
+      </div>
+      <div class="flex flex-wrap items-center gap-4 text-xs">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+          <input v-model="includeImage" type="checkbox" class="cursor-pointer" />
+          <span>{{ t('projectPagePreview.showWithAgentIncludeImage') }}</span>
+        </label>
+
+        <div class="inline-flex items-center gap-1.5">
+          <label class="inline-flex items-center gap-1.5 select-none" :class="hasHtml ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'">
+            <input v-model="includeHtml" type="checkbox" :disabled="!hasHtml" class="cursor-pointer disabled:cursor-not-allowed" />
+            <span>{{ t('projectPagePreview.showWithAgentIncludeHtml') }}</span>
+            <span v-if="hasHtml" class="text-[11px] text-zinc-400 dark:text-zinc-500">
+              ({{ htmlValidation.charCount.toLocaleString() }} / {{ htmlValidation.limit.toLocaleString() }})
+            </span>
+          </label>
+          <span
+            class="relative group inline-flex items-center justify-center w-4 h-4 rounded-full text-[11px] font-bold border border-amber-500/60 text-amber-600 dark:text-amber-400 cursor-help select-none"
+            :title="htmlTooltip"
+            :aria-label="htmlTooltip"
+          >
+            !
+            <span
+              class="pointer-events-none hidden group-hover:block absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-56 p-2 rounded-lg text-[11px] font-normal leading-snug text-white bg-zinc-900 dark:bg-zinc-800 shadow-lg z-20"
+            >
+              {{ htmlTooltip }}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <p
+        v-if="includeHtml && !htmlValidation.valid"
+        class="text-[11px] text-red-500 dark:text-red-400"
+      >
+        {{ t('projectPagePreview.showWithAgentHtmlTooLong', { count: htmlValidation.charCount, limit: htmlValidation.limit }) }}
+      </p>
+      <p
+        v-else-if="validationError"
+        class="text-[11px] text-red-500 dark:text-red-400"
+      >
+        {{ validationError }}
+      </p>
     </div>
 
     <div class="space-y-1.5">

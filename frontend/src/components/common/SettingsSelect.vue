@@ -7,6 +7,8 @@
  * `description`、value 固定 string），所以存量调用方零改动。</p>
  */
 import { computed } from 'vue';
+import { Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
 import LxSelect from './LxSelect.vue';
 import type { SelectOption } from '../../types/ui';
 
@@ -55,9 +57,15 @@ const lxOptions = computed<SelectOption<string>[]>(() => props.options.map(optio
           <!-- 有 description 的选项必须把取舍一并渲染出来，否则用户只看到档位名 -->
           <span v-if="slotProps.option.description" class="settings-select-option-desc">{{ slotProps.option.description }}</span>
         </span>
-        <svg v-if="slotProps.selected" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-          <path d="m5 12 4 4L19 6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        <HugeiconsIcon
+          v-if="slotProps.selected"
+          :icon="(Tick02Icon as IconArray)"
+          :size="13"
+          :stroke-width="2.5"
+          class="shrink-0"
+          style="color: var(--gs-accent)"
+          aria-hidden="true"
+        />
       </slot>
     </template>
   </LxSelect>

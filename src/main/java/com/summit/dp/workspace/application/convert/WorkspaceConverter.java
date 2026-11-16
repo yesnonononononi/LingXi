@@ -5,7 +5,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.WorkspaceVO;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
@@ -29,18 +29,18 @@ public class WorkspaceConverter {
     }
 
     public WorkspaceSpec toSpec(Workspace workspace, WorkspaceType type) {
-        return toSpec(workspace, type, resolveAccessMode());
+        return toSpec(workspace, type, resolvePermissionMode());
     }
 
-    public WorkspaceSpec toSpec(Workspace workspace, WorkspaceType type, AgentAccessMode mode) {
+    public WorkspaceSpec toSpec(Workspace workspace, WorkspaceType type, AgentPermissionMode mode) {
         return workspace == null || workspace.getId() == null ? null : buildSpec(workspace.getHostDir(), type, mode);
     }
 
     public WorkspaceSpec toSpec(WorkspaceVO workspace, WorkspaceType type) {
-        return toSpec(workspace, type, resolveAccessMode());
+        return toSpec(workspace, type, resolvePermissionMode());
     }
 
-    public WorkspaceSpec toSpec(WorkspaceVO workspace, WorkspaceType type, AgentAccessMode mode) {
+    public WorkspaceSpec toSpec(WorkspaceVO workspace, WorkspaceType type, AgentPermissionMode mode) {
         return workspace == null || workspace.id() == null ? null : buildSpec(workspace.hostDir(), type, mode);
     }
 
@@ -52,11 +52,11 @@ public class WorkspaceConverter {
         return workspace == null ? null : workspace.getHostDir();
     }
 
-    private AgentAccessMode resolveAccessMode() {
-        return AgentAccessMode.parse(settingsProvider.current().map(SettingsView::accessMode).orElse(null));
+    private AgentPermissionMode resolvePermissionMode() {
+        return AgentPermissionMode.parse(settingsProvider.current().map(SettingsView::permissionMode).orElse(null));
     }
 
-    private WorkspaceSpec buildSpec(String hostDir, WorkspaceType type, AgentAccessMode mode) {
+    private WorkspaceSpec buildSpec(String hostDir, WorkspaceType type, AgentPermissionMode mode) {
         if (hostDir == null || hostDir.isBlank()) throw new ClientException("工作空间缺少宿主目录，请重新配置工作空间");
         String workDir = Path.of(hostDir).toAbsolutePath().normalize().toString();
         WorkspaceType effective = type == null ? DEFAULT_TYPE : type;

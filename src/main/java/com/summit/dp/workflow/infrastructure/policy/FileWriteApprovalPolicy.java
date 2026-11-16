@@ -8,7 +8,7 @@ import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutionPolicy;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.decision.FileWriteApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.tools.file.FileMutationTools;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +44,7 @@ public class FileWriteApprovalPolicy implements ToolExecutionPolicy {
             return null;
         }
         // 完全访问档就是用户的明确授权，无需逐次批准。
-        if (AgentAccessMode.from(execution.getAttributes()).allowsOutsideWorkspace()) {
+        if (AgentPermissionMode.from(execution.getAttributes()).allowsOutsideWorkspace()) {
             return null;
         }
         String path = readPath(execution.getArgs());

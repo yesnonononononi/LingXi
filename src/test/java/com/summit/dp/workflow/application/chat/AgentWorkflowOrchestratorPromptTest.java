@@ -17,8 +17,7 @@ import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
@@ -136,11 +135,11 @@ class AgentWorkflowOrchestratorPromptTest {
 
     private RuntimeContext context(Long agentId, Long teamId, String input) {
         ExecutionContext identity = ExecutionContext.root(500L, "prompt-regression", null, 7L,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.PRE_EXEC_CONFIRM);
+                AgentPermissionMode.APPROVAL_REQUIRED);
         UserMessageEntity current = UserMessageEntity.from(input);
         List<Message> messages = List.of(UserMessageEntity.from("上一轮提问"),
                 AiMessageEntity.builder().text("上一轮回复").build(), current);
         return new RuntimeContext(identity, agentId, teamId, SessionVO.builder().id(500L).build(),
-                messages, null, null, AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.PRE_EXEC_CONFIRM, false, current);
+                messages, null, null, AgentPermissionMode.APPROVAL_REQUIRED, false, current);
     }
 }

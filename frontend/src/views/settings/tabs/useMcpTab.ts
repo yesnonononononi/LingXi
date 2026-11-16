@@ -23,6 +23,12 @@ function sleep(milliseconds: number): Promise<void> {
 /** 「自动健康检查」三态取值：unset = 不下发（沿用库默认），on / off = 显式下发布尔值。 */
 export type McpTriState = 'unset' | 'on' | 'off';
 
+/** 请求头键值对编辑项：页面按 Key : Value 分框填入，提交时再加工为请求头映射。 */
+export interface McpHeaderItem {
+  key: string;
+  value: string;
+}
+
 /**
  * 把数字输入框的原始取值收敛为「毫秒数或 null」。
  *
@@ -72,7 +78,7 @@ export function useMcpTab() {
 
   /**
    * 表单模型。
-   * `headerLines` 是「一行一个 Key: Value」的请求头编辑态；`commandLines` 是 stdio
+   * `headerItems` 是「Key : Value」键值对列表编辑态；`commandLines` 是 stdio
    * 启动命令的「一行一段 argv」编辑态——argv 逐段传给子进程，不做 shell 拼接，
    * 段内空格无需转义；`envLines` 是「一行一个 KEY=VALUE」的环境变量编辑态。
    * `headersUnchanged` / env 同理：记录本次是否改动，未改动则整体不提交该字段，
@@ -82,7 +88,7 @@ export function useMcpTab() {
     name: '',
     transport: 'streamable-http' as string,
     url: '',
-    headerLines: '',
+    headerItems: [{ key: '', value: '' }] as McpHeaderItem[],
     commandLines: '',
     envLines: '',
     description: '',
@@ -263,29 +269,42 @@ export function useMcpTab() {
     }
   };
 
-  /** 把请求头对象渲染成「Key: Value」多行文本；值为掩码时原样保留，供后端识别「未改动」 */
-  const headersToLines = (headers?: Record<string, string>) => {
-    if (!headers) return '';
-    return Object.entries(headers)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join('\n');
+  /** 把请求头对象渲染成「Key / Value」行列表；值为掩码时原样保留，供后端识别「未改动」 */
+  const headersToItems = (headers?: Record<string, string>): McpHeaderItem[] => {
+    const entries = headers ? Object.entries(headers) : [];
+    if (entries.length === 0) return [{ key: '', value: '' }];
+    return entries.map(([key, value]) => ({ key, value }));
   };
 
-  /** 解析多行文本为请求头对象；非法行抛错由调用方转为表单错误 */
-  const linesToHeaders = (text: string): Record<string, string> => {
+  /** 把「Key / Value」行列表加工为请求头对象；自动剔除空行和 Key 末尾误填的冒号，非法项抛错 */
+  const itemsToHeaders = (items: McpHeaderItem[]): Record<string, string> => {
     const result: Record<string, string> = {};
-    for (const rawLine of text.split('\n')) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      const sep = line.indexOf(':');
-            if (sep <= 0) throw new Error(t('settings.mcp.errHeaderLineFormat', { line }));
-      const key = line.slice(0, sep).trim();
-      const value = line.slice(sep + 1).trim();
-      if (!key) throw new Error(t('settings.mcp.errHeaderKeyEmpty', { line }));
+    for (const item of items) {
+      const key = item.key.trim().replace(/[:：]+$/, '').trim();
+      const value = item.value.trim();
+      if (!key && !value) continue;
+      if (!key) throw new Error(t('settings.mcp.errHeaderKeyEmpty', { line: value }));
       if (!value) throw new Error(t('settings.mcp.errHeaderValueEmpty', { key }));
+      if (key.includes(':') || key.includes('：') || /\s/.test(key)) {
+        throw new Error(t('settings.mcp.errHeaderLineFormat', { line: `${key}: ${value}` }));
+      }
       result[key] = value;
     }
     return result;
+  };
+
+  const addMcpHeader = () => {
+    mcpForm.value.headerItems.push({ key: '', value: '' });
+    mcpHeadersPristine.value = false;
+  };
+
+  const removeMcpHeader = (index: number) => {
+    mcpForm.value.headerItems.splice(index, 1);
+    mcpHeadersPristine.value = false;
+  };
+
+  const markMcpHeadersDirty = () => {
+    mcpHeadersPristine.value = false;
   };
 
   /** 把环境变量对象渲染成「KEY=VALUE」多行文本 */
@@ -325,7 +344,7 @@ export function useMcpTab() {
       name: '',
       transport: 'streamable-http',
       url: '',
-      headerLines: '',
+      headerItems: [{ key: '', value: '' }] as McpHeaderItem[],
       commandLines: '',
       envLines: '',
       description: '',
@@ -354,7 +373,7 @@ export function useMcpTab() {
       name: item.name || '',
       transport: item.transport || 'streamable-http',
       url: item.url || '',
-      headerLines: headersToLines(item.headers),
+      headerItems: headersToItems(item.headers),
       commandLines: (item.command || []).join('\n'),
       envLines: envToLines(item.env),
       description: item.description || '',
@@ -438,7 +457,7 @@ export function useMcpTab() {
       // 仅在用户改动过请求头时才提交该字段，否则后端保留库中原值
       if (!mcpHeadersPristine.value) {
         try {
-          headers = linesToHeaders(mcpForm.value.headerLines);
+          headers = itemsToHeaders(mcpForm.value.headerItems);
         } catch (e: any) {
           mcpFormError.value = e?.message || t('settings.mcp.errHeadersFormat');
           return null;
@@ -713,6 +732,9 @@ export function useMcpTab() {
     mcpForm,
     mcpAutoHealthCheckMode,
     mcpHeadersPristine,
+    addMcpHeader,
+    removeMcpHeader,
+    markMcpHeadersDirty,
     mcpEnvPristine,
     loadMcp,
     startAddMcp,

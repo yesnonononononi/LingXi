@@ -38,7 +38,7 @@ class RuntimeModelTimeoutTest {
                 new ModelConfig(7L, "https://example.invalid/v1", "test-key", "test-model", null, true)));
         contextRunner.withPropertyValues("lingxi.agent.model.conf.chat.timeout=" + timeout).run(context -> {
             ModelServiceImpl service = context.getBean(ModelServiceImpl.class);
-            SettingsView settings = new SettingsView(null, null, null, null, 7L, null, 1234, "high", null, 10);
+            SettingsView settings = new SettingsView(null, null, null, 7L, null, 1234, "high", null, 10);
 
             RuntimeModel withSettings = service.resolveRuntimeConfig(7L, settings);
             assertEquals(Duration.ofMillis(expectedMillis), withSettings.config().getTimeout());
@@ -70,7 +70,7 @@ class RuntimeModelTimeoutTest {
     void directCreateWithoutCompactModelHonoursStreamSetting() {
         // 覆盖 7 参 create 重载（无 compactModel）：返回非空且流式跟随设置，
         // 防止该重载被 NullReturnVals 类变异悄悄改成返回 null。
-        SettingsView streamOff = new SettingsView(null, null, null, null, null, null, null, null, null, 10,
+        SettingsView streamOff = new SettingsView(null, null, null, null, null, null, null, null, 10,
                 null, null, null, false);
         RuntimeModel off = RuntimeModel.create("https://example.invalid/v1", "k", "m", null, false,
                 streamOff, Duration.ofSeconds(30));
@@ -78,7 +78,7 @@ class RuntimeModelTimeoutTest {
         assertTrue(off.config().isReturnThinking());
         assertNull(off.config().getCompactModel());
 
-        SettingsView streamOn = new SettingsView(null, null, null, null, null, null, null, null, null, 10,
+        SettingsView streamOn = new SettingsView(null, null, null, null, null, null, null, null, 10,
                 null, null, null, true);
         assertTrue(RuntimeModel.create("https://example.invalid/v1", "k", "m", null, false,
                 streamOn, Duration.ofSeconds(30)).config().isStream());
@@ -121,7 +121,7 @@ class RuntimeModelTimeoutTest {
         contextRunner.run(context -> {
             ModelServiceImpl service = context.getBean(ModelServiceImpl.class);
             // streamChat=false → 连接必须关掉流式；returnThinking/sendThinking 仍恒为 true（与流式无关）。
-            SettingsView streamOff = new SettingsView(null, null, null, null, 7L, null, null, null, null, 10,
+            SettingsView streamOff = new SettingsView(null, null, null, 7L, null, null, null, null, 10,
                     null, null, null, false);
             RuntimeModel off = service.resolveRuntimeConfig(7L, streamOff);
             assertFalse(off.config().isStream());
@@ -129,7 +129,7 @@ class RuntimeModelTimeoutTest {
             assertTrue(off.config().isSendThinking());
 
             // streamChat=true → 流式打开。
-            SettingsView streamOn = new SettingsView(null, null, null, null, 7L, null, null, null, null, 10,
+            SettingsView streamOn = new SettingsView(null, null, null, 7L, null, null, null, null, 10,
                     null, null, null, true);
             assertTrue(service.resolveRuntimeConfig(7L, streamOn).config().isStream());
         });

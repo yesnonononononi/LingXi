@@ -9,6 +9,8 @@ const CHANNELS = Object.freeze({
 });
 const PARTITION = 'persist:lingxi-project-pages';
 const PROJECT_PAGE_LOAD_TIMEOUT_MS = 15000;
+/** 原生视图底色与面板 `--file-bg` 对齐，避免暗色模式下重排或重绘瞬间透出默认白底。 */
+const VIEW_BG_COLORS = Object.freeze({dark: '#0c0e13', light: '#ffffff'});
 /** 右键菜单兜底文案：渲染层来不及推送语言时，菜单也只能是单语言，不能中英混排。 */
 const DEFAULT_MENU_LABELS = Object.freeze({
   showWithAgent: '让 Agent 分析此页面',
@@ -58,11 +60,18 @@ function normalizeLayout(request) {
   }};
 }
 
-function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
+function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, nativeTheme, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
   let previewSession;
   // 菜单文案由渲染层按当前语言推送，主进程不做翻译。
   let menuLabels = DEFAULT_MENU_LABELS;
+  let darkTheme = Boolean(nativeTheme?.shouldUseDarkColors);
+
+  const applyViewTheme = view => {
+    if (typeof view?.setBackgroundColor === 'function') {
+      view.setBackgroundColor(darkTheme ? VIEW_BG_COLORS.dark : VIEW_BG_COLORS.light);
+    }
+  };
 
   const clearTimer = tab => { clearTimeout(tab.timer); tab.timer = undefined; };
   const destroyTab = (state, tab) => {
@@ -133,9 +142,40 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     if (!tab) throw new Error('网页标签已关闭，请重新打开');
     return tab;
   };
-  const load = (tab, url, options) => {
+  const capturePageHtml = async contents => {
+    if (!contents || (typeof contents.isDestroyed === 'function' && contents.isDestroyed())
+      || typeof contents.executeJavaScript !== 'function') {
+      return '';
+    }
+    try {
+      const result = await contents.executeJavaScript(
+        'document.documentElement ? document.documentElement.outerHTML : ""',
+      );
+      return typeof result === 'string' ? result : '';
+    } catch {
+      return '';
+    }
+  };
+  const captureShowWithAgentPayload = async (tab, selectionText) => {
+    const [image, html] = await Promise.all([
+      tab.contents.capturePage(),
+      capturePageHtml(tab.contents),
+    ]);
+    return {
+      tabId: tab.id,
+      url: tab.url,
+      title: tab.title,
+      selectionText: typeof selectionText === 'string' ? selectionText.trim() : '',
+      imageBuffer: image.toPNG(),
+      html,
+    };
+  };
+  const load = (state, tab, url, options) => {
     tab.url = normalizeTargetUrl(url);
     tab.committedNavigation = false;
+    applyViewTheme(tab.view);
+    // 先把非零视口与可见性落到原生视图再发起导航，否则隐藏态的新视图会让页面首屏脚本读到 0x0 视口。
+    applyLayout(state);
     // 加载失败以原生事件为准，取消旧导航产生的 Promise 拒绝不能污染新页面。
     void tab.contents.loadURL(tab.url, options).catch(() => undefined);
   };
@@ -150,6 +190,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     const view = new WebContentsView({webPreferences: {
       session: previewSession, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
     }});
+    applyViewTheme(view);
     const tab = {id: randomUUID(), view, contents: view.webContents, url: '', title: '', favicon: '', loadState: 'idle',
       isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined};
     state.tabs.set(tab.id, tab);
@@ -183,16 +224,9 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           label: hasText ? menuLabels.showWithAgentWithSelection : menuLabels.showWithAgent,
           click: async () => {
             try {
-              const image = await contents.capturePage();
-              const buffer = image.toPNG();
+              const payload = await captureShowWithAgentPayload(tab, params.selectionText);
               if (!state.host.isDestroyed()) {
-                state.host.send(CHANNELS.showWithAgent, {
-                  tabId: tab.id,
-                  url: tab.url,
-                  title: tab.title,
-                  selectionText: params.selectionText ? params.selectionText.trim() : '',
-                  imageBuffer: buffer,
-                });
+                state.host.send(CHANNELS.showWithAgent, payload);
               }
             } catch (error) {
               console.error(`页面截图失败: url=${tab.url}`, error);
@@ -226,6 +260,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       if (!current() || !mainFrame || inPlace) return;
       clearTimer(tab);
       tab.committedNavigation = false;
+      applyViewTheme(tab.view);
       tab.isLoading = true;
       tab.loadState = 'loading';
       tab.errorCode = 0;
@@ -240,7 +275,12 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       try { tab.url = normalizeTargetUrl(url); } catch { return; }
       send();
     };
-    contents.on('did-navigate', (_event, url) => { tab.committedNavigation = true; updateUrl(url); });
+    contents.on('did-navigate', (_event, url) => { tab.committedNavigation = true; applyViewTheme(tab.view); updateUrl(url); });
+    contents.on('dom-ready', () => {
+      if (!current()) return;
+      applyViewTheme(tab.view);
+      applyLayout(state);
+    });
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) updateUrl(url); });
     contents.on('page-title-updated', (_event, title) => { tab.title = title; send(); });
     contents.on('page-favicon-updated', (_event, favicons) => {
@@ -279,7 +319,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       } catch (error) { fail(-301, error.message); }
       return {action: 'deny'};
     });
-    if (url) load(tab, url, options);
+    if (url) load(state, tab, url, options);
     return tab;
   };
 
@@ -303,7 +343,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       case 'navigate': {
         const url = normalizeTargetUrl(request.url);
         const tab = request.tabId ? requireTab(state, request.tabId) : state.tabs.get(state.activeTabId) ?? createTab(state);
-        load(tab, url); break;
+        load(state, tab, url); break;
       }
       case 'back': case 'forward': case 'reload': case 'stop': {
         const tab = requireTab(state, request.tabId);
@@ -316,15 +356,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       }
       case 'show-with-agent': {
         const tab = request.tabId ? requireTab(state, request.tabId) : (state.tabs.get(state.activeTabId) ?? requireTab(state, ''));
-        return tab.contents.capturePage().then(image => {
-          const buffer = image.toPNG();
-          const payload = {
-            tabId: tab.id,
-            url: tab.url,
-            title: tab.title,
-            selectionText: typeof request.selectionText === 'string' ? request.selectionText.trim() : '',
-            imageBuffer: buffer,
-          };
+        return captureShowWithAgentPayload(tab, request.selectionText).then(payload => {
           if (!state.host.isDestroyed()) {
             state.host.send(CHANNELS.showWithAgent, payload);
           }
@@ -366,11 +398,20 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       return {ok: true, data: {applied: true}};
     } catch (error) { return {ok: false, error: error.message}; }
   });
-  return {close: () => {
-    for (const state of [...states.values()]) release(state);
-    ipcMain.removeHandler(CHANNELS.command);
-    ipcMain.removeHandler(CHANNELS.layout);
-    ipcMain.removeHandler(CHANNELS.labels);
-  }};
+  const setTheme = isDark => {
+    darkTheme = Boolean(isDark);
+    for (const state of states.values()) {
+      for (const tab of state.tabs.values()) applyViewTheme(tab.view);
+    }
+  };
+  return {
+    setTheme,
+    close: () => {
+      for (const state of [...states.values()]) release(state);
+      ipcMain.removeHandler(CHANNELS.command);
+      ipcMain.removeHandler(CHANNELS.layout);
+      ipcMain.removeHandler(CHANNELS.labels);
+    },
+  };
 }
-module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, normalizeMenuLabels, DEFAULT_MENU_LABELS, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS};
+module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, normalizeMenuLabels, DEFAULT_MENU_LABELS, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS, VIEW_BG_COLORS};

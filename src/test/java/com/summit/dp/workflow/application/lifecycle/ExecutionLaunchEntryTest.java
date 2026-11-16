@@ -42,14 +42,14 @@ class ExecutionLaunchEntryTest {
     void rootEntryLaunchesThroughGatewayWithRootRole() throws Exception {
         LaunchRecordingGateway gateway = new LaunchRecordingGateway();
         ExecutionContext executionContext = ExecutionContext.root(SESSION_ID, EXECUTION_ID_TEXT, null, null,
-                null, null);
+                null);
         PreparedChatExecutor executor = new PreparedChatExecutor(
                 mock(AgentWorkflowOrchestrator.class), mock(RequestPreparer.class),
                 mock(ModelContextService.class), registry, mock(ExecutionControl.class),
                 new StartupFailureCloser(mock(ExecutionControl.class)), gateway);
 
         executor.submitAsync(new RuntimeContext(executionContext, null, null, null, null, null, null, null,
-                null, false, null).withExecution(Execution.builder().id(EXECUTION_ID_TEXT).agentId("chatAgent")
+                false, null).withExecution(Execution.builder().id(EXECUTION_ID_TEXT).agentId("chatAgent")
                 .executionState(ExecutionState.RUNNING)
                 .agentRequest(AgentRequest.builder().executionId(EXECUTION_ID_TEXT).build())
                 .build()));

@@ -96,7 +96,7 @@ class UserConfigCompactionModelTest {
     }
 
     private static UserConfigCommand command(Long compactModelId, boolean present) {
-        return new UserConfigCommand(null, null, null, null, null, null, false, null, null, null, null,
+        return new UserConfigCommand(null, null, null, null, null, false, null, null, null, null,
                 null, null, null, compactModelId, present, null, false);
     }
 }

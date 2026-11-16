@@ -3,6 +3,7 @@ package com.summit.dp.user_configs.infrastructure.repository;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.domain.model.ReasoningEffort;
 import com.summit.dp.user_configs.domain.model.UserConfig;
 import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
@@ -53,11 +54,16 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
         }
         String renderTheme = po.getRenderTheme();
 
+        AgentPermissionMode permissionMode = po.getPermissionMode() != null && !po.getPermissionMode().isBlank()
+                ? AgentPermissionMode.parse(po.getPermissionMode())
+                : (po.getAccessMode() != null || po.getCommandApprovalPolicy() != null
+                        ? AgentPermissionMode.fromLegacy(po.getAccessMode(), po.getCommandApprovalPolicy())
+                        : AgentPermissionMode.DEFAULT);
+
         return UserConfig.builder()
                 .id(po.getId())
                 .status(po.getStatus())
-                .commandApprovalPolicy(UserConfig.CommandPolicy.fromString(po.getCommandApprovalPolicy()))
-                .accessMode(UserConfig.AccessMode.fromString(po.getAccessMode()))
+                .permissionMode(permissionMode)
                 .planMaxReminders(po.getPlanMaxReminders())
                 .agentId(po.getAgentId())
                 .modelId(po.getModelId())
@@ -91,8 +97,7 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
         return UserConfigPO.builder()
                 .id(model.getId())
                 .status(model.getStatus())
-                .commandApprovalPolicy(Objects.toString(model.getCommandApprovalPolicy(), null))
-                .accessMode(Objects.toString(model.getAccessMode(), null))
+                .permissionMode(Objects.toString(model.getPermissionMode(), null))
                 .planMaxReminders(model.getPlanMaxReminders())
                 .agentId(model.getAgentId())
                 .modelId(model.getModelId())

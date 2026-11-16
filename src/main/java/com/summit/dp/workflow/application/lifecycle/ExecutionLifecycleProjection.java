@@ -290,9 +290,8 @@ public class ExecutionLifecycleProjection {
         try {
             closeTerminal(execution);
         } catch (ExecutionClosureFailure failure) {
-            log.error("执行收口失败，待收口位保留待重试: executionId={}, step={}, error={}",
-                    execution.getId(), failure.step(), failure.getCause() == null
-                            ? failure.toString() : failure.getCause().toString(), failure);
+            log.warn("执行收口失败，待收口位保留待重试: executionId={}, step={}, error={}",
+                    execution.getId(), failure.step(), failure.getMessage());
             if (abortOnFailure) {
                 throw failure;
             }
@@ -340,8 +339,8 @@ public class ExecutionLifecycleProjection {
         try {
             action.run();
         } catch (RuntimeException error) {
-            log.error("执行收口失败: executionId={}, step={}, error={}",
-                    execution == null ? null : execution.getId(), name, error.toString(), error);
+            log.warn("执行收口失败: executionId={}, step={} error={}",
+                    execution == null ? null : execution.getId(), name,error.getMessage());
             throw new ExecutionClosureFailure(name, error);
         }
     }

@@ -65,7 +65,7 @@ class AgentModelConfigurationTest {
     }
 
     @Test void configuredChildUsesItsOwnIdAndRuntimeSettings() {
-        SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high", null, 10);
+        SettingsView selected = new SettingsView(null, null, null, 99L, null, 1234, "high", null, 10);
         ModelConfig configured = config("child");
         when(settings.current()).thenReturn(Optional.of(selected));
         when(models.resolveRuntimeConfig(7L, selected)).thenReturn(new RuntimeModel(configured, false));
@@ -98,7 +98,7 @@ class AgentModelConfigurationTest {
                 .toolListProcessor(ToolListProcessorTestSupport.create())
                 .runtimeConfigurations(RuntimeConfigurationTestSupport.create())
                 .build();
-        SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high", null, 10);
+        SettingsView selected = new SettingsView(null, null, null, 99L, null, 1234, "high", null, 10);
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");
         when(models.resolveRuntimeConfig(7L, selected)).thenReturn(new RuntimeModel(explicit, false));
@@ -107,7 +107,7 @@ class AgentModelConfigurationTest {
         assertSame(explicit, ((RuntimeModel) ReflectionTestUtils.invokeMethod(root, "rootModel", 7L, selected)).config());
         assertSame(fallback, ((RuntimeModel) ReflectionTestUtils.invokeMethod(root, "rootModel", null, selected)).config());
         // 无显式、无设置：业务侧不再读 lingxi.agent.model.conf.*，直接报「未配置可用的模型连接」。
-        SettingsView unconfigured = new SettingsView(null, null, null, null, null, null, 1000, "low", null, 10);
+        SettingsView unconfigured = new SettingsView(null, null, null, null, null, 1000, "low", null, 10);
         ClientException error = assertThrows(ClientException.class,
                 () -> ReflectionTestUtils.invokeMethod(root, "rootModel", null, unconfigured));
         assertTrue(error.getMessage().contains("未配置可用的模型连接"));

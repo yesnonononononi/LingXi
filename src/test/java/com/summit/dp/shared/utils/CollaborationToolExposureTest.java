@@ -10,8 +10,7 @@ import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.tools.application.service.ToolListProcessor;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RequestPreparerTestSupport;
@@ -58,21 +57,21 @@ class CollaborationToolExposureTest {
     @Test
     void imageToolFollowsTheVisionDeclarationRatherThanTheName() {
         AgentRequest supported = request(null, null, List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE),
-                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
+                REGISTERED, false, AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
         assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         AgentRequest unsupported = request(null, null, List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE),
-                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "claude-opus", false);
+                REGISTERED, false, AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(""), "claude-opus", false);
         assertEquals(List.of(ToolCatalog.READ_FILE), unsupported.getToolList());
         assertEquals(false, unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         AgentRequest explicitlySelected = request(7L, null, List.of(ToolCatalog.READ_FILE),
-                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
+                REGISTERED, false, AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
         assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE), explicitlySelected.getToolList());
 
         AgentRequest readOnly = request(null, null, List.of(ToolCatalog.READ_IMAGE, ToolCatalog.EDIT_FILE),
-                REGISTERED, false, AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of(ToolCatalog.READ_IMAGE),
+                REGISTERED, false, AgentPermissionMode.READ_ONLY_REVIEW, Set.of(ToolCatalog.READ_IMAGE),
                 new SkillRootResolver(""), "arbitrary-model", true);
         assertEquals(List.of(ToolCatalog.READ_IMAGE), readOnly.getToolList());
     }
@@ -132,7 +131,7 @@ class CollaborationToolExposureTest {
             AgentRequest request = request(null, null, List.of(writer), REGISTERED, false);
             assertEquals(List.of(writer, ToolCatalog.GET_CURRENT_CHECKLIST), request.getToolList());
             AgentRequest readOnly = request(null, null, List.of(writer), REGISTERED, false,
-                    AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of(ToolCatalog.GET_CURRENT_CHECKLIST));
+                    AgentPermissionMode.READ_ONLY_REVIEW, Set.of(ToolCatalog.GET_CURRENT_CHECKLIST));
             assertEquals(List.of(ToolCatalog.GET_CURRENT_CHECKLIST), readOnly.getToolList());
         }
     }
@@ -167,16 +166,15 @@ class CollaborationToolExposureTest {
     }
 
     @Test
-    @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
-    void readOnlyModeDisablesEditingAndKeepsTerminal() {
+    @DisplayName("只读审阅档位：禁用编辑工具和终端工具，保留只读工具")
+    void readOnlyModeDisablesEditingAndTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "search_files", "require_choice",
+                AgentPermissionMode.READ_ONLY_REVIEW, Set.of("read_file", "search_files", "require_choice",
                         ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST));
 
-        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
-                        ToolCatalog.SEARCH_FILES,
+        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.SEARCH_FILES,
                         ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST),
-                request.getToolList(), "只读档禁用 edit_file 与 delete_file，终端不按并发策略被剔除");
+                request.getToolList(), "只读审阅档禁用写工具与终端工具");
     }
 
     // --- 身份剔除：模型看不到它用不了的能力 ----------------------------------------------
@@ -228,7 +226,7 @@ class CollaborationToolExposureTest {
     @DisplayName("Skill 根目录可用：下发 skillConfig，read_skill 由框架提供")
     void skillRootAddsReadSkillAndConfig() {
         AgentRequest request = request(null, null, List.of("read_file"), REGISTERED, false,
-                AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(skillDir.toString()));
+                AgentPermissionMode.APPROVAL_REQUIRED, Set.of(), new SkillRootResolver(skillDir.toString()));
 
         assertEquals(List.of("read_file"), request.getToolList(),
                 "read_skill 是内核工具，框架默认注册且恒准入，业务侧不再补进名单");
@@ -241,7 +239,7 @@ class CollaborationToolExposureTest {
     @DisplayName("Skill 可用 + 只读档位：名单不被只读滤网改写，read_skill 依旧由框架准入")
     void skillRootToolSurvivesTheReadOnlyFilter() {
         AgentRequest request = request(null, null, List.of("read_file", "edit_file"), REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", ToolCatalog.READ_SKILL),
+                AgentPermissionMode.READ_ONLY_REVIEW, Set.of("read_file", ToolCatalog.READ_SKILL),
                 new SkillRootResolver(skillDir.toString()));
 
         assertEquals(List.of("read_file"), request.getToolList(),
@@ -267,25 +265,25 @@ class CollaborationToolExposureTest {
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
                                  Set<String> registered, boolean withMcp) {
         return request(agentId, teamId, configuredTools, registered, withMcp,
-                AgentAccessMode.IN_WORKSPACE, Set.of());
+                AgentPermissionMode.APPROVAL_REQUIRED, Set.of());
     }
 
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
                                  Set<String> registered, boolean withMcp,
-                                 AgentAccessMode mode, Set<String> readOnlyNames) {
+                                 AgentPermissionMode mode, Set<String> readOnlyNames) {
         return request(agentId, teamId, configuredTools, registered, withMcp, mode, readOnlyNames,
                 new SkillRootResolver(""));
     }
 
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
                                  Set<String> registered, boolean withMcp,
-                                 AgentAccessMode mode, Set<String> readOnlyNames,
+                                 AgentPermissionMode mode, Set<String> readOnlyNames,
                                  SkillRootResolver skillRootResolver) {
         return request(agentId, teamId, configuredTools, registered, withMcp, mode, readOnlyNames, skillRootResolver, "m", false);
     }
 
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
-                                 Set<String> registered, boolean withMcp, AgentAccessMode mode,
+                                 Set<String> registered, boolean withMcp, AgentPermissionMode mode,
                                  Set<String> readOnlyNames, SkillRootResolver skillRootResolver, String modelName, boolean vision) {
         ToolCatalog catalog = mock(ToolCatalog.class);
         when(catalog.names()).thenReturn(registered);
@@ -302,11 +300,11 @@ class CollaborationToolExposureTest {
 
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
         ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,
-                mode, CommandApprovalPolicy.FULL_ACCESS);
+                mode);
         RuntimeContext context = new RuntimeContext(executionContext, agentId, teamId,
                 SessionVO.builder().id(500L).build(), List.of(), null,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName(modelName).build(),
-                mode, CommandApprovalPolicy.FULL_ACCESS, false, null, vision);
+                mode, false, null, vision);
 
         return preparer.buildRequest("prompt", context, configuredTools);
     }

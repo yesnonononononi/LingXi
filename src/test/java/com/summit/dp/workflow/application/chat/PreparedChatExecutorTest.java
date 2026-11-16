@@ -19,8 +19,7 @@ import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
@@ -132,11 +131,11 @@ class PreparedChatExecutorTest {
 
     private static RuntimeContext context(Execution execution) {
         ExecutionContext executionContext = ExecutionContext.root(ROOT_SESSION_ID, EXECUTION_ID, null, 7L,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                AgentPermissionMode.FULL_ACCESS);
         RuntimeContext context = new RuntimeContext(executionContext, null, null,
                 SessionVO.builder().id(ROOT_SESSION_ID).historyRevision(3L).build(),
-                List.of(), null, null, AgentAccessMode.IN_WORKSPACE,
-                CommandApprovalPolicy.FULL_ACCESS, false, UserMessageEntity.from("你好")).withTurnId(TURN_ID);
+                List.of(), null, null, AgentPermissionMode.FULL_ACCESS,
+                false, UserMessageEntity.from("你好")).withTurnId(TURN_ID);
         return execution == null ? context : context.withExecution(execution);
     }
 

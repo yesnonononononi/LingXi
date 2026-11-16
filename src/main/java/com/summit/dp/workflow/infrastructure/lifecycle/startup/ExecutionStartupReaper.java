@@ -185,7 +185,7 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
                 continue;
             }
             for (Long executionId : pending) {
-                repairOne(executionId);
+                    repairOne(executionId);
             }
             cursor = pending.get(pending.size() - 1);
             if (pending.size() < CLOSURE_BATCH) {

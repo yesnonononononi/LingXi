@@ -38,7 +38,9 @@ import { useTheme } from '${source('src/composables/useTheme.ts')}';
 import '${source('src/style.css')}';
 
 setPreference('zh-CN');
-useTheme().setTheme('light');
+const theme = useTheme();
+theme.setTheme('light');
+window.setTheme = mode => theme.setTheme(mode);
 
 window.flush = async (ms = 60) => {
   await new Promise(resolve => setTimeout(resolve, ms));
@@ -382,6 +384,31 @@ createApp(App).use(createPinia()).mount('#app');`);
   assert.deepEqual(await evaluate('window.events.filter(item => item[0] === "popup")'), [['popup', 'm2']],
     '搜索框里按 Enter 应选中首个匹配项');
   assert.equal(await evaluate('document.querySelectorAll("[role=listbox]").length'), 0, '选中后应收起');
+
+  // ---- 10. 暗色模式同步：未显式传 :is-dark 时必须跟随全局主题切换 ----
+  await evaluate('window.setTheme("dark")');
+  await evaluate('window.flush(160)');
+  const closedDarkTrigger = await evaluate(`(() => {
+    const trigger = document.querySelector('[data-testid=basic]');
+    return {
+      triggerBg: getComputedStyle(trigger).backgroundColor,
+      triggerColor: getComputedStyle(trigger).color,
+    };
+  })()`);
+  assert.equal(closedDarkTrigger.triggerBg, 'rgb(39, 39, 42)', '暗色模式下未传 isDark 的触发器应同步为深色背景');
+  assert.equal(closedDarkTrigger.triggerColor, 'rgb(245, 245, 245)', '暗色模式下未传 isDark 的触发器应同步为浅色文字');
+
+  await click('[data-testid=basic]');
+  await evaluate('window.flush(260)');
+  const darkColors = await evaluate(`(() => {
+    const panel = document.querySelector('#basic-menu');
+    return {
+      panelBg: panel ? getComputedStyle(panel).backgroundColor : null,
+      panelColor: panel ? getComputedStyle(panel).color : null,
+    };
+  })()`);
+  assert.equal(darkColors.panelBg, 'rgb(39, 39, 42)', '暗色模式下未传 isDark 的面板应同步为深色背景');
+  assert.equal(darkColors.panelColor, 'rgb(245, 245, 245)', '暗色模式下未传 isDark 的面板应同步为浅色文字');
 
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
   clearTimeout(deadline);

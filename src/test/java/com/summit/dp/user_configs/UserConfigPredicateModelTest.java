@@ -97,7 +97,7 @@ class UserConfigPredicateModelTest {
     }
 
     private static UserConfigCommand command(Long predicateModelId, boolean present) {
-        return new UserConfigCommand(null, null, null, null, null, null, false, null, null, null,
+        return new UserConfigCommand(null, null, null, null, null, false, null, null, null,
                 null, null, null, null, null, false, predicateModelId, present, null, false, null,
                 false, null, null, false);
     }

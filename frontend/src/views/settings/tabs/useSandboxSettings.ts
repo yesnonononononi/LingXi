@@ -1,13 +1,9 @@
-import {computed, onMounted, ref} from 'vue';
+import {computed, ref} from 'vue';
 import {useUserConfigStore} from '../../../stores/userConfigStore';
-import {SandboxAPI} from '../../../services/sandbox';
 import type {
-    AgentAccessMode,
-    CommandApprovalPolicyType,
-    SandboxServiceStatus,
+    AgentPermissionMode,
     WorkspaceEnvType,
 } from '../../../types/chat';
-import {isOk} from '../../../utils/api';
 import {useI18n} from '../../../i18n';
 import {
   isAccessModeMismatch,
@@ -53,111 +49,41 @@ export function useSandboxSettings(emitModelUpdated: () => void) {
     if (ok) emitModelUpdated();
   };
 
-  // 状态查询不执行命令，基础能力检查由用户显式发起
-  const sandboxStatus = ref<SandboxServiceStatus | null>(null);
-  const isCheckingSandbox = ref(false);
-  const sandboxError = ref('');
-  const sandboxNotice = ref('');
-
-  const loadSandboxStatus = async (): Promise<void> => {
-    try {
-      const res = await SandboxAPI.status();
-      sandboxStatus.value = isOk(res.code) ? (res.data ?? null) : null;
-    } catch {
-      sandboxStatus.value = null;
-    }
-  };
-
-  const checkSandboxService = async (): Promise<void> => {
-    if (isCheckingSandbox.value) return;
-    isCheckingSandbox.value = true;
-    sandboxError.value = '';
-    sandboxNotice.value = '';
-    try {
-      const res = await SandboxAPI.check();
-      if (isOk(res.code)) {
-        sandboxNotice.value = res.data?.message || t('settings.general.sandboxChecked');
-        sandboxStatus.value = res.data ?? null;
-      } else {
-        // 详细运行诊断仅写入后端日志。
-        sandboxError.value = res.errMsg || t('settings.general.sandboxCheckFailed');
-      }
-    } catch (error) {
-      sandboxError.value = error instanceof Error && error.message
-        ? error.message
-        : t('settings.general.sandboxCheckFailed');
-    } finally {
-      isCheckingSandbox.value = false;
-    }
-  };
-
-  // 工作空间权限：文件表的粗粒度默认策略，规则命中前先生效
-  const accessMode = computed<AgentAccessMode>(() => userConfig.accessMode);
-  const accessModeOptions = computed<{ label: string; value: AgentAccessMode; desc: string }[]>(() => [
-    { label: t('settings.general.accessInWorkspace'), value: 'IN_WORKSPACE', desc: t('settings.general.accessInWorkspaceDesc') },
-    { label: t('settings.general.accessReadOnly'), value: 'READ_ONLY_IN_WORKSPACE', desc: t('settings.general.accessReadOnlyDesc') },
-    { label: t('settings.general.accessFull'), value: 'OUT_OF_WORKSPACE', desc: t('settings.general.accessFullDesc') },
+  // 会话权限：统一控制命令审批与工作区访问边界（Plan 模式下由后端自动切入只读审阅）
+  const permissionMode = computed<AgentPermissionMode>(() => userConfig.permissionMode);
+  const permissionModeOptions = computed<{ label: string; value: AgentPermissionMode; desc: string }[]>(() => [
+    { label: t('settings.general.permissionApprovalRequired'), value: 'APPROVAL_REQUIRED', desc: t('settings.general.permissionApprovalRequiredDesc') },
+    { label: t('settings.general.permissionDelegatedApproval'), value: 'DELEGATED_APPROVAL', desc: t('settings.general.permissionDelegatedApprovalDesc') },
+    { label: t('settings.general.permissionFull'), value: 'FULL_ACCESS', desc: t('settings.general.permissionFullDesc') },
   ]);
-  const currentAccessModeLabel = computed(() => accessModeOptions.value.find(o => o.value === accessMode.value)?.label
-    ?? t('settings.general.accessInWorkspace'));
+  const currentPermissionModeLabel = computed(() => permissionModeOptions.value.find(o => o.value === permissionMode.value)?.label
+    ?? t('settings.general.permissionApprovalRequired'));
 
   /**
    * 档位与执行环境必须一起读：同一个档位在本地与沙箱下能写到哪儿并不相同。
-   *
-   * <p>本地执行环境没有沙箱构建流程，终端不受任何目录围栏，只读档在那里只剩「文件工具被禁用」。</p>
    */
-  const accessModeImpact = computed<{ warn: boolean; text: string }>(() => {
+  const permissionModeImpact = computed<{ warn: boolean; text: string }>(() => {
     const state = sandboxState.value;
     const prefix = state === 'UNSET' ? t('settings.general.impactUnset') : '';
     return {
-      warn: isAccessModeMismatch(accessMode.value, state),
-      text: prefix + t(resolveAccessImpactKey(accessMode.value, state)),
+      warn: isAccessModeMismatch(permissionMode.value, state),
+      text: prefix + t(resolveAccessImpactKey(permissionMode.value, state)),
     };
   });
 
-  const handleSelectAccessMode = async (opt: AgentAccessMode): Promise<void> => {
-    await userConfig.patch('accessMode', opt, { accessMode: opt });
+  const handleSelectPermissionMode = async (opt: AgentPermissionMode): Promise<void> => {
+    await userConfig.patch('permissionMode', opt, { permissionMode: opt });
   };
-
-  // 工具权限：命令表未命中时沿用的通用命令权限
-  const commandApprovalPolicy = computed<CommandApprovalPolicyType>(
-    () => userConfig.commandApprovalPolicy ?? 'DANGEROUS_BLOCK',
-  );
-  const commandApprovalPolicyOptions = computed<{ label: string; value: CommandApprovalPolicyType; desc: string }[]>(() => [
-    { label: t('settings.general.policyDangerBlock'), value: 'DANGEROUS_BLOCK', desc: t('settings.general.policyDangerBlockDesc') },
-    { label: t('settings.general.policyPreConfirm'), value: 'PRE_EXEC_CONFIRM', desc: t('settings.general.policyPreConfirmDesc') },
-    { label: t('settings.general.policyFullAccess'), value: 'FULL_ACCESS', desc: t('settings.general.policyFullAccessDesc') },
-  ]);
-  const currentCommandApprovalPolicyLabel = computed(() => commandApprovalPolicyOptions.value
-    .find(o => o.value === commandApprovalPolicy.value)?.label ?? t('settings.general.policyDangerBlock'));
-
-  const handleSelectCommandApprovalPolicy = async (opt: CommandApprovalPolicyType): Promise<void> => {
-    await userConfig.patch('commandApprovalPolicy', opt, { commandApprovalPolicy: opt });
-  };
-
-  onMounted(() => {
-    // 与规则表无关，先发出去别挡首屏渲染。
-    void loadSandboxStatus();
-  });
 
   return {
     sandboxState,
     envLabel,
     isSavingEnv,
     setSandboxEnabled,
-    sandboxStatus,
-    isCheckingSandbox,
-    sandboxError,
-    sandboxNotice,
-    checkSandboxService,
-    accessMode,
-    accessModeOptions,
-    currentAccessModeLabel,
-    accessModeImpact,
-    handleSelectAccessMode,
-    commandApprovalPolicy,
-    commandApprovalPolicyOptions,
-    currentCommandApprovalPolicyLabel,
-    handleSelectCommandApprovalPolicy,
+    permissionMode,
+    permissionModeOptions,
+    currentPermissionModeLabel,
+    permissionModeImpact,
+    handleSelectPermissionMode,
   };
 }

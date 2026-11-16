@@ -37,8 +37,7 @@ import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RequestPreparerTestSupport;
@@ -241,9 +240,9 @@ class RuntimeConfigurationIntegrationTest {
                 .runtimeConfigurations(configurations)
                 .build();
         RuntimeContext context = new RuntimeContext(ExecutionContext.root(201L, "101", null, 31L,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.PRE_EXEC_CONFIRM), null, null,
-                SessionVO.builder().id(201L).build(), List.of(), null, model, AgentAccessMode.IN_WORKSPACE,
-                CommandApprovalPolicy.PRE_EXEC_CONFIRM, false, null);
+                AgentPermissionMode.APPROVAL_REQUIRED), null, null,
+                SessionVO.builder().id(201L).build(), List.of(), null, model, AgentPermissionMode.APPROVAL_REQUIRED,
+                false, null);
         AgentRequest request = preparer.buildRequest("prompt", context, List.of());
         assertNotNull(request.getModelConfigSpec());
         assertEquals(31L, request.getModelConfigSpec().getId().longValue());

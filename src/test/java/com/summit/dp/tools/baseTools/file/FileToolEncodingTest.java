@@ -14,9 +14,8 @@ import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecuto
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import com.summit.dp.workflow.infrastructure.tools.file.write.WriteFileToolExecutor;
-import com.summit.sandbox.mxc.MxcRuntime;
-import com.summit.sandbox.mxc.MxcWorkspaceProvider;
-import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.sandbox.windows.WindowsWorkspaceProvider;
+import com.summit.sandbox.windows.WindowsWorkspaceSpec;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -87,20 +86,12 @@ class FileToolEncodingTest {
     }
 
     @Test void nativeSandboxFileToolsPreserveUtf8AlongsideCmdOutput() throws Exception {
-        String node = System.getProperty("mxc.node");
-        String sdk = System.getProperty("mxc.sdk");
-        String base = System.getProperty("mxc.business.root");
-        assumeTrue(node != null && sdk != null && base != null, "需要显式 MXC 运行资源");
-        Path directory = Files.createDirectories(Path.of(base, "encoding-" + UUID.randomUUID()));
-        Path project = Files.createDirectories(directory.resolve("project"));
-        MxcRuntime runtime = MxcRuntime.nativeHost(Path.of(node), Path.of(sdk), directory.resolve("helpers"));
-        Workspace workspace = new MxcWorkspaceProvider(runtime).resolve(new MxcWorkspaceSpec(project.toString()));
+        Path project = Files.createDirectories(root.resolve("project"));
+        Workspace workspace = new WindowsWorkspaceProvider().resolve(new WindowsWorkspaceSpec(project.toString()));
         assertTrue(workspace.runtimeEnvironment().isolated());
         System.out.println("沙箱终端编码: " + workspace.runtimeEnvironment().charset());
-        if (runtime.windows()) {
-            assertTrue(workspace.bridge().commands().execute("echo 中文", workspace.workDir(), workspace.runtimeEnvironment().charset(),
-                    10, TimeUnit.SECONDS, 4096).output().contains("中文"));
-        }
+        assertTrue(workspace.bridge().commands().execute("echo 中文", workspace.workDir(), workspace.runtimeEnvironment().charset(),
+                10, TimeUnit.SECONDS, 4096).output().contains("中文"));
         assertReads(workspace, null, null, ORIGINAL);
         assertReads(workspace, 2, 3, "2: \n3: 末行🙂");
         assertEdits(workspace);

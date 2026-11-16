@@ -2,8 +2,7 @@ package com.summit.dp.user_configs.application.service;
 
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.user_configs.domain.model.ReasoningEffort;
 import com.summit.dp.user_configs.domain.model.UserConfig;
@@ -56,15 +55,11 @@ public class DefaultSettingsProvider implements SettingsProvider {
         }
         UserConfig.WorkSpaceConfig workSpaceConfig = config.getWorkSpaceConfig();
         WorkspaceType workspaceType = workSpaceConfig == null ? null : workSpaceConfig.type();
-        AgentAccessMode accessMode = config.getAccessMode() == null
-                ? null : AgentAccessMode.valueOf(config.getAccessMode().name());
-        CommandApprovalPolicy policy = config.getCommandApprovalPolicy() == null
-                ? null : CommandApprovalPolicy.valueOf(config.getCommandApprovalPolicy().name());
+        AgentPermissionMode permissionMode = config.getPermissionMode();
         ReasoningEffort effort = config.getReasoningEffort();
         return new SettingsView(
                 workspaceType,
-                accessMode,
-                policy,
+                permissionMode,
                 config.getPlanMaxReminders(),
                 config.getModelId(),
                 config.getAgentId(),
@@ -80,8 +75,7 @@ public class DefaultSettingsProvider implements SettingsProvider {
     SettingsView defaultView() {
         return new SettingsView(
                 WorkspaceType.SAND_BOX,
-                AgentAccessMode.IN_WORKSPACE,
-                CommandApprovalPolicy.PRE_EXEC_CONFIRM,
+                AgentPermissionMode.DEFAULT,
                 UserConfig.DEFAULT_PLAN_MAX_REMINDERS,
                 null,
                 null,

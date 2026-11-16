@@ -6,26 +6,13 @@ import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 
 import java.util.List;
 
 /**
  * 一次运行需要的上下文：执行身份、会话、工作区、模型，以及决定工具清单与命令放行的业务档位。
  * <p>身份不再走 ThreadLocal（HC-1），由 {@link ExecutionContext} 显式随 RuntimeContext 传播。</p>
- *
- * @param executionContext 执行身份（会话/根会话/执行 ID/工作空间/模型/档位）
- * @param agentId          本次绑定的 Agent（编排回落后的有效值；下行进 ExecutionAttributes.AGENT_ID）
- * @param teamId           团队模式标识；null 表示非团队会话（分支依据，替代原 command.teamId()）
- * @param session          会话视图（一定非 null：prepare 内含建会话）
- * @param pendingUserMessage 已解析但**尚未落库**的本轮用户消息；由调用方在取得运行资格后经
- *                         {@code RequestPreparer#commitUserMessage} 落库。它与 {@code messageList}
- *                         末元素是同一条消息（后者供模型上下文使用，前者供落库使用）。
- * @param turnId          受理事务生成的业务轮次 ID；受理前为 null，受理后显式传入框架事件元数据。
- * @param execution       受理事务内由框架创建并保存的执行对象；受理前为 null。
- *                        执行阶段必须用它（而不是回查执行表）：loop 就地改这个实例，
- *                        拿解码副本会让「执行行里的对象」与「loop 手里的对象」变成两份。
  */
 public record RuntimeContext(
         ExecutionContext executionContext,
@@ -35,8 +22,7 @@ public record RuntimeContext(
         List<Message> messageList,
         WorkspaceSpec workspace,
         ModelConfig modelConfig,
-        AgentAccessMode accessMode,
-        CommandApprovalPolicy commandApprovalPolicy,
+        AgentPermissionMode permissionMode,
         boolean requirePlan,
         UserMessageEntity pendingUserMessage,
         Long turnId,
@@ -46,31 +32,29 @@ public record RuntimeContext(
     /** 受理前的便捷构造器：turnId 与 execution 都还没有。 */
     public RuntimeContext(ExecutionContext executionContext, Long agentId, Long teamId,
                           SessionVO session, List<Message> messageList, WorkspaceSpec workspace,
-                          ModelConfig modelConfig, AgentAccessMode accessMode,
-                          CommandApprovalPolicy commandApprovalPolicy, boolean requirePlan,
-                          UserMessageEntity pendingUserMessage) {
+                          ModelConfig modelConfig, AgentPermissionMode permissionMode,
+                          boolean requirePlan, UserMessageEntity pendingUserMessage) {
         this(executionContext, agentId, teamId, session, messageList, workspace, modelConfig,
-                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null, null, false);
+                permissionMode, requirePlan, pendingUserMessage, null, null, false);
     }
 
     public RuntimeContext(ExecutionContext executionContext, Long agentId, Long teamId,
                           SessionVO session, List<Message> messageList, WorkspaceSpec workspace,
-                          ModelConfig modelConfig, AgentAccessMode accessMode,
-                          CommandApprovalPolicy commandApprovalPolicy, boolean requirePlan,
-                          UserMessageEntity pendingUserMessage, boolean vision) {
+                          ModelConfig modelConfig, AgentPermissionMode permissionMode,
+                          boolean requirePlan, UserMessageEntity pendingUserMessage, boolean vision) {
         this(executionContext, agentId, teamId, session, messageList, workspace, modelConfig,
-                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null, null, vision);
+                permissionMode, requirePlan, pendingUserMessage, null, null, vision);
     }
 
     public RuntimeContext withTurnId(Long turnId) {
         return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
-                workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
+                workspace, modelConfig, permissionMode, requirePlan,
                 pendingUserMessage, turnId, execution, vision);
     }
 
     public RuntimeContext withExecution(Execution execution) {
         return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
-                workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
+                workspace, modelConfig, permissionMode, requirePlan,
                 pendingUserMessage, turnId, execution, vision);
     }
 }

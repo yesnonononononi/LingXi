@@ -4,6 +4,7 @@ package com.summit.dp.user_configs.domain.model;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
@@ -21,28 +22,6 @@ public class UserConfig {
 
 
     public record WorkSpaceConfig(WorkspaceType type) {
-    }
-
-    public enum AccessMode {
-        IN_WORKSPACE,
-        READ_ONLY_IN_WORKSPACE,
-        OUT_OF_WORKSPACE;
-
-        public static AccessMode fromString(String mode) {
-            if (mode == null || mode.isBlank()) return null;
-            return AccessMode.valueOf(mode.trim().toUpperCase());
-        }
-    }
-
-    public enum CommandPolicy {
-        DANGEROUS_BLOCK,
-        PRE_EXEC_CONFIRM,
-        FULL_ACCESS;
-
-        public static CommandPolicy fromString(String policy) {
-            if (policy == null) return null;
-            return CommandPolicy.valueOf(policy.toUpperCase());
-        }
     }
 
     public enum RenderTheme {
@@ -90,13 +69,9 @@ public class UserConfig {
 
     private WorkSpaceConfig workSpaceConfig;
     /**
-     * 命令放行档位（业务侧概念）；空值表示沿用 yml 缺省。
+     * 统一总权限档位（合并工作区访问边界与命令审批策略）。
      */
-    private CommandPolicy commandApprovalPolicy;
-    /**
-     * 会话访问档位（业务侧概念）；空值表示沿用 yml 缺省。
-     */
-    private AccessMode accessMode;
+    private AgentPermissionMode permissionMode;
     private Integer planMaxReminders;
     /**
      * 本实例全局选中的 Agent（关联 agent.id；空表示未选择）
@@ -179,9 +154,8 @@ public class UserConfig {
     public static UserConfig defaultConfig() {
         return UserConfig.builder()
                 .id(LocalInstance.SETTINGS_ROW_ID)
-                .commandApprovalPolicy(CommandPolicy.PRE_EXEC_CONFIRM)
+                .permissionMode(AgentPermissionMode.DEFAULT)
                 .planMaxReminders(DEFAULT_PLAN_MAX_REMINDERS)
-                .accessMode(AccessMode.IN_WORKSPACE)
                 .reasoningEffort(ReasoningEffort.LOW)
                 .maxTokens(DEFAULT_MAX_TOKENS)
                 .streamChat(DEFAULT_STREAM_CHAT)
@@ -305,13 +279,11 @@ public class UserConfig {
         update();
     }
 
-    public void changeAccessMode(@NonNull AccessMode accessMode) {
-        this.accessMode = accessMode;
-        update();
-    }
-
-    public void changeCommandPolicy(@NonNull CommandPolicy commandPolicy) {
-        this.commandApprovalPolicy = commandPolicy;
+    public void changePermissionMode(@NonNull AgentPermissionMode permissionMode) {
+        if (!permissionMode.isVisibleInSessionMenu()) {
+            throw new ClientException("只读审阅仅在 Plan 模式下生效，不可直接设置为全局权限档位");
+        }
+        this.permissionMode = permissionMode;
         update();
     }
 

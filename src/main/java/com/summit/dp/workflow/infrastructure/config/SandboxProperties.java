@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * 运行资源按宿主平台部署，Windows 使用原生 BaseContainer。
+ * 运行资源按宿主平台部署，Windows 使用原生双账号沙箱。
  */
 @ConfigurationProperties("lingxi.sandbox")
 public record SandboxProperties(
@@ -29,10 +29,6 @@ public record SandboxProperties(
 
     public String nodeExecutable() {
         return applicationDirectory == null ? null : SandboxRuntimeLayout.resolve(applicationDirectory).nodeExecutable().toString();
-    }
-
-    public String sdkDirectory() {
-        return applicationDirectory == null ? null : SandboxRuntimeLayout.resolve(applicationDirectory).sdkDirectory().toString();
     }
 
     public Path runtimeDirectory() {

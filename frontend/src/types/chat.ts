@@ -722,14 +722,6 @@ export interface WorkspaceVO {
 /** 沙箱/本地：用户级配置，不由单个工作空间指定；取值为后端 WorkspaceType 枚举名 */
 export type WorkspaceEnvType = 'SAND_BOX' | 'LOCAL' | 'NONE';
 
-/** 沙箱资源配置状态与本次基础能力检查结果。 */
-export interface SandboxServiceStatus {
-  configured: boolean;
-  ready: boolean;
-  backend: string;
-  message: string;
-}
-
 /**
  * 日志文件位置（对应后端 LogLocationVO）。
  *
@@ -745,11 +737,8 @@ export interface LogLocationVO {
   exists: boolean;
 }
 
-/** 会话访问档位：对应后端 UserConfig.AccessMode */
-export type AgentAccessMode = 'IN_WORKSPACE' | 'READ_ONLY_IN_WORKSPACE' | 'OUT_OF_WORKSPACE';
-
-/** 命令放行档位：对应后端 UserConfig.CommandPolicy (DANGEROUS_BLOCK | PRE_EXEC_CONFIRM | FULL_ACCESS) */
-export type CommandApprovalPolicyType = 'DANGEROUS_BLOCK' | 'PRE_EXEC_CONFIRM' | 'FULL_ACCESS';
+/** 会话权限档位：对应后端 AgentPermissionMode（APPROVAL_REQUIRED | DELEGATED_APPROVAL | FULL_ACCESS） */
+export type AgentPermissionMode = 'APPROVAL_REQUIRED' | 'DELEGATED_APPROVAL' | 'FULL_ACCESS';
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -765,10 +754,8 @@ export interface UserConfigVO {
    * 类型收窄成 `number | string` 会让解绑请求体无法表达，退化成漏发该键。</p>
    */
   agentId?: number | string | null;
-  /** 命令放行档位：FULL_ACCESS / PRE_EXEC_CONFIRM / DANGEROUS_BLOCK（空值表示沿用缺省） */
-  commandApprovalPolicy?: CommandApprovalPolicyType | string;
-  /** 会话访问档位：IN_WORKSPACE / READ_ONLY_IN_WORKSPACE / OUT_OF_WORKSPACE（空值表示沿用缺省） */
-  accessMode?: AgentAccessMode | string;
+  /** 会话权限档位：APPROVAL_REQUIRED / DELEGATED_APPROVAL / FULL_ACCESS（空值表示沿用缺省） */
+  permissionMode?: AgentPermissionMode | string;
   /** 提醒"还有未完成任务"的次数上限（0-20，缺省 3） */
   planMaxReminders?: number;
   /** 模型最大 Token 数；空值表示沿用模型/框架缺省 */

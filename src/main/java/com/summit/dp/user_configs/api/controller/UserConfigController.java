@@ -36,8 +36,7 @@ public class UserConfigController {
 
         return new UserConfigCommand(
                 request.getId(),
-                request.getCommandApprovalPolicy(),
-                request.getAccessMode(),
+                request.getPermissionMode(),
                 request.getPlanMaxReminders(),
                 request.getModelId(),
                 request.getAgentId(),

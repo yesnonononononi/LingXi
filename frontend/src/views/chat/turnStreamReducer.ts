@@ -274,10 +274,14 @@ export class TurnStreamReducer {
   private handleTurnSnapshot(raw: unknown): void {
     const payload = extractBlockPayload(raw);
     if (!payload) return;
+    const existing = this.findBubbleByTurnId(payload.turnId);
+    const hadCompressingPhase = existing?.contextUsage?.phase === 'SQUEEZE_STARTED';
     const bubble = upsertTurnViewIntoMessages(this.getMessages(), payload.view);
     if (!bubble) return;
-    if (bubble.isComplete || (payload.view.blocks && payload.view.blocks.length > 0)) {
-      this.clearCompression(bubble);
+    // 运行中快照会由 TurnViewRuntimeListener#onContextUpdate 在 SQUEEZE_STARTED 时同源推送，
+    // 不能仅因快照带块就清除压缩提示；只有终态或挂起态快照才收尾压缩态。
+    if (bubble.isComplete || bubble.isSuspended) {
+      this.clearCompression(bubble, hadCompressingPhase);
     }
     this.activeBubbleId = bubble.id;
     this.requestBlockCards(bubble);
@@ -459,10 +463,10 @@ export class TurnStreamReducer {
   }
 
   /** 执行终结后压缩也已结束，迟到的旧轮次终态只清理自己的提示。 */
-  private clearCompression(bubble: ChatMessage): void {
+  private clearCompression(bubble: ChatMessage, forceNotify = false): void {
     bubble.isCompressingContext = false;
     const usage = bubble.contextUsage;
-    if (usage?.phase !== 'SQUEEZE_STARTED') return;
+    if (!usage || (!forceNotify && usage.phase !== 'SQUEEZE_STARTED')) return;
     const settledUsage = { ...usage, phase: undefined, band: undefined, message: undefined };
     bubble.contextUsage = settledUsage;
     if (this.contextUsageBubbleId === bubble.id) {

@@ -21,9 +21,11 @@ public class UserConfigPO {
     @TableId(type = IdType.INPUT)
     private Long id;
     private String workspaceType;
-    /** 命令放行档位（空值表示沿用 yml 缺省） */
+    /** 统一总权限档位（空值时兼容读取历史 commandApprovalPolicy / accessMode） */
+    private String permissionMode;
+    /** 历史命令放行档位（仅用于老数据迁移读取） */
     private String commandApprovalPolicy;
-    /** 会话访问档位（空值表示沿用 yml 缺省） */
+    /** 历史会话访问档位（仅用于老数据迁移读取） */
     private String accessMode;
     /** 提醒"还有未完成任务"的次数上限（缺省由 PlanReminderPolicy 兜底） */
     private Integer planMaxReminders;

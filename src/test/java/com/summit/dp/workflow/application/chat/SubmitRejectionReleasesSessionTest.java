@@ -21,8 +21,7 @@ import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
@@ -124,11 +123,11 @@ class SubmitRejectionReleasesSessionTest {
 
     private static RuntimeContext context(String executionId) {
         ExecutionContext executionContext = ExecutionContext.root(ROOT_SESSION_ID, executionId, null, 7L,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                AgentPermissionMode.FULL_ACCESS);
         return new RuntimeContext(executionContext, null, null,
                 SessionVO.builder().id(ROOT_SESSION_ID).historyRevision(3L).build(),
-                List.of(), null, null, AgentAccessMode.IN_WORKSPACE,
-                CommandApprovalPolicy.FULL_ACCESS, false, UserMessageEntity.from("你好")).withTurnId(TURN_ID);
+                List.of(), null, null, AgentPermissionMode.FULL_ACCESS,
+                false, UserMessageEntity.from("你好")).withTurnId(TURN_ID);
     }
 
     private void persistAccepted(Execution execution, long turnId) {

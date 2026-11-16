@@ -55,7 +55,7 @@ class TeamServiceTest {
 
     /** 团队规模上限来自设置行（teamSize），测试里直接给一条只有该项有值的投影。 */
     private static SettingsView settingsWithTeamSize(int teamSize) {
-        return new SettingsView(null, null, null, null, null, null, null, null, null, teamSize);
+        return new SettingsView(null, null, null, null, null, null, null, null, teamSize);
     }
 
     private AgentVO createAgent(Long id, String name) {

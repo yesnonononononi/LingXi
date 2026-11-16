@@ -27,8 +27,7 @@ import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -105,30 +104,28 @@ class SubAgentRequestFactoryTest {
     }
 
     @ParameterizedTest
-    @EnumSource(CommandApprovalPolicy.class)
-    void childInheritsApprovalFromParentSnapshotEvenWhenSettingsDiffer(CommandApprovalPolicy policy) throws Exception {
+    @EnumSource(AgentPermissionMode.class)
+    void childInheritsApprovalFromParentSnapshotEvenWhenSettingsDiffer(AgentPermissionMode mode) throws Exception {
         stubModel();
         SettingsView current = mock(SettingsView.class);
-        when(current.commandApprovalPolicy()).thenReturn(policy == CommandApprovalPolicy.FULL_ACCESS
-                ? CommandApprovalPolicy.PRE_EXEC_CONFIRM : CommandApprovalPolicy.FULL_ACCESS);
+        when(current.permissionMode()).thenReturn(mode == AgentPermissionMode.FULL_ACCESS
+                ? AgentPermissionMode.APPROVAL_REQUIRED : AgentPermissionMode.FULL_ACCESS);
         when(settingsProvider.current()).thenReturn(Optional.of(current));
         AgentVO member = agent(6L, "工程师", "执行委派任务");
         ToolExecution parent = ToolExecution.builder().executionId("900")
-                .attributes(Map.of(CommandApprovalPolicy.ATTRIBUTE_KEY, policy.name(),
-                        AgentAccessMode.ATTRIBUTE_KEY, AgentAccessMode.OUT_OF_WORKSPACE.name(),
+                .attributes(Map.of(AgentPermissionMode.ATTRIBUTE_KEY, mode.name(),
                         "unrelated.parent.attribute", "不应下行")).build();
         ObjectMapper json = new JsonConfig().objectMapper();
         for (boolean reused : List.of(false, true)) {
             List<Message> prior = reused ? List.of(UserMessageEntity.from("旧任务")) : List.of();
             AgentRequest request = build(member, buildTeam(member), parent, prior);
             Map<String, Object> attributes = request.runtimeParametersOrDefault().getAttributes();
-            assertEquals(policy.name(), attributes.get(CommandApprovalPolicy.ATTRIBUTE_KEY));
-            assertEquals(AgentAccessMode.OUT_OF_WORKSPACE, AgentAccessMode.from(attributes));
+            assertEquals(mode.name(), attributes.get(AgentPermissionMode.ATTRIBUTE_KEY));
             assertFalse(attributes.containsKey("unrelated.parent.attribute"));
 
             Execution restored = json.readValue(json.writeValueAsString(Execution.create(request, "")), Execution.class);
-            assertEquals(policy.name(), restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()
-                    .get(CommandApprovalPolicy.ATTRIBUTE_KEY));
+            assertEquals(mode.name(), restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()
+                    .get(AgentPermissionMode.ATTRIBUTE_KEY));
         }
     }
 
@@ -137,8 +134,8 @@ class SubAgentRequestFactoryTest {
         stubModel();
         AgentVO member = agent(6L, "工程师", "执行委派任务");
         AgentRequest request = build(member, buildTeam(member), parentToolExecution());
-        assertEquals(CommandApprovalPolicy.DEFAULT.name(), request.runtimeParametersOrDefault().getAttributes()
-                .get(CommandApprovalPolicy.ATTRIBUTE_KEY));
+        assertEquals(AgentPermissionMode.DEFAULT.name(), request.runtimeParametersOrDefault().getAttributes()
+                .get(AgentPermissionMode.ATTRIBUTE_KEY));
     }
 
     @Test
@@ -146,7 +143,7 @@ class SubAgentRequestFactoryTest {
         stubModel();
         AgentVO member = agent(6L, "工程师", "执行委派任务");
         ToolExecution parent = ToolExecution.builder().executionId("900")
-                .attributes(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.FULL_ACCESS)).build();
+                .attributes(AgentPermissionMode.toAttributes(AgentPermissionMode.FULL_ACCESS)).build();
         AgentRequest child = build(member, buildTeam(member), parent);
         ObjectMapper json = new ObjectMapper();
         CommandApprovalRegistrar approvals = mock(CommandApprovalRegistrar.class);
@@ -303,18 +300,18 @@ class SubAgentRequestFactoryTest {
     }
 
     @Test
-    @DisplayName("子执行继承只读档：禁用编辑工具，保留终端")
+    @DisplayName("子执行继承只读审阅档：禁用编辑工具与终端工具")
     void readOnlyChildCannotRegainEditingThroughItsOwnToolConfiguration() {
         stubModel();
         AgentVO member = agent(6L, "架构师", "你是架构师");
         member.setToolList(ToolCatalog.DEFAULT_AGENT_TOOLS);
-        for (AgentAccessMode mode : List.of(AgentAccessMode.READ_ONLY_IN_WORKSPACE, AgentAccessMode.IN_WORKSPACE)) {
+        for (AgentPermissionMode mode : List.of(AgentPermissionMode.READ_ONLY_REVIEW, AgentPermissionMode.APPROVAL_REQUIRED)) {
             ToolExecution parent = ToolExecution.builder().executionId("900")
-                    .attributes(AgentAccessMode.toAttributes(mode)).build();
+                    .attributes(AgentPermissionMode.toAttributes(mode)).build();
             AgentRequest request = build(member, buildTeam(member), parent);
-            assertEquals(mode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
+            assertEquals(mode, AgentPermissionMode.from(request.runtimeParametersOrDefault().getAttributes()));
             assertEquals(mode.allowsWriteTools(), request.getToolList().contains(ToolCatalog.EDIT_FILE));
-            assertTrue(request.getToolList().contains(ToolCatalog.EXECUTE_COMMAND));
+            assertEquals(mode.allowsTerminalTools(), request.getToolList().contains(ToolCatalog.EXECUTE_COMMAND));
             assertTrue(request.getToolList().contains(ToolCatalog.READ_FILE));
         }
     }

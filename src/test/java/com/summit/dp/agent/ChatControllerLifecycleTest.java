@@ -194,7 +194,7 @@ class ChatControllerLifecycleTest {
             try { return invocation.callRealMethod(); }
             finally { finishedRuns.add(context.executionContext().executionId()); }
         }).when(executor).run(any());
-        SettingsView view = new SettingsView(null, null, null, null, 7L, null, 64000, "low", null, 10);
+        SettingsView view = new SettingsView(null, null, null, 7L, null, 64000, "low", null, 10);
         when(settings.current()).thenReturn(Optional.of(view));
         when(models.resolveRuntimeConfig(any(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("controlled-model")
                 .baseUrl("https://example.invalid").apiKey("controlled-key").provider("default").build(), false));
@@ -378,6 +378,16 @@ class ChatControllerLifecycleTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0));
         assertTrue(turns.findById(turnId).isPresent(), "重发未受理，原轮次不能被删除");
         assertTrue(messages.findById(original.getId()).isPresent(), "重发未受理，原提问不能被删除");
+    }
+
+    @Test
+    void rejectsCommandExceedingMaxInputLength() throws Exception {
+        Long sessionId = sessions.initialize("输入超限验证", null, null).getData();
+        String oversized = "x".repeat(SessionMessage.MAX_INPUT_LENGTH + 1);
+        mvc.perform(multipart("/a/completion/commands").param("sessionId", sessionId.toString())
+                        .param("input", oversized).param("modelId", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
     }
 
     private ExecutionPO latest(Long sessionId) {

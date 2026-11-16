@@ -72,7 +72,7 @@ class UserConfigReasoningEffortTest {
     }
 
     private static UserConfigCommand command(String reasoningEffort) {
-        return new UserConfigCommand(null, null, null, null, null, null, false, null, null,
+        return new UserConfigCommand(null, null, null, null, null, false, null, null,
                 reasoningEffort, null, null, null, null, null, false, null, false);
     }
 }

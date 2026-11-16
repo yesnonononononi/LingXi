@@ -11,7 +11,7 @@ import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.tools.file.FileMutationTools;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -81,7 +81,7 @@ public class ApprovedFileWriteRestorer {
     private Map<String, Object> elevatedAttributes(Execution execution) {
         Map<String, Object> source = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
         Map<String, Object> elevated = source == null ? new HashMap<>() : new HashMap<>(source);
-        elevated.put(AgentAccessMode.ATTRIBUTE_KEY, AgentAccessMode.OUT_OF_WORKSPACE.name());
+        elevated.put(AgentPermissionMode.ATTRIBUTE_KEY, AgentPermissionMode.FULL_ACCESS.name());
         return elevated;
     }
 

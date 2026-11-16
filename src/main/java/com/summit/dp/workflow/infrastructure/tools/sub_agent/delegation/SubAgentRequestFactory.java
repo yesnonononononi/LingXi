@@ -24,8 +24,7 @@ import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.tools.application.service.ToolProcessingContext;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -87,9 +86,9 @@ public class SubAgentRequestFactory {
 
         Workspace parentWorkspace = toolExecution == null ? null : toolExecution.getWorkspace();
 
-        AgentAccessMode accessMode = AgentAccessMode.from(toolExecution == null ? null : toolExecution.getAttributes());
+        AgentPermissionMode permissionMode = AgentPermissionMode.from(toolExecution == null ? null : toolExecution.getAttributes());
 
-        ResolvedWorkspace resolvedWorkspace = resolveWorkspace(workDir, parentWorkspace, parentWorkspaceId, accessMode);
+        ResolvedWorkspace resolvedWorkspace = resolveWorkspace(workDir, parentWorkspace, parentWorkspaceId, permissionMode);
         WorkspaceSpec workspaceSpec = resolvedWorkspace.spec();
 
         if (parentWorkspace != null && workspaceSpec == null) {
@@ -125,7 +124,7 @@ public class SubAgentRequestFactory {
                         .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
                                 && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))
                         .teamId(ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID))
-                        .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot)
+                        .vision(childModel.vision()).permissionMode(permissionMode).skillRoot(skillRoot)
                         .projectMemory(workspaceSpec != null).build()))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .build();
@@ -177,9 +176,8 @@ public class SubAgentRequestFactory {
      */
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId,
                                                RuntimeModel childModel, Long workspaceId) {
-        Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
-        // 审批档位随父执行快照下行，避免成员回落到默认审批。
-        attributes.putAll(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.from(toolExecution.getAttributes())));
+        Map<String, Object> attributes = new HashMap<>(AgentPermissionMode.toAttributes(
+                AgentPermissionMode.from(toolExecution.getAttributes())));
 
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
         attributes.put(ExecutionAttributes.MODEL_VISION, childModel.vision());
@@ -212,7 +210,7 @@ public class SubAgentRequestFactory {
     private ResolvedWorkspace resolveWorkspace(String workDir,
                                                Workspace parentWorkspace,
                                                Long parentWorkspaceId,
-                                               AgentAccessMode accessMode
+                                               AgentPermissionMode permissionMode
     ) {
         RuntimeEnvironment parentEnvironment = parentWorkspace == null ? null : parentWorkspace.runtimeEnvironment();
         // 已开始的执行沿用父环境，设置页切换运行类型不能把子执行带出父沙箱。
@@ -221,7 +219,7 @@ public class SubAgentRequestFactory {
         if (workDir != null && !workDir.isBlank()) {
             WorkspaceVO workspace = workspaceService.findByDir(workDir).getData();
             if (workspace != null) {
-                return new ResolvedWorkspace(workspace.id(), workspaceConverter.toSpec(workspace, type, accessMode));
+                return new ResolvedWorkspace(workspace.id(), workspaceConverter.toSpec(workspace, type, permissionMode));
             }
         }
         if (parentWorkspace == null || parentWorkspaceId == null) {
@@ -229,7 +227,7 @@ public class SubAgentRequestFactory {
         }
         WorkspaceVO parent = workspaceService.findById(parentWorkspaceId).getData();
         return parent == null ? new ResolvedWorkspace(null, null)
-                : new ResolvedWorkspace(parent.id(), workspaceConverter.toSpec(parent, type, accessMode));
+                : new ResolvedWorkspace(parent.id(), workspaceConverter.toSpec(parent, type, permissionMode));
     }
 
     private record ResolvedWorkspace(Long id, WorkspaceSpec spec) { }

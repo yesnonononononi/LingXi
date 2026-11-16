@@ -9,8 +9,7 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.input.InputWakeupService;
@@ -92,10 +91,10 @@ class ChatAdmissionOrderTest {
     /** 受理前的上下文：用户消息已解析但未落库，执行对象还没有。 */
     private static RuntimeContext context() {
         ExecutionContext executionContext = ExecutionContext.root(ROOT_SESSION_ID, EXECUTION_ID,
-                null, 7L, AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                null, 7L, AgentPermissionMode.FULL_ACCESS);
         return new RuntimeContext(executionContext, null, null,
                 SessionVO.builder().id(ROOT_SESSION_ID).build(), List.of(), null, null,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false,
+                AgentPermissionMode.FULL_ACCESS, false,
                 UserMessageEntity.from("你好"));
     }
 

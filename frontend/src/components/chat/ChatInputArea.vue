@@ -16,7 +16,7 @@ import ProjectDropdown from './ProjectDropdown.vue';
 import ChatInputPlusMenu from './ChatInputPlusMenu.vue';
 import ChatInputAccessMenu from './ChatInputAccessMenu.vue';
 import type {
-  AgentAccessMode,
+  AgentPermissionMode,
   AgentVO,
   ChatMode,
   McpConnectionStateVO,
@@ -80,7 +80,7 @@ const props = defineProps<{
   canChangeWorkspace?: boolean;
   workspaces?: WorkspaceVO[];
   selectedWorkspaceId?: string | number | null;
-  accessMode?: AgentAccessMode | string;
+  accessMode?: AgentPermissionMode | string;
   /** 执行环境：档位语义随它变化，徽标必须一起读，不能只看档位。 */
   envType?: WorkspaceEnvType | string;
   reasoningEffort?: ReasoningEffort;
@@ -144,7 +144,7 @@ const emit = defineEmits<{
   /** 输入框是否已空：宿主据此决定要不要开始预测计时（有草稿就别预测） */
   (e: 'updateDraftEmpty', empty: boolean): void;
   /** 工作区权限档位变更（去向必须是 userConfig，与安全中心同一处真源） */
-  (e: 'updateAccessMode', mode: AgentAccessMode): void;
+  (e: 'updateAccessMode', mode: AgentPermissionMode): void;
 }>();
 
 defineSlots<{
@@ -348,8 +348,8 @@ const pastedDocuments = ref<PastedDocument[]>([]);
 const previewingDocument = ref<PastedDocument | null>(null);
 const isDocumentPreviewOpen = ref(false);
 
-const addPastedDocument = (text: string) => {
-  const doc = createPastedDocument(text);
+const addPastedDocument = (text: string, options?: { title?: string }) => {
+  const doc = createPastedDocument(text, options);
   pastedDocuments.value.push(doc);
   focusInput();
 };
@@ -1138,7 +1138,7 @@ const toggleAccessMenu = () => {
   isAccessMenuOpen.value = willOpen;
 };
 
-const handleSelectAccessMode = (mode: AgentAccessMode) => {
+const handleSelectAccessMode = (mode: AgentPermissionMode) => {
   isAccessMenuOpen.value = false;
   emit('updateAccessMode', mode);
   focusInput();

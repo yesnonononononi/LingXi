@@ -157,7 +157,10 @@ export function useChatHistory(options: ChatHistoryOptions) {
           if (view) upsertTurnViewIntoMessages(cur.messages, view);
         }
         attachPromptCards(cur.messages, collectedCards);
-        cur.messages = synthesizeFailedTurnBubbles(cur.messages, cur.turns);
+        const synthesized = synthesizeFailedTurnBubbles(cur.messages, cur.turns);
+        if (synthesized.length !== cur.messages.length) {
+          cur.messages = synthesized;
+        }
         if (!hasMore) {
           cur.hasMoreMessages = false;
           cur.nextMessageCursor = null;

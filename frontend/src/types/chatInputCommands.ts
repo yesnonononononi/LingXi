@@ -39,6 +39,8 @@ export interface ChatInputCommands {
   selectAgent: (id: string | number | null) => void;
   /** 打开 Agent 选择菜单。 */
   openAgentMenu: () => void;
+  /** 添加大文本/HTML 文档小卡片。 */
+  addPastedDocument: (text: string, options?: { title?: string }) => void;
 }
 
 /** 命令面的全部键名（运行时断言与类型契约共用一份来源，避免两边漂移）。 */
@@ -53,4 +55,5 @@ export const CHAT_INPUT_COMMAND_KEYS = [
   'fetchAgents',
   'selectAgent',
   'openAgentMenu',
+  'addPastedDocument',
 ] as const;

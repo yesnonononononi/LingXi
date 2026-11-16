@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
@@ -45,7 +45,7 @@ class WriteFileToolExecutorTest {
     void createWritesTheFileAndItsMissingParentDirectories() throws Exception {
         Path root = workspaceRoot();
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "CREATE", "path", "nested/deep/demo.txt", "content", "新建")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -62,7 +62,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "原本");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "CREATE", "path", "demo.txt", "content", "覆盖")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -77,7 +77,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "旧的全都要没\n");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "OVERRIDE", "path", "demo.txt", "content", "全新的")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -89,7 +89,7 @@ class WriteFileToolExecutorTest {
     void overrideRefusesToCreateAMissingFile() throws Exception {
         Path root = workspaceRoot();
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "OVERRIDE", "path", "absent.txt", "content", "内容")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -103,7 +103,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "原有");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", type, "path", "demo.txt", "content", "追加")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -118,7 +118,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "原有");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", type, "path", "demo.txt", "content", "")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -131,7 +131,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "清掉");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "OVERRIDE", "path", "demo.txt", "content", "")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -143,7 +143,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "别动我");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "OVERRIDE", "path", "demo.txt")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -155,7 +155,7 @@ class WriteFileToolExecutorTest {
     void unknownWriteTypeIsRejectedBeforeTouchingTheFile() throws Exception {
         Path root = workspaceRoot();
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "UPSERT", "path", "demo.txt", "content", "内容")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -168,7 +168,7 @@ class WriteFileToolExecutorTest {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "alpha\nbeta\n");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "OVERRIDE", "path", "demo.txt", "content", "alpha\nBETA\n")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -184,8 +184,8 @@ class WriteFileToolExecutorTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = AgentAccessMode.class, names = {"READ_ONLY_IN_WORKSPACE", "IN_WORKSPACE"})
-    void outsidePathIsRejectedWithoutWritingAnything(AgentAccessMode mode) throws Exception {
+    @EnumSource(value = AgentPermissionMode.class, names = {"READ_ONLY_REVIEW", "APPROVAL_REQUIRED", "DELEGATED_APPROVAL"})
+    void outsidePathIsRejectedWithoutWritingAnything(AgentPermissionMode mode) throws Exception {
         workspaceRoot();
         Path outside = container.resolve("outside.txt");
 
@@ -202,7 +202,7 @@ class WriteFileToolExecutorTest {
     void relativeTraversalCannotEscapeTheWorkspace() throws Exception {
         workspaceRoot();
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "CREATE", "path", "../escaped.txt", "content", "越界")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -214,7 +214,7 @@ class WriteFileToolExecutorTest {
         workspaceRoot();
         Path outside = container.resolve("outside.txt");
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.OUT_OF_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.FULL_ACCESS,
                 Map.of("type", "CREATE", "path", outside.toString(), "content", "越界写入")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -225,7 +225,7 @@ class WriteFileToolExecutorTest {
     void writtenBytesStayUtf8RegardlessOfTheProcessCharset() throws Exception {
         Path root = workspaceRoot();
 
-        ToolExecuteResult result = writer.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = writer.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("type", "CREATE", "path", "utf8.txt", "content", "中文🙂")));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -238,12 +238,12 @@ class WriteFileToolExecutorTest {
         return root;
     }
 
-    private ToolExecution execution(AgentAccessMode mode, Map<String, Object> args) throws Exception {
+    private ToolExecution execution(AgentPermissionMode mode, Map<String, Object> args) throws Exception {
         return ToolExecution.builder()
                 .workspace(new LocalWorkspace(EXECUTION_ID, workspaceRoot().toString()))
                 .executionId(EXECUTION_ID)
                 .turnId("turn")
-                .attributes(AgentAccessMode.toAttributes(mode))
+                .attributes(AgentPermissionMode.toAttributes(mode))
                 .args(mapper.writeValueAsString(args))
                 .build();
     }

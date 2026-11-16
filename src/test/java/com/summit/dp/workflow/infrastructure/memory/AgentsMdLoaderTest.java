@@ -2,7 +2,7 @@ package com.summit.dp.workflow.infrastructure.memory;
 
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.utils.TokenEstimatorTestSupport;
-import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.sandbox.windows.WindowsWorkspaceSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -67,7 +67,7 @@ class AgentsMdLoaderTest {
 
         assertEquals(List.of(), loader(3000).load(null));
         assertEquals(List.of(), loader(3000).load(unbound));
-        assertEquals(List.of(), loader(3000).load(new MxcWorkspaceSpec(project.resolve("absent").toString())));
+        assertEquals(List.of(), loader(3000).load(new WindowsWorkspaceSpec(project.resolve("absent").toString())));
         assertEquals(List.of(), loader(3000).load(spec(project)));
     }
 
@@ -106,6 +106,6 @@ class AgentsMdLoaderTest {
     }
 
     private WorkspaceSpec spec(Path project) {
-        return new MxcWorkspaceSpec(project.toString());
+        return new WindowsWorkspaceSpec(project.toString());
     }
 }

@@ -84,7 +84,9 @@ export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): boolean 
   // 「本轮改动」清单一并落到气泡上：与状态同一帧，卡片不再自己请求，也就不会有迟到的第二次排版。
   // 快照/历史页都走完整视图，缺省即「本轮没改文件」。
   bubble.turnFileChanges = view.fileChanges ?? [];
-  if (bubble.isComplete || (view.blocks && view.blocks.length > 0)) {
+  // 只有终态或挂起态快照才清除压缩提示：运行中轮次在 SQUEEZE_STARTED 时也会收到同源推送的
+  // 带块快照（TurnViewRuntimeListener#onContextUpdate），不能凭 blocks.length > 0 误清。
+  if (bubble.isComplete || bubble.isSuspended) {
     bubble.isCompressingContext = false;
   }
   return true;

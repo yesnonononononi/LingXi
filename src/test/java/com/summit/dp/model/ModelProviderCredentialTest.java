@@ -123,7 +123,7 @@ class ModelProviderCredentialTest {
         when(repository.findById(1L)).thenReturn(Optional.of(chat));
         when(repository.findById(2L)).thenReturn(Optional.of(compact));
         when(providers.findApiKey(20L)).thenReturn(Optional.of("compact-provider-key"));
-        SettingsView settings = new SettingsView(null, null, null, null, 1L, null, null, null, null, null, 2L);
+        SettingsView settings = new SettingsView(null, null, null, 1L, null, null, null, null, null, 2L);
         assertEquals("compact-provider-key", service.runtimeConfig(1L, settings).getCompactModel().apiKey());
         when(providers.findApiKey(20L)).thenReturn(Optional.empty());
         assertThrows(ClientException.class, () -> service.runtimeConfig(1L, settings));

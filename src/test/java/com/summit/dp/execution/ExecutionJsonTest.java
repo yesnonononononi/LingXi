@@ -8,12 +8,12 @@ import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.*;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.local.LocalInstance;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
-import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.sandbox.windows.WindowsWorkspaceSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -29,17 +29,15 @@ class ExecutionJsonTest {
 
     @Test
     void supportedSandboxPoliciesAndAttributesSurviveExecutionSnapshot() throws Exception {
-        for (AgentAccessMode mode : new AgentAccessMode[]{AgentAccessMode.IN_WORKSPACE, AgentAccessMode.READ_ONLY_IN_WORKSPACE}) {
-            MxcWorkspaceSpec spec = new SandboxPolicyFactory(Map.of())
+        for (AgentPermissionMode mode : new AgentPermissionMode[]{AgentPermissionMode.APPROVAL_REQUIRED, AgentPermissionMode.READ_ONLY_REVIEW}) {
+            WindowsWorkspaceSpec spec = new SandboxPolicyFactory(Map.of())
                     .build(Path.of("project").toAbsolutePath().toString(), mode);
-            Execution original = execution(spec, AgentAccessMode.toAttributes(mode));
+            Execution original = execution(spec, AgentPermissionMode.toAttributes(mode));
             Execution restored = mapper.readValue(mapper.writeValueAsBytes(original), Execution.class);
-            MxcWorkspaceSpec restoredSpec = (MxcWorkspaceSpec) restored.getAgentRequest().getWorkspaceSpec();
+            WindowsWorkspaceSpec restoredSpec = (WindowsWorkspaceSpec) restored.getAgentRequest().getWorkspaceSpec();
             assertEquals(spec, restoredSpec);
-            assertEquals(mode, AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
-            assertEquals(mode == AgentAccessMode.IN_WORKSPACE, restoredSpec.writable());
-            assertFalse(restoredSpec.securityPolicy().deniedPaths().isEmpty());
-            assertTrue(restoredSpec.readwritePaths().isEmpty());
+            assertEquals(mode, AgentPermissionMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
+            assertEquals(mode.isWorkspaceWritable(), restoredSpec.writable());
         }
     }
 
@@ -59,7 +57,7 @@ class ExecutionJsonTest {
     @Test
     void roundTripsCompleteExecutionForLocalAndSandboxWorkspaces() throws Exception {
         LingXiWorkspaceSpec local = new LingXiWorkspaceSpec("local", "D:/workspace", LocalInstance.ID, Map.of());
-        WorkspaceSpec sandbox = new MxcWorkspaceSpec("D:/workspace", LocalInstance.ID, List.of(), List.of(), Map.of(), false);
+        WorkspaceSpec sandbox = new WindowsWorkspaceSpec("D:/workspace", LocalInstance.ID, Map.of(), false);
         for (WorkspaceSpec spec : List.of(local, sandbox)) {
             Execution original = execution(spec, Map.of(ExecutionAttributes.SESSION_ID, "201",
                     ExecutionAttributes.MODEL_CONFIG_ID, "301"));

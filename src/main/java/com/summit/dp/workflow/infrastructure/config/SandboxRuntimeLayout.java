@@ -18,7 +18,6 @@ public record SandboxRuntimeLayout(Path directory, boolean windows) {
     public Path nodeExecutable() { return directory.resolve(windows ? "node/node.exe" : "node/node"); }
     public Path gitExecutable() { return directory.resolve(windows ? "git/cmd/git.exe" : "git/bin/git"); }
     public Path bashExecutable() { return directory.resolve(windows ? "git/bin/bash.exe" : "git/bin/bash"); }
-    public Path sdkDirectory() { return directory.resolve("mxc/node_modules/@microsoft/mxc-sdk"); }
 
     public Map<String, String> commandEnvironment(Map<String, String> overrides) {
         Map<String, String> result = new LinkedHashMap<>(overrides);

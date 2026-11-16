@@ -100,7 +100,7 @@ class CompactionModelRoutingTest {
     }
 
     private static SettingsView settings(Long compactModelId) {
-        return new SettingsView(null, null, null, null, CHAT_MODEL_ID, null, 1234, null, null, 10, compactModelId);
+        return new SettingsView(null, null, null, CHAT_MODEL_ID, null, 1234, null, null, 10, compactModelId);
     }
 
     @Configuration(proxyBeanMethods = false)

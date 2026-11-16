@@ -8,8 +8,7 @@ import lombok.Data;
 public class UserConfigRequest {
     private Long id;
     private String type;
-    private String commandApprovalPolicy;
-    private String accessMode;
+    private String permissionMode;
     private Integer planMaxReminders;
     /** 当前用户选中的模型ID（关联 model_config.id） */
     private Long modelId;

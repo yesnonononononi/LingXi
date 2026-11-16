@@ -9,7 +9,7 @@ import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
 import com.summit.dp.workflow.infrastructure.tools.file.FileEditRecorder;
 import com.summit.dp.workflow.infrastructure.tools.file.FileEditReport;
@@ -81,7 +81,7 @@ public class EditFileToolExecutor implements ToolExecutor {
 
             Workspace workspace = toolExecution.getWorkspace();
             // 边界与链接复核交给框架；必须在读旧内容之前拦，越界读本身就是信息泄露。
-            Path target = AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+            Path target = AgentPermissionMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
                     ? workspace.resolve(request.getPath())
                     : workspace.resolveInside(request.getPath());
             WorkspaceFiles files = workspace.bridge().files();

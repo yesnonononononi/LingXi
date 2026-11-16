@@ -97,6 +97,6 @@ class SkillRootResolverTest {
     }
 
     private static SettingsView view(String skillDir) {
-        return new SettingsView(null, null, null, null, null, null, null, null, skillDir, 10);
+        return new SettingsView(null, null, null, null, null, null, null, skillDir, 10);
     }
 }

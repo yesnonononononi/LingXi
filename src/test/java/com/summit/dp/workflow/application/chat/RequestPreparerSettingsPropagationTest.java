@@ -76,7 +76,7 @@ class RequestPreparerSettingsPropagationTest {
     @DisplayName("设置行的思考强度与 token 上限原样进入本轮模型配置")
     void settingsEffortAndMaxTokensReachTurnModelConfig() {
         when(settingsProvider.current()).thenReturn(Optional.of(
-                new SettingsView(null, null, null, null, SETTINGS_MODEL_ID, null, 4096, "high", null, 10)));
+                new SettingsView(null, null, null, SETTINGS_MODEL_ID, null, 4096, "high", null, 10)));
         AtomicReference<SettingsView> handed = new AtomicReference<>();
         // 与 ModelServiceImpl 同形：连接参数与能力声明来自同一次设置读取
         when(modelService.resolveRuntimeConfig(anyLong(), any())).thenAnswer(invocation -> {

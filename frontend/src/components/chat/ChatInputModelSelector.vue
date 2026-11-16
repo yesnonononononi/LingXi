@@ -10,6 +10,8 @@
  * 去调 `onUpdateModel`（否则后端会收到一个不存在的 model id）。</p>
  */
 import {computed} from 'vue';
+import {ArrowDown01Icon} from '@hugeicons/core-free-icons';
+import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
 import DropUpSelect from '../common/DropUpSelect.vue';
 import ProviderIcon from '../model/ProviderIcon.vue';
 import type {SelectOption} from '../../types/ui';
@@ -89,16 +91,14 @@ const selectedModel = computed<string | number>({
       <span class="truncate max-w-[220px] text-lx-fs-md leading-[18px]">
         <template v-if="selected?.group">{{ selected.group }} / </template>{{ selected?.label ?? t('chat.input.selectModel') }}
       </span>
-      <svg
-        class="w-2.5 h-2.5 shrink-0 origin-center transition-transform duration-300 ease-out"
+      <HugeiconsIcon
+        :icon="(ArrowDown01Icon as IconArray)"
+        :size="12"
+        :stroke-width="2.5"
+        class="shrink-0 origin-center transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
         :class="menuOpen ? 'rotate-180' : 'rotate-0'"
-        viewBox="0 0 1024 1024"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="currentColor"
         aria-hidden="true"
-      >
-        <path d="M838.116 732.779 877.7 693.195 511.979 327.549 146.3 693.195 185.883 732.779 512.003 406.652Z" />
-      </svg>
+      />
     </template>
   </DropUpSelect>
 </template>

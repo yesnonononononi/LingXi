@@ -49,6 +49,9 @@ const {
   mcpForm,
   mcpAutoHealthCheckMode,
   mcpHeadersPristine,
+  addMcpHeader,
+  removeMcpHeader,
+  markMcpHeadersDirty,
   mcpEnvPristine,
   loadMcp,
   startAddMcp,
@@ -294,28 +297,88 @@ watch(isEditingOrAddingMcp, (editing) => {
       </div>
 
       <!-- 请求头（http 系传输） -->
-      <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-          {{ t('settings.mcp.headersLabel') }}
-          <span class="text-lx-faint font-normal">{{ t('settings.mcp.headersHint') }}</span>
-        </label>
-        <textarea
-          v-model="mcpForm.headerLines"
-          @input="mcpHeadersPristine = false"
-          rows="3"
-          :placeholder="t('settings.mcp.headersPlaceholder')"
-          :class="[
-            'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
-            isDark
-              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
-              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
-          ]"
-        ></textarea>
+      <div v-if="mcpForm.transport !== 'stdio'" class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+            {{ t('settings.mcp.headersLabel') }}
+            <span class="text-lx-faint font-normal">{{ t('settings.mcp.headersHint') }}</span>
+          </label>
+          <button
+            type="button"
+            @click="addMcpHeader"
+            :class="[
+              'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-lx-fs-sm font-medium transition cursor-pointer shrink-0',
+              isDark
+                ? 'border-white/15 text-zinc-300 hover:bg-white/5'
+                : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+            ]"
+          >
+            <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>{{ t('settings.mcp.addHeader') }}</span>
+          </button>
+        </div>
+
+        <div v-if="mcpForm.headerItems.length === 0" class="px-3 py-2.5 rounded-xl border border-dashed text-lx-fs-sm text-lx-faint" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
+          {{ t('settings.mcp.headersEmptyHint') }}
+        </div>
+
+        <div v-else class="space-y-2">
+          <div
+            v-for="(header, index) in mcpForm.headerItems"
+            :key="index"
+            class="flex items-center gap-2"
+          >
+            <input
+              v-model="header.key"
+              @input="markMcpHeadersDirty"
+              type="text"
+              :placeholder="t('settings.mcp.headerKeyPlaceholder')"
+              :class="[
+                'flex-1 min-w-0 px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+                isDark
+                  ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                  : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+              ]"
+            />
+            <span class="text-xs font-mono text-lx-faint shrink-0 select-none">:</span>
+            <input
+              v-model="header.value"
+              @input="markMcpHeadersDirty"
+              type="text"
+              :placeholder="t('settings.mcp.headerValuePlaceholder')"
+              :class="[
+                'flex-[1.4] min-w-0 px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+                isDark
+                  ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-blue-400/80'
+                  : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+              ]"
+            />
+            <button
+              type="button"
+              @click="removeMcpHeader(index)"
+              :aria-label="t('settings.mcp.removeHeader')"
+              :title="t('settings.mcp.removeHeader')"
+              :class="[
+                'p-2 rounded-xl border transition cursor-pointer shrink-0',
+                isDark
+                  ? 'border-white/10 text-zinc-400 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10'
+                  : 'border-zinc-200 text-zinc-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50'
+              ]"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
         <p
-          v-if="mcpHeadersPristine && mcpForm.headerLines"
+          v-if="mcpHeadersPristine && mcpForm.headerItems.some((item) => item.key.trim() || item.value.trim())"
           class="text-lx-fs-sm text-lx-faint"
         >
-                    {{ t('settings.mcp.headersPristineHint') }}
+          {{ t('settings.mcp.headersPristineHint') }}
         </p>
       </div>
 

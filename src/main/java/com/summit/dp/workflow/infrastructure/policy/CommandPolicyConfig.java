@@ -8,7 +8,7 @@ import com.summit.dp.sandbox_security.application.CommandRiskClassifier;
 import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.decision.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandShell;
@@ -56,13 +56,16 @@ public class CommandPolicyConfig {
             } catch (IllegalArgumentException unsupported) {
                 return ToolExecuteResult.err(unsupported.getMessage());
             }
-            CommandApprovalPolicy mode = CommandApprovalPolicy.from(execution.getAttributes());
+            AgentPermissionMode mode = AgentPermissionMode.from(execution.getAttributes());
+            if (!mode.allowsTerminalTools()) {
+                return ToolExecuteResult.err("只读审阅模式下禁止执行终端命令");
+            }
             SecurityDecision decision = security == null ? null : security.evaluate(command, mode);
             if (decision != null && decision.action() == SecurityAction.DENY) {
                 return ToolExecuteResult.err(decision.describe());
             }
             // 完全放行是明确的免审批选择，不能再由命令文本的风险判定覆盖。
-            if (mode == CommandApprovalPolicy.FULL_ACCESS) {
+            if (mode.bypassesCommandApproval()) {
                 return null;
             }
             CommandRiskClassifier.Risk risk = CommandRiskClassifier.assess(command);
@@ -81,11 +84,13 @@ public class CommandPolicyConfig {
         };
     }
 
-    private static boolean requiresApproval(CommandApprovalPolicy policy, CommandRiskClassifier.Risk risk) {
-        return switch (policy) {
-            case FULL_ACCESS -> false;
-            case PRE_EXEC_CONFIRM -> true;
-            case DANGEROUS_BLOCK -> risk == CommandRiskClassifier.Risk.ELEVATED;
-        };
+    private static boolean requiresApproval(AgentPermissionMode mode, CommandRiskClassifier.Risk risk) {
+        if (mode.bypassesCommandApproval()) {
+            return false;
+        }
+        if (mode.requiresPerCommandApproval()) {
+            return true;
+        }
+        return mode.requiresDangerousCommandApproval() && risk == CommandRiskClassifier.Risk.ELEVATED;
     }
 }

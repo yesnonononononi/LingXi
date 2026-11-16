@@ -5,6 +5,7 @@ import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.shared.exception.AccessDeniedException;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.vo.DecisionConflictException;
+import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workspace.domain.exception.WorkspaceNoFoundException;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -71,6 +72,7 @@ public class GlobalExceptionHandler {
         log.warn("【全局异常处理】决策被拒: code={}, message={}", e.errorCode().code(), e.getMessage());
         return Result.error(e.errorCode().code(), e.getMessage());
     }
+
 
     /** 捕获业务异常 ClientException */
     @ExceptionHandler(ClientException.class)

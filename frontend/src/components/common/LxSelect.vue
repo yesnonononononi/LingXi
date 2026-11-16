@@ -17,12 +17,14 @@
  * <p><b>值比较一律按字符串</b>：后端主键常是字符串而本地选项值是数字，严格 `===` 会把同一个 id
  * 判不等，表现为「值还在，下拉却回落成占位文案」。</p>
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type CSSProperties } from 'vue';
+import { ArrowDown01Icon, Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
 import type { SelectOption } from '../../types/ui';
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: T;
   options: SelectOption<T>[];
   /** settings = 设置页同宽面板；popup = 上拉浮层（可搜索 / 分组 / 头像） */
@@ -48,7 +50,11 @@ const props = defineProps<{
   isDark?: boolean;
   /** 无匹配选项时的空态文案 */
   emptyText?: string;
-}>();
+}>(), {
+  isDark: undefined,
+  disabled: false,
+  searchable: false,
+});
 
 defineOptions({ inheritAttrs: false });
 
@@ -79,12 +85,33 @@ const menuId = computed(() => `${selectId.value}-menu`);
 const isOpen = ref(false);
 const opensUp = ref(false);
 const activeFlat = ref(0);
+const pillLive = ref(false);
+let pillInstant = true;
 const searchQuery = ref('');
 const rootRef = ref<HTMLElement | null>(null);
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const panelRef = ref<HTMLElement | null>(null);
+const listRef = ref<HTMLElement | null>(null);
+const pillRef = ref<HTMLSpanElement | null>(null);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const panelStyle = ref<Record<string, string>>({});
+
+/** GlideSelect 视觉令牌：随主题明暗切换，同时挂到根节点与 Teleport 面板确保变量作用域完整 */
+const glideTokens = computed<CSSProperties>(() => {
+  const radius = isSettings.value ? 16 : 12;
+  const innerRadius = Math.max(3, radius - 4);
+  return {
+    '--gs-accent': isDark.value ? '#f5f5f5' : '#18181b',
+    '--gs-surface': isDark.value ? '#27272a' : '#ffffff',
+    '--gs-highlight': isDark.value ? '#3f3f46' : '#e4e4e7',
+    '--gs-text': isDark.value ? '#f5f5f5' : '#18181b',
+    '--gs-radius': `${radius}px`,
+    '--gs-inner-radius': `${innerRadius}px`,
+    '--gs-pop': '180ms',
+    '--gs-pop-out': '120ms',
+    '--gs-glide': '220ms',
+  } as CSSProperties;
+});
 
 const toKey = (value: T | null | undefined): string =>
   (value === null || value === undefined ? '' : String(value));
@@ -107,14 +134,20 @@ interface OptionGroup {
   items: { option: SelectOption<T>; flat: number }[];
 }
 
+const expandedGroups = ref<Set<string>>(new Set());
+const hoveredGroupKey = ref<string | null>(null);
+const isGroupCollapsed = (group: { name: string }): boolean => {
+  if (!group.name || searchQuery.value.trim()) return false;
+  return !expandedGroups.value.has(group.name);
+};
+
 /**
- * 按 {@code option.group} 聚组，并顺带记下「扁平索引」：键盘导航与 aria-activedescendant
- * 都按可见顺序走同一份编号，避免分组 + 搜索同时生效时索引错位。
+ * 按 {@code option.group} 聚组，并只为当前可见选项分配连续的扁平索引：
+ * 折叠分组不占编号，保证键盘导航、aria-activedescendant 与滑动胶囊位置严格一致。
  */
 const groupedOptions = computed<OptionGroup[]>(() => {
   const groups: OptionGroup[] = [];
   const index = new Map<string, OptionGroup>();
-  let flat = 0;
   for (const option of filteredOptions.value) {
     const name = String(option.group ?? '').trim();
     let group = index.get(name);
@@ -123,24 +156,31 @@ const groupedOptions = computed<OptionGroup[]>(() => {
       index.set(name, group);
       groups.push(group);
     }
-    group.items.push({ option, flat: flat++ });
+    group.items.push({ option, flat: -1 });
     group.count += 1;
     if (group.items.length === 1 && typeof option.groupCount === 'number') group.count = option.groupCount;
+  }
+  let flat = 0;
+  for (const group of groups) {
+    if (isGroupCollapsed(group)) continue;
+    for (const item of group.items) {
+      item.flat = flat++;
+    }
   }
   return groups;
 });
 
-const expandedGroups = ref<Set<string>>(new Set());
-const isGroupCollapsed = (group: OptionGroup): boolean => {
-  if (!group.name || searchQuery.value.trim()) return false;
-  return !expandedGroups.value.has(group.name);
-};
-const toggleGroup = (group: OptionGroup): void => {
+const toggleGroup = async (group: OptionGroup): Promise<void> => {
   if (!group.name) return;
   const next = new Set(expandedGroups.value);
   if (next.has(group.name)) next.delete(group.name);
   else next.add(group.name);
   expandedGroups.value = next;
+  hoveredGroupKey.value = group.key;
+  pillLive.value = true;
+  await nextTick();
+  updatePosition();
+  updatePill(true);
 };
 
 /** 键盘导航的可见序列（折叠的组、被搜索过滤掉的选项都不在内）。 */
@@ -168,6 +208,7 @@ function updatePosition(): void {
   opensUp.value = below < estimate && above > below;
   const style: Record<string, string> = {
     maxHeight: `${Math.min(panelMaxHeight.value, opensUp.value ? above : below)}px`,
+    '--gs-origin': `${opensUp.value ? 'bottom' : 'top'} ${props.align ?? 'left'}`,
   };
   if (useTriggerWidth.value) {
     const width = Math.min(rect.width, available);
@@ -188,6 +229,30 @@ function updatePosition(): void {
   panelStyle.value = style;
 }
 
+/** 同步滑动胶囊位置：支持动态行高与分组头，首次显现瞬移、后续移动顺滑滑动 */
+function updatePill(instant = false): void {
+  const pill = pillRef.value;
+  const list = listRef.value;
+  if (!pill || !list || !isOpen.value || !pillLive.value) {
+    if (pill) pill.style.opacity = '0';
+    return;
+  }
+  const selector = hoveredGroupKey.value
+    ? `[data-group-key="${CSS.escape(hoveredGroupKey.value)}"]`
+    : `[data-flat="${activeFlat.value}"]`;
+  const row = list.querySelector<HTMLElement>(selector);
+  if (!row) {
+    pill.style.opacity = '0';
+    return;
+  }
+  const jump = instant || pillInstant || pill.style.opacity !== '1';
+  pill.style.transitionDuration = jump ? '0ms, 0ms, 150ms' : '';
+  pill.style.transform = `translateY(${row.offsetTop}px)`;
+  pill.style.height = `${row.offsetHeight}px`;
+  pill.style.opacity = '1';
+  pillInstant = false;
+}
+
 function revealActive(): void {
   panelRef.value?.querySelector(`[data-flat="${activeFlat.value}"]`)?.scrollIntoView({ block: 'nearest' });
 }
@@ -195,13 +260,17 @@ function revealActive(): void {
 async function open(): Promise<void> {
   if (props.disabled || !props.options.length) return;
   const selectedFlat = visibleOptions.value.findIndex(isSelected);
+  hoveredGroupKey.value = null;
   activeFlat.value = selectedFlat >= 0 ? selectedFlat : 0;
+  pillLive.value = selectedFlat >= 0;
+  pillInstant = true;
   searchQuery.value = '';
   isOpen.value = true;
   emit('open');
   updatePosition();
   await nextTick();
   updatePosition();
+  updatePill(true);
   if (isSearchable.value) searchInputRef.value?.focus();
   else revealActive();
 }
@@ -209,21 +278,49 @@ async function open(): Promise<void> {
 function close(): void {
   if (!isOpen.value) return;
   isOpen.value = false;
+  hoveredGroupKey.value = null;
+  pillLive.value = false;
   searchQuery.value = '';
   emit('close');
 }
 
 const toggle = (): void => { if (isOpen.value) close(); else void open(); };
 
-function select(option: SelectOption<T>): void {
+function select(option: SelectOption<T>, viaKey = false): void {
   if (option.disabled) return;
   if (!isSelected(option)) {
+    if (!viaKey && rootRef.value) rootRef.value.dataset.swap = '';
     emit('update:modelValue', option.value);
     emit('change', option.value);
   }
   close();
   triggerRef.value?.focus();
 }
+
+const onAnimationEnd = (event: AnimationEvent): void => {
+  if (event.animationName === 'gs-swap' && rootRef.value) {
+    delete rootRef.value.dataset.swap;
+  }
+};
+
+const onOptionHover = (flat: number): void => {
+  hoveredGroupKey.value = null;
+  activeFlat.value = flat;
+  pillLive.value = true;
+  updatePill(false);
+};
+
+const onGroupHover = (groupKey: string): void => {
+  hoveredGroupKey.value = groupKey;
+  pillLive.value = true;
+  updatePill(false);
+};
+
+const onListLeave = (): void => {
+  hoveredGroupKey.value = null;
+  pillLive.value = false;
+  if (pillRef.value) pillRef.value.style.opacity = '0';
+};
 
 async function handleKey(event: KeyboardEvent): Promise<void> {
   if (event.key === 'Escape' && isOpen.value) {
@@ -238,26 +335,29 @@ async function handleKey(event: KeyboardEvent): Promise<void> {
     if (!isOpen.value) { await open(); return; }
     const list = visibleOptions.value;
     if (!list.length) return;
+    hoveredGroupKey.value = null;
     if (event.key === 'Home') activeFlat.value = 0;
     else if (event.key === 'End') activeFlat.value = list.length - 1;
     else {
       const step = event.key === 'ArrowDown' ? 1 : -1;
       activeFlat.value = (activeFlat.value + step + list.length) % list.length;
     }
+    pillLive.value = true;
     await nextTick();
+    updatePill(false);
     revealActive();
     return;
   }
   if ((event.key === 'Enter' || event.key === ' ') && isOpen.value) {
     event.preventDefault();
     const option = visibleOptions.value[activeFlat.value];
-    if (option) select(option);
+    if (option) select(option, true);
   }
 }
 
 const handleSearchEnter = (): void => {
   const matched = visibleOptions.value.find(option => !option.disabled);
-  if (matched) select(matched);
+  if (matched) select(matched, true);
 };
 
 /** 点击面板外的任意位置关闭。panel 在 body 上，必须单独排除。 */
@@ -283,22 +383,23 @@ function optionClasses(option: SelectOption<T>, flat: number): unknown[] {
     }];
   }
   return [
-    'px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-colors select-none',
+    'lx-select-popup-option relative z-[1] px-2.5 py-2 text-xs flex items-center gap-2 transition-colors select-none',
     option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
-    selected
-      ? (isDark.value
-        ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]'
-        : 'bg-zinc-100 text-zinc-900 font-normal')
-      : (option.disabled
-        ? ''
-        : (active
-          ? (isDark.value ? 'bg-white/10 text-zinc-300' : 'bg-zinc-50 text-zinc-700')
-          : (isDark.value ? 'text-zinc-300' : 'text-zinc-700'))),
+    selected ? 'font-medium' : '',
   ];
 }
 
 watch(() => props.disabled, value => { if (value) close(); });
 watch(() => props.options.length, length => { if (!length) close(); });
+watch(searchQuery, async () => {
+  if (!isOpen.value) return;
+  hoveredGroupKey.value = null;
+  activeFlat.value = 0;
+  pillLive.value = false;
+  await nextTick();
+  updatePosition();
+  updatePill(true);
+});
 
 onMounted(() => {
   document.addEventListener('pointerdown', onPointerDown);
@@ -320,7 +421,13 @@ defineExpose({ open, close });
 </script>
 
 <template>
-  <div ref="rootRef" class="relative" :class="isSettings ? '' : 'inline-flex items-center'">
+  <div
+    ref="rootRef"
+    class="group relative"
+    :class="isSettings ? '' : 'inline-flex items-center'"
+    :style="glideTokens"
+    @animationend="onAnimationEnd"
+  >
     <button
       :id="selectId"
       ref="triggerRef"
@@ -335,10 +442,9 @@ defineExpose({ open, close });
       :class="[
         isSettings ? 'settings-select-trigger' : 'lx-select-popup-trigger',
         isSettings ? { 'is-open': isOpen } : '',
-        !isSettings ? 'flex items-center justify-between gap-1.5 rounded-lg transition outline-none border-lx-border-strong' : '',
+        !isSettings ? 'flex items-center justify-between gap-1.5 outline-none select-none touch-manipulation enabled:active:scale-[0.97] motion-reduce:enabled:active:scale-100' : '',
         !isSettings && !triggerClass ? (isSmall ? 'h-8 px-2.5 py-1.5' : 'h-9 px-3 py-2') : '',
         !isSettings ? (disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer') : '',
-        !isSettings ? (isDark ? 'hover:bg-white/5' : 'hover:bg-black/5') : '',
         triggerClass,
       ]"
       v-bind="$attrs"
@@ -346,10 +452,19 @@ defineExpose({ open, close });
       @keydown="handleKey"
     >
       <slot name="trigger" :isOpen="isOpen" :selected="selectedOption" :label="displayLabel">
-        <span class="truncate" :class="{ 'text-lx-faint': !selectedOption }">{{ displayLabel }}</span>
-        <svg class="lx-select-chevron" :class="{ 'is-open': isOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-          <path d="m6 9 6 6 6-6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        <span
+          :key="toKey(modelValue)"
+          class="truncate group-data-[swap]:animate-[gs-swap_160ms_ease] motion-reduce:group-data-[swap]:animate-none"
+          :class="{ 'opacity-60': !selectedOption }"
+        >{{ displayLabel }}</span>
+        <HugeiconsIcon
+          :icon="(ArrowDown01Icon as IconArray)"
+          :size="12"
+          :stroke-width="2.5"
+          class="lx-select-chevron"
+          :class="{ 'is-open': isOpen }"
+          aria-hidden="true"
+        />
       </slot>
     </button>
 
@@ -361,25 +476,26 @@ defineExpose({ open, close });
           ref="panelRef"
           role="listbox"
           :aria-label="label"
-          :style="panelStyle"
+          :style="[glideTokens, panelStyle]"
           :class="isSettings
             ? ['settings-select-menu', { 'opens-up': opensUp }]
             : [
-              'lx-select-popup-menu fixed flex flex-col overflow-hidden rounded-2xl border p-1.5 shadow-2xl backdrop-blur-2xl z-[1000] min-w-[10.5rem] max-w-[14rem] max-h-96',
-              isDark ? 'dark bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]' : 'light bg-white border-zinc-200/90 text-zinc-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]',
+              'lx-select-popup-menu fixed flex flex-col overflow-hidden p-1 z-[1000] min-w-[10.5rem] max-w-[14rem] max-h-96',
+              isDark ? 'dark border border-white/10' : 'light border border-zinc-200/80',
             ]"
           @pointerdown.prevent
         >
-          <div v-if="isSearchable" class="px-1.5 pt-1 pb-1.5 shrink-0">
+          <div v-if="isSearchable" class="px-0.5 pt-0.5 pb-1.5 shrink-0">
             <input
               ref="searchInputRef"
               v-model="searchQuery"
               type="text"
               :placeholder="searchPlaceholder ?? t('common.searchPlaceholder')"
-              class="w-full px-2 py-1 text-xs border rounded-lg outline-none select-text transition"
+              class="w-full px-2.5 py-1.5 text-xs border outline-none select-text transition"
+              style="border-radius: var(--gs-inner-radius)"
               :class="isDark
-                ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-faint focus:border-cyan-400/60'
-                : 'bg-transparent border-lx-border text-zinc-800 placeholder-lx-faint focus:border-blue-500'"
+                ? 'bg-white/[0.06] border-white/10 text-white placeholder-lx-faint focus:border-white/30'
+                : 'bg-zinc-50 border-zinc-200 text-zinc-800 placeholder-lx-faint focus:border-zinc-400'"
               @keydown.stop
               @keydown.esc="close"
               @keydown.enter="handleSearchEnter"
@@ -391,8 +507,20 @@ defineExpose({ open, close });
             class="px-2.5 py-1 font-semibold uppercase tracking-wider text-lx-fs-xs text-lx-faint"
           >{{ menuTitle }}</div>
 
-          <div class="min-h-0 overflow-y-auto space-y-0.5" :class="isSettings ? '' : 'scrollbar-thin max-h-80'">
-            <div v-if="!visibleOptions.length" class="px-3 py-2 text-xs text-lx-faint text-center">
+          <div
+            ref="listRef"
+            class="group/list relative min-h-0 overflow-y-auto grid gap-px"
+            :class="isSettings ? '' : 'scrollbar-thin max-h-80'"
+            :data-live="pillLive ? '' : undefined"
+            @pointerleave="onListLeave"
+          >
+            <span
+              ref="pillRef"
+              aria-hidden="true"
+              class="lx-select-glide-pill"
+            />
+
+            <div v-if="!filteredOptions.length" class="relative z-[1] px-3 py-2 text-xs text-lx-faint text-center">
               {{ emptyText ?? t('common.noOptions') }}
             </div>
 
@@ -400,10 +528,13 @@ defineExpose({ open, close });
               <button
                 v-if="group.name"
                 type="button"
+                :data-group-key="group.key"
                 :aria-expanded="!isGroupCollapsed(group)"
                 :title="isGroupCollapsed(group) ? t('common.expand') : t('common.collapse')"
-                class="w-full px-2.5 pt-1.5 pb-0.5 flex items-center gap-1.5 select-none cursor-pointer rounded-lg bg-transparent border-0 text-left transition-colors"
-                :class="isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-black/[0.04]'"
+                class="relative z-[1] w-full min-h-8 px-2.5 py-1.5 flex items-center gap-1.5 select-none cursor-pointer bg-transparent border-0 text-left"
+                style="border-radius: var(--gs-inner-radius)"
+                @pointerover="onGroupHover(group.key)"
+                @pointermove="onGroupHover(group.key)"
                 @click.stop="toggleGroup(group)"
               >
                 <span class="flex-1 min-w-0 text-lx-fs-xs font-bold uppercase tracking-wider truncate text-lx-secondary">{{ group.name }}</span>
@@ -430,7 +561,8 @@ defineExpose({ open, close });
                   :aria-selected="isSelected(item.option)"
                   :aria-disabled="item.option.disabled ? 'true' : undefined"
                   :class="optionClasses(item.option, item.flat)"
-                  @pointermove="activeFlat = item.flat"
+                  @pointerover="onOptionHover(item.flat)"
+                  @pointermove="onOptionHover(item.flat)"
                   @click="select(item.option)"
                 >
                   <slot
@@ -440,7 +572,23 @@ defineExpose({ open, close });
                     :selected="isSelected(item.option)"
                     :active="activeFlat === item.flat"
                   >
-                    <span class="truncate">{{ item.option.label }}</span>
+                    <span class="flex-1 min-w-0 font-medium truncate">{{ item.option.label }}</span>
+                    <span
+                      v-if="item.option.description"
+                      class="shrink-0 text-[11px]"
+                      style="color: color-mix(in srgb, var(--gs-text) 55%, transparent)"
+                    >
+                      {{ item.option.description }}
+                    </span>
+                    <HugeiconsIcon
+                      v-if="isSelected(item.option)"
+                      :icon="(Tick02Icon as IconArray)"
+                      :size="13"
+                      :stroke-width="2.5"
+                      class="shrink-0"
+                      style="color: var(--gs-accent)"
+                      aria-hidden="true"
+                    />
                   </slot>
                 </div>
               </template>
@@ -455,76 +603,146 @@ defineExpose({ open, close });
 <style scoped>
 @reference "../../style.css";
 
+@keyframes gs-swap {
+  from {
+    opacity: 0.6;
+    filter: blur(2px);
+  }
+}
+
+/* ---- 滑动高亮胶囊（GlideSelect 核心视觉） ---- */
+.lx-select-glide-pill {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-radius: var(--gs-inner-radius);
+  background: var(--gs-highlight);
+  transition:
+    transform var(--gs-glide) cubic-bezier(0.23, 1, 0.32, 1),
+    height var(--gs-glide) cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 150ms ease;
+}
+
 /* ---- settings 预设：与触发器同宽、描述两行、勾选对钩 ---- */
 .settings-select-trigger {
-  @apply flex w-full items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left text-xs text-lx-primary-soft outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed dark:border-white/15 dark:bg-black/30;
-  transition: background-color 160ms, border-color 160ms, box-shadow 160ms;
+  @apply flex w-full items-center justify-between gap-3 border border-zinc-200 px-3 py-2 text-left text-xs outline-none cursor-pointer select-none touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed dark:border-white/15;
+  border-radius: var(--gs-inner-radius);
+  background: var(--gs-surface);
+  color: var(--gs-text);
+  transition:
+    background-color 100ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.settings-select-trigger:not(:disabled):active {
+  transform: scale(0.97);
 }
 .settings-select-trigger:hover {
-  @apply border-zinc-300 bg-zinc-50 dark:border-white/30 dark:bg-white/5;
+  @apply border-zinc-300 dark:border-white/30;
+  background: color-mix(in srgb, var(--gs-highlight) 60%, var(--gs-surface));
 }
 .settings-select-trigger:focus-visible,
 .settings-select-trigger.is-open {
   @apply border-zinc-400 ring-2 ring-zinc-200/60 dark:border-white/40 dark:ring-white/10;
+  background: color-mix(in srgb, var(--gs-highlight) 60%, var(--gs-surface));
 }
 .lx-select-chevron {
-  @apply h-3.5 w-3.5 shrink-0 text-lx-muted;
-  transition: transform 180ms ease;
+  @apply shrink-0;
+  color: color-mix(in srgb, var(--gs-text) 55%, transparent);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .lx-select-chevron.is-open { transform: rotate(180deg); }
+
 .settings-select-menu {
-  @apply fixed z-[1000] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1.5 text-xs text-zinc-700 shadow-[0_8px_28px_rgba(0,0,0,0.12)] dark:border-white/15 dark:bg-zinc-950 dark:text-zinc-300 dark:shadow-[0_12px_36px_rgba(0,0,0,0.65)];
-  transform-origin: top center;
+  @apply fixed z-[1000] overflow-y-auto border border-zinc-200 p-1 text-xs dark:border-white/15;
+  border-radius: var(--gs-radius);
+  background: var(--gs-surface);
+  color: var(--gs-text);
+  box-shadow: 0 4px 16px color-mix(in srgb, #000 22%, transparent);
+  transform-origin: var(--gs-origin, top left);
 }
-.settings-select-menu.opens-up { transform-origin: bottom center; }
+.settings-select-menu.opens-up { transform-origin: var(--gs-origin, bottom left); }
 .settings-select-option {
-  @apply flex min-h-9 items-center justify-between gap-3 rounded-lg px-3 py-2 cursor-pointer select-none;
-  transition: background-color 120ms, color 120ms;
+  @apply relative z-[1] flex min-h-9 items-center justify-between gap-3 px-3 py-2 cursor-pointer select-none;
+  border-radius: var(--gs-inner-radius);
+  color: var(--gs-text);
+  transition: background-color 150ms ease, color 120ms ease;
 }
-.settings-select-option.is-active {
-  @apply bg-zinc-100 text-zinc-900 dark:bg-white/10 dark:text-white;
+.settings-select-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--gs-highlight) 60%, transparent);
+}
+:deep([data-live]) .settings-select-option[aria-selected="true"],
+.group\/list[data-live] .settings-select-option[aria-selected="true"] {
+  background: transparent;
 }
 .settings-select-option.is-selected {
-  @apply font-medium text-zinc-900 dark:text-white;
+  @apply font-medium;
 }
 .settings-select-option.is-disabled { @apply opacity-40 cursor-not-allowed; }
 .settings-select-option-desc {
   @apply mt-0.5 line-clamp-2 text-lx-fs-sm font-normal leading-snug text-lx-faint;
 }
 .settings-select-enter-active {
-  transition: opacity 160ms ease-out, transform 160ms ease-out;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .settings-select-leave-active {
-  transition: opacity 120ms ease-in, transform 120ms ease-in;
+  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   pointer-events: none;
 }
 .settings-select-enter-from,
 .settings-select-leave-to {
   opacity: 0;
-  transform: translateY(-4px) scale(0.97);
-}
-.opens-up.settings-select-enter-from,
-.opens-up.settings-select-leave-to {
-  transform: translateY(4px) scale(0.97);
+  transform: scale(0.95);
 }
 
-/* ---- popup 预设：上拉浮层（进入/离开沿用原 150ms/100ms 手感） ---- */
-.lx-select-popup-menu { transform-origin: top center; }
+/* ---- popup 预设：GlideSelect 质感浮层 ---- */
+.lx-select-popup-trigger {
+  border-radius: var(--gs-inner-radius);
+  color: var(--gs-text);
+  transition: background-color 100ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.lx-select-popup-trigger:not(:disabled):hover,
+.lx-select-popup-trigger[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--gs-highlight) 60%, var(--gs-surface));
+}
+.lx-select-popup-menu {
+  border-radius: var(--gs-radius);
+  background: var(--gs-surface);
+  color: var(--gs-text);
+  box-shadow: 0 4px 16px color-mix(in srgb, #000 22%, transparent);
+  transform-origin: var(--gs-origin, top left);
+}
+.lx-select-popup-option {
+  border-radius: var(--gs-inner-radius);
+  color: var(--gs-text);
+}
+.lx-select-popup-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--gs-highlight) 60%, transparent);
+}
+.group\/list[data-live] .lx-select-popup-option[aria-selected="true"] {
+  background: transparent;
+}
 .lx-select-popup-enter-active {
-  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .lx-select-popup-leave-active {
-  transition: opacity 100ms ease-in, transform 100ms ease-in;
+  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   pointer-events: none;
 }
 .lx-select-popup-enter-from,
 .lx-select-popup-leave-to {
   opacity: 0;
-  transform: translateY(4px) scale(0.95);
+  transform: scale(0.95);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .lx-select-glide-pill,
   .settings-select-trigger,
+  .lx-select-popup-trigger,
   .lx-select-chevron,
   .settings-select-option,
   .settings-select-enter-active,
@@ -532,6 +750,9 @@ defineExpose({ open, close });
   .lx-select-popup-enter-active,
   .lx-select-popup-leave-active {
     transition: none;
+  }
+  .settings-select-trigger:not(:disabled):active {
+    transform: none;
   }
 }
 </style>

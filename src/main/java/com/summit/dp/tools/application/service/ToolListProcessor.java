@@ -1,6 +1,7 @@
 package com.summit.dp.tools.application.service;
 
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -45,12 +46,22 @@ public class ToolListProcessor {
         if (context.imageGeneration()) tools.add(ToolCatalog.GENERATE_IMAGE);
         else tools.remove(ToolCatalog.GENERATE_IMAGE);
 
-        if (!context.accessMode().allowsWriteTools()) {
+        AgentPermissionMode effectiveMode = AgentPermissionMode.resolveEffective(
+                context.permissionMode(), context.requirePlan());
+        if (!effectiveMode.allowsWriteTools()) {
             Set<String> readOnly = toolCatalog.readOnlyNames();
-            // 终端与命令同等对待：写行为由档位兜住，剔除它们反而会让只读档没法跑命令。
+            // 只读审阅（Plan 语义）下同步剔除文件写工具与终端工具，避免经终端绕过只读边界。
             // 内核工具不参与此过滤——框架侧恒准入，名单里本来也没有它们。
-            tools.removeIf(name -> !ToolCatalog.EXECUTE_COMMAND.equals(name) && !ToolCatalog.MANAGE_COMMAND.equals(name)
-                    && !readOnly.contains(name));
+            tools.removeIf(name -> {
+                boolean isTerminal = ToolCatalog.EXECUTE_COMMAND.equals(name) || ToolCatalog.MANAGE_COMMAND.equals(name);
+                if (isTerminal) {
+                    return !effectiveMode.allowsTerminalTools();
+                }
+                return !readOnly.contains(name);
+            });
+        } else if (!effectiveMode.allowsTerminalTools()) {
+            tools.remove(ToolCatalog.EXECUTE_COMMAND);
+            tools.remove(ToolCatalog.MANAGE_COMMAND);
         }
         if (context.member() || context.teamId() == null) {
             tools.remove(ToolCatalog.CALL_SUB_AGENT);

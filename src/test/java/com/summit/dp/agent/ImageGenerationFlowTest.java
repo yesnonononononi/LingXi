@@ -114,7 +114,7 @@ class ImageGenerationFlowTest {
             long image=addModel(base,"image-test","default-image-model");
             long chat=addModel(base,"chat-test","default");
             Path work=Files.createDirectories(ROOT.resolve("workspace"));
-            JsonNode configured=postJson("/config/current/update",Map.of("type","LOCAL","commandApprovalPolicy","FULL_ACCESS",
+            JsonNode configured=postJson("/config/current/update",Map.of("type","LOCAL","permissionMode","FULL_ACCESS",
                     "imageModelId",Long.toString(image),"imageGenerationMaxCalls",1));
             assertEquals(1,configured.path("code").asInt(),configured.toString());
             JsonNode settings=mapper.readTree(mvc.perform(get("/config/current")).andReturn().getResponse().getContentAsString()).path("data");

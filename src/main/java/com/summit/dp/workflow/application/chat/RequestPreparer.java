@@ -29,6 +29,7 @@ import com.summit.dp.personalization.domain.repository.PersonalizationRepository
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
+import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.AccessDeniedException;
@@ -43,8 +44,7 @@ import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.tools.application.service.ToolProcessingContext;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.TurnModelSnapshot;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
@@ -146,6 +146,7 @@ public class RequestPreparer {
 
     private RuntimeContext resolve(ChatCommand command, List<Message> baseline) {
         throwIf(command == null || command.input() == null || command.input().isBlank(), "聊天内容不能为空");
+        throwIf(command.input().length() > SessionMessage.MAX_INPUT_LENGTH, "聊天内容最多支持 " + SessionMessage.MAX_INPUT_LENGTH + " 个字符");
         UserMessageEntity userMessageEntity = buildUserMessage(command);
 
         // 单例设置：档位与模型缺省的唯一来源；查询失败按无设置处理（各项走各自缺省）。
@@ -184,11 +185,11 @@ public class RequestPreparer {
         WorkspaceType workspaceType = workspace == null
                 ? WorkspaceType.NONE
                 : workspaceConverter.resolveType();
-        AgentAccessMode mode = AgentAccessMode.parse(settings == null ? null : settings.accessMode());
-        WorkspaceSpec spec = workspaceConverter.toSpec(workspace, workspaceType, mode);
-
-        CommandApprovalPolicy policy = CommandApprovalPolicy.parse(
-                settings == null ? null : settings.commandApprovalPolicy());
+        AgentPermissionMode configuredMode = AgentPermissionMode.parse(
+                settings == null ? null : settings.permissionMode());
+        AgentPermissionMode permissionMode = AgentPermissionMode.resolveEffective(
+                configuredMode, effective.requirePlan());
+        WorkspaceSpec spec = workspaceConverter.toSpec(workspace, workspaceType, permissionMode);
 
         // 模型上下文是可变的、也可能已被压缩；查不到上下文即视为新会话。
         // 只有展示用的 transcript 是只追加的，它任何时候都不会回喂给模型。
@@ -204,7 +205,7 @@ public class RequestPreparer {
         // 历史接口才能按它把这一轮的消息与统计装配到一起。
         String executionId = String.valueOf(IdUtil.getSnowflakeNextId());
         ExecutionContext executionContext = ExecutionContext.root(
-                preparedSessionId, executionId, workspaceId, effective.modelId(), mode, policy);
+                preparedSessionId, executionId, workspaceId, effective.modelId(), permissionMode);
 
         RuntimeModel runtimeModel = rootModel(effective.modelId(), settings);
         return new RuntimeContext(
@@ -218,8 +219,7 @@ public class RequestPreparer {
                 spec,
                 // 模型连接与识图声明来自同一份配置快照。
                 runtimeModel.config(),
-                mode,
-                policy,
+                permissionMode,
                 effective.requirePlan(),
                 // 用户消息此刻**还没有落库**：调用方先取运行资格，再调 commitUserMessage。
                 userMessageEntity,
@@ -423,7 +423,7 @@ public class RequestPreparer {
                         .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
                                 && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))
                         .agentId(context.agentId()).teamId(context.teamId()).vision(context.vision())
-                        .accessMode(context.accessMode()).requirePlan(context.requirePlan())
+                        .permissionMode(context.permissionMode()).requirePlan(context.requirePlan())
                         .mcpConfig(mcpConfig).skillRoot(skillRoot).projectMemory(context.workspace() != null).build()))
                 .modelConfigSpec(runtimeConfigurations.freezeModel(context.executionContext().modelConfigId(), context.modelConfig()))
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())

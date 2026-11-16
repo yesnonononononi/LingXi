@@ -3,7 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.read;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.runtime.workspace.LocalWorkspace;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -32,8 +32,8 @@ class ReadFileWorkspaceScopeTest {
     private final ReadFileToolExecutor reader = new ReadFileToolExecutor(mapper);
 
     @ParameterizedTest
-    @EnumSource(AgentAccessMode.class)
-    void readsInsideWorkspaceAreAllowedInEveryMode(AgentAccessMode mode) throws Exception {
+    @EnumSource(AgentPermissionMode.class)
+    void readsInsideWorkspaceAreAllowedInEveryMode(AgentPermissionMode mode) throws Exception {
         Path root = workspaceRoot();
         Files.writeString(root.resolve("demo.txt"), "alpha\nbeta\n");
 
@@ -44,8 +44,8 @@ class ReadFileWorkspaceScopeTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = AgentAccessMode.class, names = {"READ_ONLY_IN_WORKSPACE", "IN_WORKSPACE"})
-    void absolutePathOutsideWorkspaceIsRejected(AgentAccessMode mode) throws Exception {
+    @EnumSource(value = AgentPermissionMode.class, names = {"READ_ONLY_REVIEW", "APPROVAL_REQUIRED", "DELEGATED_APPROVAL"})
+    void absolutePathOutsideWorkspaceIsRejected(AgentPermissionMode mode) throws Exception {
         workspaceRoot();
         Path outside = container.resolve("outside.txt");
         Files.writeString(outside, "机密\n");
@@ -62,7 +62,7 @@ class ReadFileWorkspaceScopeTest {
         workspaceRoot();
         Files.writeString(container.resolve("escaped.txt"), "机密\n");
 
-        ToolExecuteResult result = reader.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = reader.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("path", "../escaped.txt")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -76,7 +76,7 @@ class ReadFileWorkspaceScopeTest {
         Path outside = container.resolve("outside.txt");
         Files.writeString(outside, "跨项目内容\n");
 
-        ToolExecuteResult result = reader.execute(execution(AgentAccessMode.OUT_OF_WORKSPACE,
+        ToolExecuteResult result = reader.execute(execution(AgentPermissionMode.FULL_ACCESS,
                 Map.of("path", outside.toString())));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
@@ -92,7 +92,7 @@ class ReadFileWorkspaceScopeTest {
         Path link = root.resolve("linkdir");
         Assumptions.assumeTrue(createDirectoryLink(link, outsideDir), "当前环境无法创建目录链接");
 
-        ToolExecuteResult result = reader.execute(execution(AgentAccessMode.IN_WORKSPACE,
+        ToolExecuteResult result = reader.execute(execution(AgentPermissionMode.APPROVAL_REQUIRED,
                 Map.of("path", "linkdir/secret.txt")));
 
         assertFalse(result.isSuccess(), result.getToolOutput());
@@ -128,12 +128,12 @@ class ReadFileWorkspaceScopeTest {
         return root;
     }
 
-    private ToolExecution execution(AgentAccessMode mode, Map<String, Object> args) throws Exception {
+    private ToolExecution execution(AgentPermissionMode mode, Map<String, Object> args) throws Exception {
         return ToolExecution.builder()
                 .workspace(new LocalWorkspace("read-scope-test", workspaceRoot().toString()))
                 .executionId("read-scope-test")
                 .turnId("turn")
-                .attributes(AgentAccessMode.toAttributes(mode))
+                .attributes(AgentPermissionMode.toAttributes(mode))
                 .args(mapper.writeValueAsString(args))
                 .build();
     }

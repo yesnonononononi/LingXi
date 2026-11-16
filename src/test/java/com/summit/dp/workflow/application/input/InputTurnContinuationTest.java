@@ -55,7 +55,7 @@ class InputTurnContinuationTest {
 
     private RuntimeContext preparedContext() {
         RuntimeContext context = mock(RuntimeContext.class);
-        when(context.executionContext()).thenReturn(ExecutionContext.root(10L, "101", null, null, null, null));
+        when(context.executionContext()).thenReturn(ExecutionContext.root(10L, "101", null, null, null));
         when(context.pendingUserMessage()).thenReturn(UserMessageEntity.from("自动续跑输入"));
         return context;
     }

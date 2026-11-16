@@ -52,7 +52,7 @@ public final class RequestPreparerTestSupport {
      * {@code teamSize} 按契约不会为 null，且本类不读取它，取值只需非空。</p>
      */
     private static final SettingsView DEFAULT_SETTINGS =
-            new SettingsView(null, null, null, null, null, null, null, null, null, 1);
+            new SettingsView(null, null, null, null, null, null, null, null, 1);
 
     private SessionService sessionService;
     private SessionRepository sessionRepository;

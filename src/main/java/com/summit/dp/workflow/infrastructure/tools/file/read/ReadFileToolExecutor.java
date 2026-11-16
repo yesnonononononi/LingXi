@@ -12,7 +12,7 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadFileRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -80,7 +80,7 @@ public class ReadFileToolExecutor implements ToolExecutor {
 
             Workspace workspace = toolExecution.getWorkspace();
             // 越界读不需要任何能力，只有完全访问档例外；链接逃逸由框架 resolveInside 一并复核。
-            Path path = AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+            Path path = AgentPermissionMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
                     ? workspace.resolve(request.getPath())
                     : workspace.resolveInside(request.getPath());
             log.info("读取文件: path={}, startLine={}, endLine={}", path, request.getStartLine(), request.getEndLine());

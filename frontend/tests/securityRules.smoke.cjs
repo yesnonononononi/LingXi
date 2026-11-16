@@ -13,7 +13,6 @@ app.whenReady().then(async () => {
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
 import SettingsModal from '../../../src/views/settings/SettingsModal.vue';
 import { SecurityRulesAPI } from '../../../src/services/securityRules';
-import { SandboxAPI } from '../../../src/services/sandbox';
 import { UserConfigAPI } from '../../../src/services/userConfig';
 import { useTheme } from '../../../src/composables/useTheme';
 import '../../../src/style.css';
@@ -24,7 +23,7 @@ const backend = {
  terminal:{activation:'IMMEDIATE',category:'terminal',revision:'2',rules:[terminal],supportedActions:['ALLOW','ASK','DENY'],defaultAction:'ASK'},
  net:{activation:'OUTBOUND_OPEN',category:'net',revision:'0',rules:[{pattern:'**',matchType:'ANY',action:'ALLOW',enabled:true,preset:'default-allow'}],supportedActions:['ALLOW'],defaultAction:'ALLOW'}
 };
-window.fixture = { fail:false, saves:[], patches:[], checks:0, backend };
+window.fixture = { fail:false, saves:[], patches:[], backend };
 SecurityRulesAPI.current = async category => ({code:1,data:structuredClone(backend[category])});
 SecurityRulesAPI.defaults = async category => ({code:1,data:structuredClone(category === 'files' ? [file] : [terminal])});
 SecurityRulesAPI.save = async (category,revision,rules) => {
@@ -33,10 +32,7 @@ SecurityRulesAPI.save = async (category,revision,rules) => {
  backend[category] = {...backend[category],revision:String(BigInt(revision)+1n),rules:rules.map(r=>({...r}))};
  return {code:1,data:structuredClone(backend[category])};
 };
-// 沙箱级设置会打真实接口：不桩掉的话失败请求会在控制台留下 error，污染「零控制台错误」断言
-SandboxAPI.status = async () => ({code:1,data:{configured:true,ready:true,backend:'windows',message:'沙箱基础能力可用'}});
-SandboxAPI.check = async () => { window.fixture.checks += 1; return {code:1,data:{configured:true,ready:true,backend:'windows',message:'沙箱基础能力检查通过'}}; };
-UserConfigAPI.current = async () => ({code:1,data:{type:'sandbox',accessMode:'IN_WORKSPACE',commandApprovalPolicy:'DANGEROUS_BLOCK',renderTheme:'LIGHT',modelId:'m-1',planMaxReminders:3}});
+UserConfigAPI.current = async () => ({code:1,data:{type:'sandbox',permissionMode:'APPROVAL_REQUIRED',renderTheme:'LIGHT',modelId:'m-1',planMaxReminders:3}});
 UserConfigAPI.updateCurrent = async payload => { window.fixture.patches.push(structuredClone(payload)); return {code:1,data:null}; };
 const {setTheme} = useTheme(); window.setDark = value => setTheme(value ? 'dark' : 'light');
 setTheme('light');
@@ -63,7 +59,6 @@ setTheme('light');
   assert.equal(await ruleCount(),0,'清单页不应出现规则行');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid^=security-tab-]").length'),3);
   assert.equal(await textOf('[data-testid=security-sandbox-state]'),'已启用');
-  assert.ok(await evaluate('document.querySelector("[data-testid=security-center]").textContent.includes("沙箱基础能力可用")'),'沙箱服务状态应随沙箱设置一起迁入');
   assert.ok(await evaluate('document.querySelector("[data-testid=security-center]").textContent.includes("按优先级控制文件路径")'),'入口行应有说明');
   await click('.sec-info');
   assert.ok(await evaluate('document.querySelector("[data-testid=security-center]").textContent.includes("保护范围与限制")'));
@@ -74,15 +69,12 @@ setTheme('light');
   assert.equal(await textOf('[data-testid=security-sandbox-state]'),'已关闭');
   await click('[data-testid=security-sandbox-toggle]');
   assert.deepEqual(await evaluate('window.fixture.patches[1]'),{type:'sandbox'});
-  await click('[data-testid=security-check-service]');
-  assert.equal(await evaluate('window.fixture.checks'),1);
-  assert.ok(await evaluate('document.querySelector("[data-testid=security-center]").textContent.includes("沙箱基础能力检查通过")'));
 
   // 进第二层：文件安全的规则编辑器
   await click('[data-testid=security-tab-files]');
   assert.equal(await ruleCount(),1);
   assert.ok(await evaluate('!!document.querySelector("[data-testid=security-back]")'),'详情页应有返回');
-  assert.ok(await evaluate('!!document.querySelector("[data-testid=security-access-mode]")'),'工作空间权限应从通用页搬进文件安全');
+  assert.ok(await evaluate('!!document.querySelector("[data-testid=security-permission-mode]")'),'会话权限应从通用页搬进文件安全');
   // 文件表只有允许/禁止：打开下拉按动作码断言，绝不出现 ASK
   await click('[data-testid=security-access]');
   assert.deepEqual(await dropdownOptions(),['ALLOW','DENY']);
@@ -97,7 +89,7 @@ setTheme('light');
   await click('[data-testid=security-back]');
   assert.equal(await ruleCount(),0,'返回应回到清单');
   await click('[data-testid=security-tab-terminal]');
-  assert.ok(await evaluate('!!document.querySelector("[data-testid=security-command-policy]")'),'工具权限应从通用页搬进命令安全');
+  assert.ok(await evaluate('!!document.querySelector("[data-testid=security-permission-mode]")'),'会话权限应同时展示在命令安全');
   assert.ok(await evaluate('!!document.querySelector("[data-testid=security-match-type]")'),'终端应有匹配方式下拉');
   await click('[data-testid=security-action]');
   assert.ok((await dropdownOptions()).includes('ASK'),'命令表必须提供询问');

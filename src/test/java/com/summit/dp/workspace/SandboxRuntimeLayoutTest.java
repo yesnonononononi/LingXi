@@ -24,7 +24,6 @@ class SandboxRuntimeLayoutTest {
         assertEquals(runtime.resolve(layout.windows() ? "node/node.exe" : "node/node"), layout.nodeExecutable());
         assertEquals(runtime.resolve(layout.windows() ? "git/cmd/git.exe" : "git/bin/git"), layout.gitExecutable());
         assertEquals(runtime.resolve(layout.windows() ? "git/bin/bash.exe" : "git/bin/bash"), layout.bashExecutable());
-        assertEquals(runtime.resolve("mxc/node_modules/@microsoft/mxc-sdk"), layout.sdkDirectory());
     }
 
     @Test void checkoutLayoutDoesNotDependOnPreparedRuntimeExisting() throws Exception {

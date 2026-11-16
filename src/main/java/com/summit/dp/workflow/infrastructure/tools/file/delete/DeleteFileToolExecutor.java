@@ -15,7 +15,7 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.tools.arguments.DeleteFileRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +62,7 @@ public class DeleteFileToolExecutor implements ToolExecutor {
 
             Workspace workspace = toolExecution.getWorkspace();
             // 边界与链接复核交给框架，与 edit/search 同一判据，不能各写一套。
-            Path target = AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+            Path target = AgentPermissionMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
                     ? workspace.resolve(request.getPath())
                     : workspace.resolveInside(request.getPath());
             WorkspaceFiles files = workspace.bridge().files();

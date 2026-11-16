@@ -235,6 +235,6 @@ class SessionTeamBindingTest {
     }
 
     private static SettingsView settingsWithAgent(Long agentId) {
-        return new SettingsView(null, null, null, null, 99L, agentId, null, null, null, 10);
+        return new SettingsView(null, null, null, 99L, agentId, null, null, null, 10);
     }
 }

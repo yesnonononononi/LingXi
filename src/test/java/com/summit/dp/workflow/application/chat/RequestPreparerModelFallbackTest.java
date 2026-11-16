@@ -24,8 +24,7 @@ import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
@@ -96,7 +95,7 @@ class RequestPreparerModelFallbackTest {
     void stubCommonPath() {
         // 单例设置绑定模型 7：没选 Agent 时它必须生效，即便别处还绑着别的模型
         when(settingsProvider.current()).thenReturn(Optional.of(
-                new SettingsView(null, null, null, null, SETTINGS_MODEL_ID, null, null, null, null, 10)));
+                new SettingsView(null, null, null, SETTINGS_MODEL_ID, null, null, null, null, 10)));
         when(sessionService.findById(SESSION_ID))
                 .thenReturn(Result.success(SessionVO.builder().id(SESSION_ID).build()));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(
@@ -116,10 +115,10 @@ class RequestPreparerModelFallbackTest {
     @Test
     void aCustomRootAgentWithAProjectReceivesBothWikiTools() {
         RuntimeContext context = new RuntimeContext(ExecutionContext.root(SESSION_ID, "1001", 99L, SETTINGS_MODEL_ID,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS), AGENT_ID, null,
+                AgentPermissionMode.FULL_ACCESS), AGENT_ID, null,
                 SessionVO.builder().id(SESSION_ID).build(), List.of(),
                 new LingXiWorkspaceSpec("local", System.getProperty("user.dir"), Map.of()), modelConfig(SETTINGS_MODEL_ID),
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false, UserMessageEntity.from("任务"));
+                AgentPermissionMode.FULL_ACCESS, false, UserMessageEntity.from("任务"));
         AgentRequest request = preparer.buildRequest("", context, List.of(ToolCatalog.READ_FILE));
         assertTrue(request.getToolList().contains(ToolCatalog.LOAD_MEMORY));
         assertTrue(request.getToolList().contains(ToolCatalog.SEARCH_WIKI));
@@ -209,7 +208,7 @@ class RequestPreparerModelFallbackTest {
     @DisplayName("没选 Agent + 单例绑了默认 Agent：模型仍用 user_configs 绑定值，不吃默认 Agent 预设")
     void defaultAgentPresetDoesNotHijackSettingsModel() {
         when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(
-                null, null, null, null, SETTINGS_MODEL_ID, AGENT_ID, null, null, null, 10)));
+                null, null, null, SETTINGS_MODEL_ID, AGENT_ID, null, null, null, 10)));
         stubAgent(AGENT_ID, AGENT_MODEL_ID);
 
         RuntimeContext context = preparer.prepare(command(null, null));

@@ -19,7 +19,7 @@ import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.decision.ApprovalWorkspaceResolver;
 import com.summit.dp.workflow.application.decision.ApprovedFileWriteRestorer;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,24 +70,24 @@ class ApprovedFileWriteRestorerTest {
     @Test
     @DisplayName("批准重建：本次调用带完全访问档，但执行自身的档位不变")
     void elevationIsScopedToTheSingleCall() {
-        Execution execution = execution(AgentAccessMode.IN_WORKSPACE);
+        Execution execution = execution(AgentPermissionMode.APPROVAL_REQUIRED);
         stubTool(ToolCatalog.WRITE_FILE);
 
         ToolExecution call = restorer.restore(execution, card(ToolCatalog.WRITE_FILE, "../outside.txt", "../outside.txt"));
 
-        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE.name(),
-                String.valueOf(call.getAttributes().get(AgentAccessMode.ATTRIBUTE_KEY)),
+        assertEquals(AgentPermissionMode.FULL_ACCESS.name(),
+                String.valueOf(call.getAttributes().get(AgentPermissionMode.ATTRIBUTE_KEY)),
                 "批准后必须能真的写出去，否则卡片形同虚设");
-        assertEquals(AgentAccessMode.IN_WORKSPACE.name(),
+        assertEquals(AgentPermissionMode.APPROVAL_REQUIRED.name(),
                 String.valueOf(execution.getAgentRequest().runtimeParametersOrDefault().getAttributes()
-                        .get(AgentAccessMode.ATTRIBUTE_KEY)),
+                        .get(AgentPermissionMode.ATTRIBUTE_KEY)),
                 "一次性授权不得写回执行本身，否则后续每轮都成了完全访问");
     }
 
     @Test
     @DisplayName("环境已变化：工作空间不一致即拒绝重放")
     void rejectsChangedWorkspace() {
-        Execution execution = execution(AgentAccessMode.IN_WORKSPACE);
+        Execution execution = execution(AgentPermissionMode.APPROVAL_REQUIRED);
         stubTool(ToolCatalog.WRITE_FILE);
         ToolCall card = card(ToolCatalog.WRITE_FILE, "../outside.txt", "../outside.txt");
         ToolCall stale = ToolCall.builder().id(card.getId()).conversationId(2L).executionId(3L)
@@ -104,7 +104,7 @@ class ApprovedFileWriteRestorerTest {
     @Test
     @DisplayName("参数不一致：卡片展示的路径与 args 里的路径对不上即拒绝")
     void rejectsInconsistentArguments() {
-        Execution execution = execution(AgentAccessMode.IN_WORKSPACE);
+        Execution execution = execution(AgentPermissionMode.APPROVAL_REQUIRED);
         stubTool(ToolCatalog.WRITE_FILE);
 
         ClientException failure = assertThrows(ClientException.class,
@@ -116,7 +116,7 @@ class ApprovedFileWriteRestorerTest {
     @Test
     @DisplayName("已经落回工作区内：旧卡不能拿来放行")
     void rejectsPathThatIsNoLongerOutside() {
-        Execution execution = execution(AgentAccessMode.IN_WORKSPACE);
+        Execution execution = execution(AgentPermissionMode.APPROVAL_REQUIRED);
         stubTool(ToolCatalog.WRITE_FILE);
 
         ClientException failure = assertThrows(ClientException.class,
@@ -128,7 +128,7 @@ class ApprovedFileWriteRestorerTest {
     @Test
     @DisplayName("非写类工具：不开放抬档重放")
     void rejectsNonMutationTool() {
-        Execution execution = execution(AgentAccessMode.IN_WORKSPACE);
+        Execution execution = execution(AgentPermissionMode.APPROVAL_REQUIRED);
         stubTool(ToolCatalog.READ_FILE);
 
         ClientException failure = assertThrows(ClientException.class,
@@ -156,9 +156,9 @@ class ApprovedFileWriteRestorerTest {
                 .rawInput("{\"args\":{}}").build();
     }
 
-    private Execution execution(AgentAccessMode mode) {
+    private Execution execution(AgentPermissionMode mode) {
         Map<String, Object> attributes = new HashMap<>();
-        attributes.put(AgentAccessMode.ATTRIBUTE_KEY, mode.name());
+        attributes.put(AgentPermissionMode.ATTRIBUTE_KEY, mode.name());
         AgentRequest request = AgentRequest.builder()
                 .workspaceSpec(mock(WorkspaceSpec.class))
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes).build())

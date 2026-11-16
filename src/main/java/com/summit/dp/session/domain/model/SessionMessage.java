@@ -12,6 +12,7 @@ import java.time.Instant;
 public class SessionMessage {
     /** 单条用户消息的图片上限，所有入口和界面均以此为准。 */
     public static final int MAX_IMAGE_COUNT = 9;
+    public static final int MAX_INPUT_LENGTH = 100_000;
     public static final int MAX_SUPPLEMENT_LENGTH = 20000;
 
     private final Long id;

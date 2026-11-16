@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
 import com.summit.dp.session.application.port.PendingInputProbe;
+import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.shared.exception.ClientException;
 import org.springframework.stereotype.Component;
 
@@ -30,7 +31,6 @@ public class PendingChatQueue implements PendingInputProbe {
 
     private static final int SESSION_LIMIT = 10;
     private static final int PROCESS_LIMIT = 100;
-    private static final int TEXT_LIMIT = 100_000;
     private static final Comparator<Ticket> ORDER = Comparator.comparingLong(Ticket::sequence);
 
     private final Map<Long, SessionQueue> queues = new HashMap<>();
@@ -39,7 +39,7 @@ public class PendingChatQueue implements PendingInputProbe {
 
     public synchronized String enqueue(long sessionId, ChatCommand command) {
         throwIf(command.input() == null || command.input().isBlank(), "待发送内容不能为空");
-        throwIf(command.input().length() > TEXT_LIMIT, "待发送内容最多支持 " + TEXT_LIMIT + " 个字符");
+        throwIf(command.input().length() > SessionMessage.MAX_INPUT_LENGTH, "待发送内容最多支持 " + SessionMessage.MAX_INPUT_LENGTH + " 个字符");
         throwIf(command.imageFile() != null && !command.imageFile().isEmpty()
                         || command.imageUrl() != null && !command.imageUrl().isEmpty(),
                 "待发送队列只支持文本，请在会话空闲时发送图片");

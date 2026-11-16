@@ -12,7 +12,7 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.tools.arguments.SearchFilesRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -233,7 +233,7 @@ public class SearchFilesToolExecutor implements ToolExecutor {
         if (path == null || path.isBlank()) {
             return Path.of(workspace.workDir()).toAbsolutePath().normalize();
         }
-        return AgentAccessMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
+        return AgentPermissionMode.from(toolExecution.getAttributes()).allowsOutsideWorkspace()
                 ? workspace.resolve(path).normalize()
                 : workspace.resolveInside(path).normalize();
     }

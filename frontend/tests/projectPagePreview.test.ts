@@ -5,7 +5,7 @@ import {EventEmitter} from 'node:events';
 import {useProjectPagePreview, validateProjectPageUrl} from '../src/composables/useProjectPagePreview';
 import {t as translate} from '../src/i18n';
 import type {ProjectPageState, ProjectPageTab} from '../src/types/projectPagePreview';
-const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
+const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS, VIEW_BG_COLORS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
 const ADDRESS = 'http://localhost:5173/';
 const OTHER_ADDRESS = 'https://example.com/other';
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -74,7 +74,7 @@ test('URL 校验：拒绝内嵌账号密码、空地址与畸形地址', () => {
   if (!malformed.ok) assert.equal(malformed.reason, 'malformed');
 });
 
-function createHarness(timeoutMs = 15000) {
+function createHarness(timeoutMs = 15000, shouldUseDarkColors = false) {
   const handlers = new Map<string, (...args: any[]) => any>();
   const events: ProjectPageState[] = [];
   const views: FakeView[] = [];
@@ -115,6 +115,9 @@ function createHarness(timeoutMs = 15000) {
         toPNG: () => Buffer.from('mock-png-snapshot'),
       });
     }
+    executeJavaScript() {
+      return Promise.resolve('<html><body><h1>Mock Page</h1></body></html>');
+    }
     finish(url: string) {
       this.url = url;
       this.loading = true;
@@ -146,6 +149,7 @@ function createHarness(timeoutMs = 15000) {
     constructor(readonly options: any) { views.push(this); }
     setVisible(value: boolean) { this.visible = value; }
     setBounds(value: unknown) { this.bounds = value; }
+    setBackgroundColor(value: string) { this.backgroundColor = value; }
   }
   const host = new FakeContents();
   const children: FakeView[] = [];
@@ -158,7 +162,7 @@ function createHarness(timeoutMs = 15000) {
   partition.setPermissionCheckHandler = (handler: any) => { checkPermission = handler; };
   const registration = registerProjectPagePreview({
     ipcMain: {handle: (channel: string, callback: any) => handlers.set(channel, callback), removeHandler: (channel: string) => handlers.delete(channel)},
-    getWindow: () => window, WebContentsView: FakeView, timeoutMs, Menu: FakeMenu,
+    getWindow: () => window, WebContentsView: FakeView, timeoutMs, Menu: FakeMenu, nativeTheme: {shouldUseDarkColors},
     session: {fromPartition: (name: string) => { assert.equal(name, 'persist:lingxi-project-pages'); return partition; }},
   });
   const sender = {sender: host, senderFrame: host.mainFrame};
@@ -513,6 +517,7 @@ test('内置浏览器右键菜单包含 Show with Agent，触发后捕获截图�
   assert.equal(event.url, ADDRESS);
   assert.equal(event.selectionText, '表单校验逻辑');
   assert.equal(event.imageBuffer.toString(), 'mock-png-snapshot');
+  assert.equal(event.html, '<html><body><h1>Mock Page</h1></body></html>');
 });
 
 test('右键菜单文案只接受来自主窗口主框架的推送，非法值退回兜底', t => {
@@ -538,6 +543,43 @@ test('指令调用 show-with-agent 同样触发截图并发送 IPC 事件', asyn
   assert.equal(result.data.selectionText, '头部导航');
   assert.equal(result.data.url, OTHER_ADDRESS);
   assert.equal(result.data.imageBuffer.toString(), 'mock-png-snapshot');
+  assert.equal(result.data.html, '<html><body><h1>Mock Page</h1></body></html>');
   assert.equal(h.showWithAgentEvents.length, 1);
   assert.equal(h.showWithAgentEvents[0].selectionText, '头部导航');
+});
+
+
+test('原生视图底色跟随明暗主题并在切换主题时同步更新已有标签', t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  assert.equal(h.views[0]!.backgroundColor, VIEW_BG_COLORS.dark);
+  h.registration.setTheme(false);
+  assert.equal(h.views[0]!.backgroundColor, VIEW_BG_COLORS.light);
+  h.registration.setTheme(true);
+  assert.equal(h.views[0]!.backgroundColor, VIEW_BG_COLORS.dark);
+});
+
+test('发起导航及新开前台标签时在 loadURL 前先落定非零视口与可见性，避免首屏读到 0x0', t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 10, y: 20, width: 300, height: 400}});
+  const view = h.views[0]!;
+  let boundsAtLoad: any;
+  let visibleAtLoad: boolean | undefined;
+  const origLoadURL = view.webContents.loadURL.bind(view.webContents);
+  view.webContents.loadURL = (url: string, options: unknown) => {
+    boundsAtLoad = view.bounds;
+    visibleAtLoad = view.visible;
+    return origLoadURL(url, options);
+  };
+  h.invoke('navigate', {url: `${ADDRESS}hang`});
+  assert.deepEqual(boundsAtLoad, {x: 20, y: 40, width: 600, height: 760});
+  assert.equal(visibleAtLoad, true);
+  assert.equal(view.visible, true);
+
+  // 新开前台标签页时同样必须在 loadURL 前可见且具备非零 bounds
+  view.webContents.open({url: OTHER_ADDRESS, disposition: 'foreground-tab', referrer: ADDRESS});
+  const popupView = h.views[1]!;
+  assert.equal(popupView.visible, true);
+  assert.deepEqual(popupView.bounds, {x: 20, y: 40, width: 600, height: 760});
 });

@@ -14,7 +14,7 @@
 import {computed} from 'vue';
 import {Tick02Icon, AlertCircleIcon} from '@hugeicons/core-free-icons';
 import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
-import type {AgentAccessMode, WorkspaceEnvType} from '../../types/chat';
+import type {AgentPermissionMode, WorkspaceEnvType} from '../../types/chat';
 import {
   isAccessModeMismatch,
   isTerminalOutsideAccessControl,
@@ -28,31 +28,31 @@ import {t} from '../../i18n';
 
 const props = defineProps<{
   isDark?: boolean;
-  accessMode?: AgentAccessMode | string;
+  accessMode?: AgentPermissionMode | string;
   envType?: WorkspaceEnvType | string;
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', mode: AgentAccessMode): void;
+  (e: 'select', mode: AgentPermissionMode): void;
   (e: 'openSecurity'): void;
 }>();
 
-const MODES: AgentAccessMode[] = ['IN_WORKSPACE', 'READ_ONLY_IN_WORKSPACE', 'OUT_OF_WORKSPACE'];
+const MODES: AgentPermissionMode[] = ['APPROVAL_REQUIRED', 'DELEGATED_APPROVAL', 'FULL_ACCESS'];
 
 const sandboxState = computed(() => resolveSandboxState(props.envType));
 
-/** 后端下发的未知档位按「普通修改」展示（与徽标同一个兜底口径）。 */
-const isSelected = (mode: AgentAccessMode): boolean =>
+/** 后端下发的未知档位按「审批模式」展示（与徽标同一个兜底口径）。 */
+const isSelected = (mode: AgentPermissionMode): boolean =>
   resolveAccessPreset(mode) === resolveAccessPreset(props.accessMode);
 
 /** 终端不受档位约束时的悬停提示：档位文案里不再重复这段长句，改成标题旁常驻感叹号的悬停说明。 */
 const terminalCaveatVisible = computed<boolean>(() => isTerminalOutsideAccessControl(sandboxState.value));
 
-const modeLabel = (mode: AgentAccessMode): string => t(resolveAccessBadgeKey(mode));
+const modeLabel = (mode: AgentPermissionMode): string => t(resolveAccessBadgeKey(mode));
 
-const modeImpact = (mode: AgentAccessMode): string => t(resolveAccessMenuDescKey(mode));
+const modeImpact = (mode: AgentPermissionMode): string => t(resolveAccessMenuDescKey(mode));
 
-const modeWarn = (mode: AgentAccessMode): boolean => isAccessModeMismatch(mode, sandboxState.value);
+const modeWarn = (mode: AgentPermissionMode): boolean => isAccessModeMismatch(mode, sandboxState.value);
 </script>
 
 <template>

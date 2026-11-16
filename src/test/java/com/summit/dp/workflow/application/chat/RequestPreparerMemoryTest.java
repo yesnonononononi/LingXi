@@ -7,10 +7,9 @@ import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.utils.TokenEstimatorTestSupport;
 import com.summit.dp.shared.vo.SessionVO;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.infrastructure.memory.AgentsMdLoader;
-import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.sandbox.windows.WindowsWorkspaceSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,7 +46,7 @@ class RequestPreparerMemoryTest {
     @DisplayName("多个 MemoryLoader 的正文按注册顺序进入 ContextSpec.memory")
     void loaderBodiesLandInContextSpecMemory(@TempDir Path project) {
         when(mcpService.currentConfig()).thenReturn(null);
-        WorkspaceSpec workspace = new MxcWorkspaceSpec(project.toString());
+        WorkspaceSpec workspace = new WindowsWorkspaceSpec(project.toString());
         AtomicReference<WorkspaceSpec> seen = new AtomicReference<>();
         RequestPreparer preparer = RequestPreparerTestSupport.builder()
                 .mcpService(mcpService)
@@ -77,7 +76,7 @@ class RequestPreparerMemoryTest {
                 .memoryLoaders(List.of(new AgentsMdLoader(TokenEstimatorTestSupport.charCount(), 3000)))
                 .build();
 
-        AgentRequest request = preparer.buildRequest("prompt", context(new MxcWorkspaceSpec(project.toString())), List.of());
+        AgentRequest request = preparer.buildRequest("prompt", context(new WindowsWorkspaceSpec(project.toString())), List.of());
 
         List<String> memory = new ArrayList<>(request.getContextSpec().getMemory());
         assertEquals(1, memory.size());
@@ -101,10 +100,10 @@ class RequestPreparerMemoryTest {
 
     private RuntimeContext context(WorkspaceSpec workspace) {
         ExecutionContext executionContext = ExecutionContext.root(SESSION_ID, EXECUTION_ID, null, null,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                AgentPermissionMode.FULL_ACCESS);
         return new RuntimeContext(executionContext, null, null, SessionVO.builder().id(SESSION_ID).build(),
                 List.of(), workspace,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName("m").build(),
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false, null, false);
+                AgentPermissionMode.FULL_ACCESS, false, null, false);
     }
 }

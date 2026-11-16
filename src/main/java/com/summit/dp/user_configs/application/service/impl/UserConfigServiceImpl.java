@@ -8,6 +8,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.command.UserConfigCommand;
+import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.service.UserConfigService;
 import com.summit.dp.user_configs.application.vo.SettingsView;
@@ -144,13 +145,17 @@ public class UserConfigServiceImpl implements UserConfigService {
 
 
     private UserConfig apply(UserConfigCommand command, UserConfig model) {
-        String accessMode = command.accessMode();
-        if (accessMode != null)
-            model.changeAccessMode(UserConfig.AccessMode.fromString(accessMode));
-
-        String commandApprovalPolicy = command.commandApprovalPolicy();
-        if (commandApprovalPolicy != null)
-            model.changeCommandPolicy(UserConfig.CommandPolicy.fromString(commandApprovalPolicy));
+        String permissionMode = command.permissionMode();
+        if (permissionMode != null) {
+            try {
+                AgentPermissionMode parsed = AgentPermissionMode.parseSelectableStrict(permissionMode);
+                if (parsed != null) {
+                    model.changePermissionMode(parsed);
+                }
+            } catch (IllegalArgumentException invalid) {
+                throw new ClientException(invalid.getMessage());
+            }
+        }
 
         Integer planMaxReminders = command.planMaxReminders();
         if (planMaxReminders != null)
@@ -173,8 +178,10 @@ public class UserConfigServiceImpl implements UserConfigService {
         if (command.streamChatPresent()) model.changeStreamChat(command.streamChat());
 
         String workspaceType = command.workspaceType();
-        if (workspaceType != null)
-            model.changeWorkspace(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(workspaceType)));
+        if (workspaceType != null) {
+            WorkspaceType nextType = WorkspaceType.fromCode(workspaceType);
+            model.changeWorkspace(new UserConfig.WorkSpaceConfig(nextType));
+        }
 
         Integer maxTokens = command.maxTokens();
         if (maxTokens != null)
@@ -243,8 +250,7 @@ public class UserConfigServiceImpl implements UserConfigService {
 
     private UserConfigVO toVO(UserConfig model, SettingsView settings) {
         UserConfig.WorkSpaceConfig workSpaceConfig = model.getWorkSpaceConfig();
-        UserConfig.CommandPolicy commandApprovalPolicy = model.getCommandApprovalPolicy();
-        UserConfig.AccessMode accessMode = model.getAccessMode();
+        AgentPermissionMode permissionMode = model.getPermissionMode();
         ReasoningEffort reasoningEffort = model.getReasoningEffort();
         String dataDir = effectiveDataDir(model);
         return UserConfigVO.builder()
@@ -252,8 +258,7 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .modelId(model.getModelId())
                 .agentId(model.getAgentId())
                 .type(workSpaceConfig == null ? null : workSpaceConfig.type())
-                .commandApprovalPolicy(commandApprovalPolicy == null ? null : commandApprovalPolicy.name())
-                .accessMode(accessMode == null ? null : accessMode.name())
+                .permissionMode(permissionMode == null ? null : permissionMode.name())
                 .planMaxReminders(model.getPlanMaxReminders())
                 .maxTokens(model.getMaxTokens())
                 .reasoningEffort(reasoningEffort == null ? null : reasoningEffort.getValue())

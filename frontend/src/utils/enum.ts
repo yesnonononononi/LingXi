@@ -20,23 +20,15 @@ export function normalizeEnum<T extends string>(
   return allowed.includes(normalized) ? normalized : fallback;
 }
 
-/** 会话访问范围档位 */
-export const AGENT_ACCESS_MODES = ['IN_WORKSPACE', 'READ_ONLY_IN_WORKSPACE', 'OUT_OF_WORKSPACE'] as const;
-export type AgentAccessMode = (typeof AGENT_ACCESS_MODES)[number];
+/** 会话权限档位（可配置选项；READ_ONLY_REVIEW 仅在 Plan 语义下由后端生效，不在菜单展示） */
+export const AGENT_PERMISSION_MODES = ['APPROVAL_REQUIRED', 'DELEGATED_APPROVAL', 'FULL_ACCESS'] as const;
+export type AgentPermissionMode = (typeof AGENT_PERMISSION_MODES)[number];
 
-export function normalizeAccessMode(raw: unknown, fallback?: AgentAccessMode): AgentAccessMode | undefined {
-  return normalizeEnum(raw, AGENT_ACCESS_MODES, fallback);
-}
-
-/** 命令审批策略 */
-export const COMMAND_APPROVAL_POLICIES = ['DANGEROUS_BLOCK', 'PRE_EXEC_CONFIRM', 'FULL_ACCESS'] as const;
-export type CommandApprovalPolicyType = (typeof COMMAND_APPROVAL_POLICIES)[number];
-
-export function normalizeCommandApprovalPolicy(
+export function normalizePermissionMode(
   raw: unknown,
-  fallback?: CommandApprovalPolicyType
-): CommandApprovalPolicyType | undefined {
-  return normalizeEnum(raw, COMMAND_APPROVAL_POLICIES, fallback);
+  fallback?: AgentPermissionMode
+): AgentPermissionMode | undefined {
+  return normalizeEnum(raw, AGENT_PERMISSION_MODES, fallback);
 }
 
 /** 工作空间运行环境（对齐后端 WorkspaceType 枚举名） */

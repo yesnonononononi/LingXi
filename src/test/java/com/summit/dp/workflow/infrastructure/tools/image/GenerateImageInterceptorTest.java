@@ -32,7 +32,7 @@ class GenerateImageInterceptorTest {
     @Test void quotaIsSavedBeforeCallsAndSurvivesJsonRestore() throws Exception {
         ObjectMapper mapper=new ObjectMapper();
         SettingsProvider settings=mock(SettingsProvider.class);
-        when(settings.current()).thenReturn(Optional.of(new SettingsView(null,null,null,null,null,null,null,null,null,10,null,9L,1)));
+        when(settings.current()).thenReturn(Optional.of(new SettingsView(null,null,null,null,null,null,null,null,10,null,9L,1)));
         ExecutionRepository repository=mock(ExecutionRepository.class);
         GenerateImageInterceptor interceptor=new GenerateImageInterceptor(settings,repository,mapper);
         Execution execution=Execution.builder().id("10").agentRequest(AgentRequest.builder()

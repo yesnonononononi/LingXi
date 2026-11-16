@@ -217,6 +217,11 @@ class SearchFilesToolExecutorSkipCountTest {
         }
 
         @Override
+        public boolean isDirectory(Path path) throws IOException {
+            return delegate.isDirectory(path);
+        }
+
+        @Override
         public void createDirectories(Path path) throws IOException {
             delegate.createDirectories(path);
         }

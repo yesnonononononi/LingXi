@@ -7,6 +7,8 @@
  * `trigger` 插槽（props 名保持 `isOpen` / `selected` / `label`，存量调用方零改动）。</p>
  */
 import { computed, ref } from 'vue';
+import { ArrowDown01Icon, Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
 import LxSelect from './LxSelect.vue';
 import ProviderIcon from '../model/ProviderIcon.vue';
 import type { SelectOption } from '../../types/ui';
@@ -17,7 +19,7 @@ import { isBuiltInProviderIcon } from '../../utils/providerIcons';
 
 defineOptions({ inheritAttrs: false });
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** 当前选中值 (配合 v-model 使用) */
   modelValue: T;
   /** 选项列表 */
@@ -29,7 +31,7 @@ const props = defineProps<{
   disabled?: boolean;
   /** 面板顶部标题，为空则不展示 */
   menuTitle?: string;
-  /** 是否开启顶部实时搜索输入框，默认关闭（Boolean prop 缺省会 cast 成 false） */
+  /** 是否开启顶部实时搜索输入框，默认关闭 */
   searchable?: boolean;
   /** 搜索框 placeholder，默认 '搜索...' */
   searchPlaceholder?: string;
@@ -37,7 +39,11 @@ const props = defineProps<{
   triggerClass?: string;
   /** 触发器尺寸：md 默认，sm 更小巧 */
   size?: 'md' | 'sm';
-}>();
+}>(), {
+  isDark: undefined,
+  disabled: false,
+  searchable: false,
+});
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: T): void;
@@ -51,7 +57,6 @@ const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => (props.isDark === undefined ? themeIsDark.value : props.isDark));
 const isSmall = computed(() => props.size === 'sm');
 const labelSizeClass = computed(() => 'text-xs');
-const iconSizeClass = computed(() => (isSmall.value ? 'w-2.5 h-2.5' : 'w-3 h-3'));
 const displayPlaceholder = computed(() => props.placeholder ?? t('common.pleaseSelect'));
 
 const selectRef = ref<{ open: () => Promise<void>; close: () => void } | null>(null);
@@ -88,18 +93,16 @@ defineExpose({
           class="font-medium leading-[18px] truncate max-w-[150px]"
           :class="[labelSizeClass, 'text-lx-tertiary']"
         >{{ label }}</span>
-        <!-- chevron svg：展开时旋转 180° -->
-        <svg
-          class="shrink-0 origin-center transition-transform duration-300 ease-out"
-          :class="[iconSizeClass, menuOpen ? 'rotate-180' : 'rotate-0']"
-          viewBox="0 0 1024 1024"
-          version="1.1"
-          xmlns="http://www.w3.org/2000/svg"
-          :fill="isDark ? '#9ca3af' : '#6b7280'"
+        <!-- chevron：展开时旋转 180° -->
+        <HugeiconsIcon
+          :icon="(ArrowDown01Icon as IconArray)"
+          :size="isSmall ? 11 : 12"
+          :stroke-width="2.5"
+          class="shrink-0 origin-center transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+          :class="menuOpen ? 'rotate-180' : 'rotate-0'"
+          style="color: color-mix(in srgb, var(--gs-text) 55%, transparent)"
           aria-hidden="true"
-        >
-          <path d="M838.116 732.779 877.7 693.195 511.979 327.549 146.3 693.195 185.883 732.779 512.003 406.652Z" />
-        </svg>
+        />
       </slot>
     </template>
 
@@ -121,17 +124,15 @@ defineExpose({
       <span v-else-if="option.avatar" class="shrink-0 text-xs leading-none select-none">{{ option.avatar }}</span>
       <!-- flex-1 + min-w-0 + truncate：长模型名截断，绝不撑破面板宽度 -->
       <span class="flex-1 min-w-0 truncate text-left font-normal leading-[18px]">{{ option.label }}</span>
-      <svg
+      <HugeiconsIcon
         v-if="selected"
-        class="w-4 h-4 shrink-0 ml-auto"
-        :class="isDark ? 'text-white' : 'text-zinc-900'"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
+        :icon="(Tick02Icon as IconArray)"
+        :size="13"
+        :stroke-width="2.5"
+        class="shrink-0 ml-auto"
+        style="color: var(--gs-accent)"
         aria-hidden="true"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-      </svg>
+      />
     </template>
   </LxSelect>
 </template>

@@ -113,3 +113,8 @@ test('P7 导航按钮选择器必须限定直接子元素，别把内嵌箭头�
     '.address-bar button 会命中内嵌箭头，必须写成 .address-bar > button');
 });
 
+test('P8 网页预览占位容器必须消费 --file-bg 令牌，暗色模式下不得透出白底', () => {
+  const frameArea = ruleBody(read(FILES.page), '.frame-area {');
+  assert.match(frameArea, /background:\s*var\(--file-bg\b/, '.frame-area 背景必须走 --file-bg 令牌');
+});
+

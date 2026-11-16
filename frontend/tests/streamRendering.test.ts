@@ -124,12 +124,14 @@ test('压缩中切走会话错过 SQUEEZE_COMPLETED 时，新流式消息（思�
     assert.equal(messages[0].isCompressingContext, false, '块增量到达必须清除压缩提示');
   }
 
-  // 4. 模拟带块的快照 TURN_SNAPSHOT 到达时清除压缩提示
+  // 4. 运行中带块快照 TURN_SNAPSHOT（SQUEEZE_STARTED 时后端同步推送）不得误清压缩提示；终态快照才清除
   {
     const messages: ChatMessage[] = [];
-    const reducer = new TurnStreamReducer(messages, { sessionId });
+    const sessionUsage: ContextUsageData[] = [];
+    const reducer = new TurnStreamReducer(messages, { sessionId, onContextUsageUpdate: (_, u) => sessionUsage.push(u) });
     reducer.consume({ ...identity, type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_STARTED', band: 'SUMMARY', usage });
     assert.equal(messages[0].isCompressingContext, true);
+    assert.equal(sessionUsage.at(-1)?.phase, 'SQUEEZE_STARTED');
 
     reducer.consume({
       type: 'TURN_SNAPSHOT',
@@ -141,11 +143,31 @@ test('压缩中切走会话错过 SQUEEZE_COMPLETED 时，新流式消息（思�
         status: 'RUNNING',
         viewVersion: 1,
         blocks: [
-          { blockId: 'text:1', type: 'TEXT', order: 0, status: 'STREAMING', isBody: true, text: '快照恢复输出' }
+          { blockId: 'text:1', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: false, text: '压缩前已有过程文本' }
         ]
       }
     } as unknown as AgentEvent);
-    assert.equal(messages[0].isCompressingContext, false, '带块的快照到达必须清除压缩提示');
+    assert.equal(messages[0].isCompressingContext, true, '运行中带块快照到达不得清除压缩提示');
+    assert.equal(messages[0].contextUsage?.phase, 'SQUEEZE_STARTED');
+    assert.equal(sessionUsage.at(-1)?.phase, 'SQUEEZE_STARTED');
+
+    reducer.consume({
+      type: 'TURN_SNAPSHOT',
+      turnId: 'turn-cs-1',
+      viewVersion: 2,
+      view: {
+        sessionId,
+        turnId: 'turn-cs-1',
+        status: 'COMPLETED',
+        viewVersion: 2,
+        blocks: [
+          { blockId: 'text:1', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '终态输出' }
+        ]
+      }
+    } as unknown as AgentEvent);
+    assert.equal(messages[0].isCompressingContext, false, '终态快照到达必须清除压缩提示');
+    assert.equal(messages[0].contextUsage?.phase, undefined);
+    assert.equal(sessionUsage.at(-1)?.phase, undefined);
   }
 });
 
