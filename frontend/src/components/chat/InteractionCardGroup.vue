@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import {computed, ref, useId, watch} from 'vue';
+import {computed, inject, ref, useId, watch} from 'vue';
 import type {GroupedPromptCardEntry, PromptCardEntry} from '../../utils/promptCardGroups';
 import {groupChoiceQuestions, isPendingCardEntry} from '../../utils/promptCardGroups';
 import type {PromptCardData, ToolCallTrace} from '../../types/chat';
+import {INTERACTION_CARD_SLOTS_KEY} from '../../types/interactionCardSlots';
 import {cardDotClass, cardKindIconPath, resolveCardTone} from '../../utils/cardUi';
 import {resolveCardStatusLabel} from '../../utils/toolCallCard';
 import {t} from '../../i18n';
@@ -11,6 +12,8 @@ import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
 import {AgentToolName} from '../../utils/toolNames';
 
 const props = defineProps<{ kind: PromptCardData['kind']; entries: PromptCardEntry[]; toolCalls?: ToolCallTrace[]; sessionId?: string | number; isDark?: boolean; docked?: boolean }>();
+const cardSlotOverrides = inject(INTERACTION_CARD_SLOTS_KEY, undefined);
+const resolvedChoiceGroup = computed(() => cardSlotOverrides?.choiceGroup ?? ChoiceQuestionGroup);
 const GROUP_LABELS = {
   PLAN: { prefix: 'plan-approval', title: 'chat.plan.groupTitle' },
   COMMAND: { prefix: 'command-approval', title: 'chat.approval.groupTitle' },
@@ -91,7 +94,7 @@ const expectedChoiceCounts = computed(() => {
       :data-testid="`${testPrefix}-list`"
     >
       <template v-for="entry in orderedEntries" :key="entry.id">
-        <ChoiceQuestionGroup v-if="entry.choices" :entries="entry.choices" :response-id="entry.responseId!"
+        <component :is="resolvedChoiceGroup" v-if="entry.choices" :entries="entry.choices" :response-id="entry.responseId!"
           :expected-count="expectedChoiceCounts.get(entry.responseId!) ?? 0" :is-dark="isDark" :docked="docked" />
         <div v-else class="min-w-0" :data-approval-id="entry.card.toolCallId">
           <button

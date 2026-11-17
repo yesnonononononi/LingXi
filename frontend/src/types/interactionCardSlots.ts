@@ -1,5 +1,6 @@
 import type {Component, InjectionKey} from 'vue';
 import type {PromptCardData} from './chat';
+import type {PromptCardEntry} from '../utils/promptCardGroups';
 
 /** 审批卡片 / 计划卡片插槽统一 props（默认实现 ApprovalCard / PlanCard 与扩展实现共用）。 */
 export interface InteractionCardSlotProps {
@@ -10,10 +11,20 @@ export interface InteractionCardSlotProps {
   readonly docked?: boolean;
 }
 
+/** 选择卡片组插槽统一 props（默认实现 ChoiceQuestionGroup 与扩展实现共用）。 */
+export interface ChoiceGroupSlotProps {
+  readonly entries: PromptCardEntry[];
+  readonly responseId: string;
+  readonly expectedCount: number;
+  readonly isDark?: boolean;
+  readonly docked?: boolean;
+}
+
 /** 宿主可注册的互动卡片渲染器集合。缺省（undefined / 字段缺省）= 使用内置默认实现。 */
 export interface InteractionCardSlotOverrides {
   readonly approvalCard?: Component<InteractionCardSlotProps>;
   readonly planCard?: Component<InteractionCardSlotProps>;
+  readonly choiceGroup?: Component<ChoiceGroupSlotProps>;
 }
 
 /** 能力注入键：由宿主（ChatView）provide，PromptCard inject。 */

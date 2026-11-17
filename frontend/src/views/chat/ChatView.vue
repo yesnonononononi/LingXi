@@ -584,6 +584,7 @@ import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import {INTERACTION_CARD_SLOTS_KEY} from '../../types/interactionCardSlots';
 import ApprovalCard from '../../components/chat/ApprovalCard.vue';
 import PlanCard from '../../components/chat/PlanCard.vue';
+import ChoiceQuestionGroup from '../../components/chat/ChoiceQuestionGroup.vue';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
 import ChatBackground from '../../components/chat/ChatBackground.vue';
 import TokenBackground from '../../components/background/TokenBackground.vue';
@@ -1084,12 +1085,14 @@ provide(SIDEBAR_SLOTS_KEY, sidebarSlots);
 const interactionCardSlots = shallowReactive({
   approvalCard: packSlots.interactionCard.approvalCard ?? ApprovalCard,
   planCard: packSlots.interactionCard.planCard ?? PlanCard,
+  choiceGroup: packSlots.interactionCard.choiceGroup ?? ChoiceQuestionGroup,
 });
 watch(
-  () => [packSlots.interactionCard.approvalCard, packSlots.interactionCard.planCard] as const,
-  ([approvalCard, planCard]) => {
+  () => [packSlots.interactionCard.approvalCard, packSlots.interactionCard.planCard, packSlots.interactionCard.choiceGroup] as const,
+  ([approvalCard, planCard, choiceGroup]) => {
     interactionCardSlots.approvalCard = approvalCard ?? ApprovalCard;
     interactionCardSlots.planCard = planCard ?? PlanCard;
+    interactionCardSlots.choiceGroup = choiceGroup ?? ChoiceQuestionGroup;
   },
 );
 provide(INTERACTION_CARD_SLOTS_KEY, interactionCardSlots);

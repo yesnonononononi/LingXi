@@ -275,6 +275,32 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     },
     load: async () => (await import('./builtin/sunsetEditorialPlan')).sunsetEditorialPlanPack,
   },
+
+  // ========== 选择卡片 (choiceCard) ==========
+  {
+    meta: {
+      id: 'rpg-quest-choice',
+      category: 'choiceCard',
+      name: '剧情抉择任务卡',
+      description: 'RPG 游戏对话抉择框风格，耀金边框配字母快捷键徽章与金色选中微光。',
+      version: '1.0.0',
+      capabilities: ['剧情抉择', '字母角标', '选择卡片 Slot'],
+      preview: { canvas: '#fffbeb', surface: '#fef3c7', accent: '#f59e0b', text: '#78350f' },
+    },
+    load: async () => (await import('./builtin/rpgQuestChoice')).rpgQuestChoicePack,
+  },
+  {
+    meta: {
+      id: 'neon-pill-choice',
+      category: 'choiceCard',
+      name: '霓虹胶囊矩阵卡',
+      description: '双列响应式胶囊网格配顶部步骤点阵进度条，打破传统长条单选排版。',
+      version: '1.0.0',
+      capabilities: ['双列矩阵', '点阵进度', '选择卡片 Slot'],
+      preview: { canvas: '#ecfeff', surface: '#e0e7ff', accent: '#06b6d4', text: '#1e1b4b' },
+    },
+    load: async () => (await import('./builtin/neonPillChoice')).neonPillChoicePack,
+  },
 ]);
 
 /** 按 id 查找内置扩展包；找不到返回 undefined。 */

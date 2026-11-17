@@ -86,6 +86,11 @@ const categories = computed<readonly CategoryDescriptor[]>(() => [
     label: isZh.value ? '计划卡片' : 'Plan Cards',
     desc: isZh.value ? '自定义实施计划审阅卡片的排版与交互样式' : 'Implementation plan review card styles',
   },
+  {
+    key: 'choiceCard',
+    label: isZh.value ? '选择卡片' : 'Choice Cards',
+    desc: isZh.value ? '自定义多题选择交互卡片的布局风格与视觉主题' : 'Choice question card layouts and themes',
+  },
 ]);
 
 const activeCategoryDescriptor = computed(() =>

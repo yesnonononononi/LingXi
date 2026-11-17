@@ -214,6 +214,7 @@ test('selectPackWithEnv 支持 interactionCard 插槽覆盖审批卡与计划卡
 test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激活的扩展包', async () => {
   const approvalPacks = listOfficialPacksByCategory('approvalCard');
   const planPacks = listOfficialPacksByCategory('planCard');
+  const choicePacks = listOfficialPacksByCategory('choiceCard');
   assert.deepEqual(
     approvalPacks.map(item => item.meta.id),
     ['amber-guard-approval', 'cyber-aurora-approval'],
@@ -221,6 +222,10 @@ test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激
   assert.deepEqual(
     planPacks.map(item => item.meta.id),
     ['emerald-blueprint-plan', 'sunset-editorial-plan'],
+  );
+  assert.deepEqual(
+    choicePacks.map(item => item.meta.id),
+    ['rpg-quest-choice', 'neon-pill-choice'],
   );
 
   const { doc } = createFakeDom();
@@ -230,8 +235,11 @@ test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激
 
   const stubApproval = defineComponent({ name: 'StubApprovalPackCard', render: () => null });
   const stubPlan = defineComponent({ name: 'StubPlanPackCard', render: () => null });
+  const stubChoice = defineComponent({ name: 'StubChoicePackCard', render: () => null });
   const lookup = (id: string): OfficialPackEntry | undefined => {
-    const entry = approvalPacks.find(item => item.meta.id === id) ?? planPacks.find(item => item.meta.id === id);
+    const entry = approvalPacks.find(item => item.meta.id === id)
+      ?? planPacks.find(item => item.meta.id === id)
+      ?? choicePacks.find(item => item.meta.id === id);
     if (!entry) return undefined;
     return {
       meta: entry.meta,
@@ -239,18 +247,23 @@ test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激
         id: entry.meta.id,
         slots: entry.meta.category === 'approvalCard'
           ? { interactionCard: { approvalCard: stubApproval } }
-          : { interactionCard: { planCard: stubPlan } },
+          : entry.meta.category === 'planCard'
+            ? { interactionCard: { planCard: stubPlan } }
+            : { interactionCard: { choiceGroup: stubChoice } },
       }),
     };
   };
 
   assert.equal(await selectPackWithEnv('approvalCard', approvalPacks[0]!.meta.id, { doc, storage, lookup }), true);
   assert.equal(await selectPackWithEnv('planCard', planPacks[0]!.meta.id, { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('choiceCard', choicePacks[0]!.meta.id, { doc, storage, lookup }), true);
 
   assert.equal(host.packSlots.interactionCard.approvalCard, stubApproval);
   assert.equal(host.packSlots.interactionCard.planCard, stubPlan);
+  assert.equal(host.packSlots.interactionCard.choiceGroup, stubChoice);
 
   resetAllPacksWithEnv({ doc, storage });
   assert.equal(host.packSlots.interactionCard.approvalCard, undefined);
   assert.equal(host.packSlots.interactionCard.planCard, undefined);
+  assert.equal(host.packSlots.interactionCard.choiceGroup, undefined);
 });
