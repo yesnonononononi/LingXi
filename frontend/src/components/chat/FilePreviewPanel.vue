@@ -764,19 +764,6 @@ button:disabled { opacity: .4; cursor: default; }
 }
 .diff-lines { min-width: max-content; }
 .diff-line { display: flex; align-items: flex-start; white-space: pre; }
-/* 行号左侧的变更细线：连续同类行拼成一根竖线，扫一眼就知道增删区域在哪。
-   sticky 是为了横向滚动长行时这根线仍钉在左缘，不会跟着滚出视野。 */
-.diff-line::before {
-  content: '';
-  flex: none;
-  align-self: stretch;
-  width: 2px;
-  position: sticky;
-  left: 0;
-  background: transparent;
-}
-.diff-line.is-add::before { background: var(--lx-success, #16a34a); }
-.diff-line.is-del::before { background: var(--lx-danger, #e7000b); }
 .diff-line:hover { background-color: rgba(128, 128, 128, 0.05); }
 .diff-line.is-add { background: var(--lx-diff-add-bg, rgba(34, 197, 94, 0.12)); }
 .diff-line.is-del { background: var(--lx-diff-del-bg, rgba(239, 68, 68, 0.12)); }

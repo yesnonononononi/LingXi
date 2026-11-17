@@ -127,21 +127,6 @@ test('diff 预览框文字按照代码风格与语法高亮渲染契约', () => 
   assert.match(panelSrc, /\.diff-preview :deep\(\.hljs-keyword\)/, '必须为 diff 代码关键词配置高亮样式');
   assert.match(panelSrc, /\.diff-preview :deep\(\.hljs-comment\)/, '必须为 diff 注释行配置高亮样式');
   assert.match(panelSrc, /\.file-preview-panel\.is-dark \.diff-preview :deep\(\.hljs-keyword\)/, '深色模式下必须提供对应的代码高亮');
-
-  // 5. 行号左侧的变更细线：增行绿、删行红，横向滚动时仍钉在左缘。
-  //    金丝雀：先证明 panelSrc 真读到了 diff 行规则，下面的「细线存在」才不会假绿。
-  assert.match(panelSrc, /\.diff-line\.is-add \{/, '金丝雀：未读到 diff 行样式');
-  const markerRule = (selector: string): string => {
-    const at = panelSrc.indexOf(selector);
-    assert.ok(at >= 0, `缺少规则：${selector}`);
-    return panelSrc.slice(panelSrc.indexOf('{', at) + 1, panelSrc.indexOf('}', at));
-  };
-  const baseMarker = markerRule('.diff-line::before {');
-  assert.match(baseMarker, /position: sticky;/, '变更细线必须 sticky，横向滚动长行时才不会滚出视野');
-  assert.match(baseMarker, /left: 0;/, '变更细线必须钉在左缘');
-  assert.match(baseMarker, /width: 2px;/, '变更细线必须是细线（2px），再粗就抢正文');
-  assert.match(markerRule('.diff-line.is-add::before {'), /var\(--lx-success/, '增行细线必须用状态令牌绘绿，不许写字面色值');
-  assert.match(markerRule('.diff-line.is-del::before'), /var\(--lx-danger/, '删行细线必须用状态令牌绘红，不许写字面色值');
 });
 
 test('控制栏关闭防漂移与侧边栏防挤压布局契约', () => {
