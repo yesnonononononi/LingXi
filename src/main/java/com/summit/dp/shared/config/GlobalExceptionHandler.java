@@ -5,7 +5,6 @@ import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.shared.exception.AccessDeniedException;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.vo.DecisionConflictException;
-import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleProjection;
 import com.summit.dp.workspace.domain.exception.WorkspaceNoFoundException;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
