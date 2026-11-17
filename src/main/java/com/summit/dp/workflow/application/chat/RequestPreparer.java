@@ -426,7 +426,8 @@ public class RequestPreparer {
                 .contextSpec(ContextSpec.builder()
                         .context(context.messageList())
                         .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization, context.workspace()))
-                        // 记忆正文由框架追加到系统提示词尾部；子 Agent 走同一个入口，口径一致。
+                        // 记忆正文不进系统提示词：框架把记忆渲染成每轮的动态上下文（user 消息），
+                        // 系统提示词必须逐字稳定，否则整段前缀缓存与 thinking 签名一起作废。
                         .memory(MemoryLoader.collect(memoryLoaders, context.workspace()))
                         .build())
                 .workspaceSpec(context.workspace())
