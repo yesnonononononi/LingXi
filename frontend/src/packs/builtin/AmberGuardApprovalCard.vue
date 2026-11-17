@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import {computed, ref} from 'vue';
 import type {PromptCardData} from '../../types/chat';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import {CARD_ERROR_TEXT_CLASS} from '../../utils/cardUi';
 import {useApprovalCardModel} from './useInteractionCardActions';
 
@@ -9,6 +11,9 @@ const props = defineProps<{
   isDark?: boolean;
   docked?: boolean;
 }>();
+
+const { isCopied, copy } = useCopyFeedback();
+const expandCommand = ref(false);
 
 const {
   t,
@@ -26,6 +31,8 @@ const {
   approve,
   reject,
 } = useApprovalCardModel(props);
+
+const isLongCommand = computed(() => primaryText.value.length > 180 || primaryText.value.split('\n').length > 3);
 </script>
 
 <template>
@@ -74,11 +81,29 @@ const {
 
       <div
         v-if="primaryText"
-        class="rounded-xl border px-3 py-2.5 font-mono text-lx-fs-md break-all select-text flex items-start gap-2"
+        class="relative rounded-xl border px-3 py-2.5 pr-16 font-mono text-lx-fs-md break-all select-text flex items-start gap-2"
         :class="isDark ? 'bg-black/65 border-amber-500/30 text-amber-200' : 'bg-stone-900 border-stone-800 text-amber-300'"
       >
         <span class="select-none font-bold text-amber-500">{{ isFileWrite ? '✎' : '$' }}</span>
-        <span class="min-w-0 flex-1 leading-relaxed">{{ primaryText }}</span>
+        <span class="min-w-0 flex-1 leading-relaxed whitespace-pre-wrap" :class="isLongCommand && !expandCommand ? 'line-clamp-3' : ''">{{ primaryText }}</span>
+        <div class="absolute right-2 top-2 flex items-center gap-1">
+          <button
+            v-if="isLongCommand"
+            type="button"
+            class="rounded-md border border-amber-500/30 bg-stone-900/90 px-1.5 py-0.5 font-sans text-lx-fs-sm text-amber-300 hover:bg-stone-800 transition cursor-pointer"
+            @click="expandCommand = !expandCommand"
+          >
+            {{ expandCommand ? t('common.collapse') : t('common.expand') }}
+          </button>
+          <button
+            type="button"
+            class="rounded-md border border-amber-500/30 bg-stone-900/90 px-1.5 py-0.5 font-sans text-lx-fs-sm transition cursor-pointer"
+            :class="isCopied ? 'text-emerald-400 border-emerald-500/40' : 'text-amber-300 hover:bg-stone-800'"
+            @click="copy(primaryText)"
+          >
+            {{ isCopied ? `✓ ${t('common.copied')}` : t('common.copy') }}
+          </button>
+        </div>
       </div>
 
       <div v-if="errorMsg" :class="['text-xs font-medium', CARD_ERROR_TEXT_CLASS]">{{ errorMsg }}</div>
@@ -87,7 +112,7 @@ const {
         <button
           type="button"
           :disabled="isSubmitting"
-          class="rounded-xl border px-3.5 py-1.5 text-xs font-medium transition cursor-pointer disabled:opacity-50"
+          class="rounded-xl border px-3.5 py-1.5 text-xs font-medium transition active:scale-[0.97] cursor-pointer disabled:opacity-50"
           :class="isDark ? 'border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-900/50' : 'border-red-200 bg-white text-red-600 hover:bg-red-50'"
           @click="reject"
         >
@@ -96,7 +121,7 @@ const {
         <button
           type="button"
           :disabled="isSubmitting"
-          class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition cursor-pointer disabled:opacity-50 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400"
+          class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition active:scale-[0.97] cursor-pointer disabled:opacity-50 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400"
           @click="approve"
         >
           {{ submittingAction === 'approve' ? '...' : t('chat.approval.approveAction') }}

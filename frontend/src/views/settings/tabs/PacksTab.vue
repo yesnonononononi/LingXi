@@ -9,6 +9,7 @@ import {isElectron, type RemotePackManifest} from '../../../utils/platform';
 const { t, locale } = useI18n();
 const {
   activePackIds,
+  activeInteractionPackIds,
   activePackCount,
   loadingCategory,
   activePackError,
@@ -151,10 +152,30 @@ const handleOpenPacksGuide = async (): Promise<void> => {
 };
 
 const resolveActivePackName = (category: OfficialPackCategory): string | null => {
+  if (category === 'interactionCard') {
+    const activeTabs = Object.values(activeInteractionPackIds.value).filter((id): id is string => Boolean(id));
+    if (!activeTabs.length) return null;
+    const all = listCategoryCards('interactionCard');
+    const first = all.find(item => item.meta.id === activeTabs[0])?.meta.name ?? activeTabs[0];
+    return activeTabs.length === 1 ? first : `${first} +${activeTabs.length - 1}`;
+  }
   const activeId = activePackIds.value[category];
   if (!activeId) return null;
   const found = listCategoryCards(category).find(item => item.meta.id === activeId);
   return found ? found.meta.name : activeId;
+};
+
+const hasActiveInteractionPack = computed(() =>
+  Object.values(activeInteractionPackIds.value).some(Boolean),
+);
+
+const isPackSelectedInDetail = (category: OfficialPackCategory, packId: string | null): boolean => {
+  if (category === 'interactionCard') {
+    const current = activeInteractionPackIds.value[activeInteractionTab.value];
+    return packId === null ? !current : current === packId;
+  }
+  const current = activePackIds.value[category];
+  return packId === null ? !current : current === packId;
 };
 
 const installedIdSet = computed(() => new Set(installedRemotePacks.value.map(item => item.id)));
@@ -182,8 +203,12 @@ const backToCategories = (): void => {
   selectedCategory.value = null;
 };
 
-const handleSelect = async (category: OfficialPackCategory, packId: string | null): Promise<void> => {
-  await selectCategoryPack(category, packId);
+const handleSelect = async (
+  category: OfficialPackCategory,
+  packId: string | null,
+  interactionTab?: InteractionCardTab,
+): Promise<void> => {
+  await selectCategoryPack(category, packId, interactionTab);
 };
 
 const handleInstallAndApply = async (manifest: RemotePackManifest): Promise<void> => {
@@ -398,7 +423,7 @@ onMounted(() => {
           </div>
 
           <button
-            v-if="activePackIds[selectedCategory]"
+            v-if="selectedCategory === 'interactionCard' ? hasActiveInteractionPack : activePackIds[selectedCategory]"
             type="button"
             @click="handleSelect(selectedCategory, null)"
             class="shrink-0 px-2.5 py-1 rounded-lg border border-lx-border-subtle text-lx-fs-xs text-lx-secondary hover:text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer"
@@ -429,13 +454,18 @@ onMounted(() => {
                 :data-testid="`interaction-card-tab-${tab.key}`"
                 @click="activeInteractionTab = tab.key"
                 :class="[
-                  'px-2.5 py-1 rounded-lg text-lx-fs-xs font-medium transition cursor-pointer',
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-lx-fs-xs font-medium transition cursor-pointer',
                   activeInteractionTab === tab.key
                     ? 'bg-lx-surface text-lx-primary shadow-2xs'
                     : 'text-lx-muted hover:text-lx-primary'
                 ]"
               >
-                {{ tab.label }}
+                <span>{{ tab.label }}</span>
+                <span
+                  v-if="activeInteractionPackIds[tab.key]"
+                  class="h-1.5 w-1.5 rounded-full bg-lx-accent"
+                  aria-hidden="true"
+                />
               </button>
             </div>
           </div>
@@ -446,10 +476,10 @@ onMounted(() => {
               type="button"
               :data-testid="`pack-${selectedCategory}-default`"
               :disabled="loadingCategory === selectedCategory"
-              @click="handleSelect(selectedCategory, null)"
+              @click="handleSelect(selectedCategory, null, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
               :class="[
                 'p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col gap-1.5',
-                !activePackIds[selectedCategory]
+                isPackSelectedInDetail(selectedCategory, null)
                   ? 'border-lx-accent bg-lx-accent-soft text-lx-primary'
                   : 'border-lx-border-subtle bg-lx-surface-sunken text-lx-secondary hover:border-lx-border hover:bg-lx-surface-hover'
               ]"
@@ -468,12 +498,12 @@ onMounted(() => {
               role="button"
               tabindex="0"
               :data-testid="`appearance-pack-${item.meta.id}`"
-              @click="handleSelect(selectedCategory, item.meta.id)"
-              @keydown.enter.prevent="handleSelect(selectedCategory, item.meta.id)"
-              @keydown.space.prevent="handleSelect(selectedCategory, item.meta.id)"
+              @click="handleSelect(selectedCategory, item.meta.id, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
+              @keydown.enter.prevent="handleSelect(selectedCategory, item.meta.id, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
+              @keydown.space.prevent="handleSelect(selectedCategory, item.meta.id, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
               :class="[
                 'p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col gap-2',
-                activePackIds[selectedCategory] === item.meta.id
+                isPackSelectedInDetail(selectedCategory, item.meta.id)
                   ? 'border-lx-accent bg-lx-accent-soft text-lx-primary'
                   : 'border-lx-border-subtle bg-lx-surface-sunken text-lx-secondary hover:border-lx-border hover:bg-lx-surface-hover'
               ]"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {onMounted, onScopeDispose} from 'vue';
 import type {PromptCardEntry} from '../../utils/promptCardGroups';
 import {resolveCardStatusLabel} from '../../utils/toolCallCard';
 import {CARD_ERROR_TEXT_CLASS, cardDotClass} from '../../utils/cardUi';
@@ -38,6 +39,51 @@ const {
 } = useChoiceGroupModel(props);
 
 const badgeLetter = (idx: number) => idx < 26 ? String.fromCharCode(65 + idx) : String(idx + 1);
+
+function onKeydown(event: KeyboardEvent) {
+  if (closable.value && !expanded.value) return;
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    if (canSubmit.value) {
+      event.preventDefault();
+      void submit();
+    }
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
+    return;
+  }
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault();
+    navigate(-1);
+    return;
+  }
+  if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    navigate(1);
+    return;
+  }
+  if (!editable.value || !active.value?.options?.length) return;
+  const optionCount = active.value.options.length;
+  if (/^[1-9]$/.test(event.key)) {
+    const idx = Number(event.key) - 1;
+    if (idx < optionCount) {
+      event.preventDefault();
+      selectOption(idx);
+    }
+    return;
+  }
+  if (/^[a-zA-Z]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    const idx = event.key.toUpperCase().charCodeAt(0) - 65;
+    if (idx >= 0 && idx < optionCount) {
+      event.preventDefault();
+      selectOption(idx);
+    }
+  }
+}
+
+onMounted(() => { window.addEventListener('keydown', onKeydown); });
+onScopeDispose(() => { window.removeEventListener('keydown', onKeydown); });
 </script>
 
 <template>
@@ -178,13 +224,16 @@ const badgeLetter = (idx: number) => idx < 26 ? String.fromCharCode(65 + idx) : 
       <footer v-if="pending.length || error" class="border-t px-4 py-2.5 space-y-2" :class="isDark ? 'border-amber-500/20 bg-black/25' : 'border-amber-200/70 bg-amber-50/60'">
         <p v-if="error" :class="['text-xs', CARD_ERROR_TEXT_CLASS]" role="alert">{{ error }}</p>
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <span class="text-xs opacity-75">
-            {{ !ready ? t('chat.choice.groupPreparing') : (canSubmit ? t('chat.choice.groupProgress', { answered, total }) : t('chat.choice.groupHint')) }}
-          </span>
+          <div class="flex items-center gap-2 text-xs opacity-75">
+            <span>{{ !ready ? t('chat.choice.groupPreparing') : (canSubmit ? t('chat.choice.groupProgress', { answered, total }) : t('chat.choice.groupHint')) }}</span>
+            <span class="hidden sm:inline-block rounded px-1.5 py-0.5 font-mono text-lx-fs-sm opacity-80" :class="isDark ? 'bg-amber-500/15 text-amber-200' : 'bg-amber-200/60 text-amber-900'">
+              A–Z / 1–9 · Ctrl+Enter
+            </span>
+          </div>
           <button
             type="button"
             :disabled="!canSubmit"
-            class="rounded-xl px-4 py-1.5 text-xs font-semibold text-stone-950 shadow-sm transition cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 hover:brightness-105"
+            class="rounded-xl px-4 py-1.5 text-xs font-semibold text-stone-950 shadow-sm transition active:scale-[0.97] cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 hover:brightness-105"
             data-testid="choice-submit-all"
             @click="submit"
           >

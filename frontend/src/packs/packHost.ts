@@ -9,6 +9,7 @@ import {OFFICIAL_PACKS, findOfficialPack} from './packRegistry';
 import type {CustomScannedPackManifest, ElectronPacksAPI, RemotePackManifest} from '../utils/platform';
 import {
   PACK_CATEGORY_ORDER,
+  type InteractionCardTab,
   type OfficialPackCategory,
   type OfficialPackDefinition,
   type OfficialPackEntry,
@@ -33,10 +34,13 @@ export interface ActivePackSlotsState {
   readonly taskProgress: TaskProgressSlotOverrides;
 }
 
+const INTERACTION_CARD_TABS: readonly InteractionCardTab[] = ['approval', 'plan', 'choice'];
 const activePackIds = ref<ActivePackSelectionMap>({});
+const activeInteractionPackIds = ref<Partial<Record<InteractionCardTab, string>>>({});
 const loadingCategory = ref<OfficialPackCategory | null>(null);
 const activePackError = ref<string | null>(null);
 const loadedDefinitions = new Map<OfficialPackCategory, OfficialPackDefinition>();
+const loadedInteractionDefinitions = new Map<InteractionCardTab, OfficialPackDefinition>();
 
 const installedRemotePacks = ref<OfficialPackMeta[]>([]);
 const remoteRegistryByCategory = ref<Partial<Record<OfficialPackCategory, RemotePackManifest[]>>>({});
@@ -128,7 +132,13 @@ const packSlots: ActivePackSlotsState = {
   taskProgress: shallowReactive<TaskProgressSlotOverrides>({}),
 };
 
-const activePackCount = computed(() => Object.values(activePackIds.value).filter(Boolean).length);
+const activePackCount = computed(() => {
+  const baseCount = Object.entries(activePackIds.value)
+    .filter(([cat, val]) => cat !== 'interactionCard' && Boolean(val))
+    .length;
+  const interactionCount = Object.values(activeInteractionPackIds.value).filter(Boolean).length;
+  return baseCount + interactionCount;
+});
 
 /** 序列化单个字体声明为 @font-face 规则。 */
 function formatFontFaceRule(font: OfficialPackFont): string {
@@ -185,6 +195,7 @@ function rebuildMergedPackSlots(): void {
   clearReactiveRecord(packSlots.taskProgress as Record<string, unknown>);
 
   for (const category of PACK_CATEGORY_ORDER) {
+    if (category === 'interactionCard') continue;
     const def = loadedDefinitions.get(category);
     if (!def?.slots) continue;
     if (def.slots.background) Object.assign(packSlots.background, def.slots.background);
@@ -194,11 +205,17 @@ function rebuildMergedPackSlots(): void {
     if (def.slots.sidebar) Object.assign(packSlots.sidebar, def.slots.sidebar);
     if (def.slots.taskProgress) Object.assign(packSlots.taskProgress, def.slots.taskProgress);
   }
+
+  for (const tab of INTERACTION_CARD_TABS) {
+    const def = loadedInteractionDefinitions.get(tab);
+    if (!def?.slots?.interactionCard) continue;
+    Object.assign(packSlots.interactionCard, def.slots.interactionCard);
+  }
 }
 
-function removeCategoryStyle(doc: Document | undefined, category: OfficialPackCategory): void {
+function removeCategoryStyle(doc: Document | undefined, styleKey: string): void {
   if (!doc?.head) return;
-  const existing = doc.head.querySelectorAll(`style[${PACK_STYLE_ATTR}="${category}"]`);
+  const existing = doc.head.querySelectorAll(`style[${PACK_STYLE_ATTR}="${styleKey}"]`);
   existing.forEach(node => node.remove());
 }
 
@@ -210,29 +227,44 @@ function removeAllPackStyles(doc: Document | undefined): void {
 
 function mountCategoryStyle(
   doc: Document | undefined,
-  category: OfficialPackCategory,
+  styleKey: string,
   packId: string,
   cssText: string,
 ): void {
-  removeCategoryStyle(doc, category);
+  removeCategoryStyle(doc, styleKey);
   if (!doc?.head || !cssText) return;
   const styleEl = doc.createElement('style');
-  styleEl.setAttribute(PACK_STYLE_ATTR, category);
+  styleEl.setAttribute(PACK_STYLE_ATTR, styleKey);
   styleEl.setAttribute('data-lx-pack-id', packId);
   styleEl.textContent = cssText;
   doc.head.appendChild(styleEl);
 }
 
-function persistSelectionMap(storage: Storage | undefined, map: ActivePackSelectionMap): void {
+const INTERACTION_TABS_STORAGE_KEY = 'interactionCardTabs';
+
+function persistSelectionMap(
+  storage: Storage | undefined,
+  map: ActivePackSelectionMap,
+  interactionMap: Partial<Record<InteractionCardTab, string>> = activeInteractionPackIds.value,
+): void {
   if (!storage) return;
   try {
-    const cleaned: ActivePackSelectionMap = {};
+    const payload: Record<string, unknown> = {};
     for (const category of PACK_CATEGORY_ORDER) {
+      if (category === 'interactionCard') continue;
       const id = map[category];
-      if (id) cleaned[category] = id;
+      if (id) payload[category] = id;
     }
-    if (Object.keys(cleaned).length > 0) {
-      storage.setItem(PACK_STORAGE_KEY, JSON.stringify(cleaned));
+    const cleanedTabs: Partial<Record<InteractionCardTab, string>> = {};
+    for (const tab of INTERACTION_CARD_TABS) {
+      const id = interactionMap[tab];
+      if (id) cleanedTabs[tab] = id;
+    }
+    if (Object.keys(cleanedTabs).length > 0) {
+      payload[INTERACTION_TABS_STORAGE_KEY] = cleanedTabs;
+    }
+    if (Object.keys(payload).length > 0) {
+      storage.setItem(PACK_STORAGE_KEY, JSON.stringify(payload));
     } else {
       storage.removeItem(PACK_STORAGE_KEY);
     }
@@ -242,32 +274,57 @@ function persistSelectionMap(storage: Storage | undefined, map: ActivePackSelect
   }
 }
 
-function readPersistedSelectionMap(storage: Storage | undefined): ActivePackSelectionMap {
-  if (!storage) return {};
+interface PersistedSelection {
+  readonly categories: ActivePackSelectionMap;
+  readonly interactionTabs: Partial<Record<InteractionCardTab, string>>;
+}
+
+function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelection {
+  if (!storage) return { categories: {}, interactionTabs: {} };
   try {
     const raw = storage.getItem(PACK_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const result: ActivePackSelectionMap = {};
+      const categories: ActivePackSelectionMap = {};
+      const interactionTabs: Partial<Record<InteractionCardTab, string>> = {};
       for (const category of PACK_CATEGORY_ORDER) {
+        if (category === 'interactionCard') continue;
         const val = parsed[category];
         if (typeof val === 'string' && val.trim().length > 0) {
-          result[category] = val.trim();
+          categories[category] = val.trim();
         }
       }
-      return result;
+      const tabsRaw = parsed[INTERACTION_TABS_STORAGE_KEY];
+      if (tabsRaw && typeof tabsRaw === 'object') {
+        for (const tab of INTERACTION_CARD_TABS) {
+          const val = (tabsRaw as Record<string, unknown>)[tab];
+          if (typeof val === 'string' && val.trim().length > 0) {
+            interactionTabs[tab] = val.trim();
+          }
+        }
+      }
+      // 兼容旧版单包 interactionCard 字符串
+      const legacyInteraction = parsed.interactionCard;
+      if (typeof legacyInteraction === 'string' && legacyInteraction.trim().length > 0) {
+        const entry = findOfficialPack(legacyInteraction.trim());
+        const tab = entry?.meta.interactionTab ?? 'approval';
+        if (!interactionTabs[tab]) interactionTabs[tab] = legacyInteraction.trim();
+      }
+      return { categories, interactionTabs };
     }
-    // 兼容早期单包持久化键
     const legacyId = storage.getItem(LEGACY_PACK_STORAGE_KEY);
     if (legacyId && legacyId.trim().length > 0) {
       const entry = findOfficialPack(legacyId.trim());
       if (entry) {
-        return { [entry.meta.category]: entry.meta.id };
+        if (entry.meta.category === 'interactionCard') {
+          return { categories: {}, interactionTabs: { [entry.meta.interactionTab ?? 'approval']: entry.meta.id } };
+        }
+        return { categories: { [entry.meta.category]: entry.meta.id }, interactionTabs: {} };
       }
     }
-    return {};
+    return { categories: {}, interactionTabs: {} };
   } catch {
-    return {};
+    return { categories: {}, interactionTabs: {} };
   }
 }
 
@@ -279,6 +336,7 @@ export async function selectPackWithEnv(
     doc?: Document;
     storage?: Storage;
     lookup?: (id: string) => OfficialPackEntry | undefined;
+    interactionTab?: InteractionCardTab;
   } = {},
 ): Promise<boolean> {
   const doc = env.doc ?? (typeof document !== 'undefined' ? document : undefined);
@@ -286,6 +344,60 @@ export async function selectPackWithEnv(
   const lookup = env.lookup ?? resolvePackEntry;
 
   activePackError.value = null;
+
+  if (category === 'interactionCard') {
+    if (!packId) {
+      const targetTabs = env.interactionTab ? [env.interactionTab] : INTERACTION_CARD_TABS;
+      const nextTabs = { ...activeInteractionPackIds.value };
+      for (const tab of targetTabs) {
+        removeCategoryStyle(doc, `interactionCard:${tab}`);
+        loadedInteractionDefinitions.delete(tab);
+        delete nextTabs[tab];
+      }
+      activeInteractionPackIds.value = nextTabs;
+      rebuildMergedPackSlots();
+      persistSelectionMap(storage, activePackIds.value, nextTabs);
+      return true;
+    }
+
+    const entry = lookup(packId);
+    const tab: InteractionCardTab = env.interactionTab ?? entry?.meta.interactionTab ?? 'approval';
+    if (!entry || entry.meta.category !== 'interactionCard') {
+      removeCategoryStyle(doc, `interactionCard:${tab}`);
+      loadedInteractionDefinitions.delete(tab);
+      const nextTabs = { ...activeInteractionPackIds.value };
+      delete nextTabs[tab];
+      activeInteractionPackIds.value = nextTabs;
+      rebuildMergedPackSlots();
+      persistSelectionMap(storage, activePackIds.value, nextTabs);
+      activePackError.value = `未找到扩展包: ${packId}`;
+      return false;
+    }
+
+    loadingCategory.value = category;
+    try {
+      const def = await entry.load();
+      const cssText = buildPackCss(def);
+      mountCategoryStyle(doc, `interactionCard:${tab}`, def.id, cssText);
+      loadedInteractionDefinitions.set(tab, def);
+      rebuildMergedPackSlots();
+      const nextTabs = { ...activeInteractionPackIds.value, [tab]: def.id };
+      activeInteractionPackIds.value = nextTabs;
+      persistSelectionMap(storage, activePackIds.value, nextTabs);
+      return true;
+    } catch (err) {
+      removeCategoryStyle(doc, `interactionCard:${tab}`);
+      loadedInteractionDefinitions.delete(tab);
+      const nextTabs = { ...activeInteractionPackIds.value };
+      delete nextTabs[tab];
+      activeInteractionPackIds.value = nextTabs;
+      rebuildMergedPackSlots();
+      activePackError.value = err instanceof Error ? err.message : String(err);
+      return false;
+    } finally {
+      loadingCategory.value = null;
+    }
+  }
 
   if (!packId) {
     removeCategoryStyle(doc, category);
@@ -346,14 +458,20 @@ export function resetAllPacksWithEnv(
 
   removeAllPackStyles(doc);
   loadedDefinitions.clear();
+  loadedInteractionDefinitions.clear();
   rebuildMergedPackSlots();
   activePackIds.value = {};
+  activeInteractionPackIds.value = {};
   activePackError.value = null;
-  persistSelectionMap(storage, {});
+  persistSelectionMap(storage, {}, {});
 }
 
-export async function selectCategoryPack(category: OfficialPackCategory, packId: string | null): Promise<boolean> {
-  return selectPackWithEnv(category, packId);
+export async function selectCategoryPack(
+  category: OfficialPackCategory,
+  packId: string | null,
+  interactionTab?: InteractionCardTab,
+): Promise<boolean> {
+  return selectPackWithEnv(category, packId, { interactionTab });
 }
 
 export function resetAllPacks(): void {
@@ -555,6 +673,15 @@ export async function removeCustomPackDir(dirPath: string): Promise<void> {
   if (targetSource) {
     const packIds = new Set(targetSource.packs.map(p => p.id));
     for (const category of PACK_CATEGORY_ORDER) {
+      if (category === 'interactionCard') {
+        for (const tab of INTERACTION_CARD_TABS) {
+          const activeId = activeInteractionPackIds.value[tab];
+          if (activeId && packIds.has(activeId)) {
+            await selectCategoryPack('interactionCard', null, tab);
+          }
+        }
+        continue;
+      }
       const activeId = activePackIds.value[category];
       if (activeId && packIds.has(activeId)) {
         await selectCategoryPack(category, null);
@@ -572,9 +699,16 @@ export async function initPackHost(): Promise<void> {
   const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
   const saved = readPersistedSelectionMap(storage);
   for (const category of PACK_CATEGORY_ORDER) {
-    const id = saved[category];
+    if (category === 'interactionCard') continue;
+    const id = saved.categories[category];
     if (id) {
       await selectPackWithEnv(category, id);
+    }
+  }
+  for (const tab of INTERACTION_CARD_TABS) {
+    const id = saved.interactionTabs[tab];
+    if (id) {
+      await selectPackWithEnv('interactionCard', id, { interactionTab: tab });
     }
   }
 }
@@ -583,6 +717,7 @@ export async function initPackHost(): Promise<void> {
 export function usePackHost() {
   return {
     activePackIds,
+    activeInteractionPackIds,
     activePackCount,
     loadingCategory,
     activePackError,

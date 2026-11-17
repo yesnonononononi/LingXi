@@ -252,6 +252,8 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
   const stubBg = defineComponent({ name: 'StubBackgroundPanel', render: () => null });
   const stubChecklist = defineComponent({ name: 'StubChecklistPanel', render: () => null });
   const stubApproval = defineComponent({ name: 'StubApprovalPackCard', render: () => null });
+  const stubPlan = defineComponent({ name: 'StubPlanPackCard', render: () => null });
+  const stubChoice = defineComponent({ name: 'StubChoicePackCard', render: () => null });
   const lookup = (id: string): OfficialPackEntry | undefined => {
     const entry = taskProgressPacks.find(item => item.meta.id === id)
       ?? interactionPacks.find(item => item.meta.id === id);
@@ -262,20 +264,39 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
         id: entry.meta.id,
         slots: entry.meta.category === 'taskProgress'
           ? { taskProgress: { backgroundPanel: stubBg, checklistPanel: stubChecklist } }
-          : { interactionCard: { approvalCard: stubApproval } },
+          : entry.meta.interactionTab === 'plan'
+            ? { interactionCard: { planCard: stubPlan } }
+            : entry.meta.interactionTab === 'choice'
+              ? { interactionCard: { choiceGroup: stubChoice } }
+              : { interactionCard: { approvalCard: stubApproval } },
       }),
     };
   };
 
   assert.equal(await selectPackWithEnv('taskProgress', taskProgressPacks[0]!.meta.id, { doc, storage, lookup }), true);
-  assert.equal(await selectPackWithEnv('interactionCard', interactionPacks[0]!.meta.id, { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('interactionCard', 'amber-guard-approval', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('interactionCard', 'emerald-blueprint-plan', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('interactionCard', 'rpg-quest-choice', { doc, storage, lookup }), true);
 
   assert.equal(host.packSlots.taskProgress.backgroundPanel, stubBg);
   assert.equal(host.packSlots.taskProgress.checklistPanel, stubChecklist);
   assert.equal(host.packSlots.interactionCard.approvalCard, stubApproval);
+  assert.equal(host.packSlots.interactionCard.planCard, stubPlan);
+  assert.equal(host.packSlots.interactionCard.choiceGroup, stubChoice);
+  assert.equal(host.activePackCount.value, 4);
+
+  // 停用 plan 子 Tab，approval 与 choice 保持生效
+  assert.equal(await selectPackWithEnv('interactionCard', null, { doc, storage, lookup, interactionTab: 'plan' }), true);
+  assert.equal(host.packSlots.interactionCard.planCard, undefined);
+  assert.equal(host.packSlots.interactionCard.approvalCard, stubApproval);
+  assert.equal(host.packSlots.interactionCard.choiceGroup, stubChoice);
+  assert.equal(host.activePackCount.value, 3);
 
   resetAllPacksWithEnv({ doc, storage });
   assert.equal(host.packSlots.taskProgress.backgroundPanel, undefined);
   assert.equal(host.packSlots.taskProgress.checklistPanel, undefined);
   assert.equal(host.packSlots.interactionCard.approvalCard, undefined);
+  assert.equal(host.packSlots.interactionCard.planCard, undefined);
+  assert.equal(host.packSlots.interactionCard.choiceGroup, undefined);
+  assert.equal(host.activePackCount.value, 0);
 });

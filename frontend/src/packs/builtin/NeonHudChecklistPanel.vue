@@ -1,12 +1,20 @@
 <script setup lang="ts">
+import {computed, ref} from 'vue';
 import type {ChecklistState} from '../../views/chat/useChecklist';
 import {useChecklistPanelModel} from './useTaskProgressPackModels';
 
 const props = defineProps<{ feed: ChecklistState; expanded: boolean; executing: boolean; isDark?: boolean }>();
 const emit = defineEmits<{ 'update:expanded': [value: boolean] }>();
 
+const filter = ref<'all' | 'active' | 'done'>('all');
 const { t, panelId, snapshot, error, loading, steps, settled, percent, toggle, refresh, stepStatusLabel } =
   useChecklistPanelModel(props, value => emit('update:expanded', value));
+
+const filteredSteps = computed(() => {
+  if (filter.value === 'active') return steps.value.filter(s => s.status === 'IN_PROGRESS' || s.status === 'PENDING');
+  if (filter.value === 'done') return steps.value.filter(s => ['COMPLETED', 'FAILED', 'SKIPPED'].includes(s.status));
+  return steps.value;
+});
 </script>
 
 <template>
@@ -45,14 +53,23 @@ const { t, panelId, snapshot, error, loading, steps, settled, percent, toggle, r
         <button type="button" class="cursor-pointer opacity-75 hover:opacity-100" :aria-label="t('common.collapse')" @click="emit('update:expanded', false)">✕</button>
       </header>
 
-      <div v-if="snapshot" class="mb-3 h-1.5 w-full overflow-hidden rounded-full" :class="isDark ? 'bg-white/10' : 'bg-violet-100'">
+      <div v-if="snapshot" class="mb-2.5 h-1.5 w-full overflow-hidden rounded-full" :class="isDark ? 'bg-white/10' : 'bg-violet-100'">
         <div class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-fuchsia-500 transition-all duration-300" :style="{ width: `${percent}%` }" />
+      </div>
+
+      <div v-if="steps.length > 0" class="mb-2.5 inline-flex items-center gap-1 rounded-lg p-0.5 text-lx-fs-sm" :class="isDark ? 'bg-white/5' : 'bg-violet-50'">
+        <button v-for="item in (['all', 'active', 'done'] as const)" :key="item" type="button"
+          class="rounded-md px-2 py-0.5 transition cursor-pointer"
+          :class="filter === item ? (isDark ? 'bg-fuchsia-500/30 text-fuchsia-100' : 'bg-white text-violet-900 shadow-2xs') : 'opacity-65 hover:opacity-100'"
+          @click="filter = item">
+          {{ item === 'all' ? `${steps.length}` : item === 'active' ? '▶' : `✓ ${settled}` }}
+        </button>
       </div>
 
       <p v-if="error" role="alert" class="mb-2 text-rose-500">{{ error }}</p>
 
       <ul class="max-h-56 space-y-1.5 overflow-y-auto scrollbar-thin">
-        <li v-for="step in steps" :key="step.stepId" :data-status="step.status" class="flex items-start gap-2 rounded-xl px-2.5 py-1.5"
+        <li v-for="step in filteredSteps" :key="step.stepId" :data-status="step.status" class="flex items-start gap-2 rounded-xl px-2.5 py-1.5"
           :class="step.status === 'IN_PROGRESS' ? (isDark ? 'bg-fuchsia-500/15 text-fuchsia-100' : 'bg-violet-50 text-violet-950') : 'opacity-80'">
           <span class="mt-0.5 shrink-0 font-bold">{{ step.status === 'COMPLETED' ? '✓' : step.status === 'FAILED' ? '✕' : step.status === 'IN_PROGRESS' ? '◉' : '○' }}</span>
           <span class="min-w-0 flex-1 whitespace-pre-wrap break-words">{{ step.content }}</span>
