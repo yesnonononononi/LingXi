@@ -214,6 +214,24 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
     assert.equal(shotJson.result.content[0].data, 'iVBORw0KGgo=');
     assert.equal(shotJson.result.content[1].type, 'text');
     assert.match(shotJson.result.content[1].text || '', /shot\.png/);
+
+    // 6. browser_screenshot 支持传入 savePath，透传给 automation.screenshot
+    const saveRes = await fetch(status.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${status.token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {name: 'browser_screenshot', arguments: {savePath: 'D:/workspace/shot.png'}},
+      }),
+    });
+    const saveJson = await saveRes.json() as {result: {isError: boolean}};
+    assert.equal(saveJson.result.isError, false);
+    assert.equal((automation.calls.at(-1)?.args as {savePath?: string})?.savePath, 'D:/workspace/shot.png');
   } finally {
     const stopped = await mcpServer.stop();
     assert.equal(stopped.running, false);
