@@ -2,6 +2,7 @@ import {computed, ref, shallowReactive} from 'vue';
 import type {ChatBackgroundSlots} from '../types/backgroundSlots';
 import type {ChatInputSlotOverrides} from '../types/chatInputSlots';
 import type {ChatMessageSlotOverrides} from '../types/chatMessageSlots';
+import type {InteractionCardSlotOverrides} from '../types/interactionCardSlots';
 import type {SidebarSlotOverrides} from '../types/sidebarSlots';
 import {OFFICIAL_PACKS, findOfficialPack} from './packRegistry';
 import type {CustomScannedPackManifest, ElectronPacksAPI, RemotePackManifest} from '../utils/platform';
@@ -26,6 +27,7 @@ export interface ActivePackSlotsState {
   readonly background: ChatBackgroundSlots;
   readonly chatInput: ChatInputSlotOverrides;
   readonly chatMessage: ChatMessageSlotOverrides;
+  readonly interactionCard: InteractionCardSlotOverrides;
   readonly sidebar: SidebarSlotOverrides;
 }
 
@@ -119,6 +121,7 @@ const packSlots: ActivePackSlotsState = {
   background: shallowReactive<ChatBackgroundSlots>({}),
   chatInput: shallowReactive<ChatInputSlotOverrides>({}),
   chatMessage: shallowReactive<ChatMessageSlotOverrides>({}),
+  interactionCard: shallowReactive<InteractionCardSlotOverrides>({}),
   sidebar: shallowReactive<SidebarSlotOverrides>({}),
 };
 
@@ -174,6 +177,7 @@ function rebuildMergedPackSlots(): void {
   clearReactiveRecord(packSlots.background as Record<string, unknown>);
   clearReactiveRecord(packSlots.chatInput as Record<string, unknown>);
   clearReactiveRecord(packSlots.chatMessage as Record<string, unknown>);
+  clearReactiveRecord(packSlots.interactionCard as Record<string, unknown>);
   clearReactiveRecord(packSlots.sidebar as Record<string, unknown>);
 
   for (const category of PACK_CATEGORY_ORDER) {
@@ -182,6 +186,7 @@ function rebuildMergedPackSlots(): void {
     if (def.slots.background) Object.assign(packSlots.background, def.slots.background);
     if (def.slots.chatInput) Object.assign(packSlots.chatInput, def.slots.chatInput);
     if (def.slots.chatMessage) Object.assign(packSlots.chatMessage, def.slots.chatMessage);
+    if (def.slots.interactionCard) Object.assign(packSlots.interactionCard, def.slots.interactionCard);
     if (def.slots.sidebar) Object.assign(packSlots.sidebar, def.slots.sidebar);
   }
 }

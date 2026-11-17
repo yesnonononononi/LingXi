@@ -180,3 +180,32 @@ test('selectPackWithEnv 单分类加载失败时仅回滚该分类（Fail-Closed
   assert.equal(styles.length, 1);
   assert.match(host.activePackError.value ?? '', /font load failed/);
 });
+
+test('selectPackWithEnv 支持 interactionCard 插槽覆盖审批卡与计划卡，停用后自动清空', async () => {
+  const { doc } = createFakeDom();
+  const { storage } = createFakeStorage();
+  const CustomApproval = defineComponent({ name: 'CustomApprovalCard', render: () => null });
+  const CustomPlan = defineComponent({ name: 'CustomPlanCard', render: () => null });
+  const entries: Record<string, OfficialPackEntry> = {
+    cardPack: makeEntry('cardPack', 'component', async () => ({
+      id: 'cardPack',
+      slots: {
+        interactionCard: {
+          approvalCard: CustomApproval,
+          planCard: CustomPlan,
+        },
+      },
+    })),
+  };
+
+  const host = usePackHost();
+  resetAllPacksWithEnv({ doc, storage });
+
+  await selectPackWithEnv('component', 'cardPack', { doc, storage, lookup: id => entries[id] });
+  assert.equal(host.packSlots.interactionCard.approvalCard, CustomApproval);
+  assert.equal(host.packSlots.interactionCard.planCard, CustomPlan);
+
+  await selectPackWithEnv('component', null, { doc, storage, lookup: id => entries[id] });
+  assert.equal(host.packSlots.interactionCard.approvalCard, undefined);
+  assert.equal(host.packSlots.interactionCard.planCard, undefined);
+});

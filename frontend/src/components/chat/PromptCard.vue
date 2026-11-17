@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, inject} from 'vue';
 import type {PromptCardData} from '../../types/chat';
+import {INTERACTION_CARD_SLOTS_KEY} from '../../types/interactionCardSlots';
 import {CARD_SHELL_CLASS} from '../../utils/cardUi';
 import PlanCard from './PlanCard.vue';
 import RequireChoiceCard from './RequireChoiceCard.vue';
@@ -23,6 +24,10 @@ const { t } = useI18n();
 const kind = computed(() => props.promptCard.kind);
 /** tool_call 缺行 / content 解析失败 / kind 非法时的诚实降级 */
 const isUnavailable = computed(() => props.promptCard.unavailable === true || kind.value === 'UNAVAILABLE');
+/** 扩展包插槽覆盖：缺省字段回落内置默认实现（PlanCard / ApprovalCard）。 */
+const slotOverrides = inject(INTERACTION_CARD_SLOTS_KEY, undefined);
+const resolvedPlanCard = computed(() => slotOverrides?.planCard ?? PlanCard);
+const resolvedApprovalCard = computed(() => slotOverrides?.approvalCard ?? ApprovalCard);
 </script>
 
 <template>
@@ -37,7 +42,8 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
         {{ t('chat.prompt.unavailable') }}
   </div>
 
-  <PlanCard
+  <component
+    :is="resolvedPlanCard"
     v-else-if="kind === 'PLAN'"
     :prompt-card="promptCard"
     :session-id="sessionId"
@@ -53,7 +59,8 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
   />
 
   <!-- 只有明确 kind==='COMMAND' 才渲染命令审批卡；绝不用 v-else 回落，避免语义未知的卡片被当成命令审批 -->
-  <ApprovalCard
+  <component
+    :is="resolvedApprovalCard"
     v-else-if="kind === 'COMMAND'"
     :prompt-card="promptCard"
     :session-id="sessionId"
@@ -62,7 +69,8 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
   />
 
   <!-- 文件改动审批与命令审批共用同一张审批卡（同一套批准/拒绝语义），正文换成目标路径 -->
-  <ApprovalCard
+  <component
+    :is="resolvedApprovalCard"
     v-else-if="kind === 'FILE_WRITE'"
     :prompt-card="promptCard"
     :session-id="sessionId"

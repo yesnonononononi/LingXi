@@ -18,6 +18,7 @@
       @newSession="handleNewSession"
       @deleteSession="handleDeleteSession"
       @renameSession="handleRenameSession"
+      @togglePin="handleTogglePin"
       @selectWorkspace="handleSelectWorkspace"
       @newWorkspace="handleOpenNewWorkspace"
       @deleteWorkspace="handleDeleteWorkspace"
@@ -580,6 +581,9 @@ import ShowWithAgentModal, {type ShowWithAgentSubmitData} from '../../components
 import {composeMessageWithDocuments} from '../../utils/pastedDocument';
 import {ANSWER_CHOICES_KEY, DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
+import {INTERACTION_CARD_SLOTS_KEY} from '../../types/interactionCardSlots';
+import ApprovalCard from '../../components/chat/ApprovalCard.vue';
+import PlanCard from '../../components/chat/PlanCard.vue';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
 import ChatBackground from '../../components/chat/ChatBackground.vue';
 import TokenBackground from '../../components/background/TokenBackground.vue';
@@ -837,6 +841,7 @@ const {
   handleNewSession,
   handleDeleteSession,
   handleRenameSession,
+  handleTogglePin,
   handleExportSession,
   handleClearCurrentSession,
   handleClearSessions,
@@ -1072,6 +1077,22 @@ watch(
   },
 );
 provide(SIDEBAR_SLOTS_KEY, sidebarSlots);
+
+/**
+ * 审批与计划卡片插槽渲染器（合并官方扩展包槽位覆盖，未覆盖字段回落内置默认实现）。
+ */
+const interactionCardSlots = shallowReactive({
+  approvalCard: packSlots.interactionCard.approvalCard ?? ApprovalCard,
+  planCard: packSlots.interactionCard.planCard ?? PlanCard,
+});
+watch(
+  () => [packSlots.interactionCard.approvalCard, packSlots.interactionCard.planCard] as const,
+  ([approvalCard, planCard]) => {
+    interactionCardSlots.approvalCard = approvalCard ?? ApprovalCard;
+    interactionCardSlots.planCard = planCard ?? PlanCard;
+  },
+);
+provide(INTERACTION_CARD_SLOTS_KEY, interactionCardSlots);
 </script>
 
 <style scoped>

@@ -1,6 +1,7 @@
 import type {ChatBackgroundSlots} from '../types/backgroundSlots';
 import type {ChatInputSlotOverrides} from '../types/chatInputSlots';
 import type {ChatMessageSlotOverrides} from '../types/chatMessageSlots';
+import type {InteractionCardSlotOverrides} from '../types/interactionCardSlots';
 import type {SidebarSlotOverrides} from '../types/sidebarSlots';
 
 /** 扩展包分类：不同分类可同时叠加激活，同分类内互斥单选。 */
@@ -50,11 +51,12 @@ export interface OfficialPackFont {
   readonly target: 'sans' | 'code';
 }
 
-/** 扩展包可覆盖的四组宿主 UI 槽位。 */
+/** 扩展包可覆盖的五组宿主 UI 槽位。 */
 export interface OfficialPackSlots {
   readonly background?: ChatBackgroundSlots;
   readonly chatInput?: ChatInputSlotOverrides;
   readonly chatMessage?: ChatMessageSlotOverrides;
+  readonly interactionCard?: InteractionCardSlotOverrides;
   readonly sidebar?: SidebarSlotOverrides;
 }
 
