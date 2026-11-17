@@ -32,6 +32,15 @@ public class SessionPO {
     private String name;
     @TableField(value = "is_read", updateStrategy = FieldStrategy.NEVER)
     private Boolean isRead;
+    /**
+     * 置顶：用户显式意图，只影响列表排序。
+     *
+     * <p><b>必须 NEVER</b>：置顶与已读同性质，只由 {@code updatePinned} 单语句写入。
+     * 若让聚合的 {@code updateById} 带上它，旁路写（如执行终结回写上下文用量）会拿着读出来的旧快照
+     * 把刚 pin 好的行覆盖回 FALSE —— 表现为「pin 了，跑完一轮又自己掉了」。</p>
+     */
+    @TableField(value = "is_pinned", updateStrategy = FieldStrategy.NEVER)
+    private Boolean isPinned;
     /** 关联 workspace 表，可空（会话未绑定工作空间） */
     private Long workspaceId;
     /**

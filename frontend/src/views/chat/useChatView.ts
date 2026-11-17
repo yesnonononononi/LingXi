@@ -993,6 +993,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleNewSession: sessionList.handleNewSession,
     handleDeleteSession: sessionList.handleDeleteSession,
     handleRenameSession: sessionList.handleRenameSession,
+    handleTogglePin: sessionList.handleTogglePin,
     handleExportSession: sessionList.handleExportSession,
     handleClearCurrentSession: sessionList.handleClearCurrentSession,
     handleClearSessions: sessionList.handleClearSessions,

@@ -268,6 +268,8 @@ export interface ChatMessage {
 export interface ChatSession {
   renderStatus?: SessionVO['renderStatus'];
   isRead?: boolean;
+  /** 是否置顶（后端 ORDER BY 最前一级）；子会话继承所属根会话。 */
+  isPinned?: boolean;
   version?: string;
   id: string;
   historyRevision?: string;
@@ -677,6 +679,8 @@ export interface ToolCallDecisionReceipt {
 export interface SessionVO {
   renderStatus: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | null;
   isRead: boolean;
+  /** 是否置顶：侧栏排序最前一级。子会话由后端回传所属根会话的值（自身不可置顶）。 */
+  isPinned: boolean;
   version: string;
   id: number | string;
   name?: string;

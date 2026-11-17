@@ -6,6 +6,7 @@ import com.summit.dp.session.domain.model.Session;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** session 表仓储，只负责会话元数据。 */
@@ -18,6 +19,29 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
     boolean markReadIfUnread(Long sessionId, Long expectedVersion);
 
     void updateRead(Session session);
+
+    /**
+     * 只翻转置顶状态：不改 {@code update_time}，版本自增 +1 供前端帧序比较。
+     *
+     * <p>与 {@code updateRead} 同理走单语句条件更新，不参与聚合 {@code updateById}：
+     * 否则旁路写会拿旧快照把刚 pin 的行覆盖回去。</p>
+     *
+     * @param sessionId 会话 id
+     * @param pinned    目标状态
+     * @return 是否命中该行（会话不存在时为 false）
+     */
+    boolean updatePinned(Long sessionId, boolean pinned);
+
+    /**
+     * 批量读取这些会话的置顶状态（键 = 会话 id）。
+     *
+     * <p>子会话渲染时没有自己的置顶，必须继承所属根会话：整棵树一次 {@code IN} 查回根会话的
+     * {@code is_pinned}，避免逐个子会话再查一次。</p>
+     *
+     * @param sessionIds 会话 id；空入参返回空表
+     * @return 会话 id → 是否置顶（查不到的行不出现在结果里）
+     */
+    Map<Long, Boolean> findPinnedByIds(Collection<Long> sessionIds);
 
     List<Session> findRootSessions();
 

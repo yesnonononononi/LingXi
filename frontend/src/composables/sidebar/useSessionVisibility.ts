@@ -16,12 +16,17 @@ import type {ProjectGroup} from './useSessionGrouping';
 export const SESSION_VISIBLE_LIMIT = 5;
 
 export interface SessionVisibilitySources {
+  /** 置顶分区（跨工作区，恒在最顶且恒展开）。 */
+  pinnedSessions: ComputedRef<ChatSession[]>;
   projectGroups: ComputedRef<ProjectGroup[]>;
   unassignedSessions: ComputedRef<ChatSession[]>;
   expandedWorkspaces: Ref<Record<string, boolean>>;
   /** 由 {@link useWorkspaceExpansion} 提供（activeSessionId watch 也会写它，故不由本 composable 创建） */
   fullyExpandedWorkspaces: Ref<Record<string, boolean>>;
 }
+
+/** 置顶分区的分组键：不参与截断，也不需要「展开显示」。 */
+export const PINNED_GROUP_KEY = 'ws-pinned';
 
 export function useSessionVisibility(sources: SessionVisibilitySources): {
   isFullyExpanded: (key: string) => boolean;
@@ -31,7 +36,7 @@ export function useSessionVisibility(sources: SessionVisibilitySources): {
   branchedMenuItems: ComputedRef<BranchedMenuItem[]>;
   branchedOpenIndices: ComputedRef<number[]>;
 } {
-  const { projectGroups, unassignedSessions, expandedWorkspaces, fullyExpandedWorkspaces } = sources;
+  const { pinnedSessions, projectGroups, unassignedSessions, expandedWorkspaces, fullyExpandedWorkspaces } = sources;
 
   const isFullyExpanded = (key: string) => fullyExpandedWorkspaces.value[key] === true;
 
@@ -39,8 +44,10 @@ export function useSessionVisibility(sources: SessionVisibilitySources): {
     fullyExpandedWorkspaces.value[key] = !fullyExpandedWorkspaces.value[key];
   };
 
-  // 按限制截断会话列表；超出时返回前 5 条，由「展开显示」控制全量
+  // 按限制截断会话列表；超出时返回前 5 条，由「展开显示」控制全量。
+  // 置顶分区是用户亲手挑出来的，截断它就等于让第 6 个置顶会话要再点一次「展开显示」。
   const limitSessions = (key: string, sessions: ChatSession[]): ChatSession[] => {
+    if (key === PINNED_GROUP_KEY) return sessions;
     if (sessions.length <= SESSION_VISIBLE_LIMIT || isFullyExpanded(key)) return sessions;
     return sessions.slice(0, SESSION_VISIBLE_LIMIT);
   };
@@ -76,6 +83,16 @@ export function useSessionVisibility(sources: SessionVisibilitySources): {
   // 构造供 BranchedMenu 树形组件消费的分支数据
   const branchedMenuItems = computed<BranchedMenuItem[]>(() => {
     const items: BranchedMenuItem[] = [];
+
+    // 置顶分区恒在最顶，raw 为 null ⇒ branchedOpenIndices 里恒展开（见下）。
+    if (pinnedSessions.value.length > 0) {
+      items.push({
+        label: t('chat.sidebar.pinned'),
+        value: PINNED_GROUP_KEY,
+        raw: null,
+        children: buildBranchedChildren(PINNED_GROUP_KEY, pinnedSessions.value)
+      });
+    }
 
     for (const group of projectGroups.value) {
       items.push({

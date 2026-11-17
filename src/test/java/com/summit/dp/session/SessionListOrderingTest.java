@@ -1,6 +1,7 @@
 package com.summit.dp.session;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.execution.ExecutionStatusCodes;
@@ -27,6 +28,7 @@ import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.context.ApplicationEventPublisher;
@@ -35,7 +37,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
@@ -141,6 +145,55 @@ class SessionListOrderingTest {
         completed.setStatus(ExecutionStatusCodes.COMPLETED);
         executions.updateById(completed);
         assertEquals(List.of(20L, 10L), loadIds(1, 10));
+    }
+
+    @Test
+    @DisplayName("置顶压过进行中：pin 的会话即使最旧也排第一（pin 是显式意图，运行态只是瞬时）")
+    void pinnedSessionLeadsEvenWhenItIsTheOldestOne() {
+        insertSession(10L, 0L, 1);
+        insertSession(20L, 0L, 5);
+        insertExecution(201L, 10L, ExecutionStatusCodes.RUNNING);
+        assertEquals(List.of(10L, 20L), loadIds(1, 10));
+
+        pin(20L);
+        // 20 既没有运行中的执行、update_time 又更晚，唯一能把它顶上来的就是置顶。
+        assertEquals(List.of(20L, 10L), loadIds(1, 10));
+
+        insertExecution(202L, 10L, ExecutionStatusCodes.CREATED);
+        assertEquals(List.of(20L, 10L), loadIds(1, 10), "进行中不得压过置顶");
+    }
+
+    @Test
+    @DisplayName("置顶参与全局排序：offset 分页不重不漏，两页并集等于总数")
+    void pinnedPaginationNeitherDuplicatesNorSkips() {
+        insertSession(10L, 0L, 1);
+        insertSession(20L, 0L, 2);
+        insertSession(30L, 0L, 3);
+        pin(10L);
+
+        List<Long> first = loadIds(1, 2);
+        List<Long> second = loadIds(2, 2);
+        assertEquals(List.of(10L, 30L), first);
+        assertEquals(List.of(20L), second);
+
+        Set<Long> union = new LinkedHashSet<>(first);
+        union.addAll(second);
+        assertEquals(3, union.size(), "同一会话不得出现在两页里");
+        assertEquals(union.size(), service.list(1, 10).getData().getTotal().intValue());
+    }
+
+    /**
+     * 把会话置顶，并**还原 update_time**。
+     *
+     * <p>不还原就等于把「排序靠 is_pinned」偷偷换成「排序靠刚刚被刷新的 update_time」——
+     * 删掉 SQL 里的置顶排序项，用例照样绿。</p>
+     */
+    private void pin(long sessionId) {
+        SessionPO before = sessions.selectById(sessionId);
+        sessions.update(null, Wrappers.<SessionPO>lambdaUpdate()
+                .eq(SessionPO::getId, sessionId)
+                .set(SessionPO::getIsPinned, true)
+                .set(SessionPO::getUpdateTime, before.getUpdateTime()));
     }
 
     private List<Long> loadIds(int page, int size) {

@@ -69,6 +69,16 @@ export class SessionAPI {
     return http.get<any, Result<SessionMessagePageVO>>(`/session/${id}/messages${query}`);
   }
 
+  /**
+   * 置顶 / 取消置顶（同一端点，pinned=false 即取消，天然幂等）。
+   * 对应后端 @PostMapping("/{id}/pin")；子会话会被后端拒绝，侧栏也不给它入口。
+   */
+  static async setPinned(id: number | string, pinned: boolean): Promise<Result<SessionVO>> {
+    return http.post<any, Result<SessionVO>>(
+      `/session/${encodeURIComponent(String(id))}/pin?pinned=${pinned}`
+    );
+  }
+
   static async update(id: number | string, name: string): Promise<Result<void>> {
     return http.post<any, Result<void>>('/session/update', { id, name });
   }

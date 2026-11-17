@@ -20,7 +20,9 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -68,8 +70,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     }
 
     @Override
-    public void updateRead(Session session) {
-        long expected = session.getVersion();
+    public void updateRead(Session session) {        long expected = session.getVersion();
         if (sessionMapper.update(null, Wrappers.<SessionPO>lambdaUpdate()
                 .eq(SessionPO::getId, session.getId()).eq(SessionPO::getVersion, expected)
                 .set(SessionPO::getIsRead, session.isRead()).set(SessionPO::getVersion, expected + 1)
@@ -77,6 +78,32 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
             throw new ClientException("会话状态已变化，请刷新后重试");
         }
         session.acceptPersistedVersion(expected + 1);
+    }
+
+    /** 置顶只翻转 is_pinned：不动 update_time（组内次序靠它），版本自增表达「这行变了」。 */
+    @Override
+    public boolean updatePinned(Long sessionId, boolean pinned) {
+        if (sessionId == null) {
+            return false;
+        }
+        return sessionMapper.update(null, Wrappers.<SessionPO>lambdaUpdate()
+                .eq(SessionPO::getId, sessionId)
+                .set(SessionPO::getIsPinned, pinned)
+                // update_time 必须**显式赋成自己**：H2 的 ON UPDATE CURRENT_TIMESTAMP 会在这个列
+                // 没被赋值时自动刷新，pin 顺手改了时间，组内次序与 unpin 后的位置就都回不去了。
+                .setSql("version = version + 1, update_time = update_time")) == 1;
+    }
+
+    @Override
+    public Map<Long, Boolean> findPinnedByIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        return sessionMapper.selectList(new LambdaQueryWrapper<SessionPO>()
+                        .select(SessionPO::getId, SessionPO::getIsPinned)
+                        .in(SessionPO::getId, sessionIds))
+                .stream()
+                .collect(Collectors.toMap(SessionPO::getId, row -> Boolean.TRUE.equals(row.getIsPinned())));
     }
 
     @Override
@@ -191,6 +218,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     protected SessionPO toPO(Session session) {
         return SessionPO.builder().id(session.getId()).name(session.getName()).workspaceId(session.getWorkspaceId())
                 .isRead(session.isRead())
+                .isPinned(session.isPinned())
                 .version(session.getVersion()).historyRevision(session.getHistoryRevision())
                 .rootSessionId(session.getRootSessionId() == null ? SessionPO.ROOT_SESSION_ID
                         : session.getRootSessionId())
@@ -207,6 +235,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     protected Session toModel(SessionPO po) {
         return Session.builder().id(po.getId()).name(po.getName()).workspaceId(po.getWorkspaceId())
                 .isRead(po.getIsRead())
+                .isPinned(Boolean.TRUE.equals(po.getIsPinned()))
                 .version(po.getVersion() == null ? 1L : po.getVersion())
                 .historyRevision(po.getHistoryRevision() == null ? 1L : po.getHistoryRevision())
                 .rootSessionId(po.getRootSessionId())

@@ -9,9 +9,17 @@ import type {ChatSession, WorkspaceVO} from './chat';
  * 由组件装配（装配逻辑见设计文档 §4.4）。</p>
  */
 export interface SidebarGroupNode {
-  /** 稳定键：`ws-<workspaceId>`；历史分组恒为 `ws-unassigned`。 */
+  /** 稳定键：`ws-<workspaceId>`；置顶分区恒为 `ws-pinned`；历史分组恒为 `ws-unassigned`。 */
   readonly key: string;
-  /** null = 「历史对话」分组（未归属任何工作区的会话）。 */
+  /**
+   * 分组语义（消费者据此决定图标与是否可折叠）：
+   * `workspace` = 工作区分组；`pinned` = 跨工作区的置顶分区；`history` = 未归属会话。
+   *
+   * <p>置顶分区**不能**用 `workspace: null` 来表达 —— 那已经是「历史对话」的语义，
+   * 两个不同含义的分组长得一样就是给下一个消费者埋坑。</p>
+   */
+  readonly kind: 'workspace' | 'pinned' | 'history';
+  /** null = 置顶分区或「历史对话」分组（都没有绑定的工作区实体）。 */
   readonly workspace: WorkspaceVO | null;
   /** 已翻译的显示名（工作区名/工作目录/「历史对话」）。 */
   readonly label: string;
@@ -44,6 +52,8 @@ export interface SidebarTreeActions {
   /** 提交重命名（内部 `emit('renameSession', id, name)`，唯一 emit 点在 useSidebarActions）。 */
   readonly onRenameSession: (id: string, name: string) => void;
   readonly onDeleteSession: (id: string) => void;
+  /** 置顶 / 取消置顶（子会话没有入口：它跟随所属根会话）。 */
+  readonly onTogglePin: (id: string) => void;
   readonly onNewSession: (workspaceId?: string | number | null) => void;
   readonly onNewWorkspace: () => void;
   readonly onDeleteWorkspace: (id: string | number) => void;

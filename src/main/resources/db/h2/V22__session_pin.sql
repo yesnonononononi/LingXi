@@ -1,0 +1,17 @@
+-- ------------------------------------------------------------
+-- V22：会话置顶（session.is_pinned）
+--
+-- 为什么单独一列：置顶是用户的显式意图，与「是否已读」「是否在运行」都正交。
+--   混进 is_read 会立刻出现「读一下就取消置顶」。
+--
+-- 为什么 NOT NULL DEFAULT FALSE：列表排序把置顶放在最前一级
+--   （CASE WHEN is_pinned THEN 0 ELSE 1 END）。列一旦可空，NULL 在 CASE 里落进 ELSE、
+--   在布尔排序里落进「最小值」，两种写法给出两种次序；NOT NULL 让语义只剩一种。
+--
+-- 为什么不加索引：根会话分页是 root_session_id 等值（idx_root_session_id）后小结果集排序，
+--   行数量级几百；给布尔列加索引换取不到任何扫描优化，只给每次写入多一份维护成本。
+--   真要做 keyset 游标分页那天再说，届时需要的是 (is_pinned, update_time, id) 复合索引。
+--
+-- 为什么不动 V1：V1 已在用户库里跑过，改它对已迁移的库不生效；结构演进一律追加。
+-- ------------------------------------------------------------
+ALTER TABLE session ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;

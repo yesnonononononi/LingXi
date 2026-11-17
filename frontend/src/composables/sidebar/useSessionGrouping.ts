@@ -28,11 +28,19 @@ export interface SessionGroupingSources {
   isSortAsc: Ref<boolean>;
 }
 
-/** 会话有显式 workspaceId（非 null / 非 undefined / 非 activeId 空白）。 */
+/** 会话行是否有显式 workspaceId（非 null / 非 undefined / 非 activeId 空白）。 */
 const hasBoundWorkspace = (session: ChatSession): boolean =>
   session.workspaceId !== undefined &&
   session.workspaceId !== null &&
   String(session.workspaceId).trim() !== '';
+
+/**
+ * 置顶会话：跨工作区聚合到侧栏顶部的独立分区。
+ *
+ * <p>因此它们**不再进任何工作区分组**——否则同一个会话会在「置顶」和它的工作区里各出现一次；
+ * 更重要的是折叠掉的工作区会把置顶会话一起藏起来，pin 就等于没生效。</p>
+ */
+export const isPinnedSession = (session: ChatSession): boolean => session.isPinned === true;
 
 /** 计算 workDir 相同的 workspace 数量；未设置 workDir 时为 0。 */
 const countSameDir = (workDir: string | null | undefined, wsList: WorkspaceVO[]): number =>
@@ -62,6 +70,7 @@ export const sessionBelongsToWorkspace = (
 };
 
 export function useSessionGrouping(sources: SessionGroupingSources): {
+  pinnedSessions: ComputedRef<ChatSession[]>;
   projectGroups: ComputedRef<ProjectGroup[]>;
   unassignedSessions: ComputedRef<ChatSession[]>;
   isWorkspaceActive: (
@@ -72,7 +81,10 @@ export function useSessionGrouping(sources: SessionGroupingSources): {
 } {
   const { sessions, workspaces, filterQuery, isSortAsc } = sources;
 
-  // 按照后端 workspace 的 ID（及兼容 workDir）收敛会话
+  /** 置顶分区（跨工作区）：顺序沿用后端给的列表顺序，不在这里重排。 */
+  const pinnedSessions = computed<ChatSession[]>(() => sessions.value.filter(isPinnedSession));
+
+  // 按照后端 workspace 的 ID（及兼容 workDir）收敛会话；置顶会话已进顶部分区，不再入组。
   const projectGroups = computed<ProjectGroup[]>(() => {
     const wsList = [...(workspaces.value || [])];
     if (isSortAsc.value) {
@@ -88,7 +100,8 @@ export function useSessionGrouping(sources: SessionGroupingSources): {
         if (!matchName && !matchDir) continue;
       }
 
-      const matchedSessions = sessions.value.filter(s => sessionBelongsToWorkspace(s, ws, wsList));
+      const matchedSessions = sessions.value
+        .filter(s => !isPinnedSession(s) && sessionBelongsToWorkspace(s, ws, wsList));
       groups.push({ workspace: ws, sessions: matchedSessions });
     }
 
@@ -99,6 +112,7 @@ export function useSessionGrouping(sources: SessionGroupingSources): {
   const unassignedSessions = computed<ChatSession[]>(() => {
     const wsList = workspaces.value || [];
     return sessions.value.filter(s => {
+      if (isPinnedSession(s)) return false;
       if (hasBoundWorkspace(s)) {
         return !wsList.some(ws => String(ws.id) === String(s.workspaceId));
       }
@@ -137,7 +151,7 @@ export function useSessionGrouping(sources: SessionGroupingSources): {
     return false;
   };
 
-  return { projectGroups, unassignedSessions, isWorkspaceActive };
+  return { pinnedSessions, projectGroups, unassignedSessions, isWorkspaceActive };
 }
 
 /** isWorkspaceActive 反查会话后按原实现比较 workDir 时的 workspace 列表来源。 */

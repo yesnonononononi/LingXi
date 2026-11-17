@@ -18,7 +18,7 @@ import {useTheme} from '../../composables/useTheme';
 import {t} from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import {useSessionGrouping} from '../../composables/sidebar/useSessionGrouping';
-import {SESSION_VISIBLE_LIMIT, useSessionVisibility} from '../../composables/sidebar/useSessionVisibility';
+import {SESSION_VISIBLE_LIMIT, PINNED_GROUP_KEY, useSessionVisibility} from '../../composables/sidebar/useSessionVisibility';
 import {useWorkspaceExpansion} from '../../composables/sidebar/useWorkspaceExpansion';
 import {useSidebarActions} from '../../composables/sidebar/useSidebarActions';
 
@@ -38,6 +38,7 @@ const emit = defineEmits<{
   (e: 'newSession', workspaceId?: string | number | null): void;
   (e: 'deleteSession', id: string): void;
   (e: 'renameSession', id: string, name: string): void;
+  (e: 'togglePin', id: string): void;
   (e: 'selectWorkspace', workspace: WorkspaceVO | null): void;
   (e: 'newWorkspace'): void;
   (e: 'deleteWorkspace', id: string | number): void;
@@ -70,7 +71,7 @@ const isSortAsc = ref(false);
 // 会话分组（纯计算）、工作空间展开态、可见性（截断 / 展开态 / BranchedMenu 数据）均已下沉为 composable。
 // 顺序不可调换：展开态持有 fullyExpandedWorkspaces（activeSessionId 的 immediate watch 会写它），
 // 可见性只能在其之后实例化。
-const { projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActivePure } = useSessionGrouping({
+const { pinnedSessions, projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActivePure } = useSessionGrouping({
   sessions: computed(() => props.sessions),
   workspaces: computed(() => props.workspaces),
   filterQuery,
@@ -90,7 +91,7 @@ const {
   limitSessions,
   branchedMenuItems,
   branchedOpenIndices
-} = useSessionVisibility({ projectGroups, unassignedSessions, expandedWorkspaces, fullyExpandedWorkspaces });
+} = useSessionVisibility({ pinnedSessions, projectGroups, unassignedSessions, expandedWorkspaces, fullyExpandedWorkspaces });
 
 
 // 按照后端 workspace 的 ID（及兼容 workDir）收敛会话。纯计算逻辑已下沉至
@@ -177,6 +178,7 @@ const treeActions: SidebarTreeActions = {
     startEdit(session, new Event('click'));
   },
   onRenameSession: (id: string, name: string) => emit('renameSession', id, name),
+  onTogglePin: (id: string) => emit('togglePin', id),
   onDeleteSession: (id: string) => emit('deleteSession', id),
   onNewSession: (workspaceId?: string | number | null) => emit('newSession', workspaceId),
   onNewWorkspace: () => emit('newWorkspace'),
@@ -192,11 +194,27 @@ const treeActions: SidebarTreeActions = {
  * 保证两种默认实现与替换实现的选中态一致。</p>
  */
 const treeGroups = computed<SidebarGroupNode[]>(() => {
-  const nodes: SidebarGroupNode[] = projectGroups.value.map((group) => {
+  const nodes: SidebarGroupNode[] = [];
+  // 置顶分区排所有工作区之前：它就是为了「不管在哪个工作区、折叠与否，都能一眼看到」。
+  if (pinnedSessions.value.length > 0) {
+    nodes.push({
+      key: PINNED_GROUP_KEY,
+      kind: 'pinned',
+      workspace: null,
+      label: t('chat.sidebar.pinned'),
+      sessions: pinnedSessions.value,
+      totalCount: pinnedSessions.value.length,
+      truncated: false,
+      expanded: true,
+      active: false
+    });
+  }
+  nodes.push(...projectGroups.value.map((group) => {
     const internalKey = String(group.workspace.id);
     const visible = limitSessions(internalKey, group.sessions);
     return {
       key: 'ws-' + internalKey,
+      kind: 'workspace' as const,
       workspace: group.workspace,
       label: group.workspace.name || group.workspace.workDir || t('session.workspace'),
       sessions: visible,
@@ -205,11 +223,12 @@ const treeGroups = computed<SidebarGroupNode[]>(() => {
       expanded: isFullyExpanded(internalKey),
       active: isWorkspaceActive(group.workspace)
     };
-  });
+  }));
   if (unassignedSessions.value.length > 0) {
     const visible = limitSessions('ws-unassigned', unassignedSessions.value);
     nodes.push({
       key: 'ws-unassigned',
+      kind: 'history',
       workspace: null,
       label: t('chat.sidebar.history'),
       sessions: visible,
@@ -241,6 +260,7 @@ const treeSlotProps = computed<SidebarTreeSlotProps>(() => ({
  * 因此子组件拿到的是真正的 Ref —— 这是内部接口专有的约定，对外契约不这样写。</p>
  */
 const treeDefaultProps = computed<SidebarWorkspaceTreeInternalProps>(() => ({
+  pinnedSessions: pinnedSessions.value,
   projectGroups: projectGroups.value,
   unassignedSessions: unassignedSessions.value,
   expandedWorkspaces: expandedWorkspaces.value,

@@ -11,9 +11,19 @@ import java.util.List;
 
 @Mapper
 public interface SessionMapper extends BaseMapper<SessionPO> {
-    /** 排序必须先于分页；最新进行态与展示口径一致，避免历史运行记录把挂起会话置顶。 */
+    /**
+     * 排序必须先于分页；最新进行态与展示口径一致，避免历史运行记录把挂起会话置顶。
+     *
+     * <p><b>置顶排在最前一级</b>：pin 是用户的显式意图，进行中只是瞬时状态 ——
+     * 反过来的话，用户 pin 的会话会被任何一次运行中的其它会话压下去，pin 看起来没生效。</p>
+     *
+     * <p><b>{@code s.id DESC} 是全序的最后一级，不能删</b>：offset 分页的正确性只依赖
+     * 「排序键两两可比且无并列」。删掉它，排序键相同的两行在两次查询里的先后 H2 不保证，
+     * 同一行会同时出现在第 1 页和第 2 页，或者两页都漏掉。</p>
+     */
     @Select("SELECT s.* FROM session s WHERE s.root_session_id = #{root}"
-            + " ORDER BY CASE WHEN (SELECT e.status FROM execution e WHERE e.session_id = s.id"
+            + " ORDER BY CASE WHEN s.is_pinned THEN 0 ELSE 1 END,"
+            + " CASE WHEN (SELECT e.status FROM execution e WHERE e.session_id = s.id"
             + " AND e.status IN (" + ExecutionStatusCodes.CREATED + "," + ExecutionStatusCodes.RUNNING
             + "," + ExecutionStatusCodes.SUSPENDED + ") ORDER BY e.id DESC LIMIT 1)"
             + " IN (" + ExecutionStatusCodes.CREATED + "," + ExecutionStatusCodes.RUNNING + ") THEN 0 ELSE 1 END,"

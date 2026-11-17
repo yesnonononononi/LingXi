@@ -16,7 +16,8 @@
  * <p><b>为什么 `editingTitle` 传的是 `Ref`：</b>原模板用 `v-model="editingTitle"` 双向绑定
  * 重命名输入框，而该 ref 的所有者是父组件的 `useSidebarActions`。改成受控 prop 必须改写模板
  * （`v-model` → `:value` + `@input`），会破坏"逐字迁移"的可审计性；因此内部接口直接传 Ref，
- * 并在文件头显式声明这一约定（仅限内部，不对替换实现开放）。</p>
+ * 并在文件头显式声明这一约定（仅限内部，不对替换实现开放）。给 `SidebarSessionRow` 时改走
+ * `v-model:editingTitle`：模板里 ref 会自动解包，当 prop 传进去只剩字符串快照，输入框就改不动了。</p>
  *
  * <p><b>会话分支展开态已下沉（2026-11 修正）：</b>原实现用组件内的"折叠集合"（默认不在集合里
  * ⇒ 默认展开）驱动子会话分支，导致每次打开侧边栏都是满屏展开的子代理树。现在改由
@@ -29,6 +30,9 @@ import type {BranchedMenuChild, BranchedMenuItem} from '../common/BranchedMenu.v
 import BranchedMenu from '../common/BranchedMenu.vue';
 import SessionStateIndicator from './SessionStateIndicator.vue';
 import SidebarSubSessions from './SidebarSubSessions.vue';
+import SidebarSessionRow from './SidebarSessionRow.vue';
+import SessionPinButton from './SessionPinButton.vue';
+import {PIN_PATH} from '../../utils/sessionPinIcons';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import {t} from '../../i18n';
 import {SESSION_VISIBLE_LIMIT} from '../../composables/sidebar/useSessionVisibility';
@@ -48,6 +52,8 @@ defineOptions({ inheritAttrs: false });
  * `actions`（同一个对象，保证两条路径的行为不会分叉）。</p>
  */
 export interface SidebarWorkspaceTreeInternalProps {
+  /** 置顶分区（跨工作区，顺序即后端列表顺序）。 */
+  readonly pinnedSessions: ChatSession[];
   /** `useSessionGrouping` 的领域分组（含会话全量）。 */
   readonly projectGroups: ProjectGroup[];
   /** 未归属任何工作区的会话（「历史对话」分区）。 */
@@ -96,6 +102,7 @@ const editingTitle = props.editingTitle;
 // **值必须包成 computed**：props 变化时纯常量不会跟着变（实测事故：`isDark` 固定为初始值
 // ⇒ 亮色下仍渲染 BranchedMenu 暗色分支）。computed 在模板里会被自动解包，读取写法不变。
 const projectGroups = computed(() => props.projectGroups);
+const pinnedSessions = computed(() => props.pinnedSessions);
 const unassignedSessions = computed(() => props.unassignedSessions);
 const expandedWorkspaces = computed(() => props.expandedWorkspaces);
 
@@ -105,6 +112,7 @@ const activeSessionId = computed(() => props.activeSessionId);
 const activeSubSessionIdOf = computed(() => props.activeSubSessionId ?? null);
 /** 全量会话：激活的是子会话时，要靠它反查所属根会话才能自动展开对应分支。 */
 const allSessions = computed(() => [
+  ...pinnedSessions.value,
   ...projectGroups.value.flatMap(group => group.sessions),
   ...unassignedSessions.value
 ]);
@@ -135,6 +143,18 @@ const startEdit = props.startEdit;
 const saveEdit = props.saveEdit;
 const handleBranchedSelect = props.handleBranchedSelect;
 const handleBranchedToggle = props.handleBranchedToggle;
+
+/**
+ * 会话行动作集合：全部转调 `actions`（侧栏唯一的 emit 出口）与父组件的重命名处理器。
+ * 行组件只拿到这些回调，拿不到 `emit` —— 与树内容区的「唯一行为入口」约束一致。
+ */
+const rowHandlers = {
+  onSelect: (id: string) => props.actions.onSelectSession(id),
+  onStartEdit: startEdit,
+  onSaveEdit: saveEdit,
+  onDelete: (id: string) => props.actions.onDeleteSession(id),
+  onTogglePin: (id: string) => props.actions.onTogglePin(id)
+};
 
 /** 原模板里出现过的 emit 事件（只有这两个，多的名字属于迁移错误）。 */
 interface TreeEmitShim {
@@ -186,7 +206,7 @@ const emit = emitShim as TreeEmitShim;
       <!-- Expanded Workspace Tree View -->
       <div v-else class="space-y-0.5" data-slot="workspace-tree">
         <!-- Empty State if no workspaces and no unassigned sessions -->
-        <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0" class="px-2 py-6 text-center text-xs text-lx-faint select-none">
+        <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0 && pinnedSessions.length === 0" class="px-2 py-6 text-center text-xs text-lx-faint select-none">
                     {{ t('chat.sidebar.noWorkspace') }}
         </div>
 
@@ -213,6 +233,16 @@ const emit = emitShim as TreeEmitShim;
             <!-- Header Prefix: 文件夹图标 -->
             <template #header-prefix="{ item }">
               <svg
+                v-if="item.value === 'ws-pinned'"
+                class="w-3.5 h-3.5 shrink-0 text-amber-400"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path :d="PIN_PATH" />
+              </svg>
+              <svg
+                v-else
                 class="w-3.5 h-3.5 shrink-0 transition-colors"
                 :class="item.raw && isWorkspaceActive(item.raw) ? 'text-zinc-100' : 'text-zinc-500'"
                 fill="none"
@@ -301,9 +331,15 @@ const emit = emitShim as TreeEmitShim;
               </div>
             </template>
 
-            <!-- Item Actions: 重命名与删除 -->
+            <!-- Item Actions: 置顶、重命名与删除 -->
             <template #item-actions="{ item }">
               <SessionStateIndicator v-if="item.raw" :session="item.raw" :active="String(item.raw.id) === (item.ownerSessionId ? activeSubSessionId : activeSessionId)" />
+              <!-- 子会话跟随根会话置顶，没有自己的入口（后端也会拒绝）。 -->
+              <SessionPinButton
+                v-if="item.raw && !item.ownerSessionId"
+                :pinned="item.raw.isPinned === true"
+                @toggle="actions.onTogglePin(String(item.raw.id))"
+              />
               <div
                 v-if="item.raw && !item.ownerSessionId && editingSessionId !== item.value"
                 class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
@@ -340,6 +376,27 @@ const emit = emitShim as TreeEmitShim;
 
         <!-- Light Mode: 既有会话列表渲染 -->
         <div v-else class="space-y-0.5">
+          <!-- 置顶分区：跨工作区恒在最顶，不参与截断（用户亲手挑出来的会话不该被「展开显示」藏起来） -->
+          <div v-if="pinnedSessions.length > 0" class="pb-1" data-testid="sidebar-pinned-group">
+            <div class="px-2 py-1 text-lx-fs-sm font-medium text-zinc-400 tracking-wider">
+              {{ t('chat.sidebar.pinned') }}
+            </div>
+            <div class="space-y-0.5">
+              <template v-for="session in pinnedSessions" :key="session.id">
+                <SidebarSessionRow
+                  :session="session"
+                  :activeId="activeSessionId"
+                  :activeSubSessionId="activeSubSessionId"
+                  :editingSessionId="editingSessionId"
+                  v-model:editingTitle="editingTitle"
+                  :isBranchExpanded="isBranchExpanded"
+                  :toggleBranch="toggleBranch"
+                  v-bind="rowHandlers"
+                />
+              </template>
+            </div>
+          </div>
+
           <!-- Each Workspace Group Item -->
           <div
             v-for="group in projectGroups"
@@ -444,65 +501,16 @@ const emit = emitShim as TreeEmitShim;
               <div v-if="expandedWorkspaces[String(group.workspace.id)] && group.sessions.length > 0">
                 <div class="pl-4 pr-1 py-0.5 space-y-0.5">
                   <template v-for="session in limitSessions(String(group.workspace.id), group.sessions)" :key="session.id">
-                  <div
-                    @click="emit('selectSession', session.id)"
-                    :class="[
-                      'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                      activeSessionId === session.id
-                        ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
-                    ]"
-                  >
-                    <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="isBranchExpanded(session.id)"
-                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleBranch(session.id)">
-                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="isBranchExpanded(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
-                    </button>
-                    <svg v-else class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
-
-                    <!-- Session Title or Inline Editor -->
-                    <div class="flex-1 truncate">
-                      <input
-                        v-if="editingSessionId === session.id"
-                        v-model="editingTitle"
-                        @blur="saveEdit(session, $event)"
-                        @keyup.enter="saveEdit(session, $event)"
-                        class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
-                        autoFocus
-                      />
-                      <span v-else class="block truncate" :title="session.title || t('session.newConversation')">{{ session.title || t('session.newConversation') }}</span>
-                    </div>
-
-                    <!-- Action Controls: Rename & Delete -->
-                    <SessionStateIndicator :session="session" :active="String(session.id) === activeSessionId" />
-                    <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                      <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button
-                        :disabled="isSessionActive(session, { activeSessionId })"
-                        @click.stop="isSessionActive(session, { activeSessionId }) ? undefined : emit('deleteSession', session.id)"
-                        :class="[
-                          'p-0.5 transition',
-                          isSessionActive(session, { activeSessionId })
-                            ? 'opacity-30 cursor-not-allowed text-zinc-400'
-                            : 'hover:text-red-500 cursor-pointer'
-                        ]"
-                        :title="isSessionActive(session, { activeSessionId }) ? t('chat.sidebar.deleteSessionActiveBlocked') : t('common.remove')"
-                      >
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                  <CollapseTransition>
-                    <SidebarSubSessions v-if="isBranchExpanded(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
-                  </CollapseTransition>
+                    <SidebarSessionRow
+                      :session="session"
+                      :activeId="activeSessionId"
+                      :activeSubSessionId="activeSubSessionId"
+                      :editingSessionId="editingSessionId"
+                      v-model:editingTitle="editingTitle"
+                      :isBranchExpanded="isBranchExpanded"
+                      :toggleBranch="toggleBranch"
+                      v-bind="rowHandlers"
+                    />
                   </template>
 
                   <!-- 展开显示 / 收起 -->
@@ -526,60 +534,16 @@ const emit = emitShim as TreeEmitShim;
             </div>
             <div class="space-y-0.5">
               <template v-for="session in limitSessions('ws-unassigned', unassignedSessions)" :key="session.id">
-              <div
-                @click="emit('selectSession', session.id)"
-                :class="[
-                  'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                  activeSessionId === session.id
-                    ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
-                ]"
-              >
-                <button v-if="session.subSessions?.length" type="button" data-testid="toggle-sub-sessions" :aria-label="session.title" :aria-expanded="isBranchExpanded(session.id)"
-                      class="flex h-4 w-3.5 shrink-0 items-center justify-center rounded cursor-pointer hover:bg-zinc-200" @click.stop="toggleBranch(session.id)">
-                      <svg class="h-3 w-3 transition-transform duration-200 motion-reduce:transition-none" :class="isBranchExpanded(session.id) ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
-                    </button>
-                <svg v-else class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-                <div class="flex-1 truncate">
-                  <input
-                    v-if="editingSessionId === session.id"
-                    v-model="editingTitle"
-                    @blur="saveEdit(session, $event)"
-                    @keyup.enter="saveEdit(session, $event)"
-                    class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
-                    autoFocus
-                  />
-                  <span v-else class="block truncate">{{ session.title || t('session.newConversation') }}</span>
-                </div>
-                <SessionStateIndicator :session="session" :active="String(session.id) === activeSessionId" />
-                <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                  <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                  <button
-                    :disabled="isSessionActive(session, { activeSessionId })"
-                    @click.stop="isSessionActive(session, { activeSessionId }) ? undefined : emit('deleteSession', session.id)"
-                    :class="[
-                      'p-0.5 transition',
-                      isSessionActive(session, { activeSessionId })
-                        ? 'opacity-30 cursor-not-allowed text-zinc-400'
-                        : 'hover:text-red-500 cursor-pointer'
-                    ]"
-                    :title="isSessionActive(session, { activeSessionId }) ? t('chat.sidebar.deleteSessionActiveBlocked') : t('common.remove')"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <CollapseTransition>
-                    <SidebarSubSessions v-if="isBranchExpanded(session.id)" :sessions="session.subSessions" :activeId="activeSubSessionId" @select="emit('selectSession', $event)" />
-                  </CollapseTransition>
+                <SidebarSessionRow
+                  :session="session"
+                  :activeId="activeSessionId"
+                  :activeSubSessionId="activeSubSessionId"
+                  :editingSessionId="editingSessionId"
+                  v-model:editingTitle="editingTitle"
+                  :isBranchExpanded="isBranchExpanded"
+                  :toggleBranch="toggleBranch"
+                  v-bind="rowHandlers"
+                />
               </template>
               <button
                 v-if="unassignedSessions.length > SESSION_VISIBLE_LIMIT"

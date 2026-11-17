@@ -278,6 +278,7 @@ export const chatApi = {
               activeTools: [],
               runStatus: item.runStatus,
               isRead: item.isRead,
+              isPinned: item.isPinned,
               renderStatus: item.renderStatus,
               version: item.version,
               lastOutcome: item.lastOutcome,
@@ -521,6 +522,7 @@ export const chatApi = {
           rootSessionId: meta?.rootSessionId,
           runStatus: meta?.runStatus,
           isRead: meta?.isRead,
+          isPinned: meta?.isPinned,
           renderStatus: meta?.renderStatus,
           version: meta?.version,
           lastOutcome: meta?.lastOutcome,
@@ -585,6 +587,21 @@ export const chatApi = {
   async renameSession(id: string, name: string): Promise<boolean> {
     try {
       const res = await SessionAPI.update(id, name);
+      return isOk(res.code);
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * 置顶 / 取消置顶。
+   *
+   * <p>成功即代表后端权威状态已变更；返回的 SessionVO 只用于取回 version，
+   * 列表次序**不在这里重排** —— 那是后端 ORDER BY 的职责（见 refreshSessionList）。</p>
+   */
+  async toggleSessionPin(id: string, pinned: boolean): Promise<boolean> {
+    try {
+      const res = await SessionAPI.setPinned(id, pinned);
       return isOk(res.code);
     } catch {
       return false;

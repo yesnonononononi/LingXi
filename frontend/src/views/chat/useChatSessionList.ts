@@ -13,6 +13,7 @@ import {
 import {upsertTurnViewIntoMessages} from './blockProjection';
 import {attachPromptCards} from '../../utils/toolCallCard';
 import {isTempSessionId} from '../../utils/ids';
+import {mergeSessionListSnapshot} from '../../utils/sessionListMerge';
 import {useConfirm} from '../../composables/useConfirm';
 import {t} from '../../i18n';
 
@@ -213,6 +214,29 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     }
   };
 
+  /**
+   * 置顶 / 取消置顶。
+   *
+   * <p>接口成功后**只认后端状态**：先落下 `isPinned`，再拉一次列表按后端顺序重排。
+   * 本地不写比较器 —— 排序规则只有后端 `ORDER BY` 一处。</p>
+   */
+  const handleTogglePin = async (id: string) => {
+    const session = localSessions.value.find(item => item.id === id);
+    if (!session || isTempSessionId(id)) return;
+    const target = !session.isPinned;
+
+    if (!await chatApi.toggleSessionPin(id, target)) {
+      window.alert(t('chat.sidebar.pinFailed'));
+      return;
+    }
+    session.isPinned = target;
+
+    const snapshot = await chatApi.fetchSessions();
+    if (snapshot.ok) {
+      localSessions.value = mergeSessionListSnapshot(localSessions.value, snapshot.data);
+    }
+  };
+
   // 清空历史对话：调用后端整库清空接口，避免仅删当前页 100 条或并发删除抢锁失败
   const handleClearSessions = async () => {
     const ids = localSessions.value.map(s => s.id);
@@ -257,6 +281,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     handleNewSession,
     handleDeleteSession,
     handleRenameSession,
+    handleTogglePin,
     handleClearSessions,
     handleClearCurrentSession,
     handleExportSession,

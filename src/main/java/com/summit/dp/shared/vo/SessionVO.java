@@ -24,6 +24,18 @@ public class SessionVO {
     @JsonProperty("isRead")
     @Getter(onMethod_ = @JsonProperty("isRead"))
     private boolean isRead;
+    /**
+     * 是否置顶（侧栏排序最前一级）。
+     *
+     * <p><b>子会话返回所属根会话的值</b>：子会话自身不可置顶，它在二级树里跟随父会话，
+     * 若这里回传自己的 FALSE，父会话置顶而子会话显示未置顶就是自相矛盾的视图。</p>
+     *
+     * <p>同样必须显式 {@code @JsonProperty("isPinned")}：Jackson 对 {@code isXxx} 布尔字段
+     * 默认产出 {@code pinned}，与前端类型里的 {@code isPinned} 对不上，表现为「刷新后置顶全丢」。</p>
+     */
+    @JsonProperty("isPinned")
+    @Getter(onMethod_ = @JsonProperty("isPinned"))
+    private boolean isPinned;
     /** 侧栏四态；新会话与取消执行没有结果标记。 */
     private String renderStatus;
     /**

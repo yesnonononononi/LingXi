@@ -70,9 +70,11 @@ public class SessionServiceImpl implements SessionService {
         List<Session> sessions = sessionRepository.findApplicationSessions();
         Map<Long, List<ExecutionStatus>> states = executionQueryService.latestStatesBySession(
                 sessions.stream().map(Session::getId).toList());
+        Map<Long, Boolean> pinned = resolvePinnedBySessionId(sessions);
 
         return Result.success(sessions.stream()
-                .map(session -> toVO(session, states.get(session.getId()), null, null)).toList());
+                .map(session -> toVO(session, states.get(session.getId()), null, null,
+                        pinned.getOrDefault(session.getId(), false))).toList());
     }
 
     @Override
@@ -153,12 +155,15 @@ public class SessionServiceImpl implements SessionService {
         List<Long> agentIds = source.getRecords().stream().map(Session::getAgentId).filter(Objects::nonNull).distinct().toList();
         Map<Long, String> agentNames = agentIds.isEmpty() ? Collections.emptyMap() :
                 agentRepository.findList(agentIds).stream().collect(Collectors.toMap(Agent::getId, Agent::getName, (a, b) -> a));
+        // 列表只建根会话，但沿用同一个解析入口：查询口径一旦分叉，「哪里该继承」就会各写一遍。
+        Map<Long, Boolean> pinned = resolvePinnedBySessionId(source.getRecords());
         PageResult<SessionVO> result = new PageResult<>(
                 source.getCurrent(),
                 source.getSize(),
                 source.getTotal(),
                 source.getRecords().stream()
-                        .map(session -> toVO(session, statesBySession.get(session.getId()), null, agentNames.get(session.getAgentId())))
+                        .map(session -> toVO(session, statesBySession.get(session.getId()), null,
+                                agentNames.get(session.getAgentId()), pinned.getOrDefault(session.getId(), false)))
                         .toList()
         );
         return Result.success(result);
@@ -172,7 +177,9 @@ public class SessionServiceImpl implements SessionService {
         String agentName = session.getAgentId() != null
                 ? agentRepository.findById(session.getAgentId()).map(Agent::getName).orElse(null)
                 : null;
-        return Result.success(toVO(session, executionQueryService.latestStatesBySession(List.of(id)).get(id), null, agentName));
+        Map<Long, Boolean> pinned = resolvePinnedBySessionId(List.of(session));
+        return Result.success(toVO(session, executionQueryService.latestStatesBySession(List.of(id)).get(id), null,
+                agentName, pinned.getOrDefault(session.getId(), false)));
     }
 
     @Override
@@ -300,11 +307,14 @@ public class SessionServiceImpl implements SessionService {
         List<Long> agentIds = sessions.stream().map(Session::getAgentId).filter(Objects::nonNull).distinct().toList();
         Map<Long, String> agentNames = agentIds.isEmpty() ? Collections.emptyMap() :
                 agentRepository.findList(agentIds).stream().collect(Collectors.toMap(Agent::getId, Agent::getName, (a, b) -> a));
+        // 树里的子会话没有自己的置顶，按所属根会话继承（见 resolvePinnedBySessionId）。
+        Map<Long, Boolean> pinned = resolvePinnedBySessionId(sessions);
         return Result.success(SessionTreeVO.builder()
                 .rootSessionId(tree.rootSessionId())
                 .sessions(sessions.stream()
                         .map(session -> toVO(session, statesBySession.get(session.getId()),
-                                counts.getOrDefault(session.getId(), 0L), agentNames.get(session.getAgentId())))
+                                counts.getOrDefault(session.getId(), 0L), agentNames.get(session.getAgentId()),
+                                pinned.getOrDefault(session.getId(), false)))
                         .toList())
                 .build());
     }
@@ -331,10 +341,12 @@ public class SessionServiceImpl implements SessionService {
      * <p>展示状态（{@code runStatus}/{@code lastOutcome}）由执行状态列表组合而来，
      * 而非会话自身字段——会话不持有执行状态。</p>
      */
-    private SessionVO toVO(Session session, List<ExecutionStatus> states, Long messageCount, String agentName) {
+    private SessionVO toVO(Session session, List<ExecutionStatus> states, Long messageCount, String agentName,
+                           boolean pinned) {
         WorkspaceVO workspace = workspaceOrDefault(session.getWorkspaceId());
         return SessionVO.builder().id(session.getId()).name(session.getName())
                 .isRead(session.isRead())
+                .isPinned(pinned)
                 .renderStatus(resolveRenderStatus(states))
                 .version(session.getVersion()).historyRevision(session.getHistoryRevision())
                 .runStatus(resolveRunStatus(states))
@@ -352,6 +364,44 @@ public class SessionServiceImpl implements SessionService {
                 .contextRatio(session.getContextRatio())
                 .build();
 
+    }
+
+    /**
+     * 展示用置顶状态（键 = 会话 id）：根会话取自身，子会话取所属根会话。
+     *
+     * <p>子会话没有自己的置顶，而它在二级树里就挂在父会话下面；父置顶、子显示未置顶是自相矛盾的
+     * 视图，所以继承口径统一在本方法里，四个读入口（applicationStates / list / findById / tree）
+     * 共用同一份，别各写一遍。</p>
+     *
+     * <p>整批只补查缺的那些根：列表页本身只含根会话，一次都不用查库；
+     * 树/详情里出现的子会话才需要把它的根捞回来，且是**一条 IN**，不按子会话逐条查。</p>
+     *
+     * @param sessions 待装配的会话（可含子会话）
+     * @return 会话 id → 是否置顶（缺省 false）
+     */
+    private Map<Long, Boolean> resolvePinnedBySessionId(List<Session> sessions) {
+        Map<Long, Boolean> pinnedByRootId = new HashMap<>();
+        for (Session session : sessions) {
+            if (!session.isSubSession()) {
+                pinnedByRootId.put(session.getId(), session.isPinned());
+            }
+        }
+        Set<Long> missingRootIds = new LinkedHashSet<>();
+        for (Session session : sessions) {
+            Long rootId = session.isSubSession() ? session.getRootSessionId() : session.getId();
+            if (rootId != null && !pinnedByRootId.containsKey(rootId)) {
+                missingRootIds.add(rootId);
+            }
+        }
+        if (!missingRootIds.isEmpty()) {
+            pinnedByRootId.putAll(sessionRepository.findPinnedByIds(missingRootIds));
+        }
+        Map<Long, Boolean> pinnedBySessionId = new HashMap<>();
+        for (Session session : sessions) {
+            Long rootId = session.isSubSession() ? session.getRootSessionId() : session.getId();
+            pinnedBySessionId.put(session.getId(), Boolean.TRUE.equals(pinnedByRootId.get(rootId)));
+        }
+        return pinnedBySessionId;
     }
 
     /**

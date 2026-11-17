@@ -10,6 +10,8 @@ export function applySessionState(session: ChatSession | SubSessionVO, state: Se
 
   session.version = state.version;
   session.isRead = state.isRead;
+  session.isPinned = state.isPinned;
+
   session.renderStatus = state.renderStatus;
   session.runStatus = state.runStatus;
   session.lastOutcome = state.lastOutcome;
@@ -46,6 +48,7 @@ export function useApplicationSessionState(sessions: Ref<ChatSession[]>, activeI
           messages: [],
           version: state.version,
           isRead: state.isRead,
+          isPinned: state.isPinned,
           renderStatus: state.renderStatus,
           runStatus: state.runStatus,
           lastOutcome: state.lastOutcome,

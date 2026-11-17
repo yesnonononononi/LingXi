@@ -59,6 +59,25 @@ public class Session {
         this.isRead = read;
     }
 
+    /**
+     * 置顶：用户显式意图，只影响列表排序（后端 ORDER BY 最前一级）。
+     *
+     * <p>子会话不单独持有置顶，展示时跟随所属根会话（见 {@code SessionPinnedResolver}）——
+     * 二级树里出现「父置顶、子不置顶」是自相矛盾的视图，因此子会话在入口就被拒绝设置。</p>
+     */
+    @Builder.Default
+    private boolean isPinned = false;
+
+    /**
+     * 置顶/取消置顶。与 {@link #rename} 不同构：**不刷新 {@code updateTime}**。
+     *
+     * <p>组内次序按 {@code updateTime} 倒序排。pin 顺手刷时间会让「最后被 pin 的排最前」；
+     * 更糟的是 unpin 后会话仍被顶到组首，用户点了下 pin 又取消，位置却再也回不去。</p>
+     */
+    public void changePinned(boolean pinned) {
+        this.isPinned = pinned;
+    }
+
     private Long workspaceId;
 
     /**
