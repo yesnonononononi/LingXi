@@ -67,8 +67,6 @@ scratch/
 .workbuddy-ai/
 deliverables/
 # docs/ 整体不入库（设计稿、QA 记录、随手笔记都不该进版本树）；
-# 但「桌宠美术资产」必须入库——M2 还有 9 个批次（lie/sleep/walk/run/jump/play/edge/side/mini），
-# 每批都靠人工 `git add -f` 去赌一次，漏一次就是「交付了但不可复现」
 # （companion/v1/tools 已经中过一次：磁盘上有文件，git ls-files 与 git status 都看不见）。
 #
 # ⚠️ gitignore 语义：父目录被排除时，`!` 无法重新包含其内部文件，
