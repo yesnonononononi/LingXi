@@ -182,11 +182,14 @@ class GenerateImageReferenceTest {
         Files.write(outside.resolve("ref.png"), image("png", 3));
         try { Files.createSymbolicLink(root.resolve("linked"), outside); }
         catch (Exception unavailable) { Assumptions.assumeTrue(false, "当前环境不允许创建符号链接"); }
+        // 链接建出来不等于它真的解析到工作区外（部分 Windows 环境会把目录链接当普通文件），先确认前提成立。
+        Assumptions.assumeTrue(!root.resolve("linked").toRealPath().startsWith(root.toRealPath()),
+                "宿主把目录链接解析成了工作区内路径，本用例的前提不成立");
         when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
                 .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").build());
         ToolExecuteResult result = executor().execute(call("linked/ref.png"));
         assertFalse(result.isSuccess());
-        assertTrue(result.getToolOutput().contains("工作区之外"), result.getToolOutput());
+        assertTrue(result.getToolOutput().contains("参考图只能读取工作区内的图片"), result.getToolOutput());
         verifyNoInteractions(providers);
     }
 

@@ -42,6 +42,17 @@ public class ModelContextService {
     /** 预建的重试器，热路径只做一次 volatile 读；直接 new 的用例为 null，现场造一个降级用。 */
     private volatile TransactionRetryTemplate replaceRetry;
 
+    /** 同会话替换锁的固定分桶（按会话标识哈希取模），不随会话数量增长。 */
+    private final Object[] replaceLocks = createReplaceLocks();
+
+    private static Object[] createReplaceLocks() {
+        Object[] locks = new Object[64];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new Object();
+        }
+        return locks;
+    }
+
     @PostConstruct
     void initRetryTemplate() {
         this.replaceRetry = new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
@@ -85,17 +96,28 @@ public class ModelContextService {
         if (messages == null) {
             throw new IllegalArgumentException("模型上下文不能为空: sessionId=" + sessionId);
         }
-        // 落盘放在事务与重试之外：重试只重放「读摘要 → 换引用」，不重复写文件。
-        String bodyId = store.write(sessionId, messages);
-        String previous;
-        try {
-            previous = replaceRetryTemplate().execute(() -> upsert(sessionId, bodyId));
-        } catch (RuntimeException failure) {
-            // 库内引用没换成，这份新文件永远不会被读到，当场删掉。
-            store.delete(sessionId, bodyId);
-            throw failure;
+        // 同一会话的替换必须串行。决策线程与恢复线程会同时对同一会话写上下文，
+        // 而「写新文件 → 读摘要换引用 → 删旧份」不是原子的：
+        // 交错时会算出过期的 previous，把另一边刚被引用的文件删掉，
+        // 之后读上下文就撞上「库里引用存在但文件没了」。锁只按会话分桶，不做全局串行。
+        synchronized (replaceLockFor(sessionId)) {
+            // 落盘放在事务与重试之外：重试只重放「读摘要 → 换引用」，不重复写文件。
+            String bodyId = store.write(sessionId, messages);
+            String previous;
+            try {
+                previous = replaceRetryTemplate().execute(() -> upsert(sessionId, bodyId));
+            } catch (RuntimeException failure) {
+                // 库内引用没换成，这份新文件永远不会被读到，当场删掉。
+                store.delete(sessionId, bodyId);
+                throw failure;
+            }
+            scheduleCleanup(sessionId, bodyId, previous);
         }
-        scheduleCleanup(sessionId, bodyId, previous);
+    }
+
+    /** 按会话标识分桶的替换锁：桶数固定，不会随会话数量增长。 */
+    private Object replaceLockFor(Long sessionId) {
+        return replaceLocks[(int) Math.floorMod(sessionId.hashCode(), replaceLocks.length)];
     }
 
     /**

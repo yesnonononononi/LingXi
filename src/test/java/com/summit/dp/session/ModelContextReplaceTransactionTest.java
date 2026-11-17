@@ -283,6 +283,44 @@ class ModelContextReplaceTransactionTest {
     }
 
 
+    /**
+     * 同一个会话被两条线程同时替换：库内引用必须始终指向一份真实存在的正文。
+     *
+     * <p>现场是「恢复了一整轮，结果读上下文时炸『会话上下文文件不存在』」。
+     * 决策线程与恢复线程会同时对同一会话写上下文，而「写新文件 → 读摘要换引用 → 删旧份」
+     * 不是原子的：交错时会按过期的 previous 把另一条线程刚设成当前引用的文件删掉。</p>
+     */
+    @Test
+    @Timeout(TestTimeouts.HANG_GUARD)
+    void concurrentReplaceOnTheSameSessionNeverStrandsTheStoredReference() throws Exception {
+        long sessionId = 703L;
+        int threads = 6;
+        int rounds = 30;
+        try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
+            CyclicBarrier barrier = new CyclicBarrier(threads);
+            List<Future<?>> workers = new ArrayList<>();
+            for (int thread = 0; thread < threads; thread++) {
+                int writer = thread;
+                workers.add(pool.submit(() -> {
+                    barrier.await();
+                    for (int round = 0; round < rounds; round++) {
+                        service.replace(sessionId, messages("writer-" + writer + "-" + round));
+                    }
+                    return null;
+                }));
+            }
+            for (Future<?> worker : workers) {
+                worker.get(120, TimeUnit.SECONDS);
+            }
+        }
+
+        // 最后一步校验：库里引用的那份正文必须还在，并且能完整读出来。
+        List<Message> restored = service.find(sessionId).orElseThrow();
+        assertEquals(1, restored.size());
+        assertTrue(restored.getFirst().text().startsWith("writer-"),
+                "读回来的必须是某一次真实写入: " + restored.getFirst().text());
+    }
+
     private void assertContextContent(long sessionId, String expectedText) {
         SessionContextPO row = contexts.selectById(sessionId);
         assertNull(row.getContent(), "正文必须搬出库，库里不得再留 CLOB: sessionId=" + sessionId);
