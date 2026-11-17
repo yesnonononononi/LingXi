@@ -66,20 +66,25 @@ test('usePendingChatQueue.cancel 成功返回 true，失败返回 false', async 
 test('ChatView 待发送队列在撤销左侧提供 SVG 编辑图标；编辑走原位更新，撤销才移除并回填', () => {
   const chatViewPath = fileURLToPath(new URL('../src/views/chat/ChatView.vue', import.meta.url));
   const chatView = readFileSync(chatViewPath, 'utf8');
+  const queuePanelPath = fileURLToPath(new URL('../src/components/chat/PendingChatQueuePanel.vue', import.meta.url));
+  const queuePanel = readFileSync(queuePanelPath, 'utf8');
 
-  const editPos = chatView.indexOf('data-testid="pending-edit-btn"');
-  const cancelPos = chatView.indexOf('data-testid="pending-cancel-btn"');
+  const editPos = queuePanel.indexOf('data-testid="pending-edit-btn"');
+  const cancelPos = queuePanel.indexOf('data-testid="pending-cancel-btn"');
   assert.ok(editPos > 0, '缺少 pending-edit-btn');
   assert.ok(cancelPos > editPos, 'pending-edit-btn 必须位于 pending-cancel-btn 左侧');
 
-  const editSnippet = chatView.slice(chatView.lastIndexOf('<button', editPos), cancelPos);
+  const editSnippet = queuePanel.slice(queuePanel.lastIndexOf('<button', editPos), cancelPos);
   assert.match(editSnippet, /<svg\b/);
-  assert.match(editSnippet, /@click="handlePendingEdit\(entry\)"/);
-  assert.doesNotMatch(editSnippet, /handlePendingRestore/,
+  assert.match(editSnippet, /@click="emit\('edit', entry\)"/);
+  assert.doesNotMatch(editSnippet, /restore/,
     '编辑不能走撤销：撤销会删掉磁盘附件，用户点发送就得把图重传一遍');
 
-  const cancelSnippet = chatView.slice(cancelPos, cancelPos + 800);
-  assert.match(cancelSnippet, /@click="handlePendingRestore\(entry\)"/);
+  const cancelSnippet = queuePanel.slice(cancelPos, cancelPos + 800);
+  assert.match(cancelSnippet, /@click="emit\('restore', entry\)"/);
+
+  assert.match(chatView, /@edit="handlePendingEdit"/);
+  assert.match(chatView, /@restore="handlePendingRestore"/);
 
   // 撤销路径的附件必须在撤销之前取字节：撤销会把磁盘上的附件一起删掉。
   assert.match(

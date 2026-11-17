@@ -227,19 +227,21 @@ test('update 失败时返回 false 并把后端文案暴露给面板', async t =
 test('ChatView 面板：缩略图懒加载 + 仅非 PENDING 给「继续」按钮 + 编辑态提示条', () => {
   const chatViewPath = fileURLToPath(new URL('../src/views/chat/ChatView.vue', import.meta.url));
   const chatView = readFileSync(chatViewPath, 'utf8');
+  const queuePanelPath = fileURLToPath(new URL('../src/components/chat/PendingChatQueuePanel.vue', import.meta.url));
+  const queuePanel = readFileSync(queuePanelPath, 'utf8');
 
-  const thumbPos = chatView.indexOf('data-testid="pending-attachment-thumb"');
+  const thumbPos = queuePanel.indexOf('data-testid="pending-attachment-thumb"');
   assert.ok(thumbPos > 0, '缺少缩略图元素');
   // 属性顺序是 src/loading 在前、testid 在后，所以从 <img 起算，不能从 testid 往后切。
-  const thumbSnippet = chatView.slice(chatView.lastIndexOf('<img', thumbPos), thumbPos + 200);
+  const thumbSnippet = queuePanel.slice(queuePanel.lastIndexOf('<img', thumbPos), thumbPos + 200);
   assert.match(thumbSnippet, /loading="lazy"/, '缩略图必须懒加载：面板每秒轮询，图不能预先全拉');
   assert.match(thumbSnippet, /pendingQueue\.attachmentUrl\(entry\.id, attachment\.id\)/,
     '缩略图必须走按需接口，不能把字节塞进快照');
 
-  const confirmPos = chatView.indexOf('data-testid="pending-confirm-btn"');
+  const confirmPos = queuePanel.indexOf('data-testid="pending-confirm-btn"');
   assert.ok(confirmPos > 0, '缺少单条「继续」按钮');
-  const confirmSnippet = chatView.slice(Math.max(0, confirmPos - 600),
-    chatView.indexOf('data-testid="pending-edit-btn"'));
+  const confirmSnippet = queuePanel.slice(Math.max(0, confirmPos - 600),
+    queuePanel.indexOf('data-testid="pending-edit-btn"'));
   assert.match(confirmSnippet, /entry\.status !== 'PENDING'/,
     'PENDING 的那条本来就会自动发，给按钮只会误导用户');
   assert.match(confirmSnippet, /pendingQueue\.confirm\(entry\.id\)/);
