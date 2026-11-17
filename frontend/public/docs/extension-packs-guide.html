@@ -542,6 +542,7 @@
             '  <tbody>',
             '    <tr><td>id</td><td>string</td><td>是</td><td>唯一标识。<br><span class="sub-note">示例值："custom-ocean-theme"</span></td></tr>',
             '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">motion</span> <span class="badge-cyan">taskProgress</span> <span class="badge-cyan">interactionCard</span></td></tr>',
+            '    <tr><td>interactionTab</td><td>string</td><td>否</td><td>仅 <span class="code-inline">interactionCard</span> 类目使用，用于子 Tab 归类与独立叠加：<span class="badge-cyan">approval</span> <span class="badge-cyan">plan</span> <span class="badge-cyan">choice</span>。</td></tr>',
             '    <tr><td>name</td><td>string</td><td>是</td><td>设置页卡片展示名称。</td></tr>',
             '    <tr><td>hostApiVersion</td><td>string</td><td>是</td><td>宿主契约版本，当前固定为 <span class="code-inline">"1"</span>。</td></tr>',
             '    <tr><td>version</td><td>string</td><td>否</td><td>语义化版本号，默认 <span class="code-inline">"1.0.0"</span>。</td></tr>',
@@ -690,14 +691,14 @@
         'cat-task-progress': {
           breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '任务进度 (taskProgress)'],
           title: '任务进度 (taskProgress)',
-          updated: '最后更新于 2026-11-17',
-          lead: '任务进度类目合并了「后台任务」与「任务清单」两个悬浮胶囊及弹出面板，主会话与子会话侧边栏共用同一套扩展槽位。',
+          updated: '最后更新于 2026-11-18',
+          lead: '任务进度类目合并了「后台任务」「任务清单」两个悬浮胶囊及「待发送队列 (pendingChat)」面板，主会话与子会话共用胶囊槽位。',
           html: [
             '<h2>开发方式</h2>',
             '<table class="feishu-table">',
             '  <tbody>',
-            '    <tr><td class="kv-key">本地纯资源包</td><td>在 <span class="code-inline">pack.css</span> 中使用 <span class="code-inline">.task-progress-dock</span>、<span class="code-inline">.task-pill</span>、<span class="code-inline">.task-panel</span> 锚点覆盖样式。</td></tr>',
-            '    <tr><td class="kv-key">源码 / 内置 Slot</td><td>注册 <span class="code-inline">slots.taskProgress.backgroundPanel</span> 与 <span class="code-inline">slots.taskProgress.checklistPanel</span>，复用 <span class="code-inline">useBackgroundPanelModel</span> / <span class="code-inline">useChecklistPanelModel</span> 接入宿主状态。</td></tr>',
+            '    <tr><td class="kv-key">本地纯资源包</td><td>在 <span class="code-inline">pack.css</span> 中使用 <span class="code-inline">.task-progress-dock</span>、<span class="code-inline">.task-pill</span>、<span class="code-inline">.task-panel</span> 及 <span class="code-inline">[data-testid="pending-chat-queue"]</span> 锚点覆盖样式。</td></tr>',
+            '    <tr><td class="kv-key">源码 / 内置 Slot</td><td>注册 <span class="code-inline">slots.taskProgress.backgroundPanel</span>、<span class="code-inline">checklistPanel</span> 与 <span class="code-inline">pendingQueuePanel</span>；前两者可复用 <span class="code-inline">useBackgroundPanelModel</span> / <span class="code-inline">useChecklistPanelModel</span>，队列面板接收 <span class="code-inline">{ pendingQueue, isDark }</span> 并 emit <span class="code-inline">edit / restore</span>。</td></tr>',
             '    <tr><td class="kv-key">键盘无障碍约定</td><td>切换胶囊按钮请保留 <span class="code-inline">data-testid="background-task-toggle"</span> 与 <span class="code-inline">data-testid="checklist-toggle"</span>，确保 Esc 关闭面板后焦点正确回退。</td></tr>',
             '  </tbody>',
             '</table>'
@@ -706,8 +707,8 @@
         'cat-interaction-card': {
           breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '互动卡片 (interactionCard)'],
           title: '互动卡片 (interactionCard)',
-          updated: '最后更新于 2026-11-17',
-          lead: '互动卡片类目统一收敛了审批卡片（COMMAND / FILE_WRITE）、计划卡片（PLAN）与选择卡片（CHOICE）三类交互扩展。',
+          updated: '最后更新于 2026-11-18',
+          lead: '互动卡片类目统一收敛了审批卡片（COMMAND / FILE_WRITE）、计划卡片（PLAN）与选择卡片（CHOICE）三类交互扩展，三个子 Tab 支持各自独立启用并同屏叠加。',
           html: [
             '<h2>三大插槽与共享 Model</h2>',
             '<table class="feishu-table">',
