@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.dp.checklist.application.ChecklistReminderContext;
@@ -26,8 +27,7 @@ final class ChecklistReminderState {
     static ChecklistReminderContext context(Execution execution) {
         Object marker = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes().get(DELIVERED_MARKER);
         // 提醒本身是用户消息：只看系统消息会把真实投递误判成未投递。
-        Set<String> delivered = marker instanceof String text && execution.getMessages() != null
-                && execution.getMessages().stream().anyMatch(message -> message.text().contains("\n" + text))
+        Set<String> delivered = marker instanceof String text && containsText(execution.getMessages(), "\n" + text)
                 ? Set.of(text) : Set.of();
         return new ChecklistReminderContext(ExecutionIdentity.sessionId(execution),
                 ExecutionIdentity.numericOrNull(execution.getId()), delivered);
@@ -66,8 +66,20 @@ final class ChecklistReminderState {
             return;
         }
         String text = expected.get();
-        boolean present = execution.getMessages() != null
-                && execution.getMessages().stream().anyMatch(message -> message.text().contains(text));
+        boolean present = containsText(execution.getMessages(), text);
         if (!present) context.appendMessage(List.of(UserMessageEntity.from(text).markPendingCompaction()));
+    }
+
+    /**
+     * 消息里是否出现过这段文本。
+     *
+     * <p>只发工具调用的助手消息没有正文，{@link Message#text()} 返回 null —— 必须按「不含」处理。
+     * 直接把 null 丢给 {@code contains} 会让整轮在提醒注入处崩掉：现场是恢复长会话时抛
+     * NPE，433 条已恢复的消息全部作废，用户看到的是「这一轮莫名其妙失败了」。</p>
+     */
+    private static boolean containsText(List<Message> messages, String fragment) {
+        return messages != null && messages.stream()
+                .map(Message::text)
+                .anyMatch(text -> text != null && text.contains(fragment));
     }
 }

@@ -179,6 +179,47 @@ class ChecklistContextAttachmentsTest {
         assertTrue(execution.getMessages().getLast().text().contains("初始任务"));
     }
 
+    /**
+     * 现场：恢复长会话时 messages 里混着只发工具调用的助手消息，{@code text()} 为 null。
+     *
+     * <p>旧实现把 null 直接丢给 {@code contains}，在提醒注入处抛 NPE，整轮连同已恢复的消息一起作废。</p>
+     */
+    @Test
+    void receiptScanToleratesAssistantMessagesWithoutText() {
+        String marker = ChecklistReminderContext.buildDeliveryMarker(
+                created.getChecklistId(), created.getProgressVersion(), 1001L);
+        execution.getMessages().add(AiMessageEntity.builder().build());
+        putDeliveredMarker(marker);
+
+        ChecklistReminderContext receipt = assertDoesNotThrow(() -> ChecklistReminderState.context(execution),
+                "没有正文的助手消息不能把证据扫描打断");
+        assertFalse(receipt.wasDelivered(created.getChecklistId(), created.getProgressVersion()),
+                "找不到提醒正文就只能算未投递，不能凭属性判定已送达");
+
+        assertDoesNotThrow(() -> ChecklistReminderState.appendIfMissing(
+                context(), execution, service.findActive(SESSION).orElseThrow()));
+    }
+
+    @Test
+    void receiptScanStillFindsTheReminderBesideAssistantMessagesWithoutText() {
+        String marker = ChecklistReminderContext.buildDeliveryMarker(
+                created.getChecklistId(), created.getProgressVersion(), 1001L);
+        execution.getMessages().add(AiMessageEntity.builder().build());
+        execution.getMessages().add(UserMessageEntity.from("提醒正文\n" + marker));
+        putDeliveredMarker(marker);
+
+        ChecklistReminderContext receipt = ChecklistReminderState.context(execution);
+        assertTrue(receipt.wasDelivered(created.getChecklistId(), created.getProgressVersion()),
+                "容忍 null 不等于从此永远判未投递");
+    }
+
+    /** 把投递证据写进运行时属性（与 {@link ChecklistReminderState#appendIfMissing} 同一处真源）。 */
+    private void putDeliveredMarker(String marker) {
+        AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
+        parameters.setAttributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION),
+                ChecklistReminderState.DELIVERED_MARKER, marker));
+    }
+
     @Test
     void actualPlanAndChecklistProvidersReadFreshStateAndKeepReceiptAcrossPruneAndSummary() throws Exception {
         injector.injectIfNeeded(context(), execution);
