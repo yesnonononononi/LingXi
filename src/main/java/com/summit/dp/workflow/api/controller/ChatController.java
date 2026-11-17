@@ -5,8 +5,10 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.workflow.api.request.ChatRequest;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.input.ResumeSupplementCommand;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
+import com.summit.dp.workflow.application.pending.PendingTaskUpdate;
 import com.summit.dp.workflow.application.input.ResumeSupplementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -76,20 +78,41 @@ public class ChatController {
     }
 
     /**
-     * 原地修改一条待发送消息：文本、保留哪些已上传图片、再补哪些新图。
+     * 原地修改一条待发送消息：文本、保留哪些已上传图片、再补哪些新图，以及模型 / 执行体 / 计划模式。
      *
      * <p>{@code keepAttachmentIds} 缺省 = 附件不动；显式给出 = 只保留列出的那些（空表示全丢）。
      * 用「缺省」而不是「空列表」表达「不动」，是因为表单里漏传字段与传空值在
      * 客户端几乎无法可靠区分，而误判成「全丢」会直接删掉用户刚传的图。</p>
+     *
+     * <p>{@code modelId} / {@code agentId} / {@code requirePlan} 反过来是**必填的整笔覆盖**：
+     * 编辑面板总能算出当前界面的选择，把它们做成可选只会让「没传」与「清空」混为一谈，
+     * 于是界面上显示的模型与真正派发的模型悄悄不一致。空串表示不指定（用预设/会话默认）。</p>
      */
     @Operation(summary = "原地修改待发送消息")
     @PutMapping(value = "/completion/{sessionId}/pending/{pendingId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Void> updatePendingCommand(@PathVariable long sessionId, @PathVariable String pendingId,
                                              @RequestParam(required = false) String input,
                                              @RequestParam(required = false) List<String> keepAttachmentIds,
-                                             @RequestParam(name = "image", required = false) List<MultipartFile> images) {
-        chatService.updatePendingCommand(sessionId, pendingId, input, keepAttachmentIds, images);
+                                             @RequestParam(name = "image", required = false) List<MultipartFile> images,
+                                             @RequestParam String modelId,
+                                             @RequestParam String agentId,
+                                             @RequestParam boolean requirePlan) {
+        chatService.updatePendingCommand(sessionId, pendingId, new PendingTaskUpdate(
+                input, keepAttachmentIds, images, requirePlan,
+                parseOptionalId(modelId, "模型标识不合法"), parseOptionalId(agentId, "执行体标识不合法")));
         return Result.success();
+    }
+
+    /** 表单里的空串表示「不指定」，不能当成 0 或解析失败。 */
+    private static Long parseOptionalId(String raw, String err) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException invalid) {
+            throw new ClientException(err + ": " + raw);
+        }
     }
 
     /**

@@ -19,10 +19,10 @@ public class PendingTask {
     private final long sessionId;
     private String input;
     private List<PendingAttachment> attachments;
-    private final Long modelId;
-    private final Long agentId;
+    private Long modelId;
+    private Long agentId;
     private final Long workspaceId;
-    private final boolean requirePlan;
+    private boolean requirePlan;
     private PendingTaskStatus status;
     private String failure;
     private final Instant createdAt;
@@ -75,6 +75,26 @@ public class PendingTask {
         this.updatedAt = now;
     }
 
+    /**
+     * 编辑时改「是否先出计划」：与文本、附件同一次提交，派发时照此构造命令。
+     */
+    public void changeRequirePlan(boolean requirePlan, Instant now) {
+        this.requirePlan = requirePlan;
+        this.updatedAt = now;
+    }
+
+    /** 编辑时改模型：{@code null} 表示不指定，改由 Agent 预设或会话默认决定。 */
+    public void changeModel(Long modelId, Instant now) {
+        this.modelId = requirePositiveId(modelId, "模型标识不合法");
+        this.updatedAt = now;
+    }
+
+    /** 编辑时改执行体：{@code null} 表示不指定，走会话默认。 */
+    public void changeAgent(Long agentId, Instant now) {
+        this.agentId = requirePositiveId(agentId, "执行体标识不合法");
+        this.updatedAt = now;
+    }
+
     /** 派发失败：停在原地等用户处理，原因要能跨重启展示。 */
     public void fail(String reason, Instant now) {
         this.status = PendingTaskStatus.PAUSED;
@@ -113,6 +133,12 @@ public class PendingTask {
         throwIf(input == null || input.isBlank(), "待发送内容不能为空");
         throwIf(input.length() > SessionMessage.MAX_INPUT_LENGTH,
                 "待发送内容最多支持 " + SessionMessage.MAX_INPUT_LENGTH + " 个字符");
+    }
+
+    /** 标识要么不指定（{@code null}），要么是正数：0 与负数只可能是调用方没清理干净的占位值。 */
+    private static Long requirePositiveId(Long id, String err) {
+        throwIf(id != null && id <= 0, err);
+        return id;
     }
 
     private static void throwIf(boolean condition, String err) {

@@ -73,6 +73,15 @@ public final class PendingTaskTestSupport {
             list.forEach(this::updateById);
         }
 
+        /** 与磁盘实现同口径：显式整笔覆盖，行不在就报错（不静默插一条）。 */
+        @Override
+        public void updateEditable(PendingTask entity) {
+            if (!rows.containsKey(entity.getId())) {
+                throw new ClientException("待发送消息不存在或已发送");
+            }
+            rows.put(entity.getId(), entity);
+        }
+
         @Override
         public IPage<PendingTask> queryByPage(int current, int size) {
             throw new UnsupportedOperationException("测试替身不支持分页");

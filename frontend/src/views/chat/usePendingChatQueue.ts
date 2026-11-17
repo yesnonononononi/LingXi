@@ -1,7 +1,7 @@
 import {ref, shallowRef, watch, type Ref} from 'vue';
 import {t} from '../../i18n';
 import {AgentAPI} from '../../services/agent';
-import type {PendingTaskEntry, PendingTaskSnapshot} from '../../types/chat';
+import type {PendingTaskEntry, PendingTaskSnapshot, PendingTaskUpdate} from '../../types/chat';
 import type {Result} from '../../services/types';
 import {isOk} from '../../utils/api';
 
@@ -149,8 +149,8 @@ export function usePendingChatQueue(sessionId: Readonly<Ref<string | null>>, isA
      *
      * <p>`keepAttachmentIds` 传 `undefined` 表示「附件不动」；传数组表示只留列出的那些。</p>
      */
-    update: (id: string, input: string, keepAttachmentIds: string[] | undefined, images: File[]) =>
-      change(owner => AgentAPI.updatePendingCommand(owner, id, input, keepAttachmentIds, images)),
+    update: (id: string, request: PendingTaskUpdate) =>
+      change(owner => AgentAPI.updatePendingCommand(owner, id, request)),
     resume: () => change(owner => AgentAPI.resumePendingCommands(owner)),
   };
 }

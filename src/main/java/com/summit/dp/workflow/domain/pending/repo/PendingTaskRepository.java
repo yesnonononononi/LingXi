@@ -36,4 +36,12 @@ public interface PendingTaskRepository extends RepositoryTemplate<PendingTask, L
 
     /** 会话删除时清空该会话的任务。 */
     int deleteBySession(long sessionId);
+
+    /**
+     * 整笔覆盖「可编辑列」：正文、附件、模型、执行体、计划模式、状态、失败原因、更新时间。
+     *
+     * <p>不能用通用的 `updateById`：它的空值策略是「非 null 才写」，于是「把模型清回默认」
+     * （`model_id = null`）永远不会落库，用户看到的是「改了但没变」。这里用显式 set 覆盖。</p>
+     */
+    void updateEditable(PendingTask task);
 }

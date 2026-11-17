@@ -1003,6 +1003,22 @@ export interface PendingTaskSnapshot {
   entries: PendingTaskEntry[];
 }
 
+/**
+ * 编辑一条待发送消息时提交的内容（`PUT /pending/{id}`）。
+ *
+ * <p>文本与附件是补丁：`input` 留空表示只改别的，`keepAttachmentIds` 缺省表示附件不动。
+ * 而 `requirePlan` / `modelId` / `agentId` 是**整笔覆盖**：编辑面板总能算出当前界面的选择，
+ * 做成可选只会让「没传」与「清空」混为一谈。空串/null 表示不指定（用预设或会话默认）。</p>
+ */
+export interface PendingTaskUpdate {
+  input: string;
+  keepAttachmentIds?: string[];
+  images: File[];
+  requirePlan: boolean;
+  modelId: string | number | null;
+  agentId: string | number | null;
+}
+
 /* ------------------------------------------------------------------ */
 /* MCP 服务                                                             */
 /* ------------------------------------------------------------------ */

@@ -3,10 +3,8 @@ package com.summit.dp.workflow.application.chat;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
-import org.springframework.web.multipart.MultipartFile;
+import com.summit.dp.workflow.application.pending.PendingTaskUpdate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import java.util.List;
 
 public interface ChatService {
     Result<String> chat(ChatCommand command);
@@ -22,12 +20,11 @@ public interface ChatService {
     void confirmPendingCommand(long sessionId, String pendingId);
 
     /**
-     * 原地修改一条排队消息：文本可改、已上传的图可保留、也可再补新图。
+     * 原地修改一条排队消息：文本与附件按补丁处理，模型 / 执行体 / 计划模式整笔覆盖。
      *
-     * @param keepAttachmentIds 要保留的附件 id；{@code null} 表示「附件不动」，空列表表示「全部丢掉」
+     * @see PendingTaskUpdate
      */
-    void updatePendingCommand(long sessionId, String pendingId, String input,
-                              List<String> keepAttachmentIds, List<MultipartFile> files);
+    void updatePendingCommand(long sessionId, String pendingId, PendingTaskUpdate update);
 
     /** 读一条排队附件的字节（缩略图与「回填编辑」）。 */
     PendingAttachmentContent readPendingAttachment(long sessionId, String pendingId, String attachmentId);

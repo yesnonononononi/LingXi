@@ -141,33 +141,38 @@ public class PendingTaskService implements PendingInputProbe {
     }
 
     /**
-     * 原地修改：文本可改、已上传的图可保留、也可再补新图。
+     * 原地修改：文本可改、已上传的图可保留、也可再补新图；模型 / 执行体 / 计划模式整笔覆盖。
      *
      * <p>顺序不能反：新文件先落盘、库更新成功、最后才删被过滤掉的旧文件。
      * 反过来做一旦库更新失败，用户就永久丢了那几张还能用的图。</p>
      */
-    public synchronized void update(long sessionId, String pendingId, String input,
-                                    List<String> keepAttachmentIds, List<MultipartFile> files) {
+    public synchronized void update(long sessionId, String pendingId, PendingTaskUpdate update) {
+        throwIf(update == null, "待发送内容不能为空");
         PendingTask task = requireTask(sessionId, pendingId);
         throwIf(claiming.contains(task.getId()), "这条消息正在发送");
 
         List<PendingAttachment> existing = task.getAttachments();
+        List<String> keepAttachmentIds = update.keepAttachmentIds();
         List<PendingAttachment> kept = keepAttachmentIds == null ? existing : existing.stream()
                 .filter(attachment -> keepAttachmentIds.contains(attachment.id()))
                 .toList();
-        List<PendingUpload> uploads = toUploads(files);
+        List<PendingUpload> uploads = toUploads(update.images());
         List<PendingAttachment> stored = attachments.store(sessionId, task.getId(), uploads);
 
         List<PendingAttachment> merged = new ArrayList<>(kept);
         merged.addAll(stored);
-        String nextInput = input == null || input.isBlank() ? task.getInput() : input;
+        String requestedInput = update.input();
+        String nextInput = requestedInput == null || requestedInput.isBlank() ? task.getInput() : requestedInput;
         throwIf(nextInput == null || nextInput.isBlank(), "待发送内容不能为空");
 
         Instant now = Instant.now();
         task.changeInput(nextInput, now);
         task.changeAttachments(merged, now);
+        task.changeRequirePlan(update.requirePlan(), now);
+        task.changeModel(update.modelId(), now);
+        task.changeAgent(update.agentId(), now);
         try {
-            pendingTasks.updateById(task);
+            pendingTasks.updateEditable(task);
         } catch (RuntimeException failure) {
             // 库没更新成功：这次新写的文件与任务行不再对应，撤掉，旧集合保持原样。
             attachments.deleteAttachments(sessionId, task.getId(),

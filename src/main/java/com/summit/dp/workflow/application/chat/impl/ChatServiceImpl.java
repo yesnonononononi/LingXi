@@ -20,13 +20,13 @@ import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
 import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
+import com.summit.dp.workflow.application.pending.PendingTaskUpdate;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
@@ -151,10 +151,9 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public void updatePendingCommand(long sessionId, String pendingId, String input,
-                                     List<String> keepAttachmentIds, List<MultipartFile> files) {
+    public void updatePendingCommand(long sessionId, String pendingId, PendingTaskUpdate update) {
         requireQueueSession(sessionId);
-        pendingTasks.update(sessionId, pendingId, input, keepAttachmentIds, files);
+        pendingTasks.update(sessionId, pendingId, update);
     }
 
     @Override

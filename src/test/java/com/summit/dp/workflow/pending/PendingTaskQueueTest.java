@@ -5,6 +5,7 @@ import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
+import com.summit.dp.workflow.application.pending.PendingTaskUpdate;
 import com.summit.dp.workflow.domain.pending.model.PendingAttachment;
 import com.summit.dp.workflow.domain.pending.model.PendingTask;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,11 @@ class PendingTaskQueueTest {
         return new MockMultipartFile("image", name, "image/png", data);
     }
 
+    /** 只改内容、不动模型与执行体的编辑提交（与 {@link #command} 的取值保持同一组）。 */
+    private static PendingTaskUpdate edit(String input, List<String> keepIds, MultipartFile... images) {
+        return new PendingTaskUpdate(input, keepIds, List.of(images), false, 7L, 3L);
+    }
+
     @Test
     void enqueueKeepsImagesOnDiskAndSnapshotOnlyReportsCount() {
         String pendingId = service.enqueue(SESSION, command("这两张图有什么区别",
@@ -64,8 +70,8 @@ class PendingTaskQueueTest {
         String keptPath = first.getAttachments().getFirst().relPath();
 
         // 保留 a 再补一张新图：结果是「旧的没白传 + 新的进来了」，不是全删重建。
-        service.update(SESSION, String.valueOf(first.getId()), "两张都看", List.of(keptId),
-                List.<MultipartFile>of(image("c.png", new byte[]{9, 9})));
+        service.update(SESSION, String.valueOf(first.getId()), edit("两张都看", List.of(keptId),
+                image("c.png", new byte[]{9, 9})));
         PendingTask merged = rows.findBySession(SESSION).getFirst();
         assertEquals("两张都看", merged.getInput());
         assertEquals(2, merged.getAttachments().size());
@@ -79,8 +85,7 @@ class PendingTaskQueueTest {
                 .map(PendingAttachment::id)
                 .filter(id -> !id.equals(keptId))
                 .findFirst().orElseThrow();
-        service.update(SESSION, String.valueOf(first.getId()), "只看新的", List.of(addedId),
-                List.<MultipartFile>of());
+        service.update(SESSION, String.valueOf(first.getId()), edit("只看新的", List.of(addedId)));
         PendingTask trimmed = rows.findBySession(SESSION).getFirst();
         assertEquals(1, trimmed.getAttachments().size());
         assertEquals(addedId, trimmed.getAttachments().getFirst().id());
@@ -122,13 +127,38 @@ class PendingTaskQueueTest {
     }
 
     @Test
+    void updateOverwritesModelAgentAndPlanFlagOnTheSameRow() {
+        service.enqueue(SESSION, command("先这样"));
+
+        // 编辑面板总能算出当前界面的选择，所以这三项是整笔覆盖：清成「不指定」也得落库。
+        service.update(SESSION, String.valueOf(rows.findBySession(SESSION).getFirst().getId()),
+                new PendingTaskUpdate("换了执行体", null, List.of(), true, 11L, null));
+
+        PendingTask updated = rows.findBySession(SESSION).getFirst();
+        assertEquals("换了执行体", updated.getInput());
+        assertTrue(updated.isRequirePlan(), "计划模式必须跟着这次编辑落库");
+        assertEquals(11L, updated.getModelId());
+        assertNull(updated.getAgentId(), "清回「不指定」必须真的变成 null，不能被当成「不改」");
+    }
+
+    @Test
+    void updateRejectsNonPositiveAgentId() {
+        service.enqueue(SESSION, command("先这样"));
+        String pendingId = String.valueOf(rows.findBySession(SESSION).getFirst().getId());
+
+        ClientException rejected = assertThrows(ClientException.class, () -> service.update(SESSION, pendingId,
+                new PendingTaskUpdate("文本", null, List.of(), false, 7L, 0L)));
+        assertTrue(rejected.getMessage().contains("执行体标识不合法"));
+    }
+
+    @Test
     void updateWithoutKeepIdsLeavesAttachmentsUntouched() {
         service.enqueue(SESSION, command("先这样", image("a.png", new byte[]{1, 2, 3})));
         PendingTask first = rows.findBySession(SESSION).getFirst();
         String keptId = first.getAttachments().getFirst().id();
 
         // 只改文字时前端不带 keepAttachmentIds：语义是「附件不动」，不是「全丢」。
-        service.update(SESSION, String.valueOf(first.getId()), "只改文字", null, List.<MultipartFile>of());
+        service.update(SESSION, String.valueOf(first.getId()), edit("只改文字", null));
 
         PendingTask updated = rows.findBySession(SESSION).getFirst();
         assertEquals("只改文字", updated.getInput());

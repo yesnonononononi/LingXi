@@ -171,15 +171,14 @@ test('attachmentFiles 按附件逐个取字节，配对附件 id，读失败的�
   }
 });
 
-test('update 走 PUT，带上保留的附件 id 与新图，不走撤销也不走队列级 resume', async t => {
+test('update 走 PUT，带上保留的附件 id、新图与整笔覆盖的模型/执行体/计划模式', async t => {
   const sessionId = ref<string | null>('s1');
   t.mock.method(AgentAPI, 'pendingCommands', async () => ({
     code: 1, data: {paused: false, failure: null, entries: [entry('p1')]},
   }));
-  const calls: Array<{id: string; input: string; kept: string[] | undefined; images: string[]}> = [];
-  t.mock.method(AgentAPI, 'updatePendingCommand', async (
-    _sessionId: string, id: string, input: string, kept: string[] | undefined, images: File[]) => {
-    calls.push({id, input, kept, images: images.map(file => file.name)});
+  const calls: any[] = [];
+  t.mock.method(AgentAPI, 'updatePendingCommand', async (_sessionId: string, id: string, change: any) => {
+    calls.push({id, change});
     return {code: 1, data: undefined};
   });
   const cancelled = t.mock.method(AgentAPI, 'cancelPendingCommand', async () => ({code: 1, data: undefined}));
@@ -189,8 +188,16 @@ test('update 走 PUT，带上保留的附件 id 与新图，不走撤销也不�
   try {
     await settle();
     const added = new File([new Uint8Array([9])], 'new.png', {type: 'image/png'});
-    assert.equal(await queue.update('p1', '改过的文本', ['a1'], [added]), true);
-    assert.deepEqual(calls, [{id: 'p1', input: '改过的文本', kept: ['a1'], images: ['new.png']}]);
+    assert.equal(await queue.update('p1', {
+      input: '改过的文本', keepAttachmentIds: ['a1'], images: [added],
+      requirePlan: true, modelId: '31', agentId: 7,
+    }), true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].id, 'p1');
+    assert.deepEqual(calls[0].change, {
+      input: '改过的文本', keepAttachmentIds: ['a1'], images: [added],
+      requirePlan: true, modelId: '31', agentId: 7,
+    });
     assert.equal(cancelled.mock.callCount(), 0, '原位修改不能退化成撤销');
   } finally {
     scope.stop();
@@ -208,7 +215,9 @@ test('update 失败时返回 false 并把后端文案暴露给面板', async t =
   const queue = scope.run(() => usePendingChatQueue(sessionId, () => false))!;
   try {
     await settle();
-    assert.equal(await queue.update('p1', '文本', undefined, []), false);
+    assert.equal(await queue.update('p1', {
+      input: '文本', images: [], requirePlan: false, modelId: null, agentId: null,
+    }), false);
     assert.equal(queue.error.value, '这条消息正在发送');
   } finally {
     scope.stop();
@@ -255,7 +264,30 @@ test('编辑提交：保留的图按对象引用翻成附件 id，新图才作�
   assert.match(body, /\.map\(item => item\.id\)/);
   assert.match(body, /images\.filter\(image => !editing\.restored\.some\(item => item\.file === image\)\)/,
     '回填进来的图不能再作为新图上传一次');
-  assert.match(body, /pendingQueue\.update\(editing\.id, text, keptIds, added\)/);
+  assert.match(body, /submitPendingEdit\(editing\.id, text, requirePlan, keptIds, added\)/);
+});
+
+test('编辑提交带上模型 / 执行体 / 计划模式，且与「发新消息」同一口径', () => {
+  const chatViewPath = fileURLToPath(new URL('../src/views/chat/ChatView.vue', import.meta.url));
+  const chatView = readFileSync(chatViewPath, 'utf8');
+  const useChatViewPath = fileURLToPath(new URL('../src/views/chat/useChatView.ts', import.meta.url));
+  const useChatView = readFileSync(useChatViewPath, 'utf8');
+
+  // 组件只负责算「保留哪些图」，模型/执行体的取值交给 useChatView 的唯一口径。
+  assert.match(chatView, /submitPendingEdit\(editing\.id, text, requirePlan, keptIds, added\)/);
+
+  const start = useChatView.indexOf('const submitPendingEdit');
+  assert.ok(start > 0, '缺 submitPendingEdit');
+  const body = useChatView.slice(start, useChatView.indexOf('\n  };', start));
+  assert.match(body, /requirePlan: requirePlan === true/);
+  assert.match(body, /modelId: resolveModelId\(\) \|\| null/,
+    '模型必须走 resolveModelId，否则编辑期间换的模型不生效');
+  assert.match(body, /agentId: toPositiveInt\(userConfig\.agentId, 0\) \|\| null/);
+
+  // 单一真源：buildCommand 也用同一个函数，别在发送路径上再写一遍三元表达式。
+  assert.match(useChatView, /const buildCommand = [\s\S]{0,400}?modelId: resolveModelId\(\)/);
+  assert.doesNotMatch(useChatView, /modelId: userConfig\.agentId \|\| localSelectedTeamId\.value/,
+    '模型选择规则只能在 resolveModelId 里写一次');
 });
 
 test('ChatInputArea：入队时把图片一起交出去，成功后清空已选附件', () => {

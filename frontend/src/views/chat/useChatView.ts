@@ -471,16 +471,24 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   );
 
   /**
+   * 发消息时该带哪个模型 —— 与后端 `effectiveCommand` 对齐的**唯一口径**：没指定 Agent 的
+   * 非协作会话，发 user_configs 绑定的模型（输入栏选择器的真源就是它）；选了 Agent 或处在
+   * 团队（协作）会话就不带 —— 前者由该 Agent 的预设驱动（后端对未绑/已删除硬报错），
+   * 后者强制由指挥者的预设驱动（协作模式下指挥者预设 otherwise 悬空）。
+   *
+   * <p>抽成函数是因为「发送」和「编辑待发送消息」必须算出同一个值，两份实现迟早会漂移。</p>
+   */
+  const resolveModelId = (): string => {
+    if (userConfig.agentId || localSelectedTeamId.value) return '';
+    const selected = workspace.selectedModelId.value;
+    return selected === null || selected === undefined || selected === '' ? '' : String(selected);
+  };
+
+  /**
    * 把输入区的界面事件翻译成请求命令。
    *
    * <p>界面层不知道 sessionId/workspaceId 这些上下文，由这里补齐；团队身份走会话绑定，
    * 不作为请求参数下发。</p>
-   *
-   * <p>模型选择规则（与后端 effectiveCommand 对齐）：没指定 Agent 的<b>非协作</b>会话，发
-   * user_configs 绑定的模型（输入栏选择器的真源就是它）；<b>选了 Agent 或处于团队（协作）
-   * 会话就不带 modelId</b> —— 前者由该 Agent 的预设模型驱动（后端对未绑/已删除硬报错），
-   * 后者强制由指挥者的预设驱动（协作模式下指挥者预设 otherwise 悬空）；协作模式里每个成员
-   * 子执行各用自己的预设（委派链路负责）。</p>
    */
   const buildCommand = (
     input: string,
@@ -491,9 +499,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       input,
       sessionId: toServerSessionId(localActiveId.value),
       workDir: '',
-      modelId: userConfig.agentId || localSelectedTeamId.value
-        ? ''
-        : workspace.selectedModelId.value ?? '',
+      modelId: resolveModelId(),
       workspaceId: Number(localActiveWorkspaceId.value ?? 0),
       agentId: Number(userConfig.agentId ?? 0),
       requirePlan: requirePlan === true,
@@ -655,6 +661,24 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   const handleQueueMessage = (text: string, requirePlan: boolean,
                               agentId: string | number | null | undefined, images: File[]) =>
     handleSendMessage(text, requirePlan, null, agentId, images ?? [], true);
+
+  /**
+   * 编辑态提交：把输入框内容原位写回队列里的那一条（`PUT`）。
+   *
+   * <p>模型 / 执行体 / 计划模式按「现在发一条新消息」的同一口径算（{@link resolveModelId}），
+   * 否则用户在编辑期间换了模型，队列里那条仍按旧模型派发 —— 界面上写着 A，实际跑的是 B。</p>
+   */
+  const submitPendingEdit = (pendingId: string, text: string, requirePlan: boolean,
+                                     keepAttachmentIds: string[] | undefined,
+                                     images: File[]): Promise<boolean> =>
+    pendingQueue.update(pendingId, {
+      input: text,
+      keepAttachmentIds,
+      images: images ?? [],
+      requirePlan: requirePlan === true,
+      modelId: resolveModelId() || null,
+      agentId: toPositiveInt(userConfig.agentId, 0) || null,
+    });
 
   /**
    * 重发一条「未发送」的提问。
@@ -932,6 +956,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       && !executionControls.resending.value && !executionControls.editTarget.value),
     pendingQueue,
     handleQueueMessage,
+    submitPendingEdit,
     executionControls,
     backgroundTasks,
     checklist,

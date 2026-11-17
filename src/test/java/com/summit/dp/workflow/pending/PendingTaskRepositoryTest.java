@@ -109,6 +109,37 @@ class PendingTaskRepositoryTest {
         assertEquals(PendingTaskStatus.PENDING, loaded.getStatus());
     }
 
+    /**
+     * 编辑能真的把配置改掉，**包括把模型/执行体清回「不指定」**。
+     *
+     * <p>这条必须走真库：`updateById` 的空值策略是「非 null 才写」，用它实现编辑时
+     * 「清空模型」永远落不了库，而内存替身整对象替换，根本察觉不到 —— 那正是假绿现场。</p>
+     */
+    @Test
+    void updateEditableWritesClearedModelAndAgentAsNull() {
+        long taskId = saveTask("待编辑", List.of());
+        PendingTask task = repository.findById(taskId).orElseThrow();
+
+        Instant now = Instant.now();
+        task.changeRequirePlan(false, now);
+        task.changeModel(null, now);
+        task.changeAgent(11L, now);
+        repository.updateEditable(task);
+
+        PendingTask reloaded = repository.findById(taskId).orElseThrow();
+        assertFalse(reloaded.isRequirePlan(), "计划模式必须真的被写回");
+        assertNull(reloaded.getModelId(), "清回「不指定」必须落成 NULL，不能被非 null 策略跳过");
+        assertEquals(11L, reloaded.getAgentId());
+        assertEquals("待编辑", reloaded.getInput(), "整笔覆盖不能把正文弄丢");
+    }
+
+    @Test
+    void updateEditableRejectsMissingRow() {
+        PendingTask ghost = PendingTask.enqueue(2107000000000000999L, SESSION, "不存在的行",
+                List.of(), 7L, 9L, 3L, false, Instant.now());
+        assertThrows(RuntimeException.class, () -> repository.updateEditable(ghost));
+    }
+
     @Test
     void earliestDispatchableSkipsTasksWaitingForTheUser() {
         long first = savePending();

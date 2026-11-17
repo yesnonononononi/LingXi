@@ -1,6 +1,6 @@
 import http from './interceptor';
 import type {Result} from './types';
-import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, ChatCommandReceipt, CreateAgentRequest, PageResult, PendingTaskSnapshot} from '../types/chat';
+import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, ChatCommandReceipt, CreateAgentRequest, PageResult, PendingTaskSnapshot, PendingTaskUpdate} from '../types/chat';
 import {isOk, toPositiveInt} from '../utils/api';
 import {toServerSessionId} from '../utils/ids';
 import {getApiBaseUrl, resolveApiUrl} from '../utils/apiConfig';
@@ -113,14 +113,19 @@ export class AgentAPI {
    *
    * <p>{@code keepAttachmentIds} 传 `undefined` 表示「附件不动」；传数组表示只保留列出的那些。
    * 这个区分不能省：把「不动」当成「全丢」会直接删掉用户刚传的图。</p>
+   *
+   * <p>模型 / 执行体 / 计划模式反过来是必填：空串表示「不指定」，缺字段会被服务端拒绝 ——
+   * 静默当成「不改」会让界面上显示的模型与真正派发出去的模型不一致。</p>
    */
   static updatePendingCommand(sessionId: string, pendingId: string,
-                              input: string, keepAttachmentIds: string[] | undefined,
-                              images: File[]): Promise<Result<void>> {
+                              change: PendingTaskUpdate): Promise<Result<void>> {
     const form = new FormData();
-    appendFormValue(form, 'input', input);
-    for (const id of keepAttachmentIds ?? []) form.append('keepAttachmentIds', id);
-    for (const image of images) form.append('image', image, image.name);
+    appendFormValue(form, 'input', change.input);
+    for (const id of change.keepAttachmentIds ?? []) form.append('keepAttachmentIds', id);
+    for (const image of change.images) form.append('image', image, image.name);
+    form.append('modelId', change.modelId === null ? '' : String(change.modelId));
+    form.append('agentId', change.agentId === null ? '' : String(change.agentId));
+    form.append('requirePlan', String(change.requirePlan === true));
     return http.put<unknown, Result<void>>(
       `/a/completion/${sessionId}/pending/${encodeURIComponent(pendingId)}`, form);
   }

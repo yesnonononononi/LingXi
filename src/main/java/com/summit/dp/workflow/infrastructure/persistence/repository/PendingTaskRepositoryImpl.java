@@ -127,6 +127,24 @@ public class PendingTaskRepositoryImpl extends AbstractRepository<PendingTask, P
                 .eq(PendingTaskPO::getSessionId, sessionId));
     }
 
+    @Override
+    public void updateEditable(PendingTask task) {
+        PendingTaskPO row = toPO(task);
+        int changed = pendingTaskMapper.update(null, new LambdaUpdateWrapper<PendingTaskPO>()
+                .eq(PendingTaskPO::getId, task.getId())
+                .set(PendingTaskPO::getInputText, row.getInputText())
+                .set(PendingTaskPO::getAttachments, row.getAttachments())
+                .set(PendingTaskPO::getModelId, row.getModelId())
+                .set(PendingTaskPO::getAgentId, row.getAgentId())
+                .set(PendingTaskPO::getRequirePlan, row.getRequirePlan())
+                .set(PendingTaskPO::getStatus, row.getStatus())
+                .set(PendingTaskPO::getFailure, row.getFailure())
+                .set(PendingTaskPO::getUpdatedAt, row.getUpdatedAt()));
+        if (changed == 0) {
+            throw new ClientException("待发送消息不存在或已发送");
+        }
+    }
+
     private String writeAttachments(List<PendingAttachment> attachments) {
         try {
             return objectMapper.writeValueAsString(attachments == null ? List.of() : attachments);

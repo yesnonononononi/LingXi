@@ -850,29 +850,22 @@ const cancelQueuedEdit = (): void => {
 };
 
 /**
- * 编辑态提交：只改文本与被保留/新增的图片，不新增队列条目。
+ * 编辑态提交：只改正文、被保留的图片与新增图片，外加模型 / 执行体 / 计划模式。
  *
- * <p>`requirePlan` 与 `agentId` 无法在这里改 —— PUT 的契约只有正文与附件；
- * 用户若改了计划模式或执行体，这次提交不会带上，界面上也因此不做暗示。</p>
+ * <p>保留判定用**对象引用**（`images.includes(item.file)`）：输入区把回填进来的 `File`
+ * 原样还回来，删掉的那张就不在列表里；按文件名匹配会被同名图串掉。</p>
  */
-const handleUpdateQueuedMessage = async (text: string, _requirePlan: boolean,
+const handleUpdateQueuedMessage = async (text: string, requirePlan: boolean,
                                           _agentId: string | number | null | undefined,
                                           images: File[]): Promise<boolean> => {
   const editing = editingPending.value;
   if (!editing) return false;
   const keptIds = editing.restored.filter(item => images.includes(item.file)).map(item => item.id);
   const added = images.filter(image => !editing.restored.some(item => item.file === image));
-  const updated = await pendingQueue.update(editing.id, text, keptIds, added);
+  const updated = await submitPendingEdit(editing.id, text, requirePlan, keptIds, added);
   if (updated) editingPending.value = null;
   return updated;
 };
-
-/** 被编辑的那条从队列消失（被派发 / 被别处撤销）时退出编辑态，别让输入框悬在一个不存在的目标上。 */
-watch(() => pendingQueue.snapshot.value, snapshot => {
-  const editing = editingPending.value;
-  if (!editing || !snapshot) return;
-  if (!snapshot.entries.some(entry => entry.id === editing.id)) editingPending.value = null;
-});
 
 
 const logOpening = ref(false);
@@ -905,6 +898,7 @@ const {
   canQueueMessage,
   pendingQueue,
   handleQueueMessage,
+  submitPendingEdit,
   localSelectedTeamId,
   isWorkspaceModalOpen,
   isTeamModalOpen,
@@ -1001,6 +995,13 @@ const {
   handleTouchStart,
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef, subSessionPanelVisible: computed(() => !previewPanelVisible.value) });
+
+/** 被编辑的那条从队列消失（被派发 / 被别处撤销）时退出编辑态，别让输入框悬在一个不存在的目标上。 */
+watch(() => pendingQueue.snapshot.value, snapshot => {
+  const editing = editingPending.value;
+  if (!editing || !snapshot) return;
+  if (!snapshot.entries.some(entry => entry.id === editing.id)) editingPending.value = null;
+});
 
 /**
  * 窗口级快捷键分发：只把已有入口再调一次，不新增任何业务分支。
