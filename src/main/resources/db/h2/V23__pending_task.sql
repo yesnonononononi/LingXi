@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS pending_task (
     require_plan   BOOLEAN      NOT NULL DEFAULT FALSE,
     status         VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     failure        VARCHAR(512) NULL,
-    created_at     TIMESTAMP    NOT NULL,
-    updated_at     TIMESTAMP    NOT NULL
+    created_at     TIMESTAMP(3) NOT NULL,
+    updated_at     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_task_session ON pending_task (session_id, id);
