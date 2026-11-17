@@ -74,6 +74,14 @@ import {
 
 const props = defineProps<{
   isSending?: boolean;
+  /**
+   * 手工压缩（`/compact`）在途。
+   *
+   * <p>压缩是一次几十秒级的模型调用，界面必须给出「正在压」的反馈，否则用户只会重复点，
+   * 而后端第二次必然以「在执行中 / 用量不足 20%」拒绝，看着像坏了。同时在途期间禁止发送：
+   * 后端要写回会话上下文正文，此时再起一轮就是在和压缩抢同一份上下文。</p>
+   */
+  isCompacting?: boolean;
   queueMessage?: (text: string, requirePlan: boolean, agentId: string | number | null | undefined, images: File[]) => Promise<boolean>;
   /**
    * 编辑态下的提交：把输入框内容原位写回队列里的**那一条**（`PUT`），而不是发新消息。
@@ -1274,6 +1282,8 @@ type SpeechRecognitionInstance = {
 // ====== Send 按钮与 Vue Bits SlingButton 状态映射 ======
 const canSend = computed(() => {
   if (props.reasoningEffortPending) return false;
+  // 压缩在途时不给发送态：上下文正要被改写，此时发出的一轮读到的可能是压缩前的旧正文。
+  if (props.isCompacting) return false;
   if (attachments.value.length > 0) return true;
   if (pastedDocuments.value.length > 0) return true;
   const text = inputText.value.trim();
@@ -1557,7 +1567,7 @@ const handleSend = () => {
   const text = draft.text.trim();
   const images = attachments.value.map(attachment => attachment.file);
   const docs = pastedDocuments.value;
-  if ((!text && images.length === 0 && docs.length === 0) || props.reasoningEffortPending || queueSubmitting.value) return;
+  if ((!text && images.length === 0 && docs.length === 0) || props.reasoningEffortPending || queueSubmitting.value || props.isCompacting) return;
 
   const combinedText = composeMessageWithDocuments(text, docs);
 
@@ -1721,7 +1731,8 @@ defineExpose({
             :key="cmd.id"
             :ref="el => (commandRowRefs[idx] = el as HTMLButtonElement | null)"
             type="button"
-            class="z-[1] relative flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors text-xs select-none w-full text-left bg-transparent border-0 outline-none"
+            :disabled="cmd.id === 'compact' && isCompacting"
+            class="z-[1] relative flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors text-xs select-none w-full text-left bg-transparent border-0 outline-none disabled:cursor-not-allowed disabled:opacity-60"
             @mouseenter="activeCommandIndex = idx"
             @click="selectCommand(cmd)"
           >
@@ -1729,7 +1740,7 @@ defineExpose({
               {{ cmd.name }}
             </span>
             <span class="truncate" :class="MUTED">
-              {{ cmd.desc }}
+              {{ cmd.id === 'compact' && isCompacting ? t('chat.compact.loading') : cmd.desc }}
             </span>
           </button>
         </div>
@@ -1817,6 +1828,16 @@ defineExpose({
       </p>
       <p v-if="promptOptimization.isOptimizing.value" role="status" class="text-xs text-lx-muted">
         {{ t('chat.optimizePrompt.loading') }}
+      </p>
+      <!-- 压缩在途：没有这行用户就只剩一个「点了没反应」的输入区，然后反复点 -->
+      <p
+        v-if="isCompacting"
+        role="status"
+        data-testid="chat-compact-loading"
+        class="flex items-center gap-1.5 text-xs text-lx-muted"
+      >
+        <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+        {{ t('chat.compact.loading') }}
       </p>
       <p v-if="promptOptimization.error.value" role="alert" class="text-xs text-red-500">
         {{ promptOptimization.error.value }}

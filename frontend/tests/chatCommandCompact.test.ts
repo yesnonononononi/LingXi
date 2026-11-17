@@ -26,6 +26,7 @@ import {
 
 const COMMAND_PARSER = 'src/utils/chatCommand.ts';
 const INPUT_AREA = 'src/components/chat/ChatInputArea.vue';
+const AGENT_API = 'src/services/agent.ts';
 
 const MUTATIONS: MutationTable = {
   // 注回缺陷：带正文也照常执行（正文被静默丢弃）
@@ -43,6 +44,16 @@ const MUTATIONS: MutationTable = {
     assert.ok(source.includes("id: 'compact',"), '补丁锚点失效：找不到 compact 菜单项');
     return source.replace("id: 'compact',", "id: 'compact-typo',");
   },
+  // 注回缺陷：压缩沿用实例默认超时（服务端压完写回了，客户端却把结果丢弃）
+  'compact-default-timeout': source => {
+    assert.ok(source.includes('{ timeout: COMPACT_TIMEOUT_MS },'), '补丁锚点失效：找不到压缩超时实参');
+    return source.replace('{ timeout: COMPACT_TIMEOUT_MS },', 'undefined,');
+  },
+  // 注回缺陷：压缩在途照样允许发送（与写回上下文的操作抢同一份正文）
+  'no-compact-gate': source => {
+    assert.ok(source.includes('if (props.isCompacting) return false;'), '补丁锚点失效：找不到发送闸门');
+    return source.replace('if (props.isCompacting) return false;', 'void 0;');
+  },
 };
 
 const PARSER_MUTATIONS: MutationTable = {
@@ -51,6 +62,10 @@ const PARSER_MUTATIONS: MutationTable = {
 };
 const INPUT_AREA_MUTATIONS: MutationTable = {
   'menu-missing': MUTATIONS['menu-missing']!,
+  'no-compact-gate': MUTATIONS['no-compact-gate']!,
+};
+const AGENT_MUTATIONS: MutationTable = {
+  'compact-default-timeout': MUTATIONS['compact-default-timeout']!,
 };
 
 const mutation = readMutationFlag();
@@ -125,7 +140,7 @@ test('整段 `/compact` 是一个命令 token：允许清空输入框', async ()
 test('前端提交前真的调用了正文校验（源码守卫）', () => {
   const source = readMutantSource(INPUT_AREA, mutation, INPUT_AREA_MUTATIONS);
   assert.ok(source.includes('hasUnexpectedCommandBody('), '提交路径必须调用统一的正文校验');
-  const guard = extractBlock(source, 'if (hasUnexpectedCommandBody(');
+  const guard = extractIfBlock(source, 'if (hasUnexpectedCommandBody(');
   assert.ok(guard.includes('return'), '校验命中必须终止本次提交');
   assert.ok(guard.includes('focusInput()'), '拒绝后应把焦点还给输入框，正文留在原位');
 });
@@ -139,18 +154,48 @@ test('菜单 id 与白名单不漂移：compact 两边都有', async () => {
   assert.ok(source.includes("emit('compactContext')"), '菜单项必须派发 compactContext，由宿主调接口');
 });
 
-/** 取出以 `const x = ` 开头的函数体（到括号配平为止）。 */
-function extractBlock(source: string, anchor: string): string {
+test('压缩请求必须显式放宽超时：默认 10s 会在服务端已写回后丢弃结果', () => {
+  const source = readMutantSource(AGENT_API, mutation, AGENT_MUTATIONS);
+  const call = extractIfBlock(source, 'static async compactContext(');
+  assert.ok(call.includes('timeout: COMPACT_TIMEOUT_MS'),
+    '压缩是同步模型调用，用实例默认超时会让「已压完并写回」的结果被客户端判定为失败');
+  assert.ok(source.includes('const COMPACT_TIMEOUT_MS'), '超时预算必须是命名常量，不能在调用点写魔数');
+});
+
+test('压缩在途：有可见 loading，且发送被挡住', () => {
+  const source = readMutantSource(INPUT_AREA, mutation, INPUT_AREA_MUTATIONS);
+  assert.ok(source.includes('data-testid="chat-compact-loading"'), '压缩在途必须有可见状态行');
+  assert.ok(source.includes("t('chat.compact.loading')"), 'loading 文案必须走 i18n');
+  assert.ok(source.includes('if (props.isCompacting) return false;'),
+    '压缩在途不得进入可发送态：此时上下文正在被改写');
+  assert.ok(source.includes('props.isCompacting) return;'), 'Enter 提交路径同样要被闸门挡住');
+});
+
+/** 取出 `if (...) { ... }` 的**语句块**（先配平圆括号，再配平大括号）。 */
+function extractIfBlock(source: string, anchor: string): string {
   const start = source.indexOf(anchor);
   assert.ok(start >= 0, `锚点不存在: ${anchor}`);
-  let depth = 0;
-  for (let i = start; i < source.length; i += 1) {
-    const ch = source[i];
-    if (ch === '{') depth += 1;
-    if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, i + 1);
+  // 必须先把实参的圆括号配平：锚点后面第一对 `{}` 往往就是实参对象字面量，
+  // 直接按大括号判块会把它当成语句块，于是「块里没有 return」这种假红。
+  let paren = 0;
+  let index = start + anchor.length - 1;
+  for (; index < source.length; index += 1) {
+    if (source[index] === '(') paren += 1;
+    else if (source[index] === ')') {
+      paren -= 1;
+      if (paren === 0) break;
     }
   }
-  assert.fail(`花括号未配平: ${anchor}`);
+  assert.ok(index < source.length, `圆括号未配平: ${anchor}`);
+  const open = source.indexOf('{', index);
+  assert.ok(open >= index, `找不到语句块: ${anchor}`);
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  return assert.fail(`花括号未配平: ${anchor}`);
 }

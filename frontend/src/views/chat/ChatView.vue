@@ -316,6 +316,7 @@
             <ChatInputArea
               ref="inputAreaRef"
               :isSending="isSending"
+              :isCompacting="isCompacting"
               :queueMessage="canQueueMessage ? handleQueueMessage : undefined"
               :updateQueuedMessage="editingPending ? handleUpdateQueuedMessage : undefined"
               :editingQueued="!!editingPending"
@@ -854,6 +855,7 @@ const {
   handleToggleTheme,
   handleSendMessage,
   handleCompactContext,
+  isCompacting,
   handleStopGeneration,
   decideToolCall,
   answerChoices,

@@ -941,11 +941,25 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   };
 
   /**
+   * 手工压缩在途的会话 id（null = 没有压缩在跑）。
+   *
+   * <p>按会话记录而不是布尔值：压缩是几十秒级的模型调用，期间用户完全可能切到别的会话，
+   * 布尔值会把「别的会话在压」显示成「当前会话在压」，还会让当前会话的输入被莫名禁用。</p>
+   */
+  const compactingSessionId = ref<string | number | null>(null);
+  const isCompacting = computed(() => compactingSessionId.value != null
+    && String(compactingSessionId.value) === String(currentActiveSession.value?.id ?? ''));
+
+  /**
    * 手工压缩当前会话上下文（输入栏 `/compact`）。
    *
    * <p><b>为什么把回执直接写进响应式存储</b>：后端返回的就是「最新用量 + 重算后的审计」。
    * 等 SSE 推送会有一段空窗（面板看着还是压缩前那份），而压缩是用户显式动作，
    * 没有即时反馈等于让他怀疑按钮没生效。</p>
+   *
+   * <p><b>为什么要占住一个在途标记</b>：压缩不是瞬时的，没有 loading 的话用户只会反复点，
+   * 而后端第二次必然以「会话在执行中」或「用量不足 20%」拒绝 —— 看着像功能坏了。
+   * 同一时刻只放一次压缩过去，重入直接忽略。</p>
    *
    * <p>失败一律以异常/错误文案返回给用户：不静默、不乐观改写本地状态 ——
    * 后端拒绝的理由（用量不足 20%、会话在执行中、没有可压缩的执行）只有它知道。</p>
@@ -960,8 +974,11 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       window.alert(t('chat.compact.busy'));
       return;
     }
+    if (compactingSessionId.value != null) return;
+    const sessionId = session.id;
+    compactingSessionId.value = sessionId;
     try {
-      const result = await AgentAPI.compactContext(session.id);
+      const result = await AgentAPI.compactContext(sessionId);
       if (!result || !isOk(result.code)) {
         throw new Error(result?.errMsg || t('chat.compact.failed'));
       }
@@ -983,6 +1000,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : t('chat.compact.failed'));
+    } finally {
+      // 只清自己那一份：期间用户切会话并压了另一个，不能把对方的标记抹掉。
+      if (String(compactingSessionId.value) === String(sessionId)) compactingSessionId.value = null;
     }
   };
 
@@ -1099,6 +1119,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 发送与生命周期控制
     handleSendMessage,
     handleCompactContext,
+    /** 当前会话的手工压缩是否在途：输入区凭它显示 loading 并挡住发送。 */
+    isCompacting,
     handleStopGeneration: sending.handleStopGeneration,
     decideToolCall,
     answerChoices,

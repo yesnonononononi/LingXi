@@ -688,6 +688,7 @@ export const messages: MessageSchema = {
       compact: {
         noSession: '当前没有会话可压缩',
         busy: '会话正在执行中，请等本轮结束或停止后再压缩上下文',
+        loading: '正在压缩上下文，请稍候…',
         failed: '压缩上下文失败',
         skipped: '上下文未压缩',
       },
@@ -2348,6 +2349,7 @@ export const messages: MessageSchema = {
       compact: {
         noSession: 'There is no conversation to compact',
         busy: 'This conversation is still running — wait for the turn to finish or stop it first',
+        loading: 'Compacting the conversation context…',
         failed: 'Failed to compact the conversation context',
         skipped: 'Context was not compacted',
       },

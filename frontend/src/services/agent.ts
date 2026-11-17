@@ -49,6 +49,15 @@ const toChatForm = (command: ChatCommand): FormData => {
 };
 
 
+/**
+ * `/compact` 的单次超时预算。
+ *
+ * <p>压缩是一次同步模型调用，耗时由上下文规模决定，10s 的实例默认值一定会误判；
+ * 上限取得比任何一档压缩模型的响应上限都宽，只用来兜住「服务端真挂住」，
+ * 不参与正常路径的判定。</p>
+ */
+const COMPACT_TIMEOUT_MS = 300_000;
+
 /** 6. Agent 对话 API (对应后端 Agent/Chat Controller: /a/completion) */
 export class AgentAPI {
   static async chatLimits(): Promise<Result<{ maxImages: number }>> {
@@ -69,9 +78,22 @@ export class AgentAPI {
    *
    * <p>不带任何参数 —— 命令不接受正文，后端也会拒绝带正文的调用（前端与后端各校验一次，
    * 只在前端拦的话，绕过界面直接打接口就没人管了）。</p>
+   *
+   * <p><b>必须显式放宽超时</b>：压缩是一次真实模型调用，大上下文几十秒很正常，
+   * 而实例默认是 10s。客户端先判超时并不会让服务端停下 —— 它照旧压完并写回会话上下文，
+   * 于是用户看到「失败」、用量却已经变了，再点一次又因为「不足 20%」被拒，
+   * 两条现象互相矛盾，还会被当成压缩坏了。</p>
+   *
+   * <p>也不取 `timeout: 0`：{@code /resume} 用 0 是因为它跑到终态并且有停止入口；
+   * 压缩没有中途取消的手段，无限期挂着只会让界面永远停在「压缩中」。
+   * 这里给一个比任何一档压缩模型调用都长的上限，把「等不到」收敛成可重试的失败。</p>
    */
   static async compactContext(sessionId: string | number): Promise<Result<ContextCompactionResult>> {
-    return http.post<unknown, Result<ContextCompactionResult>>(`/a/completion/${sessionId}/compact`);
+    return http.post<unknown, Result<ContextCompactionResult>>(
+      `/a/completion/${sessionId}/compact`,
+      null,
+      { timeout: COMPACT_TIMEOUT_MS },
+    );
   }
 
   static async resume(sessionId: string | number, supplement?: { turnId: string; requestId: string; input: string }): Promise<Result<string>> {
