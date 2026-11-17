@@ -450,6 +450,9 @@
               <button type="button" class="nav-leaf depth-3" data-doc="cat-sidebar">侧边栏 (sidebar)</button>
               <button type="button" class="nav-leaf depth-3" data-doc="cat-input">输入框 (input)</button>
               <button type="button" class="nav-leaf depth-3" data-doc="cat-component">组件与动效 (component)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-approval-card">审批卡片 (approvalCard)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-plan-card">计划卡片 (planCard)</button>
+              <button type="button" class="nav-leaf depth-3" data-doc="cat-choice-card">选择卡片 (choiceCard)</button>
             </div>
           </div>
         </div>
@@ -539,7 +542,7 @@
             '  <thead><tr><th style="width:150px">名称</th><th style="width:100px">类型</th><th style="width:70px">必填</th><th>描述</th></tr></thead>',
             '  <tbody>',
             '    <tr><td>id</td><td>string</td><td>是</td><td>唯一标识。<br><span class="sub-note">示例值："custom-ocean-theme"</span></td></tr>',
-            '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">component</span></td></tr>',
+            '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">component</span> <span class="badge-cyan">approvalCard</span> <span class="badge-cyan">planCard</span> <span class="badge-cyan">choiceCard</span></td></tr>',
             '    <tr><td>name</td><td>string</td><td>是</td><td>设置页卡片展示名称。</td></tr>',
             '    <tr><td>hostApiVersion</td><td>string</td><td>是</td><td>宿主契约版本，当前固定为 <span class="code-inline">"1"</span>。</td></tr>',
             '    <tr><td>version</td><td>string</td><td>否</td><td>语义化版本号，默认 <span class="code-inline">"1.0.0"</span>。</td></tr>',
@@ -578,7 +581,8 @@
             '<table class="feishu-table">',
             '  <tbody>',
             '    <tr><td class="kv-key">样式挂载</td><td>每个类目分配独立 <span class="code-inline">&lt;style data-lx-pack="&lt;category&gt;"&gt;</span>，切换或停用时整块移除</td></tr>',
-            '    <tr><td class="kv-key">叠加优先级</td><td><span class="badge-cyan">theme</span> &rarr; <span class="badge-cyan">font</span> &rarr; <span class="badge-cyan">background</span> &rarr; <span class="badge-cyan">sidebar</span> &rarr; <span class="badge-cyan">input</span> &rarr; <span class="badge-cyan">component</span></td></tr>',
+            '    <tr><td class="kv-key">叠加优先级</td><td><span class="badge-cyan">theme</span> &rarr; <span class="badge-cyan">font</span> &rarr; <span class="badge-cyan">background</span> &rarr; <span class="badge-cyan">sidebar</span> &rarr; <span class="badge-cyan">input</span> &rarr; <span class="badge-cyan">component</span> &rarr; <span class="badge-cyan">approvalCard</span> &rarr; <span class="badge-cyan">planCard</span> &rarr; <span class="badge-cyan">choiceCard</span></td></tr>',
+            '    <tr><td class="kv-key">卡片插槽</td><td>内置扩展包可通过 <span class="code-inline">slots.interactionCard</span> 替换审批、计划与选择卡片组件；本地纯资源包可通过 <span class="code-inline">pack.css</span> 覆盖卡片锚点样式</td></tr>',
             '    <tr><td class="kv-key">明暗双态</td><td>暗色变量写在 <span class="code-inline">:root</span>，亮色变量写在 <span class="code-inline">html.light, html[data-theme="light"]</span></td></tr>',
             '  </tbody>',
             '</table>'
@@ -682,6 +686,60 @@
             '</table>',
             '<h2>pack.css 示例</h2>',
             '<div class="code-block"><div class="code-bar"><span>component / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>.codex-text-arrival {\n  animation-duration: 120ms !important;\n}\n\n.stream-thinking-content.is-running {\n  animation-duration: 160ms !important;\n}</pre></div>'
+          ].join('')
+        },
+        'cat-approval-card': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '审批卡片 (approvalCard)'],
+          title: '审批卡片 (approvalCard)',
+          updated: '最后更新于 2026-11-17',
+          lead: '审批卡片用于定制命令执行（COMMAND）与文件改动（FILE_WRITE）审批界面，支持未决态停靠在输入框上方或已决态留驻消息流。',
+          html: [
+            '<h2>开发方式</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td class="kv-key">本地纯资源包</td><td>在 <span class="code-inline">pack.css</span> 中使用 <span class="code-inline">[data-testid="pending-interaction-dock"]</span> 与 <span class="code-inline">[data-approval-id]</span> 锚点覆盖样式。</td></tr>',
+            '    <tr><td class="kv-key">源码 / 内置 Slot</td><td>注册 <span class="code-inline">slots.interactionCard.approvalCard</span>，并复用 <span class="code-inline">useApprovalCardModel(props)</span> 获取状态、意图、命令正文与 <span class="code-inline">approve / reject</span> 动作。</td></tr>',
+            '    <tr><td class="kv-key">Props 契约</td><td><span class="code-inline">{ promptCard, sessionId, isDark, docked }</span>（<span class="code-inline">docked=true</span> 时表示位于底部停靠面板内）。</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>approvalCard / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>[data-testid="pending-interaction-dock"] section {\n  border-color: rgba(245, 158, 11, 0.45) !important;\n  background: linear-gradient(135deg, rgba(254, 243, 199, 0.92), rgba(255, 255, 255, 0.96)) !important;\n}\n\nhtml.dark [data-testid="pending-interaction-dock"] section {\n  background: linear-gradient(135deg, rgba(120, 53, 15, 0.42), rgba(9, 9, 11, 0.95)) !important;\n}</pre></div>'
+          ].join('')
+        },
+        'cat-plan-card': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '计划卡片 (planCard)'],
+          title: '计划卡片 (planCard)',
+          updated: '最后更新于 2026-11-17',
+          lead: '计划卡片保留在消息流渲染区，用于展示实施计划标题、Markdown 正文预览以及批准或跳转对话讨论。',
+          html: [
+            '<h2>开发方式</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td class="kv-key">本地纯资源包</td><td>在 <span class="code-inline">pack.css</span> 中通过 <span class="code-inline">[data-testid="plan-card"]</span> 定制卡片背景、纹理与按钮样式。</td></tr>',
+            '    <tr><td class="kv-key">源码 / 内置 Slot</td><td>注册 <span class="code-inline">slots.interactionCard.planCard</span>，复用 <span class="code-inline">usePlanCardModel(props)</span> 与 <span class="code-inline">useChatInputFocus()</span>，即可拥有批准与「去聊天里说」完整能力。</td></tr>',
+            '    <tr><td class="kv-key">i18n 常用键</td><td><span class="code-inline">chat.plan.approveAction</span>（批准）、<span class="code-inline">chat.plan.goToChat</span>（去聊天里说）、<span class="code-inline">chat.plan.previewAction</span>（预览计划书）。</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>planCard / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>[data-testid="plan-card"] {\n  border-color: rgba(16, 185, 129, 0.45) !important;\n  background-image: linear-gradient(to right, rgba(16, 185, 129, 0.08) 1px, transparent 1px),\n    linear-gradient(to bottom, rgba(16, 185, 129, 0.08) 1px, transparent 1px) !important;\n  background-size: 18px 18px !important;\n}</pre></div>'
+          ].join('')
+        },
+        'cat-choice-card': {
+          breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '选择卡片 (choiceCard)'],
+          title: '选择卡片 (choiceCard)',
+          updated: '最后更新于 2026-11-17',
+          lead: '选择卡片用于多题确认、单选与自由补充输入，支持在底部 Dock 中展示 Markdown 题干与固定上限滚动框。',
+          html: [
+            '<h2>开发方式</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td class="kv-key">本地纯资源包</td><td>在 <span class="code-inline">pack.css</span> 中使用 <span class="code-inline">[data-testid="choice-question-group"]</span>、<span class="code-inline">[data-choice-option]</span> 与 <span class="code-inline">[data-testid="choice-submit-all"]</span> 锚点覆盖样式。</td></tr>',
+            '    <tr><td class="kv-key">源码 / 内置 Slot</td><td>注册 <span class="code-inline">slots.interactionCard.choiceGroup</span>，复用 <span class="code-inline">useChoiceGroupModel(props)</span> 获取多题草稿、自动跳题与批量提交状态机。</td></tr>',
+            '    <tr><td class="kv-key">Props 契约</td><td><span class="code-inline">{ entries, responseId, expectedCount, isDark, docked }</span>。</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>pack.css 示例</h2>',
+            '<div class="code-block"><div class="code-bar"><span>choiceCard / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>[data-testid="choice-question-group"] [data-choice-option][aria-checked="true"] {\n  border-color: #06b6d4 !important;\n  background: rgba(6, 182, 212, 0.12) !important;\n}\n\n[data-testid="choice-submit-all"] {\n  background: linear-gradient(90deg, #06b6d4, #6366f1) !important;\n  color: #ffffff !important;\n}</pre></div>'
           ].join('')
         }
       };
