@@ -2,6 +2,8 @@ package com.summit.dp.personalization.api.request;
 
 import lombok.Data;
 
+import java.util.Map;
+
 /** 未传字段保持原值，空字符串表示清除可选设置。 */
 @Data
 public class PersonalizationRequest {
@@ -12,4 +14,6 @@ public class PersonalizationRequest {
     // agent的通用名字
     private String commonAgentName;
     private String customInstruction;
+    // 动作名 -> 组合键文本；null 表示本次不改快捷键
+    private Map<String, String> shortcuts;
 }

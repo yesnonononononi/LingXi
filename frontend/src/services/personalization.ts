@@ -1,5 +1,6 @@
 import http from './interceptor';
 import type {Result} from './types';
+import type {ShortcutMap} from '../utils/shortcuts';
 
 export interface PersonalizationVO {
   id: string | number;
@@ -7,6 +8,8 @@ export interface PersonalizationVO {
   commonAgentName: string | null;
   replyStyle: string;
   customInstruction: string | null;
+  /** 动作名 -> 组合键文本；从未配置过快捷键的老档返回 null，由前端回落默认值。 */
+  shortcuts?: Record<string, string> | null;
 }
 
 export interface ReplyStyleOption {
@@ -14,7 +17,10 @@ export interface ReplyStyleOption {
   label: string;
 }
 
-export type PersonalizationDraft = Pick<PersonalizationVO, 'title' | 'commonAgentName' | 'replyStyle' | 'customInstruction'>;
+/** 提交时快捷键始终是完整的一份（缺项已由 normalizeShortcutMap 补默认值）。 */
+export type PersonalizationDraft = Pick<PersonalizationVO, 'title' | 'commonAgentName' | 'replyStyle' | 'customInstruction'> & {
+  shortcuts: ShortcutMap;
+};
 
 export class PersonalizationAPI {
   static current(): Promise<Result<PersonalizationVO>> {

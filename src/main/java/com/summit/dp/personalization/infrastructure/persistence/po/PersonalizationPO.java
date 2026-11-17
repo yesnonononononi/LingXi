@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.Map;
 
 /** 保留独立时间字段，JSON 重载后仍能沿用创建时间。 */
 @Data
@@ -23,6 +24,7 @@ public class PersonalizationPO {
     private String title;
     private String commonAgentName;
     private String customInstruction;
+    private Map<String, String> shortcuts;
     private Instant createAt;
     private Instant updateAt;
 }

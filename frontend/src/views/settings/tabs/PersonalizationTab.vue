@@ -2,14 +2,33 @@
 import {computed, nextTick, ref, watch} from 'vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import {usePersonalizationTab} from './usePersonalizationTab';
+import {
+  DEFAULT_SHORTCUTS,
+  SHORTCUT_ACTIONS,
+  SHORTCUT_SCOPES,
+  formatShortcutLabel,
+  shortcutFromEvent,
+  validateShortcutText,
+  type ShortcutAction,
+} from '../../../utils/shortcuts';
 
-const { copy, config, styles, draft, loading, saving, error, saved, dirty, load, save } = usePersonalizationTab();
+const { copy, config, styles, draft, loading, saving, error, saved, dirty, shortcutConflicts, shortcutsBlocked, load, save } = usePersonalizationTab();
 const styleOptions = computed(() => styles.value.map(style => ({ value: style.value, label: copy.value.styles[style.value] || style.label })));
 const editing = ref<'title' | 'commonAgentName' | null>(null);
 const identityInput = ref<HTMLInputElement | null>(null);
 const instructionInput = ref<HTMLTextAreaElement | null>(null);
 const editingInstruction = ref(false);
 let instructionBeforeEdit = '';
+/** 展示用的平台名：macOS 走符号，其它平台走 Ctrl/Alt 全称。 */
+const platform = typeof window === 'undefined' ? undefined : window.electronAPI?.platform;
+/** 正在录制的动作；null 表示没有在录制。 */
+const recording = ref<ShortcutAction | null>(null);
+/** 录制过程中按下的键不被接受时的提示（就地显示，不打断其它行的编辑）。 */
+const recorderProblem = ref('');
+
+const conflictText = computed<string>(() => shortcutConflicts.value
+  .map(conflict => `${conflict.actions.map(action => copy.value.shortcutLabels[action]).join(' / ')} → ${formatShortcutLabel(conflict.text, platform)}`)
+  .join('；'));
 
 function syncInstructionHeight() {
   const element = instructionInput.value;
@@ -43,6 +62,56 @@ function cancelInstruction() {
   draft.customInstruction = instructionBeforeEdit;
   editingInstruction.value = false;
   nextTick(syncInstructionHeight);
+}
+
+function displayShortcut(action: ShortcutAction): string {
+  return formatShortcutLabel(draft.shortcuts[action], platform);
+}
+
+function startRecording(action: ShortcutAction) {
+  recorderProblem.value = '';
+  recording.value = action;
+}
+
+function cancelRecording() {
+  recording.value = null;
+  recorderProblem.value = '';
+}
+
+/**
+ * 录制按键。
+ *
+ * <p>必须 `stopPropagation`：窗口级监听着同一份绑定，不拦住的话录制 Mod+B 会顺手把侧边栏收起来。
+ * 只按下修饰键时返回 null，不当成一个组合键（否则第一次按 Ctrl 就被记成 Ctrl）。</p>
+ */
+function onRecorderKeydown(action: ShortcutAction, event: KeyboardEvent) {
+  if (recording.value !== action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const bare = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+  if (bare && event.key === 'Escape') {
+    cancelRecording();
+    return;
+  }
+  const text = shortcutFromEvent(event);
+  if (!text) return;
+  const problem = validateShortcutText(text, SHORTCUT_SCOPES[action]);
+  if (problem) {
+    recorderProblem.value = copy.value.shortcutProblems[problem];
+    return;
+  }
+  draft.shortcuts[action] = text;
+  cancelRecording();
+}
+
+function resetShortcut(action: ShortcutAction) {
+  draft.shortcuts[action] = DEFAULT_SHORTCUTS[action];
+  cancelRecording();
+}
+
+function resetAllShortcuts() {
+  for (const action of SHORTCUT_ACTIONS) draft.shortcuts[action] = DEFAULT_SHORTCUTS[action];
+  cancelRecording();
 }
 
 async function submit() {
@@ -106,9 +175,43 @@ async function submit() {
           />
         </section>
 
+        <section class="personalization-card space-y-3">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <span class="text-xs font-semibold text-lx-primary-soft">{{ copy.shortcuts }}</span>
+              <p class="mt-1.5 text-xs leading-relaxed text-lx-muted">{{ copy.shortcutsHint }}</p>
+            </div>
+            <button type="button" data-test="shortcut-reset-all" class="personalization-input shrink-0 px-3 cursor-pointer" @click="resetAllShortcuts">{{ copy.shortcutResetAll }}</button>
+          </div>
+          <div v-for="action in SHORTCUT_ACTIONS" :key="action" class="identity-row">
+            <span class="text-xs text-lx-primary-soft">
+              {{ copy.shortcutLabels[action] }}
+              <em class="ml-1.5 not-italic text-lx-faint">{{ copy.shortcutScopes[SHORTCUT_SCOPES[action]] }}</em>
+            </span>
+            <div class="identity-control flex items-center gap-2">
+              <button
+                type="button"
+                :data-test="`shortcut-${action}`"
+                :aria-label="copy.shortcutLabels[action]"
+                :aria-pressed="recording === action"
+                :class="[
+                  'personalization-input flex-1 min-w-0 cursor-pointer text-center tabular-nums',
+                  recording === action ? 'border-blue-400 ring-2 ring-blue-200/60 dark:border-blue-400/70 dark:ring-blue-500/20' : ''
+                ]"
+                @click="recording === action ? cancelRecording() : startRecording(action)"
+                @blur="recording === action && cancelRecording()"
+                @keydown="onRecorderKeydown(action, $event)"
+              >{{ recording === action ? copy.shortcutRecording : displayShortcut(action) }}</button>
+              <button type="button" :aria-label="`${copy.shortcutReset} ${copy.shortcutLabels[action]}`" class="shrink-0 text-xs text-lx-muted underline cursor-pointer" @click="resetShortcut(action)">{{ copy.shortcutReset }}</button>
+            </div>
+          </div>
+          <p v-if="recorderProblem" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ recorderProblem }}</p>
+          <p v-if="shortcutConflicts.length" role="alert" data-test="shortcut-conflict" class="text-xs text-red-600 dark:text-red-400">{{ copy.shortcutConflict }}：{{ conflictText }}</p>
+        </section>
+
         <div class="flex items-center justify-end gap-3 pt-2">
           <span v-if="saved && !dirty" role="status" class="text-xs text-lx-muted">{{ copy.saved }}</span>
-          <button type="submit" :disabled="!dirty || saving || loading" class="rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">{{ saving ? copy.saving : copy.save }}</button>
+          <button type="submit" :disabled="!dirty || saving || loading || shortcutsBlocked" class="rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">{{ saving ? copy.saving : copy.save }}</button>
         </div>
       </fieldset>
     </form>

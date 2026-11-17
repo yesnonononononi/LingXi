@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -86,6 +87,43 @@ class PersonalizationApiTest {
         assertEquals(before, Files.readString(path));
         assertThrows(ClientException.class, () -> service.update(null));
         assertThrows(ClientException.class, () -> service.findById(null));
+    }
+
+    @Test
+    void shortcutsPersistAndReloadWithExactText() throws Exception {
+        Path path = directory.resolve("personalization.json");
+        PersonalizationServiceImpl service = new PersonalizationServiceImpl(new PersonalizationRepositoryImpl(path.toString()));
+        service.current();
+        MockMvc mvc = createMvc(service);
+        mvc.perform(post("/personalization/update").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"id\":\"1\",\"shortcuts\":{\"toggleSidebar\":\"Mod+B\",\"togglePreview\":\"Mod+\\\\\","
+                        + "\"sendMessage\":\"Enter\",\"insertNewline\":\"Shift+Enter\"}}"))
+                .andExpect(jsonPath("$.code").value(1));
+        createMvc(new PersonalizationServiceImpl(new PersonalizationRepositoryImpl(path.toString())))
+                .perform(get("/personalization/current"))
+                .andExpect(jsonPath("$.data.shortcuts.toggleSidebar").value("Mod+B"))
+                .andExpect(jsonPath("$.data.shortcuts.togglePreview").value("Mod+\\"))
+                .andExpect(jsonPath("$.data.shortcuts.sendMessage").value("Enter"))
+                .andExpect(jsonPath("$.data.shortcuts.insertNewline").value("Shift+Enter"));
+    }
+
+    @Test
+    void conflictingOrBlankShortcutsAreRejectedWithoutTouchingTheFile() throws Exception {
+        Path path = directory.resolve("personalization.json");
+        PersonalizationServiceImpl service = new PersonalizationServiceImpl(new PersonalizationRepositoryImpl(path.toString()));
+        service.current();
+        String before = Files.readString(path);
+        // 归一化后同一组合（大小写 / 修饰键顺序不同）必须判为冲突
+        ClientException duplicate = assertThrows(ClientException.class, () -> service.update(PersonalizationCommand.builder()
+                .id(1L).shortcuts(Map.of("toggleSidebar", "Mod+Shift+K", "newSession", "shift+mod+k")).build()));
+        assertTrue(duplicate.getMessage().contains("快捷键冲突"));
+        assertThrows(ClientException.class, () -> service.update(PersonalizationCommand.builder()
+                .id(1L).shortcuts(Map.of("toggleSidebar", "   ")).build()));
+        assertThrows(ClientException.class, () -> service.update(PersonalizationCommand.builder()
+                .id(1L).shortcuts(Map.of(" ", "Mod+B")).build()));
+        assertThrows(ClientException.class, () -> service.update(PersonalizationCommand.builder()
+                .id(1L).shortcuts(Map.of("toggleSidebar", "Mod+" + "X".repeat(60))).build()));
+        assertEquals(before, Files.readString(path));
     }
 
     private MockMvc createMvc(PersonalizationServiceImpl service) {

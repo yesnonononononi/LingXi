@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 
 /** 个性化设置独立落盘，避免与模型和通用配置互相覆盖。 */
 @Repository
@@ -48,6 +49,7 @@ public class PersonalizationRepositoryImpl extends AbstractJsonRepository<Person
                  .title(po.getTitle())
                  .commonAgentName(po.getCommonAgentName())
                  .customInstruction(po.getCustomInstruction())
+                 .shortcuts(po.getShortcuts() == null ? null : new LinkedHashMap<>(po.getShortcuts()))
                  .createAt(po.getCreateAt())
                  .updateAt(po.getUpdateAt())
                  .build();
@@ -61,6 +63,7 @@ public class PersonalizationRepositoryImpl extends AbstractJsonRepository<Person
                 .title(model.getTitle())
                 .commonAgentName(model.getCommonAgentName())
                 .customInstruction(model.getCustomInstruction())
+                .shortcuts(model.getShortcuts() == null ? null : new LinkedHashMap<>(model.getShortcuts()))
                 .createAt(model.getCreateAt())
                 .updateAt(model.getUpdateAt())
                 .build();

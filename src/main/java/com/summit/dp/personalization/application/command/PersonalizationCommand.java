@@ -3,6 +3,8 @@ package com.summit.dp.personalization.application.command;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.Map;
+
 /**
  * Personalization 应用层命令（生成骨架）
  * <p>骨架仅承载聚合标识，业务字段按需在生成后补充。</p>
@@ -17,4 +19,6 @@ public class PersonalizationCommand {
     // agent的通用名字
     private String commonAgentName;
     private String customInstruction;
+    /** 动作名 -> 组合键文本，校验与去重在领域模型里完成。 */
+    private Map<String, String> shortcuts;
 }

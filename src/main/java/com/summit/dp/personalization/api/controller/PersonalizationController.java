@@ -47,6 +47,7 @@ public class PersonalizationController {
                 .title(request.getTitle())
                 .commonAgentName(request.getCommonAgentName())
                 .customInstruction(request.getCustomInstruction())
+                .shortcuts(request.getShortcuts())
                 .build();
     }
 

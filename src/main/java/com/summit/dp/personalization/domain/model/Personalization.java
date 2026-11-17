@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * Personalization 领域模型（生成骨架）
@@ -21,6 +22,8 @@ public class Personalization {
     // agent的通用名字
     private String commonAgentName;
     private String customInstruction;
+    // 动作名 -> 组合键文本；动作名单由前端持有，此处只做存储与去重校验
+    private Map<String, String> shortcuts;
     @Builder.Default
     private final Instant createAt = Instant.now();
     private Instant updateAt;
@@ -41,6 +44,11 @@ public class Personalization {
     public void changeCustomInstruction(String customInstruction) {
         throwIf(customInstruction == null, "自定义指令不能为 null，清除指令请传空字符串");
         this.customInstruction = customInstruction;
+        this.updateAt = Instant.now();
+    }
+
+    public void changeShortcuts(Map<String, String> shortcuts) {
+        this.shortcuts = ShortcutBindings.of(shortcuts);
         this.updateAt = Instant.now();
     }
 

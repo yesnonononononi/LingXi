@@ -47,6 +47,7 @@ import {
   type PastedDocument
 } from '../../utils/pastedDocument';
 import {t} from '../../i18n';
+import {useShortcuts} from '../../composables/useShortcuts';
 import {
   isAccessModeMismatch,
   resolveAccessBadgeKey,
@@ -120,6 +121,9 @@ const props = defineProps<{
     message?: string;
   } | null;
 }>();
+
+/** 发送键来自个性化配置（默认 Enter），与设置页共用同一份运行时绑定。 */
+const shortcutRuntime = useShortcuts();
 
 const emit = defineEmits<{
   (e: 'openModelEditor'): void;
@@ -1432,7 +1436,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
     return;
   }
 
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  // 发送键来自个性化配置（默认 Enter）：只拦「正好等于发送组合」的那一次按键。
+  // 换行不用拦 —— 只要不是发送组合，textarea 天然换行；反手拦一下才会把换行吃掉。
+  if (!e.isComposing && shortcutRuntime.matches('sendMessage', e)) {
     e.preventDefault();
     handleSend();
   }

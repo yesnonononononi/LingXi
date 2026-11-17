@@ -3,6 +3,8 @@ package com.summit.dp.personalization.application.convert;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
 import com.summit.dp.personalization.domain.model.Personalization;
 
+import java.util.LinkedHashMap;
+
 public final class PersonalizationConvert {
     private PersonalizationConvert() {}
 
@@ -13,6 +15,7 @@ public final class PersonalizationConvert {
         vo.setTitle(model.getTitle());
         vo.setCommonAgentName(model.getCommonAgentName());
         vo.setCustomInstruction(model.getCustomInstruction());
+        vo.setShortcuts(model.getShortcuts() == null ? null : new LinkedHashMap<>(model.getShortcuts()));
         return vo;
     }
 }

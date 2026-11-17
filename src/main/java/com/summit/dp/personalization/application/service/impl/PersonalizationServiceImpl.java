@@ -58,6 +58,8 @@ public class PersonalizationServiceImpl implements PersonalizationService {
         Personalization model = repository.findById(command.getId()).orElseThrow(ClientException::new);
         if (command.getCommonAgentName() != null) model.changeCommonAgentName(command.getCommonAgentName());
         if (command.getCustomInstruction() != null) model.changeCustomInstruction(command.getCustomInstruction());
+        // 快捷键整体替换而不是逐项合并：界面上本来就是一整份表单，逐项合并会让「删掉某个动作」无法表达。
+        if (command.getShortcuts() != null) model.changeShortcuts(command.getShortcuts());
         if (command.getReplyStyle() != null) model.changeReplyStyle(style);
         if (command.getTitle() != null) model.changeTitle(command.getTitle());
         repository.updateById(model);
