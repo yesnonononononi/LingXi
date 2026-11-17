@@ -25,6 +25,207 @@ const DEFAULT_MENU_LABELS = Object.freeze({
 });
 const MENU_LABEL_KEYS = Object.keys(DEFAULT_MENU_LABELS);
 
+const DEFAULT_INTERACTIVE_SELECTOR = [
+  'a',
+  'button',
+  'input:not([type="hidden"])',
+  'textarea',
+  'select',
+  'summary',
+  '[contenteditable="true"]',
+  '[contenteditable=""]',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="tab"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[role="combobox"]',
+  '[role="textbox"]',
+  '[role="searchbox"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
+const DEFAULT_CLICK_SELECTOR = [
+  'button',
+  'a',
+  'summary',
+  'input[type="button"]',
+  'input[type="submit"]',
+  'input[type="reset"]',
+  'input[type="checkbox"]',
+  'input[type="radio"]',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="tab"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
+function buildQueryScript({customSelector = '', maxItems = 40} = {}) {
+  return `(() => {
+    const customSelector = ${JSON.stringify(customSelector)};
+    const defaultSelector = ${JSON.stringify(DEFAULT_INTERACTIVE_SELECTOR)};
+    const maxItems = ${maxItems};
+    const targetSelector = customSelector || defaultSelector;
+    const nodes = Array.from(document.querySelectorAll(targetSelector));
+    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    const normalizeText = value => String(value || '').trim().replace(/\\s+/g, ' ');
+    const escapeAttr = value => String(value).replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
+    const isUnique = sel => {
+      try {
+        return document.querySelectorAll(sel).length === 1;
+      } catch {
+        return false;
+      }
+    };
+    const buildSelectorHint = el => {
+      const tag = el.tagName.toLowerCase();
+      if (el.id) {
+        const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(el.id) : el.id;
+        const idSel = '#' + escapedId;
+        if (isUnique(idSel)) return idSel;
+      }
+      const testId = el.getAttribute('data-testid') || el.getAttribute('data-test');
+      if (testId) {
+        const attr = el.hasAttribute('data-testid') ? 'data-testid' : 'data-test';
+        const sel = '[' + attr + '="' + escapeAttr(testId) + '"]';
+        if (isUnique(sel)) return sel;
+      }
+      const name = el.getAttribute('name');
+      if (name) {
+        const sel = tag + '[name="' + escapeAttr(name) + '"]';
+        if (isUnique(sel)) return sel;
+      }
+      const ariaLabel = el.getAttribute('aria-label');
+      if (ariaLabel && ariaLabel.length <= 60) {
+        const sel = tag + '[aria-label="' + escapeAttr(ariaLabel) + '"]';
+        if (isUnique(sel)) return sel;
+      }
+      const parts = [];
+      let cur = el;
+      for (let depth = 0; cur && cur.nodeType === 1 && depth < 3; depth++) {
+        const curTag = cur.tagName.toLowerCase();
+        if (curTag === 'html' || curTag === 'body') break;
+        const parent = cur.parentElement;
+        if (!parent) {
+          parts.unshift(curTag);
+          break;
+        }
+        const sameTagSiblings = Array.from(parent.children).filter(s => s.tagName === cur.tagName);
+        const segment = sameTagSiblings.length > 1
+          ? curTag + ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')'
+          : curTag;
+        parts.unshift(segment);
+        const candidate = parts.join(' > ');
+        if (isUnique(candidate)) return candidate;
+        cur = parent;
+      }
+      return parts.join(' > ') || tag;
+    };
+    const resolveLabel = el => {
+      if (el.labels && el.labels.length > 0) {
+        const txt = normalizeText(el.labels[0].innerText || el.labels[0].textContent);
+        if (txt) return txt.slice(0, 80);
+      }
+      const labelledBy = el.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        const refText = labelledBy
+          .split(/\\s+/)
+          .map(id => document.getElementById(id))
+          .filter(Boolean)
+          .map(node => normalizeText(node.innerText || node.textContent))
+          .filter(Boolean)
+          .join(' ');
+        if (refText) return refText.slice(0, 80);
+      }
+      return '';
+    };
+    const resolveValue = (el, tag, type) => {
+      if (tag === 'input') {
+        if (type === 'password') return el.value ? '***' : '';
+        if (type === 'checkbox' || type === 'radio') return '';
+        return String(el.value || '').slice(0, 100);
+      }
+      if (tag === 'textarea') return String(el.value || '').slice(0, 100);
+      if (tag === 'select') {
+        const opt = el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+        return normalizeText(opt ? (opt.textContent || opt.value) : el.value).slice(0, 100);
+      }
+      if (el.isContentEditable) return normalizeText(el.innerText || el.textContent).slice(0, 100);
+      return '';
+    };
+    const inViewNodes = [];
+    const outViewNodes = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      const inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;
+      if (inViewport || customSelector) inViewNodes.push({el, inViewport});
+      else outViewNodes.push({el, inViewport});
+    }
+    const ordered = customSelector ? inViewNodes : inViewNodes.concat(outViewNodes);
+    const items = [];
+    for (let i = 0; i < ordered.length && items.length < maxItems; i++) {
+      const {el, inViewport} = ordered[i];
+      const tag = el.tagName.toLowerCase();
+      const type = el.getAttribute('type') || '';
+      const ariaChecked = el.getAttribute('aria-checked');
+      const ariaSelected = el.getAttribute('aria-selected');
+      const ariaExpanded = el.getAttribute('aria-expanded');
+      const item = {
+        index: items.length,
+        tag,
+        role: el.getAttribute('role') || '',
+        id: el.id || '',
+        className: typeof el.className === 'string' ? el.className.trim() : '',
+        type,
+        name: el.getAttribute('name') || '',
+        placeholder: el.getAttribute('placeholder') || '',
+        ariaLabel: el.getAttribute('aria-label') || '',
+        label: resolveLabel(el),
+        href: el.getAttribute('href') || '',
+        value: resolveValue(el, tag, type),
+        disabled: Boolean(el.disabled || el.getAttribute('aria-disabled') === 'true'),
+        inViewport,
+        selectorHint: buildSelectorHint(el),
+        text: normalizeText(el.innerText || el.textContent).slice(0, 100),
+      };
+      if (tag === 'input' && (type === 'checkbox' || type === 'radio')) {
+        item.checked = Boolean(el.checked);
+      } else if (ariaChecked === 'true' || ariaChecked === 'false') {
+        item.checked = ariaChecked === 'true';
+      }
+      if (ariaSelected === 'true' || ariaSelected === 'false') {
+        item.selected = ariaSelected === 'true';
+      }
+      if (ariaExpanded === 'true' || ariaExpanded === 'false') {
+        item.expanded = ariaExpanded === 'true';
+      }
+      items.push(item);
+    }
+    const bodyText = normalizeText(document.body?.innerText || '').slice(0, 1500);
+    return {
+      url: window.location.href,
+      title: document.title,
+      totalMatched: nodes.length,
+      visibleCount: ordered.length,
+      elements: items,
+      textExcerpt: bodyText,
+    };
+  })()`;
+}
+
 function normalizeMenuLabels(request) {
   const labels = {...DEFAULT_MENU_LABELS};
   if (!request || typeof request !== 'object') return labels;
@@ -713,18 +914,20 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       applyLayout(state);
       return publish(state);
     },
-    click: async ({selector, text, index = 0, tabId} = {}) => {
+    click: async ({selector, text, index = 0, hoverOnly = false, tabId} = {}) => {
       const rawSelector = typeof selector === 'string' ? selector.trim() : '';
       const rawText = typeof text === 'string' ? text.trim() : '';
       if (!rawSelector && !rawText) throw new Error('selector 与 text 不能同时为空');
       const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+      const shouldHoverOnly = Boolean(hoverOnly);
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
       const script = `(() => {
         const rawSelector = ${JSON.stringify(rawSelector)};
         const rawText = ${JSON.stringify(rawText)};
         const targetIndex = ${targetIndex};
-        const baseSelector = rawSelector || 'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"], [tabindex]';
+        const shouldHoverOnly = ${shouldHoverOnly};
+        const baseSelector = rawSelector || ${JSON.stringify(DEFAULT_CLICK_SELECTOR)};
         let nodes = Array.from(document.querySelectorAll(baseSelector));
         if (rawText) {
           const needle = rawText.toLowerCase();
@@ -743,10 +946,21 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         const el = candidates[targetIndex];
         if (!el) return { ok: false, error: '未找到匹配元素: ' + (rawSelector || rawText), matchedCount: nodes.length, visibleCount: visible.length };
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-        el.focus?.();
-        el.click();
+        const rect = el.getBoundingClientRect();
+        const centerX = Math.round(rect.left + rect.width / 2);
+        const centerY = Math.round(rect.top + rect.height / 2);
+        if (shouldHoverOnly) {
+          el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY }));
+          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false, cancelable: false, clientX: centerX, clientY: centerY }));
+        } else {
+          el.focus?.();
+          el.click();
+        }
         return {
           ok: true,
+          hoverOnly: shouldHoverOnly,
+          centerX,
+          centerY,
           matchedCount: nodes.length,
           visibleCount: visible.length,
           tag: el.tagName.toLowerCase(),
@@ -757,7 +971,14 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           currentTitle: document.title,
         };
       })()`;
-      const result = await withAgentControl(tab, () => runTabScript(tab, script));
+      const result = await withAgentControl(tab, async () => {
+        const res = await runTabScript(tab, script);
+        if (res?.ok && shouldHoverOnly && typeof tab.contents?.sendInputEvent === 'function') {
+          tab.contents.sendInputEvent({type: 'mouseMove', x: res.centerX, y: res.centerY});
+          await new Promise(resolve => setTimeout(resolve, 80));
+        }
+        return res;
+      });
       if (!result?.ok) throw new Error(result?.error || '点击元素失败');
       return {...result, tabId: tab.id, url: result.currentUrl || tab.url, title: result.currentTitle || tab.title};
     },
@@ -1028,41 +1249,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const customSelector = typeof selector === 'string' && selector.trim() ? selector.trim() : '';
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
-      const script = `(() => {
-        const customSelector = ${JSON.stringify(customSelector)};
-        const maxItems = ${maxItems};
-        const targetSelector = customSelector || 'a, button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]';
-        const nodes = Array.from(document.querySelectorAll(targetSelector));
-        const items = [];
-        for (let i = 0; i < nodes.length && items.length < maxItems; i++) {
-          const el = nodes[i];
-          const style = window.getComputedStyle(el);
-          if (style.display === 'none' || style.visibility === 'hidden') continue;
-          const rect = el.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0) continue;
-          items.push({
-            index: items.length,
-            tag: el.tagName.toLowerCase(),
-            id: el.id || '',
-            className: typeof el.className === 'string' ? el.className.trim() : '',
-            type: el.getAttribute('type') || '',
-            name: el.getAttribute('name') || '',
-            placeholder: el.getAttribute('placeholder') || '',
-            ariaLabel: el.getAttribute('aria-label') || '',
-            href: el.getAttribute('href') || '',
-            disabled: Boolean(el.disabled),
-            text: (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 100),
-          });
-        }
-        const bodyText = (document.body?.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 1500);
-        return {
-          url: window.location.href,
-          title: document.title,
-          totalMatched: nodes.length,
-          elements: items,
-          textExcerpt: bodyText,
-        };
-      })()`;
+      const script = buildQueryScript({customSelector, maxItems});
       const result = await withAgentControl(tab, () => runTabScript(tab, script));
       return {...result, tabId: tab.id};
     },
@@ -1127,4 +1314,4 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     },
   };
 }
-module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, normalizeMenuLabels, DEFAULT_MENU_LABELS, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS, VIEW_BG_COLORS};
+module.exports = {registerProjectPagePreview, normalizeTargetUrl, normalizeTargetOrigin, normalizeGeneration, normalizeLayout, normalizeMenuLabels, DEFAULT_MENU_LABELS, DEFAULT_INTERACTIVE_SELECTOR, DEFAULT_CLICK_SELECTOR, buildQueryScript, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS, VIEW_BG_COLORS};

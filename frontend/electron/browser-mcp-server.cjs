@@ -29,13 +29,14 @@ const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'browser_click',
-    description: 'Click an element in the built-in browser page by CSS selector (supports .className, #id) and/or visible text.',
+    description: 'Click (or hover over) an element in the built-in browser page by CSS selector (supports .className, #id) and/or visible text.',
     inputSchema: {
       type: 'object',
       properties: {
         selector: {type: 'string', description: 'Optional CSS selector (e.g. ".submit-btn", "#login", "button").'},
         text: {type: 'string', description: 'Optional visible text substring to match clickable elements (useful when classes are obfuscated or Tailwind-based).'},
         index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
+        hoverOnly: {type: 'boolean', description: 'Move mouse over the element without clicking (triggers CSS :hover and mouseenter/mouseover for dropdown menus or tooltips). Defaults to false.'},
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
       },
     },
@@ -58,7 +59,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'browser_query',
-    description: 'Inspect visible interactive elements (classes, ids, text, placeholders) and page text excerpt.',
+    description: 'Inspect visible interactive elements (roles, states, values, labels, viewport visibility, selector hints, text) and page text excerpt.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -76,6 +77,7 @@ const TOOL_DEFINITIONS = Object.freeze([
       properties: {
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
         maxWidth: {type: 'integer', description: 'Resize width cap in pixels. Defaults to 1280.'},
+        savePath: {type: 'string', description: 'Optional absolute PNG file path (e.g. inside the workspace) where the screenshot should be saved.'},
       },
     },
   },

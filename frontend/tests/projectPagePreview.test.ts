@@ -5,7 +5,7 @@ import {EventEmitter} from 'node:events';
 import {useProjectPagePreview, validateProjectPageUrl} from '../src/composables/useProjectPagePreview';
 import {t as translate} from '../src/i18n';
 import type {ProjectPageState, ProjectPageTab} from '../src/types/projectPagePreview';
-const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS, VIEW_BG_COLORS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
+const {normalizeTargetOrigin, normalizeTargetUrl, normalizeLayout, registerProjectPagePreview, DEFAULT_INTERACTIVE_SELECTOR, DEFAULT_CLICK_SELECTOR, buildQueryScript, CHANNELS, PROJECT_PAGE_LOAD_TIMEOUT_MS, VIEW_BG_COLORS} = createRequire(import.meta.url)('../electron/project-page-preview.cjs');
 const ADDRESS = 'http://localhost:5173/';
 const OTHER_ADDRESS = 'https://example.com/other';
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -725,4 +725,79 @@ test('Agent browser_fill 优先走原生 insertText 与 sendInputEvent，失焦�
   assert.equal(cdpText, 'world');
   assert.equal(fallbackFilled.valueLength, 5);
   assert.equal(detached, true);
+});
+
+test('Agent browser_query 覆盖常见交互角色与状态字段，并按上限生成脚本', async t => {
+  for (const token of ['[role="tab"]', '[role="menuitem"]', '[role="option"]', '[role="checkbox"]', '[role="switch"]', 'summary']) {
+    assert.ok(DEFAULT_INTERACTIVE_SELECTOR.includes(token), `默认查询选择器缺少 ${token}`);
+    assert.ok(DEFAULT_CLICK_SELECTOR.includes(token), `默认点击选择器缺少 ${token}`);
+  }
+  const script = buildQueryScript({maxItems: 25});
+  assert.ok(script.includes('selectorHint'));
+  assert.ok(script.includes('inViewport'));
+  assert.ok(script.includes('resolveLabel'));
+  assert.ok(script.includes('resolveValue'));
+
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 400, height: 300}});
+  const view = h.views[0] as unknown as {
+    webContents: {
+      executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
+    };
+  };
+  let capturedScript = '';
+  view.webContents.executeJavaScript = async expr => {
+    if (expr.includes('__lingxi_agent_overlay_host__')) return undefined;
+    capturedScript = expr;
+    return {
+      url: ADDRESS,
+      title: 'Test',
+      totalMatched: 2,
+      visibleCount: 2,
+      elements: [{index: 0, tag: 'button', role: '', inViewport: true, selectorHint: '#submit'}],
+      textExcerpt: 'Test',
+    };
+  };
+  const res = await h.registration.automation.query({limit: 150});
+  assert.ok(capturedScript.includes('const maxItems = 100;'));
+  assert.equal(res.visibleCount, 2);
+  assert.equal(res.elements[0].selectorHint, '#submit');
+});
+
+test('Agent browser_click 支持 hoverOnly 参数触发 mouseMove 悬停而不点击', async t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 400, height: 300}});
+  const view = h.views[0]! as unknown as {
+    webContents: {
+      sendInputEvent?: (event: Record<string, unknown>) => void;
+      executeJavaScript: (script: string, userGesture?: boolean) => Promise<unknown>;
+    };
+  };
+  const inputEvents: Array<Record<string, unknown>> = [];
+  let executedHoverScript = '';
+  view.webContents.sendInputEvent = event => {
+    inputEvents.push(event);
+  };
+  view.webContents.executeJavaScript = async script => {
+    if (script.includes('__lingxi_agent_overlay_host__')) return undefined;
+    executedHoverScript = script;
+    return {
+      ok: true,
+      hoverOnly: true,
+      centerX: 120,
+      centerY: 60,
+      matchedCount: 1,
+      visibleCount: 1,
+      tag: 'div',
+      id: 'menu',
+      className: 'nav-item',
+      text: '产品',
+    };
+  };
+  const hovered = await h.registration.automation.click({selector: '.nav-item', hoverOnly: true});
+  assert.equal(hovered.hoverOnly, true);
+  assert.ok(executedHoverScript.includes('const shouldHoverOnly = true;'));
+  assert.deepEqual(inputEvents, [{type: 'mouseMove', x: 120, y: 60}]);
 });
