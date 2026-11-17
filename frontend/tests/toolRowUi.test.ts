@@ -151,3 +151,29 @@ test('formatThoughtTitle：后端各种「思考」标题统一成深度思考�
   setPreference('zh-CN');
   await nextTick();
 });
+
+test('parseToolDiffFromResult：纯文本错误提示不误报 JSON 解析告警，畸形 JSON 对象仍告警', async () => {
+  const { parseToolDiffFromResult } = await import('../src/utils/toolDiff');
+  const warnings: unknown[][] = [];
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  try {
+    assert.deepEqual(
+      parseToolDiffFromResult('插入位置的锚点不能为空', 'toolDiff'),
+      { plusLines: null, minusLines: null },
+    );
+    assert.deepEqual(
+      parseToolDiffFromResult(JSON.stringify({ outcome: 'ERROR', output: '写入文件失败: 文件写入类型不能为空' }), 'toolDiff'),
+      { plusLines: null, minusLines: null },
+    );
+    assert.equal(warnings.length, 0, '纯文本错误不应触发 JSON 解析告警');
+
+    assert.deepEqual(
+      parseToolDiffFromResult('{brokenJson', 'toolDiff'),
+      { plusLines: null, minusLines: null },
+    );
+    assert.equal(warnings.length, 1, '真正的畸形 JSON 对象仍应输出解析告警');
+  } finally {
+    console.warn = origWarn;
+  }
+});

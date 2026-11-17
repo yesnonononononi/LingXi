@@ -83,9 +83,12 @@ const EMPTY_STAT: ToolDiffStat = { plusLines: null, minusLines: null };
 export function parseToolDiffFromResult(result: unknown, context = 'toolDiff'): ToolDiffStat {
   // 原实现只处理字符串 result（对象形态历史上不会出现），此处保持同一口径。
   if (typeof result !== 'string') return { ...EMPTY_STAT };
+  const trimmed = result.trim();
+  // 工具失败或返回纯文本说明时，不可能是 JSON 对象，直接返回未知以避免误报解析告警。
+  if (!trimmed.startsWith('{')) return { ...EMPTY_STAT };
 
-  // 统一走 utils/json.ts 的 parseJsonSafe：失败时 console.warn，不再 `catch {}` 静默吞掉。
-  const obj = parseJsonSafe<Record<string, unknown> | null>(result, null, context);
+  // 统一走 utils/json.ts 的 parseJsonSafe：仅对真正的畸形 JSON 对象输出告警，不再 `catch {}` 静默吞掉。
+  const obj = parseJsonSafe<Record<string, unknown> | null>(trimmed, null, context);
   if (!obj || typeof obj !== 'object') return { ...EMPTY_STAT };
 
   // 历史 rawOutput 把工具原始结果放在 output，实时结果则直接是编辑摘要。
