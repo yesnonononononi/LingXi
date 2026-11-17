@@ -150,6 +150,49 @@ class SessionDeleteCascadeTest {
         verifyNoInteractions(images, executions, contexts);
     }
 
+    @Test
+    void deleteAllPurgesAllSessionsLeafFirst() {
+        SessionRepository sessions = mock(SessionRepository.class);
+        SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
+        SessionAggregateService aggregate = aggregate(sessions, guard);
+        when(sessions.findAllIds()).thenReturn(TREE);
+
+        int count = aggregate.deleteAll();
+
+        assertEquals(2, count);
+        InOrder order = inOrder(guard, sessions, executions);
+        order.verify(guard).requireNoRunningExecution(TREE);
+        order.verify(sessions).deleteByIds(List.of(12L));
+        order.verify(executions).deleteBySessions(List.of(12L));
+        order.verify(sessions).deleteByIds(List.of(11L));
+        order.verify(executions).deleteBySessions(List.of(11L));
+    }
+
+    @Test
+    void deleteAllWithNoSessionsDoesNothing() {
+        SessionRepository sessions = mock(SessionRepository.class);
+        SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
+        SessionAggregateService aggregate = aggregate(sessions, guard);
+        when(sessions.findAllIds()).thenReturn(List.of());
+
+        assertEquals(0, aggregate.deleteAll());
+        verifyNoInteractions(guard, executions, messages);
+    }
+
+    @Test
+    void deleteAllRejectedWhenAnyExecutionIsRunning() {
+        SessionRepository sessions = mock(SessionRepository.class);
+        SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
+        SessionAggregateService aggregate = aggregate(sessions, guard);
+        when(sessions.findAllIds()).thenReturn(TREE);
+        doThrow(new ClientException("会话仍在执行中，请先停止后再删除"))
+                .when(guard).requireNoRunningExecution(TREE);
+
+        assertThrows(ClientException.class, aggregate::deleteAll);
+        verify(sessions, never()).deleteByIds(anyList());
+        verifyNoInteractions(executions, messages);
+    }
+
     private SessionAggregateService aggregate(SessionRepository sessions, SessionDeletionGuard guard) {
         return new SessionAggregateService(sessions, messages, turns, guard,
                 new SessionNodeDeletion(sessions, purger), mock(ApplicationEventPublisher.class));

@@ -138,6 +138,11 @@ public class SessionServiceImpl implements SessionService {
     }
 
     @Override
+    public Result<Integer> clearAll() {
+        return Result.success(sessionAggregateService.deleteAll());
+    }
+
+    @Override
     public Result<PageResult<SessionVO>> list(Integer page, Integer pageSize) {
         int current = page == null || page < 1 ? 1 : page;
         int size = pageSize == null || pageSize < 1 ? 10 : Math.min(pageSize, 100);

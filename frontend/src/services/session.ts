@@ -78,6 +78,14 @@ export class SessionAPI {
   }
 
   /**
+   * 清空全部会话及其附属执行、检查点与文件编辑记录
+   * 对应后端 @PostMapping("/session/clear")
+   */
+  static async clear(): Promise<Result<number>> {
+    return http.post<any, Result<number>>('/session/clear');
+  }
+
+  /**
    * 按 ID 查询单个会话元数据
    * 对应后端 @GetMapping("/{id}")
    */

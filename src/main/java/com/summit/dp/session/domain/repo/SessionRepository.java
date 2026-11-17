@@ -57,6 +57,9 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
      */
     List<Long> resolveTreeIds(Long id);
 
+    /** 查询全部会话 id（含子会话），用于整库清空。 */
+    List<Long> findAllIds();
+
     /**
      * 从候选里挑出**仍然存在**的会话 id（一次 {@code IN} 查询）。
      *

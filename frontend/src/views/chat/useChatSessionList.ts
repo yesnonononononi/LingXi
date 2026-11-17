@@ -213,24 +213,17 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     }
   };
 
-  // 清空历史对话：汇总删除结果，仅移除删除成功的条目并如实提示（禁止无条件报成功）
+  // 清空历史对话：调用后端整库清空接口，避免仅删当前页 100 条或并发删除抢锁失败
   const handleClearSessions = async () => {
     const ids = localSessions.value.map(s => s.id);
-    if (ids.length === 0) return;
-    const results = await Promise.all(
-      ids.map(async id => ({ id, ok: await chatApi.deleteSession(id) })),
-    );
-    const failedIds = new Set(results.filter(r => !r.ok).map(r => r.id));
-    results.filter(result => result.ok).forEach(result => applicationSessions.forget(result.id));
-    const okCount = ids.length - failedIds.size;
-    localSessions.value = localSessions.value.filter(s => failedIds.has(s.id));
-    if (localActiveId.value && !failedIds.has(localActiveId.value)) {
+    const result = await chatApi.clearSessions();
+    if (result.ok) {
+      ids.forEach(id => applicationSessions.forget(id));
+      localSessions.value = [];
       localActiveId.value = null;
-    }
-    if (failedIds.size === 0) {
-            window.alert(t('chat.view.clearedAll', { count: okCount }));
+      window.alert(t('chat.view.clearedAll', { count: result.count > 0 ? result.count : ids.length }));
     } else {
-      window.alert(t('chat.view.partialCleared', { ok: okCount, fail: failedIds.size }));
+      window.alert(t('chat.view.deleteSessionFailed'));
     }
   };
 

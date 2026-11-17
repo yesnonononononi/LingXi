@@ -166,6 +166,13 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
                 .stream().map(SessionPO::getId).toList();
     }
 
+    @Override
+    public List<Long> findAllIds() {
+        return sessionMapper.selectList(new LambdaQueryWrapper<SessionPO>()
+                        .select(SessionPO::getId))
+                .stream().map(SessionPO::getId).toList();
+    }
+
     /**
      * 按主键删掉这批会话行。
      *

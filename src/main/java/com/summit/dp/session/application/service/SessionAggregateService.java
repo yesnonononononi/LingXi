@@ -117,6 +117,24 @@ public class SessionAggregateService {
     }
 
     /**
+     * 清空全部会话（含子会话）及其附属执行、检查点与文件编辑记录。
+     *
+     * <p>任一会话仍有执行在跑时整批拒绝，避免留下指向已删会话的孤儿行；
+     * 实际删除仍按「子会话先、根最后」逐个短事务推进，避免长事务锁库。</p>
+     */
+    public int deleteAll() {
+        List<Long> ids = sessionRepository.findAllIds();
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        deletionGuard.requireNoRunningExecution(ids);
+        deleteNodesLeafFirst(ids);
+        events.publishEvent(new SessionTreeDeleted(ids));
+        log.info("清空全部会话: sessionCount={}", ids.size());
+        return ids.size();
+    }
+
+    /**
      * 逆 id 序逐个删：子会话后建、id 更大，先走；根会话最后走。
      *
      * <p>根行留到最后的意义：根行一消失，会话列表里就看不到这棵树，剩下的子会话也不会在

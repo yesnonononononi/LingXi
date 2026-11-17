@@ -68,6 +68,11 @@ public class SessionController {
     public Result<Void> del(Long id) {
         return sessionService.del(id);
     }
+
+    @PostMapping("/clear")
+    public Result<Integer> clear() {
+        return sessionService.clearAll();
+    }
     @GetMapping("/{id}")
     public Result<SessionVO> findById(@PathVariable Long id) {
         return sessionService.findById(id);

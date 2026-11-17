@@ -573,6 +573,15 @@ export const chatApi = {
     }
   },
 
+  async clearSessions(): Promise<{ ok: boolean; count: number }> {
+    try {
+      const res = await SessionAPI.clear();
+      return { ok: isOk(res.code), count: typeof res.data === 'number' ? res.data : 0 };
+    } catch {
+      return { ok: false, count: 0 };
+    }
+  },
+
   async renameSession(id: string, name: string): Promise<boolean> {
     try {
       const res = await SessionAPI.update(id, name);

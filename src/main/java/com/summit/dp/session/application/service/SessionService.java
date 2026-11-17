@@ -37,6 +37,9 @@ public interface SessionService {
 
     Result<Void> del(Long id);
 
+    /** 清空全部会话及其附属数据（含执行、检查点与文件编辑记录）。 */
+    Result<Integer> clearAll();
+
     Result<PageResult<SessionVO>> list(Integer page, Integer pageSize);
 
     /**
