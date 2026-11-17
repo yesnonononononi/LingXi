@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type {PromptCardData} from '../../types/chat';
-import {injectChatInputFocus} from '../../types/chatInputFocus';
+import {useChatInputFocus} from '../../composables/useChatInputFocus';
 import {CARD_ERROR_TEXT_CLASS, cardDotClass, cardToneClass} from '../../utils/cardUi';
 import CardActionButton from '../../components/chat/CardActionButton.vue';
 import {usePlanCardModel} from './useInteractionCardActions';
@@ -11,7 +11,7 @@ const props = defineProps<{
   isDark?: boolean;
 }>();
 
-const focusChatInput = injectChatInputFocus();
+const focusChatInput = useChatInputFocus();
 const {
   t,
   isSubmitting,
