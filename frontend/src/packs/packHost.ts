@@ -4,6 +4,7 @@ import type {ChatInputSlotOverrides} from '../types/chatInputSlots';
 import type {ChatMessageSlotOverrides} from '../types/chatMessageSlots';
 import type {InteractionCardSlotOverrides} from '../types/interactionCardSlots';
 import type {SidebarSlotOverrides} from '../types/sidebarSlots';
+import type {TaskProgressSlotOverrides} from '../types/taskProgressSlots';
 import {OFFICIAL_PACKS, findOfficialPack} from './packRegistry';
 import type {CustomScannedPackManifest, ElectronPacksAPI, RemotePackManifest} from '../utils/platform';
 import {
@@ -29,6 +30,7 @@ export interface ActivePackSlotsState {
   readonly chatMessage: ChatMessageSlotOverrides;
   readonly interactionCard: InteractionCardSlotOverrides;
   readonly sidebar: SidebarSlotOverrides;
+  readonly taskProgress: TaskProgressSlotOverrides;
 }
 
 const activePackIds = ref<ActivePackSelectionMap>({});
@@ -123,6 +125,7 @@ const packSlots: ActivePackSlotsState = {
   chatMessage: shallowReactive<ChatMessageSlotOverrides>({}),
   interactionCard: shallowReactive<InteractionCardSlotOverrides>({}),
   sidebar: shallowReactive<SidebarSlotOverrides>({}),
+  taskProgress: shallowReactive<TaskProgressSlotOverrides>({}),
 };
 
 const activePackCount = computed(() => Object.values(activePackIds.value).filter(Boolean).length);
@@ -179,6 +182,7 @@ function rebuildMergedPackSlots(): void {
   clearReactiveRecord(packSlots.chatMessage as Record<string, unknown>);
   clearReactiveRecord(packSlots.interactionCard as Record<string, unknown>);
   clearReactiveRecord(packSlots.sidebar as Record<string, unknown>);
+  clearReactiveRecord(packSlots.taskProgress as Record<string, unknown>);
 
   for (const category of PACK_CATEGORY_ORDER) {
     const def = loadedDefinitions.get(category);
@@ -188,6 +192,7 @@ function rebuildMergedPackSlots(): void {
     if (def.slots.chatMessage) Object.assign(packSlots.chatMessage, def.slots.chatMessage);
     if (def.slots.interactionCard) Object.assign(packSlots.interactionCard, def.slots.interactionCard);
     if (def.slots.sidebar) Object.assign(packSlots.sidebar, def.slots.sidebar);
+    if (def.slots.taskProgress) Object.assign(packSlots.taskProgress, def.slots.taskProgress);
   }
 }
 

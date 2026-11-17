@@ -3,9 +3,10 @@ import type {ChatInputSlotOverrides} from '../types/chatInputSlots';
 import type {ChatMessageSlotOverrides} from '../types/chatMessageSlots';
 import type {InteractionCardSlotOverrides} from '../types/interactionCardSlots';
 import type {SidebarSlotOverrides} from '../types/sidebarSlots';
+import type {TaskProgressSlotOverrides} from '../types/taskProgressSlots';
 
 /** 扩展包分类：不同分类可同时叠加激活，同分类内互斥单选。 */
-export type OfficialPackCategory = 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'component' | 'approvalCard' | 'planCard' | 'choiceCard';
+export type OfficialPackCategory = 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'motion' | 'taskProgress' | 'interactionCard';
 
 /** 扩展包分类叠加优先级（靠后者在同槽位冲突时覆盖前者）。 */
 export const PACK_CATEGORY_ORDER: readonly OfficialPackCategory[] = Object.freeze([
@@ -14,10 +15,9 @@ export const PACK_CATEGORY_ORDER: readonly OfficialPackCategory[] = Object.freez
   'background',
   'sidebar',
   'input',
-  'component',
-  'approvalCard',
-  'planCard',
-  'choiceCard',
+  'motion',
+  'taskProgress',
+  'interactionCard',
 ]);
 
 /** 官方扩展包预览色板：用于主题/背景类卡片缩略展示。 */
@@ -54,13 +54,14 @@ export interface OfficialPackFont {
   readonly target: 'sans' | 'code';
 }
 
-/** 扩展包可覆盖的五组宿主 UI 槽位。 */
+/** 扩展包可覆盖的六组宿主 UI 槽位。 */
 export interface OfficialPackSlots {
   readonly background?: ChatBackgroundSlots;
   readonly chatInput?: ChatInputSlotOverrides;
   readonly chatMessage?: ChatMessageSlotOverrides;
   readonly interactionCard?: InteractionCardSlotOverrides;
   readonly sidebar?: SidebarSlotOverrides;
+  readonly taskProgress?: TaskProgressSlotOverrides;
 }
 
 /** 扩展包按需加载后的完整定义。 */

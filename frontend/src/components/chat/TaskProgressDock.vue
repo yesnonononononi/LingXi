@@ -2,11 +2,15 @@
 import {computed, onMounted, onScopeDispose, ref, watch} from 'vue';
 import type {BackgroundTasksState} from '../../views/chat/useBackgroundTasks';
 import type {ChecklistState} from '../../views/chat/useChecklist';
+import {usePackHost} from '../../packs/packHost';
 import BackgroundTaskPanel from './BackgroundTaskPanel.vue';
 import ChecklistPanel from './ChecklistPanel.vue';
 import './taskProgress.css';
 
 const props = defineProps<{ background: BackgroundTasksState; checklist: ChecklistState; isDark?: boolean; executing: boolean }>();
+const { packSlots } = usePackHost();
+const resolvedBackgroundPanel = computed(() => packSlots.taskProgress.backgroundPanel ?? BackgroundTaskPanel);
+const resolvedChecklistPanel = computed(() => packSlots.taskProgress.checklistPanel ?? ChecklistPanel);
 type Panel = 'background' | 'checklist';
 const activePanel = ref<Panel | null>(null);
 const dock = ref<HTMLElement>();
@@ -45,9 +49,9 @@ onScopeDispose(() => { document.removeEventListener('pointerdown', onPointer); d
     :data-theme="isDark ? 'dark' : 'light'" data-testid="task-progress-dock">
     <TransitionGroup name="task-capsule" tag="div" class="task-progress-row" appear>
       <template v-for="panel in order" :key="panel">
-        <BackgroundTaskPanel v-if="panel === 'background'" :feed="background" :is-dark="isDark" embedded
+        <component :is="resolvedBackgroundPanel" v-if="panel === 'background'" :feed="background" :is-dark="isDark" embedded
           :expanded="activePanel === 'background'" @update:expanded="setExpanded('background', $event)" />
-        <ChecklistPanel v-else :feed="checklist" :executing="executing" :expanded="activePanel === 'checklist'"
+        <component :is="resolvedChecklistPanel" v-else :feed="checklist" :executing="executing" :is-dark="isDark" :expanded="activePanel === 'checklist'"
           @update:expanded="setExpanded('checklist', $event)" />
       </template>
     </TransitionGroup>

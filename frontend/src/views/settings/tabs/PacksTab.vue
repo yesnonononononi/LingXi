@@ -72,24 +72,19 @@ const categories = computed<readonly CategoryDescriptor[]>(() => [
     desc: isZh.value ? '定制输入卡片质感、聚焦光环与输入区 Slot 组件' : 'Input box styling and input slots',
   },
   {
-    key: 'component',
-    label: isZh.value ? '组件与动效' : 'Components',
-    desc: isZh.value ? '替换局部交互 Slot 组件或调整流式渲染动效' : 'Slot components and streaming motion',
+    key: 'motion',
+    label: isZh.value ? '渲染动效' : 'Render Motion',
+    desc: isZh.value ? '调整流式输出节奏、思维链呼吸与界面入场动效' : 'Streaming rhythm and transition motion',
   },
   {
-    key: 'approvalCard',
-    label: isZh.value ? '审批卡片' : 'Approval Cards',
-    desc: isZh.value ? '自定义命令与文件改动审批卡片的布局与视觉风格' : 'Command and file-write approval card styles',
+    key: 'taskProgress',
+    label: isZh.value ? '任务进度' : 'Task Progress',
+    desc: isZh.value ? '定制后台任务与任务清单两个悬浮胶囊及面板形态' : 'Background task and checklist capsule styles',
   },
   {
-    key: 'planCard',
-    label: isZh.value ? '计划卡片' : 'Plan Cards',
-    desc: isZh.value ? '自定义实施计划审阅卡片的排版与交互样式' : 'Implementation plan review card styles',
-  },
-  {
-    key: 'choiceCard',
-    label: isZh.value ? '选择卡片' : 'Choice Cards',
-    desc: isZh.value ? '自定义多题选择交互卡片的布局风格与视觉主题' : 'Choice question card layouts and themes',
+    key: 'interactionCard',
+    label: isZh.value ? '互动卡片' : 'Interaction Cards',
+    desc: isZh.value ? '自定义审批卡片、计划卡片与选择卡片的视觉风格' : 'Approval, plan, and choice card styles',
   },
 ]);
 

@@ -189,11 +189,11 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     load: async () => (await import('./builtin/neonUnderlineInput')).neonUnderlineInputPack,
   },
 
-  // ========== 组件与动效 (component) ==========
+  // ========== 渲染动效 (motion) ==========
   {
     meta: {
       id: 'pulse-stream',
-      category: 'component',
+      category: 'motion',
       name: '流式脉冲套件',
       description: '替换输入区发送按钮为极简胶囊样式，并优化流式文本渐显与思维链呼吸节奏。',
       version: '1.0.0',
@@ -204,7 +204,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
   {
     meta: {
       id: 'crisp-instant-stream',
-      category: 'component',
+      category: 'motion',
       name: '极速零延迟套件',
       description: '将流式文本 arrival 与思维链动效压缩至 90ms 内，追求零拖影的极速响应感。',
       version: '1.0.0',
@@ -215,7 +215,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
   {
     meta: {
       id: 'soft-ink-stream',
-      category: 'component',
+      category: 'motion',
       name: '墨韵缓显套件',
       description: '拉长流式渐显与卡片入场缓动曲线，呈现舒缓柔和的水墨晕染阅读节奏。',
       version: '1.0.0',
@@ -224,11 +224,37 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     load: async () => (await import('./builtin/softInkStream')).softInkStreamPack,
   },
 
-  // ========== 审批卡片 (approvalCard) ==========
+  // ========== 任务进度 (taskProgress) ==========
+  {
+    meta: {
+      id: 'neon-hud-task-progress',
+      category: 'taskProgress',
+      name: '霓虹 HUD 任务胶囊',
+      description: '青紫霓虹流光胶囊搭配毛玻璃悬浮面板，任务清单自带渐变进度条。',
+      version: '1.0.0',
+      capabilities: ['流光胶囊', '渐变进度条', '任务进度 Slot'],
+      preview: { canvas: '#0f172a', surface: '#1e1b4b', accent: '#22d3ee', text: '#e0f2fe' },
+    },
+    load: async () => (await import('./builtin/neonHudTaskProgress')).neonHudTaskProgressPack,
+  },
+  {
+    meta: {
+      id: 'amber-craft-task-progress',
+      category: 'taskProgress',
+      name: '暖琥珀工单胶囊',
+      description: '暖琥珀徽章式任务胶囊与工单列表面板，兼顾任务状态与步骤进度可视化。',
+      version: '1.0.0',
+      capabilities: ['徽章胶囊', '工单面板', '任务进度 Slot'],
+      preview: { canvas: '#fffbeb', surface: '#fef3c7', accent: '#f59e0b', text: '#78350f' },
+    },
+    load: async () => (await import('./builtin/amberCraftTaskProgress')).amberCraftTaskProgressPack,
+  },
+
+  // ========== 互动卡片 (interactionCard) ==========
   {
     meta: {
       id: 'amber-guard-approval',
-      category: 'approvalCard',
+      category: 'interactionCard',
       name: '琥珀警戒审批卡',
       description: '暖琥珀渐变背景搭配顶部斜纹警戒条与深色终端命令框，突出风险操作辨识度。',
       version: '1.0.0',
@@ -240,7 +266,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
   {
     meta: {
       id: 'cyber-aurora-approval',
-      category: 'approvalCard',
+      category: 'interactionCard',
       name: '赛博极光审批卡',
       description: '青蓝与靛紫极光渐变毛玻璃背景，搭配霓虹顶栏光束与渐变操作按钮。',
       version: '1.0.0',
@@ -249,12 +275,10 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     },
     load: async () => (await import('./builtin/cyberAuroraApproval')).cyberAuroraApprovalPack,
   },
-
-  // ========== 计划卡片 (planCard) ==========
   {
     meta: {
       id: 'emerald-blueprint-plan',
-      category: 'planCard',
+      category: 'interactionCard',
       name: '翡翠蓝图计划卡',
       description: '工程蓝图细网格纹理背景搭配翡翠绿主题徽章与实心操作按钮，架构感十足。',
       version: '1.0.0',
@@ -266,7 +290,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
   {
     meta: {
       id: 'sunset-editorial-plan',
-      category: 'planCard',
+      category: 'interactionCard',
       name: '暖阳手账计划卡',
       description: '珊瑚橙落日渐变纸张质感搭配左侧书签饰条与内嵌 Markdown 正文，阅读体验温润鲜明。',
       version: '1.0.0',
@@ -275,12 +299,10 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     },
     load: async () => (await import('./builtin/sunsetEditorialPlan')).sunsetEditorialPlanPack,
   },
-
-  // ========== 选择卡片 (choiceCard) ==========
   {
     meta: {
       id: 'rpg-quest-choice',
-      category: 'choiceCard',
+      category: 'interactionCard',
       name: '剧情抉择任务卡',
       description: 'RPG 游戏对话抉择框风格，耀金边框配字母快捷键徽章与金色选中微光。',
       version: '1.0.0',
@@ -292,7 +314,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
   {
     meta: {
       id: 'neon-pill-choice',
-      category: 'choiceCard',
+      category: 'interactionCard',
       name: '霓虹胶囊矩阵卡',
       description: '双列响应式胶囊网格配顶部步骤点阵进度条，打破传统长条单选排版。',
       version: '1.0.0',

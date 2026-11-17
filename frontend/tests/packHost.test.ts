@@ -116,7 +116,7 @@ test('selectPackWithEnv 支持跨分类叠加、单分类卸载零残留与全�
       id: 'bgA',
       slots: { background: { surface: FakeBg } },
     })),
-    compA: makeEntry('compA', 'component', async () => ({
+    compA: makeEntry('compA', 'motion', async () => ({
       id: 'compA',
       cssText: '.codex-text-arrival { animation-duration: 500ms; }',
       slots: { chatInput: { sendButton: FakeSend } },
@@ -129,7 +129,7 @@ test('selectPackWithEnv 支持跨分类叠加、单分类卸载零残留与全�
   // 1. 叠加激活 theme + background + component
   assert.equal(await selectPackWithEnv('theme', 'themeA', { doc, storage, lookup: id => entries[id] }), true);
   assert.equal(await selectPackWithEnv('background', 'bgA', { doc, storage, lookup: id => entries[id] }), true);
-  assert.equal(await selectPackWithEnv('component', 'compA', { doc, storage, lookup: id => entries[id] }), true);
+  assert.equal(await selectPackWithEnv('motion', 'compA', { doc, storage, lookup: id => entries[id] }), true);
 
   assert.equal(host.activePackCount.value, 3);
   assert.equal(styles.length, 2); // bgA 无 cssText，themeA 与 compA 各一条 style
@@ -138,7 +138,7 @@ test('selectPackWithEnv 支持跨分类叠加、单分类卸载零残留与全�
   assert.deepEqual(JSON.parse(map.get(PACK_STORAGE_KEY)!), {
     theme: 'themeA',
     background: 'bgA',
-    component: 'compA',
+    motion: 'compA',
   });
 
   // 2. 单独停用 background：其他分类样式与 sendButton Slot 保持生效
@@ -188,7 +188,7 @@ test('selectPackWithEnv 支持 interactionCard 插槽覆盖审批卡与计划卡
   const CustomApproval = defineComponent({ name: 'CustomApprovalCard', render: () => null });
   const CustomPlan = defineComponent({ name: 'CustomPlanCard', render: () => null });
   const entries: Record<string, OfficialPackEntry> = {
-    cardPack: makeEntry('cardPack', 'component', async () => ({
+    cardPack: makeEntry('cardPack', 'interactionCard', async () => ({
       id: 'cardPack',
       slots: {
         interactionCard: {
@@ -202,30 +202,34 @@ test('selectPackWithEnv 支持 interactionCard 插槽覆盖审批卡与计划卡
   const host = usePackHost();
   resetAllPacksWithEnv({ doc, storage });
 
-  await selectPackWithEnv('component', 'cardPack', { doc, storage, lookup: id => entries[id] });
+  await selectPackWithEnv('interactionCard', 'cardPack', { doc, storage, lookup: id => entries[id] });
   assert.equal(host.packSlots.interactionCard.approvalCard, CustomApproval);
   assert.equal(host.packSlots.interactionCard.planCard, CustomPlan);
 
-  await selectPackWithEnv('component', null, { doc, storage, lookup: id => entries[id] });
+  await selectPackWithEnv('interactionCard', null, { doc, storage, lookup: id => entries[id] });
   assert.equal(host.packSlots.interactionCard.approvalCard, undefined);
   assert.equal(host.packSlots.interactionCard.planCard, undefined);
 });
 
-test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激活的扩展包', async () => {
-  const approvalPacks = listOfficialPacksByCategory('approvalCard');
-  const planPacks = listOfficialPacksByCategory('planCard');
-  const choicePacks = listOfficialPacksByCategory('choiceCard');
+test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与叠加', async () => {
+  const motionPacks = listOfficialPacksByCategory('motion');
+  const taskProgressPacks = listOfficialPacksByCategory('taskProgress');
+  const interactionPacks = listOfficialPacksByCategory('interactionCard');
+  assert.equal(motionPacks.length, 3);
   assert.deepEqual(
-    approvalPacks.map(item => item.meta.id),
-    ['amber-guard-approval', 'cyber-aurora-approval'],
+    taskProgressPacks.map(item => item.meta.id),
+    ['neon-hud-task-progress', 'amber-craft-task-progress'],
   );
   assert.deepEqual(
-    planPacks.map(item => item.meta.id),
-    ['emerald-blueprint-plan', 'sunset-editorial-plan'],
-  );
-  assert.deepEqual(
-    choicePacks.map(item => item.meta.id),
-    ['rpg-quest-choice', 'neon-pill-choice'],
+    interactionPacks.map(item => item.meta.id),
+    [
+      'amber-guard-approval',
+      'cyber-aurora-approval',
+      'emerald-blueprint-plan',
+      'sunset-editorial-plan',
+      'rpg-quest-choice',
+      'neon-pill-choice',
+    ],
   );
 
   const { doc } = createFakeDom();
@@ -233,37 +237,33 @@ test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激
   const host = usePackHost();
   resetAllPacksWithEnv({ doc, storage });
 
+  const stubBg = defineComponent({ name: 'StubBackgroundPanel', render: () => null });
+  const stubChecklist = defineComponent({ name: 'StubChecklistPanel', render: () => null });
   const stubApproval = defineComponent({ name: 'StubApprovalPackCard', render: () => null });
-  const stubPlan = defineComponent({ name: 'StubPlanPackCard', render: () => null });
-  const stubChoice = defineComponent({ name: 'StubChoicePackCard', render: () => null });
   const lookup = (id: string): OfficialPackEntry | undefined => {
-    const entry = approvalPacks.find(item => item.meta.id === id)
-      ?? planPacks.find(item => item.meta.id === id)
-      ?? choicePacks.find(item => item.meta.id === id);
+    const entry = taskProgressPacks.find(item => item.meta.id === id)
+      ?? interactionPacks.find(item => item.meta.id === id);
     if (!entry) return undefined;
     return {
       meta: entry.meta,
       load: async () => ({
         id: entry.meta.id,
-        slots: entry.meta.category === 'approvalCard'
-          ? { interactionCard: { approvalCard: stubApproval } }
-          : entry.meta.category === 'planCard'
-            ? { interactionCard: { planCard: stubPlan } }
-            : { interactionCard: { choiceGroup: stubChoice } },
+        slots: entry.meta.category === 'taskProgress'
+          ? { taskProgress: { backgroundPanel: stubBg, checklistPanel: stubChecklist } }
+          : { interactionCard: { approvalCard: stubApproval } },
       }),
     };
   };
 
-  assert.equal(await selectPackWithEnv('approvalCard', approvalPacks[0]!.meta.id, { doc, storage, lookup }), true);
-  assert.equal(await selectPackWithEnv('planCard', planPacks[0]!.meta.id, { doc, storage, lookup }), true);
-  assert.equal(await selectPackWithEnv('choiceCard', choicePacks[0]!.meta.id, { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('taskProgress', taskProgressPacks[0]!.meta.id, { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('interactionCard', interactionPacks[0]!.meta.id, { doc, storage, lookup }), true);
 
+  assert.equal(host.packSlots.taskProgress.backgroundPanel, stubBg);
+  assert.equal(host.packSlots.taskProgress.checklistPanel, stubChecklist);
   assert.equal(host.packSlots.interactionCard.approvalCard, stubApproval);
-  assert.equal(host.packSlots.interactionCard.planCard, stubPlan);
-  assert.equal(host.packSlots.interactionCard.choiceGroup, stubChoice);
 
   resetAllPacksWithEnv({ doc, storage });
+  assert.equal(host.packSlots.taskProgress.backgroundPanel, undefined);
+  assert.equal(host.packSlots.taskProgress.checklistPanel, undefined);
   assert.equal(host.packSlots.interactionCard.approvalCard, undefined);
-  assert.equal(host.packSlots.interactionCard.planCard, undefined);
-  assert.equal(host.packSlots.interactionCard.choiceGroup, undefined);
 });
