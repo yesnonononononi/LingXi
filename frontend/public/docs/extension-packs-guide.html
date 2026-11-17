@@ -543,6 +543,7 @@
             '    <tr><td>id</td><td>string</td><td>是</td><td>唯一标识。<br><span class="sub-note">示例值："custom-ocean-theme"</span></td></tr>',
             '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">motion</span> <span class="badge-cyan">taskProgress</span> <span class="badge-cyan">interactionCard</span></td></tr>',
             '    <tr><td>interactionTab</td><td>string</td><td>否</td><td>仅 <span class="code-inline">interactionCard</span> 类目使用，用于子 Tab 归类与独立叠加：<span class="badge-cyan">approval</span> <span class="badge-cyan">plan</span> <span class="badge-cyan">choice</span>。</td></tr>',
+            '    <tr><td>taskProgressTab</td><td>string</td><td>否</td><td>仅 <span class="code-inline">taskProgress</span> 类目使用，用于子 Tab 归类与独立叠加：<span class="badge-cyan">background</span> <span class="badge-cyan">checklist</span> <span class="badge-cyan">pendingQueue</span>。</td></tr>',
             '    <tr><td>name</td><td>string</td><td>是</td><td>设置页卡片展示名称。</td></tr>',
             '    <tr><td>hostApiVersion</td><td>string</td><td>是</td><td>宿主契约版本，当前固定为 <span class="code-inline">"1"</span>。</td></tr>',
             '    <tr><td>version</td><td>string</td><td>否</td><td>语义化版本号，默认 <span class="code-inline">"1.0.0"</span>。</td></tr>',
@@ -692,7 +693,7 @@
           breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '任务进度 (taskProgress)'],
           title: '任务进度 (taskProgress)',
           updated: '最后更新于 2026-11-18',
-          lead: '任务进度类目合并了「后台任务」「任务清单」两个悬浮胶囊及「待发送队列 (pendingChat)」面板，主会话与子会话共用胶囊槽位。',
+          lead: '任务进度类目收敛了「后台任务」「任务清单」两个悬浮胶囊及「待发送队列 (pendingChat)」面板，三个子 Tab 支持各自独立启用并同屏叠加；主会话与子会话共用胶囊槽位。',
           html: [
             '<h2>开发方式</h2>',
             '<table class="feishu-table">',

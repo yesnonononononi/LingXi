@@ -28,14 +28,18 @@ export interface OfficialPackPreview {
   readonly text: string;
 }
 
-/** 互动卡片子 Tab 归类（仅 interactionCard 类目用于分 Tab 展示）。 */
+/** 互动卡片子 Tab 归类（仅 interactionCard 类目用于分 Tab 展示与独立叠加）。 */
 export type InteractionCardTab = 'approval' | 'plan' | 'choice';
+
+/** 任务进度子 Tab 归类（仅 taskProgress 类目用于分 Tab 展示与独立叠加）。 */
+export type TaskProgressTab = 'background' | 'checklist' | 'pendingQueue';
 
 /** 扩展包元信息（未加载包体前即可用于分类列表展示）。 */
 export interface OfficialPackMeta {
   readonly id: string;
   readonly category: OfficialPackCategory;
   readonly interactionTab?: InteractionCardTab;
+  readonly taskProgressTab?: TaskProgressTab;
   readonly name: string;
   readonly description: string;
   readonly version: string;

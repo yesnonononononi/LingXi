@@ -3,13 +3,14 @@ import {computed, onMounted, ref} from 'vue';
 import {useI18n} from '../../../i18n';
 import {usePackHost} from '../../../packs/packHost';
 import {listOfficialPacksByCategory} from '../../../packs/packRegistry';
-import type {InteractionCardTab, OfficialPackCategory, OfficialPackMeta} from '../../../packs/types';
+import type {InteractionCardTab, OfficialPackCategory, OfficialPackMeta, TaskProgressTab} from '../../../packs/types';
 import {isElectron, type RemotePackManifest} from '../../../utils/platform';
 
 const { t, locale } = useI18n();
 const {
   activePackIds,
   activeInteractionPackIds,
+  activeTaskProgressPackIds,
   activePackCount,
   loadingCategory,
   activePackError,
@@ -38,10 +39,16 @@ const isZh = computed(() => locale.value === 'zh-CN');
 
 const selectedCategory = ref<OfficialPackCategory | null>(null);
 const activeInteractionTab = ref<InteractionCardTab>('approval');
+const activeTaskProgressTab = ref<TaskProgressTab>('background');
 const interactionTabs = computed<readonly { key: InteractionCardTab; label: string }[]>(() => [
   { key: 'approval', label: isZh.value ? '审批卡片' : 'Approval' },
   { key: 'plan', label: isZh.value ? '计划卡片' : 'Plan' },
   { key: 'choice', label: isZh.value ? '选择卡片' : 'Choice' },
+]);
+const taskProgressTabs = computed<readonly { key: TaskProgressTab; label: string }[]>(() => [
+  { key: 'background', label: isZh.value ? '后台任务' : 'Background' },
+  { key: 'checklist', label: isZh.value ? '任务清单' : 'Checklist' },
+  { key: 'pendingQueue', label: isZh.value ? '待发送队列' : 'Pending Queue' },
 ]);
 const transitionName = ref<'pack-slide-forward' | 'pack-slide-back'>('pack-slide-forward');
 const customDirInput = ref('');
@@ -119,8 +126,13 @@ const listCategoryCards = (
 const displayedCategoryCards = computed(() => {
   if (!selectedCategory.value) return [];
   const all = listCategoryCards(selectedCategory.value);
-  if (selectedCategory.value !== 'interactionCard') return all;
-  return all.filter(item => !item.meta.interactionTab || item.meta.interactionTab === activeInteractionTab.value);
+  if (selectedCategory.value === 'interactionCard') {
+    return all.filter(item => !item.meta.interactionTab || item.meta.interactionTab === activeInteractionTab.value);
+  }
+  if (selectedCategory.value === 'taskProgress') {
+    return all.filter(item => !item.meta.taskProgressTab || item.meta.taskProgressTab === activeTaskProgressTab.value);
+  }
+  return all;
 });
 
 const handleAddCustomDir = async (): Promise<void> => {
@@ -151,30 +163,44 @@ const handleOpenPacksGuide = async (): Promise<void> => {
   }
 };
 
+const resolveMultiTabActiveName = (
+  category: OfficialPackCategory,
+  activeMap: Partial<Record<string, string>>,
+): string | null => {
+  const activeIds = Object.values(activeMap).filter((id): id is string => Boolean(id));
+  if (!activeIds.length) return null;
+  const all = listCategoryCards(category);
+  const first = all.find(item => item.meta.id === activeIds[0])?.meta.name ?? activeIds[0];
+  return activeIds.length === 1 ? first : `${first} +${activeIds.length - 1}`;
+};
+
 const resolveActivePackName = (category: OfficialPackCategory): string | null => {
-  if (category === 'interactionCard') {
-    const activeTabs = Object.values(activeInteractionPackIds.value).filter((id): id is string => Boolean(id));
-    if (!activeTabs.length) return null;
-    const all = listCategoryCards('interactionCard');
-    const first = all.find(item => item.meta.id === activeTabs[0])?.meta.name ?? activeTabs[0];
-    return activeTabs.length === 1 ? first : `${first} +${activeTabs.length - 1}`;
-  }
+  if (category === 'interactionCard') return resolveMultiTabActiveName('interactionCard', activeInteractionPackIds.value);
+  if (category === 'taskProgress') return resolveMultiTabActiveName('taskProgress', activeTaskProgressPackIds.value);
   const activeId = activePackIds.value[category];
   if (!activeId) return null;
   const found = listCategoryCards(category).find(item => item.meta.id === activeId);
   return found ? found.meta.name : activeId;
 };
 
-const hasActiveInteractionPack = computed(() =>
-  Object.values(activeInteractionPackIds.value).some(Boolean),
-);
+const hasActiveCategoryPack = (category: OfficialPackCategory): boolean => {
+  if (category === 'interactionCard') return Object.values(activeInteractionPackIds.value).some(Boolean);
+  if (category === 'taskProgress') return Object.values(activeTaskProgressPackIds.value).some(Boolean);
+  return Boolean(activePackIds.value[category]);
+};
+
+const currentDetailSubTab = computed<InteractionCardTab | TaskProgressTab | undefined>(() => {
+  if (selectedCategory.value === 'interactionCard') return activeInteractionTab.value;
+  if (selectedCategory.value === 'taskProgress') return activeTaskProgressTab.value;
+  return undefined;
+});
 
 const isPackSelectedInDetail = (category: OfficialPackCategory, packId: string | null): boolean => {
-  if (category === 'interactionCard') {
-    const current = activeInteractionPackIds.value[activeInteractionTab.value];
-    return packId === null ? !current : current === packId;
-  }
-  const current = activePackIds.value[category];
+  const current = category === 'interactionCard'
+    ? activeInteractionPackIds.value[activeInteractionTab.value]
+    : category === 'taskProgress'
+      ? activeTaskProgressPackIds.value[activeTaskProgressTab.value]
+      : activePackIds.value[category];
   return packId === null ? !current : current === packId;
 };
 
@@ -206,9 +232,9 @@ const backToCategories = (): void => {
 const handleSelect = async (
   category: OfficialPackCategory,
   packId: string | null,
-  interactionTab?: InteractionCardTab,
+  subTab?: InteractionCardTab | TaskProgressTab,
 ): Promise<void> => {
-  await selectCategoryPack(category, packId, interactionTab);
+  await selectCategoryPack(category, packId, subTab);
 };
 
 const handleInstallAndApply = async (manifest: RemotePackManifest): Promise<void> => {
@@ -423,7 +449,7 @@ onMounted(() => {
           </div>
 
           <button
-            v-if="selectedCategory === 'interactionCard' ? hasActiveInteractionPack : activePackIds[selectedCategory]"
+            v-if="hasActiveCategoryPack(selectedCategory)"
             type="button"
             @click="handleSelect(selectedCategory, null)"
             class="shrink-0 px-2.5 py-1 rounded-lg border border-lx-border-subtle text-lx-fs-xs text-lx-secondary hover:text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer"
@@ -468,6 +494,36 @@ onMounted(() => {
                 />
               </button>
             </div>
+
+            <div
+              v-else-if="selectedCategory === 'taskProgress'"
+              role="tablist"
+              class="inline-flex items-center gap-1 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken p-0.5"
+              data-testid="task-progress-subtabs"
+            >
+              <button
+                v-for="tab in taskProgressTabs"
+                :key="tab.key"
+                type="button"
+                role="tab"
+                :aria-selected="activeTaskProgressTab === tab.key"
+                :data-testid="`task-progress-tab-${tab.key}`"
+                @click="activeTaskProgressTab = tab.key"
+                :class="[
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-lx-fs-xs font-medium transition cursor-pointer',
+                  activeTaskProgressTab === tab.key
+                    ? 'bg-lx-surface text-lx-primary shadow-2xs'
+                    : 'text-lx-muted hover:text-lx-primary'
+                ]"
+              >
+                <span>{{ tab.label }}</span>
+                <span
+                  v-if="activeTaskProgressPackIds[tab.key]"
+                  class="h-1.5 w-1.5 rounded-full bg-lx-accent"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -476,7 +532,7 @@ onMounted(() => {
               type="button"
               :data-testid="`pack-${selectedCategory}-default`"
               :disabled="loadingCategory === selectedCategory"
-              @click="handleSelect(selectedCategory, null, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
+              @click="handleSelect(selectedCategory, null, currentDetailSubTab)"
               :class="[
                 'p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col gap-1.5',
                 isPackSelectedInDetail(selectedCategory, null)
@@ -498,9 +554,9 @@ onMounted(() => {
               role="button"
               tabindex="0"
               :data-testid="`appearance-pack-${item.meta.id}`"
-              @click="handleSelect(selectedCategory, item.meta.id, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
-              @keydown.enter.prevent="handleSelect(selectedCategory, item.meta.id, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
-              @keydown.space.prevent="handleSelect(selectedCategory, item.meta.id, selectedCategory === 'interactionCard' ? activeInteractionTab : undefined)"
+              @click="handleSelect(selectedCategory, item.meta.id, currentDetailSubTab)"
+              @keydown.enter.prevent="handleSelect(selectedCategory, item.meta.id, currentDetailSubTab)"
+              @keydown.space.prevent="handleSelect(selectedCategory, item.meta.id, currentDetailSubTab)"
               :class="[
                 'p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col gap-2',
                 isPackSelectedInDetail(selectedCategory, item.meta.id)

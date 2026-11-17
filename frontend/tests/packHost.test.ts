@@ -218,7 +218,26 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
   assert.equal(motionPacks.length, 3);
   assert.deepEqual(
     taskProgressPacks.map(item => item.meta.id),
-    ['neon-hud-task-progress', 'amber-craft-task-progress'],
+    [
+      'neon-hud-background-task',
+      'amber-craft-background-task',
+      'neon-hud-checklist',
+      'amber-craft-checklist',
+      'neon-hud-pending-queue',
+      'amber-craft-pending-queue',
+    ],
+  );
+  assert.deepEqual(
+    taskProgressPacks.filter(item => item.meta.taskProgressTab === 'background').map(item => item.meta.id),
+    ['neon-hud-background-task', 'amber-craft-background-task'],
+  );
+  assert.deepEqual(
+    taskProgressPacks.filter(item => item.meta.taskProgressTab === 'checklist').map(item => item.meta.id),
+    ['neon-hud-checklist', 'amber-craft-checklist'],
+  );
+  assert.deepEqual(
+    taskProgressPacks.filter(item => item.meta.taskProgressTab === 'pendingQueue').map(item => item.meta.id),
+    ['neon-hud-pending-queue', 'amber-craft-pending-queue'],
   );
   assert.deepEqual(
     interactionPacks.map(item => item.meta.id),
@@ -251,6 +270,7 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
 
   const stubBg = defineComponent({ name: 'StubBackgroundPanel', render: () => null });
   const stubChecklist = defineComponent({ name: 'StubChecklistPanel', render: () => null });
+  const stubPending = defineComponent({ name: 'StubPendingQueuePanel', render: () => null });
   const stubApproval = defineComponent({ name: 'StubApprovalPackCard', render: () => null });
   const stubPlan = defineComponent({ name: 'StubPlanPackCard', render: () => null });
   const stubChoice = defineComponent({ name: 'StubChoicePackCard', render: () => null });
@@ -263,7 +283,11 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
       load: async () => ({
         id: entry.meta.id,
         slots: entry.meta.category === 'taskProgress'
-          ? { taskProgress: { backgroundPanel: stubBg, checklistPanel: stubChecklist } }
+          ? entry.meta.taskProgressTab === 'checklist'
+            ? { taskProgress: { checklistPanel: stubChecklist } }
+            : entry.meta.taskProgressTab === 'pendingQueue'
+              ? { taskProgress: { pendingQueuePanel: stubPending } }
+              : { taskProgress: { backgroundPanel: stubBg } }
           : entry.meta.interactionTab === 'plan'
             ? { interactionCard: { planCard: stubPlan } }
             : entry.meta.interactionTab === 'choice'
@@ -273,28 +297,39 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
     };
   };
 
-  assert.equal(await selectPackWithEnv('taskProgress', taskProgressPacks[0]!.meta.id, { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('taskProgress', 'neon-hud-background-task', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('taskProgress', 'amber-craft-checklist', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('taskProgress', 'neon-hud-pending-queue', { doc, storage, lookup }), true);
   assert.equal(await selectPackWithEnv('interactionCard', 'amber-guard-approval', { doc, storage, lookup }), true);
   assert.equal(await selectPackWithEnv('interactionCard', 'emerald-blueprint-plan', { doc, storage, lookup }), true);
   assert.equal(await selectPackWithEnv('interactionCard', 'rpg-quest-choice', { doc, storage, lookup }), true);
 
   assert.equal(host.packSlots.taskProgress.backgroundPanel, stubBg);
   assert.equal(host.packSlots.taskProgress.checklistPanel, stubChecklist);
+  assert.equal(host.packSlots.taskProgress.pendingQueuePanel, stubPending);
   assert.equal(host.packSlots.interactionCard.approvalCard, stubApproval);
   assert.equal(host.packSlots.interactionCard.planCard, stubPlan);
   assert.equal(host.packSlots.interactionCard.choiceGroup, stubChoice);
-  assert.equal(host.activePackCount.value, 4);
+  assert.equal(host.activePackCount.value, 6);
+
+  // 停用 taskProgress 的 checklist 子 Tab，background 与 pendingQueue 保持生效
+  assert.equal(await selectPackWithEnv('taskProgress', null, { doc, storage, lookup, taskProgressTab: 'checklist' }), true);
+  assert.equal(host.packSlots.taskProgress.checklistPanel, undefined);
+  assert.equal(host.packSlots.taskProgress.backgroundPanel, stubBg);
+  assert.equal(host.packSlots.taskProgress.pendingQueuePanel, stubPending);
+  assert.equal(host.activePackCount.value, 5);
 
   // 停用 plan 子 Tab，approval 与 choice 保持生效
   assert.equal(await selectPackWithEnv('interactionCard', null, { doc, storage, lookup, interactionTab: 'plan' }), true);
   assert.equal(host.packSlots.interactionCard.planCard, undefined);
   assert.equal(host.packSlots.interactionCard.approvalCard, stubApproval);
   assert.equal(host.packSlots.interactionCard.choiceGroup, stubChoice);
-  assert.equal(host.activePackCount.value, 3);
+  assert.equal(host.activePackCount.value, 4);
 
   resetAllPacksWithEnv({ doc, storage });
   assert.equal(host.packSlots.taskProgress.backgroundPanel, undefined);
   assert.equal(host.packSlots.taskProgress.checklistPanel, undefined);
+  assert.equal(host.packSlots.taskProgress.pendingQueuePanel, undefined);
   assert.equal(host.packSlots.interactionCard.approvalCard, undefined);
   assert.equal(host.packSlots.interactionCard.planCard, undefined);
   assert.equal(host.packSlots.interactionCard.choiceGroup, undefined);

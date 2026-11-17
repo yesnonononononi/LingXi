@@ -15,6 +15,7 @@ import {
   type OfficialPackEntry,
   type OfficialPackFont,
   type OfficialPackMeta,
+  type TaskProgressTab,
 } from './types';
 
 export const PACK_STORAGE_KEY = 'lx_active_packs';
@@ -35,12 +36,15 @@ export interface ActivePackSlotsState {
 }
 
 const INTERACTION_CARD_TABS: readonly InteractionCardTab[] = ['approval', 'plan', 'choice'];
+const TASK_PROGRESS_TABS: readonly TaskProgressTab[] = ['background', 'checklist', 'pendingQueue'];
 const activePackIds = ref<ActivePackSelectionMap>({});
 const activeInteractionPackIds = ref<Partial<Record<InteractionCardTab, string>>>({});
+const activeTaskProgressPackIds = ref<Partial<Record<TaskProgressTab, string>>>({});
 const loadingCategory = ref<OfficialPackCategory | null>(null);
 const activePackError = ref<string | null>(null);
 const loadedDefinitions = new Map<OfficialPackCategory, OfficialPackDefinition>();
 const loadedInteractionDefinitions = new Map<InteractionCardTab, OfficialPackDefinition>();
+const loadedTaskProgressDefinitions = new Map<TaskProgressTab, OfficialPackDefinition>();
 
 const installedRemotePacks = ref<OfficialPackMeta[]>([]);
 const remoteRegistryByCategory = ref<Partial<Record<OfficialPackCategory, RemotePackManifest[]>>>({});
@@ -134,10 +138,11 @@ const packSlots: ActivePackSlotsState = {
 
 const activePackCount = computed(() => {
   const baseCount = Object.entries(activePackIds.value)
-    .filter(([cat, val]) => cat !== 'interactionCard' && Boolean(val))
+    .filter(([cat, val]) => cat !== 'interactionCard' && cat !== 'taskProgress' && Boolean(val))
     .length;
   const interactionCount = Object.values(activeInteractionPackIds.value).filter(Boolean).length;
-  return baseCount + interactionCount;
+  const taskProgressCount = Object.values(activeTaskProgressPackIds.value).filter(Boolean).length;
+  return baseCount + interactionCount + taskProgressCount;
 });
 
 /** 序列化单个字体声明为 @font-face 规则。 */
@@ -195,7 +200,7 @@ function rebuildMergedPackSlots(): void {
   clearReactiveRecord(packSlots.taskProgress as Record<string, unknown>);
 
   for (const category of PACK_CATEGORY_ORDER) {
-    if (category === 'interactionCard') continue;
+    if (category === 'interactionCard' || category === 'taskProgress') continue;
     const def = loadedDefinitions.get(category);
     if (!def?.slots) continue;
     if (def.slots.background) Object.assign(packSlots.background, def.slots.background);
@@ -210,6 +215,12 @@ function rebuildMergedPackSlots(): void {
     const def = loadedInteractionDefinitions.get(tab);
     if (!def?.slots?.interactionCard) continue;
     Object.assign(packSlots.interactionCard, def.slots.interactionCard);
+  }
+
+  for (const tab of TASK_PROGRESS_TABS) {
+    const def = loadedTaskProgressDefinitions.get(tab);
+    if (!def?.slots?.taskProgress) continue;
+    Object.assign(packSlots.taskProgress, def.slots.taskProgress);
   }
 }
 
@@ -241,27 +252,37 @@ function mountCategoryStyle(
 }
 
 const INTERACTION_TABS_STORAGE_KEY = 'interactionCardTabs';
+const TASK_PROGRESS_TABS_STORAGE_KEY = 'taskProgressTabs';
 
 function persistSelectionMap(
   storage: Storage | undefined,
   map: ActivePackSelectionMap,
   interactionMap: Partial<Record<InteractionCardTab, string>> = activeInteractionPackIds.value,
+  taskProgressMap: Partial<Record<TaskProgressTab, string>> = activeTaskProgressPackIds.value,
 ): void {
   if (!storage) return;
   try {
     const payload: Record<string, unknown> = {};
     for (const category of PACK_CATEGORY_ORDER) {
-      if (category === 'interactionCard') continue;
+      if (category === 'interactionCard' || category === 'taskProgress') continue;
       const id = map[category];
       if (id) payload[category] = id;
     }
-    const cleanedTabs: Partial<Record<InteractionCardTab, string>> = {};
+    const cleanedInteractionTabs: Partial<Record<InteractionCardTab, string>> = {};
     for (const tab of INTERACTION_CARD_TABS) {
       const id = interactionMap[tab];
-      if (id) cleanedTabs[tab] = id;
+      if (id) cleanedInteractionTabs[tab] = id;
     }
-    if (Object.keys(cleanedTabs).length > 0) {
-      payload[INTERACTION_TABS_STORAGE_KEY] = cleanedTabs;
+    if (Object.keys(cleanedInteractionTabs).length > 0) {
+      payload[INTERACTION_TABS_STORAGE_KEY] = cleanedInteractionTabs;
+    }
+    const cleanedTaskTabs: Partial<Record<TaskProgressTab, string>> = {};
+    for (const tab of TASK_PROGRESS_TABS) {
+      const id = taskProgressMap[tab];
+      if (id) cleanedTaskTabs[tab] = id;
+    }
+    if (Object.keys(cleanedTaskTabs).length > 0) {
+      payload[TASK_PROGRESS_TABS_STORAGE_KEY] = cleanedTaskTabs;
     }
     if (Object.keys(payload).length > 0) {
       storage.setItem(PACK_STORAGE_KEY, JSON.stringify(payload));
@@ -277,18 +298,20 @@ function persistSelectionMap(
 interface PersistedSelection {
   readonly categories: ActivePackSelectionMap;
   readonly interactionTabs: Partial<Record<InteractionCardTab, string>>;
+  readonly taskProgressTabs: Partial<Record<TaskProgressTab, string>>;
 }
 
 function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelection {
-  if (!storage) return { categories: {}, interactionTabs: {} };
+  if (!storage) return { categories: {}, interactionTabs: {}, taskProgressTabs: {} };
   try {
     const raw = storage.getItem(PACK_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       const categories: ActivePackSelectionMap = {};
       const interactionTabs: Partial<Record<InteractionCardTab, string>> = {};
+      const taskProgressTabs: Partial<Record<TaskProgressTab, string>> = {};
       for (const category of PACK_CATEGORY_ORDER) {
-        if (category === 'interactionCard') continue;
+        if (category === 'interactionCard' || category === 'taskProgress') continue;
         const val = parsed[category];
         if (typeof val === 'string' && val.trim().length > 0) {
           categories[category] = val.trim();
@@ -303,6 +326,15 @@ function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelec
           }
         }
       }
+      const taskTabsRaw = parsed[TASK_PROGRESS_TABS_STORAGE_KEY];
+      if (taskTabsRaw && typeof taskTabsRaw === 'object') {
+        for (const tab of TASK_PROGRESS_TABS) {
+          const val = (taskTabsRaw as Record<string, unknown>)[tab];
+          if (typeof val === 'string' && val.trim().length > 0) {
+            taskProgressTabs[tab] = val.trim();
+          }
+        }
+      }
       // 兼容旧版单包 interactionCard 字符串
       const legacyInteraction = parsed.interactionCard;
       if (typeof legacyInteraction === 'string' && legacyInteraction.trim().length > 0) {
@@ -310,21 +342,91 @@ function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelec
         const tab = entry?.meta.interactionTab ?? 'approval';
         if (!interactionTabs[tab]) interactionTabs[tab] = legacyInteraction.trim();
       }
-      return { categories, interactionTabs };
+      return { categories, interactionTabs, taskProgressTabs };
     }
     const legacyId = storage.getItem(LEGACY_PACK_STORAGE_KEY);
     if (legacyId && legacyId.trim().length > 0) {
       const entry = findOfficialPack(legacyId.trim());
       if (entry) {
         if (entry.meta.category === 'interactionCard') {
-          return { categories: {}, interactionTabs: { [entry.meta.interactionTab ?? 'approval']: entry.meta.id } };
+          return { categories: {}, interactionTabs: { [entry.meta.interactionTab ?? 'approval']: entry.meta.id }, taskProgressTabs: {} };
         }
-        return { categories: { [entry.meta.category]: entry.meta.id }, interactionTabs: {} };
+        if (entry.meta.category === 'taskProgress') {
+          return { categories: {}, interactionTabs: {}, taskProgressTabs: { [entry.meta.taskProgressTab ?? 'background']: entry.meta.id } };
+        }
+        return { categories: { [entry.meta.category]: entry.meta.id }, interactionTabs: {}, taskProgressTabs: {} };
       }
     }
-    return { categories: {}, interactionTabs: {} };
+    return { categories: {}, interactionTabs: {}, taskProgressTabs: {} };
   } catch {
-    return { categories: {}, interactionTabs: {} };
+    return { categories: {}, interactionTabs: {}, taskProgressTabs: {} };
+  }
+}
+
+async function selectSubTabPack<TTab extends string>(options: {
+  category: 'interactionCard' | 'taskProgress';
+  packId: string | null;
+  subTab: TTab | undefined;
+  allTabs: readonly TTab[];
+  defaultTab: TTab;
+  resolveEntryTab: (entry: OfficialPackEntry | undefined) => TTab | undefined;
+  stateRef: { value: Partial<Record<TTab, string>> };
+  loadedMap: Map<TTab, OfficialPackDefinition>;
+  doc: Document | undefined;
+  storage: Storage | undefined;
+  lookup: (id: string) => OfficialPackEntry | undefined;
+}): Promise<boolean> {
+  const { category, packId, subTab, allTabs, defaultTab, resolveEntryTab, stateRef, loadedMap, doc, storage, lookup } = options;
+  if (!packId) {
+    const targetTabs = subTab ? [subTab] : allTabs;
+    const nextTabs = { ...stateRef.value };
+    for (const tab of targetTabs) {
+      removeCategoryStyle(doc, `${category}:${tab}`);
+      loadedMap.delete(tab);
+      delete nextTabs[tab];
+    }
+    stateRef.value = nextTabs;
+    rebuildMergedPackSlots();
+    persistSelectionMap(storage, activePackIds.value);
+    return true;
+  }
+
+  const entry = lookup(packId);
+  const tab = subTab ?? resolveEntryTab(entry) ?? defaultTab;
+  if (!entry || entry.meta.category !== category) {
+    removeCategoryStyle(doc, `${category}:${tab}`);
+    loadedMap.delete(tab);
+    const nextTabs = { ...stateRef.value };
+    delete nextTabs[tab];
+    stateRef.value = nextTabs;
+    rebuildMergedPackSlots();
+    persistSelectionMap(storage, activePackIds.value);
+    activePackError.value = `未找到扩展包: ${packId}`;
+    return false;
+  }
+
+  loadingCategory.value = category;
+  try {
+    const def = await entry.load();
+    const cssText = buildPackCss(def);
+    mountCategoryStyle(doc, `${category}:${tab}`, def.id, cssText);
+    loadedMap.set(tab, def);
+    rebuildMergedPackSlots();
+    const nextTabs = { ...stateRef.value, [tab]: def.id };
+    stateRef.value = nextTabs;
+    persistSelectionMap(storage, activePackIds.value);
+    return true;
+  } catch (err) {
+    removeCategoryStyle(doc, `${category}:${tab}`);
+    loadedMap.delete(tab);
+    const nextTabs = { ...stateRef.value };
+    delete nextTabs[tab];
+    stateRef.value = nextTabs;
+    rebuildMergedPackSlots();
+    activePackError.value = err instanceof Error ? err.message : String(err);
+    return false;
+  } finally {
+    loadingCategory.value = null;
   }
 }
 
@@ -337,6 +439,7 @@ export async function selectPackWithEnv(
     storage?: Storage;
     lookup?: (id: string) => OfficialPackEntry | undefined;
     interactionTab?: InteractionCardTab;
+    taskProgressTab?: TaskProgressTab;
   } = {},
 ): Promise<boolean> {
   const doc = env.doc ?? (typeof document !== 'undefined' ? document : undefined);
@@ -346,57 +449,35 @@ export async function selectPackWithEnv(
   activePackError.value = null;
 
   if (category === 'interactionCard') {
-    if (!packId) {
-      const targetTabs = env.interactionTab ? [env.interactionTab] : INTERACTION_CARD_TABS;
-      const nextTabs = { ...activeInteractionPackIds.value };
-      for (const tab of targetTabs) {
-        removeCategoryStyle(doc, `interactionCard:${tab}`);
-        loadedInteractionDefinitions.delete(tab);
-        delete nextTabs[tab];
-      }
-      activeInteractionPackIds.value = nextTabs;
-      rebuildMergedPackSlots();
-      persistSelectionMap(storage, activePackIds.value, nextTabs);
-      return true;
-    }
+    return selectSubTabPack({
+      category: 'interactionCard',
+      packId,
+      subTab: env.interactionTab,
+      allTabs: INTERACTION_CARD_TABS,
+      defaultTab: 'approval',
+      resolveEntryTab: entry => entry?.meta.interactionTab,
+      stateRef: activeInteractionPackIds,
+      loadedMap: loadedInteractionDefinitions,
+      doc,
+      storage,
+      lookup,
+    });
+  }
 
-    const entry = lookup(packId);
-    const tab: InteractionCardTab = env.interactionTab ?? entry?.meta.interactionTab ?? 'approval';
-    if (!entry || entry.meta.category !== 'interactionCard') {
-      removeCategoryStyle(doc, `interactionCard:${tab}`);
-      loadedInteractionDefinitions.delete(tab);
-      const nextTabs = { ...activeInteractionPackIds.value };
-      delete nextTabs[tab];
-      activeInteractionPackIds.value = nextTabs;
-      rebuildMergedPackSlots();
-      persistSelectionMap(storage, activePackIds.value, nextTabs);
-      activePackError.value = `未找到扩展包: ${packId}`;
-      return false;
-    }
-
-    loadingCategory.value = category;
-    try {
-      const def = await entry.load();
-      const cssText = buildPackCss(def);
-      mountCategoryStyle(doc, `interactionCard:${tab}`, def.id, cssText);
-      loadedInteractionDefinitions.set(tab, def);
-      rebuildMergedPackSlots();
-      const nextTabs = { ...activeInteractionPackIds.value, [tab]: def.id };
-      activeInteractionPackIds.value = nextTabs;
-      persistSelectionMap(storage, activePackIds.value, nextTabs);
-      return true;
-    } catch (err) {
-      removeCategoryStyle(doc, `interactionCard:${tab}`);
-      loadedInteractionDefinitions.delete(tab);
-      const nextTabs = { ...activeInteractionPackIds.value };
-      delete nextTabs[tab];
-      activeInteractionPackIds.value = nextTabs;
-      rebuildMergedPackSlots();
-      activePackError.value = err instanceof Error ? err.message : String(err);
-      return false;
-    } finally {
-      loadingCategory.value = null;
-    }
+  if (category === 'taskProgress') {
+    return selectSubTabPack({
+      category: 'taskProgress',
+      packId,
+      subTab: env.taskProgressTab,
+      allTabs: TASK_PROGRESS_TABS,
+      defaultTab: 'background',
+      resolveEntryTab: entry => entry?.meta.taskProgressTab,
+      stateRef: activeTaskProgressPackIds,
+      loadedMap: loadedTaskProgressDefinitions,
+      doc,
+      storage,
+      lookup,
+    });
   }
 
   if (!packId) {
@@ -459,19 +540,23 @@ export function resetAllPacksWithEnv(
   removeAllPackStyles(doc);
   loadedDefinitions.clear();
   loadedInteractionDefinitions.clear();
+  loadedTaskProgressDefinitions.clear();
   rebuildMergedPackSlots();
   activePackIds.value = {};
   activeInteractionPackIds.value = {};
+  activeTaskProgressPackIds.value = {};
   activePackError.value = null;
-  persistSelectionMap(storage, {}, {});
+  persistSelectionMap(storage, {}, {}, {});
 }
 
 export async function selectCategoryPack(
   category: OfficialPackCategory,
   packId: string | null,
-  interactionTab?: InteractionCardTab,
+  subTab?: InteractionCardTab | TaskProgressTab,
 ): Promise<boolean> {
-  return selectPackWithEnv(category, packId, { interactionTab });
+  return selectPackWithEnv(category, packId, category === 'taskProgress'
+    ? { taskProgressTab: subTab as TaskProgressTab | undefined }
+    : { interactionTab: subTab as InteractionCardTab | undefined });
 }
 
 export function resetAllPacks(): void {
@@ -682,6 +767,15 @@ export async function removeCustomPackDir(dirPath: string): Promise<void> {
         }
         continue;
       }
+      if (category === 'taskProgress') {
+        for (const tab of TASK_PROGRESS_TABS) {
+          const activeId = activeTaskProgressPackIds.value[tab];
+          if (activeId && packIds.has(activeId)) {
+            await selectCategoryPack('taskProgress', null, tab);
+          }
+        }
+        continue;
+      }
       const activeId = activePackIds.value[category];
       if (activeId && packIds.has(activeId)) {
         await selectCategoryPack(category, null);
@@ -699,7 +793,7 @@ export async function initPackHost(): Promise<void> {
   const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
   const saved = readPersistedSelectionMap(storage);
   for (const category of PACK_CATEGORY_ORDER) {
-    if (category === 'interactionCard') continue;
+    if (category === 'interactionCard' || category === 'taskProgress') continue;
     const id = saved.categories[category];
     if (id) {
       await selectPackWithEnv(category, id);
@@ -711,6 +805,12 @@ export async function initPackHost(): Promise<void> {
       await selectPackWithEnv('interactionCard', id, { interactionTab: tab });
     }
   }
+  for (const tab of TASK_PROGRESS_TABS) {
+    const id = saved.taskProgressTabs[tab];
+    if (id) {
+      await selectPackWithEnv('taskProgress', id, { taskProgressTab: tab });
+    }
+  }
 }
 
 /** 供宿主（ChatView）与设置页消费的扩展包状态接口。 */
@@ -718,6 +818,7 @@ export function usePackHost() {
   return {
     activePackIds,
     activeInteractionPackIds,
+    activeTaskProgressPackIds,
     activePackCount,
     loadingCategory,
     activePackError,
