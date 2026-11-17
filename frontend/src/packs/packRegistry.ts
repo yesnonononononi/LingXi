@@ -227,49 +227,53 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
   // ========== 审批卡片 (approvalCard) ==========
   {
     meta: {
-      id: 'compact-terminal-approval',
+      id: 'amber-guard-approval',
       category: 'approvalCard',
-      name: '极简终端审批卡',
-      description: '高密度终端命令条设计，紧凑呈现命令/路径与工作目录，适合高频连续审批。',
+      name: '琥珀警戒审批卡',
+      description: '暖琥珀渐变背景搭配顶部斜纹警戒条与深色终端命令框，突出风险操作辨识度。',
       version: '1.0.0',
-      capabilities: ['终端紧凑', '审批卡片 Slot'],
+      capabilities: ['琥珀警戒', '渐变按钮', '审批卡片 Slot'],
+      preview: { canvas: '#fffbeb', surface: '#fef3c7', accent: '#f59e0b', text: '#78350f' },
     },
-    load: async () => (await import('./builtin/compactTerminalApproval')).compactTerminalApprovalPack,
+    load: async () => (await import('./builtin/amberGuardApproval')).amberGuardApprovalPack,
   },
   {
     meta: {
-      id: 'audit-rail-approval',
+      id: 'cyber-aurora-approval',
       category: 'approvalCard',
-      name: '审计导轨审批卡',
-      description: '左侧状态导轨搭配意图说明与独立代码框，强化风险核对与可读性。',
+      name: '赛博极光审批卡',
+      description: '青蓝与靛紫极光渐变毛玻璃背景，搭配霓虹顶栏光束与渐变操作按钮。',
       version: '1.0.0',
-      capabilities: ['状态导轨', '审批卡片 Slot'],
+      capabilities: ['极光毛玻璃', '霓虹光束', '审批卡片 Slot'],
+      preview: { canvas: '#eef2ff', surface: '#e0e7ff', accent: '#06b6d4', text: '#1e1b4b' },
     },
-    load: async () => (await import('./builtin/auditRailApproval')).auditRailApprovalPack,
+    load: async () => (await import('./builtin/cyberAuroraApproval')).cyberAuroraApprovalPack,
   },
 
   // ========== 计划卡片 (planCard) ==========
   {
     meta: {
-      id: 'compact-outline-plan',
+      id: 'emerald-blueprint-plan',
       category: 'planCard',
-      name: '极简大纲计划卡',
-      description: '黑白极简紧凑大纲视图，收窄标题与摘要占屏，保留快捷批准与对话讨论入口。',
+      name: '翡翠蓝图计划卡',
+      description: '工程蓝图细网格纹理背景搭配翡翠绿主题徽章与实心操作按钮，架构感十足。',
       version: '1.0.0',
-      capabilities: ['紧凑大纲', '计划卡片 Slot'],
+      capabilities: ['蓝图网格', '翡翠主题', '计划卡片 Slot'],
+      preview: { canvas: '#ecfdf5', surface: '#d1fae5', accent: '#10b981', text: '#064e3b' },
     },
-    load: async () => (await import('./builtin/compactOutlinePlan')).compactOutlinePlanPack,
+    load: async () => (await import('./builtin/emeraldBlueprintPlan')).emeraldBlueprintPlanPack,
   },
   {
     meta: {
-      id: 'editorial-doc-plan',
+      id: 'sunset-editorial-plan',
       category: 'planCard',
-      name: '刊物文档计划卡',
-      description: '在消息流中直接内嵌限高 Markdown 计划正文，兼顾就地阅读与详情跳转。',
+      name: '暖阳手账计划卡',
+      description: '珊瑚橙落日渐变纸张质感搭配左侧书签饰条与内嵌 Markdown 正文，阅读体验温润鲜明。',
       version: '1.0.0',
-      capabilities: ['内嵌正文', '计划卡片 Slot'],
+      capabilities: ['落日渐变', '内嵌正文', '计划卡片 Slot'],
+      preview: { canvas: '#fff1f2', surface: '#ffe4e6', accent: '#f43f5e', text: '#881337' },
     },
-    load: async () => (await import('./builtin/editorialDocPlan')).editorialDocPlanPack,
+    load: async () => (await import('./builtin/sunsetEditorialPlan')).sunsetEditorialPlanPack,
   },
 ]);
 

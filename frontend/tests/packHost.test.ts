@@ -216,11 +216,11 @@ test('approvalCard 与 planCard 两个官方类目各自提供 2 个可叠加激
   const planPacks = listOfficialPacksByCategory('planCard');
   assert.deepEqual(
     approvalPacks.map(item => item.meta.id),
-    ['compact-terminal-approval', 'audit-rail-approval'],
+    ['amber-guard-approval', 'cyber-aurora-approval'],
   );
   assert.deepEqual(
     planPacks.map(item => item.meta.id),
-    ['compact-outline-plan', 'editorial-doc-plan'],
+    ['emerald-blueprint-plan', 'sunset-editorial-plan'],
   );
 
   const { doc } = createFakeDom();
