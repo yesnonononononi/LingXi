@@ -1,25 +1,28 @@
 package com.summit.dp.shared.storage;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.DisposableBean;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 停机后按需压缩 H2 数据库文件，回收因 MVStore 死块或未截断尾部导致的体积膨胀。
+ * 启动前按需压缩 H2 数据库文件，在限定时间窗口内回收 MVStore 死块造成的体积膨胀。
  *
- * <p>必须通过 {@code dataSource} 的 {@code dependsOn} 约束在数据源关闭之后销毁，
- * 避免与尚未停止的业务线程或连接池竞争文件锁。</p>
+ * <p>必须在连接池创建之前执行，且受 {@code MAX_COMPACT_TIME} 限制，避免大库启动长时间卡顿。</p>
  */
 @Slf4j
-public class H2ShutdownCompactor implements DisposableBean {
+public class H2StartupCompactor {
 
     private static final long BYTES_PER_MB = 1024L * 1024L;
+    private static final int MIN_COMPACT_TIME_MS = 100;
 
     private final StorageLayout layout;
     private final String username;
@@ -27,28 +30,26 @@ public class H2ShutdownCompactor implements DisposableBean {
     private final boolean enabled;
     private final long minFileSizeBytes;
     private final int maxFillRatePercent;
+    private final int maxCompactTimeMs;
 
-    public H2ShutdownCompactor(
+    public H2StartupCompactor(
             StorageLayout layout,
             String username,
             String password,
             boolean enabled,
             long minFileSizeMb,
-            int maxFillRatePercent) {
+            int maxFillRatePercent,
+            int maxCompactTimeMs) {
         this.layout = layout;
         this.username = username == null ? "" : username;
         this.password = password == null ? "" : password;
         this.enabled = enabled;
         this.minFileSizeBytes = Math.max(0L, minFileSizeMb) * BYTES_PER_MB;
         this.maxFillRatePercent = maxFillRatePercent;
+        this.maxCompactTimeMs = Math.max(MIN_COMPACT_TIME_MS, maxCompactTimeMs);
     }
 
-    @Override
-    public void destroy() {
-        compactIfNeeded();
-    }
-
-    /** 满足开关、体积下限与填充率阈值时执行一次 {@code SHUTDOWN COMPACT}；任何异常均记录后放行退出。 */
+    /** 满足开关、体积下限与填充率阈值时执行限时压缩；任何异常均记录后放行启动。 */
     public boolean compactIfNeeded() {
         if (!enabled) {
             return false;
@@ -67,19 +68,19 @@ public class H2ShutdownCompactor implements DisposableBean {
             long fillRate = metrics.getOrDefault("info.CHUNKS_FILL_RATE", 100L);
             long chunkCount = metrics.getOrDefault("info.CHUNK_COUNT", 0L);
             if (fillRate > maxFillRatePercent) {
-                log.info("跳过 H2 停机压缩: sizeMB={}, fillRate={}%, chunkCount={}",
+                log.info("跳过 H2 启动前压缩: sizeMB={}, fillRate={}%, chunkCount={}",
                         toMb(beforeBytes), fillRate, chunkCount);
                 return false;
             }
             long startMs = System.currentTimeMillis();
-            executeShutdownCompact(base);
+            executeBoundedCompact(base);
             long elapsedMs = System.currentTimeMillis() - startMs;
             long afterBytes = readFileSize(dbFile);
-            log.info("完成 H2 停机压缩: beforeMB={}, afterMB={}, fillRate={}%, chunkCount={}, costMs={}",
-                    toMb(beforeBytes), toMb(afterBytes), fillRate, chunkCount, elapsedMs);
+            log.info("完成 H2 启动前压缩: beforeMB={}, afterMB={}, fillRate={}%, chunkCount={}, maxCompactTimeMs={}, costMs={}",
+                    toMb(beforeBytes), toMb(afterBytes), fillRate, chunkCount, maxCompactTimeMs, elapsedMs);
             return true;
         } catch (Exception failure) {
-            log.warn("H2 停机压缩失败，已跳过: database={}, reason={}", dbFile, failure.getMessage());
+            log.warn("H2 启动前压缩失败，已跳过: database={}, reason={}", dbFile, failure.getMessage());
             return false;
         }
     }
@@ -103,11 +104,12 @@ public class H2ShutdownCompactor implements DisposableBean {
         return metrics;
     }
 
-    private void executeShutdownCompact(String base) throws SQLException {
-        String compactUrl = "jdbc:h2:file:" + base + ";IFEXISTS=TRUE";
+    private void executeBoundedCompact(String base) throws SQLException {
+        // 用普通 SHUTDOWN 配合 MAX_COMPACT_TIME，避免 SHUTDOWN COMPACT 无上限耗时阻塞启动。
+        String compactUrl = "jdbc:h2:file:" + base + ";IFEXISTS=TRUE;MAX_COMPACT_TIME=" + maxCompactTimeMs;
         try (Connection conn = DriverManager.getConnection(compactUrl, username, password);
              Statement st = conn.createStatement()) {
-            st.execute("SHUTDOWN COMPACT");
+            st.execute("SHUTDOWN");
         }
     }
 

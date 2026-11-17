@@ -1,27 +1,26 @@
 package com.summit.dp.shared;
 
 import com.alibaba.druid.pool.DruidDataSource;
-import com.summit.dp.shared.config.H2MaintenanceConfig;
-import com.summit.dp.shared.storage.H2ShutdownCompactor;
+import com.summit.dp.shared.storage.H2Storage;
+import com.summit.dp.shared.storage.H2StartupCompactor;
 import com.summit.dp.shared.storage.StorageDataSourceKeys;
 import com.summit.dp.shared.storage.StorageLayout;
+import com.summit.dp.shared.storage.StorageStartupGuardPostProcessor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.MapPropertySource;
+import org.springframework.mock.env.MockEnvironment;
 
-import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.*;
-import java.util.Map;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class H2ShutdownCompactorTest {
+class H2StartupCompactorTest {
 
     @TempDir
     Path tempDir;
@@ -34,21 +33,21 @@ class H2ShutdownCompactorTest {
         long bloatedSize = Files.size(layout.databaseFile());
         assertTrue(bloatedSize > 1024L * 1024L, "预期测试库先产生明显膨胀: " + bloatedSize);
 
-        H2ShutdownCompactor disabled = new H2ShutdownCompactor(layout, "", "", false, 1, 80);
+        H2StartupCompactor disabled = new H2StartupCompactor(layout, "", "", false, 1, 80, 3000);
         assertFalse(disabled.compactIfNeeded());
 
-        H2ShutdownCompactor highSizeThreshold = new H2ShutdownCompactor(layout, "", "", true, 1024, 80);
+        H2StartupCompactor highSizeThreshold = new H2StartupCompactor(layout, "", "", true, 1024, 80, 3000);
         assertFalse(highSizeThreshold.compactIfNeeded());
 
-        H2ShutdownCompactor strictFillThreshold = new H2ShutdownCompactor(layout, "", "", true, 1, 0);
+        H2StartupCompactor strictFillThreshold = new H2StartupCompactor(layout, "", "", true, 1, 0, 3000);
         assertFalse(strictFillThreshold.compactIfNeeded());
 
-        H2ShutdownCompactor active = new H2ShutdownCompactor(layout, "", "", true, 1, 80);
+        H2StartupCompactor active = new H2StartupCompactor(layout, "", "", true, 1, 80, 3000);
         assertTrue(active.compactIfNeeded());
 
         long compactedSize = Files.size(layout.databaseFile());
         assertTrue(compactedSize < bloatedSize / 2,
-                "压缩后应明显瘦身: before=" + bloatedSize + ", after=" + compactedSize);
+                "启动前限时压缩应明显瘦身: before=" + bloatedSize + ", after=" + compactedSize);
 
         try (Connection conn = DriverManager.getConnection(StorageDataSourceKeys.h2Url(layout), "", "");
              Statement st = conn.createStatement();
@@ -59,35 +58,57 @@ class H2ShutdownCompactorTest {
     }
 
     @Test
-    void springShutdownClosesDruidDataSourceBeforeCompactorRuns() throws Exception {
+    void postProcessorCompactsBeforeDruidDataSourceOpensAndLeavesDatabaseUsable() throws Exception {
         StorageLayout layout = new StorageLayout(tempDir);
         createBloatedDatabase(layout);
         long bloatedSize = Files.size(layout.databaseFile());
 
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", Map.of(
-                "lingxi.data.dir", tempDir.toString(),
-                "lingxi.storage.h2-compact-on-shutdown.enabled", "true",
-                "lingxi.storage.h2-compact-on-shutdown.min-file-size-mb", "1",
-                "lingxi.storage.h2-compact-on-shutdown.max-fill-rate-percent", "80")));
-        context.register(TestDataSourceConfig.class, H2MaintenanceConfig.class);
-        context.refresh();
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("lingxi.data.dir", tempDir.toString())
+                .withProperty("lingxi.storage.h2-compact-on-startup.enabled", "true")
+                .withProperty("lingxi.storage.h2-compact-on-startup.min-file-size-mb", "1")
+                .withProperty("lingxi.storage.h2-compact-on-startup.max-fill-rate-percent", "80")
+                .withProperty("lingxi.storage.h2-compact-on-startup.max-compact-time-ms", "3000");
 
-        // 持有一次活跃查询以确保 DruidDataSource 已真实建立并锁定 H2 文件。
-        DataSource dataSource = context.getBean(DataSource.class);
-        try (Connection conn = dataSource.getConnection();
+        new StorageStartupGuardPostProcessor().postProcessEnvironment(env, null);
+
+        long afterStartupCompactSize = Files.size(layout.databaseFile());
+        assertTrue(afterStartupCompactSize < bloatedSize / 2,
+                "启动预处理应在连接池创建前完成瘦身: before=" + bloatedSize + ", after=" + afterStartupCompactSize);
+
+        DruidDataSource ds = new DruidDataSource();
+        ds.setUrl(StorageDataSourceKeys.h2Url(layout));
+        ds.setDriverClassName(H2Storage.DRIVER_CLASS_NAME);
+        ds.setValidationQuery("SELECT 1");
+        ds.setInitialSize(1);
+        ds.setMinIdle(1);
+        ds.setMaxActive(2);
+        try (Connection conn = ds.getConnection();
              Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM compact_probe")) {
             assertTrue(rs.next());
             assertEquals(1, rs.getInt(1));
+        } finally {
+            ds.close();
         }
+    }
 
-        context.close();
+    @Test
+    void skipsCompactionWhenDatasourceUrlIsInMemory() throws Exception {
+        StorageLayout layout = new StorageLayout(tempDir);
+        createBloatedDatabase(layout);
+        long bloatedSize = Files.size(layout.databaseFile());
 
-        long afterShutdownSize = Files.size(layout.databaseFile());
-        assertTrue(afterShutdownSize < bloatedSize / 2,
-                "容器关闭应先释放 DruidDataSource 文件锁再完成压缩: before="
-                        + bloatedSize + ", after=" + afterShutdownSize);
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("lingxi.data.dir", tempDir.toString())
+                .withProperty("spring.datasource.url", "jdbc:h2:mem:test-skip")
+                .withProperty("lingxi.storage.h2-compact-on-startup.enabled", "true")
+                .withProperty("lingxi.storage.h2-compact-on-startup.min-file-size-mb", "1")
+                .withProperty("lingxi.storage.h2-compact-on-startup.max-fill-rate-percent", "80");
+
+        new StorageStartupGuardPostProcessor().postProcessEnvironment(env, null);
+
+        assertEquals(bloatedSize, Files.size(layout.databaseFile()));
     }
 
     private static void createBloatedDatabase(StorageLayout layout) throws Exception {
@@ -102,7 +123,6 @@ class H2ShutdownCompactorTest {
             st.execute("CREATE TABLE compact_probe (id INT PRIMARY KEY, payload CLOB)");
             st.execute("MERGE INTO compact_probe (id, payload) VALUES (1, 'init')");
             st.execute("CHECKPOINT");
-            // 用第二个未提交连接钉住旧版本号，真实模拟线上死 chunk 无法回收的膨胀过程。
             try (Connection holder = DriverManager.getConnection(url, "", "")) {
                 holder.setAutoCommit(false);
                 try (Statement hst = holder.createStatement();
@@ -119,22 +139,6 @@ class H2ShutdownCompactorTest {
                 holder.rollback();
             }
             st.execute("SHUTDOWN");
-        }
-    }
-
-    @Configuration
-    static class TestDataSourceConfig {
-        @Bean(destroyMethod = "close")
-        public DruidDataSource dataSource(Environment env) {
-            StorageLayout layout = new StorageLayout(Path.of(env.getRequiredProperty("lingxi.data.dir")));
-            DruidDataSource ds = new DruidDataSource();
-            ds.setUrl(StorageDataSourceKeys.h2Url(layout));
-            ds.setDriverClassName("org.h2.Driver");
-            ds.setValidationQuery("SELECT 1");
-            ds.setInitialSize(1);
-            ds.setMinIdle(1);
-            ds.setMaxActive(2);
-            return ds;
         }
     }
 }

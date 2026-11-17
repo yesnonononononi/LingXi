@@ -62,10 +62,12 @@ lingxi:
   data:
     dir: ${user.home}/.lingxi/data
   storage:
-    h2-compact-on-shutdown:
+    h2-compact-on-startup:
       enabled: true
-      min-file-size-mb: 256
+      min-file-size-mb: 128
       max-fill-rate-percent: 50
+      # 单次启动压缩时间预算（毫秒），避免大库阻塞启动体验；未一次压完时下次启动继续。
+      max-compact-time-ms: 3000
   # Skill 根目录的缺省值：真源在设置页（user_configs.skill_dir），改完立即生效（不需要重启）。
   # 框架递归查找其下的 SKILL.md，把 name/description/入口路径渲染进系统提示词，
   # 模型再用 read_skill 读取正文与引用资源。启动时目录不存在会被自动创建。
