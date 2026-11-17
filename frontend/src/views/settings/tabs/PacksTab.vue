@@ -3,7 +3,7 @@ import {computed, onMounted, ref} from 'vue';
 import {useI18n} from '../../../i18n';
 import {usePackHost} from '../../../packs/packHost';
 import {listOfficialPacksByCategory} from '../../../packs/packRegistry';
-import type {OfficialPackCategory, OfficialPackMeta} from '../../../packs/types';
+import type {InteractionCardTab, OfficialPackCategory, OfficialPackMeta} from '../../../packs/types';
 import {isElectron, type RemotePackManifest} from '../../../utils/platform';
 
 const { t, locale } = useI18n();
@@ -36,6 +36,12 @@ const desktopAvailable = isElectron();
 const isZh = computed(() => locale.value === 'zh-CN');
 
 const selectedCategory = ref<OfficialPackCategory | null>(null);
+const activeInteractionTab = ref<InteractionCardTab>('approval');
+const interactionTabs = computed<readonly { key: InteractionCardTab; label: string }[]>(() => [
+  { key: 'approval', label: isZh.value ? '审批卡片' : 'Approval' },
+  { key: 'plan', label: isZh.value ? '计划卡片' : 'Plan' },
+  { key: 'choice', label: isZh.value ? '选择卡片' : 'Choice' },
+]);
 const transitionName = ref<'pack-slide-forward' | 'pack-slide-back'>('pack-slide-forward');
 const customDirInput = ref('');
 
@@ -108,6 +114,13 @@ const listCategoryCards = (
     .map(meta => ({ meta, isRemote: false, isCustom: true }));
   return [...builtins, ...remotes, ...customs];
 };
+
+const displayedCategoryCards = computed(() => {
+  if (!selectedCategory.value) return [];
+  const all = listCategoryCards(selectedCategory.value);
+  if (selectedCategory.value !== 'interactionCard') return all;
+  return all.filter(item => !item.meta.interactionTab || item.meta.interactionTab === activeInteractionTab.value);
+});
 
 const handleAddCustomDir = async (): Promise<void> => {
   const pathText = customDirInput.value.trim();
@@ -396,9 +409,36 @@ onMounted(() => {
 
         <!-- 本地已就绪（内置 + 已安装远程包） -->
         <section class="space-y-2.5">
-          <h5 class="text-xs font-semibold text-lx-primary-soft">
-            {{ isZh ? '内置与已安装' : 'Built-in & Installed' }}
-          </h5>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h5 class="text-xs font-semibold text-lx-primary-soft">
+              {{ isZh ? '内置与已安装' : 'Built-in & Installed' }}
+            </h5>
+
+            <div
+              v-if="selectedCategory === 'interactionCard'"
+              role="tablist"
+              class="inline-flex items-center gap-1 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken p-0.5"
+              data-testid="interaction-card-subtabs"
+            >
+              <button
+                v-for="tab in interactionTabs"
+                :key="tab.key"
+                type="button"
+                role="tab"
+                :aria-selected="activeInteractionTab === tab.key"
+                :data-testid="`interaction-card-tab-${tab.key}`"
+                @click="activeInteractionTab = tab.key"
+                :class="[
+                  'px-2.5 py-1 rounded-lg text-lx-fs-xs font-medium transition cursor-pointer',
+                  activeInteractionTab === tab.key
+                    ? 'bg-lx-surface text-lx-primary shadow-2xs'
+                    : 'text-lx-muted hover:text-lx-primary'
+                ]"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+          </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <!-- 默认项 -->
@@ -423,7 +463,7 @@ onMounted(() => {
 
             <!-- 该类目下可用扩展包 -->
             <div
-              v-for="item in listCategoryCards(selectedCategory)"
+              v-for="item in displayedCategoryCards"
               :key="item.meta.id"
               role="button"
               tabindex="0"

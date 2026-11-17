@@ -255,6 +255,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     meta: {
       id: 'amber-guard-approval',
       category: 'interactionCard',
+      interactionTab: 'approval',
       name: '琥珀警戒审批卡',
       description: '暖琥珀渐变背景搭配顶部斜纹警戒条与深色终端命令框，突出风险操作辨识度。',
       version: '1.0.0',
@@ -267,6 +268,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     meta: {
       id: 'cyber-aurora-approval',
       category: 'interactionCard',
+      interactionTab: 'approval',
       name: '赛博极光审批卡',
       description: '青蓝与靛紫极光渐变毛玻璃背景，搭配霓虹顶栏光束与渐变操作按钮。',
       version: '1.0.0',
@@ -279,6 +281,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     meta: {
       id: 'emerald-blueprint-plan',
       category: 'interactionCard',
+      interactionTab: 'plan',
       name: '翡翠蓝图计划卡',
       description: '工程蓝图细网格纹理背景搭配翡翠绿主题徽章与实心操作按钮，架构感十足。',
       version: '1.0.0',
@@ -291,6 +294,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     meta: {
       id: 'sunset-editorial-plan',
       category: 'interactionCard',
+      interactionTab: 'plan',
       name: '暖阳手账计划卡',
       description: '珊瑚橙落日渐变纸张质感搭配左侧书签饰条与内嵌 Markdown 正文，阅读体验温润鲜明。',
       version: '1.0.0',
@@ -303,6 +307,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     meta: {
       id: 'rpg-quest-choice',
       category: 'interactionCard',
+      interactionTab: 'choice',
       name: '剧情抉择任务卡',
       description: 'RPG 游戏对话抉择框风格，耀金边框配字母快捷键徽章与金色选中微光。',
       version: '1.0.0',
@@ -315,6 +320,7 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     meta: {
       id: 'neon-pill-choice',
       category: 'interactionCard',
+      interactionTab: 'choice',
       name: '霓虹胶囊矩阵卡',
       description: '双列响应式胶囊网格配顶部步骤点阵进度条，打破传统长条单选排版。',
       version: '1.0.0',

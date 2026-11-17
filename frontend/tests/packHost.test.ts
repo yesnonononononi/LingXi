@@ -231,6 +231,18 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
       'neon-pill-choice',
     ],
   );
+  assert.deepEqual(
+    interactionPacks.filter(item => item.meta.interactionTab === 'approval').map(item => item.meta.id),
+    ['amber-guard-approval', 'cyber-aurora-approval'],
+  );
+  assert.deepEqual(
+    interactionPacks.filter(item => item.meta.interactionTab === 'plan').map(item => item.meta.id),
+    ['emerald-blueprint-plan', 'sunset-editorial-plan'],
+  );
+  assert.deepEqual(
+    interactionPacks.filter(item => item.meta.interactionTab === 'choice').map(item => item.meta.id),
+    ['rpg-quest-choice', 'neon-pill-choice'],
+  );
 
   const { doc } = createFakeDom();
   const { storage } = createFakeStorage();
