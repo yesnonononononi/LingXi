@@ -171,9 +171,9 @@ async function submit() {
       : [CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-zinc-950 border-white/10' : 'bg-white border-zinc-200/90']"
     data-testid="choice-question-group">
     <header class="flex items-start justify-between gap-3 pb-2.5" :class="docked ? 'px-0.5 pt-1' : 'px-4 pt-3'">
-      <!-- 固定高度滚动框 + Markdown 渲染：应对代码块与长题干，切题时保持下方选项位置稳定。 -->
+      <!-- 限高滚动框 + Markdown 渲染：短题自适应无空白，长题与代码块超出上限后内部滚动。 -->
       <div
-        class="scrollbar-thin h-[148px] min-w-0 flex-1 overflow-y-auto pr-1 text-sm leading-relaxed [&_.markdown-body>*:first-child]:mt-0 [&_.markdown-body>*:last-child]:mb-0"
+        class="scrollbar-thin max-h-[160px] min-w-0 flex-1 overflow-y-auto pr-1 text-sm leading-relaxed [&_.markdown-body>*:first-child]:mt-0 [&_.markdown-body>*:last-child]:mb-0"
         :class="isDark ? 'text-zinc-100' : 'text-zinc-900'"
         data-testid="choice-question"
       >
