@@ -63,7 +63,7 @@
               type="button"
               data-test="chat-preview-toggle"
               :aria-label="t('filePreview.togglePanel')"
-              :title="t('filePreview.togglePanel')"
+              :title="togglePreviewPanelTitle"
               :aria-pressed="previewPanelVisible"
               :class="[
                 'inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors cursor-pointer',
@@ -566,6 +566,7 @@ import {useUnifiedPreviewTabs} from '../../composables/useUnifiedPreviewTabs';
 import {useInlineRename} from '../../composables/useInlineRename';
 import {isTempSessionId} from '../../utils/ids';
 import {DEFAULT_WINDOW_TITLE, resolveWindowTitle} from '../../utils/windowTitle';
+import {formatTogglePreviewShortcut, isTogglePreviewShortcut} from '../../utils/previewShortcut';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
@@ -666,8 +667,15 @@ const handleShowWithAgentInsert = (data: ShowWithAgentSubmitData) => {
   inputAreaRef.value?.focusInput?.();
 };
 
+const handlePreviewShortcutKeydown = (event: KeyboardEvent): void => {
+  if (!isTogglePreviewShortcut(event)) return;
+  event.preventDefault();
+  togglePreviewPanel();
+};
+
 onMounted(() => {
   assertChatInputCommands(inputAreaRef.value, 'ChatView.onMounted');
+  window.addEventListener('keydown', handlePreviewShortcutKeydown);
   const offShowWithAgent = window.electronAPI?.projectPage?.onShowWithAgent?.((payload: ShowWithAgentPayload) => {
     showWithAgentPayload.value = payload;
     showWithAgentOpen.value = true;
@@ -675,6 +683,10 @@ onMounted(() => {
   if (offShowWithAgent) {
     onBeforeUnmount(offShowWithAgent);
   }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handlePreviewShortcutKeydown);
 });
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
@@ -715,6 +727,10 @@ const {
 });
 
 const previewPanelVisible = computed<boolean>(() => previewPanelOpen.value);
+const togglePreviewPanelTitle = computed<string>(() => {
+  const shortcut = formatTogglePreviewShortcut(window.electronAPI?.platform);
+  return `${t('filePreview.togglePanel')} (${shortcut})`;
+});
 /** 顶部横条左侧展示的会话名：空态（未建会话 / 待首次发送）给占位文案，不留一段空白。 */
 const headerSessionName = computed<string>(() => currentActiveSession.value?.title?.trim() || t('chat.sidebar.newSession'));
 
