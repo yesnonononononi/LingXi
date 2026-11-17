@@ -6,6 +6,8 @@ import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
@@ -53,7 +55,8 @@ class ChatServiceImplIdleGuardTest {
             mock(InputWakeupService.class),
             executionQueryService,
             mock(ResendTargetResolver.class),
-            mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), new PendingChatQueue());
+            mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class),
+            mock(PendingTaskService.class), mock(PendingTaskDispatcher.class));
 
     private void stubStates(List<ExecutionStatus> states) {
         when(executionQueryService.latestStatesBySession(any()))

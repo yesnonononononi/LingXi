@@ -5,6 +5,7 @@ import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import lombok.RequiredArgsConstructor;
@@ -23,12 +24,12 @@ public class SessionExecutionStopper {
     private final ExecutionRepository executions;
     private final SessionExecutionRegistry registry;
     private final ExecutionControl control;
-    private final PendingChatQueue pendingChats;
+    private final PendingTaskService pendingTasks;
 
     public void stop(long rootSessionId) {
         Set<String> executionIds;
         synchronized (ExecutionCoordination.monitor("control:" + rootSessionId)) {
-            pendingChats.pause(rootSessionId);
+            pendingTasks.pause(rootSessionId);
             executionIds = new LinkedHashSet<>(registry.cancelRoot(rootSessionId));
             Set<Long> sessionIds = new LinkedHashSet<>();
             sessionIds.add(rootSessionId);

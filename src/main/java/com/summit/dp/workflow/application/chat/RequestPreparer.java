@@ -128,7 +128,19 @@ public class RequestPreparer {
      * 后续 {@link #buildRequest} 直接复用，不再另生成。</p>
      */
     public RuntimeContext prepare(ChatCommand command) {
-        return resolve(command, null);
+        return prepare(command, null);
+    }
+
+    /**
+     * 带已解析图片的准备入口：待发送队列派发时，图片来自磁盘而非请求体。
+     *
+     * <p>若再走一次 {@code command.imageFile()} 解析，队列里的任务会因为
+     * {@code MultipartFile} 早已失效而丢图 —— 这些字节在入队时就读完了。</p>
+     *
+     * @param images 已加载的模型图片；null 表示按命令里的文件 / 地址解析
+     */
+    public RuntimeContext prepare(ChatCommand command, List<Image> images) {
+        return resolve(command, null, images);
     }
 
     /**
@@ -141,13 +153,13 @@ public class RequestPreparer {
      */
     public RuntimeContext prepareForResend(ChatCommand command, List<Message> baseline) {
         throwIf(command == null || command.sessionId() == null, "重发必须指定会话");
-        return resolve(command, baseline);
+        return resolve(command, baseline, null);
     }
 
-    private RuntimeContext resolve(ChatCommand command, List<Message> baseline) {
+    private RuntimeContext resolve(ChatCommand command, List<Message> baseline, List<Image> images) {
         throwIf(command == null || command.input() == null || command.input().isBlank(), "聊天内容不能为空");
         throwIf(command.input().length() > SessionMessage.MAX_INPUT_LENGTH, "聊天内容最多支持 " + SessionMessage.MAX_INPUT_LENGTH + " 个字符");
-        UserMessageEntity userMessageEntity = buildUserMessage(command);
+        UserMessageEntity userMessageEntity = buildUserMessage(command, images);
 
         // 单例设置：档位与模型缺省的唯一来源；查询失败按无设置处理（各项走各自缺省）。
         SettingsView settings = settingsProvider.current().orElse(null);
@@ -466,11 +478,18 @@ public class RequestPreparer {
         return revision == null || revision <= 0L ? 1L : revision;
     }
 
+    /** 命令 → 用户消息实体：按命令里的文件 / 地址解析图片。 */
     public UserMessageEntity buildUserMessage(ChatCommand chatCommand) {
-        List<Image> images = chatImageResolver.resolve(chatCommand.imageFile(), chatCommand.imageUrl());
+        return buildUserMessage(chatCommand, null);
+    }
+
+    /** 命令 → 用户消息实体；{@code images} 非空时以它为准（待发送队列的已落盘图片）。 */
+    public UserMessageEntity buildUserMessage(ChatCommand chatCommand, List<Image> images) {
+        List<Image> resolved = images != null ? images
+                : chatImageResolver.resolve(chatCommand.imageFile(), chatCommand.imageUrl());
         String input = chatCommand.input();
-        if (!images.isEmpty()) {
-            return UserMessageEntity.from(input, images);
+        if (!resolved.isEmpty()) {
+            return UserMessageEntity.from(input, resolved);
         }
         return UserMessageEntity.from(input);
     }

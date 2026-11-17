@@ -11,6 +11,8 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.dp.workflow.application.input.InputWakeupService;
@@ -80,7 +82,8 @@ class ChatResumeTeamAttributeTest {
                 mock(InputWakeupService.class),
                 mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
                 // 本测试只盯 resume 的属性补齐，重发链路用不到。
-                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), new PendingChatQueue());
+                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class),
+                mock(PendingTaskService.class), mock(PendingTaskDispatcher.class));
     }
 
     private static <T> org.springframework.beans.factory.ObjectProvider<T> provider(Class<T> type, T value) {

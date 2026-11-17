@@ -8,6 +8,7 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -37,7 +38,7 @@ public class InputTurnContinuation {
     private final RequestPreparer preparer;
     private final PreparedChatExecutor executor;
     private final ObjectProvider<InputWakeupService> wakeups;
-    private final PendingChatQueue pendingChats;
+    private final PendingTaskService pendingChats;
 
     public void continueTurn(Execution previous) {
         if (ExecutionAttributes.readLong(InputAutomationPolicy.attributes(previous), ExecutionAttributes.ROOT_EXECUTION_ID) != null) return;

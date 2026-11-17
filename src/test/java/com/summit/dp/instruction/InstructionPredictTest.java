@@ -26,7 +26,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.service.UserConfigService;
 import com.summit.dp.user_configs.application.vo.UserConfigVO;
-import com.summit.dp.workflow.application.chat.PendingChatQueue;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -59,7 +59,7 @@ class InstructionPredictTest {
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final MessageRepository messageRepository = mock(MessageRepository.class);
     private final ChatTurnRepository chatTurnRepository = mock(ChatTurnRepository.class);
-    private final PendingChatQueue pendingChats = mock(PendingChatQueue.class);
+    private final PendingTaskService pendingChats = mock(PendingTaskService.class);
     private final UserConfigService userConfigService = mock(UserConfigService.class);
     private final ModelService modelService = mock(ModelService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);

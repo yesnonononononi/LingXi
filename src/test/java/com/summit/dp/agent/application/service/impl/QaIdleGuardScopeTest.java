@@ -7,6 +7,8 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
@@ -68,7 +70,8 @@ class QaIdleGuardScopeTest {
                 mock(InputWakeupService.class),
                 realQueryService,
                 mock(ResendTargetResolver.class),
-                mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), new PendingChatQueue());
+                mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class),
+                mock(PendingTaskService.class), mock(PendingTaskDispatcher.class));
     }
 
     private Execution execution(Long sessionId, int statusCode) {

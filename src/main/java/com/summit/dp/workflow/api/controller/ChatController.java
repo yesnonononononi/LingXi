@@ -5,6 +5,9 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.workflow.api.request.ChatRequest;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.input.ResumeSupplementCommand;
+import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
+import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
 import com.summit.dp.workflow.application.input.ResumeSupplementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,7 +49,7 @@ public class ChatController {
     }
 
     @GetMapping("/completion/{sessionId}/pending")
-    public Result<PendingChatQueue.Snapshot> pendingCommands(@PathVariable long sessionId) {
+    public Result<PendingTaskSnapshot> pendingCommands(@PathVariable long sessionId) {
         return Result.success(chatService.pendingCommands(sessionId));
     }
 

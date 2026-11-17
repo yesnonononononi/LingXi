@@ -52,7 +52,9 @@ public class H2SchemaInitializer implements SchemaInitializer {
             // 文件编辑记录（V12）：跨进程存活的改动清单，基线正文在数据目录、库内只留引用。
             "file_record",
             // 指令预测（V15）：每轮一条的衍生结论，(session_id, turn_id) 唯一。
-            "instruction_predict");
+            "instruction_predict",
+            // 待发送队列（V23）：排队消息的权威事实，崩溃后靠 status 区分「本进程新入队」与「上次遗留」。
+            "pending_task");
 
     /** 从 SQLite 抄过来的写法一律拒绝：自增、SQL 触发器体、切模式、虚拟列在 H2 都不成立。 */
     private static final Pattern FORBIDDEN_IN_H2 = Pattern.compile(

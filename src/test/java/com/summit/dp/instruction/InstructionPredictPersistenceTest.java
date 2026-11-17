@@ -26,7 +26,7 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.service.UserConfigService;
 import com.summit.dp.user_configs.application.vo.UserConfigVO;
-import com.summit.dp.workflow.application.chat.PendingChatQueue;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -118,7 +118,7 @@ class InstructionPredictPersistenceTest {
         ChatTurnRepository turns = mock(ChatTurnRepository.class);
         when(turns.findById(TURN_ID)).thenReturn(Optional.of(
                 ChatTurn.builder().id(TURN_ID).sessionId(SESSION_ID).status(ChatTurnStatus.COMPLETED).build()));
-        PendingChatQueue pendingChats = mock(PendingChatQueue.class);
+        PendingTaskService pendingChats = mock(PendingTaskService.class);
         when(pendingChats.hasPending(SESSION_ID)).thenReturn(false);
         UserConfigService userConfigs = mock(UserConfigService.class);
         when(userConfigs.current()).thenReturn(Result.success(

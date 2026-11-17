@@ -16,6 +16,9 @@ import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrat
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
+import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -54,7 +57,10 @@ public class ChatServiceImpl implements ChatService {
     /** 重发回滚：把被改写的那条提问及其之后的整段历史从库里作废。 */
     private final ConversationRollbackService conversationRollbackService;
     private final SessionExecutionStopper executionStopper;
-    private final PendingChatQueue pendingChats;
+    /** 待发送队列的唯一权威在库里，进程内只剩「正在派发」这类运行时标记。 */
+    private final PendingTaskService pendingTasks;
+    /** 用户点「继续」之后要立刻试着发出去，不能等下一轮兜底扫描。 */
+    private final PendingTaskDispatcher pendingDispatcher;
 
     @Override
     public Result<String> chat(ChatCommand command) {
@@ -94,10 +100,10 @@ public class ChatServiceImpl implements ChatService {
         } else {
             long sessionId = command.sessionId();
             synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
-                if (pendingChats.hasPending(sessionId) || sessionExecutionRegistry.isRootRunning(sessionId)
+                if (pendingTasks.hasPending(sessionId) || sessionExecutionRegistry.isRootRunning(sessionId)
                         || hasUnfinishedRoot(sessionId) || ExecutionCoordination.isResumingSession(sessionId)) {
                     requireQueueSession(sessionId);
-                    String pendingId = pendingChats.enqueue(sessionId, command);
+                    String pendingId = pendingTasks.enqueue(sessionId, command);
                     return Result.success(ChatAcceptanceVO.builder().sessionId(sessionId).pendingId(pendingId).build());
                 }
                 context = requestPreparer.prepare(command);
@@ -107,62 +113,27 @@ public class ChatServiceImpl implements ChatService {
         return Result.success(commitAndSubmit(context));
     }
 
-    /** 会话门闩覆盖执行和恢复的上下文回写，终态提交只保证执行行可见。 */
-    public void dispatchPending(long sessionId) {
-        if (sessionExecutionRegistry.isRootRunning(sessionId) || ExecutionCoordination.isResumingSession(sessionId)) return;
-        synchronized (ExecutionCoordination.monitor("session:" + sessionId)) {
-            if (hasUnfinishedRoot(sessionId)) return;
-        }
-
-        PendingChatQueue.Ticket ticket;
-        RuntimeContext context;
-        synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
-            if (sessionExecutionRegistry.isRootRunning(sessionId) || hasUnfinishedRoot(sessionId)
-                    || ExecutionCoordination.isResumingSession(sessionId)) return;
-            ticket = pendingChats.claim(sessionId);
-            if (ticket == null) return;
-            try {
-                requireQueueSession(sessionId);
-                context = requestPreparer.prepare(ticket.command());
-                sessionExecutionRegistry.beginRoot(sessionId, context.executionContext().executionId());
-            } catch (RuntimeException | LinkageError failure) {
-                failPending(sessionId, ticket, failure);
-                return;
-            }
-        }
-
-        RuntimeContext committed;
-        try {
-            committed = commitUserMessage(context);
-        } catch (RuntimeException | LinkageError failure) {
-            failPending(sessionId, ticket, failure);
-            return;
-        }
-
-        // 轮次已落库，启动失败也归该轮次收口，不能把同一需求再派一次。
-        pendingChats.admitted(sessionId, ticket);
-        chatExecutor.submitAsync(committed);
-    }
-
     @Override
-    public PendingChatQueue.Snapshot pendingCommands(long sessionId) {
+    public PendingTaskSnapshot pendingCommands(long sessionId) {
         requireQueueSession(sessionId);
-        return pendingChats.snapshot(sessionId);
+        return pendingTasks.snapshot(sessionId);
     }
 
     @Override
     public void cancelPendingCommand(long sessionId, String pendingId) {
         requireQueueSession(sessionId);
-        Long deferredExecutionId = pendingChats.cancel(sessionId, pendingId);
+        Long deferredExecutionId = pendingTasks.cancel(sessionId, pendingId);
         if (deferredExecutionId != null) inputWakeups.resumeIfInputPending(deferredExecutionId);
     }
 
+    /** 用户点「继续」：待确认 / 失败暂停的那条回到队列，并立刻试一次派发（不等兜底扫描）。 */
     @Override
     public void resumePendingCommands(long sessionId) {
         requireQueueSession(sessionId);
         synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {
-            pendingChats.resume(sessionId);
+            pendingTasks.resume(sessionId);
         }
+        pendingDispatcher.relay(sessionId);
     }
 
     /**
@@ -328,7 +299,7 @@ public class ChatServiceImpl implements ChatService {
         long rootSessionId = context.executionContext().rootSessionId();
         synchronized (ExecutionCoordination.monitor("control:" + rootSessionId)) {
             ensureRootExecutionIdle(rootSessionId);
-            throwIf(pendingChats.hasPending(rootSessionId), "会话有待发送消息，请先处理队列");
+            throwIf(pendingTasks.hasPending(rootSessionId), "会话有待发送消息，请先处理队列");
             sessionExecutionRegistry.beginRoot(rootSessionId, context.executionContext().executionId());
         }
     }
@@ -336,13 +307,6 @@ public class ChatServiceImpl implements ChatService {
     private void requireQueueSession(long sessionId) {
         Session session = sessionRepository.findById(sessionId).orElseThrow(ClientException::new);
         throwIf(session.isSubSession(), "请在根会话中管理待发送消息");
-    }
-
-    private void failPending(long sessionId, PendingChatQueue.Ticket ticket, Throwable failure) {
-        String message = failure instanceof ClientException && failure.getMessage() != null
-                ? failure.getMessage() : "待发送消息受理失败，请重试";
-        pendingChats.failed(sessionId, ticket, message);
-        log.warn("待发送消息受理失败: sessionId={}, pendingId={}", sessionId, ticket.id(), failure);
     }
 
     private void throwIf(boolean condition, String err) {

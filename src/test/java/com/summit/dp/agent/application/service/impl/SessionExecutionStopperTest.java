@@ -8,10 +8,11 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.workflow.application.chat.ChatCommand;
-import com.summit.dp.workflow.application.chat.PendingChatQueue;
 import com.summit.dp.workflow.application.chat.SessionExecutionStopper;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.pending.PendingTaskTestSupport;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -26,7 +27,9 @@ class SessionExecutionStopperTest {
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
     private final ExecutionControl control = mock(ExecutionControl.class);
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
-    private final PendingChatQueue pending = new PendingChatQueue();
+    private final PendingTaskTestSupport.InMemoryRepository pendingRows = new PendingTaskTestSupport.InMemoryRepository();
+    private final PendingTaskService pending = new PendingTaskService(pendingRows,
+            new PendingTaskTestSupport.InMemoryAttachmentStore());
     private final SessionExecutionStopper stopper = new SessionExecutionStopper(sessions, executions, registry, control, pending);
 
     @Test
@@ -54,7 +57,7 @@ class SessionExecutionStopperTest {
         assertTrue(registry.acquire("102").isCancelRequired());
         assertTrue(pending.snapshot(800L).paused());
         assertEquals(pendingId, pending.snapshot(800L).entries().getFirst().id());
-        assertNull(pending.claim(800L));
+        assertTrue(pending.claim(800L).isEmpty());
     }
 
     @Test

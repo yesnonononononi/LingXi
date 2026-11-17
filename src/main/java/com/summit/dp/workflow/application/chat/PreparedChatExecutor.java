@@ -8,6 +8,8 @@ import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchGateway;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchRole;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLaunchSpec;
 import com.summit.dp.workflow.application.lifecycle.StartupFailureCloser;
+import com.summit.dp.workflow.application.turn.TurnPostEndContext;
+import com.summit.dp.workflow.application.turn.TurnPostEndProcessor;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
@@ -46,6 +48,9 @@ public class PreparedChatExecutor {
     private final ExecutionLaunchGateway executionLaunchGateway;
     @Autowired
     private ObjectProvider<InputWakeupService> inputWakeups;
+    /** 轮次结束事件的发布器：用 ObjectProvider 断开「执行器 ↔ 待发送派发器」的启动期循环依赖。 */
+    @Autowired
+    private ObjectProvider<TurnPostEndProcessor> turnPostEnds;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
     /**
@@ -177,6 +182,47 @@ public class PreparedChatExecutor {
      * @return 本次执行的框架对象（同步入口要拿它的消息集合作返回值）
      */
     public Execution run(RuntimeContext context) {
+        Execution result;
+        try {
+            result = runLocked(context);
+        } catch (RuntimeException | LinkageError failure) {
+            publishTurnPostEnd(context, failure);
+            throw failure;
+        }
+        publishTurnPostEnd(context, null);
+        return result;
+    }
+
+    /**
+     * 锁外发布「上一轮结束」事件。
+     *
+     * <p><b>为什么必须在锁外</b>：本方法的调用点刚刚退出 {@code session:} 锁、{@code finishRoot} 也已执行。
+     * 若在锁内发布，下游接力查到的 {@code isRootRunning} 仍是 true，会把自己直接跳过 ——
+     * 表现就是「排队消息永远不发出」，且没有任何报错。</p>
+     *
+     * <p>本方法绝不让异常改变 {@link #run} 的返回/抛出语义：轮次已经跑完了。</p>
+     */
+    private void publishTurnPostEnd(RuntimeContext context, Throwable failure) {
+        if (turnPostEnds == null) {
+            return;
+        }
+        try {
+            TurnPostEndProcessor processor = turnPostEnds.getIfAvailable();
+            if (processor == null) {
+                return;
+            }
+            Execution execution = context.execution();
+            processor.publish(new TurnPostEndContext(context.executionContext().sessionId(),
+                    context.executionContext().rootSessionId(), context.executionContext().executionId(),
+                    execution == null ? null : execution.getExecutionState(),
+                    failure == null ? null : failure.getMessage()));
+        } catch (RuntimeException | LinkageError publishFailure) {
+            log.error("发布轮次结束事件失败: executionId={}",
+                    context.executionContext().executionId(), publishFailure);
+        }
+    }
+
+    private Execution runLocked(RuntimeContext context) {
         // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
         synchronized (ExecutionCoordination.monitor("session:" + context.executionContext().sessionId())) {
             long rootSessionId = context.executionContext().rootSessionId();

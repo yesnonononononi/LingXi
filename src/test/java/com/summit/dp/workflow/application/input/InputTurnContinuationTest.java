@@ -16,6 +16,8 @@ import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
+import com.summit.dp.workflow.pending.PendingTaskTestSupport;
 import com.summit.dp.workflow.application.lifecycle.SuspendedExecutionResumer;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
@@ -48,7 +50,9 @@ class InputTurnContinuationTest {
     private final PreparedChatExecutor executor = mock(PreparedChatExecutor.class);
     private final InputTurnAdmission admission = mock(InputTurnAdmission.class);
     private final InputWakeupService wakeups = mock(InputWakeupService.class);
-    private final PendingChatQueue pendingChats = new PendingChatQueue();
+    private final PendingTaskTestSupport.InMemoryRepository pendingRows = new PendingTaskTestSupport.InMemoryRepository();
+    private final PendingTaskService pendingChats = new PendingTaskService(pendingRows,
+            new PendingTaskTestSupport.InMemoryAttachmentStore());
     private final InputTurnContinuation service = new InputTurnContinuation(executions, turns, registry, mail, tasks,
             admission, preparer, executor,
             new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class), pendingChats);

@@ -12,9 +12,14 @@ import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
 import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrator;
+import com.summit.dp.workflow.application.pending.PendingTaskAdmission;
+import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
+import com.summit.dp.workflow.application.pending.PendingTaskService;
+import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
+import com.summit.dp.workflow.pending.PendingTaskTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,8 +57,13 @@ class ChatAcceptanceEndpointTest {
     private final PreparedChatExecutor chatExecutor = mock(PreparedChatExecutor.class);
     private final SessionExecutionRegistry registry = new SessionExecutionRegistry();
     private final ExecutionQueryService executionQueryService = mock(ExecutionQueryService.class);
-    private final PendingChatQueue pendingChats = new PendingChatQueue();
     private final SessionRepository sessions = mock(SessionRepository.class);
+    private final PendingTaskTestSupport.InMemoryRepository pendingRows = new PendingTaskTestSupport.InMemoryRepository();
+    private final PendingTaskTestSupport.InMemoryAttachmentStore pendingFiles = new PendingTaskTestSupport.InMemoryAttachmentStore();
+    private final PendingTaskService pendingChats = new PendingTaskService(pendingRows, pendingFiles);
+    private final PendingTaskDispatcher pendingDispatcher = new PendingTaskDispatcher(pendingChats, pendingFiles,
+            new PendingTaskAdmission(chatExecutor, pendingRows, registry),
+            requestPreparer, chatExecutor, registry, executionQueryService, sessions);
 
     private final ChatServiceImpl chatService = new ChatServiceImpl(
             sseEventPublisher, requestPreparer,
@@ -61,7 +71,8 @@ class ChatAcceptanceEndpointTest {
             sessions, registry,
             mock(ExecutionLocator.class), chatExecutor,
             mock(InputWakeupService.class), executionQueryService,
-            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class), pendingChats);
+            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class), mock(SessionExecutionStopper.class),
+            pendingChats, pendingDispatcher);
 
     @BeforeEach
     void sessionIsIdle() {
@@ -158,13 +169,13 @@ class ChatAcceptanceEndpointTest {
         ChatAcceptanceVO secondReceipt = chatService.acceptCommand(second).getData();
         assertNull(firstReceipt.getTurnId());
         assertNotEquals(firstReceipt.getPendingId(), secondReceipt.getPendingId());
-        chatService.dispatchPending(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
         verifyNoInteractions(requestPreparer, chatExecutor);
 
         registry.finishRoot(ROOT_SESSION_ID, "old");
         when(executionQueryService.latestStatesBySession(any()))
                 .thenReturn(Map.of(ROOT_SESSION_ID, List.of(ExecutionStatus.SUSPENDED)));
-        chatService.dispatchPending(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
         verifyNoInteractions(requestPreparer, chatExecutor);
 
         when(executionQueryService.latestStatesBySession(any()))
@@ -173,21 +184,23 @@ class ChatAcceptanceEndpointTest {
         assertNull(thirdReceipt.getTurnId());
         RuntimeContext firstContext = context("101");
         RuntimeContext secondContext = context("102");
-        when(requestPreparer.prepare(first)).thenReturn(firstContext);
-        when(requestPreparer.prepare(second)).thenReturn(secondContext);
+        when(requestPreparer.prepare(any(ChatCommand.class))).thenReturn(firstContext, secondContext);
         when(chatExecutor.admit(firstContext)).thenReturn(firstContext.withTurnId(901L));
         when(chatExecutor.admit(secondContext)).thenReturn(secondContext.withTurnId(902L));
-        chatService.dispatchPending(ROOT_SESSION_ID);
-        chatService.dispatchPending(ROOT_SESSION_ID);
-        verify(requestPreparer, never()).prepare(second);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
+        // 同一会话只许一条在跑：第二次通知不能把第二条也领走。
+        ArgumentCaptor<ChatCommand> onlyFirst = ArgumentCaptor.forClass(ChatCommand.class);
+        verify(requestPreparer, times(1)).prepare(onlyFirst.capture());
+        assertEquals("第一条", onlyFirst.getValue().input(), "派发必须按 id 升序先发最早那条");
         registry.finishRoot(ROOT_SESSION_ID, "101");
-        chatService.dispatchPending(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
 
         InOrder order = inOrder(chatExecutor);
         order.verify(chatExecutor).submitAsync(firstContext.withTurnId(901L));
         order.verify(chatExecutor).submitAsync(secondContext.withTurnId(902L));
         assertEquals(List.of(thirdReceipt.getPendingId()), pendingChats.snapshot(ROOT_SESSION_ID).entries()
-                .stream().map(PendingChatQueue.Entry::id).toList());
+                .stream().map(PendingTaskSnapshot.Entry::id).toList());
     }
 
     @Test
@@ -213,9 +226,9 @@ class ChatAcceptanceEndpointTest {
             resume.join();
         }
         RuntimeContext context = context("101");
-        when(requestPreparer.prepare(command())).thenReturn(context);
+        when(requestPreparer.prepare(any(ChatCommand.class))).thenReturn(context);
         when(chatExecutor.admit(context)).thenReturn(context.withTurnId(901L));
-        chatService.dispatchPending(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
         verify(chatExecutor).submitAsync(context.withTurnId(901L));
     }
 
@@ -225,18 +238,18 @@ class ChatAcceptanceEndpointTest {
         String pendingId = chatService.acceptCommand(command()).getData().getPendingId();
         registry.finishRoot(ROOT_SESSION_ID, "old");
         RuntimeContext context = context("101");
-        when(requestPreparer.prepare(command())).thenReturn(context);
+        when(requestPreparer.prepare(any(ChatCommand.class))).thenReturn(context);
         when(chatExecutor.admit(context)).thenThrow(new IllegalStateException("db down"))
                 .thenReturn(context.withTurnId(901L));
 
-        chatService.dispatchPending(ROOT_SESSION_ID);
-        chatService.dispatchPending(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
         assertTrue(chatService.pendingCommands(ROOT_SESSION_ID).paused());
         assertEquals(pendingId, chatService.pendingCommands(ROOT_SESSION_ID).entries().getFirst().id());
         verify(chatExecutor, never()).submitAsync(any());
 
         chatService.resumePendingCommands(ROOT_SESSION_ID);
-        chatService.dispatchPending(ROOT_SESSION_ID);
+        pendingDispatcher.relay(ROOT_SESSION_ID);
         verify(chatExecutor).submitAsync(context.withTurnId(901L));
         assertTrue(chatService.pendingCommands(ROOT_SESSION_ID).entries().isEmpty());
     }

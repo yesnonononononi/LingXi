@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 public interface ChatService {
@@ -9,7 +10,7 @@ public interface ChatService {
     /** 空闲时同步受理并返回轮次 ID，繁忙时返回待发送 ID。 */
     Result<ChatAcceptanceVO> acceptCommand(ChatCommand command);
 
-    PendingChatQueue.Snapshot pendingCommands(long sessionId);
+    PendingTaskSnapshot pendingCommands(long sessionId);
 
     void cancelPendingCommand(long sessionId, String pendingId);
 
