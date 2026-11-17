@@ -661,9 +661,11 @@ export const messages: MessageSchema = {
       },
       pending: {
         title: '待发送消息', count: '{count} 条待发送', add: '加入待发送', sending: '发送中',
-        resume: '继续发送', edit: '回写到输入框重新编辑', editNamed: '重新编辑待发送消息：{input}',
+        resume: '继续发送', confirm: '继续', confirmNamed: '继续发送待发送消息：{input}',
+        awaitingConfirm: '待确认',
+        edit: '回写到输入框重新编辑', editNamed: '重新编辑待发送消息：{input}',
         cancel: '撤销', cancelNamed: '撤销待发送消息：{input}',
-        textOnly: '待发送队列只支持文本', operationFailed: '待发送队列操作失败，请重试',
+        operationFailed: '待发送队列操作失败，请重试',
       },
       command: {
         optimizePrompt: '优化当前提示词，预览后选择是否替换',
@@ -2309,9 +2311,11 @@ export const messages: MessageSchema = {
       },
       pending: {
         title: 'Pending messages', count: 'Pending messages ({count})', add: 'Queue message', sending: 'Sending',
-        resume: 'Resume sending', edit: 'Edit in input box', editNamed: 'Edit queued message: {input}',
+        resume: 'Resume sending', confirm: 'Resume', confirmNamed: 'Send queued message: {input}',
+        awaitingConfirm: 'Needs confirmation',
+        edit: 'Edit in input box', editNamed: 'Edit queued message: {input}',
         cancel: 'Remove', cancelNamed: 'Remove queued message: {input}',
-        textOnly: 'Only text can be queued', operationFailed: 'Could not update the queue. Try again.',
+        operationFailed: 'Could not update the queue. Try again.',
       },
       command: {
         optimizePrompt: 'Optimize the current prompt and preview before replacing',

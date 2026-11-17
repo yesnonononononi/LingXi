@@ -5,7 +5,8 @@
  * <ol>
  *   <li>{@code usePendingChatQueue.cancel} 成功返回 {@code true}，失败返回 {@code false}；</li>
  *   <li>{@code ChatView} 在撤销按钮左侧渲染 {@code pending-edit-btn}（含 SVG 图标），
- *       且编辑与撤销按钮都通过 {@code handlePendingRestore} 在撤销成功后将原文回写输入框并聚焦。</li>
+ *       且编辑与撤销按钮都通过 {@code handlePendingRestore} 在撤销成功后将原文回写输入框并聚焦；
+ *       附件先取字节再撤销 —— 反了就只剩文字。</li>
  * </ol>
  */
 import assert from 'node:assert/strict';
@@ -37,7 +38,10 @@ test('usePendingChatQueue.cancel 成功返回 true，失败返回 false', async 
   const sessionId = ref<string | null>('s1');
   t.mock.method(AgentAPI, 'pendingCommands', async () => ({
     code: 1,
-    data: {paused: false, failure: null, entries: [{id: 'p1', input: 'hello', dispatching: false}]},
+    data: {
+      paused: false, failure: null,
+      entries: [{id: 'p1', input: 'hello', dispatching: false, attachments: [], status: 'PENDING' as const}],
+    },
   }));
 
   let shouldFail = false;
@@ -75,8 +79,9 @@ test('ChatView 待发送队列在撤销左侧提供 SVG 编辑图标，且编辑
   const cancelSnippet = chatView.slice(cancelPos, cancelPos + 800);
   assert.match(cancelSnippet, /@click="handlePendingRestore\(entry\)"/);
 
+  // 附件必须在撤销之前取字节：撤销会把磁盘上的附件一起删掉。
   assert.match(
     chatView,
-    /const handlePendingRestore = async \(entry: \{ id: string; input: string \}\): Promise<void> => \{[\s\S]*?const cancelled = await pendingQueue\.cancel\(entry\.id\);[\s\S]*?if \(!cancelled\) return;[\s\S]*?inputAreaRef\.value\?\.setInputText\(entry\.input\);[\s\S]*?inputAreaRef\.value\?\.focusInput\?\.\(\);/,
+    /const handlePendingRestore = async \(entry: PendingTaskEntry\): Promise<void> => \{[\s\S]*?pendingQueue\.attachmentFiles\(entry\)[\s\S]*?pendingQueue\.cancel\(entry\.id\)[\s\S]*?if \(!cancelled\) return;[\s\S]*?inputAreaRef\.value\?\.setInputText\(entry\.input\);[\s\S]*?setAttachedImages\(files\)[\s\S]*?focusInput\?\.\(\);/,
   );
 });

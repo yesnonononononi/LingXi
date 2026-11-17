@@ -16,6 +16,7 @@ import com.summit.dp.workflow.application.lifecycle.ExecutionLifecycleOrchestrat
 import com.summit.dp.workflow.application.lifecycle.ResumeAcceptResult;
 import com.summit.dp.workflow.application.lifecycle.ResumeRequest;
 import com.summit.dp.workflow.application.lifecycle.ResumeTriggerType;
+import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
 import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
@@ -25,6 +26,7 @@ import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
@@ -134,6 +136,31 @@ public class ChatServiceImpl implements ChatService {
             pendingTasks.resume(sessionId);
         }
         pendingDispatcher.relay(sessionId);
+    }
+
+    /**
+     * 单条「继续」：与队列级恢复同口径，只是精确到某一条，避免把别的失败任务一起放行。
+     *
+     * <p>派发在锁外触发：{@code confirm} 只改任务行，运行资格与 {@code session:} 锁由派发器自己取。</p>
+     */
+    @Override
+    public void confirmPendingCommand(long sessionId, String pendingId) {
+        requireQueueSession(sessionId);
+        pendingTasks.confirm(sessionId, pendingId);
+        pendingDispatcher.relay(sessionId);
+    }
+
+    @Override
+    public void updatePendingCommand(long sessionId, String pendingId, String input,
+                                     List<String> keepAttachmentIds, List<MultipartFile> files) {
+        requireQueueSession(sessionId);
+        pendingTasks.update(sessionId, pendingId, input, keepAttachmentIds, files);
+    }
+
+    @Override
+    public PendingAttachmentContent readPendingAttachment(long sessionId, String pendingId, String attachmentId) {
+        requireQueueSession(sessionId);
+        return pendingTasks.readAttachment(sessionId, pendingId, attachmentId);
     }
 
     /**

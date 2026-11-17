@@ -2,6 +2,7 @@ package com.summit.dp.workflow.pending;
 
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskService;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
 import com.summit.dp.workflow.domain.pending.model.PendingAttachment;
@@ -48,7 +49,8 @@ class PendingTaskQueueTest {
         assertEquals(1, snapshot.entries().size());
         PendingTaskSnapshot.Entry entry = snapshot.entries().getFirst();
         assertEquals(pendingId, entry.id());
-        assertEquals(2, entry.imageCount());
+        assertEquals(2, entry.attachments().size());
+        assertTrue(entry.attachments().stream().allMatch(attachment -> attachment.name().endsWith(".png")));
         assertEquals("PENDING", entry.status());
         assertEquals(2, files.fileCount());
         assertFalse(files.relPaths().iterator().next().contains("base64"));
@@ -117,6 +119,42 @@ class PendingTaskQueueTest {
 
         assertEquals("PENDING", rows.findBySession(SESSION).getFirst().getStatus().name());
         assertTrue(rows.findBySession(SESSION).getFirst().dispatchable());
+    }
+
+    @Test
+    void updateWithoutKeepIdsLeavesAttachmentsUntouched() {
+        service.enqueue(SESSION, command("先这样", image("a.png", new byte[]{1, 2, 3})));
+        PendingTask first = rows.findBySession(SESSION).getFirst();
+        String keptId = first.getAttachments().getFirst().id();
+
+        // 只改文字时前端不带 keepAttachmentIds：语义是「附件不动」，不是「全丢」。
+        service.update(SESSION, String.valueOf(first.getId()), "只改文字", null, List.<MultipartFile>of());
+
+        PendingTask updated = rows.findBySession(SESSION).getFirst();
+        assertEquals("只改文字", updated.getInput());
+        assertEquals(1, updated.getAttachments().size());
+        assertEquals(keptId, updated.getAttachments().getFirst().id());
+        assertEquals(1, files.fileCount(), "附件不动就不能有文件被删");
+    }
+
+    @Test
+    void readAttachmentReturnsStoredBytesAndRejectsForeignScope() {
+        String pendingId = service.enqueue(SESSION, command("看这张", image("a.png", new byte[]{7, 8, 9})));
+        String attachmentId = rows.findBySession(SESSION).getFirst().getAttachments().getFirst().id();
+
+        PendingAttachmentContent content = service.readAttachment(SESSION, pendingId, attachmentId);
+        assertEquals("a.png", content.name());
+        assertEquals("image/png", content.mime());
+        assertArrayEquals(new byte[]{7, 8, 9}, content.data());
+
+        // 换个会话 id 就够不着：附件 id 是可猜的十六位串，不校验等于把别人的图挂到自己的地址上。
+        ClientException foreign = assertThrows(ClientException.class,
+                () -> service.readAttachment(SESSION + 1, pendingId, attachmentId));
+        assertTrue(foreign.getMessage().contains("不属于该会话"));
+
+        ClientException unknown = assertThrows(ClientException.class,
+                () -> service.readAttachment(SESSION, pendingId, "ffffffffffffffff"));
+        assertTrue(unknown.getMessage().contains("不存在"));
     }
 
     @Test

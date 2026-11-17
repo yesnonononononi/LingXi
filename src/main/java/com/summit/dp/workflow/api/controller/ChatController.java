@@ -5,16 +5,18 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.workflow.api.request.ChatRequest;
 import com.summit.dp.workflow.application.chat.*;
 import com.summit.dp.workflow.application.input.ResumeSupplementCommand;
-import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
-import com.summit.dp.workflow.application.pending.PendingTaskService;
+import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
 import com.summit.dp.workflow.application.input.ResumeSupplementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
 import java.util.Objects;
 
 @RestController
@@ -63,6 +65,46 @@ public class ChatController {
     public Result<Void> resumePendingCommands(@PathVariable long sessionId) {
         chatService.resumePendingCommands(sessionId);
         return Result.success();
+    }
+
+    /** 单条「继续」：只放行这一条，不把队列里别的失败任务一起带上。 */
+    @Operation(summary = "让某一条待发送消息继续发送")
+    @PostMapping("/completion/{sessionId}/pending/{pendingId}/confirm")
+    public Result<Void> confirmPendingCommand(@PathVariable long sessionId, @PathVariable String pendingId) {
+        chatService.confirmPendingCommand(sessionId, pendingId);
+        return Result.success();
+    }
+
+    /**
+     * 原地修改一条待发送消息：文本、保留哪些已上传图片、再补哪些新图。
+     *
+     * <p>{@code keepAttachmentIds} 缺省 = 附件不动；显式给出 = 只保留列出的那些（空表示全丢）。
+     * 用「缺省」而不是「空列表」表达「不动」，是因为表单里漏传字段与传空值在
+     * 客户端几乎无法可靠区分，而误判成「全丢」会直接删掉用户刚传的图。</p>
+     */
+    @Operation(summary = "原地修改待发送消息")
+    @PutMapping(value = "/completion/{sessionId}/pending/{pendingId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<Void> updatePendingCommand(@PathVariable long sessionId, @PathVariable String pendingId,
+                                             @RequestParam(required = false) String input,
+                                             @RequestParam(required = false) List<String> keepAttachmentIds,
+                                             @RequestParam(name = "image", required = false) List<MultipartFile> images) {
+        chatService.updatePendingCommand(sessionId, pendingId, input, keepAttachmentIds, images);
+        return Result.success();
+    }
+
+    /**
+     * 读取一条排队附件的原字节：面板缩略图与「回填编辑」共用。
+     *
+     * <p>走独立接口而不是塞进快照：快照每秒轮询，图片字节必须按需懒加载。</p>
+     */
+    @Operation(summary = "读取待发送图片")
+    @GetMapping("/completion/{sessionId}/pending/{pendingId}/attachments/{attachmentId}")
+    public ResponseEntity<byte[]> pendingAttachment(@PathVariable long sessionId, @PathVariable String pendingId,
+                                                    @PathVariable String attachmentId) {
+        PendingAttachmentContent content = chatService.readPendingAttachment(sessionId, pendingId, attachmentId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(content.mime()))
+                .body(content.data());
     }
 
     /**

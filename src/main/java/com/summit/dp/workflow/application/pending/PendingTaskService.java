@@ -94,7 +94,10 @@ public class PendingTaskService implements PendingInputProbe {
                 paused = task;
             }
             entries.add(new PendingTaskSnapshot.Entry(String.valueOf(task.getId()), task.getInput(),
-                    claiming.contains(task.getId()), task.getAttachments().size(),
+                    claiming.contains(task.getId()),
+                    task.getAttachments().stream()
+                            .map(attachment -> new PendingTaskSnapshot.Attachment(attachment.id(), attachment.name()))
+                            .toList(),
                     task.getStatus().name()));
         }
         return new PendingTaskSnapshot(paused != null, paused == null ? null : paused.getFailure(),
@@ -107,7 +110,7 @@ public class PendingTaskService implements PendingInputProbe {
         throwIf(claiming.contains(taskId), "这条消息正在发送");
         PendingTask task = pendingTasks.findById(taskId)
                 .orElseThrow(() -> new ClientException("待发送消息不存在或已发送"));
-        throwIf(task.getSessionId() != sessionId, "待发送消息不属于该会话");
+        
         pendingTasks.delete(task);
         attachments.deleteTask(sessionId, taskId);
         return pendingTasks.existsBySession(sessionId) ? null : deferred.remove(sessionId);
@@ -118,6 +121,23 @@ public class PendingTaskService implements PendingInputProbe {
         PendingTask task = requireTask(sessionId, pendingId);
         task.resume(Instant.now());
         pendingTasks.updateById(task);
+    }
+
+    /**
+     * 读一条排队附件的字节：缩略图与「回填编辑」共用。
+     *
+     * <p>必须校验附件确实属于该会话的该条任务 —— 附件 id 是可猜的十六位串，
+     * 不校验就能拿别的会话的图片地址。
+     */
+    public synchronized PendingAttachmentContent readAttachment(long sessionId, String pendingId,
+                                                                 String attachmentId) {
+        PendingTask task = requireTask(sessionId, pendingId);
+        PendingAttachment attachment = task.getAttachments().stream()
+                .filter(item -> item.id().equals(attachmentId))
+                .findFirst()
+                .orElseThrow(() -> new ClientException("待发送图片不存在或已发送"));
+        return new PendingAttachmentContent(attachment.name(), attachment.mime(),
+                attachments.read(attachment));
     }
 
     /**

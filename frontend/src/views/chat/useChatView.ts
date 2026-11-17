@@ -646,8 +646,15 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     }
   };
 
-  const handleQueueMessage = (text: string, requirePlan: boolean, agentId?: string | number | null) =>
-    handleSendMessage(text, requirePlan, null, agentId, [], true);
+  /**
+   * 会话忙时把消息存入后端待发送队列。
+   *
+   * <p>图片随队列一起走：入队前后端会把它们落盘，派发时再读成模型图片 ——
+   * 所以这里必须把 `File[]` 原样交出去，不能像以前那样丢成空数组。</p>
+   */
+  const handleQueueMessage = (text: string, requirePlan: boolean,
+                              agentId: string | number | null | undefined, images: File[]) =>
+    handleSendMessage(text, requirePlan, null, agentId, images ?? [], true);
 
   /**
    * 重发一条「未发送」的提问。

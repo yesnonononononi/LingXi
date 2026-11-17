@@ -73,7 +73,7 @@ import {
 
 const props = defineProps<{
   isSending?: boolean;
-  queueMessage?: (text: string, requirePlan: boolean, agentId?: string | number | null) => Promise<boolean>;
+  queueMessage?: (text: string, requirePlan: boolean, agentId: string | number | null | undefined, images: File[]) => Promise<boolean>;
   isDark?: boolean;
   models?: ModelConfig[];
   selectedModelId?: string | number;
@@ -1260,7 +1260,7 @@ const canSend = computed(() => {
 });
 const queueSubmitting = ref(false);
 const hasQueueableInput = computed(() => !!props.queueMessage && !props.reasoningEffortPending
-  && attachments.value.length === 0 && (inputText.value.trim().length > 0 || pastedDocuments.value.length > 0));
+  && (attachments.value.length > 0 || inputText.value.trim().length > 0 || pastedDocuments.value.length > 0));
 const canQueue = computed(() => hasQueueableInput.value && !queueSubmitting.value);
 // 运行中但输入框已有可入队文本时，按钮切换为「可发送」态，点击即存入待发送队列。
 const showStop = computed(() => !!props.isSending && !hasQueueableInput.value);
@@ -1512,11 +1512,12 @@ const handleSend = () => {
     if (!canQueue.value || !props.queueMessage) return;
     const original = inputText.value;
     queueSubmitting.value = true;
-    void props.queueMessage(combinedText, draft.requirePlan, localSelectedAgentId.value).then(accepted => {
-      if (accepted && inputText.value === original) {
-        writeInputText('');
-        clearPastedDocuments();
-      }
+    void props.queueMessage(combinedText, draft.requirePlan, localSelectedAgentId.value, images).then(accepted => {
+      if (!accepted || inputText.value !== original) return;
+      writeInputText('');
+      // 图片与文档都随入队一起交出去了：留着会让下一条消息莫名其妙带上上一张图。
+      clearImageAttachments();
+      clearPastedDocuments();
     }).finally(() => { queueSubmitting.value = false; });
     return;
   }

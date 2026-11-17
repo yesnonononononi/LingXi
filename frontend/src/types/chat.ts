@@ -970,10 +970,37 @@ export interface ChatAcceptance {
 
 export type ChatCommandReceipt = ChatAcceptance | {sessionId: string; pendingId: string};
 
-export interface PendingChatQueue {
+/**
+ * 待发送队列里一条附件的最小身份。
+ *
+ * <p>只给 id 与文件名，字节走单独的缩略图接口按需加载 —— 快照每秒轮询，
+ * 把图片内容塞进来等于每秒几 MB 的 JSON。</p>
+ */
+export interface PendingAttachmentView {
+  id: string;
+  name: string;
+}
+
+/** 一条排队消息；`status` 决定面板给不给「继续」按钮。 */
+export interface PendingTaskEntry {
+  id: string;
+  input: string;
+  /** 后端正在派发这一条（内存标记，不落库）。 */
+  dispatching: boolean;
+  attachments: PendingAttachmentView[];
+  status: 'PENDING' | 'PAUSED' | 'AWAITING_CONFIRM';
+}
+
+/**
+ * 待发送队列快照，契约来源：`PendingTaskSnapshot`。
+ *
+ * <p>`paused` 只表示「有失败暂停的任务」，崩溃遗留的 `AWAITING_CONFIRM` 不在其中 ——
+ * 后者要看 `entries[].status`，否则没有故障文案时会以为队列是健康的。</p>
+ */
+export interface PendingTaskSnapshot {
   paused: boolean;
   failure: string | null;
-  entries: {id: string; input: string; dispatching: boolean}[];
+  entries: PendingTaskEntry[];
 }
 
 /* ------------------------------------------------------------------ */

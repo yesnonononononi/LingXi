@@ -1,8 +1,12 @@
 package com.summit.dp.workflow.application.chat;
 
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
 import com.summit.dp.workflow.application.pending.PendingTaskSnapshot;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
 
 public interface ChatService {
     Result<String> chat(ChatCommand command);
@@ -13,6 +17,20 @@ public interface ChatService {
     PendingTaskSnapshot pendingCommands(long sessionId);
 
     void cancelPendingCommand(long sessionId, String pendingId);
+
+    /** 用户点「继续」：把待确认 / 失败暂停的那条放回可派发状态，并立刻试一次接力。 */
+    void confirmPendingCommand(long sessionId, String pendingId);
+
+    /**
+     * 原地修改一条排队消息：文本可改、已上传的图可保留、也可再补新图。
+     *
+     * @param keepAttachmentIds 要保留的附件 id；{@code null} 表示「附件不动」，空列表表示「全部丢掉」
+     */
+    void updatePendingCommand(long sessionId, String pendingId, String input,
+                              List<String> keepAttachmentIds, List<MultipartFile> files);
+
+    /** 读一条排队附件的字节（缩略图与「回填编辑」）。 */
+    PendingAttachmentContent readPendingAttachment(long sessionId, String pendingId, String attachmentId);
 
     void resumePendingCommands(long sessionId);
 

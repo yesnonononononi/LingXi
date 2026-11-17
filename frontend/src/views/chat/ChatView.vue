@@ -333,7 +333,31 @@
                       class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-md px-1 text-[10px] font-semibold tabular-nums select-none"
                       :class="displayIsDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-200/85 text-zinc-600'"
                     >{{ index + 1 }}</span>
+                    <span v-if="entry.attachments.length" class="flex shrink-0 items-center gap-1">
+                      <img
+                        v-for="attachment in entry.attachments.slice(0, 2)"
+                        :key="attachment.id"
+                        :src="pendingQueue.attachmentUrl(entry.id, attachment.id)"
+                        :alt="attachment.name"
+                        :title="attachment.name"
+                        loading="lazy"
+                        decoding="async"
+                        data-testid="pending-attachment-thumb"
+                        class="h-6 w-6 shrink-0 rounded-md object-cover ring-1"
+                        :class="displayIsDark ? 'ring-white/15' : 'ring-zinc-200'"
+                      />
+                      <span
+                        v-if="entry.attachments.length > 2"
+                        class="text-[10px] font-semibold tabular-nums"
+                        :class="displayIsDark ? 'text-zinc-400' : 'text-zinc-500'"
+                      >+{{ entry.attachments.length - 2 }}</span>
+                    </span>
                     <span class="min-w-0 flex-1 truncate leading-5" :title="entry.input">{{ entry.input }}</span>
+                    <span
+                      v-if="entry.status === 'AWAITING_CONFIRM'"
+                      class="inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
+                      :class="displayIsDark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-500/10 text-amber-600'"
+                    >{{ t('chat.pending.awaitingConfirm') }}</span>
                     <span
                       v-if="entry.dispatching"
                       class="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium"
@@ -343,6 +367,18 @@
                       {{ t('chat.pending.sending') }}
                     </span>
                     <div v-else class="flex shrink-0 items-center gap-1">
+                      <button
+                        v-if="entry.status !== 'PENDING'"
+                        type="button"
+                        data-testid="pending-confirm-btn"
+                        class="inline-flex items-center rounded-lg px-2 py-1 text-xs font-medium transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        :class="displayIsDark
+                          ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                          : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20'"
+                        :disabled="pendingQueue.changing.value"
+                        :aria-label="t('chat.pending.confirmNamed', {input: entry.input})"
+                        @click="pendingQueue.confirm(entry.id)"
+                      >{{ t('chat.pending.confirm') }}</button>
                       <button
                         type="button"
                         data-testid="pending-edit-btn"
@@ -612,7 +648,7 @@ import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
 // 命令面契约：inputAreaRef 只按这 11 项命令使用，不再用 InstanceType 绑组件内部形状（B-5 阶段 1a）
 import type {ChatInputCommands} from '../../types/chatInputCommands';
-import type {ChatMode} from '../../types/chat';
+import type {ChatMode, PendingTaskEntry} from '../../types/chat';
 import {assertChatInputCommands} from '../../utils/assertChatInputCommands';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
 import TaskProgressDock from '../../components/chat/TaskProgressDock.vue';
@@ -748,11 +784,17 @@ const handleDesignSendToChat = (payload: { prompt: string }): void => {
   inputAreaRef.value?.focusInput?.();
 };
 
-/** 撤销或回写编辑待发送消息：仅在后端成功移除后写回输入框并聚焦，避免原文被自动发出。 */
-const handlePendingRestore = async (entry: { id: string; input: string }): Promise<void> => {
+/**
+ * 撤销或回写编辑待发送消息：仅在后端成功移除后写回输入框并聚焦，避免原文被自动发出。
+ *
+ * <p>附件必须先取字节再撤销 —— 撤销会把磁盘上的附件一起删掉，顺序反了就只能回填出文字。</p>
+ */
+const handlePendingRestore = async (entry: PendingTaskEntry): Promise<void> => {
+  const files = await pendingQueue.attachmentFiles(entry);
   const cancelled = await pendingQueue.cancel(entry.id);
   if (!cancelled) return;
   inputAreaRef.value?.setInputText(entry.input);
+  if (files.length) inputAreaRef.value?.setAttachedImages(files);
   inputAreaRef.value?.focusInput?.();
 };
 

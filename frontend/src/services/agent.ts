@@ -1,9 +1,9 @@
 import http from './interceptor';
 import type {Result} from './types';
-import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, ChatCommandReceipt, CreateAgentRequest, PageResult, PendingChatQueue} from '../types/chat';
+import type {AgentBatchModelRequest, AgentVO, ChatAcceptance, ChatCommandReceipt, CreateAgentRequest, PageResult, PendingTaskSnapshot} from '../types/chat';
 import {isOk, toPositiveInt} from '../utils/api';
 import {toServerSessionId} from '../utils/ids';
-import {getApiBaseUrl} from '../utils/apiConfig';
+import {getApiBaseUrl, resolveApiUrl} from '../utils/apiConfig';
 import {t} from '../i18n';
 import type {ChatCommand} from './dto/chat_command';
 
@@ -90,8 +90,8 @@ export class AgentAPI {
     return response.json() as Promise<Result<ChatCommandReceipt>>;
   }
 
-  static pendingCommands(sessionId: string): Promise<Result<PendingChatQueue>> {
-    return http.get<unknown, Result<PendingChatQueue>>(`/a/completion/${sessionId}/pending`);
+  static pendingCommands(sessionId: string): Promise<Result<PendingTaskSnapshot>> {
+    return http.get<unknown, Result<PendingTaskSnapshot>>(`/a/completion/${sessionId}/pending`);
   }
 
   static cancelPendingCommand(sessionId: string, pendingId: string): Promise<Result<void>> {
@@ -100,6 +100,35 @@ export class AgentAPI {
 
   static resumePendingCommands(sessionId: string): Promise<Result<void>> {
     return http.post<unknown, Result<void>>(`/a/completion/${sessionId}/pending/resume`);
+  }
+
+  /** 单条「继续」：只放行这一条，不会顺带放行队列里其它失败任务。 */
+  static confirmPendingCommand(sessionId: string, pendingId: string): Promise<Result<void>> {
+    return http.post<unknown, Result<void>>(
+      `/a/completion/${sessionId}/pending/${encodeURIComponent(pendingId)}/confirm`);
+  }
+
+  /**
+   * 原地修改一条排队消息（{@code PUT}，multipart）。
+   *
+   * <p>{@code keepAttachmentIds} 传 `undefined` 表示「附件不动」；传数组表示只保留列出的那些。
+   * 这个区分不能省：把「不动」当成「全丢」会直接删掉用户刚传的图。</p>
+   */
+  static updatePendingCommand(sessionId: string, pendingId: string,
+                              input: string, keepAttachmentIds: string[] | undefined,
+                              images: File[]): Promise<Result<void>> {
+    const form = new FormData();
+    appendFormValue(form, 'input', input);
+    for (const id of keepAttachmentIds ?? []) form.append('keepAttachmentIds', id);
+    for (const image of images) form.append('image', image, image.name);
+    return http.put<unknown, Result<void>>(
+      `/a/completion/${sessionId}/pending/${encodeURIComponent(pendingId)}`, form);
+  }
+
+  /** 排队附件的懒加载地址（`<img src>` 用，直接返回完整 URL）。 */
+  static pendingAttachmentUrl(sessionId: string, pendingId: string, attachmentId: string): string {
+    return resolveApiUrl(`/a/completion/${sessionId}/pending/${encodeURIComponent(pendingId)}`
+      + `/attachments/${encodeURIComponent(attachmentId)}`);
   }
 
   /**
