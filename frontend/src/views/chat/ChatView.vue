@@ -389,7 +389,7 @@
                         :title="t('chat.pending.edit')"
                         :aria-label="t('chat.pending.editNamed', {input: entry.input})"
                         :disabled="pendingQueue.changing.value"
-                        @click="handlePendingRestore(entry)"
+                        @click="handlePendingEdit(entry)"
                       >
                         <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <path d="M11.333 2.667a1.414 1.414 0 0 1 2 2L5.5 12.5l-2.833.833.833-2.833 7.833-7.833Z" />
@@ -424,10 +424,28 @@
               paddingBottom: hasMessages ? '16px' : '0px'
             }"
           >
+            <div
+              v-if="editingPending"
+              data-testid="pending-edit-banner"
+              class="mx-auto mb-2 flex w-full max-w-lx-chat items-center justify-between gap-3 rounded-xl border px-4 py-1.5 text-xs"
+              :class="displayIsDark
+                ? 'border-amber-500/25 bg-amber-500/10 text-amber-300'
+                : 'border-amber-300/70 bg-amber-50 text-amber-700'"
+            >
+              <span class="min-w-0 truncate">{{ t('chat.pending.editing') }}</span>
+              <button
+                type="button"
+                data-testid="pending-edit-cancel"
+                class="shrink-0 cursor-pointer rounded-md px-2 py-0.5 font-medium hover:underline"
+                @click="cancelQueuedEdit"
+              >{{ t('chat.pending.cancelEdit') }}</button>
+            </div>
             <ChatInputArea
               ref="inputAreaRef"
               :isSending="isSending"
               :queueMessage="canQueueMessage ? handleQueueMessage : undefined"
+              :updateQueuedMessage="editingPending ? handleUpdateQueuedMessage : undefined"
+              :editingQueued="!!editingPending"
               :isDark="displayIsDark"
               :contextUsage="contextUsageIndicator"
               :models="localModels"
@@ -635,6 +653,7 @@ import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector
 import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import {useChatView} from './useChatView';
+import type {PendingAttachmentFile} from './usePendingChatQueue';
 import {useInstructionPredict} from '../../composables/useInstructionPredict';
 import {isCompletedTurnStatus} from '../../utils/turnStatus';
 import {useUserConfigStore} from '../../stores/userConfigStore';
@@ -785,18 +804,76 @@ const handleDesignSendToChat = (payload: { prompt: string }): void => {
 };
 
 /**
- * 撤销或回写编辑待发送消息：仅在后端成功移除后写回输入框并聚焦，避免原文被自动发出。
+ * 撤销待发送消息：仅在后端成功移除后回写输入框并聚焦，避免原文被自动发出。
  *
  * <p>附件必须先取字节再撤销 —— 撤销会把磁盘上的附件一起删掉，顺序反了就只能回填出文字。</p>
+ *
+ * <p>「编辑」不走这里：编辑是原位更新（`PUT`），撤销才是「把这条拿回来当新消息」。</p>
  */
 const handlePendingRestore = async (entry: PendingTaskEntry): Promise<void> => {
-  const files = await pendingQueue.attachmentFiles(entry);
+  const restored = await pendingQueue.attachmentFiles(entry);
   const cancelled = await pendingQueue.cancel(entry.id);
   if (!cancelled) return;
+  editingPending.value = null;
   inputAreaRef.value?.setInputText(entry.input);
-  if (files.length) inputAreaRef.value?.setAttachedImages(files);
+  if (restored.length) inputAreaRef.value?.setAttachedImages(restored.map(item => item.file));
   inputAreaRef.value?.focusInput?.();
 };
+
+/**
+ * 正在原地编辑的那条待发送消息。
+ *
+ * <p>`restored` 保存「File 对象 ↔ 附件 id」的对应：提交时用**对象引用**判断用户还留着哪几张图，
+ * 比按文件名匹配可靠（同名图会串），也不需要给 `File` 塞自定义字段。</p>
+ */
+const editingPending = ref<{id: string; restored: PendingAttachmentFile[]} | null>(null);
+
+/**
+ * 编辑：把这条的文本与图片回填到输入区，**不撤销**。
+ *
+ * <p>不撤销是这次改动的重点 —— 撤销会删掉磁盘附件，用户只要点发送就得把图重新传一遍；
+ * 原位更新则是「同一行、同一批文件」。</p>
+ */
+const handlePendingEdit = async (entry: PendingTaskEntry): Promise<void> => {
+  const restored = await pendingQueue.attachmentFiles(entry);
+  editingPending.value = {id: entry.id, restored};
+  inputAreaRef.value?.setInputText(entry.input);
+  inputAreaRef.value?.setAttachedImages(restored.map(item => item.file));
+  inputAreaRef.value?.focusInput?.();
+};
+
+/** 放弃编辑：队列里那条**原样留着**（没撤销过），输入区清空即可。 */
+const cancelQueuedEdit = (): void => {
+  editingPending.value = null;
+  inputAreaRef.value?.setInputText('');
+  inputAreaRef.value?.setAttachedImage(null);
+};
+
+/**
+ * 编辑态提交：只改文本与被保留/新增的图片，不新增队列条目。
+ *
+ * <p>`requirePlan` 与 `agentId` 无法在这里改 —— PUT 的契约只有正文与附件；
+ * 用户若改了计划模式或执行体，这次提交不会带上，界面上也因此不做暗示。</p>
+ */
+const handleUpdateQueuedMessage = async (text: string, _requirePlan: boolean,
+                                          _agentId: string | number | null | undefined,
+                                          images: File[]): Promise<boolean> => {
+  const editing = editingPending.value;
+  if (!editing) return false;
+  const keptIds = editing.restored.filter(item => images.includes(item.file)).map(item => item.id);
+  const added = images.filter(image => !editing.restored.some(item => item.file === image));
+  const updated = await pendingQueue.update(editing.id, text, keptIds, added);
+  if (updated) editingPending.value = null;
+  return updated;
+};
+
+/** 被编辑的那条从队列消失（被派发 / 被别处撤销）时退出编辑态，别让输入框悬在一个不存在的目标上。 */
+watch(() => pendingQueue.snapshot.value, snapshot => {
+  const editing = editingPending.value;
+  if (!editing || !snapshot) return;
+  if (!snapshot.entries.some(entry => entry.id === editing.id)) editingPending.value = null;
+});
+
 
 const logOpening = ref(false);
 

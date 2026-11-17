@@ -74,6 +74,15 @@ import {
 const props = defineProps<{
   isSending?: boolean;
   queueMessage?: (text: string, requirePlan: boolean, agentId: string | number | null | undefined, images: File[]) => Promise<boolean>;
+  /**
+   * 编辑态下的提交：把输入框内容原位写回队列里的**那一条**（`PUT`），而不是发新消息。
+   *
+   * <p>和 `queueMessage` 分开是因为语义不同：入队是新增，这里是更新，混成一个回调
+   * 只能靠调用方猜「当前是不是编辑态」，猜错就是两条消息。</p>
+   */
+  updateQueuedMessage?: (text: string, requirePlan: boolean, agentId: string | number | null | undefined, images: File[]) => Promise<boolean>;
+  /** 当前输入框里回填的是队列中某一条待发送消息（提交即更新那一条）。 */
+  editingQueued?: boolean;
   isDark?: boolean;
   models?: ModelConfig[];
   selectedModelId?: string | number;
@@ -1259,7 +1268,9 @@ const canSend = computed(() => {
   return text.length > 0;
 });
 const queueSubmitting = ref(false);
-const hasQueueableInput = computed(() => !!props.queueMessage && !props.reasoningEffortPending
+// 编辑态同样算「可提交」：它提交到队列里的那一条（PUT），不是发新消息。
+const hasQueueableInput = computed(() => (!!props.queueMessage || !!props.updateQueuedMessage)
+  && !props.reasoningEffortPending
   && (attachments.value.length > 0 || inputText.value.trim().length > 0 || pastedDocuments.value.length > 0));
 const canQueue = computed(() => hasQueueableInput.value && !queueSubmitting.value);
 // 运行中但输入框已有可入队文本时，按钮切换为「可发送」态，点击即存入待发送队列。
@@ -1462,6 +1473,29 @@ const runUiCommand = (commandId: string): boolean => {
   return true;
 };
 
+/**
+ * 一次「写进队列」的提交：入队（新增）与编辑（更新那一条）共用同一套收尾。
+ *
+ * <p>比文本很关键：请求期间用户可能已经接着打字，跟请求前的原文不一样就不能清空 ——
+ * 清了等于吞掉他刚敲的内容。</p>
+ */
+const submitQueued = (
+  submit: (text: string, requirePlan: boolean, agentId: string | number | null | undefined, images: File[]) => Promise<boolean>,
+  combinedText: string,
+  requirePlan: boolean,
+  images: File[]
+): void => {
+  const original = inputText.value;
+  queueSubmitting.value = true;
+  void submit(combinedText, requirePlan, localSelectedAgentId.value, images).then(accepted => {
+    if (!accepted || inputText.value !== original) return;
+    writeInputText('');
+    // 图片与文档都随这次提交交出去了：留着会让下一条消息莫名其妙带上上一张图。
+    clearImageAttachments();
+    clearPastedDocuments();
+  }).finally(() => { queueSubmitting.value = false; });
+};
+
 const handleSend = () => {
   if (confirmationState.value.isOpen) return;
   if (isPromptOptimizationCommand(inputText.value)) {
@@ -1508,17 +1542,15 @@ const handleSend = () => {
 
   const combinedText = composeMessageWithDocuments(text, docs);
 
+  // 编辑态排在最前：这条本来就在队列里，提交只能是原位更新；走成「发一条新的」就是两条消息。
+  if (props.editingQueued && props.updateQueuedMessage) {
+    submitQueued(props.updateQueuedMessage, combinedText, draft.requirePlan, images);
+    return;
+  }
+
   if (props.isSending || props.queueMessage) {
     if (!canQueue.value || !props.queueMessage) return;
-    const original = inputText.value;
-    queueSubmitting.value = true;
-    void props.queueMessage(combinedText, draft.requirePlan, localSelectedAgentId.value, images).then(accepted => {
-      if (!accepted || inputText.value !== original) return;
-      writeInputText('');
-      // 图片与文档都随入队一起交出去了：留着会让下一条消息莫名其妙带上上一张图。
-      clearImageAttachments();
-      clearPastedDocuments();
-    }).finally(() => { queueSubmitting.value = false; });
+    submitQueued(props.queueMessage, combinedText, draft.requirePlan, images);
     return;
   }
 

@@ -63,7 +63,7 @@ test('usePendingChatQueue.cancel 成功返回 true，失败返回 false', async 
   }
 });
 
-test('ChatView 待发送队列在撤销左侧提供 SVG 编辑图标，且编辑与撤销均在成功后回写输入框', () => {
+test('ChatView 待发送队列在撤销左侧提供 SVG 编辑图标；编辑走原位更新，撤销才移除并回填', () => {
   const chatViewPath = fileURLToPath(new URL('../src/views/chat/ChatView.vue', import.meta.url));
   const chatView = readFileSync(chatViewPath, 'utf8');
 
@@ -72,16 +72,27 @@ test('ChatView 待发送队列在撤销左侧提供 SVG 编辑图标，且编辑
   assert.ok(editPos > 0, '缺少 pending-edit-btn');
   assert.ok(cancelPos > editPos, 'pending-edit-btn 必须位于 pending-cancel-btn 左侧');
 
-  const editSnippet = chatView.slice(editPos, cancelPos);
+  const editSnippet = chatView.slice(chatView.lastIndexOf('<button', editPos), cancelPos);
   assert.match(editSnippet, /<svg\b/);
-  assert.match(editSnippet, /@click="handlePendingRestore\(entry\)"/);
+  assert.match(editSnippet, /@click="handlePendingEdit\(entry\)"/);
+  assert.doesNotMatch(editSnippet, /handlePendingRestore/,
+    '编辑不能走撤销：撤销会删掉磁盘附件，用户点发送就得把图重传一遍');
 
   const cancelSnippet = chatView.slice(cancelPos, cancelPos + 800);
   assert.match(cancelSnippet, /@click="handlePendingRestore\(entry\)"/);
 
-  // 附件必须在撤销之前取字节：撤销会把磁盘上的附件一起删掉。
+  // 撤销路径的附件必须在撤销之前取字节：撤销会把磁盘上的附件一起删掉。
   assert.match(
     chatView,
-    /const handlePendingRestore = async \(entry: PendingTaskEntry\): Promise<void> => \{[\s\S]*?pendingQueue\.attachmentFiles\(entry\)[\s\S]*?pendingQueue\.cancel\(entry\.id\)[\s\S]*?if \(!cancelled\) return;[\s\S]*?inputAreaRef\.value\?\.setInputText\(entry\.input\);[\s\S]*?setAttachedImages\(files\)[\s\S]*?focusInput\?\.\(\);/,
+    /const handlePendingRestore = async \(entry: PendingTaskEntry\): Promise<void> => \{[\s\S]*?pendingQueue\.attachmentFiles\(entry\)[\s\S]*?pendingQueue\.cancel\(entry\.id\)[\s\S]*?if \(!cancelled\) return;[\s\S]*?inputAreaRef\.value\?\.setInputText\(entry\.input\);[\s\S]*?setAttachedImages\([\s\S]*?\)[\s\S]*?focusInput\?\.\(\);/,
   );
+
+  // 编辑只回填、不撤销；那条要一直留在队列里等 PUT 更新。
+  assert.match(
+    chatView,
+    /const handlePendingEdit = async \(entry: PendingTaskEntry\): Promise<void> => \{[\s\S]*?pendingQueue\.attachmentFiles\(entry\)[\s\S]*?setInputText\(entry\.input\)[\s\S]*?setAttachedImages\([\s\S]*?\n\};/,
+  );
+  const editBody = chatView.slice(chatView.indexOf('const handlePendingEdit'));
+  assert.doesNotMatch(editBody.slice(0, editBody.indexOf('\n};')),
+    /pendingQueue\.cancel\(/, '编辑不能撤销这条待发送消息');
 });

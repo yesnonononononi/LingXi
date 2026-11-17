@@ -139,7 +139,7 @@ test('缩略图地址按会话 / 任务 / 附件拼，走 /a 前缀', async t =>
   }
 });
 
-test('attachmentFiles 按附件逐个取字节，读失败的那张跳过而不是整体失败', async t => {
+test('attachmentFiles 按附件逐个取字节，配对附件 id，读失败的那张跳过而不是整体失败', async t => {
   const sessionId = ref<string | null>('s1');
   t.mock.method(AgentAPI, 'pendingCommands', async () => ({
     code: 1, data: {paused: false, failure: null, entries: []},
@@ -155,21 +155,67 @@ test('attachmentFiles 按附件逐个取字节，读失败的那张跳过而不�
   const queue = scope.run(() => usePendingChatQueue(sessionId, () => false))!;
   try {
     await settle();
-    const files = await queue.attachmentFiles({
+    const restored = await queue.attachmentFiles({
       id: 'p1', input: '带图', dispatching: false, status: 'PENDING',
       attachments: [{id: 'a1', name: 'a.png'}, {id: 'bad', name: 'bad.png'}],
     });
     assert.equal(fetched.length, 2);
-    assert.equal(files.length, 1, '读不到的那张只是少一张，不能让整个回填失败');
-    assert.equal(files[0].name, 'a.png');
-    assert.equal(files[0].type, 'image/png');
-    assert.equal(files[0].size, 3);
+    assert.equal(restored.length, 1, '读不到的那张只是少一张，不能让整个回填失败');
+    // 配对不能丢：提交时要按 File 对象反推「用户还留着哪个附件 id」，丢了对不上号。
+    assert.equal(restored[0].id, 'a1');
+    assert.equal(restored[0].file.name, 'a.png');
+    assert.equal(restored[0].file.type, 'image/png');
+    assert.equal(restored[0].file.size, 3);
   } finally {
     scope.stop();
   }
 });
 
-test('ChatView 面板：缩略图懒加载 + 仅非 PENDING 给「继续」按钮', () => {
+test('update 走 PUT，带上保留的附件 id 与新图，不走撤销也不走队列级 resume', async t => {
+  const sessionId = ref<string | null>('s1');
+  t.mock.method(AgentAPI, 'pendingCommands', async () => ({
+    code: 1, data: {paused: false, failure: null, entries: [entry('p1')]},
+  }));
+  const calls: Array<{id: string; input: string; kept: string[] | undefined; images: string[]}> = [];
+  t.mock.method(AgentAPI, 'updatePendingCommand', async (
+    _sessionId: string, id: string, input: string, kept: string[] | undefined, images: File[]) => {
+    calls.push({id, input, kept, images: images.map(file => file.name)});
+    return {code: 1, data: undefined};
+  });
+  const cancelled = t.mock.method(AgentAPI, 'cancelPendingCommand', async () => ({code: 1, data: undefined}));
+
+  const scope = effectScope();
+  const queue = scope.run(() => usePendingChatQueue(sessionId, () => false))!;
+  try {
+    await settle();
+    const added = new File([new Uint8Array([9])], 'new.png', {type: 'image/png'});
+    assert.equal(await queue.update('p1', '改过的文本', ['a1'], [added]), true);
+    assert.deepEqual(calls, [{id: 'p1', input: '改过的文本', kept: ['a1'], images: ['new.png']}]);
+    assert.equal(cancelled.mock.callCount(), 0, '原位修改不能退化成撤销');
+  } finally {
+    scope.stop();
+  }
+});
+
+test('update 失败时返回 false 并把后端文案暴露给面板', async t => {
+  const sessionId = ref<string | null>('s1');
+  t.mock.method(AgentAPI, 'pendingCommands', async () => ({
+    code: 1, data: {paused: false, failure: null, entries: [entry('p1')]},
+  }));
+  t.mock.method(AgentAPI, 'updatePendingCommand', async () => ({code: 0, errMsg: '这条消息正在发送', data: undefined}));
+
+  const scope = effectScope();
+  const queue = scope.run(() => usePendingChatQueue(sessionId, () => false))!;
+  try {
+    await settle();
+    assert.equal(await queue.update('p1', '文本', undefined, []), false);
+    assert.equal(queue.error.value, '这条消息正在发送');
+  } finally {
+    scope.stop();
+  }
+});
+
+test('ChatView 面板：缩略图懒加载 + 仅非 PENDING 给「继续」按钮 + 编辑态提示条', () => {
   const chatViewPath = fileURLToPath(new URL('../src/views/chat/ChatView.vue', import.meta.url));
   const chatView = readFileSync(chatViewPath, 'utf8');
 
@@ -188,6 +234,28 @@ test('ChatView 面板：缩略图懒加载 + 仅非 PENDING 给「继续」按�
   assert.match(confirmSnippet, /entry\.status !== 'PENDING'/,
     'PENDING 的那条本来就会自动发，给按钮只会误导用户');
   assert.match(confirmSnippet, /pendingQueue\.confirm\(entry\.id\)/);
+
+  // 编辑态：有可见提示 + 可取消，否则用户分不清「在改那条」还是「在发新消息」。
+  assert.match(chatView, /data-testid="pending-edit-banner"/);
+  assert.match(chatView, /data-testid="pending-edit-cancel"[\s\S]{0,200}@click="cancelQueuedEdit"/);
+  assert.match(chatView, /:editingQueued="!!editingPending"/);
+  assert.match(chatView, /:updateQueuedMessage="editingPending \? handleUpdateQueuedMessage : undefined"/);
+});
+
+test('编辑提交：保留的图按对象引用翻成附件 id，新图才作为上传追加', () => {
+  const chatViewPath = fileURLToPath(new URL('../src/views/chat/ChatView.vue', import.meta.url));
+  const chatView = readFileSync(chatViewPath, 'utf8');
+  const start = chatView.indexOf('const handleUpdateQueuedMessage');
+  assert.ok(start > 0, '缺 handleUpdateQueuedMessage');
+  const body = chatView.slice(start, chatView.indexOf('\n};', start));
+
+  // 用引用判定而不是按文件名：同名图会串，且 File 没有可写的自定义字段可带 id。
+  assert.match(body, /editing\.restored\.filter\(item => images\.includes\(item\.file\)\)/,
+    '保留的图必须按 File 对象引用判定');
+  assert.match(body, /\.map\(item => item\.id\)/);
+  assert.match(body, /images\.filter\(image => !editing\.restored\.some\(item => item\.file === image\)\)/,
+    '回填进来的图不能再作为新图上传一次');
+  assert.match(body, /pendingQueue\.update\(editing\.id, text, keptIds, added\)/);
 });
 
 test('ChatInputArea：入队时把图片一起交出去，成功后清空已选附件', () => {
@@ -195,12 +263,25 @@ test('ChatInputArea：入队时把图片一起交出去，成功后清空已选�
   const source = readFileSync(inputAreaPath, 'utf8');
 
   assert.match(source,
-    /props\.queueMessage\(combinedText, draft\.requirePlan, localSelectedAgentId\.value, images\)/,
+    /submitQueued\(props\.queueMessage, combinedText, draft\.requirePlan, images\)/,
     '入队必须带 images，否则排队的图片永远发不出去');
   assert.match(source,
-    /props\.queueMessage\(combinedText[\s\S]{0,400}?clearImageAttachments\(\);/,
+    /const submitQueued = [\s\S]{0,900}?clearImageAttachments\(\);/,
     '入队成功后必须清空已选附件，否则下一条消息会莫名其妙带上上一张图');
   assert.doesNotMatch(source,
     /attachments\.value\.length === 0 &&/,
     '「有附件就不能入队」是本次要拆掉的限制');
+});
+
+test('ChatInputArea：编辑态的提交排在入队与发送之前', () => {
+  const inputAreaPath = fileURLToPath(new URL('../src/components/chat/ChatInputArea.vue', import.meta.url));
+  const source = readFileSync(inputAreaPath, 'utf8');
+
+  const editBranch = source.indexOf('if (props.editingQueued && props.updateQueuedMessage)');
+  const queueBranch = source.indexOf('if (props.isSending || props.queueMessage)');
+  assert.ok(editBranch > 0, '缺编辑态分支');
+  assert.ok(queueBranch > editBranch, '编辑分支必须先命中，否则会新增第二条队列消息');
+  assert.match(source,
+    /props\.editingQueued && props\.updateQueuedMessage\) \{\s*submitQueued\(props\.updateQueuedMessage/,
+    '编辑态提交必须走 updateQueuedMessage（PUT），不能落到 queueMessage');
 });

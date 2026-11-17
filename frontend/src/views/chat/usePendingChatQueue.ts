@@ -14,6 +14,12 @@ import {isOk} from '../../utils/api';
 const IDLE_INTERVAL_MS = 5000;
 const ACTIVE_INTERVAL_MS = 1000;
 
+/** 回填用：附件 id 与它读出来的 `File` 一一对应（见 `attachmentFiles`）。 */
+export interface PendingAttachmentFile {
+  id: string;
+  file: File;
+}
+
 export function usePendingChatQueue(sessionId: Readonly<Ref<string | null>>, isActive: () => boolean) {
   const snapshot = shallowRef<PendingTaskSnapshot | null>(null);
   const error = ref('');
@@ -106,32 +112,45 @@ export function usePendingChatQueue(sessionId: Readonly<Ref<string | null>>, isA
   }
 
   /**
-   * 把一条排队消息的图片读成 {@link File}，供「回写编辑」回填附件。
+   * 把一条排队消息的图片读成 {@link File}，供「回填编辑」回填附件。
+   *
+   * <p>返回 **id 与 File 的配对**而不是裸数组：调用方要用「同一个 File 对象还在不在」
+   * 判断用户保留了哪几张，配对一旦丢了就只能按文件名猜，同名图会串。</p>
    *
    * <p>调用方必须在 cancel **之前**调用：撤销会把磁盘上的附件一起删掉，
    * 顺序反了就只能回填出文字，用户得重新挑图。</p>
    */
-  async function attachmentFiles(entry: PendingTaskEntry): Promise<File[]> {
+  async function attachmentFiles(entry: PendingTaskEntry): Promise<PendingAttachmentFile[]> {
     const owner = sessionId.value;
     if (!owner || entry.attachments.length === 0) return [];
-    const files: File[] = [];
+    const restored: PendingAttachmentFile[] = [];
     for (const attachment of entry.attachments) {
       try {
         const response = await fetch(AgentAPI.pendingAttachmentUrl(owner, entry.id, attachment.id));
         if (!response.ok) continue;
         const blob = await response.blob();
-        files.push(new File([blob], attachment.name, {type: blob.type || 'image/png'}));
+        restored.push({
+          id: attachment.id,
+          file: new File([blob], attachment.name, {type: blob.type || 'image/png'}),
+        });
       } catch (cause) {
         console.warn('读取待发送图片失败:', cause);
       }
     }
-    return files;
+    return restored;
   }
 
   return {
     snapshot, error, changing, refresh, attachmentUrl, attachmentFiles,
     cancel: (id: string) => change(owner => AgentAPI.cancelPendingCommand(owner, id)),
     confirm: (id: string) => change(owner => AgentAPI.confirmPendingCommand(owner, id)),
+    /**
+     * 原位修改：只改这一条，不撤销、也不重新上传被保留的图。
+     *
+     * <p>`keepAttachmentIds` 传 `undefined` 表示「附件不动」；传数组表示只留列出的那些。</p>
+     */
+    update: (id: string, input: string, keepAttachmentIds: string[] | undefined, images: File[]) =>
+      change(owner => AgentAPI.updatePendingCommand(owner, id, input, keepAttachmentIds, images)),
     resume: () => change(owner => AgentAPI.resumePendingCommands(owner)),
   };
 }
