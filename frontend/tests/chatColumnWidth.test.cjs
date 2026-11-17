@@ -77,6 +77,11 @@ const CONSUMERS = [
     label: '待发送队列容器',
     anchor: /pending-queue-dock\s+w-full\s+max-w-lx-chat\s+mx-auto\s+px-4/,
   },
+  {
+    rel: '../src/components/chat/PendingInteractionDock.vue',
+    label: '底部未决交互卡片容器',
+    anchor: /pending-interaction-dock\s+w-full\s+max-w-lx-chat\s+mx-auto\s+px-4/,
+  },
 ].map((item) => ({
   ...item,
   source: fs.readFileSync(path.resolve(__dirname, item.rel), 'utf8'),

@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    collectDockedPendingInteractions,
     groupChoiceQuestions,
     groupInteractionCards,
+    isDockedPendingCardEntry,
     isPendingCardEntry,
     type PromptCardEntry
 } from '../src/utils/promptCardGroups';
@@ -111,4 +113,73 @@ test('提问合并进同一类型下拉，提交批次仍按会话和响应身�
   assert.deepEqual(batches.map(batch => batch.choices!.map(item => item.id)), [['q1', 'q3'], ['q2']]);
   assert.equal(batches[0]!.responseId, '101');
   assert.equal(batches[1]!.responseId, '102');
+});
+
+test('底部停靠只收集非 PLAN 的未决卡片，PLAN 与已决卡片保留在消息区', () => {
+  const pendingCmd = entry('cmd-pending', 'COMMAND');
+  pendingCmd.card = { ...pendingCmd.card, status: 'pending', pending: true, outcome: undefined };
+  const resolvedCmd = entry('cmd-done', 'COMMAND');
+  resolvedCmd.card = { ...resolvedCmd.card, status: 'completed', pending: false, outcome: 'APPROVED' };
+  const pendingPlan = entry('plan-pending', 'PLAN');
+  pendingPlan.card = { ...pendingPlan.card, status: 'pending', pending: true, outcome: undefined };
+  const preparingChoice = entry('choice-prep', 'CHOICE');
+  preparingChoice.card = { ...preparingChoice.card, status: 'preparing', pending: false, outcome: undefined };
+
+  assert.equal(isDockedPendingCardEntry(pendingCmd), true);
+  assert.equal(isDockedPendingCardEntry(preparingChoice), true);
+  assert.equal(isDockedPendingCardEntry(resolvedCmd), false);
+  assert.equal(isDockedPendingCardEntry(pendingPlan), false);
+
+  const collected = collectDockedPendingInteractions([
+    {
+      id: 'm1',
+      role: 'assistant',
+      timestamp: 1,
+      content: '',
+      toolCalls: [{ id: 'tc-1', toolName: 'execute_command', status: 'pending', order: 1, responseId: 'r1' }],
+      promptCards: [
+        {
+          id: 'cmd-pending',
+          conversationId: '42',
+          type: 'PROMISE',
+          status: 'pending',
+          content: { kind: 'COMMAND', command: 'ls' },
+        },
+        {
+          id: 'cmd-done',
+          conversationId: '42',
+          type: 'PROMISE',
+          status: 'completed',
+          content: { kind: 'COMMAND', command: 'pwd' },
+          rawOutput: { outcome: 'APPROVED' },
+        },
+        {
+          id: 'plan-pending',
+          conversationId: '42',
+          type: 'PROMISE',
+          status: 'pending',
+          content: { kind: 'PLAN', title: '实施计划', text: '...' },
+        },
+      ],
+    },
+    {
+      id: 'm2',
+      role: 'assistant',
+      timestamp: 2,
+      content: '',
+      toolCalls: [{ id: 'tc-2', toolName: 'require_choice', status: 'pending', order: 1, responseId: 'r2' }],
+      promptCards: [
+        {
+          id: 'choice-prep',
+          conversationId: '42',
+          type: 'PROMISE',
+          status: 'preparing',
+          content: { kind: 'CHOICE', question: '选哪个', options: ['A', 'B'] },
+        },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(collected.entries.map(item => item.id), ['card-cmd-pending', 'card-choice-prep']);
+  assert.deepEqual(collected.toolCalls.map(tc => tc.id), ['tc-1', 'tc-2']);
 });

@@ -155,6 +155,7 @@
             :hasMore="!isLoadingCurrentSession && !!currentActiveSession?.hasMoreMessages"
             :isLoadingMore="isLoadingMoreHistory"
             :lastAssistantIndex="lastAssistantIndex"
+            :dockPendingInteractionCards="true"
             @load="handleLoadMoreHistory"
             @retryHistoryLoad="handleRetryLoadMoreHistory"
             @scroll="handleMessagesScroll"
@@ -374,10 +375,13 @@
               </section>
             </div>
           </Transition>
-          <!-- 待审批/待回答卡片存在时整块让位：此时输入框必然是禁用态，留着它只是把卡片往下挤，
-               用户真正的下一步动作在卡片里。v-show 而非 v-if —— 组件不卸载，已经敲了一半的草稿不会丢。 -->
+          <PendingInteractionDock
+            :entries="dockedPendingInteractions.entries"
+            :tool-calls="dockedPendingInteractions.toolCalls"
+            :session-id="currentActiveSession?.id"
+            :is-dark="displayIsDark"
+          />
           <div
-            v-show="!executionControls.hasUnresolved.value"
             class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
             :style="{
               paddingBottom: hasMessages ? '16px' : '0px'
@@ -566,7 +570,7 @@ import {useUnifiedPreviewTabs} from '../../composables/useUnifiedPreviewTabs';
 import {useInlineRename} from '../../composables/useInlineRename';
 import {isTempSessionId} from '../../utils/ids';
 import {DEFAULT_WINDOW_TITLE, resolveWindowTitle} from '../../utils/windowTitle';
-import {formatTogglePreviewShortcut, isTogglePreviewShortcut} from '../../utils/previewShortcut';
+import {loadShortcutBindings, useGlobalShortcuts, useShortcuts} from '../../composables/useShortcuts';
 import {provideChatInputFocus} from '../../composables/useChatInputFocus';
 import {FILE_PREVIEW_KEY} from '../../types/filePreview';
 import type {ShowWithAgentPayload} from '../../types/projectPagePreview';
@@ -607,6 +611,8 @@ import type {ChatMode} from '../../types/chat';
 import {assertChatInputCommands} from '../../utils/assertChatInputCommands';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
 import TaskProgressDock from '../../components/chat/TaskProgressDock.vue';
+import PendingInteractionDock from '../../components/chat/PendingInteractionDock.vue';
+import {collectDockedPendingInteractions} from '../../utils/promptCardGroups';
 import ChatResendDialog from '../../components/chat/ChatResendDialog.vue';
 import SettingsModal from '../settings/SettingsModal.vue';
 import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
@@ -667,15 +673,10 @@ const handleShowWithAgentInsert = (data: ShowWithAgentSubmitData) => {
   inputAreaRef.value?.focusInput?.();
 };
 
-const handlePreviewShortcutKeydown = (event: KeyboardEvent): void => {
-  if (!isTogglePreviewShortcut(event)) return;
-  event.preventDefault();
-  togglePreviewPanel();
-};
-
 onMounted(() => {
   assertChatInputCommands(inputAreaRef.value, 'ChatView.onMounted');
-  window.addEventListener('keydown', handlePreviewShortcutKeydown);
+  // 快捷键真源在后端个性化配置：先拉一次，读失败会回落默认值（任何功能都还能用）。
+  void loadShortcutBindings();
   const offShowWithAgent = window.electronAPI?.projectPage?.onShowWithAgent?.((payload: ShowWithAgentPayload) => {
     showWithAgentPayload.value = payload;
     showWithAgentOpen.value = true;
@@ -683,10 +684,6 @@ onMounted(() => {
   if (offShowWithAgent) {
     onBeforeUnmount(offShowWithAgent);
   }
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handlePreviewShortcutKeydown);
 });
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
@@ -727,8 +724,10 @@ const {
 });
 
 const previewPanelVisible = computed<boolean>(() => previewPanelOpen.value);
+/** 快捷键绑定的只读视图：设置页保存后即时生效，标题提示跟着一起变。 */
+const shortcuts = useShortcuts();
 const togglePreviewPanelTitle = computed<string>(() => {
-  const shortcut = formatTogglePreviewShortcut(window.electronAPI?.platform);
+  const shortcut = shortcuts.label('togglePreview', window.electronAPI?.platform);
   return `${t('filePreview.togglePanel')} (${shortcut})`;
 });
 /** 顶部横条左侧展示的会话名：空态（未建会话 / 待首次发送）给占位文案，不留一段空白。 */
@@ -878,6 +877,20 @@ const {
   handleTouchMove,
 } = useChatView({ inputAreaRef, messagesContainerRef, subSessionPanelVisible: computed(() => !previewPanelVisible.value) });
 
+/**
+ * 窗口级快捷键分发：只把已有入口再调一次，不新增任何业务分支。
+ *
+ * <p>目标态全部读当前 ref，所以「设置页改完立即生效」不需要重新挂监听 —— 监听只挂一次，
+ * 绑定表由 {@link useShortcuts} 的模块级真源提供。</p>
+ */
+useGlobalShortcuts(() => ({
+  toggleSidebar: () => { isSidebarCollapsed.value = !isSidebarCollapsed.value; },
+  togglePreview: togglePreviewPanel,
+  // 设置页是「开关」语义：已经打开时按下应关闭，否则这个键永远只能开不能关。
+  toggleSettings: () => { if (isSettingsOpen.value) handleCloseSettings(); else handleOpenSettings(); },
+  newSession: () => { void handleNewSession(); },
+}));
+
 // 必须在 useChatView 初始化 currentActiveSession 之后再 immediate watch，否则会触发 TDZ 白屏。
 watch(headerSessionName, (sessionName) => {
   if (typeof document !== 'undefined') {
@@ -956,6 +969,8 @@ const lastTurnCompleted = computed<boolean>(() => {
   const turn = currentActiveSession.value?.turns?.[turnId];
   return turn != null && isCompletedTurnStatus(String(turn.status));
 });
+
+const dockedPendingInteractions = computed(() => collectDockedPendingInteractions(displayedMessages.value));
 
 /** 输入框是否为空的镜像：预测闸门之一（有草稿就不该计时）。由 ChatInputArea 上抛。 */
 const draftEmpty = ref(true);

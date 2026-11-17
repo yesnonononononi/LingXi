@@ -245,7 +245,7 @@ import MessageBodyDefault from './MessageBodyDefault.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import InteractionCards from './InteractionCards.vue';
-import type {PromptCardEntry} from '../../utils/promptCardGroups';
+import {isDockedPendingCardEntry, type PromptCardEntry} from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ImageLightbox from '../common/ImageLightbox.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
@@ -273,6 +273,8 @@ const props = defineProps<{
   isLastAssistant?: boolean;
   isSending?: boolean;
   canResend?: boolean;
+  /** 主会话启用底部未决卡片停靠时，消息流只保留 PLAN 与已决卡片 */
+  dockPendingInteractionCards?: boolean;
 }>();
 
 const { isDark: globalIsDark } = useTheme();
@@ -395,12 +397,13 @@ const wholeProcessSummary = computed(() => processViews.value.totals);
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));
 
 
-/** 过程折叠区之外的互动卡片（映射为卡片展示数据）。 */
-const cardItems = computed<PromptCardEntry[]>(() =>
-  processTimeline.value
+/** 过程折叠区之外的互动卡片（映射为卡片展示数据；启用底部停靠时过滤掉已上浮的非 PLAN 未决卡）。 */
+const cardItems = computed<PromptCardEntry[]>(() => {
+  const items = processTimeline.value
     .filter(item => item.type === 'prompt_card' && !!item.card)
-    .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
-);
+    .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }));
+  return props.dockPendingInteractionCards ? items.filter(entry => !isDockedPendingCardEntry(entry)) : items;
+});
 
 /** 本条气泡是否已带**本条轮次的终态证据**（判据在 utils/turnRunning，组件只读它）。 */
 const terminalEvidence = computed(() => hasTerminalEvidence(props.message));

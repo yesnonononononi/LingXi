@@ -73,6 +73,7 @@
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
           :canResend="allowResend && !isSending"
+          :dockPendingInteractionCards="dockPendingInteractionCards"
           @selectSubSession="(id) => emit('selectSubSession', id)"
           @resendUnsent="(id) => emit('resendUnsent', id)"
           @editResend="message => emit('editResend', message)"
@@ -107,6 +108,7 @@ const props = defineProps<{
   isLoadingMore?: boolean;
   lastAssistantIndex?: number;
   compact?: boolean;
+  dockPendingInteractionCards?: boolean;
 }>();
 
 const emit = defineEmits<{
