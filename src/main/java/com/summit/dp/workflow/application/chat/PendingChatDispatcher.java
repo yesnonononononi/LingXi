@@ -71,7 +71,7 @@ public class PendingChatDispatcher {
         }
     }
 
-    @TransactionalEventListener
+    @TransactionalEventListener(fallbackExecution = true)
     public void discardDeleted(SessionTreeDeleted event) {
         for (Long sessionId : event.sessionIds()) {
             synchronized (ExecutionCoordination.monitor("control:" + sessionId)) {

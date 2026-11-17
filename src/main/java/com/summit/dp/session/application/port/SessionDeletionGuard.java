@@ -24,4 +24,10 @@ public interface SessionDeletionGuard {
      * @throws com.summit.dp.shared.exception.ClientException 仍有执行在跑
      */
     void requireNoRunningExecution(Collection<Long> sessionIds);
+
+    /**
+     * 整库范围内还有正在跑的执行就抛业务异常（用于全量清空前检查，避免把全量 sessionId 拼进 IN）。
+     */
+    default void requireNoAnyRunningExecution() {
+    }
 }

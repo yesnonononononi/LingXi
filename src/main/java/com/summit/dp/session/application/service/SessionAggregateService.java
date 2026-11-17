@@ -2,6 +2,7 @@ package com.summit.dp.session.application.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.summit.dp.session.application.port.SessionBulkClearPort;
 import com.summit.dp.session.application.port.SessionDeletionGuard;
 import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.session.domain.model.Session;
@@ -11,8 +12,8 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.model.CursorResult;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +22,6 @@ import java.util.*;
 
 /** 在应用层聚合 session 与 session_message 两个仓储。 */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionAggregateService {
     private static final int DEFAULT_MESSAGE_PAGE_SIZE = 50;
@@ -36,6 +36,35 @@ public class SessionAggregateService {
     /** 一个会话一个短事务地删：树多大都不会构成一个大事务。 */
     private final SessionNodeDeletion nodeDeletion;
     private final ApplicationEventPublisher events;
+    /** 整库清空端口：按表独立短事务批量截断并回收磁盘目录，避免 N+1 与长事务。 */
+    private final SessionBulkClearPort bulkClear;
+
+    @Autowired
+    public SessionAggregateService(SessionRepository sessionRepository,
+                                   MessageRepository messageRepository,
+                                   ChatTurnRepository chatTurnRepository,
+                                   SessionDeletionGuard deletionGuard,
+                                   SessionNodeDeletion nodeDeletion,
+                                   ApplicationEventPublisher events,
+                                   SessionBulkClearPort bulkClear) {
+        this.sessionRepository = sessionRepository;
+        this.messageRepository = messageRepository;
+        this.chatTurnRepository = chatTurnRepository;
+        this.deletionGuard = deletionGuard;
+        this.nodeDeletion = nodeDeletion;
+        this.events = events;
+        this.bulkClear = bulkClear;
+    }
+
+    /** 兼容既有单测构造器（未传入 bulkClear 时退化为逐节点清理）。 */
+    public SessionAggregateService(SessionRepository sessionRepository,
+                                   MessageRepository messageRepository,
+                                   ChatTurnRepository chatTurnRepository,
+                                   SessionDeletionGuard deletionGuard,
+                                   SessionNodeDeletion nodeDeletion,
+                                   ApplicationEventPublisher events) {
+        this(sessionRepository, messageRepository, chatTurnRepository, deletionGuard, nodeDeletion, events, null);
+    }
 
 
     @Transactional
@@ -117,19 +146,22 @@ public class SessionAggregateService {
     }
 
     /**
-     * 清空全部会话（含子会话）及其附属执行、检查点与文件编辑记录。
+     * 清空全部会话（含子会话）及其附属执行、检查点与文件编辑记录，保留重要配置与敏感信息表。
      *
      * <p>任一会话仍有执行在跑时整批拒绝，避免留下指向已删会话的孤儿行；
-     * 实际删除仍按「子会话先、根最后」逐个短事务推进，避免长事务锁库。</p>
+     * 库表由 {@link SessionBulkClearPort} 按表独立短事务批量截断，避免 N+1 与长事务。</p>
      */
     public int deleteAll() {
+        deletionGuard.requireNoAnyRunningExecution();
         List<Long> ids = sessionRepository.findAllIds();
-        if (ids.isEmpty()) {
-            return 0;
+        if (bulkClear != null) {
+            bulkClear.clearAllSessionData();
+        } else if (!ids.isEmpty()) {
+            deleteNodesLeafFirst(ids);
         }
-        deletionGuard.requireNoRunningExecution(ids);
-        deleteNodesLeafFirst(ids);
-        events.publishEvent(new SessionTreeDeleted(ids));
+        if (!ids.isEmpty()) {
+            events.publishEvent(new SessionTreeDeleted(ids));
+        }
         log.info("清空全部会话: sessionCount={}", ids.size());
         return ids.size();
     }

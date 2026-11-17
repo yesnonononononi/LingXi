@@ -42,4 +42,12 @@ public class RunningExecutionGuard implements SessionDeletionGuard {
                 sessionIds.size(), running);
         throw new ClientException("会话仍在执行中，请先停止后再删除");
     }
+
+    @Override
+    public void requireNoAnyRunningExecution() {
+        List<Long> unfinishedSessions = executions.findUnfinishedSessionIds();
+        if (!unfinishedSessions.isEmpty()) {
+            requireNoRunningExecution(unfinishedSessions);
+        }
+    }
 }

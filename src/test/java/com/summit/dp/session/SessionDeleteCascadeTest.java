@@ -2,12 +2,14 @@ package com.summit.dp.session;
 
 import com.summit.dp.checklist.domain.repository.ChecklistRepository;
 import com.summit.dp.execution.application.service.ExecutionSessionCleanupService;
+import com.summit.dp.session.application.port.SessionBulkClearPort;
 import com.summit.dp.session.application.port.SessionDeletionGuard;
 import com.summit.dp.session.application.port.SessionImageCache;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionDataPurger;
 import com.summit.dp.session.application.service.SessionNodeDeletion;
+import com.summit.dp.session.application.service.SessionTreeDeleted;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.repo.SessionTokenAuditRepository;
@@ -151,46 +153,54 @@ class SessionDeleteCascadeTest {
     }
 
     @Test
-    void deleteAllPurgesAllSessionsLeafFirst() {
+    void deleteAllUsesBulkClearWithoutNPlusOneAndPreservesGuard() {
         SessionRepository sessions = mock(SessionRepository.class);
         SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
-        SessionAggregateService aggregate = aggregate(sessions, guard);
+        SessionBulkClearPort bulkClear = mock(SessionBulkClearPort.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        SessionAggregateService aggregate = new SessionAggregateService(
+                sessions, messages, turns, guard, new SessionNodeDeletion(sessions, purger), events, bulkClear);
         when(sessions.findAllIds()).thenReturn(TREE);
 
         int count = aggregate.deleteAll();
 
         assertEquals(2, count);
-        InOrder order = inOrder(guard, sessions, executions);
-        order.verify(guard).requireNoRunningExecution(TREE);
-        order.verify(sessions).deleteByIds(List.of(12L));
-        order.verify(executions).deleteBySessions(List.of(12L));
-        order.verify(sessions).deleteByIds(List.of(11L));
-        order.verify(executions).deleteBySessions(List.of(11L));
+        InOrder order = inOrder(guard, bulkClear, events);
+        order.verify(guard).requireNoAnyRunningExecution();
+        order.verify(bulkClear).clearAllSessionData();
+        order.verify(events).publishEvent(new SessionTreeDeleted(TREE));
+        verifyNoInteractions(executions, messages);
     }
 
     @Test
-    void deleteAllWithNoSessionsDoesNothing() {
+    void deleteAllWithNoSessionsStillClearsOrphanData() {
         SessionRepository sessions = mock(SessionRepository.class);
         SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
-        SessionAggregateService aggregate = aggregate(sessions, guard);
+        SessionBulkClearPort bulkClear = mock(SessionBulkClearPort.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        SessionAggregateService aggregate = new SessionAggregateService(
+                sessions, messages, turns, guard, new SessionNodeDeletion(sessions, purger), events, bulkClear);
         when(sessions.findAllIds()).thenReturn(List.of());
 
         assertEquals(0, aggregate.deleteAll());
-        verifyNoInteractions(guard, executions, messages);
+        verify(guard).requireNoAnyRunningExecution();
+        verify(bulkClear).clearAllSessionData();
+        verifyNoInteractions(events, executions, messages);
     }
 
     @Test
     void deleteAllRejectedWhenAnyExecutionIsRunning() {
         SessionRepository sessions = mock(SessionRepository.class);
         SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
-        SessionAggregateService aggregate = aggregate(sessions, guard);
-        when(sessions.findAllIds()).thenReturn(TREE);
+        SessionBulkClearPort bulkClear = mock(SessionBulkClearPort.class);
+        SessionAggregateService aggregate = new SessionAggregateService(
+                sessions, messages, turns, guard, new SessionNodeDeletion(sessions, purger),
+                mock(ApplicationEventPublisher.class), bulkClear);
         doThrow(new ClientException("会话仍在执行中，请先停止后再删除"))
-                .when(guard).requireNoRunningExecution(TREE);
+                .when(guard).requireNoAnyRunningExecution();
 
         assertThrows(ClientException.class, aggregate::deleteAll);
-        verify(sessions, never()).deleteByIds(anyList());
-        verifyNoInteractions(executions, messages);
+        verifyNoInteractions(bulkClear, executions, messages);
     }
 
     private SessionAggregateService aggregate(SessionRepository sessions, SessionDeletionGuard guard) {
