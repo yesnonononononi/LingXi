@@ -10,12 +10,22 @@
  */
 
 :root {
+  /* 独立入口不加载主应用 tokens.css，这里自备字号与语义色令牌 */
+  --lx-font-size-md: 12.5px;
+  --lx-font-size-lg: 13.5px;
+  --lx-font-size-xl: 14px;
+
   --fg: #f4f4f5;
   --fg-dim: #a1a1aa;
   --accent: #60a5fa;
   --accent-warn: #fbbf24;
   --accent-danger: #f87171;
   --accent-ok: #4ade80;
+
+  --status-color: var(--accent-ok);
+  --status-bg: rgba(74, 222, 128, 0.14);
+  --status-border: rgba(74, 222, 128, 0.28);
+  --status-glow: rgba(74, 222, 128, 0.12);
 }
 
 html.theme-light {
@@ -55,14 +65,15 @@ body {
   position: relative;
   box-sizing: border-box;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
   height: 100%;
-  padding: 12px 12px 12px 14px;
-  border-radius: 8px;
+  padding: 14px 14px 14px 16px;
+  border-radius: 12px;
   /* 边框由各主题自己决定：深色是渐变辉光边，浅色是白色玻璃边 */
   border: 1px solid transparent;
   overflow: hidden;
+  cursor: pointer;
   /* 入场动画：从下方轻轻推上来，别做弹跳，通知不应该抢戏 */
   transform: translateY(10px);
   opacity: 0;
@@ -79,6 +90,48 @@ body {
   transform: translateY(6px);
   opacity: 0;
   transition-duration: 140ms;
+}
+
+/* 状态语义色变量收口，供图标、角落微光与底部倒计时条共用 */
+.card.is-completed {
+  --status-color: var(--accent-ok);
+  --status-bg: rgba(74, 222, 128, 0.14);
+  --status-border: rgba(74, 222, 128, 0.28);
+  --status-glow: rgba(74, 222, 128, 0.11);
+}
+
+.card.is-failed,
+.card.is-cancelled {
+  --status-color: var(--accent-danger);
+  --status-bg: rgba(248, 113, 113, 0.14);
+  --status-border: rgba(248, 113, 113, 0.28);
+  --status-glow: rgba(248, 113, 113, 0.11);
+}
+
+.card.is-suspended {
+  --status-color: var(--accent-warn);
+  --status-bg: rgba(251, 191, 36, 0.15);
+  --status-border: rgba(251, 191, 36, 0.30);
+  --status-glow: rgba(251, 191, 36, 0.11);
+}
+
+html.theme-light .card.is-completed {
+  --status-bg: rgba(21, 128, 61, 0.10);
+  --status-border: rgba(21, 128, 61, 0.22);
+  --status-glow: rgba(21, 128, 61, 0.08);
+}
+
+html.theme-light .card.is-failed,
+html.theme-light .card.is-cancelled {
+  --status-bg: rgba(220, 38, 38, 0.10);
+  --status-border: rgba(220, 38, 38, 0.22);
+  --status-glow: rgba(220, 38, 38, 0.08);
+}
+
+html.theme-light .card.is-suspended {
+  --status-bg: rgba(180, 83, 9, 0.10);
+  --status-border: rgba(180, 83, 9, 0.22);
+  --status-glow: rgba(180, 83, 9, 0.08);
 }
 
 /*
@@ -166,38 +219,35 @@ html.theme-light .card::before {
   pointer-events: none;
 }
 
+/* 左上角柔和的状态环境光，让深/浅两套卡片都能一眼区分结果状态 */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(140px 90px at 26px 26px, var(--status-glow), transparent 72%);
+  pointer-events: none;
+}
+
 .icon {
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  width: 34px;
+  height: 34px;
   margin-top: 1px;
-  border-radius: 8px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--lx-font-size-xl);
-  line-height: 1;
-  background: rgba(96, 165, 250, 0.16);
-  color: var(--accent);
-}
-
-.is-failed .icon,
-.is-cancelled .icon {
-  background: rgba(248, 113, 113, 0.16);
-  color: var(--accent-danger);
-}
-
-.is-suspended .icon {
-  background: rgba(251, 191, 36, 0.18);
-  color: var(--accent-warn);
-}
-
-.is-completed .icon {
-  background: rgba(74, 222, 128, 0.16);
-  color: var(--accent-ok);
+  background: var(--status-bg);
+  border: 1px solid var(--status-border);
+  color: var(--status-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .content {
+  position: relative;
+  z-index: 1;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -206,7 +256,7 @@ html.theme-light .card::before {
   font-size: var(--lx-font-size-lg);
   font-weight: 600;
   line-height: 1.35;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.005em;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -215,7 +265,7 @@ html.theme-light .card::before {
 .body {
   margin-top: 3px;
   font-size: var(--lx-font-size-md);
-  line-height: 1.45;
+  line-height: 1.48;
   color: var(--fg-dim);
   /* 最多两行，超出省略：通知不是日志，塞不下就截断 */
   display: -webkit-box;
@@ -226,32 +276,75 @@ html.theme-light .card::before {
 }
 
 .close {
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  margin-top: -1px;
+  width: 24px;
+  height: 24px;
+  margin-top: -2px;
+  margin-right: -2px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: var(--fg-dim);
-  font-size: var(--lx-font-size-lg);
-  line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 140ms ease, background-color 140ms ease;
+  opacity: 0.45;
+  transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
-.card:hover .close {
-  opacity: 1;
+.card:hover .close,
+.close:focus-visible {
+  opacity: 0.9;
 }
 
 .close:hover {
+  opacity: 1;
   background: rgba(255, 255, 255, 0.12);
   color: var(--fg);
 }
 
 html.theme-light .close:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: rgba(15, 23, 42, 0.08);
+}
+
+/* 底部极细倒计时进度条：悬停暂停时同步冻结 */
+.progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--status-color);
+  opacity: 0.55;
+  transform-origin: left center;
+  transform: scaleX(1);
+  pointer-events: none;
+}
+
+.card.entered .progress {
+  animation: notify-countdown var(--notify-duration, 9000ms) linear forwards;
+}
+
+.card:hover .progress {
+  animation-play-state: paused;
+}
+
+@keyframes notify-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: opacity 120ms ease;
+    transform: none;
+  }
+  .card.entered .progress {
+    animation: none;
+  }
 }
  

@@ -40,15 +40,61 @@ declare global {
   }
 }
 
-/** 每类通知的图标字形；用文字而不是 SVG，省掉一份资源也够用。 */
-const GLYPHS: Record<NotifyKind, string> = {
-  completed: '\u2713',
-  failed: '!',
-  cancelled: '\u00d7',
-  suspended: '!',
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const DEFAULT_DURATION_MS = 9000;
+
+interface SvgShape {
+  tag: 'path' | 'circle' | 'line';
+  attrs: Record<string, string>;
+}
+
+/** 每类通知的矢量图标定义（用 createElementNS 构造，避免 innerHTML）。 */
+const KIND_ICONS: Record<NotifyKind, readonly SvgShape[]> = {
+  completed: [
+    { tag: 'path', attrs: { d: 'M5 12.5l4.2 4.2L19 7' } },
+  ],
+  failed: [
+    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '8.5' } },
+    { tag: 'line', attrs: { x1: '12', y1: '8.2', x2: '12', y2: '12.6' } },
+    { tag: 'circle', attrs: { cx: '12', cy: '15.8', r: '0.8', fill: 'currentColor', stroke: 'none' } },
+  ],
+  cancelled: [
+    { tag: 'line', attrs: { x1: '7', y1: '7', x2: '17', y2: '17' } },
+    { tag: 'line', attrs: { x1: '17', y1: '7', x2: '7', y2: '17' } },
+  ],
+  suspended: [
+    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '8.5' } },
+    { tag: 'path', attrs: { d: 'M12 7.8v4.6l3 1.8' } },
+  ],
 };
 
+const CLOSE_ICON: readonly SvgShape[] = [
+  { tag: 'line', attrs: { x1: '6.5', y1: '6.5', x2: '17.5', y2: '17.5' } },
+  { tag: 'line', attrs: { x1: '17.5', y1: '6.5', x2: '6.5', y2: '17.5' } },
+];
+
 const KNOWN_KINDS: readonly NotifyKind[] = ['completed', 'failed', 'cancelled', 'suspended'];
+
+function buildSvgIcon(shapes: readonly SvgShape[], size: number, strokeWidth: number): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', String(strokeWidth));
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const shape of shapes) {
+    const node = document.createElementNS(SVG_NS, shape.tag);
+    for (const [key, value] of Object.entries(shape.attrs)) {
+      node.setAttribute(key, value);
+    }
+    svg.appendChild(node);
+  }
+  return svg;
+}
 
 /** 主应用主题存在这个 key 下（与 `index.html` 的首屏脚本共用同一份来源）。 */
 const THEME_STORAGE_KEY = 'lingxi-theme';
@@ -97,8 +143,15 @@ function render(data: NotificationData): void {
   card.setAttribute('role', 'button');
   card.setAttribute('tabindex', '0');
 
-  const icon = text('span', 'icon', GLYPHS[kind]);
+  const durationMs = Number.isFinite(data.duration) && (data.duration as number) > 0
+    ? (data.duration as number)
+    : DEFAULT_DURATION_MS;
+  card.style.setProperty('--notify-duration', `${durationMs}ms`);
+
+  const icon = document.createElement('span');
+  icon.className = 'icon';
   icon.setAttribute('aria-hidden', 'true');
+  icon.appendChild(buildSvgIcon(KIND_ICONS[kind], 16, 2.2));
 
   const content = document.createElement('div');
   content.className = 'content';
@@ -108,15 +161,19 @@ function render(data: NotificationData): void {
   const close = document.createElement('button');
   close.className = 'close';
   close.type = 'button';
-  close.textContent = '\u00d7';
   close.setAttribute('aria-label', 'Close');
+  close.appendChild(buildSvgIcon(CLOSE_ICON, 12, 2));
   close.addEventListener('click', (event) => {
     // 关闭按钮不能顺带触发「点击卡片跳转」
     event.stopPropagation();
     void window.notificationAPI?.dismiss();
   });
 
-  card.append(icon, content, close);
+  const progress = document.createElement('span');
+  progress.className = 'progress';
+  progress.setAttribute('aria-hidden', 'true');
+
+  card.append(icon, content, close, progress);
   root.replaceChildren(card);
 
   // 入场动画：先挂一帧再切 class，否则 transition 不会触发
