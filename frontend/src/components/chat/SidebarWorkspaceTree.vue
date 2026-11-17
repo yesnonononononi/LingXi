@@ -29,7 +29,6 @@ import {computed, type Ref} from 'vue';
 import type {BranchedMenuChild, BranchedMenuItem} from '../common/BranchedMenu.vue';
 import BranchedMenu from '../common/BranchedMenu.vue';
 import SessionStateIndicator from './SessionStateIndicator.vue';
-import SidebarSubSessions from './SidebarSubSessions.vue';
 import SidebarSessionRow from './SidebarSessionRow.vue';
 import SessionPinButton from './SessionPinButton.vue';
 import {PIN_PATH} from '../../utils/sessionPinIcons';

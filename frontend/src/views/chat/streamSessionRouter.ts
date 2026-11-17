@@ -235,6 +235,8 @@ export class StreamSessionRouter {
         name: agentName || t('chat.message.subAgentIndex', { index: root.subSessions.length + 1 }),
         agentId: meta?.agentId,
         agentName,
+        // 子会话自身不可置顶，展示上继承所属根会话（与后端树查询回传的口径一致）。
+        isPinned: root.isPinned ?? false,
         runStatus: 'RUNNING',
         messages: []
       };

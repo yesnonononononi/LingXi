@@ -31,7 +31,6 @@ const {
   expanded,
   submitting,
   error,
-  customInput,
   navigate,
   selectOption,
   activateCustom,
