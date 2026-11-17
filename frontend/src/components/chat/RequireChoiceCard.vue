@@ -205,11 +205,12 @@ const handleSubmit = () => {
         <div v-if="!isCollapsed">
           <div class="space-y-3.5">
 
-            <!-- 问题正文按纯文本渲染：后端 question 常带多行（选项说明、补充材料），
-                 必须显式保留换行，否则 HTML 空白折叠会把 \n 吞成空格、全部挤成一段。 -->
-            <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-zinc-900']">
-              {{ questionText }}
-            </h3>
+            <!-- 问题正文按纯文本渲染并套固定上限滚动框：保留后端 \n 换行，同时防止超长题干撑爆卡片。 -->
+            <div class="scrollbar-thin max-h-[160px] overflow-y-auto pr-1">
+              <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-zinc-900']">
+                {{ questionText }}
+              </h3>
+            </div>
 
             <!-- 已决断提示状态 -->
             <div

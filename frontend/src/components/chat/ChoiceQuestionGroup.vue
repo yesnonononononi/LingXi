@@ -14,6 +14,7 @@ import {
 } from '../../utils/cardUi';
 import {useI18n} from '../../i18n';
 import CardActionButton from './CardActionButton.vue';
+import MarkdownRenderer from './MarkdownRenderer.vue';
 
 const props = defineProps<{ entries: PromptCardEntry[]; responseId: string; expectedCount: number; isDark?: boolean; docked?: boolean }>();
 const { t } = useI18n();
@@ -83,6 +84,12 @@ const canSubmit = computed(() => ready.value && pending.value.length > 0 && answ
 const editable = computed(() => !!active.value && canDecideCard(active.value, 'ANSWER') && !submitting.value);
 /** 题干占用标题位：优先正文，其次标题，全缺时回落分组名。 */
 const questionText = computed(() => active.value?.content || active.value?.title || t('chat.choice.groupTitle'));
+/** 当整段文本不含真实换行但含字面量 \n 时还原换行，确保代码块等 Markdown 语法正确解析。 */
+const normalizedQuestionText = computed(() =>
+  !questionText.value.includes('\n') && questionText.value.includes('\\n')
+    ? questionText.value.replace(/\\n/g, '\n')
+    : questionText.value
+);
 /** 无选项时（纯自由回答）不留固定滚动区，否则是一整块空白。 */
 const scrollable = computed(() => (active.value?.options?.length ?? 0) > 0);
 /** 缺题或仍待作答时，不能把唯一作答入口收进摘要。 */
@@ -164,9 +171,14 @@ async function submit() {
       : [CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-zinc-950 border-white/10' : 'bg-white border-zinc-200/90']"
     data-testid="choice-question-group">
     <header class="flex items-start justify-between gap-3 pb-2.5" :class="docked ? 'px-0.5 pt-1' : 'px-4 pt-3'">
-      <!-- 题干自适应高度并支持内部滚动，兼顾短题紧凑与长题稳定。 -->
-      <p class="scrollbar-thin min-h-[2.25rem] max-h-[120px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-medium leading-relaxed"
-        :class="isDark ? 'text-zinc-100' : 'text-zinc-900'" data-testid="choice-question">{{ questionText }}</p>
+      <!-- 固定高度滚动框 + Markdown 渲染：应对代码块与长题干，切题时保持下方选项位置稳定。 -->
+      <div
+        class="scrollbar-thin h-[148px] min-w-0 flex-1 overflow-y-auto pr-1 text-sm leading-relaxed [&_.markdown-body>*:first-child]:mt-0 [&_.markdown-body>*:last-child]:mb-0"
+        :class="isDark ? 'text-zinc-100' : 'text-zinc-900'"
+        data-testid="choice-question"
+      >
+        <MarkdownRenderer :content="normalizedQuestionText" :is-dark="isDark" :streaming="false" />
+      </div>
       <div class="flex shrink-0 items-center gap-0.5">
         <template v-if="entries.length > 1">
           <button type="button" :disabled="activeIndex <= 0" :aria-label="t('chat.choice.previous')"
