@@ -73,7 +73,7 @@ const {
           :class="isDark ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-200 hover:bg-emerald-900/60' : 'border-emerald-300 bg-white/90 text-emerald-800 hover:bg-emerald-100/60'"
           @click="focusChatInput"
         >
-          {{ t('chat.plan.discussInChat') }}
+          {{ t('chat.plan.goToChat') }}
         </button>
         <button
           type="button"

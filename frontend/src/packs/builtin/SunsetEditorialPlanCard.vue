@@ -72,7 +72,7 @@ const {
         :class="isDark ? 'text-rose-300 hover:text-rose-200' : 'text-rose-700 hover:text-rose-900'"
         @click="openPreview"
       >
-        {{ t('chat.plan.openDetail') }}
+        {{ t('chat.plan.previewAction') }}
       </button>
       <div class="flex items-center gap-2">
         <button
@@ -83,7 +83,7 @@ const {
           :class="isDark ? 'border-rose-500/35 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50' : 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'"
           @click="focusChatInput"
         >
-          {{ t('chat.plan.discussInChat') }}
+          {{ t('chat.plan.goToChat') }}
         </button>
         <button
           type="button"
