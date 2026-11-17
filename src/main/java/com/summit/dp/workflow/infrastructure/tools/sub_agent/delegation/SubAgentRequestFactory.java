@@ -12,6 +12,7 @@ import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecution;
+import com.summit.core.workspace.WorkspaceOptions;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -100,7 +101,10 @@ public class SubAgentRequestFactory {
         AgentRequest.AgentRequestBuilder builder = AgentRequest.builder();
 
         if (workspaceSpec != null) {
-            builder.workspaceSpec(workspaceSpec);
+            builder.workspaceSpec(workspaceSpec)
+                    .workspaceOptions(WorkspaceOptions.builder()
+                            .accessMode(permissionMode.toWorkspaceAccessMode())
+                            .build());
         }
 
         // Skill 能力随委派下行：框架按请求级 skillConfig 渲染 Skill 提示词，read_skill 也按它做

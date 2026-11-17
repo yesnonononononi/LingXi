@@ -37,7 +37,6 @@ class ExecutionJsonTest {
             WindowsWorkspaceSpec restoredSpec = (WindowsWorkspaceSpec) restored.getAgentRequest().getWorkspaceSpec();
             assertEquals(spec, restoredSpec);
             assertEquals(mode, AgentPermissionMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
-            assertEquals(mode.isWorkspaceWritable(), restoredSpec.writable());
         }
     }
 
@@ -57,7 +56,7 @@ class ExecutionJsonTest {
     @Test
     void roundTripsCompleteExecutionForLocalAndSandboxWorkspaces() throws Exception {
         LingXiWorkspaceSpec local = new LingXiWorkspaceSpec("local", "D:/workspace", LocalInstance.ID, Map.of());
-        WorkspaceSpec sandbox = new WindowsWorkspaceSpec("D:/workspace", LocalInstance.ID, Map.of(), false);
+        WorkspaceSpec sandbox = new WindowsWorkspaceSpec("D:/workspace", LocalInstance.ID, Map.of());
         for (WorkspaceSpec spec : List.of(local, sandbox)) {
             Execution original = execution(spec, Map.of(ExecutionAttributes.SESSION_ID, "201",
                     ExecutionAttributes.MODEL_CONFIG_ID, "301"));

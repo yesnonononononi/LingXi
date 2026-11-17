@@ -15,7 +15,6 @@ public final class SandboxPolicyFactory {
     }
 
     public WindowsWorkspaceSpec build(String workDir, AgentPermissionMode permissionMode) {
-        AgentPermissionMode effective = permissionMode == null ? AgentPermissionMode.DEFAULT : permissionMode;
-        return new WindowsWorkspaceSpec(workDir, LocalInstance.ID, environment, effective.isWorkspaceWritable());
+        return new WindowsWorkspaceSpec(workDir, LocalInstance.ID, environment);
     }
 }

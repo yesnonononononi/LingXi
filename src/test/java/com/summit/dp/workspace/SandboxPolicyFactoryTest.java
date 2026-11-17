@@ -1,5 +1,6 @@
 package com.summit.dp.workspace;
 
+import com.summit.core.workspace.WorkspaceAccessMode;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
@@ -23,7 +24,6 @@ class SandboxPolicyFactoryTest {
             WindowsWorkspaceSpec spec = factory.build(project, mode);
             assertEquals(project, spec.workDir());
             assertEquals(LocalInstance.ID, spec.scope());
-            assertEquals(mode.isWorkspaceWritable(), spec.writable());
         }
     }
 
@@ -31,7 +31,6 @@ class SandboxPolicyFactoryTest {
         SandboxPolicyFactory factory = new SandboxPolicyFactory(Map.of());
         String project = temporary.toString();
         assertEquals(factory.build(project, AgentPermissionMode.DEFAULT), factory.build(project, null));
-        assertTrue(factory.build(project, null).writable());
     }
 
     @Test void reusingTheFactoryDoesNotLeakPreviousProjectPathsOrPermissions() {
@@ -42,8 +41,6 @@ class SandboxPolicyFactoryTest {
         WindowsWorkspaceSpec readonly = factory.build(second, AgentPermissionMode.READ_ONLY_REVIEW);
         assertEquals(first, writable.workDir());
         assertEquals(second, readonly.workDir());
-        assertTrue(writable.writable());
-        assertFalse(readonly.writable());
         assertEquals(writable, factory.build(first, AgentPermissionMode.APPROVAL_REQUIRED));
     }
 
@@ -56,9 +53,10 @@ class SandboxPolicyFactoryTest {
         assertThrows(UnsupportedOperationException.class, () -> spec.environment().put("LANG", "changed"));
     }
 
-    @Test void outOfWorkspaceModeAllowsWriteTools() {
-        SandboxPolicyFactory factory = new SandboxPolicyFactory(Map.of());
-        WindowsWorkspaceSpec full = factory.build(temporary.toString(), AgentPermissionMode.FULL_ACCESS);
-        assertTrue(full.writable());
+    @Test void permissionModeMapsToExpectedWorkspaceAccessMode() {
+        assertEquals(WorkspaceAccessMode.READ_ONLY, AgentPermissionMode.READ_ONLY_REVIEW.toWorkspaceAccessMode());
+        assertEquals(WorkspaceAccessMode.READ_WRITE, AgentPermissionMode.APPROVAL_REQUIRED.toWorkspaceAccessMode());
+        assertEquals(WorkspaceAccessMode.READ_WRITE, AgentPermissionMode.DELEGATED_APPROVAL.toWorkspaceAccessMode());
+        assertEquals(WorkspaceAccessMode.FULL_FILESYSTEM_ACCESS, AgentPermissionMode.FULL_ACCESS.toWorkspaceAccessMode());
     }
 }

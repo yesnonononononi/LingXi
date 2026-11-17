@@ -8,6 +8,8 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolRegistry;
+import com.summit.core.workspace.WorkspaceAccessMode;
+import com.summit.core.workspace.WorkspaceOptions;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
@@ -65,13 +67,21 @@ public class ApprovedFileWriteRestorer {
         if (isInsideWorkspace(workspace, snapshot.path())) {
             throw new ClientException("文件改动环境已变化，请重新发起审批");
         }
+        // 沙箱底层目录围栏按 WorkspaceOptions 裁决，因此恢复执行的 Workspace 也必须同步抬到完全访问，
+        // 否则仅抬高 attributes 仍会被 WindowsWorkspaceFiles 拦截。
+        WorkspaceOptions originalOptions = execution.getAgentRequest().getWorkspaceOptions();
+        Workspace elevatedWorkspace = workspaces.resolve(execution, WorkspaceOptions.builder()
+                .workDir(originalOptions == null ? null : originalOptions.getWorkDir())
+                .environment(originalOptions == null ? Map.of() : originalOptions.getEnvironment())
+                .accessMode(WorkspaceAccessMode.FULL_FILESYSTEM_ACCESS)
+                .build());
         return ToolExecution.builder()
                 .id(toolCall.getId())
                 .executionId(execution.getId())
                 .responseId(execution.getLastResponseId())
                 .toolDefinition(tool)
                 .args(snapshot.args())
-                .workspace(workspace)
+                .workspace(elevatedWorkspace)
                 .attributes(elevatedAttributes(execution))
                 .eventMetaData(execution.eventMetaData())
                 .build();

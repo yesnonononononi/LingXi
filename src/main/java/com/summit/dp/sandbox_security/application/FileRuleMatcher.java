@@ -16,7 +16,7 @@ import java.util.Locale;
  * 「文件安全」规则的裁决器：把规则表变成每次文件访问的放行/拒绝判定。
  *
  * <p>为什么放在业务侧而不是交给沙箱：Windows 沙箱规格只接受「工作区是否可写」一个布尔，
- * 没有逐路径清单的入参（{@code WindowsWorkspaceSpec(workDir, scope, env, writable)}），
+ * 没有逐路径清单的入参（{@code WindowsWorkspaceSpec(workDir, scope, env)}），
  * 规则下发无处可去；工具调用前的策略钩子是唯一能落地的地方。</p>
  *
  * <p>语义沿用被删掉的旧沙箱：规则表是<b>拒绝清单</b> —— 命中 DENY 才拒绝，其余一律放行。

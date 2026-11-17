@@ -12,6 +12,7 @@ import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.model.DefaultModelProviderNames;
+import com.summit.core.workspace.WorkspaceOptions;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
@@ -431,6 +432,9 @@ public class RequestPreparer {
                         .memory(MemoryLoader.collect(memoryLoaders, context.workspace()))
                         .build())
                 .workspaceSpec(context.workspace())
+                .workspaceOptions(context.workspace() == null ? null : WorkspaceOptions.builder()
+                        .accessMode(context.permissionMode().toWorkspaceAccessMode())
+                        .build())
                 .toolSpec(toolListProcessor.processSpec(toolList, ToolProcessingContext.builder()
                         .defaultAgent(defaultAgent)
                         .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null

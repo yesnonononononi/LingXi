@@ -3,6 +3,7 @@ package com.summit.dp.workflow.application.decision;
 import com.summit.core.agent.Execution;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.workspace.BasicWorkspaceSpec;
+import com.summit.core.workspace.WorkspaceOptions;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.runtime.workspace.LocalWorkspaceProvider;
@@ -29,10 +30,15 @@ public class ApprovalWorkspaceResolver {
      * 才与签发审批卡时一致；换成带 scope 的实现会被各形态的环境校验误判成「环境已变化」。</p>
      */
     public Workspace resolve(Execution execution) {
+        return resolve(execution, execution.getAgentRequest().getWorkspaceOptions());
+    }
+
+    /** 按指定的工作区访问选项解析工作空间（例如审批放行后临时抬升沙箱访问档位）。 */
+    public Workspace resolve(Execution execution, WorkspaceOptions options) {
         WorkspaceSpec spec = execution.getAgentRequest().getWorkspaceSpec();
         if (spec == null) {
             spec = new BasicWorkspaceSpec(LocalWorkspaceProvider.TYPE, System.getProperty("user.dir"));
         }
-        return workspaces.resolve(spec);
+        return options == null ? workspaces.resolve(spec) : workspaces.resolve(spec, options);
     }
 }

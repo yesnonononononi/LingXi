@@ -33,15 +33,13 @@ class WorkspaceConverterTest {
         WindowsWorkspaceSpec readonly = (WindowsWorkspaceSpec) converter.toSpec(project, WorkspaceType.SAND_BOX, AgentPermissionMode.READ_ONLY_REVIEW);
         assertEquals(WindowsWorkspaceProvider.TYPE, writable.provider());
         assertEquals(LocalInstance.ID, writable.scope());
-        assertTrue(writable.writable());
-        assertFalse(readonly.writable());
         assertEquals(temporary.toString(), readonly.workDir());
         assertEquals(writable.environment(), readonly.environment());
     }
-    @Test void projectOutsideModeRemainsWritable() {
+    @Test void projectOutsideModeBuildsSandboxSpec() {
         WindowsWorkspaceSpec spec = (WindowsWorkspaceSpec) converter().toSpec(new Workspace(1L,"project",temporary.toString()),
                 WorkspaceType.SAND_BOX, AgentPermissionMode.FULL_ACCESS);
-        assertTrue(spec.writable());
+        assertEquals(temporary.toString(), spec.workDir());
     }
     @Test void localAndSandboxModesUseNativeHostPaths() {
         WorkspaceSpec local = converter().toSpec(new Workspace(1L,"project",temporary.toString()), WorkspaceType.LOCAL, AgentPermissionMode.FULL_ACCESS);
@@ -63,6 +61,5 @@ class WorkspaceConverterTest {
         Workspace workspace = new Workspace(1L, "project", project.resolve("nested/..").toString());
         WindowsWorkspaceSpec spec = (WindowsWorkspaceSpec) converter().toSpec(workspace, WorkspaceType.SAND_BOX, null);
         assertEquals(project.toString(), spec.workDir());
-        assertTrue(spec.writable());
     }
 }

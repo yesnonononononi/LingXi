@@ -56,8 +56,6 @@ class SandboxConfigurationTest {
             WindowsWorkspaceSpec spec = factory.build(temporary.resolve("project").toString(), AgentPermissionMode.APPROVAL_REQUIRED);
             assertEquals(properties.environment(), spec.environment());
             assertEquals("C.UTF-8", spec.environment().get("LANG"));
-            assertTrue(spec.writable());
-            assertFalse(factory.build(spec.workDir(), AgentPermissionMode.READ_ONLY_REVIEW).writable());
         });
     }
 }

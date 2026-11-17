@@ -1,5 +1,7 @@
 package com.summit.dp.user_configs.application.policy;
 
+import com.summit.core.workspace.WorkspaceAccessMode;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +95,15 @@ public enum AgentPermissionMode {
     /** 底层工作区沙箱是否以可写模式挂载。 */
     public boolean isWorkspaceWritable() {
         return workspaceWritable;
+    }
+
+    /** 映射为框架工作区访问档位，用于驱动底层沙箱的文件越界与读写隔离。 */
+    public WorkspaceAccessMode toWorkspaceAccessMode() {
+        return switch (this) {
+            case READ_ONLY_REVIEW -> WorkspaceAccessMode.READ_ONLY;
+            case APPROVAL_REQUIRED, DELEGATED_APPROVAL -> WorkspaceAccessMode.READ_WRITE;
+            case FULL_ACCESS -> WorkspaceAccessMode.FULL_FILESYSTEM_ACCESS;
+        };
     }
 
     /** 本档位下的命令审批策略。 */
