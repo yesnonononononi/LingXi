@@ -2,6 +2,7 @@ import {computed, nextTick, onBeforeUnmount, ref, type Ref, watch} from 'vue';
 import {SessionAPI} from '../../services/session';
 import {useApplicationSessionState} from './useApplicationSessionState';
 import {chatApi} from '../../services/chat';
+import {AgentAPI} from '../../services/agent';
 import type {AgentPermissionMode, ChatMessage, ChatSession, ModelConfig, ToolCallDecisionReceipt, WorkspaceVO} from '../../types/chat';
 import type {AgentEvent} from '../../types/Event';
 import type {ChoiceAnswersHandler, ToolDecisionHandler} from '../../types/toolDecision';
@@ -16,7 +17,7 @@ import {useBackgroundTasks} from './useBackgroundTasks';
 import {useSubSessionTaskProgress} from './useSubSessionTaskProgress';
 import {useChecklist} from './useChecklist';
 import {acceptsChatEvent} from './chatExecutionState';
-import {recordTokenAuditSnapshot} from './tokenAuditStream';
+import {recordTokenAuditSnapshot, toTokenAuditNumber} from './tokenAuditStream';
 import {useChatSessionList} from './useChatSessionList';
 import {useChatWorkspace} from './useChatWorkspace';
 import {useChatSubSession} from './useChatSubSession';
@@ -939,6 +940,52 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     await userConfig.patch('permissionMode', mode, { permissionMode: mode });
   };
 
+  /**
+   * 手工压缩当前会话上下文（输入栏 `/compact`）。
+   *
+   * <p><b>为什么把回执直接写进响应式存储</b>：后端返回的就是「最新用量 + 重算后的审计」。
+   * 等 SSE 推送会有一段空窗（面板看着还是压缩前那份），而压缩是用户显式动作，
+   * 没有即时反馈等于让他怀疑按钮没生效。</p>
+   *
+   * <p>失败一律以异常/错误文案返回给用户：不静默、不乐观改写本地状态 ——
+   * 后端拒绝的理由（用量不足 20%、会话在执行中、没有可压缩的执行）只有它知道。</p>
+   */
+  const handleCompactContext = async (): Promise<void> => {
+    const session = currentActiveSession.value;
+    if (!session?.id) {
+      window.alert(t('chat.compact.noSession'));
+      return;
+    }
+    if (isSessionRunning(session.runStatus)) {
+      window.alert(t('chat.compact.busy'));
+      return;
+    }
+    try {
+      const result = await AgentAPI.compactContext(session.id);
+      if (!result || !isOk(result.code)) {
+        throw new Error(result?.errMsg || t('chat.compact.failed'));
+      }
+      const data = result.data;
+      if (data?.audit) recordTokenAuditSnapshot(data.audit, session.id);
+      const tokenCount = toTokenAuditNumber(data?.tokensAfter);
+      const maxTokens = toTokenAuditNumber(data?.audit?.liveMaxTokens) ?? session.contextMaxTokens ?? null;
+      if (typeof tokenCount === 'number') {
+        chatSessionStore.setContextUsage(session.id, {
+          phase: 'SQUEEZE_COMPLETED',
+          band: 'SUMMARY',
+          tokenCount,
+          maxTokens: maxTokens ?? undefined,
+          ratio: maxTokens && maxTokens > 0 ? tokenCount / maxTokens : undefined,
+        });
+      }
+      if (data?.compacted === false) {
+        window.alert(data.message || t('chat.compact.skipped'));
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : t('chat.compact.failed'));
+    }
+  };
+
   return {
     // 布局与设置
     isSidebarCollapsed: workspace.isSidebarCollapsed,
@@ -1051,6 +1098,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleToggleTheme,
     // 发送与生命周期控制
     handleSendMessage,
+    handleCompactContext,
     handleStopGeneration: sending.handleStopGeneration,
     decideToolCall,
     answerChoices,

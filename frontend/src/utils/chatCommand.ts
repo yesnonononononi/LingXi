@@ -17,6 +17,7 @@ import type {ChatMode} from '../types/chat';
  */
 export const CHAT_COMMAND_NAMES: readonly string[] = [
   'plan',
+  'compact',
   'model',
   'workspace',
   'export',
@@ -29,6 +30,15 @@ export const CHAT_COMMAND_NAMES: readonly string[] = [
   'optimize-prompt',
   'settings',
 ];
+
+/**
+ * 不接受正文的命令。
+ *
+ * <p>这些命令是「一次动作」而不是「一段输入」：`/compact` 只压缩当前上下文，没有可调参数。
+ * 带着正文发它，说明用户以为能「按这段要求压缩」—— 静默丢弃正文就是吞掉他写的内容，
+ * 安静压缩又等于答非所问。所以一律拒绝并保留正文，让他自己决定怎么处理。</p>
+ */
+export const CHAT_COMMAND_NO_BODY: readonly string[] = ['compact'];
 
 /** 斜杠命令的解析结果：命令名 + 命令之后的正文。 */
 export interface ChatCommandDraft {
@@ -126,6 +136,33 @@ export function resolveChatCommandInvocation(text: string): ChatCommandDraft | n
     return null;
   }
   return { name: draft.name.toLowerCase(), body: draft.body };
+}
+
+/**
+ * 该命令是否不接受正文（大小写不敏感）。
+ *
+ * @param name 命令名
+ * @returns true = 这个命令只能单独发，不能带参数
+ */
+export function isBodylessChatCommand(name: string): boolean {
+  const normalized = (name ?? '').toLowerCase();
+  return normalized !== '' && CHAT_COMMAND_NO_BODY.includes(normalized);
+}
+
+/**
+ * 这次提交是否是「不接受正文的命令被塞了正文」。
+ *
+ * <p>提交层用它决定：拒绝执行并保留用户写的内容。前端与后端各校验一次 ——
+ * 只在前端拦，绕过界面（直接打接口）就没人管了。</p>
+ *
+ * @param draft 解析出的命令草稿；普通文本传 null
+ * @returns true = 应当拒绝执行
+ */
+export function hasUnexpectedCommandBody(draft: ChatCommandDraft | null): boolean {
+  if (!draft || !isBodylessChatCommand(draft.name)) {
+    return false;
+  }
+  return draft.body.trim() !== '';
 }
 
 /** 本次发送的最终形态（submit 解析结果）。 */

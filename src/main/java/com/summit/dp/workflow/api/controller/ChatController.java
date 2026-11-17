@@ -2,8 +2,10 @@ package com.summit.dp.workflow.api.controller;
 
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.shared.vo.ContextCompactionVO;
 import com.summit.dp.workflow.api.request.ChatRequest;
 import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.application.compact.ContextCompactionService;
 import com.summit.dp.workflow.application.input.ResumeSupplementCommand;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.application.pending.PendingAttachmentContent;
@@ -27,10 +29,13 @@ import java.util.Objects;
 public class ChatController {
     private final ChatService chatService;
     private final ResumeSupplementService resumeSupplementService;
+    private final ContextCompactionService contextCompactionService;
 
-    public ChatController(ChatService chatService, ResumeSupplementService resumeSupplementService) {
+    public ChatController(ChatService chatService, ResumeSupplementService resumeSupplementService,
+                          ContextCompactionService contextCompactionService) {
         this.chatService = chatService;
         this.resumeSupplementService = resumeSupplementService;
+        this.contextCompactionService = contextCompactionService;
     }
 
     @GetMapping("/completion/limits")
@@ -164,6 +169,20 @@ public class ChatController {
     @PostMapping("/completion/{sessionId}/suspend")
     public void suspend(@PathVariable Long sessionId) {
         chatService.suspend(sessionId);
+    }
+
+    /**
+     * 手工压缩会话上下文（输入栏 {@code /compact}）：压完回执最新用量与新审计结果。
+     *
+     * <p>{@code body} 只是为了把「用户带着正文发了这条命令」判成拒绝：命令本身没有参数，
+     * 带上正文说明他期待的是「按这段要求压缩」，而本能力不支持，静默丢弃就是吞字。
+     * 前端也做同样校验，两边口径一致 —— 只在前端拦，绕过界面就没人管了。</p>
+     */
+    @Operation(summary = "手工压缩会话上下文并重算用量审计")
+    @PostMapping("/completion/{sessionId}/compact")
+    public Result<ContextCompactionVO> compactContext(@PathVariable long sessionId,
+                                                      @RequestParam(required = false) String body) {
+        return Result.success(contextCompactionService.compact(sessionId, body));
     }
 
     @Operation(summary = "恢复当前会话最近暂停的执行")

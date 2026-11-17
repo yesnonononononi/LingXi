@@ -6,6 +6,7 @@ import {toServerSessionId} from '../utils/ids';
 import {getApiBaseUrl, resolveApiUrl} from '../utils/apiConfig';
 import {t} from '../i18n';
 import type {ChatCommand} from './dto/chat_command';
+import type {ContextCompactionResult} from '../types/contextCompaction';
 
 const appendFormValue = (form: FormData, key: string, value: string | number | boolean | null | undefined) => {
   if (value !== null && value !== undefined) form.append(key, String(value));
@@ -61,6 +62,16 @@ export class AgentAPI {
   static async suspend(sessionId: string | number): Promise<void> {
     const result = await http.post<unknown, Result<void> | undefined>(`/a/completion/${sessionId}/suspend`);
     if (result && !isOk(result.code)) throw new Error(result.errMsg || t('chat.controls.pauseFailed'));
+  }
+
+  /**
+   * 手工压缩会话上下文（`/compact`）：压缩后回执最新用量与重算的审计。
+   *
+   * <p>不带任何参数 —— 命令不接受正文，后端也会拒绝带正文的调用（前端与后端各校验一次，
+   * 只在前端拦的话，绕过界面直接打接口就没人管了）。</p>
+   */
+  static async compactContext(sessionId: string | number): Promise<Result<ContextCompactionResult>> {
+    return http.post<unknown, Result<ContextCompactionResult>>(`/a/completion/${sessionId}/compact`);
   }
 
   static async resume(sessionId: string | number, supplement?: { turnId: string; requestId: string; input: string }): Promise<Result<string>> {

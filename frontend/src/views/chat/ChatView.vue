@@ -337,6 +337,7 @@
               :mode="chatMode"
               :prediction="instructionPrediction"
               @sendMessage="handleSendMessage"
+        @compactContext="handleCompactContext"
               @stopGeneration="handleStopGeneration"
               @updateModel="handleUpdateModel"
               @updateReasoningEffort="handleUpdateReasoningEffort"
@@ -852,6 +853,7 @@ const {
   handleModelUpdated,
   handleToggleTheme,
   handleSendMessage,
+  handleCompactContext,
   handleStopGeneration,
   decideToolCall,
   answerChoices,

@@ -66,6 +66,7 @@ import ChatInputModelSelector from './ChatInputModelSelector.vue';
 import ChatInputSendButton from './ChatInputSendButton.vue';
 import {ICON_BTN, MUTED, TOOL_BTN} from '../../utils/promptBarStyles';
 import {
+  hasUnexpectedCommandBody,
   resolveChatSendDraft,
   resolveTextAfterCommandSelect,
   toChatMode
@@ -158,6 +159,8 @@ const emit = defineEmits<{
   (e: 'updateDraftEmpty', empty: boolean): void;
   /** 工作区权限档位变更（去向必须是 userConfig，与安全中心同一处真源） */
   (e: 'updateAccessMode', mode: AgentPermissionMode): void;
+  /** 手工压缩当前会话上下文（/compact）：宿主负责调接口并回填用量与审计 */
+  (e: 'compactContext'): void;
 }>();
 
 defineSlots<{
@@ -827,6 +830,15 @@ const allCommands = computed<CommandItem[]>(() => [
       // resolveTextAfterCommandSelect 判据里，菜单项不得各自清空用户已写内容。
       isPlanMode.value = true;
       focusInput();
+    }
+  },
+  {
+    id: 'compact',
+    name: 'compact',
+    desc: t('chat.command.compact'),
+    action: () => {
+      // 压缩是一次会话级动作，不需要正文；宿主负责调接口并把用量与审计回填到界面。
+      emit('compactContext');
     }
   },
   {
@@ -1519,6 +1531,13 @@ const handleSend = () => {
   // 非 plan 的命令不是消息：执行它，把命令之后的正文原样还给用户继续编辑。
   if (draft.command !== null && draft.command !== 'plan') {
     closeCommandLayer();
+    // 「不接受正文」的命令被塞了正文：拒绝执行并保留原文。吞掉正文发一次压缩，
+    // 用户看到的会是「我写的要求没了，上下文却莫名其妙被压了」。
+    if (hasUnexpectedCommandBody({ name: draft.command, body: draft.text })) {
+      window.alert(t('chat.command.compactRejectsBody'));
+      focusInput();
+      return;
+    }
     // 菜单里找不到这个命令（白名单与菜单漂移）时，绝不能清掉用户正文 ——
     // 「解析出命令名 → 执行落空 → token 被吞」正是静默丢字的那条路径。
     if (!runUiCommand(draft.command)) {

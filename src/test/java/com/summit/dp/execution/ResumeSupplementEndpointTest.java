@@ -18,7 +18,7 @@ class ResumeSupplementEndpointTest {
     void optionalJsonBodyRoutesToSupplementAdmissionAndEmptyBodyKeepsOrdinaryResume() throws Exception {
         ChatService chat = mock(ChatService.class);
         ResumeSupplementService supplements = mock(ResumeSupplementService.class);
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ChatController(chat, supplements)).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ChatController(chat, supplements, null)).build();
         when(chat.resume(500L)).thenReturn(Result.success("完成"));
         mvc.perform(post("/a/completion/500/resume")).andExpect(status().isOk());
         verify(chat).resume(500L);

@@ -38,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ChatPendingEndpointTest {
 
     private final ChatService service = mock(ChatService.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new ChatController(service, null)).build();
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new ChatController(service, null, null)).build();
 
     @Test
     void confirmOnlyTargetsTheOneMessage() throws Exception {

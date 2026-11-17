@@ -672,6 +672,8 @@ export const messages: MessageSchema = {
       command: {
         optimizePrompt: '优化当前提示词，预览后选择是否替换',
         plan: '进入计划模式 (生成分步执行规划)',
+        compact: '压缩当前会话上下文，压完回显最新用量与审计',
+        compactRejectsBody: '/compact 不接受正文，请直接发送 /compact',
         model: '选择或配置本会话使用的模型',
         workspace: '切换或新建工作空间 (Workspace)',
         export: '将当前会话内容导出为 Markdown 文件',
@@ -682,6 +684,12 @@ export const messages: MessageSchema = {
         mcp: '管理 MCP 服务 (接入外部工具，执行时注入模型)',
         skill: '查看本地已加载的 Skill 清单 (SKILL.md)',
         settings: '打开系统全局设置与偏好配置',
+      },
+      compact: {
+        noSession: '当前没有会话可压缩',
+        busy: '会话正在执行中，请等本轮结束或停止后再压缩上下文',
+        failed: '压缩上下文失败',
+        skipped: '上下文未压缩',
       },
       optimizePrompt: {
         empty: '请先输入需要优化的提示词，或使用 /optimize-prompt 提示词',
@@ -2324,6 +2332,8 @@ export const messages: MessageSchema = {
       command: {
         optimizePrompt: 'Optimize the current prompt and preview before replacing',
         plan: 'Enter plan mode (generate a step-by-step plan)',
+        compact: 'Compact this conversation now and show the fresh usage and audit',
+        compactRejectsBody: '/compact takes no text — send /compact on its own',
         model: 'Choose or configure the model for this conversation',
         workspace: 'Switch or create a workspace',
         export: 'Export this conversation as a Markdown file',
@@ -2334,6 +2344,12 @@ export const messages: MessageSchema = {
         mcp: 'Manage MCP services (connect external tools, injected at run time)',
         skill: 'List locally loaded skills (SKILL.md)',
         settings: 'Open global settings and preferences',
+      },
+      compact: {
+        noSession: 'There is no conversation to compact',
+        busy: 'This conversation is still running — wait for the turn to finish or stop it first',
+        failed: 'Failed to compact the conversation context',
+        skipped: 'Context was not compacted',
       },
       optimizePrompt: {
         empty: 'Enter a prompt first, or use /optimize-prompt followed by your prompt',
