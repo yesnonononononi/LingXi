@@ -279,7 +279,7 @@
 }, {
   "id" : "search_files",
   "name" : "search_files",
-  "description" : "Search file contents inside the workspace by regular expression and return `path:line: content` hits. Read-only and independent of the shell, so it also works in read-only sessions. Skips VCS, dependency and build directories; `glob` matches the file name only (e.g. `*.java`). When the result reports that the limit was reached, narrow `path` or `glob` instead of raising maxResults.",
+  "description" : "Search file contents inside the workspace by regular expression and return `path:line: content` hits.\nSkips VCS, dependency and build directories; `glob` matches the file name only (e.g. `*.java`).\nWhen the result reports that the limit was reached, narrow `path` or `glob` instead of raising maxResults.\n",
   "schema" : {
     "type" : "object",
     "properties" : {
@@ -289,7 +289,7 @@
       },
       "path" : {
         "type" : "string",
-        "description" : "Directory to search, relative to the workspace root; defaults to the whole workspace"
+        "description" : "Directory to search, relative to the workspace root; defaults to the whole workspace, A large scope makes it easier to make mistakes"
       },
       "glob" : {
         "type" : "string",

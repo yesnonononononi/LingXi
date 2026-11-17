@@ -87,7 +87,10 @@ class H2SchemaPoConsistencyTest {
             "chat_turn.error_reason",
             "file_record.diff",
             // 指令预测（V15）：预测正文可长可短，按大文本存，别让模型输出挤进有界 VARCHAR。
-            "instruction_predict.next_instruction");
+            "instruction_predict.next_instruction",
+            // 待发送队列（V23）：排队正文与附件清单都无上界，只能进 CLOB。
+            "pending_task.input_text",
+            "pending_task.attachments");
 
     /** 自增主键表（PO 侧 {@code IdType.AUTO}）；其余表主键由应用生成。 */
     private static final Set<String> IDENTITY_TABLES = Set.of(
@@ -159,7 +162,7 @@ class H2SchemaPoConsistencyTest {
     }
 
     @Test
-    @DisplayName("自动时间列：16 张 touch 表必须带 ON UPDATE，checklist/checklist_step 不带（与 SQLite 无触发器一致）")
+    @DisplayName("自动时间列：touch 表必须带 ON UPDATE，checklist/checklist_step 不带（与 SQLite 无触发器一致）")
     void automaticTouchColumnsMatchSqliteTriggers() {
         H2TestDatabase database = newDatabase("on-update");
         List<String> missing = database.queryColumn(
@@ -171,11 +174,12 @@ class H2SchemaPoConsistencyTest {
                 "只有 checklist/checklist_step 的 update_at 由仓储显式写（SQLite 侧也没有触发器），"
                         + "以及 instruction_predict.update_time（行只插入不更新、没有 touch 语义），其余必须带 ON UPDATE");
 
-        assertEquals("17", database.queryString(
+        // 18 = 原 SQLite 侧 17 张 touch 表 + pending_task（V23 新增，状态流转必须让 updated_at 前进）。
+        assertEquals("18", database.queryString(
                         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC'"
                                 + " AND COLUMN_NAME IN ('UPDATE_TIME', 'UPDATED_AT', 'UPDATE_AT')"
                                 + " AND CAST(COLUMN_ON_UPDATE AS VARCHAR) = 'CURRENT_TIMESTAMP'"),
-                "17 张带 SQLite touch 触发器的表必须有等价的 ON UPDATE（少一张就是「H2 上时间不前进」）");
+                "带 touch 语义的表必须有等价的 ON UPDATE（少一张就是「H2 上时间不前进」）");
     }
 
     @Test

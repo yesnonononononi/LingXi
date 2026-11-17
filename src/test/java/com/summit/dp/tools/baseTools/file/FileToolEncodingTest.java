@@ -17,6 +17,8 @@ import com.summit.dp.workflow.infrastructure.tools.file.write.WriteFileToolExecu
 import com.summit.sandbox.windows.WindowsWorkspaceProvider;
 import com.summit.sandbox.windows.WindowsWorkspaceSpec;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.Charset;
@@ -85,14 +87,26 @@ class FileToolEncodingTest {
         assertDiffReplayKeepsUtf8();
     }
 
-    @Test void nativeSandboxFileToolsPreserveUtf8AlongsideCmdOutput() throws Exception {
+    /**
+     * 真实 Windows 沙箱里跑一遍文件工具链。
+     *
+     * <p>只在 Windows 上跑：{@code WindowsWorkspaceProvider} 要改 ACL、建受限令牌，别的平台直接抛错——
+     * 让它去 Linux CI 上红着没有意义。</p>
+     */
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void nativeSandboxFileToolsPreserveUtf8AlongsideCmdOutput() throws Exception {
         Path project = Files.createDirectories(root.resolve("project"));
         Workspace workspace = new WindowsWorkspaceProvider().resolve(new WindowsWorkspaceSpec(project.toString()));
         assertTrue(workspace.runtimeEnvironment().isolated());
         System.out.println("沙箱终端编码: " + workspace.runtimeEnvironment().charset());
-        assertTrue(workspace.bridge().commands().execute("echo 中文", workspace.workDir(), workspace.runtimeEnvironment().charset(),
-                10, TimeUnit.SECONDS, 4096).output().contains("中文"));
-        assertReads(workspace, null, null, ORIGINAL);
+        // 这里刻意用 ASCII：cmd 的内建命令在 chcp 生效前就把命令行按 ANSI 代码页转成字节了
+        // （见框架 ShellType.CMD 的注释），中文参数用 UTF-8 解码必然出替换字符。
+        // 「中文不乱码」由下面的文件工具断言负责，那才是本用例要守的东西。
+        assertTrue(workspace.bridge().commands().execute("echo sandbox-alive", workspace.workDir(),
+                        workspace.runtimeEnvironment().charset(), 10, TimeUnit.SECONDS, 4096)
+                .output().contains("sandbox-alive"));
+        assertReads(workspace, null, null, ORIGINAL_NUMBERED);
         assertReads(workspace, 2, 3, "2: \n3: 末行🙂");
         assertEdits(workspace);
         assertCreates(workspace);

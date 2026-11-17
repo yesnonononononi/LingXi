@@ -13,6 +13,7 @@ import com.summit.dp.mcp.infrastructure.oauth.McpTokenStore;
 import com.summit.dp.mcp.infrastructure.oauth.OAuthMcpAuthorizationProvider;
 import com.summit.dp.mcp.infrastructure.oauth.OAuthMetadataClient;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.utils.TestTimeouts;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import mcp.McpClientSettings;
@@ -51,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>用真实 HTTP 而不是桩，是因为这条链路的价值全在「地址与参数拼得对不对」上：
  * 回调端口、state、resource、表单编码任何一处写错，桩都看不出来。</p>
  */
-@Timeout(60)
+@Timeout(TestTimeouts.HANG_GUARD)
 class McpOAuthFlowTest {
 
     private static final String SERVER_NAME = "oauth-server";

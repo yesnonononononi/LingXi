@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -73,20 +74,39 @@ class StorageDriverPolicyTest {
         return violations;
     }
 
+    /**
+     * 唯一允许的例外：启动前压缩器。
+     *
+     * <p>它必须在连接池存在之前拿到连接，而且要用 URL 级参数（{@code ACCESS_MODE_DATA=r}、
+     * {@code MAX_COMPACT_TIME}）——这些参数无法通过 {@code DataSource} 表达。这不是「绕开池」，
+     * 而是「池还不存在时的一次性启动动作」，所以单独放行，同时断言它确实是那个类。</p>
+     */
+    private static final String STARTUP_COMPACTOR = "shared/storage/H2StartupCompactor.java";
+
     @Test
     @DisplayName("src/main 下 DriverManager 引用数为 0（只允许走 DataSource）")
     void productionCodeNeverUsesDriverManager() throws IOException {
         assertTrue("\0DriverManager".contains("DriverManager"), "扫描器必须命中含 NUL 的正样本");
         Path root = locateMainSources();
         List<String> offenders = new ArrayList<>();
+        List<Path> exceptionFiles = new ArrayList<>();
         try (Stream<Path> files = Files.walk(root)) {
             for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
                 String body = Files.readString(file, StandardCharsets.UTF_8);
-                if (body.contains("DriverManager")) {
-                    offenders.add(root.relativize(file).toString().replace('\\', '/'));
+                if (!body.contains("DriverManager")) continue;
+                String relative = root.relativize(file).toString().replace('\\', '/');
+                if (relative.endsWith(STARTUP_COMPACTOR)) {
+                    exceptionFiles.add(file);
+                    continue;
                 }
+                offenders.add(relative);
             }
         }
+        assertEquals(1, exceptionFiles.size(),
+                "例外只允许恰好一个文件，且必须仍然存在（改名或删除都要重新审一遍）: " + exceptionFiles);
+        String exceptionBody = Files.readString(exceptionFiles.getFirst(), StandardCharsets.UTF_8);
+        assertTrue(exceptionBody.contains("MAX_COMPACT_TIME") && exceptionBody.contains("SHUTDOWN"),
+                "例外文件必须真的是连接池之前的启动前压缩器，不能拿这个名字装别的连接逻辑");
         assertTrue(offenders.isEmpty(),
                 "生产代码禁止直接使用 DriverManager（会绕开连接池与时区初始化），命中=" + offenders);
     }
