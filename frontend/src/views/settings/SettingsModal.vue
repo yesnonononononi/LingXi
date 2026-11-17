@@ -84,7 +84,7 @@ watch(() => props.initialTab, (newTab) => {
 /** 面板尺寸/配色（关闭策略由 LxModal 承担，不在这里拼） */
 const panelClass = computed(() =>
   [
-    'w-[768px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-2rem)] rounded-3xl p-6 shadow-2xl border flex flex-col',
+    'w-[960px] max-w-[calc(100vw-2rem)] h-[700px] max-h-[calc(100vh-2rem)] rounded-3xl p-6 shadow-2xl border flex flex-col',
     isDark.value
       ? 'bg-black border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)] backdrop-blur-2xl'
       : 'bg-white border-zinc-100 text-zinc-800',
