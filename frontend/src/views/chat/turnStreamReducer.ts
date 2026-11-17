@@ -1,7 +1,7 @@
 import type {AgentEvent, TokenInfo} from '../../types/Event';
 import type {BlockEventPayload} from '../../types/block';
 import type {ChatMessage, ContextUsageData, ToolCallVO} from '../../types/chat';
-import {isCardToolName, upsertPromptCard} from '../../utils/toolCallCard';
+import {isCardToolName, isIntrinsicCardToolName, upsertPromptCard} from '../../utils/toolCallCard';
 import {upsertBlockIntoBubble, upsertTurnViewIntoMessages} from './blockProjection';
 import {consumeResponseText} from './responseText';
 import {consumeToolEvent} from './toolStream';
@@ -407,7 +407,7 @@ export class TurnStreamReducer {
     bubble.isExploring = false;
     bubble.isSuspended = false;
 
-    if (!requestId || !toolName || !isCardToolName(toolName)) return;
+    if (!requestId || !toolName || !isIntrinsicCardToolName(toolName)) return;
 
     this.requestPromptCard(bubble.id, requestId, toolName);
     this.onScrollFollow?.();
@@ -422,7 +422,11 @@ export class TurnStreamReducer {
     // 终端审批（命令审批）在 policy 内短路，框架只发 TOOL_COMPLETED(resultStatus=PROMISED)、
     // 从不发 TOOL_CALL，必须用完成事件自带的权威调用 ID 直接拉卡 —— 否则实时审批卡要等到
     // 刷新后从历史聚合才出现。requestId 缺失同样不建卡：伪造 ID 会让卡片挂到错误的调用上。
-    if (event.resultStatus !== 'PROMISED' || !event.requestId) return;
+    if (event.resultStatus !== 'PROMISED') {
+      if (event.requestId) this.clearCardRetry(event.requestId);
+      return;
+    }
+    if (!event.requestId) return;
 
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     this.requestPromptCard(bubble.id, event.requestId, event.toolName);
@@ -616,7 +620,12 @@ export class TurnStreamReducer {
     }
     if (this.disposed) return;
 
-    if (card && card.type === 'PROMISE') {
+    if (card) {
+      if (card.type !== 'PROMISE') {
+        // 后端已明确返回非 PROMISE 的普通工具调用，无需继续等待卡片就绪
+        this.clearCardRetry(toolCallId);
+        return;
+      }
       const bubble = this.findMessageById(bubbleId);
       if (bubble) {
         // ⚠️ 落卡走 upsertPromptCard（历史/实时唯一落点）：本地再写一份「覆盖或追加」

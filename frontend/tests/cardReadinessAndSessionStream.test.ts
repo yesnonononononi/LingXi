@@ -404,3 +404,58 @@ test('B2. 受理被拒 → 回读权威状态纠正 runStatus，不得卡在生�
   holders.forEach(c => { try { c.close(); } catch { /* 已关闭 */ } });
   scope.stop();
 });
+
+test('C. 普通 edit_file / execute_command 工具调用不触发卡片轮询重试与放弃告警', async () => {
+  const { TurnStreamReducer } = await import('../src/views/chat/turnStreamReducer');
+  const messages: ChatMessage[] = [];
+  const scheduler = makeManualScheduler();
+  const requestedIds: string[] = [];
+  const warnings: unknown[][] = [];
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+
+  try {
+    const reducer = new TurnStreamReducer(messages, {
+      sessionId: 'sess-c',
+      onResolveCard: async (toolCallId) => {
+        requestedIds.push(toolCallId);
+        return { id: toolCallId, type: 'EXECUTE', status: 'completed', pending: false } as ToolCallVO;
+      },
+      scheduleCardRetry: scheduler.schedule,
+      cancelCardRetry: scheduler.cancel,
+    });
+
+    reducer.consume({ type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' } });
+    reducer.consume({
+      type: 'TOOL_CALL', toolName: AgentToolName.EditFile, requestId: 'call-edit-1',
+      args: '{"path":"a.ts"}', resultStatus: 'STARTED', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' }
+    });
+    reducer.consume({
+      type: 'TOOL_CALL', toolName: AgentToolName.ExecuteCommand, requestId: 'call-cmd-2',
+      args: '{"command":"npm test"}', resultStatus: 'STARTED', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' }
+    });
+    await flushAsync();
+
+    assert.equal(requestedIds.length, 0, '普通 edit_file / execute_command 在 TOOL_CALL 阶段不得盲目拉取卡片');
+    assert.equal(scheduler.size, 0, '不得安排无意义的卡片重试定时器');
+
+    // 若经其他路径拉到非 PROMISE 的普通 ToolCallVO，也应立即停止而不重试
+    reducer.consume({
+      type: 'TURN_SNAPSHOT', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' },
+      view: {
+        sessionId: 'sess-c', turnId: 't1', status: 'RUNNING', viewVersion: '2',
+        blocks: [{
+          blockId: 'tool:call-edit-1', type: 'TOOL', order: 0, status: 'PROMISED',
+          toolCallId: 'call-edit-1', toolName: AgentToolName.EditFile
+        }]
+      }
+    });
+    await flushAsync();
+
+    assert.equal(requestedIds.length, 1, 'TURN_SNAPSHOT pending 触发一次拉卡');
+    assert.equal(scheduler.size, 0, '后端明确返回非 PROMISE 后不得继续重试');
+    assert.equal(warnings.length, 0, '不得输出卡片就绪重试已达上限的警告');
+  } finally {
+    console.warn = origWarn;
+  }
+});

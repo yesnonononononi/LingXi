@@ -40,12 +40,22 @@ export function resolveCardKind(content: unknown): CardKind {
  * 漏一个就等于「后端卡住了，前端看不见，用户永远批不了」。</p>
  */
 export function isCardToolName(toolName?: string | null): boolean {
-  return toolName === AgentToolName.CreatePlan
-    || toolName === AgentToolName.RequireChoice
+  return isIntrinsicCardToolName(toolName)
     || toolName === AgentToolName.ExecuteCommand
     || toolName === AgentToolName.WriteFile
     || toolName === AgentToolName.EditFile
     || toolName === AgentToolName.DeleteFile;
+}
+
+/**
+ * 必定产生 PROMISE 卡片的互动工具（计划 / 提问）。
+ *
+ * <p>命令执行与文件写类工具仅在策略拦截时才转为 PROMISE，由 {@code TOOL_COMPLETED(PROMISED)}
+ * 或挂起/块快照的 {@code pending} 状态触发拉卡，不在 {@code TOOL_CALL} 阶段盲目轮询。</p>
+ */
+export function isIntrinsicCardToolName(toolName?: string | null): boolean {
+  return toolName === AgentToolName.CreatePlan
+    || toolName === AgentToolName.RequireChoice;
 }
 
 /**
