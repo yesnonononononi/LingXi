@@ -76,6 +76,16 @@ const categories = computed<readonly CategoryDescriptor[]>(() => [
     label: isZh.value ? '组件与动效' : 'Components',
     desc: isZh.value ? '替换局部交互 Slot 组件或调整流式渲染动效' : 'Slot components and streaming motion',
   },
+  {
+    key: 'approvalCard',
+    label: isZh.value ? '审批卡片' : 'Approval Cards',
+    desc: isZh.value ? '自定义命令与文件改动审批卡片的布局与视觉风格' : 'Command and file-write approval card styles',
+  },
+  {
+    key: 'planCard',
+    label: isZh.value ? '计划卡片' : 'Plan Cards',
+    desc: isZh.value ? '自定义实施计划审阅卡片的排版与交互样式' : 'Implementation plan review card styles',
+  },
 ]);
 
 const activeCategoryDescriptor = computed(() =>

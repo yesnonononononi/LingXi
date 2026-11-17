@@ -223,6 +223,54 @@ export const OFFICIAL_PACKS: readonly OfficialPackEntry[] = Object.freeze([
     },
     load: async () => (await import('./builtin/softInkStream')).softInkStreamPack,
   },
+
+  // ========== 审批卡片 (approvalCard) ==========
+  {
+    meta: {
+      id: 'compact-terminal-approval',
+      category: 'approvalCard',
+      name: '极简终端审批卡',
+      description: '高密度终端命令条设计，紧凑呈现命令/路径与工作目录，适合高频连续审批。',
+      version: '1.0.0',
+      capabilities: ['终端紧凑', '审批卡片 Slot'],
+    },
+    load: async () => (await import('./builtin/compactTerminalApproval')).compactTerminalApprovalPack,
+  },
+  {
+    meta: {
+      id: 'audit-rail-approval',
+      category: 'approvalCard',
+      name: '审计导轨审批卡',
+      description: '左侧状态导轨搭配意图说明与独立代码框，强化风险核对与可读性。',
+      version: '1.0.0',
+      capabilities: ['状态导轨', '审批卡片 Slot'],
+    },
+    load: async () => (await import('./builtin/auditRailApproval')).auditRailApprovalPack,
+  },
+
+  // ========== 计划卡片 (planCard) ==========
+  {
+    meta: {
+      id: 'compact-outline-plan',
+      category: 'planCard',
+      name: '极简大纲计划卡',
+      description: '黑白极简紧凑大纲视图，收窄标题与摘要占屏，保留快捷批准与对话讨论入口。',
+      version: '1.0.0',
+      capabilities: ['紧凑大纲', '计划卡片 Slot'],
+    },
+    load: async () => (await import('./builtin/compactOutlinePlan')).compactOutlinePlanPack,
+  },
+  {
+    meta: {
+      id: 'editorial-doc-plan',
+      category: 'planCard',
+      name: '刊物文档计划卡',
+      description: '在消息流中直接内嵌限高 Markdown 计划正文，兼顾就地阅读与详情跳转。',
+      version: '1.0.0',
+      capabilities: ['内嵌正文', '计划卡片 Slot'],
+    },
+    load: async () => (await import('./builtin/editorialDocPlan')).editorialDocPlanPack,
+  },
 ]);
 
 /** 按 id 查找内置扩展包；找不到返回 undefined。 */

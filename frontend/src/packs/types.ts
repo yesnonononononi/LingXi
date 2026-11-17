@@ -5,7 +5,7 @@ import type {InteractionCardSlotOverrides} from '../types/interactionCardSlots';
 import type {SidebarSlotOverrides} from '../types/sidebarSlots';
 
 /** 扩展包分类：不同分类可同时叠加激活，同分类内互斥单选。 */
-export type OfficialPackCategory = 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'component';
+export type OfficialPackCategory = 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'component' | 'approvalCard' | 'planCard';
 
 /** 扩展包分类叠加优先级（靠后者在同槽位冲突时覆盖前者）。 */
 export const PACK_CATEGORY_ORDER: readonly OfficialPackCategory[] = Object.freeze([
@@ -15,6 +15,8 @@ export const PACK_CATEGORY_ORDER: readonly OfficialPackCategory[] = Object.freez
   'sidebar',
   'input',
   'component',
+  'approvalCard',
+  'planCard',
 ]);
 
 /** 官方扩展包预览色板：用于主题/背景类卡片缩略展示。 */
