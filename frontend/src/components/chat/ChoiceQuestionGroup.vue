@@ -15,7 +15,7 @@ import {
 import {useI18n} from '../../i18n';
 import CardActionButton from './CardActionButton.vue';
 
-const props = defineProps<{ entries: PromptCardEntry[]; responseId: string; expectedCount: number; isDark?: boolean }>();
+const props = defineProps<{ entries: PromptCardEntry[]; responseId: string; expectedCount: number; isDark?: boolean; docked?: boolean }>();
 const { t } = useI18n();
 const answerChoices = inject(ANSWER_CHOICES_KEY, null);
 interface Draft { version?: string; selected: number | null; custom: string; useCustom: boolean }
@@ -158,37 +158,41 @@ async function submit() {
       <svg class="h-3.5 w-3.5 shrink-0 text-lx-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="cardKindIconPath('CHOICE')" /></svg>
       <span class="truncate">{{ summary }}</span>
     </button>
-  <section v-if="!closable || expanded" :class="[CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-black border-white/10' : 'bg-white border-zinc-200/90']" data-testid="choice-question-group">
-    <header class="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
-      <!-- 题干预留四行并内部滚动，切题时保持高度稳定。 -->
-      <p class="scrollbar-thin h-[92px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed"
-        :class="isDark ? 'text-white text-glow-white' : ''" data-testid="choice-question">{{ questionText }}</p>
+  <section v-if="!closable || expanded"
+    :class="docked
+      ? 'w-full min-w-0'
+      : [CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-zinc-950 border-white/10' : 'bg-white border-zinc-200/90']"
+    data-testid="choice-question-group">
+    <header class="flex items-start justify-between gap-3 pb-2.5" :class="docked ? 'px-0.5 pt-1' : 'px-4 pt-3'">
+      <!-- 题干自适应高度并支持内部滚动，兼顾短题紧凑与长题稳定。 -->
+      <p class="scrollbar-thin min-h-[2.25rem] max-h-[120px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-medium leading-relaxed"
+        :class="isDark ? 'text-zinc-100' : 'text-zinc-900'" data-testid="choice-question">{{ questionText }}</p>
       <div class="flex shrink-0 items-center gap-0.5">
         <template v-if="entries.length > 1">
           <button type="button" :disabled="activeIndex <= 0" :aria-label="t('chat.choice.previous')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
-            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
+            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'"
             data-testid="choice-previous" @click="navigate(-1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 5-7 7 7 7" /></svg>
           </button>
-          <span class="min-w-8 text-center text-xs tabular-nums" :class="isDark ? 'text-zinc-300 text-glow-subtle' : 'text-zinc-500'" role="status">{{ activeIndex + 1 }} / {{ total }}</span>
+          <span class="min-w-8 text-center text-xs tabular-nums" :class="isDark ? 'text-zinc-400' : 'text-zinc-500'" role="status">{{ activeIndex + 1 }} / {{ total }}</span>
           <button type="button" :disabled="activeIndex >= entries.length - 1" :aria-label="t('chat.choice.next')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
-            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
+            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'"
             data-testid="choice-next" @click="navigate(1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </template>
         <button v-if="closable" type="button" :title="t('common.close')" :aria-label="t('common.close')"
           class="ml-1 rounded-md p-1 transition cursor-pointer"
-          :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
+          :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'"
           data-testid="choice-dismiss" @click="expanded = false">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
     </header>
-    <div v-if="active && draft" :id="`question-${active.toolCallId}`" class="px-4 pb-3">
-      <div v-if="active.status === 'completed'" class="whitespace-pre-wrap break-words text-sm" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'" data-testid="choice-confirmed-answer">
+    <div v-if="active && draft" :id="`question-${active.toolCallId}`" :class="docked ? 'pb-3' : 'px-4 pb-3'">
+      <div v-if="active.status === 'completed'" class="whitespace-pre-wrap break-words text-sm" :class="isDark ? 'text-zinc-400' : 'text-zinc-500'" data-testid="choice-confirmed-answer">
         <template v-if="active.outcome === 'ANSWERED'">{{ t('chat.choice.confirmedDecision') }}{{ active.answer }}</template>
         <template v-else>{{ resolveCardStatusLabel(active) }}</template>
       </div>
@@ -197,45 +201,45 @@ async function submit() {
         <div class="scrollbar-thin -mr-1 space-y-1.5 pr-1" :class="scrollable ? 'h-[200px] overflow-y-auto' : ''" role="radiogroup" :aria-label="active.title">
           <button v-for="(option, index) in active.options || []" :key="index" type="button" role="radio"
             :aria-checked="!draft.useCustom && draft.selected === index" :disabled="!editable"
-            class="group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition disabled:opacity-60 cursor-pointer disabled:cursor-default"
+            class="group flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition disabled:opacity-60 cursor-pointer disabled:cursor-default"
             :class="!draft.useCustom && draft.selected === index
-              ? (isDark ? 'border-white/85 bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
-              : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-zinc-100 hover:border-blue-200 hover:bg-blue-50/50')"
+              ? (isDark ? 'border-white/80 bg-white/[0.08]' : 'border-zinc-900 bg-zinc-900/[0.03] ring-1 ring-zinc-900/10')
+              : (isDark ? 'border-white/10 bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.05]' : 'border-zinc-200/75 bg-white hover:border-zinc-400 hover:bg-zinc-50/70')"
             :data-choice-option="index" @click="selectOption(index)">
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-lx-fs-sm font-semibold tabular-nums transition-colors"
               :class="!draft.useCustom && draft.selected === index
-                ? 'bg-white text-zinc-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
-                : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-500')">{{ index + 1 }}</span>
+                ? (isDark ? 'bg-white text-zinc-950' : 'bg-zinc-900 text-white')
+                : (isDark ? 'bg-white/10 text-zinc-400 group-hover:text-zinc-200' : 'bg-zinc-100 text-zinc-500 group-hover:text-zinc-800')">{{ index + 1 }}</span>
             <span class="min-w-0 flex-1 whitespace-pre-wrap break-words"
-              :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-zinc-200 text-glow-subtle') : ''">{{ option }}</span>
-            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-zinc-600' : 'text-zinc-300')"
+              :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white' : 'text-zinc-200') : (draft.selected === index && !draft.useCustom ? 'text-zinc-950 font-medium' : 'text-zinc-800')">{{ option }}</span>
+            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-zinc-900') : (isDark ? 'text-zinc-600' : 'text-zinc-300')"
               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </div>
         <!-- 其他补充 = 与选项同形的整行输入：点行即键入，不再另开输入框 -->
-        <div class="mt-1.5 flex items-center gap-3 rounded-xl border px-3 py-2.5 transition"
+        <div class="mt-1.5 flex items-center gap-3 rounded-xl border px-3 py-2 transition"
           :class="draft.useCustom
-            ? (isDark ? 'border-white/85 bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
-            : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-zinc-100 hover:border-blue-200 hover:bg-blue-50/50')"
+            ? (isDark ? 'border-white/80 bg-white/[0.08]' : 'border-zinc-900 bg-zinc-900/[0.03] ring-1 ring-zinc-900/10')
+            : (isDark ? 'border-white/10 bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.05]' : 'border-zinc-200/75 bg-white hover:border-zinc-400 hover:bg-zinc-50/70')"
           role="presentation" data-testid="choice-custom-toggle" @click="activateCustom">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
-            :class="draft.useCustom ? 'bg-white text-zinc-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-400')">
+            :class="draft.useCustom ? (isDark ? 'bg-white text-zinc-950' : 'bg-zinc-900 text-white') : (isDark ? 'bg-white/10 text-zinc-400' : 'bg-zinc-100 text-zinc-500')">
             <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
           </span>
           <!-- rows=1 + resize-none：外观是输入行，粘贴多行仍原样保留 -->
           <textarea ref="customInput" v-model="draft.custom" :disabled="!editable" rows="1"
             :aria-label="t('chat.choice.customAnswerPlaceholder')" :placeholder="t('chat.choice.customRowLabel')"
-            class="h-5 min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 outline-none placeholder:text-zinc-500"
-            :class="isDark ? 'text-white caret-blue-400 text-glow-subtle' : 'text-zinc-900'"
+            class="h-5 min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+            :class="isDark ? 'text-white caret-white' : 'text-zinc-900 caret-zinc-900'"
             data-testid="choice-custom-input" />
         </div>
       </template>
     </div>
-    <footer v-if="pending.length || error" class="space-y-2 border-t px-4 py-3" :class="isDark ? 'border-white/10' : 'border-zinc-100'">
+    <footer v-if="pending.length || error" class="space-y-2 border-t py-2.5" :class="[docked ? '' : 'px-4', isDark ? 'border-white/10' : 'border-zinc-100']">
       <p v-if="error" :class="['text-xs', CARD_ERROR_TEXT_CLASS]" role="alert">{{ error }}</p>
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <span class="text-xs" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">{{ !ready ? t('chat.choice.groupPreparing') : (canSubmit ? t('chat.choice.groupProgress', { answered, total }) : t('chat.choice.groupHint')) }}</span>
-        <CardActionButton tone="blue" :loading="submitting" :disabled="!canSubmit" :is-dark="isDark" data-testid="choice-submit-all" @click="submit">{{ t('chat.choice.submitAll') }}</CardActionButton>
+        <span class="text-xs" :class="isDark ? 'text-zinc-400' : 'text-zinc-500'">{{ !ready ? t('chat.choice.groupPreparing') : (canSubmit ? t('chat.choice.groupProgress', { answered, total }) : t('chat.choice.groupHint')) }}</span>
+        <CardActionButton tone="neutral" :loading="submitting" :disabled="!canSubmit" :is-dark="isDark" data-testid="choice-submit-all" @click="submit">{{ t('chat.choice.submitAll') }}</CardActionButton>
       </div>
     </footer>
   </section>

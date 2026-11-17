@@ -33,47 +33,54 @@ watch(() => props.entries.map(entry => entry.id), (ids, previous) => {
       data-testid="pending-interaction-dock"
     >
       <section
-        class="w-full rounded-2xl border px-3.5 py-2 text-sm backdrop-blur-md transition-colors duration-200"
+        class="w-full rounded-2xl border text-sm backdrop-blur-md transition-colors duration-200"
         :class="isDark
-          ? 'border-white/[0.09] bg-zinc-950/90 text-zinc-100 shadow-[0_10px_28px_-8px_rgba(0,0,0,0.65)]'
-          : 'border-zinc-200/85 bg-white/95 text-zinc-800 shadow-[0_6px_22px_-6px_rgba(24,24,27,0.07),0_1px_2px_rgba(24,24,27,0.04)]'"
+          ? 'border-white/12 bg-zinc-950/95 text-zinc-100 shadow-[0_14px_40px_-12px_rgba(0,0,0,0.75)]'
+          : 'border-zinc-200/90 bg-white/95 text-zinc-900 shadow-[0_8px_30px_-10px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]'"
         :aria-label="t('chat.cards.title')"
       >
-        <button
-          type="button"
-          :aria-expanded="expanded"
-          :aria-controls="contentId"
-          class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs transition cursor-pointer"
-          :class="isDark ? 'text-zinc-200 hover:text-white' : 'text-zinc-700 hover:text-zinc-950'"
-          data-testid="pending-interaction-dock-toggle"
-          @click="expanded = !expanded"
+        <div
+          class="flex items-center justify-between gap-2 px-4 py-2"
+          :class="expanded ? (isDark ? 'border-b border-white/10' : 'border-b border-zinc-100') : ''"
         >
-          <svg
-            class="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
-            :class="expanded ? 'rotate-180' : ''"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
+          <button
+            type="button"
+            :aria-expanded="expanded"
+            :aria-controls="contentId"
+            class="flex min-w-0 flex-1 items-center gap-2 text-left text-xs transition cursor-pointer"
+            :class="isDark ? 'text-zinc-300 hover:text-white' : 'text-zinc-600 hover:text-zinc-950'"
+            data-testid="pending-interaction-dock-toggle"
+            @click="expanded = !expanded"
           >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m18 15-6-6-6 6" />
-          </svg>
-          <span class="font-medium">{{ t('chat.cards.title') }}</span>
-          <span
-            class="ml-auto shrink-0 rounded-md px-2 py-0.5 text-xs font-medium"
-            :class="isDark ? 'bg-amber-950/40 text-amber-300' : 'bg-amber-50 text-amber-700'"
-            role="status"
-            data-testid="pending-interaction-dock-count"
-          >
-            {{ t('chat.cards.pending', { count: entries.length }) }}
-          </span>
-        </button>
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full lx-live-dot" :class="isDark ? 'bg-white' : 'bg-zinc-900'" aria-hidden="true" />
+            <span class="font-medium" :class="isDark ? 'text-zinc-100' : 'text-zinc-900'">{{ t('chat.cards.title') }}</span>
+            <span
+              class="rounded-full px-2 py-0.5 text-lx-fs-sm font-medium tabular-nums"
+              :class="isDark ? 'bg-white/10 text-zinc-200' : 'bg-zinc-100 text-zinc-700'"
+              role="status"
+              data-testid="pending-interaction-dock-count"
+            >
+              {{ t('chat.cards.pending', { count: entries.length }) }}
+            </span>
+            <svg
+              class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200 opacity-60"
+              :class="expanded ? 'rotate-180' : ''"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m18 15-6-6-6 6" />
+            </svg>
+          </button>
+        </div>
 
         <!-- 折叠仅隐藏内容，不销毁作答中的草稿与提交态。 -->
         <div
           v-show="expanded"
           :id="contentId"
-          class="mt-1.5 max-h-[min(52vh,34rem)] space-y-2 overflow-y-auto overscroll-contain pr-0.5 scrollbar-thin"
+          class="max-h-[min(68vh,40rem)] divide-y overflow-y-auto overscroll-contain px-4 py-2.5 scrollbar-thin"
+          :class="isDark ? 'divide-white/10' : 'divide-zinc-100'"
           data-testid="pending-interaction-dock-content"
         >
           <InteractionCardGroup
@@ -84,6 +91,8 @@ watch(() => props.entries.map(entry => entry.id), (ids, previous) => {
             :tool-calls="toolCalls"
             :session-id="sessionId"
             :is-dark="isDark"
+            docked
+            class="py-1 first:pt-0 last:pb-0"
           />
         </div>
       </section>

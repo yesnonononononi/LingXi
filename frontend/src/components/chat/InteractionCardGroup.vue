@@ -10,7 +10,7 @@ import PromptCard from './PromptCard.vue';
 import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
 import {AgentToolName} from '../../utils/toolNames';
 
-const props = defineProps<{ kind: PromptCardData['kind']; entries: PromptCardEntry[]; toolCalls?: ToolCallTrace[]; sessionId?: string | number; isDark?: boolean }>();
+const props = defineProps<{ kind: PromptCardData['kind']; entries: PromptCardEntry[]; toolCalls?: ToolCallTrace[]; sessionId?: string | number; isDark?: boolean; docked?: boolean }>();
 const GROUP_LABELS = {
   PLAN: { prefix: 'plan-approval', title: 'chat.plan.groupTitle' },
   COMMAND: { prefix: 'command-approval', title: 'chat.approval.groupTitle' },
@@ -52,6 +52,7 @@ const expectedChoiceCounts = computed(() => {
 <template>
   <section class="w-full min-w-0" :data-testid="`${testPrefix}-group`">
     <button
+      v-if="!docked"
       type="button"
       class="flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-2 text-left text-xs transition cursor-pointer"
       :class="isDark ? 'text-zinc-300 hover:bg-white/5' : 'text-zinc-600 hover:bg-zinc-50'"
@@ -64,25 +65,37 @@ const expectedChoiceCounts = computed(() => {
       <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="cardKindIconPath(kind)" /></svg>
       <span class="font-medium">{{ groupTitle }}</span>
       <span class="shrink-0 tabular-nums">{{ t('chat.cards.count', { count: entries.length }) }}</span>
-      <span v-if="pendingEntries.length" class="ml-auto shrink-0 rounded-md px-2 py-0.5" :class="isDark ? 'bg-amber-950/40 text-amber-300' : 'bg-amber-50 text-amber-700'" role="status">
+      <span v-if="pendingEntries.length" class="ml-auto shrink-0 rounded-md px-2 py-0.5" :class="isDark ? 'bg-white/10 text-zinc-200' : 'bg-zinc-100 text-zinc-800'" role="status">
         {{ t('chat.cards.pending', { count: pendingEntries.length }) }}
       </span>
     </button>
     <div
-      v-show="expanded"
+      v-else
+      class="flex items-center gap-2 pb-2 text-xs"
+      :class="isDark ? 'text-zinc-400' : 'text-zinc-500'"
+      :data-testid="`${testPrefix}-toggle`"
+    >
+      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="cardKindIconPath(kind)" /></svg>
+      <span class="font-medium" :class="isDark ? 'text-zinc-200' : 'text-zinc-800'">{{ groupTitle }}</span>
+      <span class="tabular-nums opacity-75">{{ entries.length }}</span>
+    </div>
+    <div
+      v-show="docked || expanded"
       :id="listId"
       role="region"
       :aria-label="groupTitle"
       tabindex="0"
-      class="overflow-y-auto overscroll-contain rounded-xl border px-3 py-1"
-      :class="[kind === 'CHOICE' ? 'max-h-[min(36rem,75vh)]' : 'max-h-80', isDark ? 'border-white/10 bg-zinc-950/20' : 'border-zinc-200/80 bg-zinc-50/40']"
+      :class="docked
+        ? 'space-y-2.5'
+        : ['overflow-y-auto overscroll-contain rounded-xl border px-3 py-1', kind === 'CHOICE' ? 'max-h-[min(36rem,75vh)]' : 'max-h-80', isDark ? 'border-white/10 bg-zinc-950/20' : 'border-zinc-200/80 bg-zinc-50/40']"
       :data-testid="`${testPrefix}-list`"
     >
       <template v-for="entry in orderedEntries" :key="entry.id">
         <ChoiceQuestionGroup v-if="entry.choices" :entries="entry.choices" :response-id="entry.responseId!"
-          :expected-count="expectedChoiceCounts.get(entry.responseId!) ?? 0" :is-dark="isDark" />
+          :expected-count="expectedChoiceCounts.get(entry.responseId!) ?? 0" :is-dark="isDark" :docked="docked" />
         <div v-else class="min-w-0" :data-approval-id="entry.card.toolCallId">
           <button
+            v-if="!(docked && orderedEntries.length === 1)"
             type="button"
             class="flex w-full min-w-0 items-center gap-2 py-2 text-left text-xs text-lx-tertiary disabled:cursor-default cursor-pointer"
             :disabled="entry.card.pending"
@@ -101,6 +114,7 @@ const expectedChoiceCounts = computed(() => {
             :prompt-card="entry.card"
             :session-id="sessionId"
             :is-dark="isDark"
+            :docked="docked && orderedEntries.length === 1"
           />
         </div>
       </template>

@@ -13,6 +13,8 @@ const props = defineProps<{
   /** 卡片所属会话（缺省时在子卡片内回落到 promptCard.conversationId） */
   sessionId?: string | number;
   isDark?: boolean;
+  /** 是否停靠在底部 Dock 容器内（去掉重复外框，融进 Dock 画布） */
+  docked?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -47,6 +49,7 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
     :prompt-card="promptCard"
     :session-id="sessionId"
     :is-dark="isDark"
+    :docked="docked"
   />
 
   <!-- 只有明确 kind==='COMMAND' 才渲染命令审批卡；绝不用 v-else 回落，避免语义未知的卡片被当成命令审批 -->
@@ -55,6 +58,7 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
     :prompt-card="promptCard"
     :session-id="sessionId"
     :is-dark="isDark"
+    :docked="docked"
   />
 
   <!-- 文件改动审批与命令审批共用同一张审批卡（同一套批准/拒绝语义），正文换成目标路径 -->
@@ -63,5 +67,6 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
     :prompt-card="promptCard"
     :session-id="sessionId"
     :is-dark="isDark"
+    :docked="docked"
   />
 </template>

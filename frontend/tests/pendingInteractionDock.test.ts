@@ -112,12 +112,7 @@ test('启用 dockPendingInteractionCards 后，消息流只留已决卡与 PLAN�
 
   const dockNode = harness.find(dockRoot, node => node.props['data-testid'] === 'pending-interaction-dock');
   assert.ok(dockNode, '底部 Dock 应渲染未决审批');
-  const dockCommands = harness.findAll(
-    dockRoot,
-    node => node.props['data-testid'] === 'command-approval-entry-toggle',
-  );
-  assert.equal(dockCommands.length, 1, '底部 Dock 应渲染未决命令审批');
-  assert.ok(collectText(dockCommands[0]!).includes('运行单测'));
+  assert.ok(collectText(dockNode).includes('运行单测'), '底部 Dock 应直接渲染未决命令审批内容');
   assert.equal(
     harness.find(dockRoot, node => node.props['data-testid'] === 'plan-approval-group'),
     undefined,

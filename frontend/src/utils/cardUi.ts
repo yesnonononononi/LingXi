@@ -27,7 +27,7 @@ export function cardDotClass(tone: CardTone): string {
     case 'rejected':
       return 'bg-red-500';
     case 'pending':
-      return 'bg-amber-400 lx-live-dot';
+      return 'bg-zinc-900 dark:bg-white lx-live-dot';
     default:
       return 'bg-zinc-400';
   }
@@ -50,8 +50,8 @@ export function cardToneClass(tone: CardTone, isDark?: boolean): string {
       dark: 'bg-red-950/30 text-red-400 border-red-900/40'
     },
     pending: {
-      light: 'bg-amber-50 text-amber-700 border-amber-200/60',
-      dark: 'bg-amber-950/30 text-amber-400 border-amber-900/40'
+      light: 'bg-zinc-100 text-zinc-800 border-zinc-200/80',
+      dark: 'bg-white/10 text-zinc-200 border-white/15'
     },
     unknown: {
       light: 'bg-zinc-50 text-zinc-600 border-zinc-200',

@@ -21,6 +21,7 @@ const props = defineProps<{
   /** 卡片所属会话；决策接口据此定位（缺省时回落到 promptCard.conversationId） */
   sessionId?: string | number;
   isDark?: boolean;
+  docked?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -162,9 +163,11 @@ const handleSubmit = () => {
 <template>
   <div
     v-if="!isDismissed"
-    :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-zinc-800' : 'bg-white border-zinc-200/90']"
+    :class="docked
+      ? 'w-full'
+      : [CARD_SHELL_CLASS, isDark ? 'bg-zinc-950 border-white/10' : 'bg-white border-zinc-200/90']"
   >
-    <div :class="CARD_BODY_CLASS">
+    <div :class="docked ? 'py-1 space-y-3' : CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
       <CardHeader :tone="headerTone" :type-label="t('chat.choice.typeLabel')" :is-dark="isDark">
         <template #actions>
@@ -230,18 +233,18 @@ const handleSubmit = () => {
                 :key="idx"
                 @click="selectChoice(idx)"
                 :class="[
-                  'flex items-start sm:items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
+                  'flex items-start sm:items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
                   selectedIndex === idx
-                    ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-zinc-800/40 hover:border-zinc-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-zinc-200')
+                    ? (isDark ? 'bg-white/[0.08] border-white/80' : 'bg-zinc-900/[0.03] border-zinc-900 ring-1 ring-zinc-900/10')
+                    : (isDark ? 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/25' : 'border-zinc-200/75 bg-white hover:bg-zinc-50/70 hover:border-zinc-400')
                 ]"
               >
                 <div
                   :class="[
                     'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
                     selectedIndex === idx
-                      ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-zinc-800 text-zinc-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-zinc-500 group-hover:text-zinc-700')
+                      ? (isDark ? 'bg-white text-zinc-950' : 'bg-zinc-900 text-white')
+                      : (isDark ? 'bg-white/10 text-zinc-400 group-hover:text-zinc-200' : 'bg-zinc-100 text-zinc-500 group-hover:text-zinc-800')
                   ]"
                 >
                   {{ idx + 1 }}
@@ -258,18 +261,18 @@ const handleSubmit = () => {
               <div
                 @click="selectCustom"
                 :class="[
-                  'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-text',
+                  'flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-text',
                   isCustomSelected
-                    ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-zinc-800/40 hover:border-zinc-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-zinc-200')
+                    ? (isDark ? 'bg-white/[0.08] border-white/80' : 'bg-zinc-900/[0.03] border-zinc-900 ring-1 ring-zinc-900/10')
+                    : (isDark ? 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/25' : 'border-zinc-200/75 bg-white hover:bg-zinc-50/70 hover:border-zinc-400')
                 ]"
               >
                 <div
                   :class="[
                     'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors',
                     isCustomSelected
-                      ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-[#eef2f6] text-zinc-400')
+                      ? (isDark ? 'bg-white text-zinc-950' : 'bg-zinc-900 text-white')
+                      : (isDark ? 'bg-white/10 text-zinc-400' : 'bg-zinc-100 text-zinc-500')
                   ]"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -300,7 +303,7 @@ const handleSubmit = () => {
             <div v-if="!isResolved" class="pt-2 flex items-center justify-between gap-3 select-none">
               <span class="text-lx-fs-sm text-lx-muted">{{ disabledReason }}</span>
               <CardActionButton
-                tone="blue"
+                tone="neutral"
                 :loading="isSubmitting"
                 :disabled="!canSubmit"
                 :is-dark="isDark"

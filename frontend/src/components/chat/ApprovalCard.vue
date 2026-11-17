@@ -22,6 +22,7 @@ const props = defineProps<{
   promptCard: PromptCardData;
   sessionId?: string | number;
   isDark?: boolean;
+  docked?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -132,9 +133,11 @@ const handleReject = () => submit(false);
 <template>
   <div
     v-if="!isDismissed"
-    :class="[CARD_SHELL_CLASS, 'overflow-hidden', isDark ? 'bg-[#151b26] border-zinc-800' : 'bg-white border-zinc-200/90']"
+    :class="docked
+      ? 'w-full overflow-hidden'
+      : [CARD_SHELL_CLASS, 'overflow-hidden', isDark ? 'bg-zinc-950 border-white/10' : 'bg-white border-zinc-200/90']"
   >
-    <div :class="CARD_BODY_CLASS">
+    <div :class="docked ? 'py-1 space-y-2.5' : CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
       <CardHeader :tone="headerTone" :type-label="typeLabel" :is-dark="isDark">
         <template #actions>
@@ -176,7 +179,7 @@ const handleReject = () => submit(false);
               v-if="primaryText"
               :class="[
                 'rounded-xl border relative group overflow-hidden',
-                isDark ? 'bg-[#0e131d] border-zinc-800' : 'bg-[#f7f8fa] border-zinc-200/80'
+                isDark ? 'bg-zinc-900/70 border-white/10' : 'bg-zinc-50/90 border-zinc-200/80'
               ]"
             >
               <!-- 复制按钮 (右上角悬浮)；意图/目录行右侧预留安全区，避免遮挡 -->
@@ -213,8 +216,8 @@ const handleReject = () => submit(false);
               <div v-if="targetWorkDir" class="px-3 pt-2 pr-16 text-xs text-zinc-500 break-all">{{ t('chat.approval.workDir') }}{{ targetWorkDir }}</div>
               <!-- 正文：命令审批带 $ 提示符，文件改动审批用落笔图标，不假装自己是命令 -->
               <div class="p-3 pr-16 font-mono text-lx-fs-md leading-relaxed break-all select-text flex items-start gap-2">
-                <span v-if="!isFileWrite" class="text-blue-500/80 font-bold select-none">$</span>
-                <svg v-else class="w-3.5 h-3.5 mt-1 shrink-0 text-blue-500/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <span v-if="!isFileWrite" class="text-zinc-400 dark:text-zinc-500 font-semibold select-none">$</span>
+                <svg v-else class="w-3.5 h-3.5 mt-1 shrink-0 text-zinc-400 dark:text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
                 <span :class="isDark ? 'text-zinc-200' : 'text-zinc-800'">{{ primaryText }}</span>
@@ -262,7 +265,7 @@ const handleReject = () => submit(false);
               </CardActionButton>
 
               <CardActionButton
-                tone="emerald"
+                tone="neutral"
                 :loading="submittingAction === 'approve'"
                 :disabled="isSubmitting"
                 :is-dark="isDark"

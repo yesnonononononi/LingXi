@@ -32,36 +32,34 @@ const classes = computed(() => {
   const base = 'inline-flex items-center justify-center gap-1.5 rounded-xl text-xs font-medium px-4 py-1.5 transition cursor-pointer select-none'
     + ' focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1'
     + ' disabled:opacity-50 disabled:cursor-not-allowed';
-  const ring = {
-    emerald: 'focus-visible:ring-emerald-500/50',
-    blue: 'focus-visible:ring-blue-500/50',
-    danger: 'focus-visible:ring-red-500/50',
-    neutral: 'focus-visible:ring-zinc-400/50'
-  }[props.tone];
+  const ring = 'focus-visible:ring-zinc-400/50';
 
   if (props.variant === 'outline') {
     const outline = {
       emerald: props.isDark
-        ? 'border border-emerald-900/60 text-emerald-400 hover:bg-emerald-950/40 hover:border-emerald-800'
-        : 'border border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300',
+        ? 'border border-white/15 text-zinc-200 hover:bg-white/10 hover:border-white/30'
+        : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300',
       blue: props.isDark
-        ? 'border border-blue-900/60 text-blue-400 hover:bg-blue-950/40 hover:border-blue-800'
-        : 'border border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300',
+        ? 'border border-white/15 text-zinc-200 hover:bg-white/10 hover:border-white/30'
+        : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300',
       danger: props.isDark
-        ? 'border border-red-900/60 text-red-400 hover:bg-red-950/40 hover:border-red-800'
-        : 'border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300',
+        ? 'border border-white/12 text-zinc-300 hover:border-red-900/60 hover:bg-red-950/30 hover:text-red-400'
+        : 'border border-zinc-200 text-zinc-600 hover:border-red-200 hover:bg-red-50/70 hover:text-red-600',
       neutral: props.isDark
-        ? 'border border-zinc-700 text-zinc-300 hover:bg-zinc-800'
-        : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+        ? 'border border-white/15 text-zinc-300 hover:bg-white/[0.08] hover:border-white/25'
+        : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300'
     }[props.tone];
     return [base, outline, ring];
   }
 
+  const monochromeSolid = props.isDark
+    ? 'bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs'
+    : 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-xs';
   const solid = {
-    emerald: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs',
-    blue: 'bg-blue-600 hover:bg-blue-500 text-white shadow-xs',
+    emerald: monochromeSolid,
+    blue: monochromeSolid,
     danger: 'bg-red-600 hover:bg-red-500 text-white shadow-xs',
-    neutral: props.isDark ? 'bg-zinc-700 hover:bg-zinc-600 text-white shadow-xs' : 'bg-zinc-800 hover:bg-zinc-700 text-white shadow-xs'
+    neutral: monochromeSolid
   }[props.tone];
   return [base, solid, ring];
 });
