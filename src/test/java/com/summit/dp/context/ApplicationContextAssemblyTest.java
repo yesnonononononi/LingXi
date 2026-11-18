@@ -3,7 +3,11 @@ package com.summit.dp.context;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.conversation.event.ContextEventPublisher;
+import com.summit.core.conversation.event.ContextListener;
+import com.summit.core.conversation.event.ContextUpdateEvent;
 import com.summit.core.mcp.ScopeMcpProvider;
+import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
 import com.summit.core.tool.ToolDefinition;
@@ -14,6 +18,8 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.lifecycle.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
+import com.summit.dp.workflow.infrastructure.listener.session.TurnViewRuntimeListener;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
 import com.summit.dp.workflow.infrastructure.tools.memory.MemoryWikiLoader;
@@ -22,6 +28,8 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendM
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
+import com.summit.runtime.compact.DefaultContextPruner;
+import com.summit.runtime.compact.DefaultModelCompacter;
 import com.summit.runtime.loop.LoopInterceptorFactory;
 import mcp.McpSessionFactory;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +39,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -227,5 +236,58 @@ class ApplicationContextAssemblyTest {
         // 能走到这里，说明 ApplicationContext 已完全 refresh 成功（含构造成环检测）。
         assertNotNull(context.getBean(LoopInterceptorProcessor.class));
         assertNotNull(context.getBean(SendMailToAgentTool.class));
+    }
+
+    /**
+     * 上下文压缩遥测的接线守卫。
+     *
+     * <p>框架已把压缩事件（{@code ContextUpdateEvent}）从生命周期发布器搬到 {@code ContextEventPublisher}，
+     * 而业务侧这两个监听器的单测都是<b>直接调回调</b>，接线断了照样全绿 —— 生产上表现为压缩提示与用量回落
+     * 静默消失。这里只断言容器的真实装配，任何一环被拆掉都会红。</p>
+     */
+    @Test
+    @DisplayName("⑤ 压缩遥测接线：唯一的 ContextEventPublisher、两个业务 ContextListener 在链上且各自覆写回调")
+    void compactionTelemetryIsWiredToBusinessContextListeners() {
+        Map<String, ContextEventPublisher> publishers = context.getBeansOfType(ContextEventPublisher.class);
+        assertEquals(Set.of("contextEventPublisher"), publishers.keySet(),
+                "上下文事件发布器必须唯一且来自框架自动配置；多一个就是有人自建了空链 publisher，"
+                        + "压缩遥测会分叉到无人消费的那条。实际=" + publishers.keySet());
+        ContextEventPublisher publisher = publishers.get("contextEventPublisher");
+
+        List<ContextListener> chain = publisher.getListeners();
+        assertTrue(chain.contains(context.getBean(AgentEventListener.class)),
+                "AgentEventListener 必须在 ContextEventPublisher 的监听器链上，否则 CONTEXT_UPDATE 到不了 SSE，"
+                        + "前端压缩提示与用量回落全部消失。实际链=" + describeChain(chain));
+        assertTrue(chain.contains(context.getBean(TurnViewRuntimeListener.class)),
+                "TurnViewRuntimeListener 必须在 ContextEventPublisher 的监听器链上，"
+                        + "否则压缩期间的整轮用量快照不再推送。实际链=" + describeChain(chain));
+        assertDeclaresContextUpdated(AgentEventListener.class);
+        assertDeclaresContextUpdated(TurnViewRuntimeListener.class);
+
+        // 遥测的源头：容器里的用量上报器与两个压缩器必须共用同一个发布器，
+        // 任何一个自建 publisher（测试里常见的 new ContextEventPublisher(List.of())）都会让事件掉进空链。
+        ContextUsageReporter reporter = context.getBean(ContextUsageReporter.class);
+        assertSame(publisher, ReflectionTestUtils.getField(reporter, "publisher"),
+                "ContextUsageReporter 必须持有容器里的 ContextEventPublisher，不得自建");
+        assertSame(reporter, ReflectionTestUtils.getField(context.getBean(DefaultContextPruner.class), "usage"),
+                "本地剪枝压缩器必须共用容器里的 ContextUsageReporter，否则 PRUNE 阶段的遥测不会发出");
+        assertSame(reporter, ReflectionTestUtils.getField(context.getBean("modelCompacter"), "usage"),
+                "模型深压缩器必须共用容器里的 ContextUsageReporter，否则 SUMMARY 阶段的遥测不会发出");
+    }
+
+    /** 监听器必须自己覆写回调；只继承空默认实现时，它在链上也只是空转。 */
+    private static void assertDeclaresContextUpdated(Class<?> type) {
+        Method callback = assertDoesNotThrow(() -> type.getMethod("onContextUpdated", ContextUpdateEvent.class));
+        assertEquals(type, callback.getDeclaringClass(),
+                type.getSimpleName() + " 必须自己覆写 onContextUpdated（继承空默认实现等于没接）");
+    }
+
+    /** 断言失败时打印真实监听器链，避免只看到一句「expected true」。 */
+    private static String describeChain(List<ContextListener> chain) {
+        List<String> names = new ArrayList<>();
+        for (ContextListener listener : chain) {
+            names.add(listener.getClass().getSimpleName());
+        }
+        return names.toString();
     }
 }
