@@ -69,12 +69,16 @@ public interface ToolCatalog {
      * <p>执行清单工具也在列：它们只依赖会话归属（执行上下文自带），
      * 且 Agent 必须能自发记录与推进步骤，否则收尾提醒就无从判定「还剩什么没做」。</p>
      *
+     * <p>计划工具也在列：它和 {@link #REQUIRE_CHOICE} 同类，无写副作用，只登记一张待批准的卡片。
+     * 原先「勾了计划模式才补进名单」的写法会让 tools 声明随开关变化，而声明属于缓存前缀，
+     * 一变整段前缀作废；放进基础集后，默认 Agent 的声明与是否勾选无关。</p>
+     *
      * <p>只读档位不必在这里分叉：工具加工层会按注册表的只读标记剔除写工具，
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
             List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, SEARCH_FILES, LOAD_MEMORY, SEARCH_WIKI, EDIT_FILE, WRITE_FILE,
-                    DELETE_FILE, REQUIRE_CHOICE,
+                    DELETE_FILE, REQUIRE_CHOICE, CREATE_PLAN,
                     CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, GET_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST,
                     DELETE_CHECKLIST);
 

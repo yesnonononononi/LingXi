@@ -57,6 +57,8 @@ public class ToolListProcessor {
             tools.add(ToolCatalog.LOAD_MEMORY);
             tools.add(ToolCatalog.SEARCH_WIKI);
         }
+        // 默认 Agent 的基础集已含 create_plan，这一行只给自带清单的 Agent 补位。
+        // 不许改成恒加：toolList 即授权，没配这件工具的清单不该因为加工层而多出来。
         if (context.requirePlan()) tools.add(ToolCatalog.CREATE_PLAN);
         if (context.vision()) tools.add(ToolCatalog.READ_IMAGE);
         else tools.remove(ToolCatalog.READ_IMAGE);
