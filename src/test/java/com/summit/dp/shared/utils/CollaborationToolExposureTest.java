@@ -146,11 +146,11 @@ class CollaborationToolExposureTest {
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
-                        ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.REQUIRE_CHOICE, ToolCatalog.CREATE_PLAN,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolSpec().getToolList(),
-                "基础工具包含用户确认、执行清单、文件检索写入删除与项目记忆读取/检索；内核工具不进名单，协作工具不该出现");
+                "基础工具包含用户确认、审批计划、执行清单、文件检索写入删除与项目记忆读取/检索；内核工具不进名单，协作工具不该出现");
     }
 
     @Test
@@ -161,7 +161,7 @@ class CollaborationToolExposureTest {
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
-                        ToolCatalog.REQUIRE_CHOICE,
+                        ToolCatalog.REQUIRE_CHOICE, ToolCatalog.CREATE_PLAN,
                         ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                         ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolSpec().getToolList());

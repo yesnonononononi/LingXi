@@ -74,7 +74,7 @@ class AgentWorkflowOrchestratorPromptTest {
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                 ToolCatalog.SEARCH_FILES, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                 ToolCatalog.EDIT_FILE, ToolCatalog.WRITE_FILE, ToolCatalog.DELETE_FILE,
-                ToolCatalog.REQUIRE_CHOICE,
+                ToolCatalog.REQUIRE_CHOICE, ToolCatalog.CREATE_PLAN,
                 ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                 ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST), request.getToolSpec().getToolList());
         verifyNoInteractions(subAgent, agentService, teamService);

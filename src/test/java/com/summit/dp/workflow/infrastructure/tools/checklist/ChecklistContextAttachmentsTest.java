@@ -319,8 +319,11 @@ class ChecklistContextAttachmentsTest {
 
         DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(attachments).build();
         conversations.rebuildContext("第一次摘要", execution, CheckpointSaver.NONE);
-        assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().equals(firstNotice.text())),
-                "首次压缩保留一轮以便衔接");
+        assertFalse(execution.getMessages().stream().anyMatch(message -> message.text().equals(firstNotice.text())),
+                "已答复的旧清单通知不再作为用户发言重放，避免历史轮次被当成未答复提问");
+        assertTrue(execution.getMessages().stream().filter(SystemMessageEntity.class::isInstance)
+                        .anyMatch(message -> message.text().contains("计划正文")),
+                "压缩后清单与计划状态必须仍由受保护附件承载，不能随旧通知一起消失");
 
         execution.getMessages().add(AiMessageEntity.builder().text("继续处理").build());
         execution.getMessages().add(UserMessageEntity.from("再下一轮用户提问"));
