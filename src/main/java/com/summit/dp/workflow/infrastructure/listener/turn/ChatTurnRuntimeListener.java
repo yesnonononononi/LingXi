@@ -132,7 +132,7 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
      * 不需要回查。缺失时返回 {@code null}（观察者会跳过该帧并告警，而不是猜）。
      * 子执行的元数据里根指向发起方，这正是「投递用根、归属用自身会话」所需的那一半。</p>
      */
-    private static Long resolveRootSessionId(AgentEvent event) {
+    private static Long resolveRootSessionId(Event event) {
         return ExecutionEventMetadata.parseRootSessionId(event.eventMetaData());
     }
 

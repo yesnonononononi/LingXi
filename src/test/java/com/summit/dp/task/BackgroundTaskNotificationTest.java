@@ -47,6 +47,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 class BackgroundTaskNotificationTest {
     private final TaskRepository repository = mock(TaskRepository.class);
@@ -187,13 +188,13 @@ class BackgroundTaskNotificationTest {
         DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
         AtomicInteger modelCalls = new AtomicInteger();
         RuntimeProcessorTemplate runner = new RuntimeProcessorTemplate(RuntimeContext.builder()
-                .conversationManager(new DefaultConversationManager(ContextAttachmentProvider.NONE))
+                .conversationManager(DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build())
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor(), interceptor, wait)))
                 .runtimeBoundaryChecker(boundary).executionRepository(checkpoints)
                 .toolExecutionManager(tools).runtimeEventPublisher(events)
                 .runtimeLifeStyleManager(lifecycle)
                 .executionControl(new DefaultExecutionController(() -> null, checkpoints, events, lifecycle))
-                .usage(new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1))
+                .usage(new ContextUsageReporter(new DefaultTokenizer(), 100_000, new ContextEventPublisher(List.of()), 1))
                 .invoker(new DefaultChatModelInvoker(command -> {
                     int round = modelCalls.incrementAndGet();
                     long notices = command.getMessages().stream()

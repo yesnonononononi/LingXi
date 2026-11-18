@@ -15,6 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.event.Event;
 
 /**
  * SSE 双连接与空桶回收回归：守住 {@code SseEventPublisher#connect} 的
@@ -30,7 +31,7 @@ class SseEventPublisherTest {
     private final List<SseEmitter> created = new ArrayList<>();
 
     /** 推送用的最小事件：真实框架事件，避免依赖字符串载荷。 */
-    private static AgentEvent sampleEvent() {
+    private static Event sampleEvent() {
         return new ContextUpdateEvent("exec-test", ContextUpdateEvent.Phase.UPDATE, null, "test");
     }
 

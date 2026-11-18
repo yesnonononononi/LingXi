@@ -47,7 +47,6 @@ class AgentEventListenerTest {
     void retryRoutesToRootSessionAndRetainsFailedResponseAndTurnIdentity() {
         resolveSession();
         AgentEventListener retryListener = new AgentEventListener(new JsonConfig().objectMapper(), publisher, identity, mock(SessionTokenAuditCollector.class));
-        retryListener.init();
         InvokeRetryEvent event = InvokeRetryEvent.builder().executionId(EXECUTION_ID).responseId(RESPONSE_ID)
                 .retryCount(2).retryDelay(750).timeUnit(TimeUnit.MILLISECONDS)
                 .metaData(Map.of("turnId", Long.toString(TURN_ID), "sessionId", Long.toString(SESSION_ID))).build();
@@ -90,8 +89,6 @@ class AgentEventListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener.init();
-        liveListener.init();
     }
 
     @AfterEach
@@ -228,7 +225,7 @@ class AgentEventListenerTest {
         ContextUpdateEvent event =
                 new ContextUpdateEvent(EXECUTION_ID, ContextUpdateEvent.Phase.UPDATE, null, "用量刷新");
 
-        listener.onContextUpdate(event);
+        listener.onContextUpdated(event);
 
         assertSame(event, publishedEvent(ContextUpdateEvent.class).getValue());
     }
@@ -598,10 +595,12 @@ class AgentEventListenerTest {
 
     /** 捕获投递到根会话的那条事件；泛型只用于调用点取字段，类型断言交给测试自身。 */
     @SuppressWarnings("unchecked")
-    private <T extends AgentEvent> ArgumentCaptor<T> publishedEvent(Class<T> type) {
-        ArgumentCaptor<AgentEvent> captor = ArgumentCaptor.forClass(AgentEvent.class);
+    private <T extends Event> ArgumentCaptor<T> publishedEvent(Class<T> type) {
+        // 事件面现在统一是 Event：runtime / context 事件不再是 AgentEvent 的子类型，
+        // 捕获取宽后按调用点要求的具体类型断言，靠 AgentEvent 捕获会漏掉生命周期与会话事件。
+        ArgumentCaptor<Event> captor = ArgumentCaptor.forClass(Event.class);
         verify(publisher).publish(eq(ROOT_SESSION_ID), captor.capture());
-        AgentEvent value = captor.getValue();
+        Event value = captor.getValue();
         org.junit.jupiter.api.Assertions.assertTrue(type.isInstance(value),
                 "投递的事件类型应为 " + type.getSimpleName() + "，实际 " + value.getClass().getSimpleName());
         return (ArgumentCaptor<T>) (ArgumentCaptor<?>) captor;

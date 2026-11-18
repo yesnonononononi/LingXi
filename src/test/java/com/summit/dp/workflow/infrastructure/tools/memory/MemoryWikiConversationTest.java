@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 /** 工具失败必须留在工具消息里，不能阻断当前回复或后续用户输入。 */
 class MemoryWikiConversationTest {
@@ -48,7 +49,7 @@ class MemoryWikiConversationTest {
         RuntimeBoundaryChecker boundary = mock(RuntimeBoundaryChecker.class);
         when(boundary.before(any(), any())).thenReturn(CheckPointResult.continueWith());
         when(boundary.after(any(), any())).thenReturn(CheckPointResult.continueWith());
-        DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+        DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
         AtomicInteger modelCalls = new AtomicInteger();
         AgentRequest request = AgentRequest.builder().toolSpec(com.summit.core.agent.ToolSpec.builder().toolList(List.of(ToolCatalog.LOAD_MEMORY)).build()).build();
         Execution execution = Execution.builder().id("wiki-conversation")
@@ -66,7 +67,7 @@ class MemoryWikiConversationTest {
                     .conversationManager(conversations).toolExecutionManager(tools)
                     .runtimeBoundaryChecker(boundary).runtimeEventPublisher(events)
                     // 框架升级：runner 每轮都要用 ContextUsageReporter 算上下文基线，未注入时 tokenizer 为 null 会 NPE。
-                    .usage(new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1))
+                    .usage(new ContextUsageReporter(new DefaultTokenizer(), 100_000, new ContextEventPublisher(List.of()), 1))
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of()))
                     .invoker(new DefaultChatModelInvoker(command -> {
                         int round = modelCalls.incrementAndGet();

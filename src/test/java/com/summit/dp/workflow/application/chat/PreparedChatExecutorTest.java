@@ -87,7 +87,6 @@ class PreparedChatExecutorTest {
     {
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
                 sseEventPublisher, executionIdentity, mock(SessionTokenAuditCollector.class));
-        agentEvents.init();
         // 与生产同序：轮次侧监听器（HIGHEST_PRECEDENCE）在前，SSE 广播在后。
         RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(
                 new ChatTurnRuntimeListener(chatTurnService), agentEvents));
@@ -206,7 +205,6 @@ class PreparedChatExecutorTest {
             int connected = live.connectedCount();
             AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
                     live, executionIdentity, mock(SessionTokenAuditCollector.class));
-            agentEvents.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                     new ChatTurnRuntimeListener(chatTurnService), agentEvents));
             LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(

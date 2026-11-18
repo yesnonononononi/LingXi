@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.listener.session;
 
 import com.summit.core.conversation.event.*;
+import com.summit.core.conversation.event.ContextListener;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import lombok.RequiredArgsConstructor;
@@ -15,19 +16,19 @@ import org.springframework.stereotype.Component;
  * 整轮快照由前端按 {@code viewVersion} 整体替换，天然幂等 —— 重复或乱序到达都无害。</p>
  *
  * <p><b>为什么用量变化也要推</b>：上下文压缩发生在轮次内部，不触发任何执行状态边界，
- * 但前端需要立即看到用量回落（见 {@link #onContextUpdate}）。</p>
+ * 但前端需要立即看到用量回落（见 {@link #onContextUpdated}）。</p>
  *
  * <p><b>为什么 order 低于 {@code ChatTurnRuntimeListener}</b>：快照读的是
  * {@code chat_turn} 的<b>已落库状态</b>。轮次监听器负责把状态先写进去（它取
  * {@code HIGHEST_PRECEDENCE}），本类必须在它之后跑 —— 否则快照读到的是变更前的状态，
  * 前端会看到「终态事件带的是 RUNNING」。{@link Ordered#LOWEST_PRECEDENCE} 保证本类最后执行。</p>
  *
- * <p><b>异常隔离由框架负责</b>：{@code RuntimeEventPublisher} 按默认 {@code Behavior.CONTAIN}
+ * <p><b>异常隔离由框架负责</b>：{@code ContextEventPublisher} / {@code RuntimeEventPublisher} 按默认 {@code Behavior.CONTAIN}
  * 逐监听器隔离异常，旁路推送失败不会中断其他监听器或主执行流。</p>
  */
 @Component
 @RequiredArgsConstructor
-public class TurnViewRuntimeListener implements RuntimeListener {
+public class TurnViewRuntimeListener implements RuntimeListener, ContextListener {
 
     private final TurnViewBroadcaster turnViewBroadcaster;
 
@@ -79,12 +80,12 @@ public class TurnViewRuntimeListener implements RuntimeListener {
      * 不入快照 —— 真源仍是会话上的持久化用量，避免「事件里的瞬时值」与「落库值」两套口径。</p>
      */
     @Override
-    public void onContextUpdate(ContextUpdateEvent event) {
+    public void onContextUpdated(ContextUpdateEvent event) {
         snapshot(event);
     }
 
     /** 取执行 ID 推整轮快照；异常由 {@code RuntimeEventPublisher} 按 {@code Behavior.CONTAIN} 统一隔离。 */
-    private void snapshot(AgentEvent event) {
+    private void snapshot(Event event) {
         if (event == null || event.executionId() == null || event.executionId().isBlank()) {
             return;
         }

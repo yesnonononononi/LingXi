@@ -93,6 +93,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 /** 记录截图中的提前结束路径；这些反例通过不代表任务履约缺口已经修复。 */
 class QaPendingMailRedelegationTest {
@@ -282,13 +283,13 @@ class QaPendingMailRedelegationTest {
             List<List<Message>> requests = new ArrayList<>();
             Execution execution = Execution.create(request, "");
             execution.setMaxSteps(5);
-            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
             DefaultTokenizer tokenizer = new DefaultTokenizer();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
             InMemoryActiveExecutionRegistry checkpoints = new InMemoryActiveExecutionRegistry(json);
             DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
             // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
-            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, new ContextEventPublisher(List.of()), 1);
             RuntimeProcessorTemplate runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(checkpoints).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, checkpoints, events, lifecycle))

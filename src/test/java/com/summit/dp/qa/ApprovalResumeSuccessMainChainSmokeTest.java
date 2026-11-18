@@ -67,6 +67,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 /**
  * 真实成功主链端到端 smoke：<b>chat 提问 → 工具审批 → 恢复 → 终态成功</b>。
@@ -221,7 +222,7 @@ class ApprovalResumeSuccessMainChainSmokeTest {
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
         DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
         DefaultTokenizer tokenizer = new DefaultTokenizer();
-        DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+        DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
         return new RuntimeProcessorTemplate(RuntimeContext.builder()
                 .executionRepository(executions)
                 .conversationManager(conversations)
@@ -232,7 +233,7 @@ class ApprovalResumeSuccessMainChainSmokeTest {
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                 .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(6).build(), tokenizer,
                         conversations, null, null, null, null))
-                .usage(new ContextUsageReporter(tokenizer, 64_000, events, 1))
+                .usage(new ContextUsageReporter(tokenizer, 64_000, new ContextEventPublisher(List.of()), 1))
                 .invoker(new DefaultChatModelInvoker(command -> {
                     seenRequests.add(List.copyOf(command.getMessages()));
                     int round = modelCalls.incrementAndGet();

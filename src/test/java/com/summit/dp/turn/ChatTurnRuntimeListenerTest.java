@@ -173,17 +173,10 @@ class ChatTurnRuntimeListenerTest {
     void nonErrorEventsDoNotRecordReason() {
         listener.onExecutionStart(null);
         listener.onExecutionResumed(null);
-        listener.onExecutionSuspended(null);
         listener.onExecutionCompleted(null);
         listener.onExecutionCancelled(null);
-        listener.onAiMessage(null);
-        listener.onContextUpdate(null);
-        listener.onApplicationEvent(null);
-        listener.onPartialText(null);
-        listener.onPartialThinking(null);
-        listener.onCompleteText(null);
-        listener.onToolCall(null);
-        listener.onToolCallOutput(null);
+        // 流式回调与上下文回调已按通道拆到 AgentStreamListener / ContextListener，
+        // 本监听器不再实现它们 —— 也就不存在"这些回调误写失败原因"的路径可测。
 
         verify(chatTurnService, never()).recordFailureReason(anyString(), anyString(), any());
     }

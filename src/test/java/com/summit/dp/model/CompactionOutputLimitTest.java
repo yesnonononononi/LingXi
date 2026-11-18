@@ -50,6 +50,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 class CompactionOutputLimitTest {
     private final List<ModelConfig> selected = new ArrayList<>();
@@ -85,10 +86,10 @@ class CompactionOutputLimitTest {
                 .withBean("defaultContextCompactModel", ChatModel.class,
                         () -> request -> { throw new AssertionError("不能使用应用级压缩连接"); })
                 .withBean("contextPruner", DefaultContextPruner.class, () -> mock(DefaultContextPruner.class))
-                .withBean(ConversationManager.class, () -> new DefaultConversationManager(ContextAttachmentProvider.NONE))
+                .withBean(ConversationManager.class, () -> DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build())
                 .withBean(Tokenizer.class, DefaultTokenizer::new)
                 .withBean(ContextUsageReporter.class, () -> new ContextUsageReporter(new DefaultTokenizer(),
-                        102400, new RuntimeEventPublisher(List.of()), 1))
+                        102400, new ContextEventPublisher(List.of()), 1))
                 .withBean(ExecutionRepository.class, InMemoryActiveExecutionRegistry::new)
                 .withBean(RevisionSource.class, () -> new RevisionSource((id, version) -> {
                     assertEquals(7L, id.longValue());

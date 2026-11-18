@@ -42,6 +42,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.CheckpointSaver;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 class ChecklistContextAttachmentsTest {
     private static final long SESSION = 9401L;
@@ -105,7 +107,7 @@ class ChecklistContextAttachmentsTest {
         assertTrue(checkpoint.getMessages().stream().anyMatch(message -> message.text().contains(marker)));
 
         execution.getMessages().removeIf(message -> message.text().contains(marker));
-        new DefaultConversationManager(attachments).rebuildContext("工作摘要", execution);
+        DefaultConversationManager.builder().contextAttachmentProvider(attachments).build().rebuildContext("工作摘要", execution, CheckpointSaver.NONE);
         assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().contains(marker)));
     }
 
@@ -233,10 +235,10 @@ class ChecklistContextAttachmentsTest {
         assertFalse(attachment.contains("旧计划正文"));
         assertTrue(attachment.contains("请逐项如实处理"));
 
-        DefaultConversationManager conversations = new DefaultConversationManager(attachments);
+        DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(attachments).build();
         DefaultTokenizer tokenizer = new DefaultTokenizer();
         AgentConfig config = AgentConfig.builder().maxTokens(20_000).build();
-        ContextUsageReporter usage = new ContextUsageReporter(tokenizer, config.maxTokens(), new RuntimeEventPublisher(List.of()), 1);
+        ContextUsageReporter usage = new ContextUsageReporter(tokenizer, config.maxTokens(), new ContextEventPublisher(List.of()), 1);
         DefaultContextPruner pruner = new DefaultContextPruner(config, usage, attachments);
         AtomicReference<ChatRequestEntity> compactRequest = new AtomicReference<>();
         ChatModel summaryModel = request -> {
@@ -248,7 +250,7 @@ class ChecklistContextAttachmentsTest {
                 .conversationManager(conversations)
                 .contextAttachmentProvider(attachments)
                 .usage(usage)
-                .summaryApplier(new DefaultCompactSummaryApplier(conversations))
+                .summaryApplier(new DefaultCompactSummaryApplier(conversations, CheckpointSaver.NONE))
                 .build();
         for (int round = 0; round < 3; round++) {
             service.modify(ChecklistCommand.modify(SESSION, created.getChecklistId(), "更新任务" + round,
@@ -288,7 +290,7 @@ class ChecklistContextAttachmentsTest {
     void removedChecklistsStopAppendingWithoutRewritingWhatWasAlreadySent() throws Exception {
         injector.injectIfNeeded(context(), execution);
         saveCheckpoint();
-        new DefaultConversationManager(attachments).rebuildContext("工作摘要", execution);
+        DefaultConversationManager.builder().contextAttachmentProvider(attachments).build().rebuildContext("工作摘要", execution, CheckpointSaver.NONE);
         injector.injectIfNeeded(context(), execution);
         String notice = ChecklistReminderText.renderUpdate(service.findActive(SESSION).orElseThrow());
         assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().equals(notice)));
@@ -315,14 +317,14 @@ class ChecklistContextAttachmentsTest {
         execution.getMessages().add(UserMessageEntity.from("下一轮用户提问"));
         saveCheckpoint();
 
-        DefaultConversationManager conversations = new DefaultConversationManager(attachments);
-        conversations.rebuildContext("第一次摘要", execution);
+        DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(attachments).build();
+        conversations.rebuildContext("第一次摘要", execution, CheckpointSaver.NONE);
         assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().equals(firstNotice.text())),
                 "首次压缩保留一轮以便衔接");
 
         execution.getMessages().add(AiMessageEntity.builder().text("继续处理").build());
         execution.getMessages().add(UserMessageEntity.from("再下一轮用户提问"));
-        conversations.rebuildContext("第二次摘要", execution);
+        conversations.rebuildContext("第二次摘要", execution, CheckpointSaver.NONE);
         assertFalse(execution.getMessages().stream().anyMatch(message -> message.text().equals(firstNotice.text())),
                 "已有后续回复且经过两次压缩的旧清单通知必须淘汰，不能永久堆叠在 earlierUsers");
     }

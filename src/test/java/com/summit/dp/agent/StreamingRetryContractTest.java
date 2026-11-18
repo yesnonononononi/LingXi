@@ -11,6 +11,7 @@ import com.summit.core.compact.ContextAttachmentProvider;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conversation.event.AgentEvent;
+import com.summit.core.conversation.event.AgentEventPublisher;
 import com.summit.core.conversation.event.InvokeRetryEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -55,6 +56,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.conversation.event.ContextEventPublisher;
+import com.summit.core.conversation.event.Event;
 
 /**
  * 模型故障必须贯穿适配器、重试、执行终态和业务事件序列化。
@@ -100,8 +103,7 @@ class StreamingRetryContractTest {
             when(locator.sessionId("101")).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
             AgentEventListener bridge = new AgentEventListener(stream.json, stream, locator, mock(SessionTokenAuditCollector.class));
-            bridge.init();
-            RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
+                        RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
                 @Override
                 public int order() {
                     return 0;
@@ -121,7 +123,7 @@ class StreamingRetryContractTest {
             execution.setStreaming(true);
             execution.setMaxSteps(mode.endsWith("BUDGET") ? 1 : 5);
             InMemoryActiveExecutionRegistry repository = new InMemoryActiveExecutionRegistry();
-            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
             DefaultTokenizer tokenizer = new DefaultTokenizer();
             DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
             ToolExecutionManager tools = new ToolExecutionManager() {
@@ -130,11 +132,14 @@ class StreamingRetryContractTest {
             };
             // 框架升级后 BoundaryChecker 需要显式注入 ContextUsageReporter 与 ToolRegistry：
             // 传 null 时它会在 maxTokens 缺省时 intValue() 空指针，故复用 runtime 的同一个 reporter。
-            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, new ContextEventPublisher(List.of()), 1);
             RuntimeProcessorTemplate runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(repository).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, repository, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).toolExecutionManager(tools)
+                    // 流式事件走的是独立通道：只接 runtimeEventPublisher 时 AI_MESSAGE 一片不落地，
+                    // 断言"终局 AI 消息只出现一次"就会得到 0。渲染用监听器必须同时被两条通道唤醒。
+                    .agentEventPublisher(new AgentEventPublisher(List.of(bridge)))
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
                             conversations, null, null, usage, null)).usage(usage)
@@ -255,7 +260,7 @@ class StreamingRetryContractTest {
     private static final class Capture extends SseEventPublisher implements AutoCloseable {
         private final ObjectMapper json = new JsonConfig().objectMapper();
         private final List<JsonNode> frames = new CopyOnWriteArrayList<>();
-        public void publish(long rootSessionId, AgentEvent event) {
+        @Override public void publish(long rootSessionId, Event event) {
             assertEquals(7L, rootSessionId);
             frames.add(json.valueToTree(event));
         }

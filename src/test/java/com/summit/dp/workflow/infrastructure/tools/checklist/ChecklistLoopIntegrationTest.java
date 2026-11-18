@@ -53,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 class ChecklistLoopIntegrationTest {
     private static final long SESSION = 6401L;
@@ -223,7 +224,7 @@ class ChecklistLoopIntegrationTest {
         // 框架升级：runner 每轮都要用 ContextUsageReporter 算上下文基线（之前由 BoundaryChecker 内部兜底），
         // 未注入 reporter 时 runner 会拿到 tokenizer 为 null 的实例并 NPE，故这里显式给一个。
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
-        ContextUsageReporter usage = new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1);
+        ContextUsageReporter usage = new ContextUsageReporter(new DefaultTokenizer(), 100_000, new ContextEventPublisher(List.of()), 1);
         return new AgentLoopStepRunner(RuntimeContext.builder()
                 .conversationManager(DefaultConversationManager.builder()
                         .conversationTranscriptSink((id, ai, results, responseId, metadata) -> transcripts.incrementAndGet())

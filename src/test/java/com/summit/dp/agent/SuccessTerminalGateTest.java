@@ -135,7 +135,6 @@ class SuccessTerminalGateTest {
         agentEvents = new AgentEventListener(new JsonConfig().objectMapper(), ssePublisher,
                 locator, mock(SessionTokenAuditCollector.class));
         events = new RuntimeEventPublisher(List.of(agentEvents));
-        agentEvents.init();
 
         runtime = ExecutionRepositoryTestFactory.create(
                 new ExecutionCheckpointService(executions, mock(ApplicationEventPublisher.class)),

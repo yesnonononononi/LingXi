@@ -140,7 +140,6 @@ class StartupFailureEndToEndTest {
 
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
                 publisher, identity, mock(SessionTokenAuditCollector.class));
-        agentEvents.init();
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                 new ChatTurnRuntimeListener(chatTurnService),
                 agentEvents,

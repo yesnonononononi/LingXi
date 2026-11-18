@@ -67,6 +67,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.CheckpointSaver;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 /**
  * 委派出去的子执行必须拿到「成员版」上下文：
@@ -194,8 +196,8 @@ class SubAgentRequestFactoryTest {
 
         Execution execution = Execution.create(request, "");
         execution.setMessages(new ArrayList<>(execution.getMessages()));
-        DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
-        conversations.startConversation(execution, null, null);
+        DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
+        conversations.startConversation(execution, null, null, CheckpointSaver.NONE);
         execution.startChecked();
         String protectedPrompt = execution.getMessages().getFirst().text();
         assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
@@ -212,7 +214,7 @@ class SubAgentRequestFactoryTest {
         conversations.appendUserMessage(execution, "协作邮件：上一轮端口纠错，作为补充背景");
         DefaultTokenizer tokenizer = new DefaultTokenizer();
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
-        ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100000, events, 1);
+        ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100000, new ContextEventPublisher(List.of()), 1);
         AgentConfig config = AgentConfig.builder().maxTokens(100000).maxIterations(3).build();
         int before = tokenizer.count(execution.getMessages());
         assertTrue(new DefaultContextPruner(config, usage).compact(new ContextCompactRequest(execution)));
@@ -232,7 +234,7 @@ class SubAgentRequestFactoryTest {
                 .conversationManager(conversations)
                 .contextAttachmentProvider(ContextAttachmentProvider.NONE)
                 .usage(usage)
-                .summaryApplier(new DefaultCompactSummaryApplier(conversations))
+                .summaryApplier(new DefaultCompactSummaryApplier(conversations, CheckpointSaver.NONE))
                 .build();
         for (int round = 0; round < 2; round++) {
             assertTrue(compacter.compact(new ContextCompactRequest(execution)));

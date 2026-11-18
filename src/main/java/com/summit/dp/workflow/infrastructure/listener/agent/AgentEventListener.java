@@ -1,10 +1,10 @@
 package com.summit.dp.workflow.infrastructure.listener.agent;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.*;
 import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.runtime.AgentStreamListener;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -12,7 +12,6 @@ import com.summit.dp.session.application.service.SessionTokenAuditCollector;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.workflow.application.chat.ExecutionErrorText;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -29,7 +28,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class AgentEventListener implements RuntimeListener {
+public class AgentEventListener implements RuntimeListener, AgentStreamListener, ContextListener {
     private final ObjectMapper objectMapper;
     private final SseEventPublisher sseEventPublisher;
     private final ExecutionLocator executionLocator;
@@ -41,16 +40,6 @@ public class AgentEventListener implements RuntimeListener {
      * 属于应用层，与 {@code TurnViewBroadcaster} 直接调用 {@code session.application.*} 同一先例。</p>
      */
     private final SessionTokenAuditCollector sessionTokenAuditCollector;
-
-    private interface TypedEventMixIn {
-        @JsonProperty("type")
-        String type();
-    }
-
-    @PostConstruct
-    public void init() {
-        objectMapper.addMixIn(TypedEvent.class, TypedEventMixIn.class);
-    }
 
     @Override
     public int order() {
@@ -136,7 +125,7 @@ public class AgentEventListener implements RuntimeListener {
         broadcastRenderEvent(event);
     }
 
-    private void broadcastRenderEvent(AgentEvent event) {
+    private void broadcastRenderEvent(Event event) {
         BroadcastTarget target = resolveTarget(event);
         if (target == null) return;
         ObjectNode payload = objectMapper.valueToTree(event);
@@ -181,7 +170,7 @@ public class AgentEventListener implements RuntimeListener {
     }
 
     @Override
-    public void onContextUpdate(ContextUpdateEvent event) {
+    public void onContextUpdated(ContextUpdateEvent event) {
         broadcast(event);
     }
 
@@ -226,7 +215,7 @@ public class AgentEventListener implements RuntimeListener {
     }
 
     /** 执行终结只广播，连接由会话流自身的生命周期回收。 */
-    private void broadcast(AgentEvent event) {
+    private void broadcast(Event event) {
         BroadcastTarget target = resolveTarget(event);
         if (target == null) {
             return;
@@ -246,7 +235,7 @@ public class AgentEventListener implements RuntimeListener {
      *
      * <p>两处都拿不到归属就丢弃：宁可少推一帧，也绝不把未知事件改投到别的会话。</p>
      */
-    private BroadcastTarget resolveTarget(AgentEvent event) {
+    private BroadcastTarget resolveTarget(Event event) {
         String executionId = event.executionId();
         if (executionId == null || executionId.isBlank()) {
             log.warn("丢弃缺少执行身份的事件: event={}", event);
@@ -273,7 +262,7 @@ public class AgentEventListener implements RuntimeListener {
      * <p>复用 {@link ExecutionEventMetadata} 的解析规则，不另写一份键名与格式判断：
      * 元数据键是十进制字符串，缺失或不可解析返回 {@code null}。</p>
      */
-    private static BroadcastTarget resolveTargetFromMetadata(AgentEvent event) {
+    private static BroadcastTarget resolveTargetFromMetadata(Event event) {
         Map<String, Object> metadata = event.eventMetaData();
         Long sessionId = ExecutionEventMetadata.sessionId(metadata);
         Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(metadata);

@@ -54,6 +54,7 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 /** 本地模型端点见证真实工具轮后的图片请求，不依赖外部模型或密钥。 */
 class ReadImageLoopIntegrationTest {
@@ -116,9 +117,9 @@ class ReadImageLoopIntegrationTest {
             Execution execution = Execution.builder().id("image-loop").agentId("test")
                     .agentRequest(request).messages(new ArrayList<>(request.getContextSpec().getContext())).tokenUsage(TokenUsageEntity.empty()).build();
             DefaultTokenizer tokenizer = new DefaultTokenizer();
-            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
             // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
-            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, events, 1);
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, new ContextEventPublisher(List.of()), 1);
             BoundaryChecker budget = new BoundaryChecker(AgentConfig.builder().maxIterations(3).maxTokens(100_000).build(),
                     tokenizer, conversations, null, null, usage,
                     new ToolRegistry(List.of(definition)));

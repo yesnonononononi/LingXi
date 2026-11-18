@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
+import com.summit.core.conversation.event.Event;
 
 /**
  * 工具状态先落库再推块增量，避免前端读到旧状态。
@@ -74,7 +75,7 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
      * @param facts 事件带来的块事实
      * @param event 框架事件（提供元数据与执行 ID）
      */
-    private void broadcastToolBlock(ToolBlockEventFacts facts, AgentEvent event) {
+    private void broadcastToolBlock(ToolBlockEventFacts facts, Event event) {
         if (facts == null || facts.toolCallId() == null || facts.toolCallId().isBlank()) {
             return;
         }
@@ -91,7 +92,7 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
      *
      * <p>反查不到就丢弃 —— 这正对应「拿不到归属就不推送」，与主路径的丢弃语义一致。</p>
      */
-    private void broadcastWithExecutionLookup(ToolBlockEventFacts facts, AgentEvent event) {
+    private void broadcastWithExecutionLookup(ToolBlockEventFacts facts, Event event) {
         Long numericExecutionId = ExecutionIdentity.numericOrNull(event.executionId());
         if (numericExecutionId == null) {
             log.debug("工具事件缺少可解析的执行 ID，跳过推送: requestId={}", facts.toolCallId());

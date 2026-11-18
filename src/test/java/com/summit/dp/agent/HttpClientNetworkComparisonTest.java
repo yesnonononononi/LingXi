@@ -73,6 +73,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import com.summit.core.conversation.event.ContextEventPublisher;
+import com.summit.core.conversation.event.Event;
 
 /**
  * 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。
@@ -214,8 +216,7 @@ class HttpClientNetworkComparisonTest {
             when(locator.sessionId(anyString())).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
             AgentEventListener bridge = new AgentEventListener(capture.json, capture, locator, mock(SessionTokenAuditCollector.class));
-            bridge.init();
-            RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
+                        RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(bridge, new RuntimeListener() {
                 @Override
                 public int order() {
                     return 0;
@@ -224,7 +225,7 @@ class HttpClientNetworkComparisonTest {
                 @Override
                 public void onInvokeRetry(InvokeRetryEvent event) { endpoint.retrySeen.countDown(); }
             }));
-            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
             DefaultTokenizer tokenizer = new DefaultTokenizer();
             DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
             ToolExecutionManager tools = new ToolExecutionManager() {
@@ -233,7 +234,7 @@ class HttpClientNetworkComparisonTest {
             };
             // 框架升级后 BoundaryChecker 必须显式注入 ContextUsageReporter/ToolRegistry：
             // null 会在 AgentConfig.maxTokens 缺省时 intValue() 空指针，故复用 runtime 的同一个 reporter。
-            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, events, 1);
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 64000, new ContextEventPublisher(List.of()), 1);
             runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
                     .executionRepository(repository).conversationManager(conversations)
                     .executionControl(new DefaultExecutionController(() -> null, repository, events, lifecycle))
@@ -299,7 +300,7 @@ class HttpClientNetworkComparisonTest {
         private final List<JsonNode> frames = new CopyOnWriteArrayList<>();
         private final CountDownLatch partial = new CountDownLatch(1);
 
-        public void publish(long rootSessionId, AgentEvent event) { frames.add(json.valueToTree(event)); }
+        @Override public void publish(long rootSessionId, Event event) { frames.add(json.valueToTree(event)); }
         public void publishBusiness(long rootSessionId, String name, Object payload) {
             assertEquals(7L, rootSessionId);
             frames.add(json.valueToTree(payload));

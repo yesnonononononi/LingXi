@@ -1,6 +1,6 @@
 package com.summit.dp.workflow.infrastructure.stream;
 
-import com.summit.core.conversation.event.AgentEvent;
+import com.summit.core.conversation.event.Event;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -34,7 +34,7 @@ public class SseEventPublisher {
     /**
      * 传输层信号事件名（就绪 / 心跳）。
      *
-     * <p>这些是传输层语义，不是框架 {@code AgentEvent}：不进入 {@link #publish(long, AgentEvent)}
+     * <p>这些是传输层语义，不是框架 {@code AgentEvent}：不进入 {@link #publish(long, Event)}
      * 的业务事件通道；抽成枚举避免字面量散落。</p>
      */
     private enum SignalEvent {
@@ -107,7 +107,7 @@ public class SseEventPublisher {
      * <p>子执行事件归入父任务：子会话的事件必须用 rootSessionId 推送。
      * 没有活跃订阅时静默忽略（前端可能尚未建流，或已切走待回查历史）。</p>
      */
-    public void publish(long rootSessionId, AgentEvent event) {
+    public void publish(long rootSessionId, Event event) {
 
         Set<SseEmitter> bucket = emittersByRootSession.get(rootSessionId);
 
@@ -123,11 +123,11 @@ public class SseEventPublisher {
      * 定向推送一条**业务**事件（块快照 / 块增量）。
      *
      * <p><b>与框架事件的差别只在载荷与事件名</b>：框架事件的事件名取自
-     * {@code AgentEvent.type()}，业务事件的事件名由调用方显式给出（{@link BusinessEventEnvelope}
+     * {@code Event.type()}，业务事件的事件名由调用方显式给出（{@link BusinessEventEnvelope}
      * 的 {@code type} / 事件名常量）。两者共用同一套分桶、同一套摘流语义 ——
      * 传输层不为业务多开一条路。</p>
      *
-     * <p>与 {@link #publish(long, AgentEvent)} 的失败语义完全一致：无订阅者静默丢弃，
+     * <p>与 {@link #publish(long, Event)} 的失败语义完全一致：无订阅者静默丢弃，
      * 写失败摘流且不关其它流。</p>
      *
      * @param rootSessionId 路由用根会话（子会话的事件也必须用根，否则投错桶）
@@ -173,7 +173,7 @@ public class SseEventPublisher {
      * <p><b>为什么写失败要摘流。</b>客户端断开后容器未必立刻回调 onError，继续对它写入只会
      * 每轮重复失败；摘掉这一条，其余流不受影响。会话状态另有历史接口兜底，丢一条推送不影响正确性。</p>
      */
-    private void send(long rootSessionId, SseEmitter emitter, AgentEvent event) {
+    private void send(long rootSessionId, SseEmitter emitter, Event event) {
         try {
             emitter.send(SseEmitter
                     .event()

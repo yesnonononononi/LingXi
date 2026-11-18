@@ -60,6 +60,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
+import com.summit.core.conversation.event.ContextEventPublisher;
 
 
 @SpringJUnitConfig(ConcurrentCheckpointSaveTransactionTest.Config.class)
@@ -93,7 +94,7 @@ class ConcurrentCheckpointSaveTransactionTest {
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
             DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
             DefaultTokenizer tokenizer = new DefaultTokenizer();
-            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            DefaultConversationManager conversations = DefaultConversationManager.builder().contextAttachmentProvider(ContextAttachmentProvider.NONE).build();
             ToolExecutionManager tools = new ToolExecutionManager() {
                 public List<ToolExecuteResult> execute(ToolExecuteCommand command) {
                     return List.of(ToolExecuteResult.success("读取完成"));
@@ -101,7 +102,7 @@ class ConcurrentCheckpointSaveTransactionTest {
                 public ToolRegistry toolRegistry() { return new ToolRegistry(List.of()); }
             };
             // 框架升级：BoundaryChecker 需显式注入 ContextUsageReporter/ToolRegistry（null 会空指针）。
-            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, events, 1);
+            ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100_000, new ContextEventPublisher(List.of()), 1);
             new RuntimeProcessorTemplate(RuntimeContext.builder().conversationManager(conversations)
                     .executionRepository(runtime)
                     .executionControl(new DefaultExecutionController(() -> null, runtime, events, lifecycle))

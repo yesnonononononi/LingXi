@@ -29,7 +29,7 @@ class TurnViewRuntimeListenerTest {
     @Test
     @DisplayName("上下文用量变化也要推快照（压缩不触发状态边界，别让它成为盲区）")
     void contextUpdateAlsoTriggersSnapshot() {
-        listener.onContextUpdate(new ContextUpdateEvent(EXECUTION_ID, ContextUpdateEvent.Phase.UPDATE,
+        listener.onContextUpdated(new ContextUpdateEvent(EXECUTION_ID, ContextUpdateEvent.Phase.UPDATE,
                 new ContextUsageMetric(1000, 8000, 0.125), "用量更新"));
 
         verify(broadcaster).broadcastSnapshotForExecution(EXECUTION_ID);
@@ -48,7 +48,7 @@ class TurnViewRuntimeListenerTest {
     @Test
     @DisplayName("执行 ID 缺失时静默跳过，绝不抛异常（同步广播链上抛错会跳过后续监听器）")
     void blankExecutionIdIsSkipped() {
-        listener.onContextUpdate(new ContextUpdateEvent("", ContextUpdateEvent.Phase.UPDATE, null, null));
+        listener.onContextUpdated(new ContextUpdateEvent("", ContextUpdateEvent.Phase.UPDATE, null, null));
 
         verify(broadcaster, never()).broadcastSnapshotForExecution(anyString());
     }
