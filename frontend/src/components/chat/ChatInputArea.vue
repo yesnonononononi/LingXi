@@ -252,7 +252,7 @@ const promptOptimization = usePromptOptimization(inputText, () => props.selected
   closeCommandLayer();
   writeInputText(text);
 });
-const { state: confirmationState } = useConfirm();
+const { state: confirmationState, notice } = useConfirm();
 
 // ====== 语音听写 (Mic) 基础状态 ======
 let dictation = 0;
@@ -1544,7 +1544,7 @@ const handleSend = () => {
     // 「不接受正文」的命令被塞了正文：拒绝执行并保留原文。吞掉正文发一次压缩，
     // 用户看到的会是「我写的要求没了，上下文却莫名其妙被压了」。
     if (hasUnexpectedCommandBody({ name: draft.command, body: draft.text })) {
-      window.alert(t('chat.command.compactRejectsBody'));
+      void notice(t('chat.command.compactRejectsBody'));
       focusInput();
       return;
     }

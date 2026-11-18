@@ -7,6 +7,8 @@ import {normalizeSettingsTab, type SettingsTabKey} from '../../utils/enum';
 import {isElectron, openDirectoryPicker} from '../../utils/platform';
 import {extractDirName} from '../../utils/path';
 import {t} from '../../i18n';
+import {useConfirm} from '../../composables/useConfirm';
+import {resolveUserFacingMessage} from '../../services/interceptor';
 
 export interface ChatWorkspaceOptions {
   localSessions: Ref<ChatSession[]>;
@@ -34,6 +36,7 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
   } = options;
 
   const userConfig = useUserConfigStore();
+  const { notice } = useConfirm();
 
   const isWorkspaceModalOpen = ref(false);
   const isSidebarCollapsed = ref(false);
@@ -66,7 +69,7 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
         isWorkspaceModalOpen.value = false;
       }
     } catch (err: any) {
-      window.alert(err?.message || t('chat.view.createProjectFailed'));
+      void notice(resolveUserFacingMessage(err, t('chat.view.createProjectFailed')));
     }
   };
 

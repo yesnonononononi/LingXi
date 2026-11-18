@@ -31,7 +31,7 @@ interface ModelForm {
 export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const { t } = useI18n();
   const importCopy = useModelImportCopy();
-  const { confirm } = useConfirm();
+  const { confirm, notice } = useConfirm();
 
   const catalogGroups = ref<ProviderModelGroupVO[]>([]);
   const providers = ref<ProviderConfigVO[]>([]);
@@ -197,10 +197,10 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
         showModelToast(t('settings.models.toastProviderDeleted'));
         await refreshAfterChange();
       } else {
-        window.alert(res.errMsg || t('settings.models.errDelete'));
+        void notice(res.errMsg || t('settings.models.errDelete'));
       }
     } catch {
-      window.alert(t('settings.models.errDeleteRetry'));
+      void notice(t('settings.models.errDeleteRetry'));
     }
   };
 
@@ -337,10 +337,10 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
         showModelToast(t('settings.models.toastDeleted'));
         await refreshAfterChange();
       } else {
-        window.alert(res.errMsg || t('settings.models.errDelete'));
+        void notice(res.errMsg || t('settings.models.errDelete'));
       }
     } catch {
-      window.alert(t('settings.models.errDeleteRetry'));
+      void notice(t('settings.models.errDeleteRetry'));
     }
   };
 

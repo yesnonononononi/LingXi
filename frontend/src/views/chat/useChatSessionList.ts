@@ -59,7 +59,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     onNewSession,
   } = options;
 
-  const { confirm } = useConfirm();
+  const { confirm, notice, busy } = useConfirm();
   const isLoadingCurrentSession = ref(false);
   const sessionLoadError = ref('');
 
@@ -188,7 +188,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       activeSessionId: localActiveId.value,
       applicationStates: applicationSessions.states
     })) {
-      window.alert(t('chat.sidebar.deleteSessionActiveBlocked'));
+      void notice(t('chat.sidebar.deleteSessionActiveBlocked'));
       return;
     }
 
@@ -207,7 +207,15 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       if (localActiveId.value === id) localActiveId.value = null;
       return;
     }
-    const result = await chatApi.deleteSession(id);
+    // 整棵树按「一个会话一个短事务」删，耗时随子会话数增长：必须给出进行中提示，
+    // 否则用户面对的是一个看起来卡死的界面。
+    const closeBusy = busy({content: t('chat.view.deletingSession')});
+    let result: Awaited<ReturnType<typeof chatApi.deleteSession>>;
+    try {
+      result = await chatApi.deleteSession(id);
+    } finally {
+      closeBusy();
+    }
     if (result.ok) {
       applicationSessions.forget(id);
       localSessions.value = localSessions.value.filter(s => s.id !== id);
@@ -215,7 +223,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       return;
     }
     // 失败原因由后端/分类给出，不再统一糊成一句「请重试」
-    window.alert(result.message);
+    void notice(result.message);
     await reconcileSessionList();
   };
 
@@ -241,7 +249,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     const target = !session.isPinned;
 
     if (!await chatApi.toggleSessionPin(id, target)) {
-      window.alert(t('chat.sidebar.pinFailed'));
+      void notice(t('chat.sidebar.pinFailed'));
       return;
     }
     session.isPinned = target;
@@ -252,15 +260,22 @@ export function useChatSessionList(options: ChatSessionListOptions) {
   // 清空历史对话：调用后端整库清空接口，避免仅删当前页 100 条或并发删除抢锁失败
   const handleClearSessions = async () => {
     const ids = localSessions.value.map(s => s.id);
-    const result = await chatApi.clearSessions();
+    // 整库清空是重活（14 张表 + 4 个目录），必须给进行中提示，不能让它看起来像卡死
+    const closeBusy = busy({content: t('chat.view.clearingSessions')});
+    let result: Awaited<ReturnType<typeof chatApi.clearSessions>>;
+    try {
+      result = await chatApi.clearSessions();
+    } finally {
+      closeBusy();
+    }
     if (result.ok) {
       ids.forEach(id => applicationSessions.forget(id));
       localSessions.value = [];
       localActiveId.value = null;
-      window.alert(t('chat.view.clearedAll', { count: result.count > 0 ? result.count : ids.length }));
+      void notice(t('chat.view.clearedAll', { count: result.count > 0 ? result.count : ids.length }));
       return;
     }
-    window.alert(result.message);
+    void notice(result.message);
     await reconcileSessionList();
   };
 
@@ -274,7 +289,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     const session = currentActiveSession.value;
     const exported = displayedMessages.value;
     if (!session || exported.length === 0) {
-      window.alert(t('chat.view.nothingToExport'));
+      void notice(t('chat.view.nothingToExport'));
       return;
     }
     const blob = new Blob([buildSessionMarkdown(session.title, exported)], { type: 'text/markdown;charset=utf-8' });

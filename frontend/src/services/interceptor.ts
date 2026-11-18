@@ -12,12 +12,17 @@ import {t} from '../i18n';
  * - `notFound` ：HTTP 404 —— 端点不存在（已下线接口）
  * - `server`   ：HTTP 5xx —— 服务端故障
  * - `business` ：HTTP 200 + `Result.code` 非成功 —— 普通业务错误（后端无结构化业务码）
- * - `network`  ：无 HTTP 响应（连接失败 / 超时）
+ * - `network`  ：无 HTTP 响应（连接失败 / 服务不可达）
+ * - `timeout`  ：请求在预算内没有响应（axios `ECONNABORTED` / `ETIMEDOUT`）
  * - `unknown`  ：其余未分类的 HTTP 状态
+ *
+ * <p><b>为什么把 `timeout` 单列</b>：超时与服务不可达对用户是两件事。前者服务端**大概率还在干活**
+ * （整树删除、整库清空这类成本随数据规模增长的写操作尤其如此），把它糊成「网络连接失败」
+ * 会让用户以为什么都没发生，于是反复点。分类分开后文案才能说清事实。</p>
  *
  * 本地单实例（HC-1）无鉴权体系：**不存在 401**，故不为其编写分支。
  */
-export type ApiErrorKind = 'forbidden' | 'notFound' | 'server' | 'business' | 'network' | 'unknown';
+export type ApiErrorKind = 'forbidden' | 'notFound' | 'server' | 'business' | 'network' | 'timeout' | 'unknown';
 
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
@@ -81,6 +86,8 @@ export function describeKind(kind: ApiErrorKind): string {
       return t('error.serverBusy');
     case 'network':
       return t('error.networkFailed');
+    case 'timeout':
+      return t('error.requestTimeout');
     case 'business':
       return t('error.defaultUserFacing');
     default:
@@ -112,11 +119,24 @@ export function resolveUserFacingMessage(error: unknown, fallback: string): stri
 /** 中文（含扩展区）判定：后端业务文案的语言特征，用于把内部异常文案挡在用户视野之外。 */
 const CJK_PATTERN = /[\u4e00-\u9fff]/;
 
+/** axios 在「预算内没有响应」时抛出的错误码（`timeout` 与 `transitional.clarifyTimeoutError` 两种形态）。 */
+const TIMEOUT_ERROR_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT']);
+
+/** 是否属于「请求超时」而非「连不上」。axios 两种成因都无 `response`，只能靠错误码区分。 */
+function isTimeoutError(error: unknown): boolean {
+  const axiosError = error as AxiosError | undefined;
+  if (axiosError?.code) return TIMEOUT_ERROR_CODES.has(axiosError.code);
+  return error instanceof Error && /timeout/i.test(error.message);
+}
+
 /** 把 axios 抛出的错误归一为带分类的 ApiError。 */
-function toApiError(error: unknown): ApiError {
+export function toApiError(error: unknown): ApiError {
   const axiosError = error as AxiosError<{ errMsg?: string }> | undefined;
   const response = axiosError?.response;
   if (!response) {
+    if (isTimeoutError(error)) {
+      return new ApiError('timeout', describeKind('timeout'));
+    }
     const message = error instanceof Error && error.message ? error.message : t('error.networkFailed');
     return new ApiError('network', message);
   }
@@ -129,6 +149,20 @@ function toApiError(error: unknown): ApiError {
   });
 }
 
+/**
+ * 交互式请求的默认预算（毫秒）。
+ *
+ * <p><b>这不是「所有请求」的预算</b>，而是「点一下就该有反应」的请求的预算：列表、详情、
+ * 单行写操作。这里之所以要写明，是因为历史上一刀切的 10s 曾把整树删除 / 整库清空
+ * （成本随数据规模线性增长）打成「删除失败，请重试」，而服务端其实已经删完了。</p>
+ *
+ * <p>成本会随数据规模增长的写操作，<b>必须</b>在 service 层按操作显式声明自己的预算
+ * （例如 `session.ts` 的整树删除与整库清空、`agent.ts` 的上下文压缩、`mcp.ts` 的连接探测），
+ * 并在注释里说明量级依据。判断标准：耗时是否取决于库里现有多少数据，而不是取决于用户这一次
+ * 点了什么。</p>
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
 // 创建 axios 实例
 // 本地单实例（HC-1）：无认证头、无 401 跳转；支持动态服务地址寻址（桌面端直连、Web走配置或代理）。
 // 不设默认 Content-Type：由 axios 按请求体类型自行判定。
@@ -137,7 +171,7 @@ function toApiError(error: unknown): ApiError {
 // 同理，也不得手动指定 multipart/form-data：boundary 由浏览器生成，写死会丢 boundary。
 const http = axios.create({
   baseURL: getApiBaseUrl(),
-  timeout: 10000,
+  timeout: DEFAULT_REQUEST_TIMEOUT_MS,
 });
 
 // 请求拦截器：保证每次请求动态匹配当前最新配置的 baseURL

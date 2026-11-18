@@ -91,11 +91,8 @@ test('isSessionActive: 各种边界与活跃态判定正确', () => {
 
 test('handleDeleteSession: 活跃会话硬性拦截，不弹确认框且不调后端删除', async () => {
   setActivePinia(createPinia());
-  const alerts: string[] = [];
-  const originalAlert = globalThis.window?.alert;
-  (globalThis as any).window = { alert: (msg: string) => alerts.push(msg) };
 
-  const { state: confirmState } = useConfirm();
+  const { state: confirmState, handleConfirm } = useConfirm();
   confirmState.value.isOpen = false;
 
   let deleteApiCalled = false;
@@ -138,14 +135,17 @@ test('handleDeleteSession: 活跃会话硬性拦截，不弹确认框且不调�
 
     await sessionList.handleDeleteSession('active-session-1');
 
-    assert.equal(alerts.length, 1, '活跃会话应触发拦截提示');
-    assert.match(alerts[0], /无法删除|进行中/, '提示文案应说明活跃中无法删除');
-    assert.equal(confirmState.value.isOpen, false, '活跃会话不应弹出确认框');
+    // 拦截提示走项目弹窗（notice 形态：只有一个确认按钮），不再是 window.alert
+    assert.equal(confirmState.value.isOpen, true, '活跃会话应触发拦截提示');
+    assert.equal(confirmState.value.options.showCancel, false, '拦截提示属于告知，不该给「取消」');
+    assert.match(confirmState.value.options.content || '', /无法删除|进行中/, '提示文案应说明活跃中无法删除');
+    handleConfirm();
+    assert.equal(confirmState.value.isOpen, false);
+
     assert.equal(deleteApiCalled, false, '活跃会话不应调用后端删除接口');
     assert.equal(localSessions.value.length, 1, '会话列表中该条目未被删除');
   } finally {
     chatApi.deleteSession = originalDelete;
-    if (originalAlert) (globalThis as any).window.alert = originalAlert;
   }
 });
 
@@ -225,9 +225,6 @@ test('handleDeleteSession: 未活跃会话弹确认框，取消则不删除，�
  */
 test('handleDeleteSession: 失败时展示后端原因并重拉列表自愈', async () => {
   setActivePinia(createPinia());
-  const alerts: string[] = [];
-  const originalAlert = globalThis.window?.alert;
-  (globalThis as any).window = { alert: (msg: string) => alerts.push(msg) };
 
   const { state: confirmState, handleConfirm } = useConfirm();
   confirmState.value.isOpen = false;
@@ -277,12 +274,15 @@ test('handleDeleteSession: 失败时展示后端原因并重拉列表自愈', as
     handleConfirm();
     await pending;
 
-    assert.deepEqual(alerts, ['会话仍在执行中，请先停止后再删除'],
+    // 失败原因由后端给出，走 notice 弹出（仍是项目弹窗，不是 window.alert）
+    assert.equal(confirmState.value.isOpen, true, '失败后必须给出可见提示');
+    assert.equal(confirmState.value.options.content, '会话仍在执行中，请先停止后再删除',
       '失败文案必须来自后端原因，不能折叠成「请重试」');
+    assert.equal(confirmState.value.options.showCancel, false, '失败提示属于告知');
+    handleConfirm();
     assert.equal(fetchCount, 1, '失败后必须重拉一次列表');
   } finally {
     chatApi.deleteSession = originalDelete;
     chatApi.fetchSessions = originalFetch;
-    if (originalAlert) (globalThis as any).window.alert = originalAlert;
   }
 });

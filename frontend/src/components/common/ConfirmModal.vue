@@ -50,6 +50,8 @@ const panelClass = computed(() =>
 
 const handleKeyDown = (e: KeyboardEvent) => {
   if (!state.value.isOpen) return
+  // 进行中态只负责告知，不接受任何键盘确认
+  if (state.value.options.loading) return
   // Esc 由 LxModal 统一承担（避免两处各自监听导致双重触发），这里只管 Enter 确认
   if (e.key === 'Enter') {
     handleConfirm()
@@ -163,26 +165,40 @@ onUnmounted(() => {
       class="min-h-0 overflow-y-auto max-h-[55vh] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-black/20 p-4 text-sm leading-relaxed font-sans text-zinc-800 dark:text-zinc-200"
     >{{ state.options.preview }}</pre>
 
-    <!-- Bottom Action Buttons -->
+    <!-- Bottom Action Buttons：进行中态不给按钮，避免用户以为还能取消 -->
     <div class="flex items-center justify-end gap-2.5 pt-1">
-      <button
-        v-if="state.options.showCancel"
-        ref="cancelButton"
-        type="button"
-        class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-lx-tertiary hover:text-zinc-900 dark:hover:text-white bg-zinc-100 hover:bg-zinc-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-zinc-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
-        @click="handleCancel"
+      <div
+        v-if="state.options.loading"
+        data-testid="confirm-loading"
+        class="flex items-center gap-2 text-xs sm:text-sm text-lx-muted"
       >
-        {{ state.options.cancelText || t('common.cancel') }}
-      </button>
+        <span
+          class="w-3.5 h-3.5 rounded-full border-2 border-lx-muted/40 border-t-transparent animate-spin"
+          aria-hidden="true"
+        ></span>
+        <span>{{ t('common.processing') }}</span>
+      </div>
 
-      <button
-        type="button"
-        class="px-4 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors focus:outline-none cursor-pointer active:scale-95 shadow-sm"
-        :class="typeConfig.confirmBtn"
-        @click="handleConfirm"
-      >
-        {{ state.options.confirmText || t('common.confirm') }}
-      </button>
+      <template v-else>
+        <button
+          v-if="state.options.showCancel"
+          ref="cancelButton"
+          type="button"
+          class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-lx-tertiary hover:text-zinc-900 dark:hover:text-white bg-zinc-100 hover:bg-zinc-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-zinc-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
+          @click="handleCancel"
+        >
+          {{ state.options.cancelText || t('common.cancel') }}
+        </button>
+
+        <button
+          type="button"
+          class="px-4 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors focus:outline-none cursor-pointer active:scale-95 shadow-sm"
+          :class="typeConfig.confirmBtn"
+          @click="handleConfirm"
+        >
+          {{ state.options.confirmText || t('common.confirm') }}
+        </button>
+      </template>
     </div>
   </LxModal>
 </template>

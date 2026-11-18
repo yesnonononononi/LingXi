@@ -33,6 +33,8 @@ import {useTheme} from '../../composables/useTheme';
 import {t} from '../../i18n';
 import {useReasoningEffort} from '../../composables/useReasoningEffort';
 import {useDesktopNotification} from '../../composables/useDesktopNotification';
+import {useConfirm} from '../../composables/useConfirm';
+import {resolveUserFacingMessage} from '../../services/interceptor';
 
 import {isPersistedSessionId, toServerSessionId} from '../../utils/ids';
 import {isOk, toPositiveInt} from '../../utils/api';
@@ -83,6 +85,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   } = useReasoningEffort();
   const chatSessionStore = useChatSessionStore();
   const userConfig = useUserConfigStore();
+  const { notice } = useConfirm();
 
   /**
    * 统一登记组件内所有 `setTimeout`，卸载时一并清理：
@@ -645,7 +648,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       return true;
     } catch (err) {
       console.error('发送消息失败:', err);
-      window.alert(err instanceof Error ? err.message : t('chat.view.createSessionFailedRetry'));
+      void notice(resolveUserFacingMessage(err, t('chat.view.createSessionFailedRetry')));
       return false;
     } finally {
       hasOptimisticSend = false;
@@ -967,11 +970,11 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   const handleCompactContext = async (): Promise<void> => {
     const session = currentActiveSession.value;
     if (!session?.id) {
-      window.alert(t('chat.compact.noSession'));
+      void notice(t('chat.compact.noSession'));
       return;
     }
     if (isSessionRunning(session.runStatus)) {
-      window.alert(t('chat.compact.busy'));
+      void notice(t('chat.compact.busy'));
       return;
     }
     if (compactingSessionId.value != null) return;
@@ -996,10 +999,10 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
         });
       }
       if (data?.compacted === false) {
-        window.alert(data.message || t('chat.compact.skipped'));
+        void notice(data.message || t('chat.compact.skipped'));
       }
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : t('chat.compact.failed'));
+      void notice(resolveUserFacingMessage(err, t('chat.compact.failed')));
     } finally {
       // 只清自己那一份：期间用户切会话并压了另一个，不能把对方的标记抹掉。
       if (String(compactingSessionId.value) === String(sessionId)) compactingSessionId.value = null;

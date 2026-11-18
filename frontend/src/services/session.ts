@@ -2,6 +2,25 @@ import http from './interceptor';
 import type {Result} from './types';
 import type {SessionBootstrapVO, SessionMessagePageVO, SessionTreeVO, SessionVO} from '../types/chat';
 
+/**
+ * 整树删除的超时预算：一次请求要删掉根会话及其全部子会话，耗时与子会话/消息量成正比，
+ * 不同于「点一下就该有反应」的交互请求，因此不吃默认的 {@link DEFAULT_REQUEST_TIMEOUT_MS}。
+ *
+ * <p>取值依据：删除按「一个会话一个短事务」逐个走（后端刻意不打包成大事务），单会话是毫秒级，
+ * 60s 覆盖万级节点的量级，同时仍留一个上限——后端若真卡死，用户不至于无限等待。</p>
+ */
+const TREE_DELETE_TIMEOUT_MS = 60_000;
+
+/**
+ * 整库清空的超时预算：后端要按表逐个 TRUNCATE 14 张会话衍生表，再递归清空 4 个数据目录
+ * （checkpoints / file-records / contexts / images），目录内容多时耗时是分钟级的。
+ *
+ * <p>与 {@link TREE_DELETE_TIMEOUT_MS} 分开取值，原因就是这里的量级明显更大：
+ * 卡片目录里可能累计了成千上万个文件。超时只应该发生在「真的出问题」时，而不应该
+ * 发生在「数据多」这种正常情况上。</p>
+ */
+const CLEAR_ALL_TIMEOUT_MS = 180_000;
+
 export interface SessionCreateRequest {
   name: string;
   workspaceId?: number | string | null;
@@ -83,16 +102,24 @@ export class SessionAPI {
     return http.post<any, Result<void>>('/session/update', { id, name });
   }
 
+  /**
+   * 删除会话树。
+   *
+   * <p>超时必须单独给预算，见 {@link TREE_DELETE_TIMEOUT_MS}：默认 10s 会把正常的大树删除
+   * 变成「失败」，而服务端可能已经删完了。</p>
+   */
   static async del(id: number | string): Promise<Result<void>> {
-    return http.get<any, Result<void>>(`/session/del?id=${id}`);
+    return http.get<any, Result<void>>(`/session/del?id=${id}`, { timeout: TREE_DELETE_TIMEOUT_MS });
   }
 
   /**
    * 清空全部会话及其附属执行、检查点与文件编辑记录
    * 对应后端 @PostMapping("/session/clear")
+   *
+   * <p>超时必须单独给预算，见 {@link CLEAR_ALL_TIMEOUT_MS}。</p>
    */
   static async clear(): Promise<Result<number>> {
-    return http.post<any, Result<number>>('/session/clear');
+    return http.post<any, Result<number>>('/session/clear', null, { timeout: CLEAR_ALL_TIMEOUT_MS });
   }
 
   /**

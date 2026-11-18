@@ -122,6 +122,7 @@ export const messages: MessageSchema = {
       refresh: '刷新',
       open: '打开',
       gotIt: '知道了',
+      processing: '处理中…',
       confirmTitle: '操作确认',
       pleaseSelect: '请选择',
       searchPlaceholder: '搜索...',
@@ -157,6 +158,8 @@ export const messages: MessageSchema = {
       loadFailed: '加载失败，请稍后重试',
       requestFailed: '请求失败，请稍后重试',
       networkFailed: '网络连接失败，请稍后重试',
+      // 超时与服务不可达分开说：超时意味着请求可能仍在服务端执行，用户不该以为什么都没发生
+      requestTimeout: '请求超时，操作可能仍在后台继续，请稍后刷新确认',
     },
     tool: {
       category: {
@@ -796,6 +799,8 @@ export const messages: MessageSchema = {
         dataDirRestartRequired: '数据目录已变更，请先在「设置 - 数据管理」中重启应用，再继续对话',
         sessionLoadFailed: '会话加载失败，请稍后重试',
         deleteSessionFailed: '删除会话失败，请重试',
+        deletingSession: '正在删除会话…',
+        clearingSessions: '正在清空全部对话…',
         clearedAll: '已清空全部对话（{count} 条）',
         partialCleared: '已清空 {ok} 条，{fail} 条失败，请重试',
         nothingToExport: '当前会话暂无消息内容可导出',
@@ -1784,6 +1789,7 @@ export const messages: MessageSchema = {
       refresh: 'Refresh',
       open: 'Open',
       gotIt: 'Got it',
+      processing: 'Working…',
       confirmTitle: 'Confirm',
       pleaseSelect: 'Please select',
       searchPlaceholder: 'Search...',
@@ -1818,6 +1824,7 @@ export const messages: MessageSchema = {
       loadFailed: 'Loading failed. Please try again later.',
       requestFailed: 'Request failed. Please try again later.',
       networkFailed: 'Network connection failed. Please try again later.',
+      requestTimeout: 'The request timed out. The operation may still be running in the background; refresh later to confirm.',
     },
     tool: {
       category: {
@@ -2457,6 +2464,8 @@ export const messages: MessageSchema = {
         dataDirRestartRequired: 'The data folder changed. Restart the app from Settings – Data management before continuing.',
         sessionLoadFailed: 'Failed to load the conversation. Please try again later.',
         deleteSessionFailed: 'Failed to delete the conversation. Please retry.',
+        deletingSession: 'Deleting the conversation…',
+        clearingSessions: 'Clearing all conversations…',
         clearedAll: 'Cleared all conversations ({count})',
         partialCleared: 'Cleared {ok}; {fail} failed. Please retry.',
         nothingToExport: 'This conversation has no messages to export',
