@@ -26,9 +26,19 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(windowsAppId);
 }
 
+// 产品名的唯一真源：Electron 的原生对话框（window.alert 等 JS 对话框）标题取 app.name，
+// 而 app.name 缺省读 package.json 的 name —— 历史包名 aether-agent-chat 会直接漏到用户脸上。
+// 必须在任何 app.getPath('userData') 之前调用，否则默认目录已按旧名算出来。
+app.setName('LingXi');
+
 // 开发与安装版的浏览器配置分开，避免单实例锁和 API 地址互相覆盖。
 if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('appData'), 'aether-agent-chat-development'));
+} else {
+  // 上面改的是显示名，**存储位置不能跟着变**：安装版的 userData 默认目录由 app.name 派生，
+  // 改名会把 %APPDATA%\aether-agent-chat 整个搬到 %APPDATA%\LingXi，用户看到的是「数据全没了」。
+  // 目录名属于已发布的数据位置，要动就得先做迁移，不在改名这件事里顺手改。
+  app.setPath('userData', path.join(app.getPath('appData'), 'aether-agent-chat'));
 }
 
 // 同一版本只保留一个窗口；开发与安装版各有自己的 userData 和锁。
