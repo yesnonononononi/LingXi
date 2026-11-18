@@ -272,6 +272,63 @@ export interface ContextUpdateEvent extends EventInterface {
   message?: string;
 }
 
+/** 上下文变化的理由（对应框架 {@code ContextChangeReason}）。 */
+export type ContextChangeReason =
+  | 'SYSTEM_PROMPT_INSERTED'
+  | 'SYSTEM_PROMPT_REPLACED'
+  | 'DYNAMIC_SECTIONS_CHANGED';
+
+/**
+ * 一轮上下文里的动态段种类（对应框架 {@code ContextSectionKind}）。
+ *
+ * <p>取值参与线上字段名（{@code changedSections} 的键），改名即收不到那一段。</p>
+ */
+export type ContextSectionKind =
+  | 'MCP'
+  | 'SKILL'
+  | 'MEMORY'
+  | 'WORK_DIR'
+  | 'PERMISSION'
+  | 'ENVIRONMENT'
+  | 'FORBIDDEN_TOOLS'
+  | 'TASK';
+
+/** 单个动态段被改写前后的全文（对应框架 {@code ChangedDiff}）；{@code oldContent} 为 null 表示该段此前不存在。 */
+export interface ContextChangedSection {
+  oldContent?: string | null;
+  newContent?: string | null;
+}
+
+/**
+ * CONTEXT_CHANGED —— 本轮上下文与上一轮不同（对应 {@code ContextChangedEvent}）。
+ *
+ * <p>框架发布的是**事实**：哪几类东西变了（{@code reasons}）、每个动态段改成了什么
+ * （{@code changedSections}，两侧已截断）、{@code reasons} 派生出的缓存前缀是否幸存。
+ * 消费侧不得自行推断「大概没变多少」——一律以这里为准。</p>
+ */
+export interface ContextChangedEvent extends EventInterface {
+  type: 'CONTEXT_CHANGED';
+  /** 变化理由；发布时不可能为空 */
+  reasons: ContextChangeReason[];
+  /** 各动态段的 old/new 全文；键是段种类 */
+  changedSections?: Partial<Record<ContextSectionKind, ContextChangedSection>>;
+  /** 变化后历史里的活上下文块数 */
+  currentLiveBlocks?: number;
+  /** 部署容忍的活块上限 */
+  maxLiveBlocks?: number;
+  /** 缓存前缀是否幸存（由 reasons 派生，永远是同一个事实的两种写法） */
+  prefixPreserved?: boolean;
+}
+
+/** CONTEXT_REBUILT —— 上下文被摘要重建，缓存前缀必然失效（对应 {@code ContextRebuiltEvent}）。 */
+export interface ContextRebuiltEvent extends EventInterface {
+  type: 'CONTEXT_REBUILT';
+  /** 重建后的摘要代数；1 表示该会话第一次生成摘要 */
+  summaryGeneration: number;
+  /** 重建后上下文里的消息条数，用户据此看出「还剩多少历史」 */
+  messageCount: number;
+}
+
 /* ------------------------------------------------------------------ */
 /* 业务事件（块视图）                                                    */
 /* ------------------------------------------------------------------ */
@@ -373,6 +430,8 @@ export interface AgentEventMap {
   TOOL_CALL: ToolCallStartEvent;
   TOOL_COMPLETED: ToolCallEndEvent;
   CONTEXT_UPDATE: ContextUpdateEvent;
+  CONTEXT_CHANGED: ContextChangedEvent;
+  CONTEXT_REBUILT: ContextRebuiltEvent;
   /**
    * 业务事件：块视图（整轮快照 / 单块增量）。
    *
@@ -447,6 +506,8 @@ const AGENT_EVENT_TYPES: Record<RuntimeEventType, true> = {
   TOOL_CALL: true,
   TOOL_COMPLETED: true,
   CONTEXT_UPDATE: true,
+  CONTEXT_CHANGED: true,
+  CONTEXT_REBUILT: true,
   // 业务事件：后端 BlockEventType 下发。必须在此登记 —— 未登记会被 toAgentEvent 静默丢弃。
   TURN_SNAPSHOT: true,
   BLOCK_UPSERT: true,

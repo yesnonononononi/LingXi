@@ -175,6 +175,23 @@ public class AgentEventListener implements RuntimeListener, AgentStreamListener,
     }
 
     /**
+     * 一轮上下文与上一轮不同 → 推给前端渲染提示卡。
+     *
+     * <p>载荷里带 {@code reasons} 与各动态段的 old/new 全文（框架已截断），前端据此渲染差异预览；
+     * 业务侧不再另算 diff —— 动态段是整段替换，事实本身就是「整段换掉」。</p>
+     */
+    @Override
+    public void onContextChanged(ContextChangedEvent event) {
+        broadcast(event);
+    }
+
+    /** 上下文被摘要重建（前缀缓存必然失效）→ 推给前端渲染提示卡。 */
+    @Override
+    public void onContextRebuilt(ContextRebuiltEvent event) {
+        broadcast(event);
+    }
+
+    /**
      * token 审计成功事件 → 采集并落库（<b>过渡接线</b>，待 workflow 统一
      * {@code ExecutionLifecycleProjectionListener} 落地后迁移到该统一投影）。
      *

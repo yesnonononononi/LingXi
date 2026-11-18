@@ -2,10 +2,12 @@ package com.summit.dp.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.summit.core.conversation.ChangedDiff;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.event.*;
 import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.message.ContextSectionKind;
 import com.summit.core.tool.ToolCallStatus;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -33,6 +35,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -228,6 +231,40 @@ class AgentEventListenerTest {
         listener.onContextUpdated(event);
 
         assertSame(event, publishedEvent(ContextUpdateEvent.class).getValue());
+    }
+
+    /** 一轮上下文变化（动态段改写）必须广播出去：前端靠它渲染提示卡与差异预览。 */
+    @Test
+    void contextChangedRoutesToRootSessionWithChangedSections() {
+        resolveSession();
+        ContextChangedEvent event = ContextChangedEvent.builder()
+                .executionId(EXECUTION_ID)
+                .metaData(Map.of("turnId", Long.toString(TURN_ID)))
+                .reasons(Set.of(ContextChangeReason.DYNAMIC_SECTIONS_CHANGED))
+                .changedSections(Map.of(ContextSectionKind.MEMORY, new ChangedDiff("旧记忆", "新记忆")))
+                .currentLiveBlocks(3)
+                .maxLiveBlocks(8)
+                .build();
+
+        listener.onContextChanged(event);
+
+        assertSame(event, publishedEvent(ContextChangedEvent.class).getValue());
+    }
+
+    /** 摘要重建是破坏性事实（前缀缓存必失效），同样必须广播。 */
+    @Test
+    void contextRebuiltRoutesToRootSession() {
+        resolveSession();
+        ContextRebuiltEvent event = ContextRebuiltEvent.builder()
+                .executionId(EXECUTION_ID)
+                .metaData(Map.of("turnId", Long.toString(TURN_ID)))
+                .summaryGeneration(2)
+                .messageCount(7)
+                .build();
+
+        listener.onContextRebuilt(event);
+
+        assertSame(event, publishedEvent(ContextRebuiltEvent.class).getValue());
     }
 
     /** 工具生命周期事件同样按根会话广播。 */

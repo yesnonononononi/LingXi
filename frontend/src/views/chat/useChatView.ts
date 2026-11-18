@@ -16,6 +16,7 @@ import {useChatOutcomeNotifications} from './useChatOutcomeNotifications';
 import {useBackgroundTasks} from './useBackgroundTasks';
 import {useSubSessionTaskProgress} from './useSubSessionTaskProgress';
 import {useChecklist} from './useChecklist';
+import {useContextFacts} from '../../composables/useContextFacts';
 import {acceptsChatEvent} from './chatExecutionState';
 import {recordTokenAuditSnapshot, toTokenAuditNumber} from './tokenAuditStream';
 import {useChatSessionList} from './useChatSessionList';
@@ -328,6 +329,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   });
 
   /**
+   * 上下文事实卡片（左上角实时提示）。
+   *
+   * <p>框架把「上下文被改了什么 / 被重建」当事实发布，业务侧只做呈现：判定全在
+   * {@code ContextFactFeed} 里，这里只把宿主的定时器登记交给它，保证卸载后不再回调。</p>
+   */
+  const contextFacts = useContextFacts({scheduleTimeout});
+
+  /**
    * 会话级流：发送只做同步受理、不带流，正文与工具轨迹全部由这条流下发。
    *
    * <p>连接按<b>根会话</b>共享并计数：主视图与子会话抽屉可能同时看同一会话，
@@ -342,6 +351,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     onEvent: (event) => {
       // 用量审计快照只喂面板存储，不参与聊天状态机：命中即 return，见 takeTokenAuditSnapshot 的说明。
       if (takeTokenAuditSnapshot(event)) return;
+      // 上下文事实同理：它不是本轮对话的正文，进 streamRouter 只会被当成未知事件丢掉。
+      if (contextFacts.accept(event)) return;
       if (!acceptsChatEvent(currentActiveSession.value, event)) return;
       checklist.onEvent(event);
       subTaskProgress.onEvent(event);
@@ -1034,6 +1045,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     currentAbortController: sending.currentAbortController,
     sendFailureNotice: sending.sendFailureNotice,
     dismissSendFailure: sending.dismissSendFailure,
+    // 上下文事实（左上角提示卡）
+    contextFacts,
     // 会话级流健康
     streamHealthState,
     /** 重试耗尽后的显式重挂入口（界面必须呈现「连接失败」并提供它）。 */

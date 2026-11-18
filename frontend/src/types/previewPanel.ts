@@ -35,3 +35,4 @@ export interface NewPreviewTab {
 }
 
 export const PLAN_PREVIEW_KEY: InjectionKey<(tab: PlanPreviewTab) => void> = Symbol('planPreview');
+

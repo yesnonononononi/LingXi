@@ -34,6 +34,22 @@
       <!-- 左侧：根会话工作区 (包含消息列表与底部输入框，被右侧子代理面板向左挤压) -->
       <div class="relative flex-1 min-w-0 h-full flex flex-col overflow-hidden">
 
+        <!-- 上下文事实提示：贴本列左上角浮起（绝对定位，不占流内高度，横条与消息区不会因它跳动）。
+             容器自身不吃点击（pointer-events-none），只有卡片吃，避免挡住底下的标题与入口。 -->
+        <div
+          v-if="contextFacts.cards.value.length"
+          class="pointer-events-none absolute left-3 top-2 z-30 flex flex-col gap-2"
+          data-test="context-fact-stack"
+        >
+          <ContextEventCard
+            v-for="card in contextFacts.cards.value"
+            :key="card.id"
+            :card="card"
+            class="pointer-events-auto"
+            @dismiss="handleDismissContextFact"
+          />
+        </div>
+
         <!-- 顶部横条：左会话名、右预览类入口。整条在流内占高，不再盖在消息上；
              入口挂在本列内，右缘就不会跑到子代理面板头上（那会盖住面板头部的「收起」）。
              横条**常驻**：预览面板开合只改右侧列宽，横条若跟着消失/出现，消息区高度会跳 44px。
@@ -527,6 +543,7 @@ import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.v
 import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector.vue';
 import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
+import ContextEventCard from '../../components/chat/ContextEventCard.vue';
 import {useChatView} from './useChatView';
 import type {PendingAttachmentFile} from './usePendingChatQueue';
 import {useInstructionPredict} from '../../composables/useInstructionPredict';
@@ -672,6 +689,11 @@ const headerSessionName = computed<string>(() => currentActiveSession.value?.tit
 provide(FILE_PREVIEW_KEY, openFilePreviewInPanel);
 provide(PLAN_PREVIEW_KEY, openPlanPreview);
 
+/** 关掉一张提示卡：只影响这一张，别的事实不受牵连。 */
+const handleDismissContextFact = (id: string): void => {
+  contextFacts.dismiss(id);
+};
+
 /** 将设计原型画布或实现计划生成的文本填入聊天输入区并聚焦。 */
 const handleDesignSendToChat = (payload: { prompt: string }): void => {
   if (!payload.prompt?.trim()) return;
@@ -800,6 +822,7 @@ const {
   backgroundTasks,
   checklist,
   subTaskProgress,
+  contextFacts,
   reasoningEffort,
   reasoningEffortPending,
   reasoningEffortError,
