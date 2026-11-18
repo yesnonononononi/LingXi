@@ -73,6 +73,7 @@ public static class TaskbarProperties {
 function createMainWindow(isPackaged) {
   let window;
   let processAppId;
+  let processAppName;
   // 仅隔离后端、页面加载与自动启动，窗口和 setAppDetails 使用真实 Electron 实现。
   class ProbeWindow extends electron.BrowserWindow {
     constructor(options) { super(options); window = this; }
@@ -82,6 +83,7 @@ function createMainWindow(isPackaged) {
   const app = {
     isPackaged,
     setAppUserModelId(id) { processAppId = id; },
+    setName(name) { processAppName = name; },
     setPath() {}, getPath: () => electron.app.getPath('temp'),
     getAppPath: () => 'D:\\LingXi Development\\frontend',
     requestSingleInstanceLock: () => true,
@@ -120,20 +122,22 @@ function createMainWindow(isPackaged) {
       return stubRequire(name);
     },
     __dirname: path.join(frontendRoot, 'electron'),
-    process: { platform: 'win32', execPath: process.execPath, argv: [], env: {} },
+    process: { platform: 'win32', execPath: process.execPath, argv: [], env: {}, on() {}, once() {}, off() {}, cwd: () => process.cwd() },
     console,
   });
   vm.runInContext(source, context);
   vm.runInContext('createWindow()', context);
-  return { window, processAppId };
+  return { window, processAppId, processAppName };
 }
 
 electron.app.whenReady().then(() => {
   for (const isPackaged of [false, true]) {
-    const { window, processAppId } = createMainWindow(isPackaged);
+    const { window, processAppId, processAppName } = createMainWindow(isPackaged);
     try {
       const properties = readTaskbarProperties(window);
       const expectedId = isPackaged ? 'com.lingxi.lx' : 'com.lingxi.lx.development';
+      assert.equal(processAppName, 'LingXi',
+        '原生对话框标题取自 app.name，必须显式钉成产品名，否则退回历史包名 aether-agent-chat');
       assert.equal(processAppId, expectedId);
       assert.equal(properties.appId, expectedId);
       assert.equal(properties.name, isPackaged ? 'LX' : 'LX 开发版');
