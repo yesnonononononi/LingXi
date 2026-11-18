@@ -75,6 +75,9 @@
 1. **领域对象更新**：更新一律通过领域方法修改非 final 字段；字段限制（如名字不可大于 10 字）以常量定义在领域模型中，rename 等变更方法先校验再赋值。应用层更新数据时，使用 `if (command.getXxx() != null) model.changeXxx(...)` 的逐字段判空结构驱动领域方法，最后统一 `updateById()`。
 2. **全类名**：方法代码中尽量不要书写全类名，import 只能出现在文件顶部。
 3. **框架源码位置**：本机框架源码位于 `D:\code\starter`（如 `dev-framework-ddd-starter`、`lingxi-harness-agent`），只读参考。
+   - 需要改框架时，框架仓自己的 git 提交照常在框架仓做。本机 `D:\code\starter` 对 shell 是只读的（`mvn` 写不进 `target`，报 `createdFiles.lst` 拒绝访问），所以把工作树复制到 `.run/fw-build` 里构建。
+   - **本地验证不必等发布**：在副本里跑框架用例，再 `mvn -o -DskipTests -Dgpg.skip=true -Dmaven.javadoc.skip=true install`（`-Dmaven.repo.local` 指业务用的那个本地仓库）装进去，业务侧就能直接编译与回归。
+   - **发布才必须锁版本**：动框架仓、走双仓发布流是**必要不充分**条件，`framework-deps.lock.json` 锁定到确定的 commit 才是发布前提。没锁之前业务跑的是本地装进去的 SNAPSHOT，不能当作「已发布」。
 4. **仓储层**：必须使用 DDD 开发框架——接口继承 `RepositoryTemplate`，实现继承 `AbstractRepository`。
 5. **业务参数校验**：调用仓储层返回 Optional 时，用 `orElseThrow(ClientException::new)` 抛出，由全局异常处理器统一返回错误。
 6. **新模块骨架**：新建 DDD 模块优先使用框架的 `DddCodeGenerator` 生成开发骨架，再根据情况改造。

@@ -14,6 +14,7 @@ function changedEvent(overrides: Record<string, unknown> = {}): {type: string} &
   return {
     type: 'CONTEXT_CHANGED',
     executionId: 'exec-1',
+    contextRevision: 1,
     reasons: ['DYNAMIC_SECTIONS_CHANGED'],
     changedSections: {
       MEMORY: {oldContent: '旧记忆', newContent: '新记忆'},
@@ -67,6 +68,7 @@ test('CONTEXT_REBUILT 被翻译成重建卡：代数与消息条数，且不给�
   const card = toContextFactCard({
     type: 'CONTEXT_REBUILT',
     executionId: 'exec-2',
+    contextRevision: 1,
     summaryGeneration: 2,
     messageCount: 7,
   }, 5);
@@ -82,21 +84,26 @@ test('不是这两类事实的事件一律返回 null，调用方据此继续走
   assert.equal(toContextFactCard({type: 'CONTEXT_UPDATED'}, 1), null);
 });
 
-test('事实签名：同轮同类别同计数算同一事实，类别或活片段变了就是另一条', () => {
-  const base = toContextFactCard(changedEvent(), 1);
-  const sameFactLater = toContextFactCard(changedEvent(), 999);
-  const otherKind = toContextFactCard(changedEvent({
-    changedSections: {SKILL: {oldContent: 'x', newContent: 'y'}},
-  }), 1);
-  const otherLive = toContextFactCard(changedEvent({currentLiveBlocks: 4}), 1);
+test('事实身份来自框架序号：载荷相同但修订号不同，是两条事实', () => {
+  const base = toContextFactCard(changedEvent({contextRevision: 1}), 1);
+  const redelivered = toContextFactCard(changedEvent({contextRevision: 1}), 999);
+  const nextRevision = toContextFactCard(changedEvent({contextRevision: 2}), 1);
 
-  assert.equal(base?.id, sameFactLater?.id, '时间戳不参与签名，否则同一事实会被当成两条');
-  assert.notEqual(base?.id, otherKind?.id);
-  assert.notEqual(base?.id, otherLive?.id, '同一轮里再改一次记忆，活片段计数变了必须另行提示');
+  assert.equal(base?.id, redelivered?.id, '同一条事实重投不换身份，时间戳也不参与');
+  assert.notEqual(base?.id, nextRevision?.id,
+    '载荷一模一样，但那是同一执行里的第二次修订 —— 载荷拼签名在这里会误合并');
+
+  const sameRevisionOtherPayload = toContextFactCard(
+    changedEvent({contextRevision: 1, currentLiveBlocks: 4, changedSections: {SKILL: {oldContent: 'x', newContent: 'y'}}}), 1);
+  assert.equal(base?.id, sameRevisionOtherPayload?.id,
+    '身份不跟着展示字段跑：改了渲染用的载荷不代表换了一条事实');
+
   assert.notEqual(
-    toContextFactCard({type: 'CONTEXT_REBUILT', executionId: 'e', summaryGeneration: 1, messageCount: 2}, 1)?.id,
-    toContextFactCard({type: 'CONTEXT_REBUILT', executionId: 'e', summaryGeneration: 2, messageCount: 2}, 1)?.id,
-  );
+    toContextFactCard(changedEvent({executionId: 'exec-2'}), 1)?.id, base?.id,
+    '不同执行各自从 1 开始编号');
+  assert.notEqual(
+    toContextFactCard({type: 'CONTEXT_REBUILT', executionId: 'exec-1', contextRevision: 1}, 1)?.id, base?.id,
+    '同一序号上的变更与重建是两种事实');
 });
 
 test('重复投递的同一份事实不会叠出第二张卡', () => {
@@ -111,7 +118,8 @@ test('超出上限时淘汰最旧的那张：新事实永远比旧事实更值�
   const feed = new ContextFactFeed(2);
   for (const generation of [1, 2, 3]) {
     const card = toContextFactCard({
-      type: 'CONTEXT_REBUILT', executionId: 'e', summaryGeneration: generation, messageCount: generation,
+      type: 'CONTEXT_REBUILT', executionId: 'e', contextRevision: generation,
+      summaryGeneration: generation, messageCount: generation,
     }, generation) as ContextFactCard;
     feed.push(card);
   }
@@ -133,7 +141,7 @@ test('dismiss 只拿掉指定那张，别的提示不受牵连', () => {
   const feed = new ContextFactFeed(3);
   const first = toContextFactCard(changedEvent(), 1) as ContextFactCard;
   const second = toContextFactCard({
-    type: 'CONTEXT_REBUILT', executionId: 'e', summaryGeneration: 1, messageCount: 1,
+    type: 'CONTEXT_REBUILT', executionId: 'e', contextRevision: 2, summaryGeneration: 1, messageCount: 1,
   }, 2) as ContextFactCard;
   feed.push(first);
   feed.push(second);

@@ -21,7 +21,7 @@ export type ContextFactKind = 'changed' | 'rebuilt';
 
 /** 一张上下文事实卡片。 */
 export interface ContextFactCard {
-  /** 事实签名：同样的事实重复下发不会叠出第二张卡。 */
+  /** 事实身份：种类 + 执行 + 框架修订号，不是载荷本身；同一事实重复下发不会叠出第二张卡。 */
   id: string;
   kind: ContextFactKind;
   /** 被改写的动态段类别（重建卡为空：重建不是「改了几段」，而是整份历史被换掉）。 */
@@ -77,22 +77,19 @@ function readChangedKinds(event: ContextChangedEvent): ContextSectionKind[] {
 }
 
 /**
- * 事实签名：种类 + 执行身份 + 载荷本身。
+ * 事实签名：种类 + 执行身份 + 框架给的上下文修订号。
  *
- * <p>用它而不是「时间戳」做 id —— 断线重连或重复投递的同一份事实不该在界面上出现两次。</p>
+ * <p>载荷不能当身份。两次修订完全可能长成一模一样（同样的理由、同样的类别、同样的活片段计数），
+ * 拿载荷拼签名只是靠巧合把事实分开 —— 哪天展示用的字段增删一次，去重就开始误合并。
+ * {@code contextRevision} 是框架在执行状态里单调递增的权威序号（随执行快照持久化），
+ * 同一执行内不会重复，断线重投同一条事实也不会变号。</p>
  */
-function resolveSignature(kind: ContextFactKind, event: ContextChangedEvent | ContextRebuiltEvent,
-                          changedKinds: ContextSectionKind[]): string {
-  const executionId = event.executionId ?? '';
-  if (kind === 'rebuilt') {
-    const rebuilt = event as ContextRebuiltEvent;
-    return `rebuilt:${executionId}:${rebuilt.summaryGeneration ?? 0}:${rebuilt.messageCount ?? 0}`;
-  }
-  const changed = event as ContextChangedEvent;
-  const reasons = [...(changed.reasons || [])].sort().join('+');
-  // 正文不到前端，能区分「同一轮里的第二次改写」的只剩类别与活片段计数
-  const live = `${changed.currentLiveBlocks ?? ''}/${changed.maxLiveBlocks ?? ''}`;
-  return `changed:${executionId}:${reasons}:${changedKinds.join(',')}:${live}`;
+function resolveSignature(
+  kind: ContextFactKind,
+  event: { executionId?: string | null; contextRevision?: number },
+): string {
+  // 缺修订号只可能是老后端：那种后端一个执行只发一次同类事实，0 不会撞上别人。
+  return `${kind}:${event.executionId ?? ''}:${event.contextRevision ?? 0}`;
 }
 
 /**
@@ -108,7 +105,7 @@ export function toContextFactCard(
   if (event.type === 'CONTEXT_REBUILT') {
     const rebuilt = event as unknown as ContextRebuiltEvent;
     return {
-      id: resolveSignature('rebuilt', rebuilt, []),
+      id: resolveSignature('rebuilt', rebuilt),
       kind: 'rebuilt',
       changedKinds: [],
       reasons: [],
@@ -127,7 +124,7 @@ export function toContextFactCard(
     ? { current: changed.currentLiveBlocks, max: changed.maxLiveBlocks }
     : null;
   return {
-    id: resolveSignature('changed', changed, changedKinds),
+    id: resolveSignature('changed', changed),
     kind: 'changed',
     changedKinds,
     reasons: [...(changed.reasons || [])],

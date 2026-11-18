@@ -77,7 +77,7 @@ function mount(component: DefineComponent, props: Record<string, unknown>): Elem
 
 function cardOf(overrides: Partial<ContextFactCard> = {}): ContextFactCard {
   return {
-    id: 'changed:exec-1:DYNAMIC_SECTIONS_CHANGED:MEMORY:3/8',
+    id: 'changed:exec-1:1',
     kind: 'changed',
     changedKinds: ['MEMORY'],
     reasons: ['DYNAMIC_SECTIONS_CHANGED'],
@@ -117,7 +117,7 @@ test('重建卡：只说重建事实，不说「改了哪几类」', async (t) =
   const component = (await loadComponent('components/chat/ContextEventCard.vue', t)) as DefineComponent;
   const root = mount(component, {
     card: cardOf({
-      id: 'rebuilt:exec-2:2:7', kind: 'rebuilt', changedKinds: [], reasons: [],
+      id: 'rebuilt:exec-2:2', kind: 'rebuilt', changedKinds: [], reasons: [],
       prefixPreserved: false, liveBlocks: null, summaryGeneration: 2, messageCount: 7,
     }),
   });

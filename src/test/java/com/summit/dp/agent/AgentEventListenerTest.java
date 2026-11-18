@@ -240,6 +240,7 @@ class AgentEventListenerTest {
         ContextChangedEvent event = ContextChangedEvent.builder()
                 .executionId(EXECUTION_ID)
                 .metaData(Map.of("turnId", Long.toString(TURN_ID)))
+                .contextRevision(1)
                 .reasons(Set.of(ContextChangeReason.DYNAMIC_SECTIONS_CHANGED))
                 .changedSections(Map.of(ContextSectionKind.MEMORY, new ChangedDiff("旧记忆", "新记忆")))
                 .currentLiveBlocks(3)
@@ -258,6 +259,7 @@ class AgentEventListenerTest {
         ContextRebuiltEvent event = ContextRebuiltEvent.builder()
                 .executionId(EXECUTION_ID)
                 .metaData(Map.of("turnId", Long.toString(TURN_ID)))
+                .contextRevision(2)
                 .summaryGeneration(2)
                 .messageCount(7)
                 .build();

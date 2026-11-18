@@ -308,6 +308,13 @@ export interface ContextChangedSection {
  */
 export interface ContextChangedEvent extends EventInterface {
   type: 'CONTEXT_CHANGED';
+  /**
+   * 本次事实在执行上下文里的修订号：同一执行内从 1 单调递增，随执行快照持久化。
+   *
+   * <p>这是事实的唯一身份。载荷不能当身份 —— 两次修订的 reasons、类别、活片段计数可能完全一样，
+   * 拿它们拼签名只是靠巧合区分事实。</p>
+   */
+  contextRevision: number;
   /** 变化理由；发布时不可能为空 */
   reasons: ContextChangeReason[];
   /** 各动态段的 old/new 全文；键是段种类 */
@@ -323,6 +330,8 @@ export interface ContextChangedEvent extends EventInterface {
 /** CONTEXT_REBUILT —— 上下文被摘要重建，缓存前缀必然失效（对应 {@code ContextRebuiltEvent}）。 */
 export interface ContextRebuiltEvent extends EventInterface {
   type: 'CONTEXT_REBUILT';
+  /** 本次事实的上下文修订号，语义与 {@link ContextChangedEvent.contextRevision} 相同（同一个计数器） */
+  contextRevision: number;
   /** 重建后的摘要代数；1 表示该会话第一次生成摘要 */
   summaryGeneration: number;
   /** 重建后上下文里的消息条数，用户据此看出「还剩多少历史」 */
