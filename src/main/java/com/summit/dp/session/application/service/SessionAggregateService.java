@@ -135,6 +135,8 @@ public class SessionAggregateService {
     public boolean deleteById(Long id) {
         List<Long> ids = sessionRepository.resolveTreeIds(id);
         if (ids.isEmpty()) {
+            // 幂等：目标早就不在了。绝不能报失败 —— 侧栏残留的幽灵行会因此永远删不掉。
+            log.info("删除会话: 目标已不存在, 视为已完成, sessionId={}", id);
             return true;
         }
         // 先问执行再动手：仍在跑的会话一律拒绝，否则线程收尾会写出指向已删会话的孤儿行。

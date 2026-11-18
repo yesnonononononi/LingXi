@@ -102,7 +102,7 @@ test('handleDeleteSession: 活跃会话硬性拦截，不弹确认框且不调�
   const originalDelete = chatApi.deleteSession;
   chatApi.deleteSession = async () => {
     deleteApiCalled = true;
-    return true;
+    return { ok: true, message: '' };
   };
 
   try {
@@ -158,7 +158,7 @@ test('handleDeleteSession: 未活跃会话弹确认框，取消则不删除，�
   const originalDelete = chatApi.deleteSession;
   chatApi.deleteSession = async (id: string) => {
     deleteApiSessionId = id;
-    return true;
+    return { ok: true, message: '' };
   };
 
   try {
@@ -214,5 +214,75 @@ test('handleDeleteSession: 未活跃会话弹确认框，取消则不删除，�
     assert.equal(localActiveId.value, null, '当前激活会话被删除后激活 id 应置 null');
   } finally {
     chatApi.deleteSession = originalDelete;
+  }
+});
+
+/**
+ * 删除失败必须**说清原因**，并且失败后按后端权威重拉一次列表。
+ *
+ * <p>回归的现场症状：侧栏留着一行早已不在库里的会话，点删除永远弹同一句「请重试」，
+ * 用户只能靠重启应用脱困。</p>
+ */
+test('handleDeleteSession: 失败时展示后端原因并重拉列表自愈', async () => {
+  setActivePinia(createPinia());
+  const alerts: string[] = [];
+  const originalAlert = globalThis.window?.alert;
+  (globalThis as any).window = { alert: (msg: string) => alerts.push(msg) };
+
+  const { state: confirmState, handleConfirm } = useConfirm();
+  confirmState.value.isOpen = false;
+
+  const originalDelete = chatApi.deleteSession;
+  const originalFetch = chatApi.fetchSessions;
+  let fetchCount = 0;
+  chatApi.deleteSession = async () => ({ ok: false, message: '会话仍在执行中，请先停止后再删除' });
+  chatApi.fetchSessions = async () => {
+    fetchCount++;
+    // 后端权威列表里已经没有这一行：本地幽灵行必须在重拉后被清掉。
+    return { ok: true, data: [] } as any;
+  };
+
+  try {
+    const ghostSession: ChatSession = {
+      id: 'ghost-session-1',
+      title: '幽灵会话',
+      runStatus: 'IDLE',
+      renderStatus: 'COMPLETED',
+      createdAt: 1000,
+      updatedAt: 1000,
+      modelId: 'm1',
+      activeTools: [],
+      messages: []
+    };
+
+    const localSessions = ref<ChatSession[]>([ghostSession]);
+    const localActiveId = ref<string | null>(null);
+
+    const sessionList = useChatSessionList({
+      localSessions,
+      localActiveId,
+      currentActiveSession: ref(null) as any,
+      displayedMessages: ref([]) as any,
+      localActiveWorkspaceId: ref(null),
+      localSelectedTeamId: ref(null),
+      beforeSwitchSession: () => {},
+      isGenerating: () => false,
+      scrollToBottomForce: () => {},
+      seedContextUsageFromTree: () => {},
+      resetScrollAnchors: () => {},
+      onNewSession: () => {}
+    });
+
+    const pending = sessionList.handleDeleteSession('ghost-session-1');
+    handleConfirm();
+    await pending;
+
+    assert.deepEqual(alerts, ['会话仍在执行中，请先停止后再删除'],
+      '失败文案必须来自后端原因，不能折叠成「请重试」');
+    assert.equal(fetchCount, 1, '失败后必须重拉一次列表');
+  } finally {
+    chatApi.deleteSession = originalDelete;
+    chatApi.fetchSessions = originalFetch;
+    if (originalAlert) (globalThis as any).window.alert = originalAlert;
   }
 });

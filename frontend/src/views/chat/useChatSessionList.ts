@@ -167,6 +167,19 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     localActiveId.value = null;
   };
 
+  /**
+   * 按后端权威重拉会话列表（只补元数据，正文与临时会话仍留在本地，见 {@link mergeSessionListSnapshot}）。
+   *
+   * <p>写操作失败后必须走一次：本地列表可能已经落后于库（比如会话在别处被清掉），
+   * 不重拉就会拿着陈旧的行反复重试，而用户看到的永远是同一句失败。</p>
+   */
+  const reconcileSessionList = async () => {
+    const snapshot = await chatApi.fetchSessions();
+    if (snapshot.ok) {
+      localSessions.value = mergeSessionListSnapshot(localSessions.value, snapshot.data);
+    }
+  };
+
   const handleDeleteSession = async (id: string) => {
     const session = localSessions.value.find(s => s.id === id);
     // 硬性门槛：会话处于活跃状态时禁止删除
@@ -194,14 +207,16 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       if (localActiveId.value === id) localActiveId.value = null;
       return;
     }
-    const deleteOk = await chatApi.deleteSession(id);
-    if (deleteOk) {
+    const result = await chatApi.deleteSession(id);
+    if (result.ok) {
       applicationSessions.forget(id);
       localSessions.value = localSessions.value.filter(s => s.id !== id);
       if (localActiveId.value === id) localActiveId.value = null;
-    } else {
-      window.alert(t('chat.view.deleteSessionFailed'));
+      return;
     }
+    // 失败原因由后端/分类给出，不再统一糊成一句「请重试」
+    window.alert(result.message);
+    await reconcileSessionList();
   };
 
   const handleRenameSession = async (id: string, name: string) => {
@@ -231,10 +246,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     }
     session.isPinned = target;
 
-    const snapshot = await chatApi.fetchSessions();
-    if (snapshot.ok) {
-      localSessions.value = mergeSessionListSnapshot(localSessions.value, snapshot.data);
-    }
+    await reconcileSessionList();
   };
 
   // 清空历史对话：调用后端整库清空接口，避免仅删当前页 100 条或并发删除抢锁失败
@@ -246,9 +258,10 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       localSessions.value = [];
       localActiveId.value = null;
       window.alert(t('chat.view.clearedAll', { count: result.count > 0 ? result.count : ids.length }));
-    } else {
-      window.alert(t('chat.view.deleteSessionFailed'));
+      return;
     }
+    window.alert(result.message);
+    await reconcileSessionList();
   };
 
   // 快捷指令「清空当前会话」——**已禁用**（语义未定，见历史设计说明）。

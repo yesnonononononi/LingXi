@@ -196,6 +196,32 @@ if (lxProtocol) lxProtocol.registerLxSchemePrivileges();
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
 const userDataDir = app.getPath('userData');
 const backendLogPath = path.join(userDataDir, 'logs', 'backend.log');
+const mainLogPath = path.join(userDataDir, 'logs', 'main.log');
+
+/**
+ * 主进程未捕获异常/未处理拒绝的兜底：**只记日志，绝不弹框**。
+ *
+ * <p><b>为什么必须自己登记监听器</b>：Electron 在「除它自己以外没有任何 uncaughtException
+ * 监听器」时，会弹一个 `A JavaScript error occurred in the main process` 的原生错误框。
+ * agent 运行期驱动的一切都跑在主进程里（浏览器自动化 MCP、网页预览、扩展包读写、图片动作），
+ * 那些脚本报错属于**内部错误**，弹给用户只有一个效果：让用户以为是自己弄坏了什么。</p>
+ *
+ * <p><b>为什么只写文件不弹框</b>：真正的用户级故障都有显式出口（后端崩溃走 onCrash 的
+ * showErrorBox、启动失败走 createWindow 的兜底），兜底通道不该越权替它们发言。</p>
+ */
+const logMainFailure = (kind, error) => {
+  const detail = error instanceof Error ? (error.stack || `${error.name}: ${error.message}`) : String(error);
+  console.error(`[main] ${kind}: ${detail}`);
+  try {
+    fs.mkdirSync(path.dirname(mainLogPath), {recursive: true});
+    fs.appendFileSync(mainLogPath, `[${new Date().toISOString()}] ${kind}: ${detail}\n`);
+  } catch (writeError) {
+    // 日志写不进去也不能反过来把应用搞崩：只剩控制台一条记录。
+    console.warn(`[main] 写主进程日志失败: ${(writeError && writeError.message) || writeError}`);
+  }
+};
+process.on('uncaughtException', (error) => logMainFailure('uncaughtException', error));
+process.on('unhandledRejection', (reason) => logMainFailure('unhandledRejection', reason));
 
 // ------------------------------------------------------------ 桌宠偏好（M3 T04）
 

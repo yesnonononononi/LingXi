@@ -76,8 +76,11 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
      * <p>删除前必须先知道要删哪些会话：执行闸门、级联清理都按这批 id 走。
      * 根解析只有这一处，避免「查的是这棵树、删的是另一棵」。</p>
      *
+     * <p>{@code id} 不存在时返回空列表而不是抛异常：唯一调用方是删除入口，删除必须幂等，
+     * 「目标本来就不在」不等于失败。</p>
+     *
      * @param id 根会话或子会话 id
-     * @return 整棵树的会话 id（含根），按主键升序
+     * @return 整棵树的会话 id（含根），按主键升序；目标不存在时为空列表
      */
     List<Long> resolveTreeIds(Long id);
 

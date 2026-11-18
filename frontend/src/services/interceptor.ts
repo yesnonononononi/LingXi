@@ -88,6 +88,30 @@ export function describeKind(kind: ApiErrorKind): string {
   }
 }
 
+/**
+ * 取「可以给用户看的失败文案」。
+ *
+ * <p>契约 §7 说后端 `errMsg` 不得原样渲染 —— 它可能是英文、内部错误码甚至堆栈片段。
+ * 但项目公约同时要求**业务异常消息必须是中文业务文案**（「会话仍在执行中，请先停止后再删除」
+ * 这类）。两者不冲突的判据就是语言特征：含中文才认为是写给用户的业务提示，直接回显；
+ * 其余一律走分类文案，内部细节只进控制台。</p>
+ *
+ * @param error 任意失败对象（通常是 {@link ApiError}）
+ * @param fallback 没有可用文案时的兜底（调用方自己的场景文案）
+ * @returns 面向用户的提示文案
+ */
+export function resolveUserFacingMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    const raw = (error.rawMessage ?? '').trim();
+    if (raw && CJK_PATTERN.test(raw)) return raw;
+    return describeKind(error.kind);
+  }
+  return fallback;
+}
+
+/** 中文（含扩展区）判定：后端业务文案的语言特征，用于把内部异常文案挡在用户视野之外。 */
+const CJK_PATTERN = /[\u4e00-\u9fff]/;
+
 /** 把 axios 抛出的错误归一为带分类的 ApiError。 */
 function toApiError(error: unknown): ApiError {
   const axiosError = error as AxiosError<{ errMsg?: string }> | undefined;

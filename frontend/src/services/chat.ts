@@ -5,7 +5,7 @@ import {SessionAPI} from './session';
 import {AgentAPI} from './agent';
 import {TeamAPI} from './team';
 import {ToolCallAPI} from './toolCall';
-import {ApiError, classifyResult} from './interceptor';
+import {ApiError, classifyResult, resolveUserFacingMessage} from './interceptor';
 import {aggregateRecordsByIdentity} from '../utils/session';
 import {attachPromptCards} from '../utils/toolCallCard';
 import {isOk} from '../utils/api';
@@ -60,6 +60,13 @@ function describeFetchFailure(err: unknown): string {
     }
   }
   return t('error.loadFailed');
+}
+
+/** 删除/清空这类「用户明确点了一下」的写操作的结果：失败必须带回一句能直接展示的原因。 */
+export interface DeleteSessionResult {
+  ok: boolean;
+  /** `ok=false` 时是面向用户的文案；成功时为空串。 */
+  message: string;
 }
 
 /** 7. 统一 chatApi 导出，供 UI 层直接调用 */
@@ -566,21 +573,42 @@ export const chatApi = {
     };
   },
 
-  async deleteSession(id: string): Promise<boolean> {
+  /**
+   * 删除会话。
+   *
+   * <p>失败时**必须带回原因**：一句笼统的「删除失败」会让用户对着一个删不掉的行反复点，
+   * 排障时也看不出到底是「仍在执行」还是「后端挂了」。</p>
+   *
+   * @returns `ok=false` 时 `message` 是可直接展示给用户的文案
+   */
+  async deleteSession(id: string): Promise<DeleteSessionResult> {
     try {
       const res = await SessionAPI.del(id);
-      return isOk(res.code);
-    } catch {
-      return false;
+      const failure = classifyResult(res);
+      if (!failure) return { ok: true, message: '' };
+      return { ok: false, message: resolveUserFacingMessage(failure, t('chat.view.deleteSessionFailed')) };
+    } catch (err) {
+      console.error(`删除会话失败: id=${id}`, err);
+      return { ok: false, message: resolveUserFacingMessage(err, t('chat.view.deleteSessionFailed')) };
     }
   },
 
-  async clearSessions(): Promise<{ ok: boolean; count: number }> {
+  /**
+   * 清空全部会话。
+   *
+   * @returns `ok=false` 时 `message` 是可直接展示给用户的文案
+   */
+  async clearSessions(): Promise<{ ok: boolean; count: number; message: string }> {
     try {
       const res = await SessionAPI.clear();
-      return { ok: isOk(res.code), count: typeof res.data === 'number' ? res.data : 0 };
-    } catch {
-      return { ok: false, count: 0 };
+      const failure = classifyResult(res);
+      if (failure) {
+        return { ok: false, count: 0, message: resolveUserFacingMessage(failure, t('chat.view.deleteSessionFailed')) };
+      }
+      return { ok: true, count: typeof res.data === 'number' ? res.data : 0, message: '' };
+    } catch (err) {
+      console.error('清空会话失败', err);
+      return { ok: false, count: 0, message: resolveUserFacingMessage(err, t('chat.view.deleteSessionFailed')) };
     }
   },
 

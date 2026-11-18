@@ -136,6 +136,25 @@ class SessionDeleteCascadeTest {
         assertEquals(Propagation.REQUIRES_NEW, tx.propagation());
     }
 
+    /**
+     * 幂等：目标已经不在时直接成功。
+     *
+     * <p>删除的目的已经达成，这里报失败只会产生副作用 —— 前端不知道该清哪一行，
+     * 幽灵行就会一直留在侧栏，点一次弹一次错。</p>
+     */
+    @Test
+    void deletingAnAlreadyGoneSessionSucceedsWithoutTouchingAnything() {
+        SessionRepository sessions = mock(SessionRepository.class);
+        SessionDeletionGuard guard = mock(SessionDeletionGuard.class);
+        SessionAggregateService aggregate = aggregate(sessions, guard);
+        when(sessions.resolveTreeIds(7L)).thenReturn(List.of());
+
+        assertTrue(aggregate.deleteById(7L), "目标不存在必须视为删除成功");
+
+        verify(sessions, never()).deleteByIds(anyList());
+        verifyNoInteractions(guard, executions, images, contexts, messages);
+    }
+
     @Test
     void rejectedDeletionLeavesEverythingInPlace() {
         SessionRepository sessions = mock(SessionRepository.class);

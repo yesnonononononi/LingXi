@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
-import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
@@ -162,22 +161,27 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     }
 
     /**
-     * 删除会话树。{@code id} 是「根会话或子会话」的 id，删除的是其所属整棵树。
+     * 解析要删的整棵树。{@code id} 是「根会话或子会话」的 id。
      *
-     * <p>入参 id 先按主键解析成根会话 id，再走树查询收集整棵树的会话并删除；
-     * id 不存在时抛「会话不存在」。</p>
+     * <p>入参 id 先按主键解析成根会话 id，再走树查询收集整棵树的会话。</p>
+     *
+     * <p><b>找不到就返空，不抛「会话不存在」</b>：本方法只服务删除入口，而删除必须幂等 ——
+     * 目标本来就不在，删除的目的已经达成。抛异常会把「早就没了」报成一次失败，
+     * 现场表现就是侧栏留着一行已删会话，点一次弹一次「删除会话失败」。</p>
      */
     @Override
     public List<Long> resolveTreeIds(Long id) {
         if (id == null) {
-            throw new SessionNoFoundException();
+            return List.of();
         }
-        Session owned = findBy(new LambdaQueryWrapper<SessionPO>()
-                .eq(SessionPO::getId, id))
-                .orElseThrow(SessionNoFoundException::new);
-        Long rootSessionId = owned.getRootSessionId();
+        Optional<Session> owned = findBy(new LambdaQueryWrapper<SessionPO>()
+                .eq(SessionPO::getId, id));
+        if (owned.isEmpty()) {
+            return List.of();
+        }
+        Long rootSessionId = owned.get().getRootSessionId();
         Long rootId = rootSessionId == null || rootSessionId == SessionPO.ROOT_SESSION_ID
-                ? owned.getId()
+                ? owned.get().getId()
                 : rootSessionId;
         return sessionMapper.selectSessionTree(rootId).stream().map(SessionPO::getId).toList();
     }
