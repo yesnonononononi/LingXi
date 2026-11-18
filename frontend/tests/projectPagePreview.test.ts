@@ -801,3 +801,99 @@ test('Agent browser_click 支持 hoverOnly 参数触发 mouseMove 悬停而不�
   assert.ok(executedHoverScript.includes('const shouldHoverOnly = true;'));
   assert.deepEqual(inputEvents, [{type: 'mouseMove', x: 120, y: 60}]);
 });
+
+function buildFakePngBase64(width: number, height: number): string {
+  const buf = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
+  buf.writeUInt32BE(13, 8);
+  buf.write('IHDR', 12, 'ascii');
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  return buf.toString('base64');
+}
+
+test('Agent browser_screenshot 默认通过 CDP 覆写标准桌面视口截图而不受窄预览框影响，且支持 fullPage、viewportWidth=0 与异常回退', async t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 420, height: 320}});
+  const view = h.views[0]! as unknown as {
+    bounds: {x: number; y: number; width: number; height: number};
+    webContents: {
+      capturePage: () => Promise<{getSize: () => {width: number; height: number}; resize: (opts: {width: number}) => unknown; toPNG: () => Buffer}>;
+      debugger?: {
+        isAttached: () => boolean;
+        attach: (version?: string) => void;
+        detach: () => void;
+        sendCommand: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      };
+    };
+  };
+
+  let attached = false;
+  let capturePageCalls = 0;
+  const cdpCalls: Array<{method: string; params?: Record<string, unknown>}> = [];
+  let shouldFailCdp = false;
+
+  view.webContents.capturePage = async () => {
+    capturePageCalls += 1;
+    const img = {
+      getSize: () => ({width: 420, height: 320}),
+      resize: () => img,
+      toPNG: () => Buffer.from(buildFakePngBase64(420, 320), 'base64'),
+    };
+    return img;
+  };
+  view.webContents.debugger = {
+    isAttached: () => attached,
+    attach: () => { attached = true; },
+    detach: () => { attached = false; },
+    sendCommand: async (method, params) => {
+      cdpCalls.push({method, params});
+      if (shouldFailCdp && method === 'Page.captureScreenshot') {
+        throw new Error('CDP failed');
+      }
+      if (method === 'Page.captureScreenshot') {
+        return {data: buildFakePngBase64(1280, 800)};
+      }
+      return {};
+    },
+  };
+
+  // 1. 默认截图：预览框仅 420x320，CDP 应临时覆写 1280x800 视口并清理，且不改变实际 view.bounds
+  const boundsBefore = {...view.bounds};
+  const desktopShot = await h.registration.automation.screenshot({saveToTemp: false});
+  assert.equal(desktopShot.width, 1280);
+  assert.equal(desktopShot.height, 800);
+  assert.equal(capturePageCalls, 0);
+  assert.equal(attached, false);
+  assert.deepEqual(view.bounds, boundsBefore);
+  assert.deepEqual(
+    cdpCalls.map(c => c.method),
+    ['Emulation.setDeviceMetricsOverride', 'Page.captureScreenshot', 'Emulation.clearDeviceMetricsOverride'],
+  );
+  assert.deepEqual(cdpCalls[0]!.params, {width: 1280, height: 800, deviceScaleFactor: 1, mobile: false});
+  assert.deepEqual(cdpCalls[1]!.params, {format: 'png'});
+
+  // 2. fullPage=true 与自定义视口：应传 captureBeyondViewport: true
+  cdpCalls.length = 0;
+  await h.registration.automation.screenshot({saveToTemp: false, viewportWidth: 1440, viewportHeight: 900, fullPage: true});
+  assert.deepEqual(cdpCalls[0]!.params, {width: 1440, height: 900, deviceScaleFactor: 1, mobile: false});
+  assert.deepEqual(cdpCalls[1]!.params, {format: 'png', captureBeyondViewport: true});
+
+  // 3. viewportWidth=0 时保留当前预览框视口，直接走 capturePage
+  cdpCalls.length = 0;
+  const panelShot = await h.registration.automation.screenshot({saveToTemp: false, viewportWidth: 0});
+  assert.equal(cdpCalls.length, 0);
+  assert.equal(capturePageCalls, 1);
+  assert.equal(panelShot.width, 420);
+  assert.equal(panelShot.height, 320);
+
+  // 4. CDP 截图失败时自动清理 override 并回退到 capturePage
+  cdpCalls.length = 0;
+  shouldFailCdp = true;
+  const fallbackShot = await h.registration.automation.screenshot({saveToTemp: false});
+  assert.equal(attached, false);
+  assert.ok(cdpCalls.some(c => c.method === 'Emulation.clearDeviceMetricsOverride'));
+  assert.equal(capturePageCalls, 2);
+  assert.equal(fallbackShot.width, 420);
+});

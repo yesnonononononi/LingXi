@@ -265,7 +265,31 @@ function normalizeLayout(request) {
   }};
 }
 
-function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, nativeTheme, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
+const DEFAULT_SCREENSHOT_VIEWPORT = Object.freeze({width: 1280, height: 800});
+
+function readPngDimensions(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
+  if (buffer.subarray(12, 16).toString('ascii') !== 'IHDR') return null;
+  return {width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20)};
+}
+
+async function withDebugger(contents, fn) {
+  const dbg = contents?.debugger;
+  if (!dbg || typeof dbg.sendCommand !== 'function') {
+    throw new Error('当前网页实例不支持 CDP debugger');
+  }
+  const attachedByUs = typeof dbg.isAttached === 'function' ? !dbg.isAttached() : false;
+  if (attachedByUs) dbg.attach('1.3');
+  try {
+    return await fn(dbg);
+  } finally {
+    if (attachedByUs && typeof dbg.isAttached === 'function' && dbg.isAttached()) {
+      dbg.detach();
+    }
+  }
+}
+
+function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, nativeTheme, nativeImage, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
   let previewSession;
   // 菜单文案由渲染层按当前语言推送，主进程不做翻译。
@@ -1086,14 +1110,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
 
           // 面板收起/失焦时 insertText 可能被 Chromium 忽略，兜底用 CDP Input.insertText 写入。
           if (textValue !== '' && readResult?.ok && readResult.valueLength === 0 && tab.contents.debugger) {
-            const dbg = tab.contents.debugger;
-            const attachedByUs = typeof dbg.isAttached === 'function' ? !dbg.isAttached() : false;
-            try {
-              if (attachedByUs) dbg.attach('1.3');
-              await dbg.sendCommand('Input.insertText', {text: textValue});
-            } finally {
-              if (attachedByUs && typeof dbg.isAttached === 'function' && dbg.isAttached()) dbg.detach();
-            }
+            await withDebugger(tab.contents, dbg => dbg.sendCommand('Input.insertText', {text: textValue}));
             readResult = await runTabScript(tab, readScript);
           }
 
@@ -1253,42 +1270,116 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const result = await withAgentControl(tab, () => runTabScript(tab, script));
       return {...result, tabId: tab.id};
     },
-    screenshot: async ({tabId, maxWidth = 1280, saveToTemp = true, savePath} = {}) => {
+    screenshot: async ({
+      tabId,
+      maxWidth = 1280,
+      saveToTemp = true,
+      savePath,
+      viewportWidth = DEFAULT_SCREENSHOT_VIEWPORT.width,
+      viewportHeight = DEFAULT_SCREENSHOT_VIEWPORT.height,
+      fullPage = false,
+    } = {}) => {
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
       const contents = tab.contents;
       if (!contents || contents.isDestroyed()) throw new Error('网页实例不可用');
+      const targetViewportWidth = Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0;
+      const targetViewportHeight = Number.isFinite(viewportHeight) && viewportHeight > 0
+        ? Math.round(viewportHeight)
+        : DEFAULT_SCREENSHOT_VIEWPORT.height;
+      const wantFullPage = Boolean(fullPage);
+      const canUseCdp = (targetViewportWidth > 0 || wantFullPage)
+        && Boolean(contents.debugger && typeof contents.debugger.sendCommand === 'function');
+
       return withAgentControl(tab, async () => {
         await syncAgentOverlay(tab, {forceHide: true, waitForPaint: true});
-        let image;
+        let pngBuffer = null;
+        let finalSize = null;
         try {
-          image = await contents.capturePage();
+          if (canUseCdp) {
+            try {
+              const cdpResult = await withDebugger(contents, async dbg => {
+                let metricsOverridden = false;
+                try {
+                  if (targetViewportWidth > 0) {
+                    await dbg.sendCommand('Emulation.setDeviceMetricsOverride', {
+                      width: targetViewportWidth,
+                      height: targetViewportHeight,
+                      deviceScaleFactor: 1,
+                      mobile: false,
+                    });
+                    metricsOverridden = true;
+                    await runTabScript(
+                      tab,
+                      'typeof requestAnimationFrame === "function" ? new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))) : true',
+                    ).catch(() => undefined);
+                  }
+                  const shotParams = wantFullPage
+                    ? {format: 'png', captureBeyondViewport: true}
+                    : {format: 'png'};
+                  return await dbg.sendCommand('Page.captureScreenshot', shotParams);
+                } finally {
+                  if (metricsOverridden) {
+                    await dbg.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
+                  }
+                }
+              });
+              if (cdpResult && typeof cdpResult.data === 'string' && cdpResult.data) {
+                pngBuffer = Buffer.from(cdpResult.data, 'base64');
+                if (nativeImage && typeof nativeImage.createFromBuffer === 'function') {
+                  let img = nativeImage.createFromBuffer(pngBuffer);
+                  let imgSize = img.getSize();
+                  if (Number.isFinite(maxWidth) && maxWidth > 0 && imgSize.width > maxWidth) {
+                    img = img.resize({width: Math.round(maxWidth)});
+                    imgSize = img.getSize();
+                    pngBuffer = img.toPNG();
+                  }
+                  if (imgSize.width > 0 && imgSize.height > 0) finalSize = imgSize;
+                }
+                if (!finalSize) {
+                  finalSize = readPngDimensions(pngBuffer) || {
+                    width: targetViewportWidth || DEFAULT_SCREENSHOT_VIEWPORT.width,
+                    height: targetViewportHeight,
+                  };
+                }
+              }
+            } catch {
+              // CDP 截图失败（如被外部 DevTools 占用）时回退到原生 capturePage。
+              pngBuffer = null;
+              finalSize = null;
+            }
+          }
+
+          if (!pngBuffer) {
+            let image = await contents.capturePage();
+            const size = image.getSize();
+            if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
+              image = image.resize({width: Math.round(maxWidth)});
+            }
+            finalSize = image.getSize();
+            pngBuffer = image.toPNG();
+          }
         } finally {
           await syncAgentOverlay(tab);
         }
-      const size = image.getSize();
-      if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
-        image = image.resize({width: Math.round(maxWidth)});
-      }
-      const finalSize = image.getSize();
-      const pngBuffer = image.toPNG();
-      let filePath = '';
-      const rawSavePath = typeof savePath === 'string' ? savePath.trim() : '';
-      if (rawSavePath) {
-        if (!path.isAbsolute(rawSavePath)) {
-          throw new Error('savePath 必须是绝对路径');
+
+        let filePath = '';
+        const rawSavePath = typeof savePath === 'string' ? savePath.trim() : '';
+        if (rawSavePath) {
+          if (!path.isAbsolute(rawSavePath)) {
+            throw new Error('savePath 必须是绝对路径');
+          }
+          filePath = path.normalize(rawSavePath);
+          fs.mkdirSync(path.dirname(filePath), {recursive: true});
+          fs.writeFileSync(filePath, pngBuffer);
+        } else if (saveToTemp) {
+          const dir = process.platform === 'win32' && process.env.PUBLIC
+            ? path.join(process.env.PUBLIC, 'lingxi-browser-mcp')
+            : path.join(os.tmpdir(), 'lingxi-browser-mcp');
+          fs.mkdirSync(dir, {recursive: true});
+          filePath = path.join(dir, `shot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
+          fs.writeFileSync(filePath, pngBuffer);
         }
-        filePath = path.normalize(rawSavePath);
-        fs.mkdirSync(path.dirname(filePath), {recursive: true});
-        fs.writeFileSync(filePath, pngBuffer);
-      } else if (saveToTemp) {
-        const dir = process.platform === 'win32' && process.env.PUBLIC
-          ? path.join(process.env.PUBLIC, 'lingxi-browser-mcp')
-          : path.join(os.tmpdir(), 'lingxi-browser-mcp');
-        fs.mkdirSync(dir, {recursive: true});
-        filePath = path.join(dir, `shot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
-        fs.writeFileSync(filePath, pngBuffer);
-      }
         return {
           tabId: tab.id,
           url: tab.url,

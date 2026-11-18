@@ -215,7 +215,12 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
     assert.equal(shotJson.result.content[1].type, 'text');
     assert.match(shotJson.result.content[1].text || '', /shot\.png/);
 
-    // 6. browser_screenshot 支持传入 savePath，透传给 automation.screenshot
+    // 6. browser_screenshot 支持传入 savePath、viewportWidth、viewportHeight、fullPage，透传给 automation.screenshot
+    const screenshotDef = TOOL_DEFINITIONS.find((t: {name: string}) => t.name === 'browser_screenshot');
+    assert.ok(screenshotDef?.inputSchema?.properties?.viewportWidth);
+    assert.ok(screenshotDef?.inputSchema?.properties?.viewportHeight);
+    assert.ok(screenshotDef?.inputSchema?.properties?.fullPage);
+
     const saveRes = await fetch(status.url, {
       method: 'POST',
       headers: {
@@ -226,12 +231,29 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
         jsonrpc: '2.0',
         id: 7,
         method: 'tools/call',
-        params: {name: 'browser_screenshot', arguments: {savePath: 'D:/workspace/shot.png'}},
+        params: {
+          name: 'browser_screenshot',
+          arguments: {
+            savePath: 'D:/workspace/shot.png',
+            viewportWidth: 1440,
+            viewportHeight: 900,
+            fullPage: true,
+          },
+        },
       }),
     });
     const saveJson = await saveRes.json() as {result: {isError: boolean}};
     assert.equal(saveJson.result.isError, false);
-    assert.equal((automation.calls.at(-1)?.args as {savePath?: string})?.savePath, 'D:/workspace/shot.png');
+    const lastArgs = automation.calls.at(-1)?.args as {
+      savePath?: string;
+      viewportWidth?: number;
+      viewportHeight?: number;
+      fullPage?: boolean;
+    };
+    assert.equal(lastArgs?.savePath, 'D:/workspace/shot.png');
+    assert.equal(lastArgs?.viewportWidth, 1440);
+    assert.equal(lastArgs?.viewportHeight, 900);
+    assert.equal(lastArgs?.fullPage, true);
   } finally {
     const stopped = await mcpServer.stop();
     assert.equal(stopped.running, false);

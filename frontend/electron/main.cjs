@@ -63,7 +63,7 @@ let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
 /** 网页独立于主页面，保留主窗口原有外链策略。 */
-const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme });
+const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme, nativeImage });
 const browserMcpServer = createBrowserMcpServer({ automation: projectPagePreview.automation });
 
 const assertMainFrameSender = (event) => {

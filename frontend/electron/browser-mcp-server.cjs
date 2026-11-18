@@ -71,12 +71,15 @@ const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'browser_screenshot',
-    description: 'Capture a PNG screenshot of the current built-in browser tab.',
+    description: 'Capture a PNG screenshot of the current built-in browser tab. By default, renders at a standard desktop viewport (1280x800) regardless of the preview panel width.',
     inputSchema: {
       type: 'object',
       properties: {
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
         maxWidth: {type: 'integer', description: 'Resize width cap in pixels. Defaults to 1280.'},
+        viewportWidth: {type: 'integer', description: 'Logical viewport width in pixels during capture (defaults to 1280). Pass 0 to use the current preview panel viewport.'},
+        viewportHeight: {type: 'integer', description: 'Logical viewport height in pixels during capture (defaults to 800).'},
+        fullPage: {type: 'boolean', description: 'Capture the full scrollable page beyond the viewport. Defaults to false.'},
         savePath: {type: 'string', description: 'Optional absolute PNG file path (e.g. inside the workspace) where the screenshot should be saved.'},
       },
     },
