@@ -308,6 +308,7 @@ onBeforeUnmount(() => {
 
 <template>
   <aside
+    data-slot="sidebar"
     :class="[
       'relative h-full shrink-0 overflow-hidden transition-[width,background-color,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-30 select-none border-r',
       isCollapsed ? 'w-16' : 'w-64',
@@ -453,7 +454,10 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Bottom Left Settings Bar (Image style) -->
-    <div :class="['p-3 border-t shrink-0', isDark ? 'border-white/[0.06]' : 'border-zinc-200/80']">
+    <div
+      data-slot="sidebar-footer-bar"
+      :class="['p-3 border-t shrink-0', isDark ? 'border-white/[0.06]' : 'border-zinc-200/80']"
+    >
       <slot name="sidebarFooter" v-bind="footerSlotProps">
         <component :is="injectedFooter" v-if="injectedFooter" v-bind="footerSlotProps" />
         <SidebarFooterBar v-else v-bind="footerSlotProps" />

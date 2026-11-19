@@ -416,6 +416,7 @@
         <div class="nav-section-body">
           <button type="button" class="nav-leaf" data-doc="manifest-spec">manifest.json 清单规范</button>
           <button type="button" class="nav-leaf" data-doc="assets-inline">静态资源引用与内联</button>
+          <button type="button" class="nav-leaf" data-doc="anchor-contract">可覆盖锚点契约</button>
         </div>
       </div>
 
@@ -541,7 +542,7 @@
             '  <thead><tr><th style="width:150px">名称</th><th style="width:100px">类型</th><th style="width:70px">必填</th><th>描述</th></tr></thead>',
             '  <tbody>',
             '    <tr><td>id</td><td>string</td><td>是</td><td>唯一标识。<br><span class="sub-note">示例值："custom-ocean-theme"</span></td></tr>',
-            '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">motion</span> <span class="badge-cyan">taskProgress</span> <span class="badge-cyan">interactionCard</span></td></tr>',
+            '    <tr><td>category</td><td>string</td><td>是</td><td>所属类目：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">motion</span> <span class="badge-cyan">taskProgress</span> <span class="badge-cyan">interactionCard</span><br><span class="sub-note">区分大小写。历史别名 component 仍能加载，但已不属于官方类目，新包不要使用。</span></td></tr>',
             '    <tr><td>interactionTab</td><td>string</td><td>否</td><td>仅 <span class="code-inline">interactionCard</span> 类目使用，用于子 Tab 归类与独立叠加：<span class="badge-cyan">approval</span> <span class="badge-cyan">plan</span> <span class="badge-cyan">choice</span>。</td></tr>',
             '    <tr><td>taskProgressTab</td><td>string</td><td>否</td><td>仅 <span class="code-inline">taskProgress</span> 类目使用，用于子 Tab 归类与独立叠加：<span class="badge-cyan">background</span> <span class="badge-cyan">checklist</span> <span class="badge-cyan">pendingQueue</span>。</td></tr>',
             '    <tr><td>name</td><td>string</td><td>是</td><td>设置页卡片展示名称。</td></tr>',
@@ -572,6 +573,61 @@
             '<div class="code-block"><div class="code-bar"><span>正确的相对路径写法</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>@font-face {\n  font-family: \'CustomSans\';\n  src: url(\'./fonts/custom.woff2\');\n  font-display: swap;\n}\n\n.lx-chat-background {\n  background-image: var(--lx-canvas-image, none), url(\'./assets/wallpaper.webp\');\n}</pre></div>'
           ].join('')
         },
+        'anchor-contract': {
+          breadcrumb: ['开放文档', '核心规范', '可覆盖锚点契约'],
+          title: '可覆盖锚点契约',
+          updated: '最后更新于 2026-11-19',
+          lead: '本页列出 pack.css 可以依赖的全部稳定锚点。除本页所列之外的选择器都属于实现细节，客户端改版不保证保留。',
+          html: [
+            '<h2>为什么需要契约</h2>',
+            '<p>侧边栏、会话树这些区域的类名大量来自 Tailwind 原子类，随时可能因为一次重构换名。把样式挂在这些类名上，包会在某次升级后静默失效，而且没有任何报错。因此客户端为每个可覆盖位置固定了一个 <span class="code-inline">data-slot</span> 标记，它就是扩展包与宿主之间的接口。</p>',
+            '<h2>侧边栏 (sidebar)</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th style="width:290px">锚点</th><th>说明</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td><span class="code-inline">aside[data-slot="sidebar"]</span></td><td>侧边栏容器。折叠态额外带 <span class="code-inline">w-16</span> 类，展开态为 <span class="code-inline">w-64</span>，可据此写折叠态覆盖。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="sidebar-footer"]</span></td><td>底栏内容行，位于设置入口所在的 <span class="code-inline">div.p-3.border-t</span> 内部。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="sidebar-footer-bar"]</span></td><td>底栏外层容器（带顶部边框与内边距），改底栏分割线或留白时用它，别再用结构选择器。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="workspace-tree"]</span></td><td>会话树根节点（亮色结构）。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="session-row"]</span></td><td>会话行（亮色结构）。选中态额外带 <span class="code-inline">data-active="true"</span>。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="workspace-group"]</span></td><td>工作区分组容器（亮色结构），其首个子元素是工作区标题行。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="pinned-group"]</span></td><td>置顶会话分区（亮色结构），同时保留 <span class="code-inline">data-testid="sidebar-pinned-group"</span>。</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>会话树暗色结构 (BranchedMenu)</h2>',
+            '<table class="feishu-table">',
+            '  <thead><tr><th style="width:290px">锚点</th><th>说明</th></tr></thead>',
+            '  <tbody>',
+            '    <tr><td><span class="code-inline">[data-slot="tree-menu"]</span></td><td>树根 <span class="code-inline">nav</span>，配色变量默认值挂在这里。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="tree-section"]</span></td><td>一个工作区分组，展开态额外带 <span class="code-inline">data-open</span>。</td></tr>',
+            '    <tr><td><span class="code-inline">[data-slot="tree-row"]</span></td><td>一行会话。行内 <span class="code-inline">button</span> 上带 <span class="code-inline">data-active</span> 表示选中。</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>暗亮双结构：同一个位置有两个 DOM</h2>',
+            '<p>侧边栏会话树在暗色与亮色下由<b>两套完全不同的组件</b>渲染：暗色是 <span class="code-inline">BranchedMenu</span>（分支连线树），亮色是普通分组模板。因此针对会话行、工作区分组的样式<b>必须写两份</b>，只写一套会在切换主题后失效一半。</p>',
+            '<div class="code-block"><div class="code-bar"><span>sidebar / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>/* 亮色结构 */\naside[data-slot="sidebar"] [data-slot="session-row"][data-active="true"] {\n  background-color: color-mix(in srgb, var(--lx-accent) 16%, transparent);\n}\n\n/* 暗色结构 */\naside[data-slot="sidebar"] [data-slot="tree-row"] button[data-active] {\n  color: var(--lx-accent);\n}</pre></div>',
+            '<h2>暗色树配色的覆盖方式</h2>',
+            '<p>暗色树的配色由 <span class="code-inline">--bm-ink</span>（正文）、<span class="code-inline">--bm-accent</span>（选中强调）、<span class="code-inline">--bm-line</span>（分支连线）三个变量驱动。它们<b>默认值写在样式表</b>的 <span class="code-inline">nav[data-slot="tree-menu"]</span> 上，因此用普通选择器即可覆盖，<b>不需要 !important</b>：</p>',
+            '<div class="code-block"><div class="code-bar"><span>motion / pack.css</span><button class="copy-btn" type="button" data-copy>复制</button></div><pre>aside[data-slot="sidebar"] nav[data-slot="tree-menu"] {\n  --bm-accent: var(--lx-info);\n  --bm-line: color-mix(in srgb, var(--lx-accent) 30%, transparent);\n}</pre></div>',
+            '<p><span class="sub-note">例外：仅当内置调用方显式传入 color / accentColor / lineColor 时才写内联变量，内联样式优先级最高，此时仍需 !important。侧边栏不传这些参数，所以侧边栏方向无需 !important。</span></p>',
+            '<h2>输入框与卡片类锚点</h2>',
+            '<table class="feishu-table">',
+            '  <tbody>',
+            '    <tr><td><span class="code-inline">[data-slot="chat-input-card"]</span></td><td>输入卡片（input 类目）</td></tr>',
+            '    <tr><td><span class="code-inline">.task-progress-dock</span> / <span class="code-inline">.task-pill</span> / <span class="code-inline">.task-panel</span></td><td>任务进度胶囊与面板（taskProgress 类目）</td></tr>',
+            '    <tr><td><span class="code-inline">[data-testid="pending-chat-queue"]</span></td><td>待发送队列面板（taskProgress 类目）</td></tr>',
+            '    <tr><td><span class="code-inline">[data-testid="pending-interaction-dock"]</span></td><td>底部审批/选择停靠面板（interactionCard 类目）</td></tr>',
+            '    <tr><td><span class="code-inline">[data-testid="plan-card"]</span></td><td>计划审批卡片（interactionCard 类目）</td></tr>',
+            '    <tr><td><span class="code-inline">[data-testid="choice-question-group"]</span></td><td>选择问题组（interactionCard 类目）</td></tr>',
+            '  </tbody>',
+            '</table>',
+            '<h2>禁止改动的量</h2>',
+            '<ul>',
+            '  <li><span class="code-inline">--container-lx-chat</span>：消息列表、输入区、执行控制条共用这一处列宽真源，覆盖会导致上下左右不对齐。</li>',
+            '  <li>侧边栏容器宽度：展开/折叠宽度由组件按 <span class="code-inline">w-64</span> / <span class="code-inline">w-16</span> 做动画推进，直接写 <span class="code-inline">width</span> 会破坏折叠动画。</li>',
+            '</ul>'
+          ].join('')
+        },
         'overview': {
           breadcrumb: ['开放文档', '扩展包开发', '开发前必读', '架构概述'],
           title: '架构概述',
@@ -585,6 +641,7 @@
             '    <tr><td class="kv-key">叠加优先级</td><td><span class="badge-cyan">theme</span> &rarr; <span class="badge-cyan">font</span> &rarr; <span class="badge-cyan">background</span> &rarr; <span class="badge-cyan">sidebar</span> &rarr; <span class="badge-cyan">input</span> &rarr; <span class="badge-cyan">motion</span> &rarr; <span class="badge-cyan">taskProgress</span> &rarr; <span class="badge-cyan">interactionCard</span></td></tr>',
             '    <tr><td class="kv-key">组件与卡片插槽</td><td>内置扩展包可通过 <span class="code-inline">slots.taskProgress</span> 与 <span class="code-inline">slots.interactionCard</span> 替换任务进度胶囊及审批/计划/选择卡片；本地纯资源包可通过 <span class="code-inline">pack.css</span> 覆盖对应锚点样式</td></tr>',
             '    <tr><td class="kv-key">明暗双态</td><td>暗色变量写在 <span class="code-inline">:root</span>，亮色变量写在 <span class="code-inline">html.light, html[data-theme="light"]</span></td></tr>',
+            '    <tr><td class="kv-key">会话树双结构</td><td>侧边栏会话树在暗色下由 <span class="code-inline">BranchedMenu</span>（分支连线树）渲染，亮色下由普通分组模板渲染，两套 DOM 并存。针对会话行/分组的样式必须两份都写，否则切换主题会失效一半。锚点见「可覆盖锚点契约」</td></tr>',
             '  </tbody>',
             '</table>'
           ].join('')
@@ -600,7 +657,11 @@
             '<h3>Q2：为什么设置了背景扩展包却没显示？</h3>',
             '<p>若你在「通用设置 → 主页背景」里上传过自定义图片，用户图片优先级高于扩展包背景。清除自定义背景图片后即可看到扩展包效果。</p>',
             '<h3>Q3：为什么不建议在扩展包里修改对话区宽度？</h3>',
-            '<p>消息列表、输入区与执行控制条共用单一真源 <span class="code-inline">--container-lx-chat</span>，私自覆盖会导致上下左右不对齐。</p>'
+            '<p>消息列表、输入区与执行控制条共用单一真源 <span class="code-inline">--container-lx-chat</span>，私自覆盖会导致上下左右不对齐。</p>',
+            '<h3>Q4：category 明明写了，为什么还是「未发现合法扩展包」？</h3>',
+            '<p><span class="code-inline">category</span> 区分大小写，且必须是这 8 个值之一：<span class="badge-cyan">theme</span> <span class="badge-cyan">font</span> <span class="badge-cyan">background</span> <span class="badge-cyan">sidebar</span> <span class="badge-cyan">input</span> <span class="badge-cyan">motion</span> <span class="badge-cyan">taskProgress</span> <span class="badge-cyan">interactionCard</span>。其中后两个是驼峰，写成 <span class="code-inline">taskprogress</span> 或 <span class="code-inline">interaction-card</span> 都会被静默丢弃。</p>',
+            '<h3>Q5：为什么覆盖 --bm-* 变量没生效？</h3>',
+            '<p>该变量默认值已放在样式表，普通选择器即可覆盖。只有内置调用方显式传入颜色参数时才会写成内联样式，此时内联优先级最高，需要 <span class="code-inline">!important</span>。侧边栏方向不传参数，因此正常写即可。</p>'
           ].join('')
         },
         'cat-theme': {
@@ -653,11 +714,14 @@
         'cat-sidebar': {
           breadcrumb: ['开放文档', '扩展包开发', '类目开发指南', '侧边栏 (sidebar)'],
           title: '侧边栏 (sidebar)',
-          updated: '最后更新于 2026-11-16',
-          lead: '侧边栏扩展包用于调整侧边栏容器的圆角、毛玻璃、边框或导轨样式。',
+          updated: '最后更新于 2026-11-19',
+          lead: '侧边栏扩展包用于调整侧边栏容器的圆角、毛玻璃、边框或导轨样式，锚点为 aside[data-slot="sidebar"]。',
           html: [
+            '<h2>锚点选择</h2>',
+            '<p>统一使用 <span class="code-inline">aside[data-slot="sidebar"]</span>。这是契约锚点，选择器优先级为「元素 + 属性」，天然高于容器上那些 Tailwind 原子类（如 <span class="code-inline">bg-black</span>、<span class="code-inline">border-white/[0.06]</span>），所以底色与边框<b>不需要 !important</b>。会话行、工作区分组等内部锚点见「可覆盖锚点契约」。</p>',
             '<h2>pack.css 示例</h2>',
-            '<div class="code-block"><div class="code-bar"><span>sidebar / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>aside.border-r {\n  margin: 8px 0 8px 8px;\n  height: calc(100% - 16px) !important;\n  border-radius: 18px;\n  border: 1px solid var(--lx-border-subtle) !important;\n  background-color: color-mix(in srgb, var(--lx-surface) 82%, transparent) !important;\n  backdrop-filter: blur(18px);\n  box-shadow: var(--lx-shadow-2);\n}</pre></div>'
+            '<div class="code-block"><div class="code-bar"><span>sidebar / pack.css</span><button type="button" class="copy-btn" data-copy>复制</button></div><pre>aside[data-slot="sidebar"] {\n  margin: 8px 0 8px 8px;\n  height: calc(100% - 16px);\n  border-radius: 18px;\n  border: 1px solid var(--lx-border-subtle);\n  background-color: color-mix(in srgb, var(--lx-surface) 82%, transparent);\n  backdrop-filter: blur(18px);\n  box-shadow: var(--lx-shadow-2);\n}</pre></div>',
+            '<p><span class="sub-note">注意：不要覆盖 --container-lx-chat，也不要直接设置容器 width，那会打断展开/折叠动画。</span></p>'
           ].join('')
         },
         'cat-input': {

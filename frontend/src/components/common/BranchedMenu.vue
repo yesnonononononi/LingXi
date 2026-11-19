@@ -82,9 +82,9 @@ const props = withDefaults(defineProps<BranchedMenuProps>(), {
   defaultActive: '',
   active: undefined,
   openIndices: undefined,
-  color: '#a1a1aa',
-  accentColor: '#38bdf8',
-  lineColor: 'rgba(255, 255, 255, 0.12)',
+  color: undefined,
+  accentColor: undefined,
+  lineColor: undefined,
   width: 240,
   rowHeight: 36,
   indent: 40,
@@ -234,27 +234,37 @@ const isActivePath = (rows: MenuRow[], index: number): boolean => {
 
 const isIconData = (icon: IconArray | Component): icon is IconArray => Array.isArray(icon);
 
-const navStyle = computed(
-  () =>
-    ({
-      '--bm-w': `${props.width}px`,
-      '--bm-ink': props.color,
-      '--bm-accent': props.accentColor,
-      '--bm-line': props.lineColor,
-      '--bm-font': `${props.fontSize}px`,
-      '--bm-row': `${props.rowHeight}px`,
-      '--bm-indent': `${props.indent}px`,
-      '--bm-line-w': props.lineWidth,
-      '--bm-draw': `${props.drawDuration}ms`,
-      '--bm-muted': `color-mix(in srgb, ${props.color} 55%, transparent)`,
-      '--bm-fold': `${props.foldDuration}ms`
-    }) as CSSProperties
-);
+/**
+ * 根节点内联变量。
+ *
+ * <p><b>只有几何量常驻内联</b>：宽度、行高、缩进、线宽、动画时长属于组件布局，跟主题无关。</p>
+ *
+ * <p><b>颜色类变量（`--bm-ink` / `--bm-accent` / `--bm-line`）只在调用方显式传入时才内联</b>。
+ * 内联样式优先级高于作者样式表，早前无条件内联导致纯资源扩展包无法用普通选择器换色，
+ * 只能靠 `!important` 硬压——那不是能力，是缺陷。默认值下沉到样式表的
+ * `nav[data-slot='tree-menu']`，随 `--lx-*` 语义令牌走，主题包按正常优先级即可覆盖。</p>
+ */
+const navStyle = computed(() => {
+  const style: Record<string, string> = {
+    '--bm-w': `${props.width}px`,
+    '--bm-font': `${props.fontSize}px`,
+    '--bm-row': `${props.rowHeight}px`,
+    '--bm-indent': `${props.indent}px`,
+    '--bm-line-w': String(props.lineWidth),
+    '--bm-draw': `${props.drawDuration}ms`,
+    '--bm-fold': `${props.foldDuration}ms`,
+  };
+  if (props.color) style['--bm-ink'] = props.color;
+  if (props.accentColor) style['--bm-accent'] = props.accentColor;
+  if (props.lineColor) style['--bm-line'] = props.lineColor;
+  return style as CSSProperties;
+});
 </script>
 
 <template>
   <nav
     ref="navRef"
+    data-slot="tree-menu"
     class="before:top-2 before:bottom-0 before:left-0 before:absolute relative flex flex-col pl-3.5 before:rounded-[1px] w-full max-w-[min(var(--bm-w),100%)] before:content-[''] leading-[1.2] [color:var(--bm-ink)] [font-family:inherit] [font-size:var(--bm-font)] before:[background:linear-gradient(to_bottom,var(--bm-line)_0%,var(--bm-line)_55%,transparent_100%)]"
     :class="className"
     :style="navStyle"
@@ -267,6 +277,7 @@ const navStyle = computed(
     <div
       v-for="(item, i) in menuItems"
       :key="item.value ?? item.label"
+      data-slot="tree-section"
       class="group/section flex flex-col w-full"
       :data-open="item.children && open.has(i) ? '' : undefined"
     >
@@ -326,6 +337,7 @@ const navStyle = computed(
             <div
               v-for="{item: kid, depth} in sectionRows[i]"
               :key="kid.value"
+              data-slot="tree-row"
               class="group/kid relative flex items-center w-full"
               :data-depth="depth"
             >
@@ -372,3 +384,24 @@ const navStyle = computed(
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--bm-accent) 45%, transparent));
 }
 </style>
+<style>
+/*
+ * 全局样式块：树形菜单的配色默认值。
+ *
+ * 刻意不放进 <style scoped>：scoped 会给选择器追加 [data-v-*] 属性，把默认值的优先级抬到
+ * 跟主题包的普通选择器同一档，作者又得靠 !important 抢回去。这里用最低优先级的
+ * `nav[data-slot='tree-menu']` 声明，任何 `[data-slot=...] nav` 形态的主题包选择器都能自然覆盖，
+ * 同时不会污染页面上其它 <nav>。
+ *
+ * 内联样式仍然高于这里：调用方显式传 color / accentColor / lineColor 时，
+ * navStyle 会把它写进内联变量，优先级照旧最高。
+ */
+nav[data-slot='tree-menu'] {
+  /* 默认值刻意锚到与原先硬编码值视觉等价的语义令牌，避免主题令牌化顺带改变观感 */
+  --bm-ink: var(--lx-text-muted, #a1a1aa);
+  --bm-accent: var(--lx-text-primary, #ffffff);
+  --bm-line: var(--lx-border-subtle, rgba(255, 255, 255, 0.12));
+  --bm-muted: color-mix(in srgb, var(--bm-ink) 55%, transparent);
+}
+</style>
+

@@ -23,7 +23,31 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 15000;
 
 const PACK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
-const ALLOWED_CATEGORIES = new Set(['theme', 'font', 'background', 'sidebar', 'input', 'component']);
+
+/**
+ * 扩展包类目白名单。
+ *
+ * <p><b>为什么有这份清单：</b>类目决定 `packs:fetch-registry` 拉哪个 `categories/<category>.json`，
+ * 也决定本地 manifest 是否被接受。取值为真源，必须与渲染进程的 `OfficialPackCategory` 保持一致——
+ * 两边分裂过一次：UI 与文档都按 8 类目出货，白名单却只放行 6 个，导致本地包被静默丢弃、
+ * 在线列表报「非法扩展包类目」。同步关系由 `tests/packCategories.test.cjs` 机械校验。</p>
+ *
+ * <p><b>`component` 是历史别名</b>：仅存在于白名单，渲染进程类目与设置页卡片都没有它。
+ * 保留是为了不让早期按该值发布的包失效，新包不要使用。</p>
+ */
+const PACK_CATEGORIES = [
+  'theme',
+  'font',
+  'background',
+  'sidebar',
+  'input',
+  'motion',
+  'taskProgress',
+  'interactionCard',
+];
+const LEGACY_PACK_CATEGORIES = ['component'];
+const ALLOWED_CATEGORIES = new Set([...PACK_CATEGORIES, ...LEGACY_PACK_CATEGORIES]);
+
 
 const MIME_BY_EXT = {
   '.woff2': 'font/woff2',
@@ -447,6 +471,9 @@ function registerPacksManager({
 module.exports = {
   DEFAULT_CATEGORIES_RAW_BASE,
   DEFAULT_PACKS_RAW_BASE,
+  PACK_CATEGORIES,
+  LEGACY_PACK_CATEGORIES,
+  ALLOWED_CATEGORIES,
   sanitizePackId,
   sanitizeRelativeFile,
   inlineCssLocalAssets,

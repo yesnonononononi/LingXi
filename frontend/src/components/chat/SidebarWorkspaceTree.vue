@@ -215,9 +215,6 @@ const emit = emitShim as TreeEmitShim;
             :items="branchedMenuItems"
             :active="activeSubSessionId || activeSessionId || ''"
             :openIndices="branchedOpenIndices"
-            color="#a1a1aa"
-            accentColor="#ffffff"
-            lineColor="rgba(255, 255, 255, 0.12)"
             :lineWidth="1.2"
             :rowHeight="34"
             :indent="36"
@@ -376,7 +373,12 @@ const emit = emitShim as TreeEmitShim;
         <!-- Light Mode: 既有会话列表渲染 -->
         <div v-else class="space-y-0.5">
           <!-- 置顶分区：跨工作区恒在最顶，不参与截断（用户亲手挑出来的会话不该被「展开显示」藏起来） -->
-          <div v-if="pinnedSessions.length > 0" class="pb-1" data-testid="sidebar-pinned-group">
+          <div
+            v-if="pinnedSessions.length > 0"
+            class="pb-1"
+            data-testid="sidebar-pinned-group"
+            data-slot="pinned-group"
+          >
             <div class="px-2 py-1 text-lx-fs-sm font-medium text-zinc-400 tracking-wider">
               {{ t('chat.sidebar.pinned') }}
             </div>
@@ -400,6 +402,7 @@ const emit = emitShim as TreeEmitShim;
           <div
             v-for="group in projectGroups"
             :key="group.workspace.id"
+            data-slot="workspace-group"
             class="rounded-lg transition-colors"
           >
             <!-- Workspace Row (Folder Icon + Name) -->

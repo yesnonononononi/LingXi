@@ -39,6 +39,8 @@ const editingTitle = defineModel<string>('editingTitle', {required: true});
 <template>
   <div
     @click="onSelect(session.id)"
+    data-slot="session-row"
+    :data-active="activeId === session.id ? 'true' : undefined"
     :class="[
       'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
       activeId === session.id
