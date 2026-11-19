@@ -18,17 +18,9 @@ import type {ChatMode} from '../types/chat';
 export const CHAT_COMMAND_NAMES: readonly string[] = [
   'plan',
   'compact',
-  'model',
-  'workspace',
   'export',
-  'team',
-  'add-team',
   'agent',
-  'permission',
-  'mcp',
-  'skill',
   'optimize-prompt',
-  'settings',
 ];
 
 /**

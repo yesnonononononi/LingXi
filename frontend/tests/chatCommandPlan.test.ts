@@ -255,8 +255,8 @@ test('CHAT_COMMAND_NAMES 必须与输入栏菜单 id 集合完全一致（白名
   const menuIds = extractMenuCommandIds(readMutantSource(INPUT_AREA, mutation, INPUT_AREA_MUTATIONS));
 
   // 抽取本身必须可靠，否则这条守护会变成永真断言
-  assert.ok(whitelist.length >= 10, `白名单抽取异常，仅得到 ${whitelist.length} 项`);
-  assert.ok(menuIds.length >= 10, `菜单 id 抽取异常，仅得到 ${menuIds.length} 项`);
+  assert.ok(whitelist.length >= 5, `白名单抽取异常，仅得到 ${whitelist.length} 项`);
+  assert.ok(menuIds.length >= 5, `菜单 id 抽取异常，仅得到 ${menuIds.length} 项`);
 
   const onlyInWhitelist = whitelist.filter(name => !menuIds.includes(name));
   const onlyInMenu = menuIds.filter(id => !whitelist.includes(id));

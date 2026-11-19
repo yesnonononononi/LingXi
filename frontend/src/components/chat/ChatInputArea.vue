@@ -850,43 +850,11 @@ const allCommands = computed<CommandItem[]>(() => [
     }
   },
   {
-    id: 'model',
-    name: 'model',
-    desc: t('chat.command.model'),
-    action: () => {
-      emit('openModelEditor');
-    }
-  },
-  {
-    id: 'workspace',
-    name: 'workspace',
-    desc: t('chat.command.workspace'),
-    action: () => {
-      emit('newProject');
-    }
-  },
-  {
     id: 'export',
     name: 'export',
     desc: t('chat.command.export'),
     action: () => {
       emit('exportSession');
-    }
-  },
-  {
-    id: 'team',
-    name: 'team',
-    desc: t('chat.command.team'),
-    action: () => {
-      openPlusMenu('teams');
-    }
-  },
-  {
-    id: 'add-team',
-    name: 'add-team',
-    desc: t('chat.command.addTeam'),
-    action: () => {
-      emit('openTeamModal');
     }
   },
   {
@@ -898,42 +866,10 @@ const allCommands = computed<CommandItem[]>(() => [
     }
   },
   {
-    id: 'permission',
-    name: 'permission',
-    desc: t('chat.command.permission'),
-    action: () => {
-      emit('openSettings');
-    }
-  },
-  {
-    id: 'mcp',
-    name: 'mcp',
-    desc: t('chat.command.mcp'),
-    action: () => {
-      emit('openSettingsTab', 'mcp');
-    }
-  },
-  {
-    id: 'skill',
-    name: 'skill',
-    desc: t('chat.command.skill'),
-    action: () => {
-      openPlusMenu('skills');
-    }
-  },
-  {
     id: 'optimize-prompt',
     name: 'optimize-prompt',
     desc: t('chat.command.optimizePrompt'),
     action: () => { void promptOptimization.optimize(); }
-  },
-  {
-    id: 'settings',
-    name: 'settings',
-    desc: t('chat.command.settings'),
-    action: () => {
-      emit('openSettings');
-    }
   }
 ]);
 
