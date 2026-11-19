@@ -22,6 +22,14 @@ const logDir = path.resolve(frontendRoot, '../.lingxi/tmp/qa-slot-pilot');
 
 const chatViewPath = path.resolve(frontendRoot, 'src/views/chat/ChatView.vue');
 
+/**
+ * 宿主必须注册的插槽字段全集（排序后比较）。
+ *
+ * <p>少一个就说明某个插槽从生产注册里掉了 —— 那正是这套用例要守的东西，
+ * 所以这里是显式清单，而不是「表达式里有几个就认几个」。</p>
+ */
+const REQUIRED_MESSAGE_SLOTS = ['actions', 'body', 'messageItem', 'processSubAgent', 'processThought', 'processTool', 'userBody'];
+
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
 let window;
@@ -41,11 +49,19 @@ function specifierFor(absolutePath) {
  * 提取不到直接抛错 —— 这就是「删掉 provide 必红」的落点。
  */
 function extractChatViewProviderExpression(source) {
-  const match = /provide\(\s*CHAT_MESSAGE_SLOTS_KEY\s*,\s*(\{[\s\S]*?\})\s*\)/.exec(source);
-  if (!match) {
-    throw new Error('ChatView.vue 中未找到 `provide(CHAT_MESSAGE_SLOTS_KEY, {...})`：生产注册已被移除');
+  const direct = /provide\(\s*CHAT_MESSAGE_SLOTS_KEY\s*,\s*(\{[\s\S]*?\})\s*\)/.exec(source);
+  if (direct) return direct[1];
+  // 插槽变多以后宿主不再内联字面量，而是先把字段聚到 `messageSlots` 再 provide 这个标识符。
+  const byName = /provide\(\s*CHAT_MESSAGE_SLOTS_KEY\s*,\s*([A-Za-z_$][\w$]*)\s*\)/.exec(source);
+  if (!byName) {
+    throw new Error('ChatView.vue 中未找到 `provide(CHAT_MESSAGE_SLOTS_KEY, ...)`：生产注册已被移除');
   }
-  return match[1];
+  const name = byName[1];
+  const declaration = new RegExp('const\\s+' + name + '\\s*=\\s*[A-Za-z_$][\\w$]*\\(\\s*(\\{[\\s\\S]*?\\})\\s*\\)\\s*;').exec(source);
+  if (!declaration) {
+    throw new Error(`ChatView.vue 里找不到 \`const ${name} = someReactive({...})\` 的对象字面量`);
+  }
+  return declaration[1];
 }
 
 /** 从 ChatView.vue 的 import 语句里取出某个默认导入的真实模块绝对路径。 */
@@ -55,11 +71,46 @@ function resolveImportedModule(source, identifier) {
   return path.resolve(path.dirname(chatViewPath), match[1]);
 }
 
-/** 提取表达式里 `body: X` / `actions: Y` 的标识符，保证宿主导入与生产同源。 */
-function extractFieldIdentifier(expression, field) {
-  const match = new RegExp(field + '\\s*:\\s*([A-Za-z_$][\\w$]*)').exec(expression);
-  if (!match) throw new Error(`ChatView 的 provide 表达式里缺 \`${field}\` 字段：${expression}`);
-  return match[1];
+/**
+ * 取某个字段值里**真正被 import 的那个组件标识符**。
+ *
+ * <p>字段值可能是 `packSlots.chatMessage.body ?? MessageBodyDefault` 这种带回落的表达式，
+ * 所以从右往左找第一个能在 ChatView 的 import 里解析到的标识符 —— 那才是注册链上的组件。
+ * 一个都解析不到（字段类型里全是不需要组件的位置，例如纯扩展包占位）就算没有组件。</p>
+ */
+function resolveFieldComponent(source, value) {
+  const identifiers = (value.match(/[A-Za-z_$][\w$]*/g) ?? []).reverse();
+  for (const identifier of identifiers) {
+    try {
+      return { identifier, module: resolveImportedModule(source, identifier) };
+    } catch {
+      // 不是宿主导入的组件（如 packSlots 这类局部对象），继续往前找。
+    }
+  }
+  return null;
+}
+
+/** 把 provide 的对象字面量按顶层字段切开：`body: xxx, actions: yyy` → [{field, value}]。 */
+function parseProviderFields(expression) {
+  const body = expression.slice(1, -1);
+  const fields = [];
+  let depth = 0;
+  let current = '';
+  for (const char of body) {
+    if ('{[(<'.includes(char)) depth++;
+    else if ('}])>'.includes(char)) depth--;
+    if (char === ',' && depth === 0) {
+      if (current.trim()) fields.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) fields.push(current.trim());
+  return fields.map(entry => {
+    const separator = entry.indexOf(':');
+    return { field: entry.slice(0, separator).trim(), value: entry.slice(separator + 1).trim() };
+  });
 }
 
 /** 生成宿主 App 入口（一次构建，多次挂载不同场景）。 */
@@ -72,27 +123,35 @@ async function writeHarness() {
   let productionError = null;
   try {
     const providerExpression = extractChatViewProviderExpression(chatViewSource);
-    const bodyIdentifier = extractFieldIdentifier(providerExpression, 'body');
-    const actionsIdentifier = extractFieldIdentifier(providerExpression, 'actions');
-    production = {
-      providerExpression,
-      bodyIdentifier,
-      actionsIdentifier,
-      bodyModule: resolveImportedModule(chatViewSource, bodyIdentifier),
-      actionsModule: resolveImportedModule(chatViewSource, actionsIdentifier)
-    };
+    // 逐字段解析成「标识符」再拼一份等价的对象字面量：
+    // ChatView 的值里现在会引用 packSlots 这类局部对象，原样搬进宿主是跑不起来的。
+    const slots = parseProviderFields(providerExpression).map(({ field, value }) => ({
+      field,
+      component: resolveFieldComponent(chatViewSource, value),
+    }));
+    // 强制项：正文与操作栏必须是宿主导入的真实组件，否则「注册链可达」这句话没有落点。
+    // 其余插槽在 ChatView 里就是「扩展包给了就用」的可选值，默认 undefined，缺组件是正常的。
+    const required = slots.filter(slot => ['body', 'actions'].includes(slot.field) && !slot.component);
+    if (required.length > 0) {
+      throw new Error(`这些必修插槽没有可解析的组件导入：${required.map(slot => slot.field).join(', ')}`);
+    }
+    production = { slots };
   } catch (error) {
     productionError = String((error && error.message) || error);
   }
 
   const productionImports = production
-    ? `import ${production.bodyIdentifier} from '${specifierFor(production.bodyModule)}';\n`
-      + `import ${production.actionsIdentifier} from '${specifierFor(production.actionsModule)}';`
+    ? production.slots
+      .filter(slot => slot.component)
+      .map(slot => `import ${slot.component.identifier} from '${specifierFor(slot.component.module)}';`)
+      .join('\n')
     : '/* 生产注册缺失：未导入 ChatView 的注册组件 */';
 
-  // 生产注册值逐字来自 ChatView.vue 的 provide 表达式；Proxy 只记录字段读取，不改值。
+  // 生产注册值由 ChatView.vue 的 provide 表达式逐字段还原；Proxy 只记录字段读取，不改值。
   const productionValueBlock = production
-    ? `const CHAT_VIEW_PROVIDER_VALUE = ${production.providerExpression};
+    ? `const CHAT_VIEW_PROVIDER_VALUE = { ${production.slots
+      .map(slot => `${slot.field}: ${slot.component ? slot.component.identifier : 'undefined'}`)
+      .join(', ')} };
 window.__slotReads = [];
 const OBSERVED_PROVIDER = new Proxy(CHAT_VIEW_PROVIDER_VALUE, {
   get(target, key) {
@@ -107,8 +166,8 @@ window.__slotReads = [];`;
   const productionIdentityBlock = production
     ? `window.__prodProviderKeys = Object.keys(CHAT_VIEW_PROVIDER_VALUE).sort();
 window.__prodProviderIdentity = {
-  body: CHAT_VIEW_PROVIDER_VALUE.body === ${production.bodyIdentifier},
-  actions: CHAT_VIEW_PROVIDER_VALUE.actions === ${production.actionsIdentifier}
+  body: CHAT_VIEW_PROVIDER_VALUE.body != null,
+  actions: CHAT_VIEW_PROVIDER_VALUE.actions != null
 };`
     : `window.__prodProviderKeys = null;
 window.__prodProviderIdentity = null;`;
@@ -383,8 +442,8 @@ app.whenReady().then(async () => {
     await runCase('用例5 生产调用链可达（ChatView 的 provide 真的被 Item 走到）', async () => {
       // 5.1 注册值必须逐字来自 ChatView.vue（提取失败 / 字段被改都红）
       const providerKeys = await evaluate('window.__prodProviderKeys');
-      assert.deepEqual(providerKeys, ['actions', 'body'],
-        `ChatView 的 provide 字段应恰为 body/actions，实际 ${JSON.stringify(providerKeys)}`);
+      assert.deepEqual(providerKeys, REQUIRED_MESSAGE_SLOTS,
+        `ChatView 的 provide 字段必须覆盖全部插槽，实际 ${JSON.stringify(providerKeys)}`);
       const providerIdentity = await evaluate('window.__prodProviderIdentity');
       assert.deepEqual(providerIdentity, { body: true, actions: true },
         `ChatView 注册的组件必须与它 import 的模块同一（注册链可达）：${JSON.stringify(providerIdentity)}`);
@@ -407,7 +466,7 @@ app.whenReady().then(async () => {
       assert.ok(reads.includes('actions'),
         `Item 未读取注册表的 actions 字段 ⇒ 注册分支不可达，reads=${JSON.stringify(reads)}`);
       const executed = await evaluate('window.__prodProviderKeys');
-      assert.deepEqual(executed, ['actions', 'body'],
+      assert.deepEqual(executed, REQUIRED_MESSAGE_SLOTS,
         `执行的 provide 表达式字段异常：${JSON.stringify(executed)}`);
     });
 
