@@ -66,6 +66,24 @@ public class H2SchemaInitializer implements SchemaInitializer {
     private static final Pattern CREATE_INDEX_NAME = Pattern.compile(
             "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(\\w+)", Pattern.CASE_INSENSITIVE);
 
+    private record LegacyChecksumMigration(String legacyChecksum, String currentChecksum) {
+    }
+
+    /**
+     * 历史上已发布但曾因幂等化（如补 {@code IF NOT EXISTS}）改写过一次的脚本指纹映射：
+     * 版本号 →（旧指纹 → 改写后的当前指纹）。
+     *
+     * <p>只有「库里登记的是旧指纹，且当前脚本恰好就是对应的已知改写版」时才放行；
+     * 若当前脚本再被改成别的内容，照常拒绝启动。</p>
+     */
+    private static final Map<Integer, LegacyChecksumMigration> LEGACY_CHECKSUMS = Map.of(
+            20, new LegacyChecksumMigration(
+                    "aeb37bedc799bd8e2e6fda70de2710a0c4e57071d0d2bf91972f53066a7cfd9a",
+                    "60e010001f59da8e3600efa41d349f0957cd99917cb789eb002c470dfdfec014"),
+            23, new LegacyChecksumMigration(
+                    "930779a67cfb07975a9940cbe239eeb084d4127d0e3f1114dd1fc3924b155b4b",
+                    "48562d7f9974075f8d05fa913a80fafb06174bf8ad332be9e21582662758ea79"));
+
     private final SchemaScriptLoader loader = new SchemaScriptLoader();
 
     @Override
@@ -127,9 +145,14 @@ public class H2SchemaInitializer implements SchemaInitializer {
                 expected.addAll(authoritative.getOrDefault(script.version(), declaredTables(script)));
                 String appliedChecksum = applied.get(script.version());
                 if (appliedChecksum != null) {
-                    // 口径无关比对：换行符差异（CRLF/LF）与历史直算口径的指纹都算「同一脚本」，
+                    // 口径无关比对：换行符差异（CRLF/LF）、历史直算口径与已登记的历史兼容指纹都算「同一脚本」，
                     // 只有语义内容真的变了才拒绝。详见 SchemaScriptLoader#acceptedChecksums。
-                    if (!loader.matchesRegistered(appliedChecksum, script.content())) {
+                    LegacyChecksumMigration migration = LEGACY_CHECKSUMS.get(script.version());
+                    String normalizedApplied = appliedChecksum.strip().toLowerCase(Locale.ROOT);
+                    boolean matchesLegacy = migration != null
+                            && migration.legacyChecksum().equals(normalizedApplied)
+                            && loader.matchesRegistered(migration.currentChecksum(), script.content());
+                    if (!loader.matchesRegistered(appliedChecksum, script.content()) && !matchesLegacy) {
                         throw new IllegalStateException("H2 建库脚本已被修改但版本号没升（已登记指纹 "
                                 + appliedChecksum + "，当前 " + script.checksum() + "），拒绝启动: "
                                 + script.filename() + "。改了已发布的脚本就新增 V<n>__*.sql，不要原地改。");

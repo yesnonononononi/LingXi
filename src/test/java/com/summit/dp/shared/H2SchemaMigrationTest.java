@@ -45,6 +45,36 @@ class H2SchemaMigrationTest {
         assertEquals(0, initializer.initialize(database));
     }
 
+    @Test
+    @DisplayName("V20 旧库登记了补 IF NOT EXISTS 前的指纹 → 仍能正常升级启动，但未知指纹照常拒绝")
+    void v20LegacyPreIdempotentChecksumRemainsAcceptable() {
+        H2TestDatabase database = newDatabase("v20-legacy");
+        H2SchemaInitializer initializer = new H2SchemaInitializer();
+        List<SchemaScript> all = loader.load(H2Storage.SCHEMA_LOCATION);
+        List<SchemaScript> upTo19 = all.stream().filter(script -> script.version() < 20).toList();
+        String legacyV20Sql = "-- 回滚标记：该文件在这次执行里的最后一条记录一旦被按基线回填，就在这里留时间戳。\n"
+                + "-- 只标记「最后一条」：回滚的判定与展示都以末态记录为准，标记整段历史没有意义。\n"
+                + "ALTER TABLE file_record ADD COLUMN rolled_back_at TIMESTAMP(3) NULL;\n";
+        String legacyV20Checksum = loader.checksum(legacyV20Sql);
+        assertEquals("aeb37bedc799bd8e2e6fda70de2710a0c4e57071d0d2bf91972f53066a7cfd9a", legacyV20Checksum);
+
+        List<SchemaScript> withLegacyV20 = new ArrayList<>(upTo19);
+        withLegacyV20.add(new SchemaScript(20, "V20__file_record_rollback.sql", legacyV20Sql, legacyV20Checksum));
+        assertEquals(withLegacyV20.size(), initializer.initialize(database, withLegacyV20));
+
+        int remaining = all.size() - withLegacyV20.size();
+        assertEquals(remaining, initializer.initialize(database),
+                "V20 已登记旧指纹时必须放行并继续执行后续版本脚本");
+        assertEquals(0, initializer.initialize(database));
+
+        String modifiedV20 = "ALTER TABLE file_record ADD COLUMN IF NOT EXISTS other_col TIMESTAMP(3) NULL;\n";
+        IllegalStateException rejected = assertThrows(IllegalStateException.class,
+                () -> initializer.initialize(database, List.of(
+                        new SchemaScript(20, "V20__file_record_rollback.sql", modifiedV20,
+                                loader.checksum(modifiedV20)))));
+        assertTrue(rejected.getMessage().contains("V20__file_record_rollback.sql"));
+    }
+
     @AfterEach
     void cleanUp() {
         for (H2TestDatabase database : databases) {
