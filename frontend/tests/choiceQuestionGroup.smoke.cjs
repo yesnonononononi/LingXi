@@ -71,7 +71,18 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-pending]").textContent.includes("3 条待处理")'),true);
   await revealCards();
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),1);
-  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").clientHeight'),92,'题干必须预留四行高度');
+  // 题干已改为 Markdown 渲染 + 限高自适应：短题按内容收（不再预留固定四行空白），长题在 160px 内滚动。
+  assert.match(await evaluate('document.querySelector("[data-testid=choice-question]").className'), /max-h-\[160px\]/,
+    '题干必须有滚动上限，长题不能把卡片撑爆');
+  assert.deepEqual(
+    await evaluate(`(()=>{
+      const box=document.querySelector('[data-testid=choice-question]');
+      return { twoParagraphs: box.clientHeight>40, noReservedBlank: box.clientHeight<92,
+        noScroll: box.scrollHeight<=box.clientHeight+1 };
+    })()`),
+    { twoParagraphs: true, noReservedBlank: true, noScroll: true },
+    '两段短题必须按内容自适应：既完整显示两段，又不预留固定四行空白，也不出现内部滚动'
+  );
   assert.equal(await evaluate(`(()=>{
     const list=document.querySelector('[data-testid=choice-card-list]');
     const submit=document.querySelector('[data-testid=choice-submit-all]');
@@ -107,7 +118,12 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'3 / 4','最后一题不该再进位（没有下一题）');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true,'缺少第四张卡片时不能提交');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-dismiss]")'),null,'待答题时不得提供关闭入口，否则等于藏掉唯一的作答口');
-  assert.equal(await evaluate('document.querySelector("[data-choice-option=\\"1\\"]").className.includes("bg-blue-50")'),true,'选中项必须带浅蓝高亮');
+  assert.equal(await evaluate(`(()=>{
+    const option=document.querySelector('[data-choice-option="1"]');
+    const classes=option.className.split(/\\s+/);
+    return option.getAttribute('aria-checked')==='true'
+      && classes.includes('border-zinc-900') && classes.includes('ring-1');
+  })()`),true,'选中项必须有选中态：aria-checked + 深色描边 + ring（旧的浅蓝底色已废弃）');
   await evaluate('window.addLastQuestion();window.flush()');
   await click('[data-testid=choice-next]');
   await click('[data-testid=choice-custom-toggle]');
@@ -124,9 +140,29 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('window.setDark(true);window.flush()');
   // 回到首题（有选项）验证暗色契约：纯黑底 + 发光文字
   for(let index=0;index<3;index++)await click('[data-testid=choice-previous]');
-  assert.equal(await evaluate('getComputedStyle(document.querySelector("[data-testid=choice-question-group]")).backgroundColor'),'rgb(0, 0, 0)','暗色卡片底必须是纯黑');
-  assert.notEqual(await evaluate('getComputedStyle(document.querySelector("[data-testid=choice-question]")).textShadow'),'none','暗色题干必须带发光');
-  assert.notEqual(await evaluate('getComputedStyle(document.querySelector("[data-choice-option] [class*=text-glow]")).textShadow'),'none','暗色选项文字必须带发光');
+  // 色值格式随 Tailwind 版本变成 oklch，写死 rgb(0,0,0) 会把「暗色底本来就正确」判成失败。
+  // 改成与 bg-zinc-950 探针比对：既锁住深色底，又不对具体色彩空间格式过敏。
+  assert.equal(await evaluate(`(()=>{
+    const probe=document.createElement('div');probe.className='bg-zinc-950';document.body.appendChild(probe);
+    const expected=getComputedStyle(probe).backgroundColor;
+    const actual=getComputedStyle(document.querySelector('[data-testid=choice-question-group]')).backgroundColor;
+    probe.remove();
+    return actual===expected && actual!=='rgba(0, 0, 0, 0)';
+  })()`),true,'暗色卡片底必须落在深色底（bg-zinc-950）上，不能被透明或浅底覆盖');
+  // 发光是 Neon 主题包的效果；内置卡片在暗色下只保证反白可读，不能把主题特效当成通用契约。
+  const darkContrast = await evaluate(`(()=>{
+    const probe=cls=>{const el=document.createElement('div');el.className=cls;document.body.appendChild(el);
+      const color=getComputedStyle(el).color;el.remove();return color;};
+    return {
+      question: getComputedStyle(document.querySelector('[data-testid=choice-question]')).color,
+      light: probe('text-zinc-100'),
+      option: getComputedStyle(document.querySelector('[data-choice-option="1"] span.min-w-0')).color,
+      optionReadable: [probe('text-white'), probe('text-zinc-200')],
+    };
+  })()`);
+  assert.equal(darkContrast.question, darkContrast.light, '暗色题干必须反白（text-zinc-100）');
+  assert.ok(darkContrast.optionReadable.includes(darkContrast.option),
+    '暗色选项文字必须用高对比度亮色，不能沿用浅色主题的深色文字');
   await fs.writeFile(path.join(output,'dark.png'),(await window.webContents.capturePage()).toPNG());
   await window.setSize(360,720);
   await evaluate('window.flush()');
