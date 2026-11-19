@@ -868,7 +868,7 @@ test('历史摘要使用原操作名和目标，待确认与未知状态保留�
   assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-preview')), 'mcp.json');
 });
 
-test('历史计划书：权威卡片经真实消息和计划组件显示完整正文与审批按钮', t => {
+test('历史计划书：真实计划卡片显示标题与摘要，完整正文经预览入口交出', t => {
   const load = filename => loadChatModule(path.resolve(__dirname, filename), true);
   const { AgentToolName } = load('../src/utils/toolNames.ts');
   const { aggregateRecordsByIdentity } = load('../src/utils/session.ts');
@@ -888,10 +888,58 @@ test('历史计划书：权威卡片经真实消息和计划组件显示完整�
   for (const isDark of [false, true]) {
     const root = mountComponent(t, component, { message: reactive(messages.find(item => item.role === 'assistant')),
       sessionId: '2108854642652921856', isDark, isSuspended: true });
-    assert.ok(text(root).includes(body), '完整正文应显示在真正的计划组件中');
-    assert.ok(find(root, node => node.tag === 'button' && text(node).includes('批准')));
-    assert.ok(find(root, node => node.tag === 'button' && text(node).includes('拒绝执行')));
+
+    // 卡片收敛为「标题 + 摘要 + 执行入口」，完整正文不再铺在气泡里 ——
+    // 否则一条计划书会把整个对话流挤开。正文的可达性由下一段源码契约与真实的预览入口共同保证：
+    // 运行时 symbol 每次 load 都是新实例，无法在进程内断言注入回调，这里不假装能验证。
+    const card = find(root, node => node.props?.['data-testid'] === 'plan-card');
+    assert.ok(card, '必须渲染真实计划卡片');
+    assert.ok(text(card).includes('协作式演示计划'), '标题取权威卡片的 title');
+    assert.doesNotMatch(text(card), /参数不能替代权威正文/, '不能在卡片上回退成工具参数里的正文');
+    assert.ok(find(card, node => node.tag === 'button' && text(node).includes('执行')), '待决计划必须给执行入口');
     assert.doesNotMatch(text(root), /恢复执行|当前轮次已挂起/);
+
+    // 契约：卡片点击必须把**整张权威卡片数据**（含完整正文）交给预览入口，而不是摘要或参数。
+    assert.equal(typeof find(card, node => typeof node.props?.onClick === 'function')?.props?.onClick, 'function',
+      '卡片必须可点开，否则完整正文无处可看');
+  }
+  const planCardSource = readSource('../src/components/chat/PlanCard.vue');
+  assert.match(planCardSource, /openPlanPreview\?\.\(\{[\s\S]{0,200}promptCard:\s*props\.promptCard/,
+    '点开时必须交出 promptCard 本体，预览面板才有完整正文');
+});
+
+test('计划摘要只剥 Markdown 结构标记，不改写正文里的连字符标识符', t => {
+  const load = filename => loadChatModule(path.resolve(__dirname, filename), true);
+  const { AgentToolName } = load('../src/utils/toolNames.ts');
+  const { aggregateRecordsByIdentity } = load('../src/utils/session.ts');
+  const { attachPromptCards } = load('../src/utils/toolCallCard.ts');
+  const component = load('../src/components/chat/ChatMessageItem.vue').default;
+  // 旧实现把 - _ | 当 Markdown 标记一律换成空格，摘要里于是出现「plan 0」「lingxi harness」这类
+  // 正文中根本不存在的文字；这里按"只剥结构标记"锁定摘要文本。
+  const cases = [
+    ['## 目标\n\n核对 lingxi-harness-agent 与 plan-0 的锁定关系。', '目标 核对 lingxi-harness-agent 与 plan-0 的锁定关系。'],
+    ['## 目标\n\n**必须**先看 [文档](https://example.com/a.md) 再动手。', '目标 必须先看 文档 再动手。'],
+    ['- 列表项一\n- 列表项二', '列表项一 列表项二'],
+  ];
+  for (const [body, expected] of cases) {
+    const callId = 'call-excerpt';
+    const messages = aggregateRecordsByIdentity('2108854642652921857', { '2108854643462422529': {
+      sessionId: '2108854642652921857', turnId: '2108854643462422529', status: 'WAITING', viewVersion: '4',
+      blocks: [{ blockId: `tool:${callId}`, responseId: '896693207532830721', order: 1,
+        type: 'TOOL', status: 'PROMISED', toolCallId: callId, toolName: AgentToolName.CreatePlan,
+        arguments: JSON.stringify({ title: '摘要计划' }) }],
+    } });
+    attachPromptCards(messages, [{ id: callId, conversationId: '2108854642652921857',
+      type: 'PROMISE', status: 'pending', version: '4', pending: true, allowedActions: ['APPROVE', 'REJECT'],
+      content: { kind: 'PLAN', title: '摘要计划', text: body }, toolName: AgentToolName.CreatePlan }]);
+    const root = mountComponent(t, component, {
+      message: reactive(messages.find(item => item.role === 'assistant')),
+      sessionId: '2108854642652921857', isDark: false, isSuspended: true });
+    const card = find(root, node => node.props?.['data-testid'] === 'plan-card');
+    assert.ok(card, '必须渲染真实计划卡片');
+    const excerpt = find(card, node => node.tag === 'p');
+    assert.ok(excerpt, '计划卡必须有摘要行');
+    assert.equal(text(excerpt), expected, '摘要只能剥掉 Markdown 结构标记');
   }
 });
 
@@ -1290,7 +1338,10 @@ test('历史编辑摘要：解析持久化结果的 output，工具收起时显�
   const root = await mountExpanded(t, answer);
   assert.match(text(root), /history\.md\s*\+3-2/);
   assert.match(text(root), /created\.md\s*\+5-0/);
-  const button = find(root, node => node.tag === 'button' && node.props['aria-label'] === '查看写入详情');
+  // 详情按钮的 aria-label 是动态模板「查看{category}详情」，别再写死某一类工具的文案。
+  const button = find(root, node => node.tag === 'button'
+    && /^查看.+详情$/.test(String(node.props['aria-label'] ?? '')));
+  assert.ok(button, '工具行必须提供展开详情的入口');
   button.props.onClick({ stopPropagation() {} });
   await nextTick();
   assert.equal(text(root).split('+3-2').length - 1, 2, '展开详情也保留相同统计');

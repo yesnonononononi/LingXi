@@ -104,11 +104,19 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=plan-approval-entry-toggle]").length'),20);
   assert.equal(await evaluate('(()=>{const list=document.querySelector("[data-testid=plan-approval-list]");return list.scrollHeight>list.clientHeight&&list.clientHeight<=320;})()'),true);
   await evaluate('document.querySelector("[data-testid=plan-approval-entry-toggle]").click();window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list]").innerText.includes("完整计划正文 plan-0")'),true);
+  // 计划卡现在是「标题 + 一行摘要 + 点开预览」：展开条目后列表里只该出现标题与摘要，
+  // 正文交给预览面板承载，不再把整段 markdown 内联进列表。
+  assert.deepEqual(await evaluate(`(()=>{
+    const card=document.querySelector('[data-testid=plan-approval-list] [data-testid=plan-card]');
+    const title=card.querySelector('.text-sm.font-semibold')?.textContent.trim();
+    const excerpt=card.querySelector('p')?.textContent.trim();
+    return {title, excerpt, hasInlineHeading: card.querySelector('h1,h2,h3')!==null};
+  })()`), {title:'实施计划 plan-0', excerpt:'目标 完整计划正文 plan-0', hasInlineHeading:false},
+  '展开计划条目必须渲染计划卡：标题 + 一行摘要，正文交给预览面板而不是内联');
   await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").click();window.addPendingPlan("plan-20");window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'true','新待决计划必须自动露出');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list] [data-approval-id]").dataset.approvalId'),'plan-20');
-  await evaluate('[...document.querySelectorAll(\'[data-approval-id="plan-20"] button\')].find(button=>button.textContent.trim()==="批准").click();window.flush()');
+  await evaluate('document.querySelector(\'[data-approval-id="plan-20"] [data-testid=plan-execute-button]\').click();window.flush()');
   assert.deepEqual(await evaluate('window.decisions[2]'),{conversationId:'42',toolCallId:'plan-20',action:'APPROVE',text:'',expectedVersion:'7'});
   await evaluate('window.finishDecision();window.flush()');
   assert.equal(await evaluate('document.querySelector(\'[data-approval-id="plan-20"]\').textContent.includes("已批准")'),true);

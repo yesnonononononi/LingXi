@@ -31,11 +31,16 @@ const errorMsg = ref('');
 const isPending = computed(() => canDecideCard(props.promptCard, 'APPROVE'));
 const planTitle = computed(() => props.promptCard.title || t('chat.plan.defaultTitle'));
 const planExcerpt = computed(() => {
-  const raw = props.promptCard.content || '';
+  const raw = String(props.promptCard.content ?? '');
   if (!raw.trim()) return '';
+  // 只剥 Markdown 的**结构标记**：标题/列表记号、行内强调、链接语法。
+  // 不能像以前那样把 - _ | 当标记一律换成空格——那会把 plan-0、lingxi-harness-agent
+  // 这类真实标识符改写成「plan 0」，摘要里出现并不存在的文字。
   return raw
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[#>*`|_-]+/g, ' ')
+    .replace(/^\s{0,3}(#{1,6}|[-*+]|\d+\.)\s+/gm, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*`]+/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 140);
