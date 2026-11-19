@@ -35,4 +35,15 @@ function describeForModel(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-module.exports = {TOOL_ERROR, ToolError, toolError, describeForModel};
+/**
+ * 把底层异常归一成带 code 的工具错误。
+ *
+ * 桥接器、页面脚本这些下层只知道「失败了」，不知道调用方是模型；
+ * 不补 code 模型就没法区分该重试还是该换路子。
+ */
+function asToolError(code, error) {
+  if (error instanceof ToolError) return error;
+  return new ToolError(code, error instanceof Error ? error.message : String(error));
+}
+
+module.exports = {TOOL_ERROR, ToolError, toolError, describeForModel, asToolError};

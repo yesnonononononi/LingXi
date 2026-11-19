@@ -46,7 +46,7 @@ module.exports = {
 
     const state = await host.acquireState();
     const tab = host.resolveTab(state, normalizeText(args.tabId));
-    const navWaiter = submit ? host.beginNavigationWatch(tab) : null;
+    const navWatch = submit ? host.beginNavigationWatch(tab) : null;
 
     const result = await host.withAgentControl(tab, async () => {
       const prepared = await host.runScript(tab, 'fill-prepare', target);
@@ -83,7 +83,7 @@ module.exports = {
       return read;
     });
 
-    const navigation = navWaiter ? await navWaiter : null;
+    const navigation = navWatch ? await navWatch.settle() : null;
     return {
       ...result,
       tabId: tab.id,

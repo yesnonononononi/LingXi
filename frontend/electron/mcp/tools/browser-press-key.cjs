@@ -34,13 +34,13 @@ module.exports = {
 
     const state = await host.acquireState();
     const tab = host.resolveTab(state, normalizeText(args.tabId));
-    const navWaiter = keyCode === 'Return' || keyCode === 'Enter' ? host.beginNavigationWatch(tab) : null;
+    const navWatch = keyCode === 'Return' || keyCode === 'Enter' ? host.beginNavigationWatch(tab) : null;
 
     const result = await host.withAgentControl(tab, async () => {
       if (rawRef || rawSelector) {
         const focused = await host.runScript(tab, 'focus', {rawRef, rawSelector});
         if (!focused || !focused.ok) {
-          throw new Error((focused && focused.error) || '聚焦元素失败');
+          throw toolError(TOOL_ERROR.TARGET_NOT_FOUND, (focused && focused.error) || '聚焦元素失败');
         }
       }
       if (host.canSendInputEvent(tab)) {
@@ -52,7 +52,7 @@ module.exports = {
       return {...fallback, key: rawKey, inputKeyCode: keyCode, modifiers, tabId: tab.id};
     });
 
-    const navigation = navWaiter ? await navWaiter : null;
+    const navigation = navWatch ? await navWatch.settle() : null;
     return {
       ...result,
       url: (navigation && navigation.url) || result.url || tab.url,

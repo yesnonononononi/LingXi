@@ -3,7 +3,7 @@
  */
 
 const {normalizeBoolean, normalizeText} = require('../args.cjs');
-const {TOOL_ERROR, toolError} = require('../errors.cjs');
+const {TOOL_ERROR, toolError, asToolError} = require('../errors.cjs');
 
 module.exports = {
   name: 'design_capture',
@@ -31,12 +31,17 @@ module.exports = {
   async run(host, args) {
     const bridge = host.designBridge;
     if (!bridge) throw toolError(TOOL_ERROR.DESIGN_UNAVAILABLE, 'Design 画布桥接器未启用');
-    const captured = await bridge.capture({
-      viewports: args.viewports,
-      fullPage: normalizeBoolean(args.fullPage, false),
-      saveDir: normalizeText(args.saveDir),
-      saveToTemp: true,
-    });
+    let captured;
+    try {
+      captured = await bridge.capture({
+        viewports: args.viewports,
+        fullPage: normalizeBoolean(args.fullPage, false),
+        saveDir: normalizeText(args.saveDir),
+        saveToTemp: true,
+      });
+    } catch (error) {
+      throw asToolError(TOOL_ERROR.DESIGN_UNAVAILABLE, error);
+    }
     const shots = captured.shots || [];
     return {
       images: shots.map(shot => ({data: shot.base64, mimeType: shot.mimeType || 'image/png'})),

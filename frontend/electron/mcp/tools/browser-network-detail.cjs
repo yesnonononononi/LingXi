@@ -42,7 +42,7 @@ module.exports = {
     const responseBody = storedBody.slice(offset, offset + maxLength);
     const totalBodyLength = Number.isFinite(entry.bodyLength) ? entry.bodyLength : storedBody.length;
 
-    return {
+    const result = {
       tabId: tab.id,
       id: entry.id,
       method: entry.method,
@@ -58,12 +58,14 @@ module.exports = {
       responseHeaders: entry.responseHeaders || {},
       requestBody: entry.requestBody || '',
       bodyCaptured: Boolean(entry.bodyCaptured),
-      bodyUnavailableReason: entry.bodyCaptured ? '' : (entry.bodyUnavailableReason || ''),
       responseBody,
       totalBodyLength,
       offset,
       truncated: offset + responseBody.length < totalBodyLength,
       base64Encoded: Boolean(entry.base64Encoded),
     };
+    // 只有没抓到时才给原因：抓到了还带一个空串，模型会以为这里本该有内容
+    if (!result.bodyCaptured) result.bodyUnavailableReason = entry.bodyUnavailableReason || '响应体未抓取';
+    return result;
   },
 };

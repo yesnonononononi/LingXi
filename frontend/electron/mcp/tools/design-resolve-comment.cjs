@@ -2,8 +2,8 @@
  * design_resolve_comment：把某条（或全部）Design 批注标为已解决。
  */
 
+const {TOOL_ERROR, toolError, asToolError} = require('../errors.cjs');
 const {normalizeBoolean, normalizeText} = require('../args.cjs');
-const {TOOL_ERROR, toolError} = require('../errors.cjs');
 
 module.exports = {
   name: 'design_resolve_comment',
@@ -24,6 +24,10 @@ module.exports = {
     if (!all && !commentId) {
       throw toolError(TOOL_ERROR.INVALID_ARGUMENT, 'commentId 与 all=true 至少提供一项');
     }
-    return bridge.resolveComment({commentId, all});
+    try {
+      return await bridge.resolveComment({commentId, all});
+    } catch (error) {
+      throw asToolError(TOOL_ERROR.DESIGN_UNAVAILABLE, error);
+    }
   },
 };

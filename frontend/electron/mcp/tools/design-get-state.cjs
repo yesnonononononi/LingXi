@@ -2,7 +2,7 @@
  * design_get_state：读 Design 画布的绑定路径、选中元素、计算样式与未解决批注。
  */
 
-const {TOOL_ERROR, toolError} = require('../errors.cjs');
+const {TOOL_ERROR, toolError, asToolError} = require('../errors.cjs');
 
 module.exports = {
   name: 'design_get_state',
@@ -12,6 +12,10 @@ module.exports = {
   async run(host) {
     const bridge = host.designBridge;
     if (!bridge) throw toolError(TOOL_ERROR.DESIGN_UNAVAILABLE, 'Design 画布桥接器未启用');
-    return bridge.getState();
+    try {
+      return await bridge.getState();
+    } catch (error) {
+      throw asToolError(TOOL_ERROR.DESIGN_UNAVAILABLE, error);
+    }
   },
 };

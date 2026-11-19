@@ -49,6 +49,16 @@ module.exports = {
     if (!url) {
       throw toolError(TOOL_ERROR.INVALID_ARGUMENT, 'action=goto 时必须提供 url');
     }
+    // 先自己判一遍协议：host 的校验只会抛普通 Error，模型就看不到错误码
+    let parsedUrl = null;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw toolError(TOOL_ERROR.INVALID_ARGUMENT, `页面地址格式不正确: ${url}`);
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw toolError(TOOL_ERROR.INVALID_ARGUMENT, `页面地址必须使用 http/https 协议: ${url}`);
+    }
     const state = await host.acquireState();
     const tab = normalizeBoolean(args.newTab, false) ? host.createTab(state) : host.resolveTab(state, tabId);
     if (!tab.url) tab.openedByAgent = true;

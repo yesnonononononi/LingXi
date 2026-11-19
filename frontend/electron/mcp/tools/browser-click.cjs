@@ -46,7 +46,7 @@ module.exports = {
     const state = await host.acquireState();
     const tab = host.resolveTab(state, normalizeText(args.tabId));
 
-    const navWaiter = shouldWaitNavigation && !shouldHoverOnly ? host.beginNavigationWatch(tab) : null;
+    const navWatch = shouldWaitNavigation && !shouldHoverOnly ? host.beginNavigationWatch(tab) : null;
     const result = await host.withAgentControl(tab, async () => {
       const res = await host.runScript(tab, 'click', scriptArgs);
       if (res && res.ok && shouldHoverOnly) {
@@ -59,7 +59,8 @@ module.exports = {
       throw toolError(TOOL_ERROR.TARGET_NOT_FOUND, (result && result.error) || '点击元素失败');
     }
 
-    const navigation = navWaiter ? await navWaiter : null;
+    // 监听必须在动作之前注册、在动作之后 settle：先 settle 就开始计时，会漏掉点击引发的导航
+    const navigation = navWatch ? await navWatch.settle() : null;
     return {
       ...result,
       tabId: tab.id,
