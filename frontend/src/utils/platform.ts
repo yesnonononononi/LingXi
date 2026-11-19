@@ -137,7 +137,13 @@ export interface ElectronAPI {
   /** Design 画布本地 MCP 桥接通道（响应主进程状态读取与批注解决指令）。Web 端为 undefined。 */
   designMcp?: {
     onRequest: (callback: (payload: { requestId: string; action: string; payload?: Record<string, unknown> }) => void) => () => void;
-    respond: (payload: { requestId: string; ok: boolean; data?: unknown; error?: string }) => void;
+    /**
+     * 响应回执。
+     *
+     * <p>`code` 是给工具层的分支码（如 `TARGET_NOT_FOUND`）：主进程会把字符串型 code 原样带给调用方，
+     * 工具层据此区分「批注不存在」与「画布不可用」，比字符串匹配 error 文案可靠。</p>
+     */
+    respond: (payload: { requestId: string; ok: boolean; data?: unknown; code?: string; error?: string }) => void;
   };
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
   updater?: ElectronUpdaterAPI;
