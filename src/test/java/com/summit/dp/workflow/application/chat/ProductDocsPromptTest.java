@@ -38,6 +38,19 @@ class ProductDocsPromptTest {
         assertTrue(section.contains("以实现为准"), "文档与实现冲突时要以实现为准，否则会照着过期文档误导用户");
     }
 
+    /**
+     * 历史包名已废弃：提示词里一旦出现，模型会把过期目录名当事实抄给用户。
+     * 这条断言是把「彻底舍弃」变成可执行契约 —— 光靠人记着不改，迟早写回去。
+     */
+    @Test
+    void sectionDoesNotMentionTheRetiredPackageName() {
+        String section = new ProductDocsPrompt().load();
+        assertFalse(section.toLowerCase().contains("aether"),
+                "历史包名已废弃，提示词里不许再出现，否则会引导模型去猜过期路径");
+        assertTrue(section.contains("%APPDATA%"), "但要保留「用户数据目录在 %APPDATA% 下」这个事实");
+        assertTrue(section.contains("以应用名命名"), "改写成按运行中的应用名推导，避免名字漂移后过期");
+    }
+
     /** 尾换行会在 String.join("\n\n", ...) 里多出一个空行，段与段之间就会拉开。 */
     @Test
     void sectionHasNoTrailingBlankLine() {
