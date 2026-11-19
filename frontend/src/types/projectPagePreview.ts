@@ -18,6 +18,8 @@ export interface ProjectPageTab {
   canGoBack: boolean;
   canGoForward: boolean;
   agentGlowActive?: boolean;
+  agentBusy?: boolean;
+  agentPaused?: boolean;
 }
 
 /** 版本号保证事件与操作回执乱序到达时不会回退状态。 */
@@ -28,7 +30,7 @@ export interface ProjectPageState {
   tabs: ProjectPageTab[];
 }
 
-export type ProjectPageAction = 'sync' | 'create' | 'activate' | 'close-tab' | 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'close' | 'show-with-agent' | 'dismiss-agent-glow';
+export type ProjectPageAction = 'sync' | 'create' | 'activate' | 'close-tab' | 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'close' | 'show-with-agent' | 'dismiss-agent-glow' | 'pause-agent' | 'resume-agent';
 /** 原生右键菜单文案。原生 Menu 没有 i18n 运行时，只能由渲染层按当前语言推送。 */
 export interface ProjectPageMenuLabels {
   showWithAgent: string;
@@ -89,6 +91,8 @@ export interface ProjectPagePreviewApi {
   stop: () => void;
   showWithAgent: (tabId?: string, selectionText?: string) => void;
   dismissAgentGlow: (tabId?: string) => void;
+  pauseAgent: (tabId?: string) => void;
+  resumeAgent: (tabId?: string) => void;
   /**
    * 收起面板：只让原生视图让位，主进程里的标签、登录态与表单仍在，重开即恢复。
    *

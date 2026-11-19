@@ -14,6 +14,8 @@ import {
   DESIGN_QUICK_BLOCKS,
   DESIGN_STARTER_TEMPLATES,
   type ElementLike,
+  type OutlineElementLike,
+  collectDesignOutlineNodes,
   extractDesignSystemTokens,
   extractElementStyleSummary,
   formatStyleSummary,
@@ -334,4 +336,35 @@ test('Design 发给 AI 附带计算布局/样式摘要与画布截图接线', ()
   assert.match(designCode, /renderCanvasSnapshotFile/);
   assert.match(designCode, /extractElementStyleSummary/);
   assert.match(chatCode, /payload\.files && payload\.files\.length > 0/);
+});
+
+test('P2 画布增强：DOM 层级树解析（忽略辅助节点）、流式布局控制与双端视口对比接线', () => {
+  const body: OutlineElementLike = { tagName: 'BODY', children: [] };
+  const header: OutlineElementLike = { tagName: 'HEADER', className: 'nav', parentElement: body, children: [] };
+  const btn: OutlineElementLike = { tagName: 'BUTTON', className: 'cta', parentElement: header, style: { display: 'none' } };
+  const main: OutlineElementLike = { tagName: 'MAIN', className: 'hero', parentElement: body };
+  const moveableBox: OutlineElementLike = { tagName: 'DIV', className: 'moveable-control-box', parentElement: body };
+  const scriptTag: OutlineElementLike = { tagName: 'SCRIPT', parentElement: body };
+  header.children = [btn];
+  body.children = [header, moveableBox, scriptTag, main];
+
+  const { nodes } = collectDesignOutlineNodes(body);
+  assert.equal(nodes.length, 3);
+  assert.equal(nodes[0]?.label, 'header.nav');
+  assert.equal(nodes[0]?.depth, 0);
+  assert.equal(nodes[0]?.canMoveUp, false);
+  assert.equal(nodes[0]?.canMoveDown, true);
+  assert.equal(nodes[1]?.label, 'button.cta');
+  assert.equal(nodes[1]?.depth, 1);
+  assert.equal(nodes[1]?.hidden, true);
+  assert.equal(nodes[2]?.label, 'main.hero');
+  assert.equal(nodes[2]?.canMoveUp, true);
+  assert.equal(nodes[2]?.canMoveDown, false);
+
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const designCode = fs.readFileSync(path.resolve(currentDir, '../src/components/chat/DesignCanvasPreview.vue'), 'utf8');
+  assert.match(designCode, /<DesignOutlinePanel\b/);
+  assert.match(designCode, /isCompareViewports/);
+  assert.match(designCode, /key === 'flexDirection'/);
+  assert.match(designCode, /key === 'gap'/);
 });

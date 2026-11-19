@@ -19,9 +19,11 @@ import {
   DESIGN_STARTER_TEMPLATES,
   type DesignAnimationPreset,
   type DesignBreadcrumbNode,
+  type DesignOutlineNode,
   type DesignQuickBlock,
   type DesignStarterTemplate,
   type DesignTweakVar,
+  collectDesignOutlineNodes,
   extractDesignSystemTokens,
   extractElementStyleSummary,
   parseDesignTweakVars,
@@ -37,6 +39,7 @@ import DesignVersionPanel from './DesignVersionPanel.vue';
 import DesignCommentLayer from './DesignCommentLayer.vue';
 import DesignTweakPanel from './DesignTweakPanel.vue';
 import DesignVariantsModal from './DesignVariantsModal.vue';
+import DesignOutlinePanel from './DesignOutlinePanel.vue';
 import projectTokensRaw from '../../theme/tokens.css?raw';
 
 const props = defineProps<{
@@ -73,6 +76,8 @@ const loadedFileName = ref<string>('');
 const isFileLoaded = ref(false);
 const isDraggingOver = ref(false);
 const currentViewportWidth = ref<string>('100%');
+const isCompareViewports = ref(false);
+const compareHtmlSnapshot = ref('');
 const canvasZoom = ref<number>(1);
 
 const showPasteModal = ref(false);
@@ -90,7 +95,9 @@ const MAX_HISTORY = 30;
 /** Agent 改写后按选择器恢复选中，避免每轮都要重新点选。 */
 let pendingReselector = '';
 const agentUpdatedFlash = ref(false);
-const activeDrawer = ref<'none' | 'versions' | 'comments' | 'tweaks'>('none');
+const activeDrawer = ref<'none' | 'outline' | 'versions' | 'comments' | 'tweaks'>('none');
+const outlineNodes = ref<DesignOutlineNode[]>([]);
+let outlineElements: HTMLElement[] = [];
 const tweakVars = ref<DesignTweakVar[]>([]);
 const tweakValues = ref<Record<string, string>>({});
 const injectProjectTokens = ref(false);
@@ -101,7 +108,36 @@ const showExportMenu = ref(false);
 const versionMgr = useDesignVersions();
 const commentMgr = useDesignComments();
 
-const toggleDrawer = (drawer: 'versions' | 'comments' | 'tweaks'): void => {
+const refreshOutline = (): void => {
+  const body = iframeRef.value?.contentDocument?.body;
+  if (!body) {
+    outlineNodes.value = [];
+    outlineElements = [];
+    return;
+  }
+  const collected = collectDesignOutlineNodes(body);
+  outlineNodes.value = collected.nodes;
+  outlineElements = collected.elements as HTMLElement[];
+};
+
+const syncCompareSnapshot = (): void => {
+  if (!isCompareViewports.value || !isFileLoaded.value) return;
+  compareHtmlSnapshot.value = isCodeView.value ? codeDraft.value : serializeDocumentHtml();
+};
+
+const toggleCompareViewports = (): void => {
+  isCompareViewports.value = !isCompareViewports.value;
+  if (isCompareViewports.value) {
+    syncCompareSnapshot();
+  }
+};
+
+const selectViewportWidth = (width: string): void => {
+  isCompareViewports.value = false;
+  currentViewportWidth.value = width;
+};
+
+const toggleDrawer = (drawer: 'outline' | 'versions' | 'comments' | 'tweaks'): void => {
   if (activeDrawer.value === drawer) {
     activeDrawer.value = 'none';
     commentMgr.commentMode.value = false;
@@ -109,6 +145,9 @@ const toggleDrawer = (drawer: 'versions' | 'comments' | 'tweaks'): void => {
   }
   activeDrawer.value = drawer;
   commentMgr.commentMode.value = drawer === 'comments';
+  if (drawer === 'outline') {
+    refreshOutline();
+  }
 };
 
 const designDoc = useDesignDocument({
@@ -117,6 +156,8 @@ const designDoc = useDesignDocument({
     pendingReselector = selectedElement.value ? resolveElementSelector(selectedElement.value) : '';
     parseAndMountHtml(content, loadedFileName.value || 'design-prototype.html', true);
     versionMgr.recordVersion(content, 'ai');
+    if (activeDrawer.value === 'outline') nextTick(refreshOutline);
+    if (isCompareViewports.value) compareHtmlSnapshot.value = content;
     agentUpdatedFlash.value = true;
     setTimeout(() => { agentUpdatedFlash.value = false; }, 2400);
   },
@@ -146,6 +187,8 @@ const recordSnapshot = (): void => {
   }
   redoStack.value = [];
   designDoc.markDirty();
+  if (activeDrawer.value === 'outline') nextTick(refreshOutline);
+  if (isCompareViewports.value) nextTick(syncCompareSnapshot);
 };
 
 const clearSelectionState = (hint?: string): void => {
@@ -232,6 +275,11 @@ const currentStyles = ref({
   padding: 0,
   opacity: 1,
   boxShadow: 'none',
+  display: 'block',
+  flexDirection: 'row',
+  justifyContent: 'flex-start',
+  alignItems: 'stretch',
+  gap: 0,
   animationPreset: 'none' as DesignAnimationPreset['id'],
   animationDuration: 400,
 });
@@ -267,6 +315,11 @@ const syncElementStyles = (el: HTMLElement) => {
     padding: parseInt(computed.paddingTop, 10) || 0,
     opacity: Number(parseFloat(computed.opacity || '1').toFixed(2)),
     boxShadow: computed.boxShadow && computed.boxShadow !== 'none' ? computed.boxShadow : 'none',
+    display: computed.display || 'block',
+    flexDirection: computed.flexDirection || 'row',
+    justifyContent: computed.justifyContent || 'flex-start',
+    alignItems: computed.alignItems || 'stretch',
+    gap: parseInt(computed.gap || computed.rowGap || '0', 10) || 0,
     animationPreset: rawAnim || 'none',
     animationDuration: Number.isFinite(rawDuration) && rawDuration >= 100 ? rawDuration : 400,
   };
@@ -337,7 +390,12 @@ type StyleKey =
   | 'textAlign'
   | 'padding'
   | 'opacity'
-  | 'boxShadow';
+  | 'boxShadow'
+  | 'display'
+  | 'flexDirection'
+  | 'justifyContent'
+  | 'alignItems'
+  | 'gap';
 
 const applyStyle = (key: StyleKey, val: string | number) => {
   if (!selectedElement.value) return;
@@ -377,6 +435,21 @@ const applyStyle = (key: StyleKey, val: string | number) => {
       child.style.setProperty('color', String(val), 'important');
     });
     currentStyles.value.color = String(val);
+  } else if (key === 'display') {
+    el.style.setProperty('display', String(val), 'important');
+    currentStyles.value.display = String(val);
+  } else if (key === 'flexDirection') {
+    el.style.setProperty('flex-direction', String(val), 'important');
+    currentStyles.value.flexDirection = String(val);
+  } else if (key === 'justifyContent') {
+    el.style.setProperty('justify-content', String(val), 'important');
+    currentStyles.value.justifyContent = String(val);
+  } else if (key === 'alignItems') {
+    el.style.setProperty('align-items', String(val), 'important');
+    currentStyles.value.alignItems = String(val);
+  } else if (key === 'gap') {
+    el.style.setProperty('gap', `${val}px`, 'important');
+    currentStyles.value.gap = Number(val);
   }
 
   nextTick(() => {
@@ -1008,6 +1081,59 @@ const focusCommentSelector = (selector: string): void => {
   selectElement(target);
 };
 
+const selectOutlineAt = (index: number): void => {
+  const target = outlineElements[index];
+  if (!target || !target.isConnected) return;
+  if (canvasMode.value !== 'design') setCanvasMode('design');
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  selectElement(target);
+};
+
+const moveOutlineAt = ({ index, direction }: { index: number; direction: 'up' | 'down' }): void => {
+  const target = outlineElements[index];
+  const parent = target?.parentElement;
+  if (!target || !parent || isProtectedNode(target)) return;
+  const siblings = Array.from(parent.children).filter(node => !isProtectedNode(node as HTMLElement)) as HTMLElement[];
+  const pos = siblings.indexOf(target);
+  if (pos < 0) return;
+  if (direction === 'up' && pos > 0) {
+    recordSnapshot();
+    parent.insertBefore(target, siblings[pos - 1]!);
+  } else if (direction === 'down' && pos < siblings.length - 1) {
+    recordSnapshot();
+    const afterNext = siblings[pos + 1]!.nextSibling;
+    parent.insertBefore(target, afterNext);
+  } else {
+    return;
+  }
+  refreshOutline();
+  nextTick(() => moveableInstance?.updateRect());
+};
+
+const toggleOutlineVisibilityAt = (index: number): void => {
+  const target = outlineElements[index];
+  if (!target || isProtectedNode(target)) return;
+  recordSnapshot();
+  if (target.style.display === 'none') {
+    target.style.removeProperty('display');
+  } else {
+    target.style.setProperty('display', 'none', 'important');
+  }
+  refreshOutline();
+  nextTick(() => moveableInstance?.updateRect());
+};
+
+const removeOutlineAt = (index: number): void => {
+  const target = outlineElements[index];
+  if (!target || isProtectedNode(target)) return;
+  recordSnapshot();
+  if (selectedElement.value === target) {
+    clearSelectionState();
+  }
+  target.remove();
+  refreshOutline();
+};
+
 const addSelectedComment = (text: string): void => {
   if (!selectedElement.value) return;
   commentMgr.addComment(selectedSelector.value, selectedCommentLabel.value, text);
@@ -1419,9 +1545,10 @@ onBeforeUnmount(() => {
 
         <!-- 视口尺寸切换器 -->
         <div v-if="isFileLoaded && !isCodeView" class="device-switch" role="group">
-          <button type="button" :class="{ 'is-selected': currentViewportWidth === '100%' }" @click="currentViewportWidth = '100%'" title="桌面自适应">桌面</button>
-          <button type="button" :class="{ 'is-selected': currentViewportWidth === '768px' }" @click="currentViewportWidth = '768px'" title="平板 768px">平板</button>
-          <button type="button" :class="{ 'is-selected': currentViewportWidth === '390px' }" @click="currentViewportWidth = '390px'" title="手机 390px">手机</button>
+          <button type="button" :class="{ 'is-selected': !isCompareViewports && currentViewportWidth === '100%' }" @click="selectViewportWidth('100%')" title="桌面自适应">桌面</button>
+          <button type="button" :class="{ 'is-selected': !isCompareViewports && currentViewportWidth === '768px' }" @click="selectViewportWidth('768px')" title="平板 768px">平板</button>
+          <button type="button" :class="{ 'is-selected': !isCompareViewports && currentViewportWidth === '390px' }" @click="selectViewportWidth('390px')" title="手机 390px">手机</button>
+          <button type="button" :class="{ 'is-selected': isCompareViewports }" @click="toggleCompareViewports" title="并排对比桌面与手机视口">双端对比</button>
         </div>
 
         <!-- 缩放倍率 -->
@@ -1463,6 +1590,17 @@ onBeforeUnmount(() => {
           @click="saveDesignDocument"
         >
           保存
+        </button>
+
+        <button
+          v-if="isFileLoaded"
+          type="button"
+          class="btn-secondary-action"
+          :class="{ 'is-drawer-active': activeDrawer === 'outline' }"
+          title="DOM 层级树：查看结构、调序与显隐"
+          @click="toggleDrawer('outline')"
+        >
+          层级
         </button>
 
         <button
@@ -1668,6 +1806,30 @@ onBeforeUnmount(() => {
 
       <div class="inspector-divider"></div>
 
+      <!-- 流式布局调节（Flex / Grid） -->
+      <div class="inspector-group">
+        <span class="inspector-label">布局</span>
+        <div class="flex items-center gap-1">
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.display === 'block' }" @click="applyStyle('display', 'block')">块</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.display.includes('flex') }" @click="applyStyle('display', 'flex')">Flex</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.display.includes('grid') }" @click="applyStyle('display', 'grid')">Grid</button>
+        </div>
+        <div v-if="currentStyles.display.includes('flex')" class="flex items-center gap-1 ml-1">
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.flexDirection === 'row' }" @click="applyStyle('flexDirection', 'row')" title="横向排列">横</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.flexDirection === 'column' }" @click="applyStyle('flexDirection', 'column')" title="纵向排列">纵</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.justifyContent === 'center' }" @click="applyStyle('justifyContent', 'center')" title="主轴居中">居中</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.justifyContent === 'space-between' }" @click="applyStyle('justifyContent', 'space-between')" title="两端对齐">两端</button>
+        </div>
+        <div v-if="currentStyles.display.includes('flex') || currentStyles.display.includes('grid')" class="flex items-center gap-1 ml-1" title="子元素间距 gap">
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.gap === 0 }" @click="applyStyle('gap', 0)">0</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.gap === 8 }" @click="applyStyle('gap', 8)">8</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.gap === 16 }" @click="applyStyle('gap', 16)">16</button>
+          <button type="button" class="option-pill" :class="{ 'is-selected': currentStyles.gap === 24 }" @click="applyStyle('gap', 24)">24</button>
+        </div>
+      </div>
+
+      <div class="inspector-divider"></div>
+
       <!-- 内置过渡动画样式选择框 -->
       <div class="inspector-group animation-picker-group">
         <span class="inspector-label">{{ t('designPreview.animation') || '过渡动画' }}</span>
@@ -1787,7 +1949,7 @@ onBeforeUnmount(() => {
 
       <!-- Iframe 沙箱画板 -->
       <div
-        v-show="isFileLoaded"
+        v-show="isFileLoaded && !isCompareViewports"
         class="artboard-iframe-wrapper"
         :style="{
           width: currentViewportWidth,
@@ -1802,7 +1964,40 @@ onBeforeUnmount(() => {
           sandbox="allow-scripts allow-same-origin allow-modals"
         />
       </div>
+
+      <!-- 双端并排对比画板 -->
+      <div v-if="isFileLoaded && isCompareViewports" class="compare-viewports-grid">
+        <div class="compare-pane compare-pane-desktop">
+          <div class="compare-pane-header">桌面端 · 1280px</div>
+          <iframe
+            class="compare-iframe"
+            title="Desktop Compare Preview"
+            sandbox="allow-scripts allow-same-origin"
+            :srcdoc="compareHtmlSnapshot"
+          />
+        </div>
+        <div class="compare-pane compare-pane-mobile">
+          <div class="compare-pane-header">移动端 · 390px</div>
+          <iframe
+            class="compare-iframe"
+            title="Mobile Compare Preview"
+            sandbox="allow-scripts allow-same-origin"
+            :srcdoc="compareHtmlSnapshot"
+          />
+        </div>
       </div>
+      </div>
+
+      <DesignOutlinePanel
+        v-if="isFileLoaded && activeDrawer === 'outline'"
+        :nodes="outlineNodes"
+        :selectedSelector="selectedSelector"
+        @select="selectOutlineAt"
+        @move="moveOutlineAt"
+        @toggleVisibility="toggleOutlineVisibilityAt"
+        @remove="removeOutlineAt"
+        @close="activeDrawer = 'none'"
+      />
 
       <DesignVersionPanel
         v-if="isFileLoaded && activeDrawer === 'versions'"
@@ -2646,5 +2841,52 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.compare-viewports-grid {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  overflow-x: auto;
+  padding: 4px;
+}
+
+.compare-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--file-line, #e4e4e7);
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.compare-pane-desktop {
+  flex: 1 1 560px;
+  min-width: 480px;
+}
+
+.compare-pane-mobile {
+  flex: 0 0 390px;
+  width: 390px;
+}
+
+.compare-pane-header {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--file-muted, #71717a);
+  background: var(--file-tab, #f4f4f5);
+  border-bottom: 1px solid var(--file-line, #e4e4e7);
+}
+
+.compare-iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #ffffff;
 }
 </style>

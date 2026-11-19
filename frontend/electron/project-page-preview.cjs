@@ -347,6 +347,9 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       const HOST_ID = '__lingxi_agent_overlay_host__';
       const glowVisible = ${glowVisible};
       const busyVisible = ${busyVisible};
+      if (!glowVisible && !busyVisible) {
+        try { document.querySelectorAll('[data-lx-agent-flash]').forEach(n => n.remove()); } catch {}
+      }
       const existing = document.getElementById(HOST_ID);
       if (!glowVisible && !busyVisible) {
         if (existing) existing.remove();
@@ -464,6 +467,12 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     if (tab.contents && tab.contents.id !== undefined) {
       tabsByContentsId.delete(tab.contents.id);
     }
+    if (Array.isArray(tab.agentResumeWaiters) && tab.agentResumeWaiters.length > 0) {
+      for (const waiter of tab.agentResumeWaiters) {
+        waiter.reject(new Error('网页标签已关闭，人工接管等待已取消'));
+      }
+      tab.agentResumeWaiters = [];
+    }
     clearTimer(tab);
     clearAgentOverlayTimer(tab);
     if (!state.window.isDestroyed()) state.window.contentView.removeChildView(tab.view);
@@ -507,6 +516,8 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       canGoBack: !tab.contents.isDestroyed() && tab.contents.navigationHistory.canGoBack(),
       canGoForward: !tab.contents.isDestroyed() && tab.contents.navigationHistory.canGoForward(),
       agentGlowActive: isAgentGlowActive(tab),
+      agentBusy: Boolean(tab.agentBusy),
+      agentPaused: Boolean(tab.agentPaused),
     })),
   });
   const publish = state => {
@@ -633,7 +644,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     applyViewTheme(view);
     const tab = {id: randomUUID(), view, contents: view.webContents, url: '', title: '', favicon: '', loadState: 'idle',
       isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined,
-      openedByAgent: false, agentGlowDismissed: false, agentBusy: false, agentOverlayTimer: undefined,
+      openedByAgent: false, agentGlowDismissed: false, agentBusy: false, agentPaused: false, agentResumeWaiters: [], agentOverlayTimer: undefined,
       consoleLogs: [], networkLogs: []};
     state.tabs.set(tab.id, tab);
     if (tab.contents && tab.contents.id !== undefined) {
@@ -826,6 +837,22 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
         void syncAgentOverlay(tab);
         break;
       }
+      case 'pause-agent': {
+        const tab = request.tabId ? requireTab(state, request.tabId) : (state.tabs.get(state.activeTabId) ?? requireTab(state, ''));
+        tab.agentPaused = true;
+        void syncAgentOverlay(tab, {forceHide: true});
+        break;
+      }
+      case 'resume-agent': {
+        const tab = request.tabId ? requireTab(state, request.tabId) : (state.tabs.get(state.activeTabId) ?? requireTab(state, ''));
+        tab.agentPaused = false;
+        if (Array.isArray(tab.agentResumeWaiters) && tab.agentResumeWaiters.length > 0) {
+          const waiters = tab.agentResumeWaiters.splice(0, tab.agentResumeWaiters.length);
+          for (const waiter of waiters) waiter.resolve();
+        }
+        void syncAgentOverlay(tab);
+        break;
+      }
       case 'close': destroyTabs(state); state.closed = true; state.layout = null; break;
       default: throw new Error('不支持此网页标签操作');
     }
@@ -949,7 +976,33 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     return contents.executeJavaScript(script, true);
   };
 
+  const waitUntilAgentResumed = tab => {
+    if (!tab.agentPaused) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      if (!Array.isArray(tab.agentResumeWaiters)) tab.agentResumeWaiters = [];
+      tab.agentResumeWaiters.push({resolve, reject});
+    });
+  };
+
+  /** 在目标元素位置短暂绘制高亮边框与动作标签，便于用户实时看清 Agent 正在操作的位置。 */
+  const buildTargetFlashSnippet = (labelExpr) => `
+    try {
+      const r = el.getBoundingClientRect();
+      document.querySelectorAll('[data-lx-agent-flash]').forEach(n => n.remove());
+      const box = document.createElement('div');
+      box.setAttribute('data-lx-agent-flash', '1');
+      box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #3b82f6;border-radius:6px;background:rgba(59,130,246,0.12);box-shadow:0 0 0 3px rgba(59,130,246,0.22);transition:opacity 220ms ease;left:' + Math.max(0, r.left - 3) + 'px;top:' + Math.max(0, r.top - 3) + 'px;width:' + Math.max(12, r.width + 6) + 'px;height:' + Math.max(12, r.height + 6) + 'px;';
+      const tagEl = document.createElement('div');
+      tagEl.textContent = ${labelExpr};
+      tagEl.style.cssText = 'position:absolute;left:0;top:-22px;padding:2px 6px;border-radius:4px;background:#2563eb;color:#fff;font:600 11px/1.2 system-ui,sans-serif;white-space:nowrap;';
+      box.appendChild(tagEl);
+      (document.body || document.documentElement).appendChild(box);
+      setTimeout(() => { box.style.opacity = '0'; setTimeout(() => box.remove(), 240); }, 550);
+    } catch {}
+  `;
+
   const withAgentControl = async (tab, fn) => {
+    await waitUntilAgentResumed(tab);
     beginAgentControl(tab);
     try {
       return await fn();
@@ -1084,6 +1137,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           if (!el) return { ok: false, error: '未找到匹配元素: ' + (rawSelector || rawText), matchedCount: nodes.length, visibleCount: visible.length };
         }
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        ${buildTargetFlashSnippet("shouldHoverOnly ? '悬停' : '点击'")}
         const rect = el.getBoundingClientRect();
         const centerX = Math.round(rect.left + rect.width / 2);
         const centerY = Math.round(rect.top + rect.height / 2);
@@ -1164,6 +1218,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
             const shouldClear = ${shouldClear};
             const shouldSubmit = ${shouldSubmit};
             el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            ${buildTargetFlashSnippet("'输入'")}
             el.focus?.();
             if (el.tagName === 'SELECT') {
               const options = Array.from(el.options || []);
@@ -1639,6 +1694,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
             }
             if (!el) return { ok: false, error: '未找到要聚焦的目标元素: ' + (rawRef || rawSelector) };
             el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            ${buildTargetFlashSnippet("'输入'")}
             el.focus?.();
             return { ok: true };
           })()`;

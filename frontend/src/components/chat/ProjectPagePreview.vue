@@ -365,6 +365,15 @@ onBeforeUnmount(() => {
     <div class="status-row">
       <span class="status-text" :class="stateClass" role="status">{{ statusText }}</span>
       <button
+        v-if="activeTab?.agentGlowActive || activeTab?.agentBusy || activeTab?.agentPaused"
+        type="button"
+        class="agent-takeover-btn"
+        :class="{ 'is-paused': activeTab?.agentPaused }"
+        @click="activeTab?.agentPaused ? preview.resumeAgent(activeTab.id) : preview.pauseAgent(activeTab.id)"
+      >
+        <span>{{ activeTab?.agentPaused ? '人工接管中 · 交还 AI' : '人工接管' }}</span>
+      </button>
+      <button
         v-if="activeTab?.agentGlowActive"
         type="button"
         class="agent-glow-dismiss-btn"
@@ -459,6 +468,9 @@ onBeforeUnmount(() => {
 .agent-glow-dismiss-btn { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 9999px; border: 1px solid rgba(59, 130, 246, .38); background: rgba(59, 130, 246, .1); color: #2563eb; font-size: var(--lx-font-size-xs); font-weight: 500; cursor: pointer; transition: background-color .15s, border-color .15s; }
 .agent-glow-dismiss-btn:hover { background: rgba(59, 130, 246, .18); border-color: rgba(59, 130, 246, .6); }
 .agent-glow-dot { width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 6px #3b82f6; }
+.agent-takeover-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 9999px; border: 1px solid var(--file-line, #e4e4e7); background: var(--file-tab, #f4f4f5); color: var(--file-ink, #18181b); font-size: var(--lx-font-size-xs); font-weight: 500; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.agent-takeover-btn:hover { border-color: var(--file-focus, #a1a1aa); }
+.agent-takeover-btn.is-paused { border-color: rgba(217, 119, 6, .55); background: rgba(245, 158, 11, .14); color: #b45309; }
 .status-text.state-timeout { color: #b45309; }
 .status-text.state-failed { color: #dc2626; }
 .diagnose-text { margin: 0; font-size: var(--lx-font-size-sm); color: #b45309; }

@@ -36,6 +36,22 @@ export interface DesignBreadcrumbNode {
   depth: number;
 }
 
+export interface DesignOutlineNode {
+  id: string;
+  tag: string;
+  label: string;
+  selector: string;
+  depth: number;
+  hidden: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}
+
+export interface OutlineElementLike extends ElementLike {
+  children?: ArrayLike<OutlineElementLike>;
+  style?: { display?: string };
+}
+
 export interface ElementLike {
   tagName: string;
   id?: string;
@@ -451,6 +467,55 @@ export const resolveElementBreadcrumb = (el: ElementLike): DesignBreadcrumbNode[
     label: resolveElementLabel(node),
     depth: index,
   }));
+};
+
+const OUTLINE_IGNORED_TAGS = new Set(['script', 'style', 'link', 'meta', 'noscript', 'template']);
+
+const isOutlineIgnoredNode = (el: OutlineElementLike): boolean => {
+  const tag = el.tagName.toLowerCase();
+  if (OUTLINE_IGNORED_TAGS.has(tag)) return true;
+  const cls = readClassText(el).split(/\s+/).filter(Boolean);
+  if (cls.includes('moveable-control-box') || cls.includes('moveable-line')) return true;
+  if (el.getAttribute?.('data-lx-hover-box') !== null && el.getAttribute?.('data-lx-hover-box') !== undefined) return true;
+  return false;
+};
+
+/** 收集画布 body 下的扁平化 DOM 层级树，用于右侧大纲面板展示与调序。 */
+export const collectDesignOutlineNodes = (
+  root: OutlineElementLike | null | undefined,
+  maxNodes = 200,
+): { nodes: DesignOutlineNode[]; elements: OutlineElementLike[] } => {
+  const nodes: DesignOutlineNode[] = [];
+  const elements: OutlineElementLike[] = [];
+  if (!root || !root.children) return { nodes, elements };
+
+  const visit = (parent: OutlineElementLike, depth: number): void => {
+    if (!parent.children || nodes.length >= maxNodes) return;
+    const validChildren: OutlineElementLike[] = [];
+    for (let i = 0; i < parent.children.length; i++) {
+      const child = parent.children[i];
+      if (child && !isOutlineIgnoredNode(child)) validChildren.push(child);
+    }
+    validChildren.forEach((child, idx) => {
+      if (nodes.length >= maxNodes) return;
+      const index = nodes.length;
+      nodes.push({
+        id: `outline-${index}`,
+        tag: child.tagName.toLowerCase(),
+        label: resolveElementLabel(child),
+        selector: resolveElementSelector(child),
+        depth,
+        hidden: child.style?.display === 'none',
+        canMoveUp: idx > 0,
+        canMoveDown: idx < validChildren.length - 1,
+      });
+      elements.push(child);
+      visit(child, depth + 1);
+    });
+  };
+
+  visit(root, 0);
+  return { nodes, elements };
 };
 
 const truncateHtmlSnippet = (raw: string, maxChars: number): string => {

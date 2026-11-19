@@ -955,3 +955,45 @@ test('Agent 调试原语：console 日志捕获与过滤、ref 定位、evaluate
   assert.equal(keyRes.ok, true);
   assert.ok(inputEvents.some(ev => ev.type === 'keyDown' && ev.keyCode === 'Return'));
 });
+
+test('P2 人工接管与操作高亮：pause-agent 挂起后续自动化操作，resume-agent 立即放行，click 注入目标高亮', async t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 800, height: 600}});
+  h.invoke('navigate', {url: 'http://localhost:5173/login'});
+
+  const view = h.views[0]! as unknown as {
+    webContents: {
+      executeJavaScript: (code: string) => Promise<unknown>;
+    };
+  };
+  const executedScripts: string[] = [];
+  view.webContents.executeJavaScript = async (code: string) => {
+    executedScripts.push(code);
+    return {ok: true, tag: 'button', id: 'login', className: '', text: '登录', centerX: 20, centerY: 20, matchedCount: 1, visibleCount: 1, currentUrl: 'http://localhost:5173/login', currentTitle: 'Login'};
+  };
+
+  // 1. 人工接管暂停 Agent
+  const pausedSnap = h.invoke('pause-agent') as {ok: boolean; data?: {tabs: Array<{agentPaused?: boolean}>}};
+  assert.equal(pausedSnap.ok, true);
+  assert.equal(pausedSnap.data?.tabs[0]?.agentPaused, true);
+
+  let clickResolved = false;
+  const clickPromise = h.registration.automation.click({selector: '#login'}).then(res => {
+    clickResolved = true;
+    return res;
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(clickResolved, false, '人工接管暂停期间自动化动作必须挂起等待');
+
+  // 2. 交还 AI 后立即放行并注入目标高亮框
+  const resumedSnap = h.invoke('resume-agent') as {ok: boolean; data?: {tabs: Array<{agentPaused?: boolean}>}};
+  assert.equal(resumedSnap.ok, true);
+  assert.equal(resumedSnap.data?.tabs[0]?.agentPaused, false);
+
+  const clickRes = await clickPromise;
+  assert.equal(clickRes.ok, true);
+  assert.equal(clickResolved, true);
+  assert.ok(executedScripts.some(s => s.includes('data-lx-agent-flash')));
+});
