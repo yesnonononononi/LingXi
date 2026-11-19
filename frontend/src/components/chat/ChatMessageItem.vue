@@ -1,6 +1,6 @@
 
 <template>
-  <div :class="['w-full py-3 px-2 sm:px-4 transition-colors', props.message.role === 'user' && !isDelegatedTask ? 'flex justify-end' : 'flex justify-start']">
+  <div data-slot="message-item" :class="['w-full py-3 px-2 sm:px-4 transition-colors', props.message.role === 'user' && !isDelegatedTask ? 'flex justify-end' : 'flex justify-start']">
     <DelegatedTaskMessage
       v-if="isDelegatedTask"
       :content="props.message.content"
@@ -10,11 +10,14 @@
     
     <!-- 1. 用户消息展示样式 (匹配左图：无头像，柔和浅蓝背景圆角气泡，下方展示时间与复制图标) -->
     <div v-else-if="props.message.role === 'user'" class="flex min-w-0 max-w-full flex-col items-end sm:max-w-2xl group" data-testid="user-message">
+      <component :is="injectedUserBody" v-if="injectedUserBody" v-bind="userBodySlotProps" />
+      <template v-else>
       <!-- 气泡内容 -->
       <div class="relative flex min-w-0 max-w-full items-center gap-2">
         <!-- 报错标识已移除：失败是轮次的属性，由回答组统一渲染（turn.status=FAILED + errorReason） -->
         <div
           data-testid="user-message-bubble"
+          data-slot="user-message-bubble"
           :class="[
             'min-w-0 max-w-full rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors [overflow-wrap:anywhere] overflow-hidden',
             userImageUrls.length || (parsedUserMessage.documents.length && !parsedUserMessage.text) ? 'p-2' : 'px-4 py-2.5',
@@ -56,23 +59,6 @@
         </div>
       </div>
 
-      <!-- 放大查看复用全站唯一的 ImageLightbox：绝不能再 window.open，Electron 主进程只放行
-           http(s) 外链，data:/blob: 图片会落到 action:'allow'，开出一个没有 preload 的白窗。 -->
-      <ImageLightbox
-        :open="previewImage !== null"
-        :src="previewImage?.url ?? ''"
-        :name="previewImage?.name ?? ''"
-        test-id="user-image-lightbox"
-        @close="closeImagePreview"
-      />
-      <PastedDocumentPreviewModal
-        :open="isUserDocumentPreviewOpen"
-        :document="previewingUserDocument"
-        :is-dark="isDark"
-        readonly
-        @close="closeUserDocumentPreview"
-      />
-
       <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
       <div class="flex items-center gap-2 mt-1.5 text-xs text-lx-faint pr-1 select-none">
         <span>{{ displayTime }}</span>
@@ -110,12 +96,29 @@
           </svg>
         </button>
       </div>
+      </template>
+
+      <!-- 放大查看复用全站唯一的 ImageLightbox -->
+      <ImageLightbox
+        :open="previewImage !== null"
+        :src="previewImage?.url ?? ''"
+        :name="previewImage?.name ?? ''"
+        test-id="user-image-lightbox"
+        @close="closeImagePreview"
+      />
+      <PastedDocumentPreviewModal
+        :open="isUserDocumentPreviewOpen"
+        :document="previewingUserDocument"
+        :is-dark="isDark"
+        readonly
+        @close="closeUserDocumentPreview"
+      />
     </div>
 
     <!-- 2. Agent 回复展示样式 (匹配右图：无头像，顶部折叠"已思考 >"及分割线，正文高亮，底部丰富状态操作栏) -->
     <div v-else class="flex flex-col items-start w-full max-w-lx-chat space-y-2.5">
       
-      <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process">
+      <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process" data-slot="process-panel">
         <button v-if="showWholeProcessToggle" type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
           class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer"
           :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
@@ -186,6 +189,7 @@
       <!-- 回复正文 (使用 Markdown 渲染，包含代码高亮、代码块复制、表格与列表) -->
       <div
         v-if="bodyVisible"
+        data-slot="assistant-body"
         class="w-full text-sm font-normal my-1"
       >
         <slot name="body" v-bind="bodySlotProps">
@@ -222,7 +226,7 @@
 </template>
 <script setup lang="ts">
 import {computed, inject, ref} from 'vue';
-import type {ChatMessageActionsSlotProps, ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
+import type {ChatMessageActionsSlotProps, ChatMessageBodySlotProps, ChatMessageUserBodySlotProps} from '../../types/chatMessageSlots';
 import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import type {ChatMessage, ChatTurn, ProcessTimelineItem, SubSessionVO} from '../../types/chat';
 import {toPromptCardData} from '../../utils/toolCallCard';
@@ -335,6 +339,7 @@ const isDelegatedTask = computed(() => props.message.role === 'user'
 const slotOverrides = inject(CHAT_MESSAGE_SLOTS_KEY, undefined);
 const injectedBody = computed(() => slotOverrides?.body);
 const injectedActions = computed(() => slotOverrides?.actions);
+const injectedUserBody = computed(() => slotOverrides?.userBody);
 
 defineSlots<{
   /** 正文内容。外层容器/class/时机由组件拥有，本插槽只替换容器内部。 */
@@ -577,6 +582,23 @@ const bodyVisible = computed(() => !!props.message.content || !!props.message.re
  * 正文插槽 props：只暴露渲染正文必需的 3 项。
  * 用 computed 包一层而不是普通对象：`message` 是 props，消息流式更新时必须跟着变。
  */
+const userBodySlotProps = computed<ChatMessageUserBodySlotProps>(() => ({
+  message: props.message,
+  isDark: isDark.value,
+  parsedText: parsedUserMessage.value.text,
+  documents: parsedUserMessage.value.documents,
+  imageUrls: userImageUrls.value,
+  displayTime: displayTime.value,
+  copied: copied.value,
+  canResend: Boolean(props.canResend),
+  resendTitle: resendTitle.value,
+  copyContent,
+  onResendUnsent: () => emit('resendUnsent', props.message.id),
+  onEditResend: () => emit('editResend', props.message),
+  onPreviewImage: openImagePreview,
+  onPreviewDocument: openUserDocumentPreview,
+}));
+
 const bodySlotProps = computed<ChatMessageBodySlotProps>(() => ({
   message: props.message,
   isDark: isDark.value,
