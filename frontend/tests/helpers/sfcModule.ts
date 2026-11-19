@@ -73,6 +73,16 @@ export function rewriteRelativeImports(source: string, componentPath: string, co
   );
 }
 
+/**
+ * 进程级隔离后缀。
+ *
+ * <p>`node --test` 每个测试文件一个进程并行跑，而临时产物名只由源路径决定 ——
+ * 于是两个测试文件编译同一个组件时会指向**同一个** `node_modules/.tmp/xxx.mjs`：
+ * 谁先结束谁就 `unlink`，另一个正要 import 就拿到 `ERR_MODULE_NOT_FOUND`。
+ * 这类失败与用例本身无关，只在全量并行时出现，单独跑必绿，是最难查的一种 flaky。</p>
+ */
+const processTag = String(process.pid);
+
 /** 把 .vue 编译成临时 .mjs 并返回其路径；同一源文件只编译一次，用后由 context.after 清理。 */
 export function compileVueModule(sourcePath: string, context: test.TestContext): string {
   const cached = compiledModules.get(sourcePath);
@@ -80,7 +90,7 @@ export function compileVueModule(sourcePath: string, context: test.TestContext):
 
   const temporary = resolve(
     tmpDir,
-    sourcePath.replace(frontendRoot, '').replace(/[\\/]+/g, '-').replace(/^-/, '') + '.mjs'
+    sourcePath.replace(frontendRoot, '').replace(/[\\/]+/g, '-').replace(/^-/, '') + `.${processTag}.mjs`
   );
   // 先登记再递归：A → B → A 时 B 能拿到 A 已登记的产物路径，不会无限递归。
   compiledModules.set(sourcePath, temporary);

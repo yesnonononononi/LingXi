@@ -23,7 +23,12 @@ export function getApiBaseUrl(): string {
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) return '';
 
   // 1. 用户自定义配置优先
-  const userConfigured = localStorage.getItem(STORAGE_KEY_API_BASE_URL)?.trim();
+  //
+  // 只判断 `typeof window` 不够：测试 harness 与某些嵌入环境会提供 window 却没有 localStorage，
+  // 那样守卫形同虚设，模块一加载就 ReferenceError（import 链经过 services/interceptor 时尤其致命）。
+  // 存储缺失等价于「没有自定义配置」，直接走后面的默认规则。
+  const storage = typeof localStorage === 'undefined' ? null : localStorage;
+  const userConfigured = storage?.getItem(STORAGE_KEY_API_BASE_URL)?.trim();
   if (userConfigured) {
     return userConfigured.replace(/\/+$/, '');
   }

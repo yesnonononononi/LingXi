@@ -247,12 +247,18 @@ test('未决卡片禁止普通恢复，必须走原卡片决策链路', async t 
   assert.equal(resume.mock.calls.length, 0);
 });
 
-test('未决卡片存在时输入区整块让位，暂停条不重复喊一遍', () => {
+test('未决卡片上浮到输入区上方 Dock，暂停条不重复喊一遍', () => {
   // 装配级断言：这两处接线没有便宜的渲染入口（ChatView 依赖整棵会话树），
   // 但拿掉任何一处，用户就会在「卡片已经占住输入位」时又看到一排禁用按钮。金丝雀：正则确实命中两处。
+  //
+  // 设计变更（4b939ab5）：非计划类未决卡片不再靠隐藏输入区「让位」，而是上浮到输入区上方的
+  // PendingInteractionDock；输入区保持可见，用户仍可补充说明，已敲了一半的草稿也不会因为
+  // 切走再切回而被 v-show 抢走焦点。所以这里断言的是 Dock 接线，而不是旧的 v-show。
   const view = fs.readFileSync(path.join(HERE, '../src/views/chat/ChatView.vue'), 'utf8');
-  assert.match(view, /v-show="!executionControls\.hasUnresolved\.value"[\s\S]{0,400}<ChatInputArea/,
-    'ChatView 必须在待答卡片存在时隐藏输入区（v-show：卸载会把用户敲了一半的草稿丢掉）');
+  assert.match(view, /<PendingInteractionDock[\s\S]{0,400}dockedPendingInteractions/,
+    '未决卡片必须由输入区上方的 Dock 承载，否则用户看不到真正的下一步动作');
+  assert.doesNotMatch(view, /v-show="!executionControls\.hasUnresolved\.value"/,
+    '输入区不能再整块隐藏：草稿与焦点都留在原处，卡片由 Dock 呈现');
 
   const controls = fs.readFileSync(path.join(HERE, '../src/components/chat/ChatExecutionControls.vue'), 'utf8');
   assert.match(controls, /v-if="status === 'SUSPENDED' && !hasUnresolved"/,

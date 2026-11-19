@@ -45,16 +45,26 @@ test('真实视图命令构造和聊天表单同样保留选中的模型 ID', as
   const source = readFileSync(new URL('../src/views/chat/useChatView.ts', import.meta.url), 'utf8');
   const file = ts.createSourceFile('useChatView.ts', source, ts.ScriptTarget.Latest, true);
   let initializer: ts.Expression | undefined;
+  let resolveModelIdInit: ts.Expression | undefined;
   function visit(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(file) === 'buildCommand') initializer = node.initializer;
+    if (ts.isVariableDeclaration(node)) {
+      const name = node.name.getText(file);
+      if (name === 'buildCommand') initializer = node.initializer;
+      if (name === 'resolveModelId') resolveModelIdInit = node.initializer;
+    }
     ts.forEachChild(node, visit);
   }
   visit(file);
   assert.ok(initializer);
+  // buildCommand 通过同作用域的 resolveModelId 取模型，抽源码时必须一并抽取，
+  // 否则 eval 出去就是 ReferenceError —— 那不是在测实现，是在测抽取脚本。
+  assert.ok(resolveModelIdInit, 'buildCommand 依赖同作用域的 resolveModelId，必须一并抽取');
   // 单独执行真实命令构造，避免用量 ID 用例依赖浏览器订阅和滚动生命周期。
-  const compiled = ts.transpileModule(`const buildCommand = ${initializer.getText(file)};`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-  }).outputText;
+  const compiled = ts.transpileModule(
+    `const resolveModelId = ${resolveModelIdInit.getText(file)};\nconst buildCommand = ${initializer.getText(file)};`,
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+    }).outputText;
   const id = '2109664456480034818';
   const selectedTeamId = ref<string | null>(null);
   const build = new Function('workspace', 'localActiveId', 'localActiveWorkspaceId', 'userConfig', 'toServerSessionId', 'localSelectedTeamId',

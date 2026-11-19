@@ -51,8 +51,8 @@ defineOptions({ inheritAttrs: false });
  * `actions`（同一个对象，保证两条路径的行为不会分叉）。</p>
  */
 export interface SidebarWorkspaceTreeInternalProps {
-  /** 置顶分区（跨工作区，顺序即后端列表顺序）。 */
-  readonly pinnedSessions: ChatSession[];
+  /** 置顶分区（跨工作区，顺序即后端列表顺序）。缺省等价于「没有置顶」。 */
+  readonly pinnedSessions?: ChatSession[];
   /** `useSessionGrouping` 的领域分组（含会话全量）。 */
   readonly projectGroups: ProjectGroup[];
   /** 未归属任何工作区的会话（「历史对话」分区）。 */
@@ -90,7 +90,18 @@ export interface SidebarWorkspaceTreeInternalProps {
   readonly actions: SidebarTreeActions;
 }
 
-const props = defineProps<SidebarWorkspaceTreeInternalProps>();
+/**
+ * 置顶分区必须有运行时默认值：它是可选展示分区，没有置顶是合法状态。
+ *
+ * <p>原来这一项是 required 且无默认值，模板里直接 `pinnedSessions.length`，
+ * 任何没传它的调用方（例如只关心亮色分支的 SSR 测试）都会渲染期抛
+ * `Cannot read properties of undefined (reading 'length')` —— 报错落在模板深处，
+ * 看不出是 props 没传全，排查成本远高于收益。</p>
+ */
+const props = withDefaults(defineProps<SidebarWorkspaceTreeInternalProps>(), {
+  pinnedSessions: () => [],
+});
+
 
 // 重命名输入框的双向绑定：`editingTitle` 的所有者是父组件的 useSidebarActions。
 // 直接持有同一个 Ref（脚本作用域不会自动解包），模板 `v-model="editingTitle"` 才能写回 .value。
