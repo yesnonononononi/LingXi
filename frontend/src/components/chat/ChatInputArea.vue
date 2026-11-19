@@ -1868,7 +1868,7 @@ defineExpose({
           :title="t('chat.input.switchTeamTip')"
           @click.stop="openPlusMenu('teams')"
         >
-          <span class="max-w-[10rem] truncate">👥 {{ currentTeamName }}</span>
+          <span class="lx-team-badge-name truncate">👥 {{ currentTeamName }}</span>
           <span
             class="hover:text-red-400 hover:bg-black/10 dark:hover:bg-white/10 rounded-full w-3.5 h-3.5 flex items-center justify-center text-xs leading-none transition"
             :title="t('chat.input.exitTeamTip')"

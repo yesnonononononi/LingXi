@@ -108,6 +108,17 @@
   --container-lx-chat:         56rem;
 }
 
+/*
+ * 输入区团队徽章里团队名的截断上限。
+ *
+ * 它不是对话列宽 —— 套 max-w-lx-chat 会把徽章撑满整行；但也不该把 10rem 这种魔法数字
+ * 留在模板里，chatColumnWidth.test.cjs 明令那五个消费文件不得写死具体宽度。
+ * 数值收到样式层单点维护，模板只挂这个语义类。
+ */
+.lx-team-badge-name {
+  max-width: 10rem;
+}
+
 /* Vue Bits 纯黑风格亮/暗模式 CSS 变量与主题拓展 */
 :root {
   color-scheme: dark;
