@@ -17,7 +17,7 @@ class BusinessSystemPromptBuilderTest {
 
     /** 产品能力段：渲染语法 + 产品文档，顺序由 BusinessSystemPromptBuilder 定稿。 */
     private static final String PRODUCT_SECTIONS =
-            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION;
+            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION + "\n\n" + DevEnvironmentPrompt.SECTION;
 
 
     @Test
@@ -108,8 +108,10 @@ class BusinessSystemPromptBuilderTest {
             context.getEnvironment().getPropertySources().addFirst(
                     new MapPropertySource("提示词测试", Map.of("lingxi.system-prompt", "配置规则")));
             context.register(BusinessSystemPromptBuilder.class);
+            context.register(ProductPromptSections.class);
             context.register(RenderSyntaxPrompt.class);
             context.register(ProductDocsPrompt.class);
+            context.register(DevEnvironmentPrompt.class);
             context.registerBean(ProjectMemoryPrompt.class, () -> workspace -> "");
             context.refresh();
             assertEquals("配置规则\n\n" + PRODUCT_SECTIONS + "\n\n角色提示",

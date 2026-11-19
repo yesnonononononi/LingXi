@@ -48,7 +48,7 @@ class RequestPreparerExecutionIdentityTest {
 
     /** 产品能力段：渲染语法 + 产品文档，顺序由 BusinessSystemPromptBuilder 定稿。 */
     private static final String PRODUCT_SECTIONS =
-            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION;
+            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION + "\n\n" + DevEnvironmentPrompt.SECTION;
 
 
     private static final long SESSION_ID = 500L;

@@ -22,27 +22,24 @@ public class BusinessSystemPromptBuilder {
 
     private final String globalPrompt;
     private final ProjectMemoryPrompt projectMemoryPrompt;
-    private final RenderSyntaxPrompt renderSyntaxPrompt;
-    private final ProductDocsPrompt productDocsPrompt;
+    private final ProductPromptSections productPromptSections;
 
     public BusinessSystemPromptBuilder(String globalPrompt) {
-        this(globalPrompt, workspace -> "", new RenderSyntaxPrompt(), new ProductDocsPrompt());
+        this(globalPrompt, workspace -> "", ProductPromptSections.defaults());
     }
 
-    /** 记忆段可替换、渲染语法与产品文档取产品默认实现：委派链路只关心成员提示词，不需要装配这些段。 */
+    /** 记忆段可替换、产品事实段取默认组合：委派链路只关心成员提示词，不需要装配这些段。 */
     public BusinessSystemPromptBuilder(String globalPrompt, ProjectMemoryPrompt projectMemoryPrompt) {
-        this(globalPrompt, projectMemoryPrompt, new RenderSyntaxPrompt(), new ProductDocsPrompt());
+        this(globalPrompt, projectMemoryPrompt, ProductPromptSections.defaults());
     }
 
     @Autowired
     public BusinessSystemPromptBuilder(@Value("${lingxi.system-prompt:}") String globalPrompt,
                                        ProjectMemoryPrompt projectMemoryPrompt,
-                                       RenderSyntaxPrompt renderSyntaxPrompt,
-                                       ProductDocsPrompt productDocsPrompt) {
+                                       ProductPromptSections productPromptSections) {
         this.globalPrompt = globalPrompt == null ? "" : globalPrompt.trim();
         this.projectMemoryPrompt = projectMemoryPrompt;
-        this.renderSyntaxPrompt = renderSyntaxPrompt;
-        this.productDocsPrompt = productDocsPrompt;
+        this.productPromptSections = productPromptSections;
     }
 
     /** 空段不产生分隔符，未配置偏好时保持原有提示词。 */
@@ -56,13 +53,13 @@ public class BusinessSystemPromptBuilder {
     }
 
     /**
-     * 根提示词：全局规则 → 产品渲染语法 → 产品文档 → 用户偏好 → 角色职责 → 项目记忆。
+     * 根提示词：全局规则 → 产品事实段 → 用户偏好 → 角色职责 → 项目记忆。
      *
-     * <p>渲染语法与产品文档紧跟全局规则：它们都是「平台怎么用」的产品事实，排在用户偏好之前，
-     * 用户改自己的偏好时不会碰掉产品能力说明。</p>
+     * <p>产品事实段（渲染语法 / 产品文档 / 后端构建环境）紧跟全局规则：它们讲的都是
+     * 「平台怎么用、环境什么样」，排在用户偏好之前，用户改自己的偏好时不会碰掉这些说明。</p>
      */
     public String buildRootPrompt(String agentPrompt, PersonalizationVO personalization, WorkspaceSpec workspace) {
-        return String.join("\n\n", Stream.of(globalPrompt, renderSyntaxPrompt.load(), productDocsPrompt.load(),
+        return String.join("\n\n", Stream.of(globalPrompt, productPromptSections.load(),
                         customPrompt(personalization), Objects.toString(agentPrompt, "").trim(),
                         projectMemoryPrompt.load(workspace))
                 .filter(section -> !section.isEmpty()).toList());

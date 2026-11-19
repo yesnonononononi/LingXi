@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.memory;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.application.chat.DevEnvironmentPrompt;
 import com.summit.dp.workflow.application.chat.ProductDocsPrompt;
 import com.summit.dp.workflow.application.chat.RenderSyntaxPrompt;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
@@ -27,7 +28,7 @@ class MemoryWikiPromptTest {
 
     /** 产品能力段：渲染语法 + 产品文档，顺序由 BusinessSystemPromptBuilder 定稿。 */
     private static final String PRODUCT_SECTIONS =
-            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION;
+            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION + "\n\n" + DevEnvironmentPrompt.SECTION;
 
 
     @TempDir
