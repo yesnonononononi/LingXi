@@ -44,6 +44,8 @@ function createBridge(renderCalls: Array<{width: number; height: number}> = []) 
         mimeType: 'image/png',
         base64: 'iVBORw0KGgo=',
         pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+        fullPageApplied: height > 800,
+        fullPageTruncated: false,
       };
     },
   });
@@ -67,4 +69,51 @@ test('design_capture：saveDir 只收绝对路径，落盘到指定目录', asyn
   } finally {
     fs.rmSync(tempDir, {recursive: true, force: true});
   }
+});
+
+test('design_capture：fullPage 透传给渲染器，并把全页结果回给模型', async () => {
+  const renderCalls: Array<{width: number; height: number}> = [];
+  const fullPageCalls: boolean[] = [];
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const window = {
+    isDestroyed: () => false,
+    webContents: {
+      send: (channel: string, req: {requestId: string}) => {
+        const respond = listeners.get(DESIGN_MCP_CHANNELS.response);
+        assert.ok(respond);
+        respond({}, {
+          requestId: req.requestId,
+          ok: true,
+          data: {active: true, fileName: 'landing.html', html: '<html><body>tall</body></html>'},
+        });
+      },
+    },
+  };
+  const bridge = registerDesignMcpBridge({
+    ipcMain: {
+      on: (channel: string, fn: (...args: unknown[]) => void) => listeners.set(channel, fn),
+      removeListener: (channel: string) => listeners.delete(channel),
+    },
+    getWindow: () => window,
+    renderHtmlViewport: async ({width, height, fullPage}: {width: number; height: number; fullPage: boolean}) => {
+      renderCalls.push({width, height});
+      fullPageCalls.push(fullPage);
+      const appliedHeight = fullPage ? 3200 : height;
+      return {
+        width,
+        height: appliedHeight,
+        mimeType: 'image/png',
+        base64: 'iVBORw0KGgo=',
+        pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+        fullPageApplied: fullPage,
+        fullPageTruncated: false,
+      };
+    },
+  });
+
+  const captured = await bridge.capture({viewports: [{name: 'desktop', width: 1280, height: 800}], fullPage: true});
+  assert.deepEqual(fullPageCalls, [true]);
+  assert.equal(captured.shots[0].height, 3200);
+  assert.equal(captured.shots[0].fullPageApplied, true);
+  assert.equal(captured.shots[0].fullPageTruncated, false);
 });

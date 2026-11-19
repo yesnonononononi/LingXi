@@ -34,6 +34,49 @@ function normalizeViewports(input) {
   return normalized.length > 0 ? normalized : DEFAULT_DESIGN_VIEWPORTS.map(item => ({...item}));
 }
 
+const MAX_FULL_PAGE_HEIGHT = 6000;
+const CAPTURE_TIMEOUT_MS = 15000;
+
+/** 等两帧，确保 resize 之后的布局与绘制都落到新尺寸上。 */
+async function waitTwoFrames(webContents) {
+  await webContents
+    .executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
+    .catch(() => undefined);
+}
+
+/** 量文档尺寸；量不到就返回 null，由调用方退回原视口。 */
+async function readDocumentSize(webContents) {
+  const raw = await webContents.executeJavaScript(
+    'JSON.stringify({w: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),'
+    + ' h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)})',
+  ).catch(() => '');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed.h) || parsed.h <= 0) return null;
+    return {width: Number.isFinite(parsed.w) ? parsed.w : 0, height: parsed.h};
+  } catch {
+    return null;
+  }
+}
+
+/** 截图加超时：隐藏窗口的合成器偶尔不给帧，这里不能无限等。 */
+function captureWithTimeout(webContents, timeoutMs = CAPTURE_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`截图超时（${timeoutMs}ms）`)), timeoutMs);
+    webContents.capturePage().then(
+      image => {
+        clearTimeout(timer);
+        resolve(image);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function defaultRenderHtmlViewport({BrowserWindow, html, width, height, fullPage = false}) {
   if (!BrowserWindow) {
     throw new Error('当前环境不支持离屏渲染截图');
@@ -54,34 +97,38 @@ async function defaultRenderHtmlViewport({BrowserWindow, html, width, height, fu
   try {
     const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
     await win.loadURL(dataUrl);
-    await win.webContents.executeJavaScript(
-      'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))',
-    ).catch(() => undefined);
+    await waitTwoFrames(win.webContents);
 
-    let pngBuffer = null;
-    const dbg = win.webContents.debugger;
-    if (fullPage && dbg && typeof dbg.sendCommand === 'function') {
-      const attachedByUs = !dbg.isAttached();
-      if (attachedByUs) dbg.attach('1.3');
-      try {
-        const res = await dbg.sendCommand('Page.captureScreenshot', {format: 'png', captureBeyondViewport: true});
-        if (res && typeof res.data === 'string' && res.data) {
-          pngBuffer = Buffer.from(res.data, 'base64');
-        }
-      } finally {
-        if (attachedByUs && dbg.isAttached()) dbg.detach();
+    let captureWidth = width;
+    let captureHeight = height;
+    let fullPageTruncated = false;
+    if (fullPage) {
+      // 隐藏窗口的 CDP Page.captureScreenshot 抓超视口区域会一直挂住（实测 20s 无返回），
+      // 所以改成把窗口长到内容高度再 capturePage：同一次实测 55ms 就拿到了整页。
+      const size = await readDocumentSize(win.webContents);
+      if (size && size.height > height) {
+        captureHeight = Math.min(Math.round(size.height), MAX_FULL_PAGE_HEIGHT);
+        fullPageTruncated = size.height > captureHeight;
+        win.setContentSize(width, captureHeight);
+        await waitTwoFrames(win.webContents);
       }
     }
-    if (!pngBuffer) {
-      const image = await win.webContents.capturePage();
-      pngBuffer = image.toPNG();
-    }
+
+    const image = await captureWithTimeout(win.webContents);
+    const size = image.getSize();
+    // 隐藏窗口按 DPR 出图（1.5x 很常见），统一缩回请求的 CSS 尺寸给模型看
+    const normalized = size.width !== captureWidth || size.height !== captureHeight
+      ? image.resize({width: captureWidth, height: captureHeight})
+      : image;
+    const pngBuffer = normalized.toPNG();
     return {
-      width,
-      height,
+      width: captureWidth,
+      height: captureHeight,
       mimeType: 'image/png',
       base64: pngBuffer.toString('base64'),
       pngBuffer,
+      fullPageApplied: captureHeight > height,
+      fullPageTruncated,
     };
   } finally {
     if (!win.isDestroyed()) win.destroy();
@@ -184,6 +231,8 @@ function registerDesignMcpBridge({
           mimeType: rendered.mimeType || 'image/png',
           base64: rendered.base64,
           filePath,
+          fullPageApplied: Boolean(rendered.fullPageApplied),
+          fullPageTruncated: Boolean(rendered.fullPageTruncated),
         });
       }
       return {

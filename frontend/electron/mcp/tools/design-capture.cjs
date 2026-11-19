@@ -52,6 +52,8 @@ module.exports = {
         width: shot.width,
         height: shot.height,
         filePath: shot.filePath,
+        fullPageApplied: shot.fullPageApplied,
+        fullPageTruncated: shot.fullPageTruncated,
       })),
     };
   },
