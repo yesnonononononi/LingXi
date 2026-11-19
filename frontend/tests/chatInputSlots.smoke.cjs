@@ -38,13 +38,25 @@ function specifierFor(absolutePath) {
   return relative.startsWith('.') ? relative : './' + relative;
 }
 
-/** 从 `ChatView.vue` 源码里提取 provide 的对象字面量表达式。提取不到即视为生产注册被移除。 */
+/**
+ * 从 `ChatView.vue` 源码里提取 provide 的对象字面量表达式。
+ *
+ * <p>宿主既可能内联字面量，也可能先把字段聚到 `inputSlots` 再 provide 这个标识符；
+ * 两种写法都要认，认不出来即视为生产注册被移除。</p>
+ */
 function extractProviderExpression(source) {
-  const match = /provide\(\s*CHAT_INPUT_SLOTS_KEY\s*,\s*(\{[\s\S]*?\})\s*\)/.exec(source);
-  if (!match) {
-    throw new Error('ChatView.vue 中未找到 `provide(CHAT_INPUT_SLOTS_KEY, {...})`：生产注册已被移除');
+  const direct = /provide\(\s*CHAT_INPUT_SLOTS_KEY\s*,\s*(\{[\s\S]*?\})\s*\)/.exec(source);
+  if (direct) return direct[1];
+  const byName = /provide\(\s*CHAT_INPUT_SLOTS_KEY\s*,\s*([A-Za-z_$][\w$]*)\s*\)/.exec(source);
+  if (!byName) {
+    throw new Error('ChatView.vue 中未找到 `provide(CHAT_INPUT_SLOTS_KEY, ...)`：生产注册已被移除');
   }
-  return match[1];
+  const name = byName[1];
+  const declaration = new RegExp('const\\s+' + name + '\\s*=\\s*[A-Za-z_$][\\w$]*\\(\\s*(\\{[\\s\\S]*?\\})\\s*\\)\\s*;').exec(source);
+  if (!declaration) {
+    throw new Error(`ChatView.vue 里找不到 \`const ${name} = someReactive({...})\` 的对象字面量`);
+  }
+  return declaration[1];
 }
 
 /** 从 ChatView.vue 的 import 语句里取出某个默认导入的真实模块绝对路径。 */
@@ -54,11 +66,23 @@ function resolveImportedModule(source, identifier) {
   return path.resolve(path.dirname(chatViewPath), match[1]);
 }
 
-/** 提取表达式里 `field: X` 的标识符，保证宿主导入与生产同源。 */
-function extractFieldIdentifier(expression, field) {
-  const match = new RegExp(field + '\\s*:\\s*([A-Za-z_$][\\w$]*)').exec(expression);
+/**
+ * 取某个字段值里真正被 import 的那个组件标识符。
+ *
+ * <p>字段值可能是 `packSlots.chatInput.sendButton ?? ChatInputSendButton`，
+ * 从右往左找第一个能解析到 import 的标识符，那才是注册链上的组件。</p>
+ */
+function resolveFieldComponent(source, expression, field) {
+  const match = new RegExp('(?:^|[\\s{,])' + field + '\\s*:\\s*([^,]+)').exec(expression);
   if (!match) throw new Error(`ChatView 的 provide 表达式里缺 \`${field}\` 字段：${expression}`);
-  return match[1];
+  for (const identifier of (match[1].match(/[A-Za-z_$][\w$]*/g) ?? []).reverse()) {
+    try {
+      return { identifier, module: resolveImportedModule(source, identifier) };
+    } catch {
+      // 不是宿主导入的组件（如 packSlots 这类局部对象），继续往前找。
+    }
+  }
+  throw new Error(`ChatView 的 \`${field}\` 字段里没有可解析的组件导入：${match[1]}`);
 }
 
 const SLOT_FIELDS = ['contextUsage', 'modelSelector', 'sendButton'];
@@ -74,10 +98,9 @@ async function writeHarness() {
     const providerExpression = extractProviderExpression(chatViewSource);
     const fields = {};
     for (const field of SLOT_FIELDS) {
-      const identifier = extractFieldIdentifier(providerExpression, field);
-      fields[field] = { identifier, module: resolveImportedModule(chatViewSource, identifier) };
+      fields[field] = resolveFieldComponent(chatViewSource, providerExpression, field);
     }
-    production = { providerExpression, fields };
+    production = { fields };
   } catch (error) {
     productionError = String((error && error.message) || error);
   }
@@ -87,7 +110,7 @@ async function writeHarness() {
     : '/* 生产注册缺失：未导入 ChatView 的注册组件 */';
 
   const productionValueBlock = production
-    ? `const CHAT_VIEW_PROVIDER_VALUE = ${production.providerExpression};
+    ? `const CHAT_VIEW_PROVIDER_VALUE = { ${SLOT_FIELDS.map(field => `${field}: ${production.fields[field].identifier}`).join(', ')} };
 window.__slotReads = [];
 const OBSERVED_PROVIDER = new Proxy(CHAT_VIEW_PROVIDER_VALUE, {
   get(target, key) {
