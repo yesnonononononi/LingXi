@@ -88,6 +88,15 @@ test('全仓不再使用 Tailwind 默认 animate-pulse', () => {
   assert.deepEqual(offenders, [], `以下文件仍在使用 animate-pulse：${offenders.join(', ')}`);
 });
 
+test('发光工具类必须留在样式层：内置卡片不再强制使用，但能力不能被静默删除', () => {
+  // 交互卡片改版后不再给题干/选项挂 text-glow —— 发光属于主题与装饰层，不是内置卡片契约。
+  // 但主题侧与若干组件仍在用这些类，删掉它们会让暗色可读性方案无声失效，所以守住定义本身。
+  const glow = ruleBlock(styleEntry, '.text-glow-white');
+  assert.ok(glow && /text-shadow/.test(glow), '.text-glow-white 必须仍带 text-shadow');
+  const glowSubtle = ruleBlock(styleEntry, '.text-glow-subtle');
+  assert.ok(glowSubtle && /text-shadow/.test(glowSubtle), '.text-glow-subtle 必须仍带 text-shadow');
+});
+
 test('状态点映射函数返回统一样式类', () => {
   const delegation = read('src/utils/asyncDelegation.ts');
   assert.match(delegation, /return 'bg-amber-400 lx-live-dot';/, 'subItemStatusDotClass 未收敛到统一样式类');

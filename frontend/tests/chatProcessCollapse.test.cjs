@@ -1338,10 +1338,13 @@ test('历史编辑摘要：解析持久化结果的 output，工具收起时显�
   const root = await mountExpanded(t, answer);
   assert.match(text(root), /history\.md\s*\+3-2/);
   assert.match(text(root), /created\.md\s*\+5-0/);
-  // 详情按钮的 aria-label 是动态模板「查看{category}详情」，别再写死某一类工具的文案。
-  const button = find(root, node => node.tag === 'button'
-    && /^查看.+详情$/.test(String(node.props['aria-label'] ?? '')));
-  assert.ok(button, '工具行必须提供展开详情的入口');
+  // 详情按钮的 aria-label 是动态模板「查看{category}详情」。断言改为与渲染名精确拼接，
+  // 既能跟着工具分类文案演进，也不会因为模式太松而漏掉「文案被写成别的东西」这类回归。
+  const load = filename => loadChatModule(path.resolve(__dirname, filename), true);
+  const {resolveToolRenderName} = load('../src/utils/toolDisplayNames.ts');
+  const expectedLabel = `查看${resolveToolRenderName(AgentToolName.EditFile)}详情`;
+  const button = find(root, node => node.tag === 'button' && node.props['aria-label'] === expectedLabel);
+  assert.ok(button, `工具行详情入口的 aria-label 必须是「${expectedLabel}」`);
   button.props.onClick({ stopPropagation() {} });
   await nextTick();
   assert.equal(text(root).split('+3-2').length - 1, 2, '展开详情也保留相同统计');

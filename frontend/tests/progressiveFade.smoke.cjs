@@ -12,7 +12,10 @@ let window;
 let server;
 const startedAt = Date.now();
 const mark = label => console.log(`渐进淡入验证[${Date.now() - startedAt}ms]: ${label}`);
-const deadline = setTimeout(() => { console.error('渐进淡入验证超时'); app.exit(1); }, 110000);
+// 硬超时给 60s：本机实测约 14s 跑完，留 4 倍余量足够慢机器。
+// 之前为了绕开「多个冒烟共用 vite 缓存互相踢掉预打包」把上限放到 110s，
+// 那是拿阈值掩盖根因；缓存已按用例隔离，这里收回来才能继续当回归闸门用。
+const deadline = setTimeout(() => { console.error('渐进淡入验证超时'); app.exit(1); }, 60000);
 
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
