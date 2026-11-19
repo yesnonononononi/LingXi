@@ -143,34 +143,42 @@ function registerDesignMcpBridge({
       }
       return requestRenderer('resolve_comment', {commentId: normalizedId, all: Boolean(all)});
     },
-    capture: async ({viewports, fullPage = false, saveToTemp = true} = {}) => {
+    capture: async ({viewports, fullPage = false, saveToTemp = true, saveDir} = {}) => {
       const state = await requestRenderer('get_state', {includeHtml: true});
       if (!state || !state.active || !state.html) {
         throw new Error('当前没有已加载原型的 Design 画布可供截图');
       }
       const targets = normalizeViewports(viewports);
       const shots = [];
-      const tempDir = saveToTemp
-        ? (process.platform === 'win32' && process.env.PUBLIC
+      const rawSaveDir = typeof saveDir === 'string' ? saveDir.trim() : '';
+      let targetDir = '';
+      if (rawSaveDir) {
+        if (!path.isAbsolute(rawSaveDir)) {
+          throw new Error('saveDir 必须是绝对路径');
+        }
+        targetDir = path.normalize(rawSaveDir);
+      } else if (saveToTemp) {
+        targetDir = process.platform === 'win32' && process.env.PUBLIC
           ? path.join(process.env.PUBLIC, 'lingxi-design-mcp')
-          : path.join(os.tmpdir(), 'lingxi-design-mcp'))
-        : '';
-      if (tempDir) fs.mkdirSync(tempDir, {recursive: true});
+          : path.join(os.tmpdir(), 'lingxi-design-mcp');
+      }
+      if (targetDir) await fs.promises.mkdir(targetDir, {recursive: true});
 
-      for (const vp of targets) {
+      for (const viewport of targets) {
         const rendered = await rendererFn({
           html: state.html,
-          width: vp.width,
-          height: vp.height,
+          width: viewport.width,
+          height: viewport.height,
           fullPage: Boolean(fullPage),
         });
         let filePath = '';
-        if (tempDir && rendered.pngBuffer) {
-          filePath = path.join(tempDir, `design-${vp.name}-${Date.now()}-${randomUUID().slice(0, 6)}.png`);
-          fs.writeFileSync(filePath, rendered.pngBuffer);
+        if (targetDir && rendered.pngBuffer) {
+          filePath = path.join(targetDir, `design-${viewport.name}-${Date.now()}-${randomUUID().slice(0, 6)}.png`);
+          // 异步写：多视口串行同步写几 MB PNG 会把主进程卡住
+          await fs.promises.writeFile(filePath, rendered.pngBuffer);
         }
         shots.push({
-          name: vp.name,
+          name: viewport.name,
           width: rendered.width,
           height: rendered.height,
           mimeType: rendered.mimeType || 'image/png',

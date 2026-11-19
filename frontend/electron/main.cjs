@@ -63,9 +63,9 @@ let backendStopped = false;
 let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
-/** 网页独立于主页面，保留主窗口原有外链策略。 */
-const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme, nativeImage });
 const designMcpBridge = registerDesignMcpBridge({ ipcMain, getWindow: () => mainWindow, BrowserWindow });
+/** 网页独立于主页面，保留主窗口原有外链策略。 */
+const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme, nativeImage, designBridge: designMcpBridge });
 const browserMcpServer = createBrowserMcpServer({ automation: projectPagePreview.automation, designBridge: designMcpBridge });
 
 const assertMainFrameSender = (event) => {

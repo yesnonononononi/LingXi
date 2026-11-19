@@ -3,6 +3,9 @@ const {randomUUID} = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {buildPageScript, runPageScript} = require('./mcp/page-scripts.cjs');
+const {MAX_LOG_ENTRIES, normalizeConsoleLevel, appendRingBuffer, normalizeHeaders, resolveContentType, MAX_STORED_RESPONSE_BODY_CHARS} = require('./mcp/logs.cjs');
+const {listTools} = require('./mcp/registry.cjs');
 const CHANNELS = Object.freeze({
   command: 'project-page:command',
   layout: 'project-page:layout',
@@ -68,193 +71,13 @@ const DEFAULT_CLICK_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-function buildQueryScript({customSelector = '', maxItems = 40} = {}) {
-  return `(() => {
-    const customSelector = ${JSON.stringify(customSelector)};
-    const defaultSelector = ${JSON.stringify(DEFAULT_INTERACTIVE_SELECTOR)};
-    const maxItems = ${maxItems};
-    const targetSelector = customSelector || defaultSelector;
-    const nodes = Array.from(document.querySelectorAll(targetSelector));
-    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
-    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
-    const normalizeText = value => String(value || '').trim().replace(/\\s+/g, ' ');
-    const escapeAttr = value => String(value).replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
-    const isUnique = sel => {
-      try {
-        return document.querySelectorAll(sel).length === 1;
-      } catch {
-        return false;
-      }
-    };
-    const buildSelectorHint = el => {
-      const tag = el.tagName.toLowerCase();
-      if (el.id) {
-        const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(el.id) : el.id;
-        const idSel = '#' + escapedId;
-        if (isUnique(idSel)) return idSel;
-      }
-      const testId = el.getAttribute('data-testid') || el.getAttribute('data-test');
-      if (testId) {
-        const attr = el.hasAttribute('data-testid') ? 'data-testid' : 'data-test';
-        const sel = '[' + attr + '="' + escapeAttr(testId) + '"]';
-        if (isUnique(sel)) return sel;
-      }
-      const name = el.getAttribute('name');
-      if (name) {
-        const sel = tag + '[name="' + escapeAttr(name) + '"]';
-        if (isUnique(sel)) return sel;
-      }
-      const ariaLabel = el.getAttribute('aria-label');
-      if (ariaLabel && ariaLabel.length <= 60) {
-        const sel = tag + '[aria-label="' + escapeAttr(ariaLabel) + '"]';
-        if (isUnique(sel)) return sel;
-      }
-      const parts = [];
-      let cur = el;
-      for (let depth = 0; cur && cur.nodeType === 1 && depth < 3; depth++) {
-        const curTag = cur.tagName.toLowerCase();
-        if (curTag === 'html' || curTag === 'body') break;
-        const parent = cur.parentElement;
-        if (!parent) {
-          parts.unshift(curTag);
-          break;
-        }
-        const sameTagSiblings = Array.from(parent.children).filter(s => s.tagName === cur.tagName);
-        const segment = sameTagSiblings.length > 1
-          ? curTag + ':nth-of-type(' + (sameTagSiblings.indexOf(cur) + 1) + ')'
-          : curTag;
-        parts.unshift(segment);
-        const candidate = parts.join(' > ');
-        if (isUnique(candidate)) return candidate;
-        cur = parent;
-      }
-      return parts.join(' > ') || tag;
-    };
-    const resolveLabel = el => {
-      if (el.labels && el.labels.length > 0) {
-        const txt = normalizeText(el.labels[0].innerText || el.labels[0].textContent);
-        if (txt) return txt.slice(0, 80);
-      }
-      const labelledBy = el.getAttribute('aria-labelledby');
-      if (labelledBy) {
-        const refText = labelledBy
-          .split(/\\s+/)
-          .map(id => document.getElementById(id))
-          .filter(Boolean)
-          .map(node => normalizeText(node.innerText || node.textContent))
-          .filter(Boolean)
-          .join(' ');
-        if (refText) return refText.slice(0, 80);
-      }
-      return '';
-    };
-    const resolveValue = (el, tag, type) => {
-      if (tag === 'input') {
-        if (type === 'password') return el.value ? '***' : '';
-        if (type === 'checkbox' || type === 'radio') return '';
-        return String(el.value || '').slice(0, 100);
-      }
-      if (tag === 'textarea') return String(el.value || '').slice(0, 100);
-      if (tag === 'select') {
-        const opt = el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
-        return normalizeText(opt ? (opt.textContent || opt.value) : el.value).slice(0, 100);
-      }
-      if (el.isContentEditable) return normalizeText(el.innerText || el.textContent).slice(0, 100);
-      return '';
-    };
-    const inViewNodes = [];
-    const outViewNodes = [];
-    for (let i = 0; i < nodes.length; i++) {
-      const el = nodes[i];
-      const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-      const inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw;
-      if (inViewport || customSelector) inViewNodes.push({el, inViewport});
-      else outViewNodes.push({el, inViewport});
-    }
-    const ordered = customSelector ? inViewNodes : inViewNodes.concat(outViewNodes);
-    try {
-      document.querySelectorAll('[data-lx-ref]').forEach(node => node.removeAttribute('data-lx-ref'));
-    } catch {
-      // 忽略清理旧 ref 属性时的异常
-    }
-    const items = [];
-    for (let i = 0; i < ordered.length && items.length < maxItems; i++) {
-      const {el, inViewport} = ordered[i];
-      const refId = 'e' + (items.length + 1);
-      try { el.setAttribute('data-lx-ref', refId); } catch {}
-      const tag = el.tagName.toLowerCase();
-      const type = el.getAttribute('type') || '';
-      const ariaChecked = el.getAttribute('aria-checked');
-      const ariaSelected = el.getAttribute('aria-selected');
-      const ariaExpanded = el.getAttribute('aria-expanded');
-      const item = {
-        ref: refId,
-        index: items.length,
-        tag,
-        role: el.getAttribute('role') || '',
-        id: el.id || '',
-        className: typeof el.className === 'string' ? el.className.trim() : '',
-        type,
-        name: el.getAttribute('name') || '',
-        placeholder: el.getAttribute('placeholder') || '',
-        ariaLabel: el.getAttribute('aria-label') || '',
-        label: resolveLabel(el),
-        href: el.getAttribute('href') || '',
-        value: resolveValue(el, tag, type),
-        disabled: Boolean(el.disabled || el.getAttribute('aria-disabled') === 'true'),
-        inViewport,
-        selectorHint: buildSelectorHint(el),
-        text: normalizeText(el.innerText || el.textContent).slice(0, 100),
-      };
-      if (tag === 'input' && (type === 'checkbox' || type === 'radio')) {
-        item.checked = Boolean(el.checked);
-      } else if (ariaChecked === 'true' || ariaChecked === 'false') {
-        item.checked = ariaChecked === 'true';
-      }
-      if (ariaSelected === 'true' || ariaSelected === 'false') {
-        item.selected = ariaSelected === 'true';
-      }
-      if (ariaExpanded === 'true' || ariaExpanded === 'false') {
-        item.expanded = ariaExpanded === 'true';
-      }
-      items.push(item);
-    }
-    const bodyText = normalizeText(document.body?.innerText || '').slice(0, 1500);
-    return {
-      url: window.location.href,
-      title: document.title,
-      totalMatched: nodes.length,
-      visibleCount: ordered.length,
-      elements: items,
-      textExcerpt: bodyText,
-    };
-  })()`;
-}
-
-const MAX_LOG_ENTRIES = 200;
-const CONSOLE_LEVEL_NAMES = Object.freeze(['verbose', 'info', 'warning', 'error']);
-
-function normalizeConsoleLevel(level) {
-  if (typeof level === 'string') {
-    const lower = level.trim().toLowerCase();
-    if (lower === 'warn') return 'warning';
-    if (lower === 'log' || lower === 'debug') return 'info';
-    if (['verbose', 'info', 'warning', 'error'].includes(lower)) return lower;
-  }
-  if (typeof level === 'number' && level >= 0 && level < CONSOLE_LEVEL_NAMES.length) {
-    return CONSOLE_LEVEL_NAMES[level];
-  }
-  return 'info';
-}
-
-function appendRingBuffer(list, item, max = MAX_LOG_ENTRIES) {
-  list.push(item);
-  if (list.length > max) {
-    list.splice(0, list.length - max);
-  }
+/**
+ * browser_query 的页面脚本。
+ *
+ * <p>脚本体在 electron/page-scripts/query.js：这里只保留入口名，既有调用点与测试继续可用。</p>
+ */
+function buildQueryScript({customSelector = '', maxItems = 40, defaultSelector = DEFAULT_INTERACTIVE_SELECTOR} = {}) {
+  return buildPageScript('query', {customSelector, maxItems, defaultSelector});
 }
 
 function normalizeMenuLabels(request) {
@@ -297,7 +120,6 @@ function normalizeLayout(request) {
 }
 
 const DEFAULT_SCREENSHOT_VIEWPORT = Object.freeze({width: 1280, height: 800});
-
 function readPngDimensions(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
   if (buffer.subarray(12, 16).toString('ascii') !== 'IHDR') return null;
@@ -320,10 +142,12 @@ async function withDebugger(contents, fn) {
   }
 }
 
-function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, nativeTheme, nativeImage, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
+function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, nativeTheme, nativeImage, designBridge = null, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
   const tabsByContentsId = new Map();
   const pendingRequests = new Map();
+  let networkSeq = 0;
+  const nextRequestId = () => `req-${++networkSeq}`;
   let previewSession;
   // 菜单文案由渲染层按当前语言推送，主进程不做翻译。
   let menuLabels = DEFAULT_MENU_LABELS;
@@ -596,17 +420,29 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
               resourceType: details.resourceType || '',
               startedAt: Date.now(),
               webContentsId: details.webContentsId,
+              requestHeaders: {},
             });
           }
           callback({});
         });
+        if (typeof previewSession.webRequest.onBeforeSendHeaders === 'function') {
+          previewSession.webRequest.onBeforeSendHeaders((details, callback) => {
+            const pending = details ? pendingRequests.get(details.id) : null;
+            if (pending && details.requestHeaders) {
+              pending.requestHeaders = normalizeHeaders(details.requestHeaders);
+            }
+            callback({});
+          });
+        }
         if (typeof previewSession.webRequest.onCompleted === 'function') {
           previewSession.webRequest.onCompleted(details => {
             const pending = pendingRequests.get(details.id);
             pendingRequests.delete(details.id);
             const targetTab = tabsByContentsId.get(details.webContentsId);
-            if (!targetTab) return;
+            if (!targetTab || targetTab.cdpNetworkEnabled) return;
+            const responseHeaders = normalizeHeaders(details.responseHeaders);
             appendRingBuffer(targetTab.networkLogs, {
+              id: nextRequestId(),
               method: details.method || pending?.method || 'GET',
               url: details.url || pending?.url || '',
               resourceType: details.resourceType || pending?.resourceType || '',
@@ -615,6 +451,16 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
               durationMs: pending ? Math.max(0, Date.now() - pending.startedAt) : 0,
               error: '',
               timestamp: Date.now(),
+              contentType: resolveContentType(responseHeaders),
+              requestHeaders: pending?.requestHeaders || {},
+              responseHeaders,
+              requestBody: '',
+              responseBody: '',
+              base64Encoded: false,
+              bodyLength: 0,
+              bodyCaptured: false,
+              bodyUnavailableReason: 'webRequest 通道不提供响应体（CDP Network 未启用）',
+              _bodyPromise: null,
             });
           });
         }
@@ -623,8 +469,9 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
             const pending = pendingRequests.get(details.id);
             pendingRequests.delete(details.id);
             const targetTab = tabsByContentsId.get(details.webContentsId);
-            if (!targetTab) return;
+            if (!targetTab || targetTab.cdpNetworkEnabled) return;
             appendRingBuffer(targetTab.networkLogs, {
+              id: nextRequestId(),
               method: details.method || pending?.method || 'GET',
               url: details.url || pending?.url || '',
               resourceType: details.resourceType || pending?.resourceType || '',
@@ -633,6 +480,16 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
               durationMs: pending ? Math.max(0, Date.now() - pending.startedAt) : 0,
               error: details.error || 'net::ERR_FAILED',
               timestamp: Date.now(),
+              contentType: '',
+              requestHeaders: pending?.requestHeaders || {},
+              responseHeaders: {},
+              requestBody: '',
+              responseBody: '',
+              base64Encoded: false,
+              bodyLength: 0,
+              bodyCaptured: false,
+              bodyUnavailableReason: 'webRequest 通道不提供响应体（CDP Network 未启用）',
+              _bodyPromise: null,
             });
           });
         }
@@ -645,7 +502,7 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     const tab = {id: randomUUID(), view, contents: view.webContents, url: '', title: '', favicon: '', loadState: 'idle',
       isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined,
       openedByAgent: false, agentGlowDismissed: false, agentBusy: false, agentPaused: false, agentResumeWaiters: [], agentOverlayTimer: undefined,
-      consoleLogs: [], networkLogs: []};
+      cdpNetworkEnabled: false, consoleLogs: [], networkLogs: []};
     state.tabs.set(tab.id, tab);
     if (tab.contents && tab.contents.id !== undefined) {
       tabsByContentsId.set(tab.contents.id, tab);
@@ -654,6 +511,128 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     view.setVisible(false);
     state.window.contentView.addChildView(view);
     const contents = tab.contents;
+    if (
+      contents?.debugger &&
+      typeof contents.debugger.attach === 'function' &&
+      typeof contents.debugger.sendCommand === 'function' &&
+      typeof contents.debugger.on === 'function'
+    ) {
+      const dbg = contents.debugger;
+      const cdpPending = new Map();
+      try {
+        if (typeof dbg.isAttached !== 'function' || !dbg.isAttached()) {
+          dbg.attach('1.3');
+        }
+        tab.cdpNetworkEnabled = true;
+        dbg.on('detach', () => {
+          tab.cdpNetworkEnabled = false;
+          cdpPending.clear();
+        });
+        dbg.on('message', (_event, method, params) => {
+          if (!params || !params.requestId) return;
+          if (method === 'Network.requestWillBeSent') {
+            const req = params.request || {};
+            cdpPending.set(params.requestId, {
+              method: req.method || 'GET',
+              url: req.url || '',
+              resourceType: params.type || '',
+              requestHeaders: normalizeHeaders(req.headers),
+              requestBody: typeof req.postData === 'string' ? req.postData.slice(0, MAX_STORED_RESPONSE_BODY_CHARS) : '',
+              responseHeaders: {},
+              mimeType: '',
+              statusCode: 0,
+              startedAt: Date.now(),
+            });
+          } else if (method === 'Network.responseReceived') {
+            const pending = cdpPending.get(params.requestId);
+            if (!pending) return;
+            const res = params.response || {};
+            pending.statusCode = Number.isFinite(res.status) ? res.status : 0;
+            pending.responseHeaders = normalizeHeaders(res.headers);
+            pending.mimeType = typeof res.mimeType === 'string' ? res.mimeType : '';
+            if (res.requestHeaders) {
+              pending.requestHeaders = {...pending.requestHeaders, ...normalizeHeaders(res.requestHeaders)};
+            }
+          } else if (method === 'Network.loadingFinished') {
+            const pending = cdpPending.get(params.requestId);
+            cdpPending.delete(params.requestId);
+            if (!pending) return;
+            const entry = {
+              id: nextRequestId(),
+              method: pending.method,
+              url: pending.url,
+              resourceType: pending.resourceType,
+              statusCode: pending.statusCode,
+              ok: pending.statusCode > 0 ? pending.statusCode >= 200 && pending.statusCode < 400 : true,
+              durationMs: Math.max(0, Date.now() - pending.startedAt),
+              error: '',
+              timestamp: Date.now(),
+              contentType: resolveContentType(pending.responseHeaders, pending.mimeType),
+              requestHeaders: pending.requestHeaders,
+              responseHeaders: pending.responseHeaders,
+              requestBody: pending.requestBody,
+              responseBody: '',
+              base64Encoded: false,
+              bodyLength: 0,
+              bodyCaptured: false,
+              bodyUnavailableReason: '响应体尚未抓取完成',
+              _bodyPromise: null,
+            };
+            appendRingBuffer(tab.networkLogs, entry);
+            entry._bodyPromise = dbg.sendCommand('Network.getResponseBody', {requestId: params.requestId})
+              .then(res => {
+                if (res && typeof res.body === 'string') {
+                  entry.bodyLength = res.body.length;
+                  entry.base64Encoded = Boolean(res.base64Encoded);
+                  entry.responseBody = res.body.slice(0, MAX_STORED_RESPONSE_BODY_CHARS);
+                  entry.bodyCaptured = true;
+                  entry.bodyUnavailableReason = '';
+                }
+              })
+              .catch(() => {
+                entry.bodyCaptured = false;
+                entry.bodyUnavailableReason = '响应体已不在 CDP 缓冲（Network 缓冲被裁剪或页面已导航）';
+              })
+              .finally(() => {
+                entry._bodyPromise = null;
+              });
+          } else if (method === 'Network.loadingFailed') {
+            const pending = cdpPending.get(params.requestId);
+            cdpPending.delete(params.requestId);
+            if (!pending) return;
+            appendRingBuffer(tab.networkLogs, {
+              id: nextRequestId(),
+              method: pending.method,
+              url: pending.url,
+              resourceType: pending.resourceType,
+              statusCode: pending.statusCode || 0,
+              ok: false,
+              durationMs: Math.max(0, Date.now() - pending.startedAt),
+              error: params.errorText || 'net::ERR_FAILED',
+              timestamp: Date.now(),
+              contentType: resolveContentType(pending.responseHeaders, pending.mimeType),
+              requestHeaders: pending.requestHeaders,
+              responseHeaders: pending.responseHeaders,
+              requestBody: pending.requestBody,
+              responseBody: '',
+              base64Encoded: false,
+              bodyLength: 0,
+              bodyCaptured: false,
+              bodyUnavailableReason: '请求失败，没有响应体',
+              _bodyPromise: null,
+            });
+          }
+        });
+        Promise.resolve(dbg.sendCommand('Network.enable', {
+          maxTotalBufferSize: 10 * 1024 * 1024,
+          maxResourceBufferSize: 5 * 1024 * 1024,
+        })).catch(() => {
+          tab.cdpNetworkEnabled = false;
+        });
+      } catch {
+        tab.cdpNetworkEnabled = false;
+      }
+    }
     const current = () => state.tabs.get(tab.id) === tab;
     const send = () => { if (current()) { applyLayout(state); publish(state); } };
     const fail = (code, description) => {
@@ -968,14 +947,6 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     timer = setTimeout(() => finish({loadState: 'timeout'}), effectiveWaitMs);
   });
 
-  const runTabScript = async (tab, script) => {
-    const contents = tab.contents;
-    if (!contents || contents.isDestroyed() || typeof contents.executeJavaScript !== 'function') {
-      throw new Error('当前网页标签不可执行脚本');
-    }
-    return contents.executeJavaScript(script, true);
-  };
-
   const waitUntilAgentResumed = tab => {
     if (!tab.agentPaused) return Promise.resolve();
     return new Promise((resolve, reject) => {
@@ -983,23 +954,6 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       tab.agentResumeWaiters.push({resolve, reject});
     });
   };
-
-  /** 在目标元素位置短暂绘制高亮边框与动作标签，便于用户实时看清 Agent 正在操作的位置。 */
-  const buildTargetFlashSnippet = (labelExpr) => `
-    try {
-      const r = el.getBoundingClientRect();
-      document.querySelectorAll('[data-lx-agent-flash]').forEach(n => n.remove());
-      const box = document.createElement('div');
-      box.setAttribute('data-lx-agent-flash', '1');
-      box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #3b82f6;border-radius:6px;background:rgba(59,130,246,0.12);box-shadow:0 0 0 3px rgba(59,130,246,0.22);transition:opacity 220ms ease;left:' + Math.max(0, r.left - 3) + 'px;top:' + Math.max(0, r.top - 3) + 'px;width:' + Math.max(12, r.width + 6) + 'px;height:' + Math.max(12, r.height + 6) + 'px;';
-      const tagEl = document.createElement('div');
-      tagEl.textContent = ${labelExpr};
-      tagEl.style.cssText = 'position:absolute;left:0;top:-22px;padding:2px 6px;border-radius:4px;background:#2563eb;color:#fff;font:600 11px/1.2 system-ui,sans-serif;white-space:nowrap;';
-      box.appendChild(tagEl);
-      (document.body || document.documentElement).appendChild(box);
-      setTimeout(() => { box.style.opacity = '0'; setTimeout(() => box.remove(), 240); }, 550);
-    } catch {}
-  `;
 
   const withAgentControl = async (tab, fn) => {
     await waitUntilAgentResumed(tab);
@@ -1011,79 +965,23 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     }
   };
 
-  const automation = {
-    listTabs: async () => {
-      const state = await ensureAutomationState();
-      return snapshot(state);
-    },
-    navigate: async ({action = 'goto', url, tabId, newTab = false, waitUntilLoad = true, waitTimeoutMs} = {}) => {
-      const state = await ensureAutomationState();
-      const normalizedAction = typeof action === 'string' ? action.trim().toLowerCase() : 'goto';
-      if (normalizedAction === 'back' || normalizedAction === 'forward' || normalizedAction === 'reload') {
-        const tab = resolveAutomationTab(state, tabId);
-        return withAgentControl(tab, async () => {
-          state.activeTabId = tab.id;
-          const contents = tab.contents;
-          if (!contents || contents.isDestroyed()) throw new Error('网页实例已销毁');
-          const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
-          if (normalizedAction === 'back') {
-            if (!contents.navigationHistory.canGoBack()) throw new Error('当前标签页无法后退');
-            contents.navigationHistory.goBack();
-          } else if (normalizedAction === 'forward') {
-            if (!contents.navigationHistory.canGoForward()) throw new Error('当前标签页无法前进');
-            contents.navigationHistory.goForward();
-          } else {
-            if (!tab.url) throw new Error('当前标签页尚未打开任何地址');
-            contents.reload();
-          }
-          publish(state);
-          const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
-          return {
-            action: normalizedAction,
-            tabId: tab.id,
-            url: tab.url,
-            title: tab.title,
-            loadState: loadResult.loadState ?? tab.loadState,
-            errorCode: loadResult.errorCode ?? tab.errorCode,
-            errorDescription: loadResult.errorDescription ?? tab.errorDescription,
-          };
-        });
-      }
-      if (normalizedAction !== 'goto') {
-        throw new Error(`不支持的导航动作: ${action}`);
-      }
-      const targetUrl = normalizeTargetUrl(url);
-      const tab = newTab ? createTab(state) : resolveAutomationTab(state, tabId);
-      if (newTab || !tab.url) {
-        tab.openedByAgent = true;
-      }
-      return withAgentControl(tab, async () => {
-        state.activeTabId = tab.id;
-        const loadPromise = waitUntilLoad ? waitForTabLoad(tab, waitTimeoutMs) : null;
-        load(state, tab, targetUrl);
-        publish(state);
-        const loadResult = loadPromise ? await loadPromise : {loadState: tab.loadState};
-        return {
-          action: 'goto',
-          tabId: tab.id,
-          url: tab.url,
-          title: tab.title,
-          loadState: loadResult.loadState ?? tab.loadState,
-          errorCode: loadResult.errorCode ?? tab.errorCode,
-          errorDescription: loadResult.errorDescription ?? tab.errorDescription,
-        };
-      });
-    },
-    activateTab: async tabId => {
-      const state = await ensureAutomationState();
-      const tab = requireTab(state, tabId);
+  /** 工具宿主：把标签、脚本、截图能力交给 electron/mcp/tools 下的工具实现。 */
+  const host = {
+    designBridge,
+    defaultInteractiveSelector: DEFAULT_INTERACTIVE_SELECTOR,
+    defaultClickSelector: DEFAULT_CLICK_SELECTOR,
+    acquireState: () => ensureAutomationState(),
+    resolveTab: (state, tabId) => resolveAutomationTab(state, tabId),
+    requireTab,
+    createTab: state => createTab(state),
+    publish,
+    listTabs: async () => snapshot(await ensureAutomationState()),
+    activateTab: (state, tab) => {
       state.activeTabId = tab.id;
       applyLayout(state);
       return publish(state);
     },
-    closeTab: async tabId => {
-      const state = await ensureAutomationState();
-      const tab = requireTab(state, tabId);
+    closeTab: (state, tab) => {
       const ids = [...state.tabs.keys()];
       const index = ids.indexOf(tab.id);
       destroyTab(state, tab);
@@ -1092,645 +990,211 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       applyLayout(state);
       return publish(state);
     },
-    click: async ({ref, selector, text, index = 0, hoverOnly = false, tabId} = {}) => {
-      const rawRef = typeof ref === 'string' ? ref.trim() : '';
-      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
-      const rawText = typeof text === 'string' ? text.trim() : '';
-      if (!rawRef && !rawSelector && !rawText) throw new Error('ref、selector 与 text 不能同时为空');
-      const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
-      const shouldHoverOnly = Boolean(hoverOnly);
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const script = `(() => {
-        const rawRef = ${JSON.stringify(rawRef)};
-        const rawSelector = ${JSON.stringify(rawSelector)};
-        const rawText = ${JSON.stringify(rawText)};
-        const targetIndex = ${targetIndex};
-        const shouldHoverOnly = ${shouldHoverOnly};
-        let nodes = [];
-        let el = null;
-        let visible = [];
-        if (rawRef) {
-          const escapedRef = rawRef.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
-          el = document.querySelector('[data-lx-ref="' + escapedRef + '"]');
-          if (!el) return { ok: false, error: '未找到 ref 对应元素（可能页面已刷新，请重新 browser_query）: ' + rawRef, matchedCount: 0, visibleCount: 0 };
-          nodes = [el];
-          visible = [el];
-        } else {
-          const baseSelector = rawSelector || ${JSON.stringify(DEFAULT_CLICK_SELECTOR)};
-          nodes = Array.from(document.querySelectorAll(baseSelector));
-          if (rawText) {
-            const needle = rawText.toLowerCase();
-            nodes = nodes.filter(node => {
-              const label = (node.innerText || node.textContent || node.getAttribute('aria-label') || node.value || '').trim().replace(/\\s+/g, ' ').toLowerCase();
-              return label.includes(needle);
-            });
-          }
-          visible = nodes.filter(node => {
-            const style = window.getComputedStyle(node);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-            const rect = node.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          });
-          const candidates = visible.length > 0 ? visible : nodes;
-          el = candidates[targetIndex];
-          if (!el) return { ok: false, error: '未找到匹配元素: ' + (rawSelector || rawText), matchedCount: nodes.length, visibleCount: visible.length };
-        }
-        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-        ${buildTargetFlashSnippet("shouldHoverOnly ? '悬停' : '点击'")}
-        const rect = el.getBoundingClientRect();
-        const centerX = Math.round(rect.left + rect.width / 2);
-        const centerY = Math.round(rect.top + rect.height / 2);
-        if (shouldHoverOnly) {
-          el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: centerX, clientY: centerY }));
-          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false, cancelable: false, clientX: centerX, clientY: centerY }));
-        } else {
-          el.focus?.();
-          el.click();
-        }
-        return {
-          ok: true,
-          hoverOnly: shouldHoverOnly,
-          centerX,
-          centerY,
-          matchedCount: nodes.length,
-          visibleCount: visible.length,
-          tag: el.tagName.toLowerCase(),
-          id: el.id || '',
-          className: typeof el.className === 'string' ? el.className : '',
-          text: (el.innerText || el.textContent || '').trim().slice(0, 120),
-          currentUrl: window.location.href,
-          currentTitle: document.title,
-        };
-      })()`;
-      const result = await withAgentControl(tab, async () => {
-        const res = await runTabScript(tab, script);
-        if (res?.ok && shouldHoverOnly && typeof tab.contents?.sendInputEvent === 'function') {
-          tab.contents.sendInputEvent({type: 'mouseMove', x: res.centerX, y: res.centerY});
-          await new Promise(resolve => setTimeout(resolve, 80));
-        }
-        return res;
-      });
-      if (!result?.ok) throw new Error(result?.error || '点击元素失败');
-      return {...result, tabId: tab.id, url: result.currentUrl || tab.url, title: result.currentTitle || tab.title};
+    loadUrl: (state, tab, url) => {
+      load(state, tab, url);
+      publish(state);
     },
-    fill: async ({ref, selector, value = '', index = 0, clear = true, submit = false, tabId} = {}) => {
-      const rawRef = typeof ref === 'string' ? ref.trim() : '';
-      const normalizedSelector = typeof selector === 'string' ? selector.trim() : '';
-      if (!rawRef && !normalizedSelector) throw new Error('ref 与 selector 不能同时为空');
-      const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
-      const textValue = value === undefined || value === null ? '' : String(value);
-      const shouldClear = Boolean(clear);
-      const shouldSubmit = Boolean(submit);
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const resolveTargetSnippet = `
-        const rawRef = ${JSON.stringify(rawRef)};
-        const selector = ${JSON.stringify(normalizedSelector)};
-        const targetIndex = ${targetIndex};
-        let el = null;
-        let nodes = [];
-        if (rawRef) {
-          const escapedRef = rawRef.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
-          el = document.querySelector('[data-lx-ref="' + escapedRef + '"]');
-          if (!el) return { ok: false, error: '未找到 ref 对应输入元素（可能页面已刷新，请重新 browser_query）: ' + rawRef, matchedCount: 0 };
-          nodes = [el];
-        } else {
-          nodes = Array.from(document.querySelectorAll(selector));
-          const visible = nodes.filter(node => {
-            const style = window.getComputedStyle(node);
-            if (style.display === 'none' || style.visibility === 'hidden') return false;
-            const rect = node.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          });
-          const candidates = visible.length > 0 ? visible : nodes;
-          el = candidates[targetIndex];
-          if (!el) return { ok: false, error: '未找到匹配输入元素: ' + selector, matchedCount: nodes.length };
-        }
-      `;
-
-      // 优先走 Electron 原生输入通道（isTrusted: true），避免 React 受控组件忽略合成 Event 导致输入回退为空。
-      if (typeof tab.contents?.insertText === 'function') {
-        const result = await withAgentControl(tab, async () => {
-          const prepScript = `(() => {
-            ${resolveTargetSnippet}
-            const nextValue = ${JSON.stringify(textValue)};
-            const shouldClear = ${shouldClear};
-            const shouldSubmit = ${shouldSubmit};
-            el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-            ${buildTargetFlashSnippet("'输入'")}
-            el.focus?.();
-            if (el.tagName === 'SELECT') {
-              const options = Array.from(el.options || []);
-              const byValue = options.find(opt => opt.value === nextValue);
-              const byText = byValue || options.find(opt => (opt.textContent || '').trim() === nextValue)
-                || options.find(opt => (opt.textContent || '').trim().includes(nextValue));
-              const resolved = byText ? byText.value : nextValue;
-              const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
-              if (descriptor && descriptor.set) descriptor.set.call(el, resolved);
-              else el.value = resolved;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              if (shouldSubmit && el.form && typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
-              return {
-                ok: true,
-                handled: true,
-                tag: el.tagName.toLowerCase(),
-                id: el.id || '',
-                className: typeof el.className === 'string' ? el.className : '',
-                valueLength: (el.value ?? el.textContent ?? '').length,
-              };
-            }
-            const isEmptyBefore = (el.value ?? el.textContent ?? '').length === 0;
-            if (el.isContentEditable) {
-              const range = document.createRange();
-              range.selectNodeContents(el);
-              if (!shouldClear) range.collapse(false);
-              const selection = window.getSelection();
-              selection?.removeAllRanges();
-              selection?.addRange(range);
-            } else if (shouldClear) {
-              if (typeof el.select === 'function') el.select();
-              else if (typeof el.setSelectionRange === 'function') el.setSelectionRange(0, (el.value || '').length);
-            } else if (typeof el.setSelectionRange === 'function') {
-              const len = (el.value || '').length;
-              el.setSelectionRange(len, len);
-            }
-            return { ok: true, handled: false, isEmptyBefore };
-          })()`;
-          const prep = await runTabScript(tab, prepScript);
-          if (!prep?.ok) throw new Error(prep?.error || '填充元素失败');
-          if (prep.handled) return prep;
-
-          if (typeof tab.contents.focus === 'function') tab.contents.focus();
-          if (shouldClear && textValue === '') {
-            if (!prep.isEmptyBefore) {
-              if (typeof tab.contents.delete === 'function') {
-                tab.contents.delete();
-              } else if (typeof tab.contents.sendInputEvent === 'function') {
-                tab.contents.sendInputEvent({type: 'keyDown', keyCode: 'Backspace'});
-                tab.contents.sendInputEvent({type: 'keyUp', keyCode: 'Backspace'});
-              }
-            }
-          } else if (textValue !== '') {
-            await tab.contents.insertText(textValue);
-          }
-
-          const readScript = `(() => {
-            ${resolveTargetSnippet}
-            return {
-              ok: true,
-              tag: el.tagName.toLowerCase(),
-              id: el.id || '',
-              className: typeof el.className === 'string' ? el.className : '',
-              valueLength: (el.value ?? el.textContent ?? '').length,
-            };
-          })()`;
-          let readResult = await runTabScript(tab, readScript);
-
-          // 面板收起/失焦时 insertText 可能被 Chromium 忽略，兜底用 CDP Input.insertText 写入。
-          if (textValue !== '' && readResult?.ok && readResult.valueLength === 0 && tab.contents.debugger) {
-            await withDebugger(tab.contents, dbg => dbg.sendCommand('Input.insertText', {text: textValue}));
-            readResult = await runTabScript(tab, readScript);
-          }
-
-          if (shouldSubmit && typeof tab.contents.sendInputEvent === 'function') {
-            tab.contents.sendInputEvent({type: 'keyDown', keyCode: 'Return'});
-            tab.contents.sendInputEvent({type: 'char', keyCode: 'Return'});
-            tab.contents.sendInputEvent({type: 'keyUp', keyCode: 'Return'});
-          }
-          return readResult;
-        });
-        if (!result?.ok) throw new Error(result?.error || '填充元素失败');
-        return {...result, tabId: tab.id, url: tab.url, title: tab.title};
+    navigateHistory: (state, tab, action) => {
+      const contents = tab.contents;
+      if (!contents || contents.isDestroyed()) throw new Error('网页实例已销毁');
+      if (action === 'back') {
+        if (!contents.navigationHistory.canGoBack()) throw new Error('当前标签页无法后退');
+        contents.navigationHistory.goBack();
+      } else if (action === 'forward') {
+        if (!contents.navigationHistory.canGoForward()) throw new Error('当前标签页无法前进');
+        contents.navigationHistory.goForward();
+      } else {
+        if (!tab.url) throw new Error('当前标签页尚未打开任何地址');
+        contents.reload();
       }
-
-      const script = `(() => {
-        ${resolveTargetSnippet}
-        const nextValue = ${JSON.stringify(textValue)};
-        const shouldClear = ${shouldClear};
-        const shouldSubmit = ${shouldSubmit};
-        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-        el.focus?.();
-        if (el.isContentEditable) {
-          el.textContent = shouldClear ? nextValue : ((el.textContent || '') + nextValue);
-          el.dispatchEvent(new InputEvent('input', { bubbles: true, data: nextValue, inputType: 'insertText' }));
-        } else if (el.tagName === 'SELECT') {
-          const options = Array.from(el.options || []);
-          const byValue = options.find(opt => opt.value === nextValue);
-          const byText = byValue || options.find(opt => (opt.textContent || '').trim() === nextValue)
-            || options.find(opt => (opt.textContent || '').trim().includes(nextValue));
-          const resolved = byText ? byText.value : nextValue;
-          const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
-          if (descriptor && descriptor.set) descriptor.set.call(el, resolved);
-          else el.value = resolved;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        } else {
-          const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-          const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-          const finalValue = shouldClear ? nextValue : ((el.value || '') + nextValue);
-          if (descriptor && descriptor.set) descriptor.set.call(el, finalValue);
-          else el.value = finalValue;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        if (shouldSubmit) {
-          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-          el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-          if (el.form && typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
-        }
-        return {
-          ok: true,
-          tag: el.tagName.toLowerCase(),
-          id: el.id || '',
-          className: typeof el.className === 'string' ? el.className : '',
-          valueLength: (el.value ?? el.textContent ?? '').length,
-        };
-      })()`;
-      const result = await withAgentControl(tab, () => runTabScript(tab, script));
-      if (!result?.ok) throw new Error(result?.error || '填充元素失败');
-      return {...result, tabId: tab.id, url: tab.url, title: tab.title};
+      publish(state);
     },
-    wait: async ({selector, text, ms, timeoutMs: waitLimitMs = 10000, tabId} = {}) => {
-      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
-      const rawText = typeof text === 'string' ? text.trim() : '';
-      const fixedMs = Number.isFinite(ms) && ms > 0 ? Math.min(Math.round(ms), 15000) : 0;
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      return withAgentControl(tab, async () => {
-        if (!rawSelector && !rawText) {
-          const delayMs = fixedMs || 1000;
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-          return {ok: true, waitedMs: delayMs, tabId: tab.id, url: tab.url, title: tab.title};
-        }
-        const maxWait = Number.isFinite(waitLimitMs) && waitLimitMs > 0 ? Math.min(Math.round(waitLimitMs), 15000) : 10000;
-        const startedAt = Date.now();
-        const deadline = startedAt + maxWait;
-        while (Date.now() < deadline) {
-          const checkScript = `(() => {
-            const sel = ${JSON.stringify(rawSelector)};
-            const txt = ${JSON.stringify(rawText)};
-            let selectorOk = !sel;
-            if (sel) {
-              const nodes = Array.from(document.querySelectorAll(sel));
-              selectorOk = nodes.some(el => {
-                const style = window.getComputedStyle(el);
-                if (style.display === 'none' || style.visibility === 'hidden') return false;
-                const rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
-              });
-            }
-            let textOk = !txt;
-            if (txt) {
-              const bodyText = (document.body?.innerText || '').trim();
-              textOk = bodyText.includes(txt);
-            }
-            return { matched: selectorOk && textOk, url: window.location.href, title: document.title };
-          })()`;
-          const status = await runTabScript(tab, checkScript);
-          if (status?.matched) {
-            return {
-              ok: true,
-              waitedMs: Date.now() - startedAt,
-              tabId: tab.id,
-              url: status.url || tab.url,
-              title: status.title || tab.title,
-            };
-          }
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-        throw new Error(`等待超时（${maxWait}ms）未满足条件: ${rawSelector || rawText}`);
-      });
+    waitForTabLoad: (tab, waitMs) => waitForTabLoad(tab, waitMs),
+    withAgentControl,
+    runScript: (tab, name, args) => runPageScript(tab.contents, name, args),
+    sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    logs: tab => ({
+      console: Array.isArray(tab.consoleLogs) ? tab.consoleLogs : [],
+      network: Array.isArray(tab.networkLogs) ? tab.networkLogs : [],
+    }),
+    canInsertText: tab => typeof tab.contents?.insertText === 'function',
+    focusContents: tab => {
+      if (typeof tab.contents?.focus === 'function') tab.contents.focus();
     },
-    scroll: async ({direction = 'down', amount, selector, tabId} = {}) => {
-      const normalizedDirection = typeof direction === 'string' ? direction.trim().toLowerCase() : 'down';
-      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
-      const px = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const script = `(() => {
-        const dir = ${JSON.stringify(normalizedDirection)};
-        const px = ${px};
-        const sel = ${JSON.stringify(rawSelector)};
-        const target = sel ? document.querySelector(sel) : null;
-        if (sel && !target) return { ok: false, error: '未找到滚动目标元素: ' + sel };
-        if (target && !px && dir === 'down') {
-          target.scrollIntoView({ block: 'center', behavior: 'instant' });
-        } else {
-          const step = px || Math.round(window.innerHeight * 0.8);
-          const container = target || document.scrollingElement || document.documentElement;
-          if (dir === 'top') container.scrollTop = 0;
-          else if (dir === 'bottom') container.scrollTop = container.scrollHeight;
-          else if (dir === 'up') container.scrollTop = Math.max(0, container.scrollTop - step);
-          else container.scrollTop = Math.min(container.scrollHeight, container.scrollTop + step);
-        }
-        const root = target || document.scrollingElement || document.documentElement;
-        return {
-          ok: true,
-          scrollTop: Math.round(root.scrollTop),
-          scrollHeight: Math.round(root.scrollHeight),
-          clientHeight: Math.round(root.clientHeight),
-          atBottom: root.scrollTop + root.clientHeight >= root.scrollHeight - 2,
-          url: window.location.href,
-          title: document.title,
-        };
-      })()`;
-      const result = await withAgentControl(tab, () => runTabScript(tab, script));
-      if (!result?.ok) throw new Error(result?.error || '滚动页面失败');
-      return {...result, tabId: tab.id};
+    insertText: (tab, text) => tab.contents.insertText(text),
+    deleteContent: tab => {
+      if (typeof tab.contents?.delete === 'function') {
+        tab.contents.delete();
+        return;
+      }
+      if (typeof tab.contents?.sendInputEvent === 'function') {
+        tab.contents.sendInputEvent({type: 'keyDown', keyCode: 'Backspace'});
+        tab.contents.sendInputEvent({type: 'keyUp', keyCode: 'Backspace'});
+      }
     },
-    query: async ({selector, limit = 40, tabId} = {}) => {
-      const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 40;
-      const customSelector = typeof selector === 'string' && selector.trim() ? selector.trim() : '';
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const script = buildQueryScript({customSelector, maxItems});
-      const result = await withAgentControl(tab, () => runTabScript(tab, script));
-      return {...result, tabId: tab.id};
+    pressEnter: tab => {
+      if (typeof tab.contents?.sendInputEvent !== 'function') return;
+      tab.contents.sendInputEvent({type: 'keyDown', keyCode: 'Return'});
+      tab.contents.sendInputEvent({type: 'char', keyCode: 'Return'});
+      tab.contents.sendInputEvent({type: 'keyUp', keyCode: 'Return'});
     },
-    screenshot: async ({
-      tabId,
-      maxWidth = 1280,
-      saveToTemp = true,
-      savePath,
-      viewportWidth = DEFAULT_SCREENSHOT_VIEWPORT.width,
-      viewportHeight = DEFAULT_SCREENSHOT_VIEWPORT.height,
-      fullPage = false,
-    } = {}) => {
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
+    canCdpInsert: tab => Boolean(tab.contents?.debugger),
+    cdpInsertText: (tab, text) => withDebugger(tab.contents, dbg => dbg.sendCommand('Input.insertText', {text})),
+    canSendInputEvent: tab => typeof tab.contents?.sendInputEvent === 'function',
+    sendKey: (tab, keyCode, modifiers) => {
+      tab.contents.sendInputEvent({type: 'keyDown', keyCode, modifiers});
+      if (keyCode.length === 1 || keyCode === 'Return') {
+        tab.contents.sendInputEvent({type: 'char', keyCode, modifiers});
+      }
+      tab.contents.sendInputEvent({type: 'keyUp', keyCode, modifiers});
+    },
+    dispatchHover: async (tab, x, y) => {
+      if (typeof tab.contents?.sendInputEvent !== 'function') return;
+      tab.contents.sendInputEvent({type: 'mouseMove', x, y});
+      await new Promise(resolve => setTimeout(resolve, 80));
+    },
+    /**
+     * 观察一次动作是否引发导航。
+     *
+     * <p>必须在动作**之前**注册监听、动作**之后**调用 settle：否则导航起头早于计时器，
+     * 静默窗口会误判成「没导航」。</p>
+     */
+    beginNavigationWatch: tab => {
+      const contents = tab.contents;
+      if (!contents || contents.isDestroyed() || typeof contents.on !== 'function') {
+        return {settle: async () => null};
+      }
+      let sawStart = false;
+      const onStart = (_event, _url, _inPlace, mainFrame) => {
+        if (mainFrame) sawStart = true;
+      };
+      contents.on('did-start-navigation', onStart);
+      return {
+        settle: ({silenceMs = 400, maxWaitMs = 5000} = {}) => new Promise(resolve => {
+          let settled = false;
+          let silenceTimer = null;
+          let hardTimer = null;
+          const onStop = () => {
+            if (sawStart) finish();
+          };
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(silenceTimer);
+            clearTimeout(hardTimer);
+            contents.removeListener('did-start-navigation', onStart);
+            contents.removeListener('did-stop-loading', onStop);
+            resolve({url: tab.url, title: tab.title, loadState: tab.loadState, navigated: sawStart});
+          };
+          contents.on('did-stop-loading', onStop);
+          // 动作后这段时间内没有任何主框架导航起头，就判定为「不导航」
+          silenceTimer = setTimeout(() => {
+            if (!sawStart) finish();
+          }, silenceMs);
+          hardTimer = setTimeout(finish, maxWaitMs);
+        }),
+      };
+    },
+    captureScreenshot: async (tab, {maxWidth, viewportWidth, viewportHeight, fullPage}) => {
       const contents = tab.contents;
       if (!contents || contents.isDestroyed()) throw new Error('网页实例不可用');
-      const targetViewportWidth = Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0;
-      const targetViewportHeight = Number.isFinite(viewportHeight) && viewportHeight > 0
-        ? Math.round(viewportHeight)
-        : DEFAULT_SCREENSHOT_VIEWPORT.height;
-      const wantFullPage = Boolean(fullPage);
-      const canUseCdp = (targetViewportWidth > 0 || wantFullPage)
-        && Boolean(contents.debugger && typeof contents.debugger.sendCommand === 'function');
-
-      return withAgentControl(tab, async () => {
-        await syncAgentOverlay(tab, {forceHide: true, waitForPaint: true});
+      await syncAgentOverlay(tab, {forceHide: true, waitForPaint: true});
+      try {
         let pngBuffer = null;
         let finalSize = null;
-        try {
-          if (canUseCdp) {
-            try {
-              const cdpResult = await withDebugger(contents, async dbg => {
-                let metricsOverridden = false;
-                try {
-                  if (targetViewportWidth > 0) {
-                    await dbg.sendCommand('Emulation.setDeviceMetricsOverride', {
-                      width: targetViewportWidth,
-                      height: targetViewportHeight,
-                      deviceScaleFactor: 1,
-                      mobile: false,
-                    });
-                    metricsOverridden = true;
-                    await runTabScript(
-                      tab,
-                      'typeof requestAnimationFrame === "function" ? new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))) : true',
-                    ).catch(() => undefined);
-                  }
-                  const shotParams = wantFullPage
-                    ? {format: 'png', captureBeyondViewport: true}
-                    : {format: 'png'};
-                  return await dbg.sendCommand('Page.captureScreenshot', shotParams);
-                } finally {
-                  if (metricsOverridden) {
-                    await dbg.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
-                  }
+        const canUseCdp = (viewportWidth > 0 || fullPage)
+          && Boolean(contents.debugger && typeof contents.debugger.sendCommand === 'function');
+        if (canUseCdp) {
+          try {
+            const cdpResult = await withDebugger(contents, async dbg => {
+              let metricsOverridden = false;
+              try {
+                if (viewportWidth > 0) {
+                  await dbg.sendCommand('Emulation.setDeviceMetricsOverride', {
+                    width: viewportWidth,
+                    height: viewportHeight,
+                    deviceScaleFactor: 1,
+                    mobile: false,
+                  });
+                  metricsOverridden = true;
+                  await runPageScript(contents, 'raf-wait').catch(() => undefined);
                 }
-              });
-              if (cdpResult && typeof cdpResult.data === 'string' && cdpResult.data) {
-                pngBuffer = Buffer.from(cdpResult.data, 'base64');
-                if (nativeImage && typeof nativeImage.createFromBuffer === 'function') {
-                  let img = nativeImage.createFromBuffer(pngBuffer);
-                  let imgSize = img.getSize();
-                  if (Number.isFinite(maxWidth) && maxWidth > 0 && imgSize.width > maxWidth) {
-                    img = img.resize({width: Math.round(maxWidth)});
-                    imgSize = img.getSize();
-                    pngBuffer = img.toPNG();
-                  }
-                  if (imgSize.width > 0 && imgSize.height > 0) finalSize = imgSize;
-                }
-                if (!finalSize) {
-                  finalSize = readPngDimensions(pngBuffer) || {
-                    width: targetViewportWidth || DEFAULT_SCREENSHOT_VIEWPORT.width,
-                    height: targetViewportHeight,
-                  };
+                return await dbg.sendCommand(
+                  'Page.captureScreenshot',
+                  fullPage ? {format: 'png', captureBeyondViewport: true} : {format: 'png'},
+                );
+              } finally {
+                if (metricsOverridden) {
+                  await dbg.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
                 }
               }
-            } catch {
-              // CDP 截图失败（如被外部 DevTools 占用）时回退到原生 capturePage。
-              pngBuffer = null;
-              finalSize = null;
+            });
+            if (cdpResult && typeof cdpResult.data === 'string' && cdpResult.data) {
+              pngBuffer = Buffer.from(cdpResult.data, 'base64');
+              if (nativeImage && typeof nativeImage.createFromBuffer === 'function') {
+                let image = nativeImage.createFromBuffer(pngBuffer);
+                let size = image.getSize();
+                if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
+                  image = image.resize({width: Math.round(maxWidth)});
+                  size = image.getSize();
+                  pngBuffer = image.toPNG();
+                }
+                if (size.width > 0 && size.height > 0) finalSize = size;
+              }
+              if (!finalSize) {
+                finalSize = readPngDimensions(pngBuffer) || {
+                  width: viewportWidth || DEFAULT_SCREENSHOT_VIEWPORT.width,
+                  height: viewportHeight,
+                };
+              }
             }
-          }
-
-          if (!pngBuffer) {
-            let image = await contents.capturePage();
-            const size = image.getSize();
-            if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
-              image = image.resize({width: Math.round(maxWidth)});
-            }
-            finalSize = image.getSize();
-            pngBuffer = image.toPNG();
-          }
-        } finally {
-          await syncAgentOverlay(tab);
-        }
-
-        let filePath = '';
-        const rawSavePath = typeof savePath === 'string' ? savePath.trim() : '';
-        if (rawSavePath) {
-          if (!path.isAbsolute(rawSavePath)) {
-            throw new Error('savePath 必须是绝对路径');
-          }
-          filePath = path.normalize(rawSavePath);
-          fs.mkdirSync(path.dirname(filePath), {recursive: true});
-          fs.writeFileSync(filePath, pngBuffer);
-        } else if (saveToTemp) {
-          const dir = process.platform === 'win32' && process.env.PUBLIC
-            ? path.join(process.env.PUBLIC, 'lingxi-browser-mcp')
-            : path.join(os.tmpdir(), 'lingxi-browser-mcp');
-          fs.mkdirSync(dir, {recursive: true});
-          filePath = path.join(dir, `shot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
-          fs.writeFileSync(filePath, pngBuffer);
-        }
-        return {
-          tabId: tab.id,
-          url: tab.url,
-          title: tab.title,
-          mimeType: 'image/png',
-          width: finalSize.width,
-          height: finalSize.height,
-          base64: pngBuffer.toString('base64'),
-          filePath,
-        };
-      });
-    },
-    console: async ({level, limit = 50, clear = false, tabId} = {}) => {
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_LOG_ENTRIES) : 50;
-      const filterLevel = typeof level === 'string' && level.trim() && level.trim().toLowerCase() !== 'all'
-        ? normalizeConsoleLevel(level)
-        : '';
-      const source = Array.isArray(tab.consoleLogs) ? tab.consoleLogs : [];
-      const filtered = filterLevel ? source.filter(entry => entry.level === filterLevel) : source;
-      const entries = filtered.slice(-maxItems);
-      if (clear) {
-        tab.consoleLogs = [];
-      }
-      return {
-        tabId: tab.id,
-        url: tab.url,
-        title: tab.title,
-        totalCount: filtered.length,
-        entries,
-      };
-    },
-    network: async ({onlyErrors = false, urlContains = '', limit = 50, clear = false, tabId} = {}) => {
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_LOG_ENTRIES) : 50;
-      const needle = typeof urlContains === 'string' ? urlContains.trim().toLowerCase() : '';
-      const source = Array.isArray(tab.networkLogs) ? tab.networkLogs : [];
-      let filtered = source;
-      if (onlyErrors) {
-        filtered = filtered.filter(entry => !entry.ok || entry.statusCode >= 400 || Boolean(entry.error));
-      }
-      if (needle) {
-        filtered = filtered.filter(entry => String(entry.url || '').toLowerCase().includes(needle));
-      }
-      const entries = filtered.slice(-maxItems);
-      if (clear) {
-        tab.networkLogs = [];
-      }
-      return {
-        tabId: tab.id,
-        url: tab.url,
-        title: tab.title,
-        totalCount: filtered.length,
-        entries,
-      };
-    },
-    evaluate: async ({expression, tabId} = {}) => {
-      if (typeof expression !== 'string' || !expression.trim()) {
-        throw new Error('expression 不能为空');
-      }
-      const code = expression.trim();
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      const script = `(async () => {
-        try {
-          const fn = new Function('return (' + ${JSON.stringify(code)} + ')');
-          let value;
-          try {
-            value = await fn();
-          } catch (syntaxErr) {
-            if (syntaxErr instanceof SyntaxError) {
-              const blockFn = new Function(${JSON.stringify(code)});
-              value = await blockFn();
-            } else {
-              throw syntaxErr;
-            }
-          }
-          let serialized;
-          try {
-            serialized = JSON.stringify(value);
           } catch {
-            serialized = JSON.stringify(String(value));
+            // CDP 截图失败（如被外部 DevTools 占用）时回退到原生 capturePage
+            pngBuffer = null;
+            finalSize = null;
           }
-          if (serialized === undefined) serialized = 'undefined';
-          const truncated = serialized.length > 16000;
-          return {
-            ok: true,
-            type: value === null ? 'null' : typeof value,
-            result: truncated ? serialized.slice(0, 16000) + '...(truncated)' : serialized,
-            truncated,
-            url: window.location.href,
-            title: document.title,
-          };
-        } catch (err) {
-          return {
-            ok: false,
-            error: err && err.message ? err.message : String(err),
-            url: window.location.href,
-            title: document.title,
-          };
         }
-      })()`;
-      const result = await withAgentControl(tab, () => runTabScript(tab, script));
-      if (!result?.ok) throw new Error(result?.error || '脚本求值失败');
-      return {...result, tabId: tab.id};
-    },
-    pressKey: async ({key, modifiers = [], ref, selector, tabId} = {}) => {
-      if (typeof key !== 'string' || !key.trim()) {
-        throw new Error('key 不能为空');
+        if (!pngBuffer) {
+          let image = await contents.capturePage();
+          const size = image.getSize();
+          if (Number.isFinite(maxWidth) && maxWidth > 0 && size.width > maxWidth) {
+            image = image.resize({width: Math.round(maxWidth)});
+          }
+          finalSize = image.getSize();
+          pngBuffer = image.toPNG();
+        }
+        return {buffer: pngBuffer, width: finalSize.width, height: finalSize.height};
+      } finally {
+        await syncAgentOverlay(tab);
       }
-      const normalizedKey = key.trim();
-      const normalizedModifiers = Array.isArray(modifiers)
-        ? modifiers.map(m => String(m || '').trim().toLowerCase()).filter(Boolean)
-        : [];
-      const rawRef = typeof ref === 'string' ? ref.trim() : '';
-      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
-      const state = await ensureAutomationState();
-      const tab = resolveAutomationTab(state, tabId);
-      return withAgentControl(tab, async () => {
-        if (rawRef || rawSelector) {
-          const focusScript = `(() => {
-            const rawRef = ${JSON.stringify(rawRef)};
-            const rawSelector = ${JSON.stringify(rawSelector)};
-            let el = null;
-            if (rawRef) {
-              const escapedRef = rawRef.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
-              el = document.querySelector('[data-lx-ref="' + escapedRef + '"]');
-            } else if (rawSelector) {
-              el = document.querySelector(rawSelector);
-            }
-            if (!el) return { ok: false, error: '未找到要聚焦的目标元素: ' + (rawRef || rawSelector) };
-            el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-            ${buildTargetFlashSnippet("'输入'")}
-            el.focus?.();
-            return { ok: true };
-          })()`;
-          const focusRes = await runTabScript(tab, focusScript);
-          if (!focusRes?.ok) throw new Error(focusRes?.error || '聚焦元素失败');
-        }
-        const keyCode = normalizedKey === 'Enter' ? 'Return' : normalizedKey;
-        if (typeof tab.contents?.sendInputEvent === 'function') {
-          if (typeof tab.contents.focus === 'function') tab.contents.focus();
-          tab.contents.sendInputEvent({type: 'keyDown', keyCode, modifiers: normalizedModifiers});
-          if (keyCode.length === 1 || keyCode === 'Return') {
-            tab.contents.sendInputEvent({type: 'char', keyCode, modifiers: normalizedModifiers});
-          }
-          tab.contents.sendInputEvent({type: 'keyUp', keyCode, modifiers: normalizedModifiers});
-          return {ok: true, key: normalizedKey, modifiers: normalizedModifiers, tabId: tab.id, url: tab.url, title: tab.title};
-        }
-        const fallbackScript = `(() => {
-          const target = document.activeElement || document.body || document.documentElement;
-          const init = {
-            key: ${JSON.stringify(normalizedKey)},
-            bubbles: true,
-            cancelable: true,
-            ctrlKey: ${normalizedModifiers.includes('control') || normalizedModifiers.includes('ctrl')},
-            shiftKey: ${normalizedModifiers.includes('shift')},
-            altKey: ${normalizedModifiers.includes('alt')},
-            metaKey: ${normalizedModifiers.includes('meta') || normalizedModifiers.includes('command')},
-          };
-          target.dispatchEvent(new KeyboardEvent('keydown', init));
-          target.dispatchEvent(new KeyboardEvent('keyup', init));
-          return { ok: true, url: window.location.href, title: document.title };
-        })()`;
-        const res = await runTabScript(tab, fallbackScript);
-        return {...res, key: normalizedKey, modifiers: normalizedModifiers, tabId: tab.id};
-      });
+    },
+    saveScreenshot: async (buffer, savePath) => {
+      if (savePath) {
+        if (!path.isAbsolute(savePath)) throw new Error('savePath 必须是绝对路径');
+        const target = path.normalize(savePath);
+        await fs.promises.mkdir(path.dirname(target), {recursive: true});
+        await fs.promises.writeFile(target, buffer);
+        return target;
+      }
+      const dir = process.platform === 'win32' && process.env.PUBLIC
+        ? path.join(process.env.PUBLIC, 'lingxi-browser-mcp')
+        : path.join(os.tmpdir(), 'lingxi-browser-mcp');
+      await fs.promises.mkdir(dir, {recursive: true});
+      const filePath = path.join(dir, `shot-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
+      await fs.promises.writeFile(filePath, buffer);
+      return filePath;
     },
   };
+
+  const automation = {};
+  for (const tool of listTools(false)) {
+    if (!tool.method) continue;
+    automation[tool.method] = (args = {}) => tool.run(host, args);
+  }
+  const tabsTool = listTools(false).find(tool => tool.name === 'browser_tabs');
+  automation.listTabs = () => tabsTool.run(host, {action: 'list'});
+  automation.activateTab = tabId => tabsTool.run(host, {action: 'activate', tabId});
+  automation.closeTab = tabId => tabsTool.run(host, {action: 'close', tabId});
 
   return {
     setTheme,

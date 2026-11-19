@@ -1,228 +1,30 @@
 /**
  * 内置浏览器本地 MCP Server（Streamable HTTP）。
  *
- * <p>仅监听本机回环地址，使用一次性随机 Bearer Token 鉴权，
- * 将内置 WebContentsView 浏览器能力作为可选按需加载的 MCP 工具暴露给后端。</p>
+ * <p>仅监听本机回环地址，使用一次性随机 Bearer Token 鉴权，把内置 WebContentsView
+ * 浏览器与 Design 画布能力作为可选工具暴露给后端。</p>
+ *
+ * <p>工具清单与分派都来自 electron/mcp/registry.cjs：这里只负责 HTTP/JSON-RPC、
+ * 鉴权、会话与 content 组装，不再自己维护一份工具表。</p>
  */
 const http = require('node:http');
 const {randomBytes, randomUUID, timingSafeEqual} = require('node:crypto');
+const {BROWSER_TOOLS, DESIGN_TOOLS, findTool} = require('./mcp/registry.cjs');
+const {describeForModel} = require('./mcp/errors.cjs');
 
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2025-11-25', '2025-03-26', '2024-11-05']);
 const DEFAULT_PROTOCOL_VERSION = '2025-11-25';
 const MAX_BODY_BYTES = 1024 * 1024;
+/** 会话表上限：SDK 不一定发 DELETE，不加限制就是无上限增长。 */
+const MAX_SESSIONS = 64;
 
-const TOOL_DEFINITIONS = Object.freeze([
-  {
-    name: 'browser_navigate',
-    description: 'Navigate the built-in desktop browser: open a URL (goto) or go back, forward, or reload.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        action: {type: 'string', enum: ['goto', 'back', 'forward', 'reload'], description: 'Navigation action. Defaults to goto.'},
-        url: {type: 'string', description: 'Target http/https URL (required when action is goto).'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-        newTab: {type: 'boolean', description: 'Whether to open in a new tab (only for goto). Defaults to false.'},
-        waitUntilLoad: {type: 'boolean', description: 'Wait for page load completion. Defaults to true.'},
-        waitTimeoutMs: {type: 'integer', description: 'Load wait timeout in milliseconds (max 30000).'},
-      },
-    },
-  },
-  {
-    name: 'browser_click',
-    description: 'Click (or hover over) an element in the built-in browser page by ref (from browser_query), CSS selector (supports .className, #id), and/or visible text.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        ref: {type: 'string', description: 'Optional element ref returned by the latest browser_query snapshot (e.g. "e3"). Preferred for reliable targeting.'},
-        selector: {type: 'string', description: 'Optional CSS selector (e.g. ".submit-btn", "#login", "button").'},
-        text: {type: 'string', description: 'Optional visible text substring to match clickable elements (useful when classes are obfuscated or Tailwind-based).'},
-        index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
-        hoverOnly: {type: 'boolean', description: 'Move mouse over the element without clicking (triggers CSS :hover and mouseenter/mouseover for dropdown menus or tooltips). Defaults to false.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-    },
-  },
-  {
-    name: 'browser_fill',
-    description: 'Fill text into an input, textarea, contenteditable, or select an option in a <select> by ref (from browser_query) or CSS selector.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        ref: {type: 'string', description: 'Optional element ref returned by the latest browser_query snapshot (e.g. "e2").'},
-        selector: {type: 'string', description: 'Optional CSS selector matching the input/select element (required if ref is omitted).'},
-        value: {type: 'string', description: 'Text value to fill (or option value/label for <select>).'},
-        index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
-        clear: {type: 'boolean', description: 'Clear existing content before filling. Defaults to true.'},
-        submit: {type: 'boolean', description: 'Dispatch Enter key and submit enclosing form after filling. Defaults to false.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-      required: ['value'],
-    },
-  },
-  {
-    name: 'browser_query',
-    description: 'Inspect visible interactive elements (including stable snapshot ref IDs like "e1", roles, states, values, labels, viewport visibility, selector hints, text) and page text excerpt.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        selector: {type: 'string', description: 'Optional CSS selector filter. Defaults to common interactive elements.'},
-        limit: {type: 'integer', description: 'Maximum elements to return (1-100). Defaults to 40.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-    },
-  },
-  {
-    name: 'browser_screenshot',
-    description: 'Capture a PNG screenshot of the current built-in browser tab. By default, renders at a standard desktop viewport (1280x800) regardless of the preview panel width.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-        maxWidth: {type: 'integer', description: 'Resize width cap in pixels. Defaults to 1280.'},
-        viewportWidth: {type: 'integer', description: 'Logical viewport width in pixels during capture (defaults to 1280). Pass 0 to use the current preview panel viewport.'},
-        viewportHeight: {type: 'integer', description: 'Logical viewport height in pixels during capture (defaults to 800).'},
-        fullPage: {type: 'boolean', description: 'Capture the full scrollable page beyond the viewport. Defaults to false.'},
-        savePath: {type: 'string', description: 'Optional absolute PNG file path (e.g. inside the workspace) where the screenshot should be saved.'},
-      },
-    },
-  },
-  {
-    name: 'browser_tabs',
-    description: 'List, activate, or close tabs in the built-in browser.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        action: {type: 'string', enum: ['list', 'activate', 'close'], description: 'Tab operation. Defaults to list.'},
-        tabId: {type: 'string', description: 'Target tab ID for activate or close.'},
-      },
-    },
-  },
-  {
-    name: 'browser_wait',
-    description: 'Wait for a visible selector, page text, or a fixed delay in milliseconds (useful for SPA async updates).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        selector: {type: 'string', description: 'Optional CSS selector to wait for until visible.'},
-        text: {type: 'string', description: 'Optional text substring to wait for in page body.'},
-        ms: {type: 'integer', description: 'Fixed delay in milliseconds (used when selector and text are omitted, max 15000).'},
-        timeoutMs: {type: 'integer', description: 'Maximum wait timeout in milliseconds (default 10000, max 15000).'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-    },
-  },
-  {
-    name: 'browser_scroll',
-    description: 'Scroll the page or a specific scrollable container (down, up, top, bottom, or by pixel amount).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        direction: {type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Defaults to down.'},
-        amount: {type: 'integer', description: 'Optional pixel offset for up/down scrolling. Defaults to 80% of viewport height.'},
-        selector: {type: 'string', description: 'Optional CSS selector of a target container or element to scroll.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-    },
-  },
-  {
-    name: 'browser_console',
-    description: 'Read captured browser console logs (errors, warnings, info) from the built-in browser tab for debugging.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        level: {type: 'string', enum: ['all', 'error', 'warning', 'info', 'verbose'], description: 'Optional log level filter. Defaults to all.'},
-        limit: {type: 'integer', description: 'Maximum entries to return (1-200). Defaults to 50.'},
-        clear: {type: 'boolean', description: 'Clear buffered logs after reading. Defaults to false.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-    },
-  },
-  {
-    name: 'browser_network',
-    description: 'Read captured HTTP/XHR/Fetch network requests and failures from the built-in browser tab.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        onlyErrors: {type: 'boolean', description: 'Return only failed requests (HTTP >= 400 or network error). Defaults to false.'},
-        urlContains: {type: 'string', description: 'Optional case-insensitive URL substring filter.'},
-        limit: {type: 'integer', description: 'Maximum entries to return (1-200). Defaults to 50.'},
-        clear: {type: 'boolean', description: 'Clear buffered network entries after reading. Defaults to false.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-    },
-  },
-  {
-    name: 'browser_evaluate',
-    description: 'Evaluate a JavaScript expression in the built-in browser page and return its JSON-serialized result (useful for inspecting computed styles, DOM state, or app store).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        expression: {type: 'string', description: 'JavaScript expression or function body to evaluate in the page context.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-      required: ['expression'],
-    },
-  },
-  {
-    name: 'browser_press_key',
-    description: 'Press a keyboard key (with optional modifiers like control, shift, alt, meta) in the built-in browser page.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        key: {type: 'string', description: 'Key name (e.g. "Enter", "Escape", "Tab", "Backspace", "ArrowDown", "a").'},
-        modifiers: {type: 'array', items: {type: 'string'}, description: 'Optional modifier keys (e.g. ["control"], ["shift"]).'},
-        ref: {type: 'string', description: 'Optional element ref to focus before pressing the key.'},
-        selector: {type: 'string', description: 'Optional CSS selector to focus before pressing the key.'},
-        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
-      },
-      required: ['key'],
-    },
-  },
-]);
+/** 浏览器工具的 automation 方法名 → 工具声明里的 method 字段是唯一真源，这里只留 tabs 的多动作映射。 */
+const TAB_ACTIONS = Object.freeze({list: 'listTabs', activate: 'activateTab', close: 'closeTab'});
 
-const DESIGN_TOOL_DEFINITIONS = Object.freeze([
-  {
-    name: 'design_get_state',
-    description: 'Read the active Design Canvas state: bound workspace HTML file path, current viewport, selected element selector & computed layout/style summary, CSS tweak variables, and unresolved design comments.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'design_capture',
-    description: 'Capture rendered PNG screenshots of the active Design Canvas across one or more viewports (defaults to desktop 1280x800 and mobile 390x844) for visual self-check after editing.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        viewports: {
-          type: 'array',
-          description: 'Optional list of viewports to capture (max 4). Defaults to desktop (1280x800) and mobile (390x844).',
-          items: {
-            type: 'object',
-            properties: {
-              name: {type: 'string', description: 'Viewport label (e.g. "desktop", "tablet", "mobile").'},
-              width: {type: 'integer', description: 'Viewport width in pixels (320-2560).'},
-              height: {type: 'integer', description: 'Viewport height in pixels (400-2400).'},
-            },
-          },
-        },
-        fullPage: {type: 'boolean', description: 'Capture full scrollable height beyond the viewport. Defaults to false.'},
-      },
-    },
-  },
-  {
-    name: 'design_resolve_comment',
-    description: 'Mark a Design Canvas comment (by commentId) or all unresolved comments (all: true) as resolved after applying design changes.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        commentId: {type: 'string', description: 'Target comment ID from design_get_state.'},
-        all: {type: 'boolean', description: 'Set true to resolve all unresolved comments at once.'},
-      },
-    },
-  },
-]);
+/** 对外暴露的工具定义：只要 name/description/inputSchema，执行函数不进协议。 */
+const toDefinition = tool => ({name: tool.name, description: tool.description, inputSchema: tool.inputSchema});
+const TOOL_DEFINITIONS = Object.freeze(BROWSER_TOOLS.map(toDefinition));
+const DESIGN_TOOL_DEFINITIONS = Object.freeze(DESIGN_TOOLS.map(toDefinition));
 
 function safeTokenEquals(actual, expected) {
   if (typeof actual !== 'string' || typeof expected !== 'string') return false;
@@ -238,20 +40,32 @@ function isAllowedLoopbackHost(hostHeader, port) {
   return normalized === `127.0.0.1:${port}` || normalized === `localhost:${port}`;
 }
 
+/**
+ * 读 JSON 请求体。
+ *
+ * <p>超限时不 destroy 连接：连接断了响应就写不回去，调用方只会看到「连接被重置」而不是 413。</p>
+ */
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let totalBytes = 0;
+    let settled = false;
     req.on('data', chunk => {
+      if (settled) return;
       totalBytes += chunk.length;
       if (totalBytes > MAX_BODY_BYTES) {
-        reject(new Error('请求体超出大小限制'));
-        req.destroy();
+        settled = true;
+        const error = new Error('请求体超出 1MB 限制');
+        error.code = 'BODY_TOO_LARGE';
+        reject(error);
+        req.resume();
         return;
       }
       chunks.push(chunk);
     });
     req.on('end', () => {
+      if (settled) return;
+      settled = true;
       try {
         const text = Buffer.concat(chunks).toString('utf8').trim();
         resolve(text ? JSON.parse(text) : {});
@@ -259,132 +73,78 @@ function readJsonBody(req) {
         reject(new Error('JSON 请求体格式不正确'));
       }
     });
-    req.on('error', reject);
+    req.on('error', error => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 
+/**
+ * 工具返回值 → MCP content blocks。
+ *
+ * <p>工具用 `images: [{data, mimeType}]` 声明图片块，其余字段序列化成一个文本块，
+ * 图片块排在前面（模型先看图，再看元信息）。</p>
+ */
+function toContent(result) {
+  if (!result || !Array.isArray(result.images) || result.images.length === 0) {
+    return [{type: 'text', text: JSON.stringify(result)}];
+  }
+  const rest = {...result};
+  const images = rest.images;
+  delete rest.images;
+  return [
+    ...images.map(image => ({type: 'image', data: image.data, mimeType: image.mimeType || 'image/png'})),
+    {type: 'text', text: JSON.stringify(rest)},
+  ];
+}
+
+/**
+ * 建一个本地 MCP 服务实例。
+ *
+ * @param automation 由 project-page-preview 暴露的自动化门面（方法名与工具 method 对应）
+ * @param designBridge Design 画布桥接器，未接线时为 null
+ */
 function createBrowserMcpServer({automation, designBridge = null}) {
   if (!automation) throw new Error('automation 依赖不能为空');
 
-  const activeTools = designBridge
-    ? Object.freeze([...TOOL_DEFINITIONS, ...DESIGN_TOOL_DEFINITIONS])
-    : TOOL_DEFINITIONS;
+  const activeTools = Object.freeze(designBridge ? [...TOOL_DEFINITIONS, ...DESIGN_TOOL_DEFINITIONS] : TOOL_DEFINITIONS);
 
   let server = null;
   let port = 0;
   let token = '';
   const sessions = new Set();
 
+  /** 记住会话并淘汰最旧的，避免 SDK 漏发 DELETE 时无限增长。 */
+  const rememberSession = sessionId => {
+    sessions.add(sessionId);
+    if (sessions.size > MAX_SESSIONS) {
+      const oldest = sessions.values().next().value;
+      sessions.delete(oldest);
+    }
+  };
+
+  /** 按工具名分派：浏览器工具走 automation 门面，Design 工具直接持有桥接器。 */
+  const invokeTool = (tool, args) => {
+    if (tool.name === 'browser_tabs') {
+      const action = String(args.action || 'list').toLowerCase();
+      const method = TAB_ACTIONS[action] || 'listTabs';
+      return method === 'listTabs' ? automation.listTabs() : automation[method](args.tabId);
+    }
+    if (tool.method) return automation[tool.method](args);
+    return tool.run({designBridge}, args);
+  };
+
   const callTool = async (name, args = {}) => {
-    switch (name) {
-      case 'browser_navigate': {
-        const data = await automation.navigate(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_click': {
-        const data = await automation.click(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_fill': {
-        const data = await automation.fill(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_query': {
-        const data = await automation.query(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_screenshot': {
-        const shot = await automation.screenshot({...args, saveToTemp: true});
-        return {
-          content: [
-            {type: 'image', data: shot.base64, mimeType: shot.mimeType},
-            {
-              type: 'text',
-              text: JSON.stringify({
-                tabId: shot.tabId,
-                url: shot.url,
-                title: shot.title,
-                width: shot.width,
-                height: shot.height,
-                filePath: shot.filePath,
-              }),
-            },
-          ],
-          isError: false,
-        };
-      }
-      case 'browser_tabs': {
-        const action = args.action || 'list';
-        let data;
-        if (action === 'activate') data = await automation.activateTab(args.tabId);
-        else if (action === 'close') data = await automation.closeTab(args.tabId);
-        else data = await automation.listTabs();
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_wait': {
-        const data = await automation.wait(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_scroll': {
-        const data = await automation.scroll(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_console': {
-        const data = await automation.console(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_network': {
-        const data = await automation.network(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_evaluate': {
-        const data = await automation.evaluate(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'browser_press_key': {
-        const data = await automation.pressKey(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'design_get_state': {
-        if (!designBridge) {
-          return {content: [{type: 'text', text: 'Design 画布桥接器未启用'}], isError: true};
-        }
-        const data = await designBridge.getState(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      case 'design_capture': {
-        if (!designBridge) {
-          return {content: [{type: 'text', text: 'Design 画布桥接器未启用'}], isError: true};
-        }
-        const captured = await designBridge.capture({...args, saveToTemp: true});
-        const content = [];
-        for (const shot of captured.shots || []) {
-          content.push({type: 'image', data: shot.base64, mimeType: shot.mimeType || 'image/png'});
-        }
-        content.push({
-          type: 'text',
-          text: JSON.stringify({
-            fileName: captured.fileName,
-            boundPath: captured.boundPath,
-            shots: (captured.shots || []).map(shot => ({
-              name: shot.name,
-              width: shot.width,
-              height: shot.height,
-              filePath: shot.filePath,
-            })),
-          }),
-        });
-        return {content, isError: false};
-      }
-      case 'design_resolve_comment': {
-        if (!designBridge) {
-          return {content: [{type: 'text', text: 'Design 画布桥接器未启用'}], isError: true};
-        }
-        const data = await designBridge.resolveComment(args);
-        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
-      }
-      default:
-        return {content: [{type: 'text', text: `未知浏览器工具: ${name}`}], isError: true};
+    const tool = findTool(name);
+    if (!tool) {
+      return {content: [{type: 'text', text: `未知工具: ${name}`}], isError: true};
+    }
+    try {
+      return {content: toContent(await invokeTool(tool, args)), isError: false};
+    } catch (error) {
+      return {content: [{type: 'text', text: describeForModel(error)}], isError: true};
     }
   };
 
@@ -403,7 +163,7 @@ function createBrowserMcpServer({automation, designBridge = null}) {
       const requested = params?.protocolVersion;
       const negotiated = SUPPORTED_PROTOCOL_VERSIONS.has(requested) ? requested : DEFAULT_PROTOCOL_VERSION;
       const sessionId = randomUUID();
-      sessions.add(sessionId);
+      rememberSession(sessionId);
       res.setHeader('Mcp-Session-Id', sessionId);
       return {
         status: 200,
@@ -413,7 +173,7 @@ function createBrowserMcpServer({automation, designBridge = null}) {
           result: {
             protocolVersion: negotiated,
             capabilities: {tools: {}},
-            serverInfo: {name: 'lingxi-browser-mcp', version: '1.0.0'},
+            serverInfo: {name: 'lingxi-browser-mcp', version: '2.0.0'},
           },
         },
       };
@@ -428,21 +188,8 @@ function createBrowserMcpServer({automation, designBridge = null}) {
     }
 
     if (method === 'tools/call') {
-      const toolName = params?.name;
       const toolArgs = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {};
-      try {
-        const result = await callTool(toolName, toolArgs);
-        return {status: 200, body: {jsonrpc: '2.0', id, result}};
-      } catch (error) {
-        return {
-          status: 200,
-          body: {
-            jsonrpc: '2.0',
-            id,
-            result: {content: [{type: 'text', text: error instanceof Error ? error.message : String(error)}], isError: true},
-          },
-        };
-      }
+      return {status: 200, body: {jsonrpc: '2.0', id, result: await callTool(params?.name, toolArgs)}};
     }
 
     return {status: 200, body: {jsonrpc: '2.0', id, error: {code: -32601, message: `Method not found: ${method}`}}};
@@ -470,8 +217,8 @@ function createBrowserMcpServer({automation, designBridge = null}) {
       return;
     }
 
+    const sessionId = req.headers['mcp-session-id'];
     if (req.method === 'DELETE') {
-      const sessionId = req.headers['mcp-session-id'];
       if (typeof sessionId === 'string') sessions.delete(sessionId);
       res.writeHead(204);
       res.end();
@@ -484,24 +231,35 @@ function createBrowserMcpServer({automation, designBridge = null}) {
       return;
     }
 
+    let payload;
     try {
-      const payload = await readJsonBody(req);
-      const {status, body} = await handleRpc(payload, res);
-      if (status === 202 || body === null) {
-        res.writeHead(202);
-        res.end();
-        return;
-      }
-      res.writeHead(status, {'Content-Type': 'application/json'});
-      res.end(JSON.stringify(body));
+      payload = await readJsonBody(req);
     } catch (error) {
-      res.writeHead(400, {'Content-Type': 'application/json'});
+      const tooLarge = error && error.code === 'BODY_TOO_LARGE';
+      res.writeHead(tooLarge ? 413 : 400, {'Content-Type': 'application/json'});
       res.end(JSON.stringify({
         jsonrpc: '2.0',
         id: null,
-        error: {code: -32700, message: error instanceof Error ? error.message : String(error)},
+        error: {code: -32700, message: tooLarge ? 'Payload too large' : (error instanceof Error ? error.message : String(error))},
       }));
+      return;
     }
+
+    // 会话校验：带上来的 session id 必须是本进程发过的，否则按规范回 404
+    if (payload?.method !== 'initialize' && typeof sessionId === 'string' && sessionId && !sessions.has(sessionId)) {
+      res.writeHead(404, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({error: 'Session not found'}));
+      return;
+    }
+
+    const {status, body} = await handleRpc(payload, res);
+    if (status === 202 || body === null) {
+      res.writeHead(202);
+      res.end();
+      return;
+    }
+    res.writeHead(status, {'Content-Type': 'application/json'});
+    res.end(JSON.stringify(body));
   };
 
   const getStatus = () => ({
@@ -536,16 +294,16 @@ function createBrowserMcpServer({automation, designBridge = null}) {
 
   const stop = async () => {
     sessions.clear();
-    if (!server) {
-      port = 0;
-      token = '';
-      return getStatus();
-    }
     const closing = server;
     server = null;
     port = 0;
     token = '';
-    await new Promise(resolve => closing.close(() => resolve()));
+    if (!closing) return getStatus();
+    await new Promise(resolve => {
+      closing.close(() => resolve());
+      // keep-alive 连接不会自己断，长耗时的 tools/call 也在飞：直接掐掉，否则 close 回调永远不来
+      if (typeof closing.closeAllConnections === 'function') closing.closeAllConnections();
+    });
     return getStatus();
   };
 
