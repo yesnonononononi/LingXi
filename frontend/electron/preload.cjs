@@ -66,6 +66,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: () => ipcRenderer.invoke('browser-mcp:start'),
     stop: () => ipcRenderer.invoke('browser-mcp:stop'),
   },
+  designMcp: {
+    onRequest: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('design-mcp:request', listener);
+      return () => ipcRenderer.removeListener('design-mcp:request', listener);
+    },
+    respond: (payload) => ipcRenderer.send('design-mcp:response', payload),
+  },
   /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */
   notify: (options) => ipcRenderer.invoke('notify', options),
   /**

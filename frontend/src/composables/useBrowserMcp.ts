@@ -7,7 +7,7 @@ import {isElectron, type BrowserMcpServerStatus} from '../utils/platform';
 
 export const BROWSER_MCP_SERVER_NAME = 'lingxi-browser';
 export const BROWSER_MCP_DESCRIPTION =
-  'Built-in desktop browser automation: navigate URLs, click elements by CSS selector/class, fill inputs, inspect elements, capture screenshots, and manage tabs.';
+  'Built-in desktop browser & Design Canvas automation: navigate URLs, click/fill by ref or CSS selector, inspect elements/console/network/JS, capture screenshots, and inspect/capture/resolve comments in the active Design Canvas.';
 
 export function findBrowserMcpRecord(list: McpVO[]): McpVO | undefined {
   return list.find(item => item.name === BROWSER_MCP_SERVER_NAME);

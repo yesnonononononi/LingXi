@@ -134,6 +134,11 @@ export interface ElectronAPI {
   projectPage?: ElectronProjectPageAPI;
   /** 内置浏览器本地 MCP 服务通道。Web 端为 undefined，调用方需判空。 */
   browserMcp?: ElectronBrowserMcpAPI;
+  /** Design 画布本地 MCP 桥接通道（响应主进程状态读取与批注解决指令）。Web 端为 undefined。 */
+  designMcp?: {
+    onRequest: (callback: (payload: { requestId: string; action: string; payload?: Record<string, unknown> }) => void) => () => void;
+    respond: (payload: { requestId: string; ok: boolean; data?: unknown; error?: string }) => void;
+  };
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
   updater?: ElectronUpdaterAPI;
   /**

@@ -180,6 +180,50 @@ const TOOL_DEFINITIONS = Object.freeze([
   },
 ]);
 
+const DESIGN_TOOL_DEFINITIONS = Object.freeze([
+  {
+    name: 'design_get_state',
+    description: 'Read the active Design Canvas state: bound workspace HTML file path, current viewport, selected element selector & computed layout/style summary, CSS tweak variables, and unresolved design comments.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'design_capture',
+    description: 'Capture rendered PNG screenshots of the active Design Canvas across one or more viewports (defaults to desktop 1280x800 and mobile 390x844) for visual self-check after editing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        viewports: {
+          type: 'array',
+          description: 'Optional list of viewports to capture (max 4). Defaults to desktop (1280x800) and mobile (390x844).',
+          items: {
+            type: 'object',
+            properties: {
+              name: {type: 'string', description: 'Viewport label (e.g. "desktop", "tablet", "mobile").'},
+              width: {type: 'integer', description: 'Viewport width in pixels (320-2560).'},
+              height: {type: 'integer', description: 'Viewport height in pixels (400-2400).'},
+            },
+          },
+        },
+        fullPage: {type: 'boolean', description: 'Capture full scrollable height beyond the viewport. Defaults to false.'},
+      },
+    },
+  },
+  {
+    name: 'design_resolve_comment',
+    description: 'Mark a Design Canvas comment (by commentId) or all unresolved comments (all: true) as resolved after applying design changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commentId: {type: 'string', description: 'Target comment ID from design_get_state.'},
+        all: {type: 'boolean', description: 'Set true to resolve all unresolved comments at once.'},
+      },
+    },
+  },
+]);
+
 function safeTokenEquals(actual, expected) {
   if (typeof actual !== 'string' || typeof expected !== 'string') return false;
   const a = Buffer.from(actual, 'utf8');
@@ -219,8 +263,12 @@ function readJsonBody(req) {
   });
 }
 
-function createBrowserMcpServer({automation}) {
+function createBrowserMcpServer({automation, designBridge = null}) {
   if (!automation) throw new Error('automation 依赖不能为空');
+
+  const activeTools = designBridge
+    ? Object.freeze([...TOOL_DEFINITIONS, ...DESIGN_TOOL_DEFINITIONS])
+    : TOOL_DEFINITIONS;
 
   let server = null;
   let port = 0;
@@ -297,6 +345,44 @@ function createBrowserMcpServer({automation}) {
         const data = await automation.pressKey(args);
         return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
       }
+      case 'design_get_state': {
+        if (!designBridge) {
+          return {content: [{type: 'text', text: 'Design 画布桥接器未启用'}], isError: true};
+        }
+        const data = await designBridge.getState(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'design_capture': {
+        if (!designBridge) {
+          return {content: [{type: 'text', text: 'Design 画布桥接器未启用'}], isError: true};
+        }
+        const captured = await designBridge.capture({...args, saveToTemp: true});
+        const content = [];
+        for (const shot of captured.shots || []) {
+          content.push({type: 'image', data: shot.base64, mimeType: shot.mimeType || 'image/png'});
+        }
+        content.push({
+          type: 'text',
+          text: JSON.stringify({
+            fileName: captured.fileName,
+            boundPath: captured.boundPath,
+            shots: (captured.shots || []).map(shot => ({
+              name: shot.name,
+              width: shot.width,
+              height: shot.height,
+              filePath: shot.filePath,
+            })),
+          }),
+        });
+        return {content, isError: false};
+      }
+      case 'design_resolve_comment': {
+        if (!designBridge) {
+          return {content: [{type: 'text', text: 'Design 画布桥接器未启用'}], isError: true};
+        }
+        const data = await designBridge.resolveComment(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
       default:
         return {content: [{type: 'text', text: `未知浏览器工具: ${name}`}], isError: true};
     }
@@ -338,7 +424,7 @@ function createBrowserMcpServer({automation}) {
     }
 
     if (method === 'tools/list') {
-      return {status: 200, body: {jsonrpc: '2.0', id, result: {tools: TOOL_DEFINITIONS}}};
+      return {status: 200, body: {jsonrpc: '2.0', id, result: {tools: activeTools}}};
     }
 
     if (method === 'tools/call') {
@@ -461,4 +547,4 @@ function createBrowserMcpServer({automation}) {
   return {start, stop, getStatus};
 }
 
-module.exports = {createBrowserMcpServer, TOOL_DEFINITIONS, isAllowedLoopbackHost, safeTokenEquals};
+module.exports = {createBrowserMcpServer, TOOL_DEFINITIONS, DESIGN_TOOL_DEFINITIONS, isAllowedLoopbackHost, safeTokenEquals};

@@ -4,6 +4,7 @@ const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
 const { registerProjectPagePreview } = require('./project-page-preview.cjs');
+const { registerDesignMcpBridge } = require('./design-mcp-bridge.cjs');
 const { createBrowserMcpServer } = require('./browser-mcp-server.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerPacksManager } = require('./packs-manager.cjs');
@@ -64,7 +65,8 @@ const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () =>
 
 /** 网页独立于主页面，保留主窗口原有外链策略。 */
 const projectPagePreview = registerProjectPagePreview({ ipcMain, getWindow: () => mainWindow, WebContentsView, session, Menu, nativeTheme, nativeImage });
-const browserMcpServer = createBrowserMcpServer({ automation: projectPagePreview.automation });
+const designMcpBridge = registerDesignMcpBridge({ ipcMain, getWindow: () => mainWindow, BrowserWindow });
+const browserMcpServer = createBrowserMcpServer({ automation: projectPagePreview.automation, designBridge: designMcpBridge });
 
 const assertMainFrameSender = (event) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || !event.senderFrame || event.senderFrame !== mainWindow.webContents.mainFrame) {
@@ -871,6 +873,7 @@ app.on('before-quit', () => {
   closeFilePreviews();
   // 页面预览只是摘掉 webContents 监听器与 IPC handler，没有需要落盘的状态
   projectPagePreview.close();
+  designMcpBridge.close();
   void browserMcpServer.stop();
   // 背景 IPC 只是注销通道，不删用户图片（图片要跨重启保留）
   backgroundImages.close();

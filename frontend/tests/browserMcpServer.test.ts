@@ -7,8 +7,11 @@ import {
   findBrowserMcpRecord,
 } from '../src/composables/useBrowserMcp';
 
-const {createBrowserMcpServer, TOOL_DEFINITIONS} = createRequire(import.meta.url)(
+const {createBrowserMcpServer, TOOL_DEFINITIONS, DESIGN_TOOL_DEFINITIONS} = createRequire(import.meta.url)(
   '../electron/browser-mcp-server.cjs',
+);
+const {registerDesignMcpBridge, DESIGN_MCP_CHANNELS} = createRequire(import.meta.url)(
+  '../electron/design-mcp-bridge.cjs',
 );
 
 function createMockAutomation() {
@@ -339,6 +342,106 @@ test('Browser MCP 新增调试原语（console/network/evaluate/press_key）与 
     assert.equal(keyRes.result.isError, false);
     assert.deepEqual(automation.calls.at(-1), {method: 'pressKey', args: {key: 'Escape', modifiers: ['shift']}});
   } finally {
+    await mcpServer.stop();
+  }
+});
+
+test('Design × MCP 联动闭环：design_get_state、design_capture 多视口截图与 design_resolve_comment', async () => {
+  const automation = createMockAutomation();
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const mockIpcMain = {
+    on: (ch: string, fn: (...args: unknown[]) => void) => listeners.set(ch, fn),
+    removeListener: (ch: string) => listeners.delete(ch),
+  };
+
+  let resolvedIds: string[] = [];
+  const mockWindow = {
+    isDestroyed: () => false,
+    webContents: {
+      send: (channel: string, req: {requestId: string; action: string; payload?: Record<string, unknown>}) => {
+        assert.equal(channel, DESIGN_MCP_CHANNELS.request);
+        const respond = listeners.get(DESIGN_MCP_CHANNELS.response);
+        assert.ok(respond);
+        if (req.action === 'get_state') {
+          respond({}, {
+            requestId: req.requestId,
+            ok: true,
+            data: {
+              active: true,
+              fileName: 'landing.html',
+              boundPath: '.lingxi/design/landing.html',
+              viewportWidth: '100%',
+              selected: {selector: 'body > header > button.cta', label: 'button.cta'},
+              comments: [{id: 'c1', selector: 'body > h1', elementLabel: 'h1', text: '字号加大', resolved: false}],
+              html: req.payload?.includeHtml ? '<!DOCTYPE html><html><body><h1>Hi</h1></body></html>' : undefined,
+            },
+          });
+        } else if (req.action === 'resolve_comment') {
+          if (req.payload?.commentId) resolvedIds.push(String(req.payload.commentId));
+          respond({}, {requestId: req.requestId, ok: true, data: {resolvedCount: 1, remainingCount: 0}});
+        }
+      },
+    },
+  };
+
+  const renderedViewports: Array<{width: number; height: number}> = [];
+  const designBridge = registerDesignMcpBridge({
+    ipcMain: mockIpcMain,
+    getWindow: () => mockWindow,
+    renderHtmlViewport: async ({width, height}: {width: number; height: number}) => {
+      renderedViewports.push({width, height});
+      return {
+        width,
+        height,
+        mimeType: 'image/png',
+        base64: 'iVBORw0KGgo=',
+        pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+      };
+    },
+  });
+
+  const mcpServer = createBrowserMcpServer({automation, designBridge});
+  const status = await mcpServer.start();
+  const postRpc = async (id: number, method: string, params?: Record<string, unknown>) => {
+    const res = await fetch(status.url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Authorization: `Bearer ${status.token}`},
+      body: JSON.stringify({jsonrpc: '2.0', id, method, params}),
+    });
+    return res.json() as Promise<{result: {tools?: Array<{name: string}>; isError?: boolean; content?: Array<{type: string; text?: string; data?: string}>}}>;
+  };
+
+  try {
+    // 1. tools/list 应自动包含 3 个 design_* 工具
+    const listJson = await postRpc(1, 'tools/list');
+    assert.equal(listJson.result.tools?.length, TOOL_DEFINITIONS.length + DESIGN_TOOL_DEFINITIONS.length);
+    const names = (listJson.result.tools || []).map(item => item.name);
+    assert.ok(names.includes('design_get_state'));
+    assert.ok(names.includes('design_capture'));
+    assert.ok(names.includes('design_resolve_comment'));
+
+    // 2. design_get_state 返回选中元素与批注
+    const stateJson = await postRpc(2, 'tools/call', {name: 'design_get_state', arguments: {}});
+    assert.equal(stateJson.result.isError, false);
+    assert.match(stateJson.result.content?.[0]?.text || '', /\.lingxi\/design\/landing\.html/);
+    assert.match(stateJson.result.content?.[0]?.text || '', /字号加大/);
+
+    // 3. design_capture 默认生成桌面 + 移动两张 PNG 图片块
+    const capJson = await postRpc(3, 'tools/call', {name: 'design_capture', arguments: {}});
+    assert.equal(capJson.result.isError, false);
+    const imageBlocks = (capJson.result.content || []).filter(item => item.type === 'image');
+    assert.equal(imageBlocks.length, 2);
+    assert.deepEqual(renderedViewports, [
+      {width: 1280, height: 800},
+      {width: 390, height: 844},
+    ]);
+
+    // 4. design_resolve_comment 正确转发到渲染层
+    const resolveJson = await postRpc(4, 'tools/call', {name: 'design_resolve_comment', arguments: {commentId: 'c1'}});
+    assert.equal(resolveJson.result.isError, false);
+    assert.deepEqual(resolvedIds, ['c1']);
+  } finally {
+    designBridge.close();
     await mcpServer.stop();
   }
 });

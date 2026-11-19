@@ -1215,8 +1215,91 @@ const sendDesignPrompt = async (presetText?: string) => {
   }
 };
 
+let offDesignMcpRequest: (() => void) | undefined;
+
+const handleDesignMcpRequest = (req: { requestId: string; action: string; payload?: Record<string, unknown> }) => {
+  // 多标签并存时只由当前激活的 Design 画布响应，避免非激活标签抢答。
+  if (props.active === false) return;
+  const respond = window.electronAPI?.designMcp?.respond;
+  if (!respond) return;
+
+  try {
+    if (req.action === 'get_state') {
+      const selected = selectedElement.value;
+      const iframeWin = iframeRef.value?.contentDocument?.defaultView || window;
+      const selectedInfoObj = selected
+        ? {
+            selector: resolveElementSelector(selected),
+            label: resolveElementLabel(selected),
+            styleSummary: extractElementStyleSummary(selected.getBoundingClientRect(), iframeWin.getComputedStyle(selected)),
+          }
+        : null;
+      const includeHtml = Boolean(req.payload?.includeHtml);
+      respond({
+        requestId: req.requestId,
+        ok: true,
+        data: {
+          active: isFileLoaded.value,
+          fileName: loadedFileName.value,
+          boundPath: designDoc.boundPath.value,
+          viewportWidth: currentViewportWidth.value,
+          selected: selectedInfoObj,
+          tweakVars: tweakVars.value.map(v => ({ name: v.name, value: tweakValues.value[v.name] ?? v.value })),
+          comments: commentMgr.comments.value.map(c => ({
+            id: c.id,
+            selector: c.selector,
+            elementLabel: c.elementLabel,
+            text: c.text,
+            resolved: c.resolved,
+          })),
+          html: includeHtml ? (isCodeView.value ? codeDraft.value : serializeDocumentHtml()) : undefined,
+        },
+      });
+      return;
+    }
+
+    if (req.action === 'resolve_comment') {
+      const resolveAllFlag = Boolean(req.payload?.all);
+      const commentId = typeof req.payload?.commentId === 'string' ? req.payload.commentId : '';
+      let resolvedCount = 0;
+      if (resolveAllFlag) {
+        resolvedCount = commentMgr.unresolvedComments.value.length;
+        commentMgr.resolveAll();
+      } else if (commentId) {
+        const target = commentMgr.comments.value.find(item => item.id === commentId);
+        if (!target) {
+          respond({ requestId: req.requestId, ok: false, error: `未找到批注: ${commentId}` });
+          return;
+        }
+        if (!target.resolved) {
+          commentMgr.toggleResolve(commentId);
+          resolvedCount = 1;
+        }
+      }
+      respond({
+        requestId: req.requestId,
+        ok: true,
+        data: {
+          resolvedCount,
+          remainingCount: commentMgr.unresolvedComments.value.length,
+        },
+      });
+      return;
+    }
+
+    respond({ requestId: req.requestId, ok: false, error: `不支持的 Design MCP 动作: ${req.action}` });
+  } catch (err) {
+    respond({
+      requestId: req.requestId,
+      ok: false,
+      error: err instanceof Error ? err.message : 'Design 画布处理 MCP 请求失败',
+    });
+  }
+};
+
 onMounted(async () => {
   window.addEventListener('keydown', handleCanvasKeyDown);
+  offDesignMcpRequest = window.electronAPI?.designMcp?.onRequest?.(handleDesignMcpRequest);
   await nextTick();
   if (props.initialContent) {
     parseAndMountHtml(props.initialContent, props.initialFileName || 'preview.html');
@@ -1231,6 +1314,8 @@ watch(() => [props.initialContent, props.initialFileName] as const, ([newContent
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleCanvasKeyDown);
+  offDesignMcpRequest?.();
+  offDesignMcpRequest = undefined;
   moveableInstance?.destroy();
   moveableInstance = null;
   hoverBoxEl = null;
