@@ -45,7 +45,9 @@ window.parseDocument = renderMarkdownDocument;
   await fs.writeFile(path.join(output, 'entry.js'), "import { createApp } from 'vue'; import App from './App.vue'; createApp(App).mount('#app'); window.library = () => import('mermaid'); window.ready = true;");
   const { createServer } = await import('vite');
   const { default: vue } = await import('@vitejs/plugin-vue');
-  server = await createServer({ configFile: false, root, plugins: [{
+  server = await createServer({ configFile: false, root,
+    // 与 progressiveFade.smoke 同理：并发冒烟不能共用 root/node_modules/.vite。
+    cacheDir: path.join(output, 'vite-cache'), plugins: [{
     name: 'mermaid-race-fixture', enforce: 'pre',
     resolveId(id) { if (id === 'virtual:mermaid-race.vue') return path.join(output, 'RaceBlock.vue'); },
     async load(id) {

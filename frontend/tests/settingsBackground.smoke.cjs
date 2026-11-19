@@ -40,6 +40,10 @@ setPreference('zh-CN');
 const theme = useTheme(); theme.setTheme('dark');
 UserConfigAPI.current = async () => ({code:1,data:{renderTheme:'DARK'}});
 const show = ref(true);
+// 下面这段是从 ChatView 里整块抠出来的真实注册代码，它依赖宿主的 packSlots。
+// 不给一份同形状的桩，watch 回调里的 packSlots 会抛 ReferenceError 被 Vue 静默吞掉，
+// 表面就永远停在 ImageBackground —— 清除后仍留一层 scrim 的假绿/假红都出自这里。
+const packSlots = { background: { surface: undefined as Component | undefined } };
 ${binding}
 const background = useBackgroundPreference();
 await background.init();

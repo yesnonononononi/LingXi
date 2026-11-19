@@ -10,7 +10,9 @@ app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
 let window;
 let server;
-const deadline = setTimeout(() => { console.error('渐进淡入验证超时'); app.exit(1); }, 90000);
+const startedAt = Date.now();
+const mark = label => console.log(`渐进淡入验证[${Date.now() - startedAt}ms]: ${label}`);
+const deadline = setTimeout(() => { console.error('渐进淡入验证超时'); app.exit(1); }, 110000);
 
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
@@ -33,7 +35,10 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
   await fs.writeFile(path.join(output, 'entry.js'), "import { createApp } from 'vue'; import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;");
   const { createServer } = await import('vite');
   const { default: vue } = await import('@vitejs/plugin-vue');
-  server = await createServer({ configFile: false, root, plugins: [{
+  server = await createServer({ configFile: false, root,
+    // 依赖预打包缓存必须落在本用例自己的临时目录：默认的 root/node_modules/.vite 会被并发的
+    // 其它 electron 冒烟同时改写，导致「The build was canceled」与十几秒的重复预打包。
+    cacheDir: path.join(output, 'vite-cache'), plugins: [{
     name: 'codex-text-arrival-mutation', enforce: 'pre',
     transform(source, id) {
       if (id.replaceAll('\\', '/').endsWith('/src/utils/progressiveFade.ts')) {
@@ -58,7 +63,7 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
   window = new BrowserWindow({ width: 900, height: 900, show: false,
     webPreferences: { contextIsolation: true, offscreen: true, backgroundThrottling: false } });
   await window.loadURL(server.resolvedUrls.local[0] + 'node_modules/.tmp/codex-text-arrival/index.html');
-  console.log('渐进淡入验证: 页面已加载');
+  mark('页面已加载');
   const evaluate = source => window.webContents.executeJavaScript(source);
   const waitFor = async (expression, label, timeout = 8000) => {
     const end = Date.now() + timeout;
@@ -69,7 +74,14 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
   };
   const setContent = (text, streaming = true) => evaluate(`window.setContent(${JSON.stringify(text)}, ${streaming})`);
   await waitFor('window.ready', '页面未就绪');
-  console.log('渐进淡入验证: 组件已挂载');
+  mark('组件已挂载');
+  // 动画用例必须自己声明动效偏好：宿主机器开了「减少动态效果」时，第一批文字本就不会淡入，
+  // 直接继承系统设置会让这条用例在无障碍设置不同的机器上无故变红（后面切换偏好的用例同理）。
+  window.webContents.debugger.attach('1.3');
+  await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+  });
+  await waitFor('!matchMedia("(prefers-reduced-motion: reduce)").matches', '动效偏好未强制为 no-preference');
   // 同一浏览器任务中检查，避免机器速度影响 480ms 的动画窗口。
   for (const chunks of [['你好', '，世界', '，继续生成'], ['Hello', ', world', ', streaming continues']]) {
     await evaluate(`window.remount('', true)`);
@@ -97,7 +109,7 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
     assert.ok(result.frames.every(frame => (!frame[1] || frame[1] === 'none') && (!frame[2] || frame[2] === 'none')));
   }
   await waitFor('document.querySelectorAll(".codex-text-arrival").length === 0', '动画结束后应移除包装', 2000);
-  console.log('渐进淡入验证: 中英文与节点稳定已通过');
+  mark('中英文与节点稳定已通过');
   const stable = await evaluate(`(async () => {
     const p = document.querySelector('.markdown-body p'); const first = p.firstChild;
     await window.setContent(p.textContent + ' 新增');
@@ -126,8 +138,10 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
   assert.equal(packet.filter, 'none');
   assert.equal(packet.containerOpacity, '1');
   assert.ok(['none', 'normal'].includes(packet.cursor), '不应显示打字光标');
-  console.log('渐进淡入验证: 725 字突发输出全文立即显示，尾迹节点=' + packet.nodes);
+  mark('725 字突发输出全文立即显示，尾迹节点=' + packet.nodes);
+  mark('突发输出截图开始');
   await fs.writeFile(path.join(output, 'burst.png'), (await window.webContents.capturePage()).toPNG());
+  mark('突发输出截图已保存');
 
   const text = '一整段突发输出也应保持滚动位置与文字布局稳定。'.repeat(160);
   await setContent(text);
@@ -217,7 +231,7 @@ window.copied = ''; Object.defineProperty(navigator, 'clipboard', { value: { wri
   }
   await evaluate('window.remount("", true)');
   await setContent('动画中的文字');
-  window.webContents.debugger.attach('1.3');
+  if (!window.webContents.debugger.isAttached()) window.webContents.debugger.attach('1.3');
   await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
   });

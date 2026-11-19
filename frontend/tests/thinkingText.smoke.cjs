@@ -44,7 +44,7 @@ window.cancelAnimationFrame = id => {handles.delete(id); cancel(id);}; window.pe
 import {createApp} from 'vue'; import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`);
   const {createServer} = await import('vite');
   const {default: vue} = await import('@vitejs/plugin-vue');
-  server = await createServer({root,configFile:false,plugins:[{
+  server = await createServer({root,cacheDir:path.join(output,'vite-cache'),configFile:false,plugins:[{
     name:'thinking-scheduler-probe',enforce:'pre',
     transform(source,id) {
       const file = id.replaceAll('\\','/');
