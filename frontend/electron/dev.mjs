@@ -4,29 +4,48 @@ import path from 'path';
 import {fileURLToPath} from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isWindows = process.platform === 'win32';
-const npxCmd = isWindows ? 'npx.cmd' : 'npx';
+const frontendDir = path.resolve(__dirname, '..');
+const viteBin = path.join(frontendDir, 'node_modules', 'vite', 'bin', 'vite.js');
+const electronCli = path.join(frontendDir, 'node_modules', 'electron', 'cli.js');
 
 console.log('[Electron Dev] 启动 Vite 开发服务器...');
-const viteProcess = spawn(npxCmd, ['vite'], {
-  cwd: path.resolve(__dirname, '..'),
+const viteProcess = spawn(process.execPath, [viteBin], {
+  cwd: frontendDir,
   stdio: 'inherit',
-  shell: true,
 });
 
-function waitForVite(url, maxAttempts = 40) {
+let viteExitError = null;
+viteProcess.on('exit', (code, signal) => {
+  if (code !== 0 && code !== null) {
+    viteExitError = new Error(`Vite 开发服务器提前退出 (code=${code})`);
+  } else if (signal) {
+    viteExitError = new Error(`Vite 开发服务器被终止 (signal=${signal})`);
+  }
+});
+
+function waitForVite(url, maxAttempts = 120) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const check = () => {
+      if (viteExitError) {
+        reject(viteExitError);
+        return;
+      }
       attempts++;
       const req = http.get(url, (res) => {
+        res.resume();
         resolve();
       });
+      req.setTimeout(1000, () => {
+        req.destroy(new Error('timeout'));
+      });
       req.on('error', () => {
-        if (attempts >= maxAttempts) {
-          reject(new Error('等待 Vite 启动超时 (http://localhost:5174)'));
+        if (viteExitError) {
+          reject(viteExitError);
+        } else if (attempts >= maxAttempts) {
+          reject(new Error(`等待 Vite 启动超时 (${url})`));
         } else {
-          setTimeout(check, 400);
+          setTimeout(check, 500);
         }
       });
       req.end();
@@ -39,10 +58,9 @@ try {
   await waitForVite('http://localhost:5174');
   console.log('[Electron Dev] Vite 服务器就绪，正在启动 Electron 桌面客户端...');
 
-  const electronProcess = spawn(npxCmd, ['electron', '.', '--dev'], {
-    cwd: path.resolve(__dirname, '..'),
+  const electronProcess = spawn(process.execPath, [electronCli, '.', '--dev'], {
+    cwd: frontendDir,
     stdio: 'inherit',
-    shell: true,
     env: {
       ...process.env,
       NODE_ENV: 'development',
@@ -50,18 +68,25 @@ try {
     },
   });
 
+  const cleanup = () => {
+    if (!viteProcess.killed) viteProcess.kill();
+    if (!electronProcess.killed) electronProcess.kill();
+  };
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
   electronProcess.on('close', (code) => {
     console.log(`[Electron Dev] Electron 客户端已退出 (代码: ${code})`);
-    viteProcess.kill();
+    if (!viteProcess.killed) viteProcess.kill();
     process.exit(code || 0);
   });
 
   viteProcess.on('close', (code) => {
-    electronProcess.kill();
+    if (!electronProcess.killed) electronProcess.kill();
     process.exit(code || 0);
   });
 } catch (err) {
   console.error('[Electron Dev] 启动失败:', err);
-  viteProcess.kill();
+  if (!viteProcess.killed) viteProcess.kill();
   process.exit(1);
 }
