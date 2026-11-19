@@ -77,6 +77,28 @@ function captureWithTimeout(webContents, timeoutMs = CAPTURE_TIMEOUT_MS) {
   });
 }
 
+/**
+ * 把截图规整成返回值：按 DPR 缩回请求的 CSS 尺寸。
+ *
+ * 隐藏窗口按设备像素出图（1.5x 很常见），不缩回 CSS 尺寸就是在尺寸上撒谎。
+ */
+function buildShot(image, captureWidth, captureHeight, requestedHeight, fullPageTruncated) {
+  const size = image.getSize();
+  const normalized = size.width !== captureWidth || size.height !== captureHeight
+    ? image.resize({width: captureWidth, height: captureHeight})
+    : image;
+  const pngBuffer = normalized.toPNG();
+  return {
+    width: captureWidth,
+    height: captureHeight,
+    mimeType: 'image/png',
+    base64: pngBuffer.toString('base64'),
+    pngBuffer,
+    fullPageApplied: captureHeight > requestedHeight,
+    fullPageTruncated,
+  };
+}
+
 async function defaultRenderHtmlViewport({BrowserWindow, html, width, height, fullPage = false}) {
   if (!BrowserWindow) {
     throw new Error('当前环境不支持离屏渲染截图');
@@ -115,21 +137,16 @@ async function defaultRenderHtmlViewport({BrowserWindow, html, width, height, fu
     }
 
     const image = await captureWithTimeout(win.webContents);
-    const size = image.getSize();
-    // 隐藏窗口按 DPR 出图（1.5x 很常见），统一缩回请求的 CSS 尺寸给模型看
-    const normalized = size.width !== captureWidth || size.height !== captureHeight
-      ? image.resize({width: captureWidth, height: captureHeight})
-      : image;
-    const pngBuffer = normalized.toPNG();
-    return {
-      width: captureWidth,
-      height: captureHeight,
-      mimeType: 'image/png',
-      base64: pngBuffer.toString('base64'),
-      pngBuffer,
-      fullPageApplied: captureHeight > height,
-      fullPageTruncated,
-    };
+    if (image.getSize().width === 0 || image.getSize().height === 0) {
+      // 隐藏窗口偶尔不出帧，capturePage 会给一张 0x0 空图（历史结果里那些 8 字节 PNG 就是它）
+      await waitTwoFrames(win.webContents);
+      const retried = await captureWithTimeout(win.webContents);
+      if (retried.getSize().width === 0 || retried.getSize().height === 0) {
+        throw new Error('离屏截图失败：隐藏窗口没有产出画面');
+      }
+      return buildShot(retried, captureWidth, captureHeight, height, fullPageTruncated);
+    }
+    return buildShot(image, captureWidth, captureHeight, height, fullPageTruncated);
   } finally {
     if (!win.isDestroyed()) win.destroy();
   }
@@ -153,7 +170,10 @@ function registerDesignMcpBridge({
     if (message.ok) {
       entry.resolve(message.data);
     } else {
-      entry.reject(new Error(typeof message.error === 'string' && message.error ? message.error : 'Design 画布操作失败'));
+      const error = new Error(typeof message.error === 'string' && message.error ? message.error : 'Design 画布操作失败');
+      // 渲染层能给出更精确的错误码（如批注不存在），透传给工具层
+      if (typeof message.code === 'string' && message.code) error.code = message.code;
+      entry.reject(error);
     }
   };
 
@@ -219,6 +239,10 @@ function registerDesignMcpBridge({
           fullPage: Boolean(fullPage),
         });
         let filePath = '';
+        if (!rendered || !rendered.pngBuffer || rendered.pngBuffer.length < 100) {
+          // 空图就是 8 字节的 PNG 签名，写出去等于给模型一张坏图
+          throw new Error(`截图失败：${viewport.name} 视口没有产出有效图像`);
+        }
         if (targetDir && rendered.pngBuffer) {
           filePath = path.join(targetDir, `design-${viewport.name}-${Date.now()}-${randomUUID().slice(0, 6)}.png`);
           // 异步写：多视口串行同步写几 MB PNG 会把主进程卡住

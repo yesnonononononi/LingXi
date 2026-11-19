@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 
+const fakePng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(200, 0x41)]);
 const requireCjs = createRequire(import.meta.url);
 const {registerDesignMcpBridge, DESIGN_MCP_CHANNELS} = requireCjs('../electron/design-mcp-bridge.cjs');
 
@@ -42,8 +43,8 @@ function createBridge(renderCalls: Array<{width: number; height: number}> = []) 
         width,
         height,
         mimeType: 'image/png',
-        base64: 'iVBORw0KGgo=',
-        pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+        base64: fakePng.toString('base64'),
+        pngBuffer: fakePng,
         fullPageApplied: height > 800,
         fullPageTruncated: false,
       };
@@ -103,8 +104,8 @@ test('design_capture：fullPage 透传给渲染器，并把全页结果回给模
         width,
         height: appliedHeight,
         mimeType: 'image/png',
-        base64: 'iVBORw0KGgo=',
-        pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+        base64: fakePng.toString('base64'),
+        pngBuffer: fakePng,
         fullPageApplied: fullPage,
         fullPageTruncated: false,
       };
@@ -116,4 +117,62 @@ test('design_capture：fullPage 透传给渲染器，并把全页结果回给模
   assert.equal(captured.shots[0].height, 3200);
   assert.equal(captured.shots[0].fullPageApplied, true);
   assert.equal(captured.shots[0].fullPageTruncated, false);
+});
+
+function createBridgeWithResponse(render: () => Promise<unknown>, response?: Record<string, unknown>) {
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const window = {
+    isDestroyed: () => false,
+    webContents: {
+      send: (channel: string, req: {requestId: string}) => {
+        const respond = listeners.get(DESIGN_MCP_CHANNELS.response);
+        assert.ok(respond);
+        respond({}, response
+          ? {requestId: req.requestId, ...response}
+          : {
+            requestId: req.requestId,
+            ok: true,
+            data: {active: true, fileName: 'landing.html', html: '<html><body>x</body></html>'},
+          });
+      },
+    },
+  };
+  return registerDesignMcpBridge({
+    ipcMain: {
+      on: (channel: string, fn: (...args: unknown[]) => void) => listeners.set(channel, fn),
+      removeListener: (channel: string) => listeners.delete(channel),
+    },
+    getWindow: () => window,
+    renderHtmlViewport: render,
+  });
+}
+
+test('design_capture：渲染器给出空图（8 字节 PNG 签名）必须报错，不能写坏文件', async () => {
+  const bridge = createBridgeWithResponse(async ({width, height}: {width: number; height: number}) => ({
+    width,
+    height,
+    mimeType: 'image/png',
+    base64: 'iVBORw0KGgo=',
+    pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+  }));
+  await assert.rejects(
+    () => bridge.capture({viewports: [{name: 'desktop', width: 800, height: 600}], saveToTemp: false}),
+    /没有产出有效图像/,
+  );
+});
+
+test('design_resolve_comment：渲染层的错误码透传到工具层', async () => {
+  const bridge = createBridgeWithResponse(async () => fakePng, {
+    ok: false,
+    code: 'TARGET_NOT_FOUND',
+    error: '未找到批注: nope',
+  });
+  const error = await bridge.resolveComment({commentId: 'nope'}).catch((err: Error & {code?: string}) => err);
+  assert.equal(error.code, 'TARGET_NOT_FOUND');
+
+  const {asToolError} = requireCjs('../electron/mcp/errors.cjs');
+  const toolError = asToolError('DESIGN_UNAVAILABLE', error);
+  assert.equal(toolError.code, 'TARGET_NOT_FOUND');
+  // 下层没带 code 时落到兜底
+  assert.equal(asToolError('DESIGN_UNAVAILABLE', new Error('画布没开')).code, 'DESIGN_UNAVAILABLE');
 });

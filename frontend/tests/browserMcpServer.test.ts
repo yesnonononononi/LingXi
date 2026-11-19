@@ -14,6 +14,12 @@ const {registerDesignMcpBridge, DESIGN_MCP_CHANNELS} = createRequire(import.meta
   '../electron/design-mcp-bridge.cjs',
 );
 
+// 桥接器会拒收 8 字节空图（PNG 签名），这里给一份够大的假图
+const PNG_STUB = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.alloc(200, 0x41),
+]);
+
 function createMockAutomation() {
   const calls: Array<{method: string; args: unknown}> = [];
   return {
@@ -449,8 +455,8 @@ test('Design × MCP 联动闭环：design_get_state、design_capture 多视口�
         width,
         height,
         mimeType: 'image/png',
-        base64: 'iVBORw0KGgo=',
-        pngBuffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+        base64: PNG_STUB.toString('base64'),
+        pngBuffer: PNG_STUB,
       };
     },
   });

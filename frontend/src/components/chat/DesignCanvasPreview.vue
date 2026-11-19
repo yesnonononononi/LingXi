@@ -1394,7 +1394,8 @@ const handleDesignMcpRequest = (req: { requestId: string; action: string; payloa
       } else if (commentId) {
         const target = commentMgr.comments.value.find(item => item.id === commentId);
         if (!target) {
-          respond({ requestId: req.requestId, ok: false, error: `未找到批注: ${commentId}` });
+          // code 让上层给模型一个可分支的错误码：批注不存在 ≠ 画布不可用
+          respond({ requestId: req.requestId, ok: false, code: 'TARGET_NOT_FOUND', error: `未找到批注: ${commentId}` });
           return;
         }
         if (!target.resolved) {

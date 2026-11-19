@@ -38,12 +38,14 @@ function describeForModel(error) {
 /**
  * 把底层异常归一成带 code 的工具错误。
  *
- * 桥接器、页面脚本这些下层只知道「失败了」，不知道调用方是模型；
- * 不补 code 模型就没法区分该重试还是该换路子。
+ * 下层如果自己带了更精确的 code（如 TARGET_NOT_FOUND），优先用它；
+ * 没带才落到调用方给的兜底 code。
  */
 function asToolError(code, error) {
   if (error instanceof ToolError) return error;
-  return new ToolError(code, error instanceof Error ? error.message : String(error));
+  const message = error instanceof Error ? error.message : String(error);
+  const specific = error && typeof error.code === 'string' && error.code ? error.code : code;
+  return new ToolError(specific, message);
 }
 
 module.exports = {TOOL_ERROR, ToolError, toolError, describeForModel, asToolError};
