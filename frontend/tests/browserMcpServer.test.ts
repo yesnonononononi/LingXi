@@ -57,13 +57,12 @@ function createMockAutomation() {
     screenshot: async (args: unknown) => {
       calls.push({method: 'screenshot', args});
       return {
+        images: [{data: 'iVBORw0KGgo=', mimeType: 'image/png'}],
         tabId: 'tab-1',
         url: 'https://example.com',
         title: 'Example',
-        mimeType: 'image/png',
         width: 800,
         height: 600,
-        base64: 'iVBORw0KGgo=',
         filePath: '/tmp/shot.png',
       };
     },
@@ -73,7 +72,41 @@ function createMockAutomation() {
     },
     network: async (args: unknown) => {
       calls.push({method: 'network', args});
-      return {tabId: 'tab-1', totalCount: 1, entries: [{method: 'GET', url: 'https://example.com/api', statusCode: 500, ok: false}]};
+      return {
+        tabId: 'tab-1',
+        totalCount: 1,
+        entries: [{
+          id: 'req-1',
+          method: 'GET',
+          url: 'https://example.com/api',
+          statusCode: 500,
+          ok: false,
+          contentType: 'application/json',
+          requestHeaders: {'x-test': '1'},
+          responseHeaders: {'content-type': 'application/json'},
+          bodyPreview: '{"error":"boom"}',
+        }],
+      };
+    },
+    networkDetail: async (args: unknown) => {
+      calls.push({method: 'networkDetail', args});
+      return {
+        tabId: 'tab-1',
+        id: 'req-1',
+        method: 'GET',
+        url: 'https://example.com/api',
+        statusCode: 500,
+        ok: false,
+        contentType: 'application/json',
+        requestHeaders: {'x-test': '1'},
+        responseHeaders: {'content-type': 'application/json'},
+        requestBody: '',
+        responseBody: '{"error":"boom"}',
+        totalBodyLength: 16,
+        offset: 0,
+        truncated: false,
+        base64Encoded: false,
+      };
     },
     evaluate: async (args: unknown) => {
       calls.push({method: 'evaluate', args});
@@ -159,6 +192,7 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
         'browser_scroll',
         'browser_console',
         'browser_network',
+        'browser_network_detail',
         'browser_evaluate',
         'browser_press_key',
       ],
@@ -337,6 +371,23 @@ test('Browser MCP 新增调试原语（console/network/evaluate/press_key）与 
     assert.equal(networkRes.result.isError, false);
     assert.equal(automation.calls.at(-1)?.method, 'network');
     assert.match(networkRes.result.content[0]?.text || '', /500/);
+
+    const networkDetailRes = await postTool(131, 'browser_network_detail', {requestId: 'req-1', offset: 0, maxLength: 100});
+    assert.equal(networkDetailRes.result.isError, false);
+    assert.deepEqual(automation.calls.at(-1), {method: 'networkDetail', args: {requestId: 'req-1', offset: 0, maxLength: 100}});
+    assert.match(networkDetailRes.result.content[0]?.text || '', /boom/);
+
+    // 校验 screenshot savePath 与 design_capture saveDir 参数说明明确告知临时目录默认行为及工作区直存建议
+    const shotSchema = (TOOL_DEFINITIONS.find((t: {name: string}) => t.name === 'browser_screenshot') as {
+      inputSchema: {properties: {savePath: {description: string}}};
+    }).inputSchema;
+    assert.match(shotSchema.properties.savePath.description, /temporary directory/i);
+    assert.match(shotSchema.properties.savePath.description, /workspace/i);
+    const designCapSchema = (DESIGN_TOOL_DEFINITIONS.find((t: {name: string}) => t.name === 'design_capture') as {
+      inputSchema: {properties: {saveDir: {description: string}}};
+    }).inputSchema;
+    assert.match(designCapSchema.properties.saveDir.description, /temporary directory/i);
+    assert.match(designCapSchema.properties.saveDir.description, /workspace/i);
 
     const evalRes = await postTool(14, 'browser_evaluate', {expression: 'document.title'});
     assert.equal(evalRes.result.isError, false);

@@ -760,7 +760,7 @@ test('Agent browser_query 覆盖常见交互角色与状态字段，并按上限
     };
   };
   const res = await h.registration.automation.query({limit: 150});
-  assert.ok(capturedScript.includes('const maxItems = 100;'));
+  assert.ok(capturedScript.includes('"maxItems":100'));
   assert.equal(res.visibleCount, 2);
   assert.equal(res.elements[0].selectorHint, '#submit');
 });
@@ -798,7 +798,7 @@ test('Agent browser_click 支持 hoverOnly 参数触发 mouseMove 悬停而不�
   };
   const hovered = await h.registration.automation.click({selector: '.nav-item', hoverOnly: true});
   assert.equal(hovered.hoverOnly, true);
-  assert.ok(executedHoverScript.includes('const shouldHoverOnly = true;'));
+  assert.ok(executedHoverScript.includes('"hoverOnly":true'));
   assert.deepEqual(inputEvents, [{type: 'mouseMove', x: 120, y: 60}]);
 });
 
@@ -936,7 +936,7 @@ test('Agent 调试原语：console 日志捕获与过滤、ref 定位、evaluate
   view.webContents.executeJavaScript = async (code: string) => {
     executedScripts.push(code);
     if (code.includes('new Function')) {
-      return {ok: true, type: 'number', result: '42', truncated: false, url: 'http://localhost:5173/app', title: 'App'};
+      return {ok: true, valueType: 'number', json: '42', truncated: false, url: 'http://localhost:5173/app', title: 'App'};
     }
     return {ok: true, tag: 'button', id: 'btn', className: '', text: 'Go', centerX: 10, centerY: 10, matchedCount: 1, visibleCount: 1, currentUrl: 'http://localhost:5173/app', currentTitle: 'App'};
   };
@@ -949,7 +949,7 @@ test('Agent 调试原语：console 日志捕获与过滤、ref 定位、evaluate
 
   const evalRes = await h.registration.automation.evaluate({expression: '21 * 2'});
   assert.equal(evalRes.ok, true);
-  assert.equal(evalRes.result, '42');
+  assert.equal(evalRes.value, 42);
 
   const keyRes = await h.registration.automation.pressKey({key: 'Enter', modifiers: ['control']});
   assert.equal(keyRes.ok, true);
@@ -996,4 +996,124 @@ test('P2 人工接管与操作高亮：pause-agent 挂起后续自动化操作�
   assert.equal(clickRes.ok, true);
   assert.equal(clickResolved, true);
   assert.ok(executedScripts.some(s => s.includes('data-lx-agent-flash')));
+});
+
+test('Agent browser_network 捕获请求/响应头与响应体预览，并支持按 id 分段查询 browser_network_detail', async t => {
+  class FakeDebugger extends EventEmitter {
+    attached = false;
+    isAttached() { return this.attached; }
+    attach() { this.attached = true; }
+    detach() { this.attached = false; }
+    async sendCommand(method: string) {
+      if (method === 'Network.getResponseBody') {
+        return {
+          body: '{"message":"' + 'A'.repeat(400) + '","end":true}',
+          base64Encoded: false,
+        };
+      }
+      return {};
+    }
+  }
+  const dbg = new FakeDebugger();
+  const fakeContents = new EventEmitter() as EventEmitter & Record<string, any>;
+  Object.assign(fakeContents, {
+    id: 101,
+    debugger: dbg,
+    isDestroyed: () => false,
+    close: () => undefined,
+    getURL: () => 'http://localhost:5173/app',
+    isLoadingMainFrame: () => false,
+    loadURL: async () => {
+      fakeContents.emit('did-navigate', {}, 'http://localhost:5173/app');
+      fakeContents.emit('did-finish-load');
+    },
+    setWindowOpenHandler: () => undefined,
+    navigationHistory: {canGoBack: () => false, canGoForward: () => false},
+  });
+  class FakeNetworkView {
+    webContents = fakeContents;
+    setVisible() {}
+    setBounds() {}
+    setBackgroundColor() {}
+  }
+  const fakeWebContents = Object.assign(new EventEmitter(), {
+    send() {},
+    isDestroyed: () => false,
+    getZoomFactor: () => 1,
+  });
+  const fakeWindow = {
+    isDestroyed: () => false,
+    once: () => undefined,
+    getContentSize: () => [1280, 800],
+    contentView: {addChildView() {}, removeChildView() {}},
+    webContents: fakeWebContents,
+  };
+  const handlers = new Map<string, (...args: any[]) => any>();
+  const reg = registerProjectPagePreview({
+    ipcMain: {
+      handle: (ch: string, fn: (...args: any[]) => any) => handlers.set(ch, fn),
+      removeHandler: (ch: string) => handlers.delete(ch),
+      on: () => undefined,
+      removeListener: () => undefined,
+    },
+    getWindow: () => fakeWindow,
+    WebContentsView: FakeNetworkView,
+    session: {
+      fromPartition: () => ({
+        setPermissionRequestHandler: () => undefined,
+        setPermissionCheckHandler: () => undefined,
+        on: () => undefined,
+        webRequest: {onBeforeRequest: () => undefined, onCompleted: () => undefined, onErrorOccurred: () => undefined},
+      }),
+    },
+  });
+  t.after(() => reg.close());
+
+  await reg.automation.navigate({url: 'http://localhost:5173/app'});
+  assert.equal(dbg.attached, true);
+
+  dbg.emit('message', {}, 'Network.requestWillBeSent', {
+    requestId: 'cdp-1',
+    type: 'Fetch',
+    request: {
+      method: 'POST',
+      url: 'http://localhost:5173/api/generate',
+      headers: {'Content-Type': 'application/json', 'X-Pow-Token': 'abc123'},
+      postData: '{"prompt":"hello"}',
+    },
+  });
+  dbg.emit('message', {}, 'Network.responseReceived', {
+    requestId: 'cdp-1',
+    response: {
+      status: 200,
+      mimeType: 'application/json',
+      headers: {'Content-Type': 'application/json; charset=utf-8', 'X-Request-Id': 'srv-9'},
+    },
+  });
+  dbg.emit('message', {}, 'Network.loadingFinished', {requestId: 'cdp-1'});
+
+  const list = await reg.automation.network({urlContains: '/api/generate'});
+  assert.equal(list.entries.length, 1);
+  const entry = list.entries[0]!;
+  assert.equal(entry.id, 'req-1');
+  assert.equal(entry.contentType, 'application/json; charset=utf-8');
+  assert.equal(entry.requestHeaders['x-pow-token'], 'abc123');
+  assert.equal(entry.responseHeaders['x-request-id'], 'srv-9');
+  assert.equal(entry.bodyTruncated, true);
+  assert.equal(entry.bodyLength, 425);
+  assert.equal(entry.bodyPreview.length, 300);
+
+  const detail = await reg.automation.networkDetail({requestId: 'req-1', offset: 300, maxLength: 200});
+  assert.equal(detail.id, 'req-1');
+  assert.equal(detail.requestBody, '{"prompt":"hello"}');
+  assert.equal(detail.responseBody, 'A'.repeat(112) + '","end":true}');
+  assert.equal(detail.totalBodyLength, 425);
+  assert.equal(detail.offset, 300);
+  assert.equal(detail.truncated, false);
+  assert.equal(detail.base64Encoded, false);
+
+  await assert.rejects(
+    () => reg.automation.networkDetail({requestId: 'req-999'}),
+    /未找到请求记录/,
+  );
 });
