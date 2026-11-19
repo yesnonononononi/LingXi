@@ -1772,7 +1772,7 @@ defineExpose({
         data-testid="chat-compact-loading"
         class="flex items-center gap-1.5 text-xs text-lx-muted"
       >
-        <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden="true" />
+        <span class="h-1.5 w-1.5 shrink-0 lx-live-dot rounded-full bg-current" aria-hidden="true" />
         {{ t('chat.compact.loading') }}
       </p>
       <p v-if="promptOptimization.error.value" role="alert" class="text-xs text-red-500">

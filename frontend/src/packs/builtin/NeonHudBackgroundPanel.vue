@@ -54,9 +54,9 @@ async function copyDetailOutput() {
       @click="toggle"
     >
       <span class="inline-flex items-end gap-0.5 h-3" aria-hidden="true">
-        <span class="w-0.5 rounded-full bg-cyan-400 transition-all" :class="runningCount > 0 ? 'h-3 animate-pulse' : 'h-1.5 opacity-60'" />
-        <span class="w-0.5 rounded-full bg-indigo-400 transition-all" :class="runningCount > 0 ? 'h-2 animate-pulse' : 'h-2.5 opacity-60'" />
-        <span class="w-0.5 rounded-full bg-cyan-300 transition-all" :class="runningCount > 0 ? 'h-2.5 animate-pulse' : 'h-1 opacity-60'" />
+        <span class="w-0.5 rounded-full bg-cyan-400 transition-all" :class="runningCount > 0 ? 'h-3 lx-live-dot' : 'h-1.5 opacity-60'" />
+        <span class="w-0.5 rounded-full bg-indigo-400 transition-all" :class="runningCount > 0 ? 'h-2 lx-live-dot' : 'h-2.5 opacity-60'" />
+        <span class="w-0.5 rounded-full bg-cyan-300 transition-all" :class="runningCount > 0 ? 'h-2.5 lx-live-dot' : 'h-1 opacity-60'" />
       </span>
       <span class="font-semibold">{{ summary }}</span>
       <span
@@ -159,7 +159,7 @@ async function copyDetailOutput() {
               class="px-1 text-lx-fs-sm opacity-60 hover:opacity-100 cursor-pointer" :disabled="!!deletingId" @click="removeTask(task.id)">✕</button>
           </div>
           <div v-if="task.status === 'RUNNING'" class="mt-1.5 h-1 w-full overflow-hidden rounded-full" :class="isDark ? 'bg-white/10' : 'bg-indigo-100'">
-            <div class="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500" />
+            <div class="h-full w-2/3 lx-live-dot rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500" />
           </div>
         </li>
       </ul>

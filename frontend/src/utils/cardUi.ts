@@ -27,7 +27,9 @@ export function cardDotClass(tone: CardTone): string {
     case 'rejected':
       return 'bg-red-500';
     case 'pending':
-      return 'bg-zinc-900 dark:bg-white lx-live-dot';
+      // 与 subItemStatusDotClass 的 running/suspended 同一套语义：等待决策 = 琥珀脉冲。
+      // 曾经这里用 bg-zinc-900 dark:bg-white，同屏出现两种「进行中」色点，用户读不出哪个还在等。
+      return 'bg-amber-400 lx-live-dot';
     default:
       return 'bg-zinc-400';
   }

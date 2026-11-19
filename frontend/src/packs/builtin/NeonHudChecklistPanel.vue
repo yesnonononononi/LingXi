@@ -90,7 +90,7 @@ const filteredSteps = computed(() => {
           <div class="truncate font-semibold">{{ snapshot?.title || t('chat.checklist.title') }}</div>
           <div v-if="snapshot" class="mt-1 flex h-1.5 w-full overflow-hidden rounded-full" :class="isDark ? 'bg-white/10' : 'bg-slate-200'">
             <div class="h-full bg-emerald-500 transition-all duration-300" :style="{ width: `${statusBreakdown.completedPct}%` }" />
-            <div class="h-full bg-cyan-400 animate-pulse transition-all duration-300" :style="{ width: `${statusBreakdown.inProgressPct}%` }" />
+            <div class="h-full bg-cyan-400 lx-live-dot transition-all duration-300" :style="{ width: `${statusBreakdown.inProgressPct}%` }" />
             <div class="h-full bg-rose-500 transition-all duration-300" :style="{ width: `${statusBreakdown.failedPct}%` }" />
           </div>
         </div>
