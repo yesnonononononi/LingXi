@@ -34,6 +34,11 @@ import static org.mockito.Mockito.*;
 
 class AgentWorkflowOrchestratorPromptTest {
 
+    /** 产品能力段：渲染语法 + 产品文档，顺序由 BusinessSystemPromptBuilder 定稿。 */
+    private static final String PRODUCT_SECTIONS =
+            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION;
+
+
     private final SubAgent subAgent = mock(SubAgent.class);
     private final IChatAgent chatAgent = mock(IChatAgent.class);
     private final TeamService teamService = mock(TeamService.class);
@@ -64,7 +69,7 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(chatAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION
+        assertEquals("全局规则\n\n" + PRODUCT_SECTIONS
                         + "\n\n# 用户个性化偏好\n\n## 用户偏好与自定义指令\n先给结论",
                 request.getContextSpec().getSystemPrompt());
         assertEquals(context.messageList(), request.getContextSpec().getContext());
@@ -94,7 +99,7 @@ class AgentWorkflowOrchestratorPromptTest {
         ArgumentCaptor<AgentRequest> captor = ArgumentCaptor.forClass(AgentRequest.class);
         verify(subAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
-        assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n代码审查助手",
+        assertEquals("全局规则\n\n" + PRODUCT_SECTIONS + "\n\n代码审查助手",
                 request.getContextSpec().getSystemPrompt());
         assertEquals(context.messageList(), request.getContextSpec().getContext());
         assertEquals(selected.getToolList(), request.getToolSpec().getToolList());
@@ -123,7 +128,7 @@ class AgentWorkflowOrchestratorPromptTest {
         verify(subAgent).createExecution(captor.capture());
         AgentRequest request = captor.getValue();
         assertTrue(request.getContextSpec().getSystemPrompt()
-                .startsWith("全局规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n开发团队主理人\n"));
+                .startsWith("全局规则\n\n" + PRODUCT_SECTIONS + "\n\n开发团队主理人\n"));
         assertTrue(request.getContextSpec().getSystemPrompt().contains("- id: 6"));
         assertTrue(request.getContextSpec().getSystemPrompt().contains("验证回归用例"));
         assertEquals(context.messageList(), request.getContextSpec().getContext());

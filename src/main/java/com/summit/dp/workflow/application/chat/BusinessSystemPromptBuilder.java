@@ -23,23 +23,26 @@ public class BusinessSystemPromptBuilder {
     private final String globalPrompt;
     private final ProjectMemoryPrompt projectMemoryPrompt;
     private final RenderSyntaxPrompt renderSyntaxPrompt;
+    private final ProductDocsPrompt productDocsPrompt;
 
     public BusinessSystemPromptBuilder(String globalPrompt) {
-        this(globalPrompt, workspace -> "", new RenderSyntaxPrompt());
+        this(globalPrompt, workspace -> "", new RenderSyntaxPrompt(), new ProductDocsPrompt());
     }
 
-    /** 记忆段可替换、渲染语法取产品默认实现：委派链路只关心成员提示词，不需要装配渲染语法。 */
+    /** 记忆段可替换、渲染语法与产品文档取产品默认实现：委派链路只关心成员提示词，不需要装配这些段。 */
     public BusinessSystemPromptBuilder(String globalPrompt, ProjectMemoryPrompt projectMemoryPrompt) {
-        this(globalPrompt, projectMemoryPrompt, new RenderSyntaxPrompt());
+        this(globalPrompt, projectMemoryPrompt, new RenderSyntaxPrompt(), new ProductDocsPrompt());
     }
 
     @Autowired
     public BusinessSystemPromptBuilder(@Value("${lingxi.system-prompt:}") String globalPrompt,
                                        ProjectMemoryPrompt projectMemoryPrompt,
-                                       RenderSyntaxPrompt renderSyntaxPrompt) {
+                                       RenderSyntaxPrompt renderSyntaxPrompt,
+                                       ProductDocsPrompt productDocsPrompt) {
         this.globalPrompt = globalPrompt == null ? "" : globalPrompt.trim();
         this.projectMemoryPrompt = projectMemoryPrompt;
         this.renderSyntaxPrompt = renderSyntaxPrompt;
+        this.productDocsPrompt = productDocsPrompt;
     }
 
     /** 空段不产生分隔符，未配置偏好时保持原有提示词。 */
@@ -53,14 +56,15 @@ public class BusinessSystemPromptBuilder {
     }
 
     /**
-     * 根提示词：全局规则 → 产品渲染语法 → 用户偏好 → 角色职责 → 项目记忆。
+     * 根提示词：全局规则 → 产品渲染语法 → 产品文档 → 用户偏好 → 角色职责 → 项目记忆。
      *
-     * <p>渲染语法紧跟全局规则：两者都是「平台怎么用」的规则，排在用户偏好之前，
+     * <p>渲染语法与产品文档紧跟全局规则：它们都是「平台怎么用」的产品事实，排在用户偏好之前，
      * 用户改自己的偏好时不会碰掉产品能力说明。</p>
      */
     public String buildRootPrompt(String agentPrompt, PersonalizationVO personalization, WorkspaceSpec workspace) {
-        return String.join("\n\n", Stream.of(globalPrompt, renderSyntaxPrompt.load(), customPrompt(personalization),
-                Objects.toString(agentPrompt, "").trim(), projectMemoryPrompt.load(workspace))
+        return String.join("\n\n", Stream.of(globalPrompt, renderSyntaxPrompt.load(), productDocsPrompt.load(),
+                        customPrompt(personalization), Objects.toString(agentPrompt, "").trim(),
+                        projectMemoryPrompt.load(workspace))
                 .filter(section -> !section.isEmpty()).toList());
     }
 

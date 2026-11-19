@@ -15,6 +15,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class BusinessSystemPromptBuilderTest {
 
+    /** 产品能力段：渲染语法 + 产品文档，顺序由 BusinessSystemPromptBuilder 定稿。 */
+    private static final String PRODUCT_SECTIONS =
+            RenderSyntaxPrompt.SECTION + "\n\n" + ProductDocsPrompt.SECTION;
+
+
     @Test
     void preferencesSitBetweenDefaultsAndTeamWithoutLosingMultilineInstructions() {
         PersonalizationVO preferences = new PersonalizationVO();
@@ -23,7 +28,7 @@ class BusinessSystemPromptBuilderTest {
         preferences.setReplyStyle("DIRECT");
         preferences.setCustomInstruction(" 先给结论\n再说明证据 ");
         String prompt = new BusinessSystemPromptBuilder("默认规则").buildRootPrompt("团队模式", preferences);
-        assertEquals("默认规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n# 用户个性化偏好\n\n"
+        assertEquals("默认规则\n\n" + PRODUCT_SECTIONS + "\n\n# 用户个性化偏好\n\n"
                 + "## 助手名字\n与用户交流时，使用用户指定的助手名字：\n灵犀\n\n"
                 + "## 用户称呼\n称呼用户时，使用以下称呼：\n小林\n\n"
                 + "## 回复风格\n" + ReplyStyle.DIRECT.getContent() + "\n\n"
@@ -37,31 +42,31 @@ class BusinessSystemPromptBuilderTest {
         preferences.setTitle("");
         preferences.setReplyStyle("DEFAULT");
         BusinessSystemPromptBuilder builder = new BusinessSystemPromptBuilder("默认规则");
-        assertEquals("默认规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n团队模式", builder.buildRootPrompt("团队模式", preferences));
+        assertEquals("默认规则\n\n" + PRODUCT_SECTIONS + "\n\n团队模式", builder.buildRootPrompt("团队模式", preferences));
         // 渲染语法是产品能力说明，与「全局规则/角色」是否为空无关：没有别的内容时它就是全部内容。
-        assertEquals(RenderSyntaxPrompt.SECTION, new BusinessSystemPromptBuilder("").buildRootPrompt(null, preferences));
+        assertEquals(PRODUCT_SECTIONS, new BusinessSystemPromptBuilder("").buildRootPrompt(null, preferences));
         preferences.setCustomInstruction("只输出必要信息");
-        assertEquals(RenderSyntaxPrompt.SECTION + "\n\n# 用户个性化偏好\n\n## 用户偏好与自定义指令\n只输出必要信息",
+        assertEquals(PRODUCT_SECTIONS + "\n\n# 用户个性化偏好\n\n## 用户偏好与自定义指令\n只输出必要信息",
                 new BusinessSystemPromptBuilder("").buildRootPrompt(null, preferences));
     }
 
     @Test
     void rootKeepsGlobalRulesBeforeRoleAndPreservesInternalNewlines() {
         BusinessSystemPromptBuilder builder = new BusinessSystemPromptBuilder("  全局规则\n第二条  ");
-        assertEquals("全局规则\n第二条\n\n" + RenderSyntaxPrompt.SECTION + "\n\n角色提示", builder.buildRootPrompt("  角色提示  "));
-        assertEquals("全局规则\n第二条\n\n" + RenderSyntaxPrompt.SECTION + "\n\n另一个角色", builder.buildRootPrompt("另一个角色"));
+        assertEquals("全局规则\n第二条\n\n" + PRODUCT_SECTIONS + "\n\n角色提示", builder.buildRootPrompt("  角色提示  "));
+        assertEquals("全局规则\n第二条\n\n" + PRODUCT_SECTIONS + "\n\n另一个角色", builder.buildRootPrompt("另一个角色"));
     }
 
     @Test
     void emptySectionsDoNotLeaveSeparators() {
         BusinessSystemPromptBuilder configured = new BusinessSystemPromptBuilder(" 全局规则 ");
-        assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION, configured.buildRootPrompt(null));
-        assertEquals("全局规则\n\n" + RenderSyntaxPrompt.SECTION, configured.buildRootPrompt(" \n "));
+        assertEquals("全局规则\n\n" + PRODUCT_SECTIONS, configured.buildRootPrompt(null));
+        assertEquals("全局规则\n\n" + PRODUCT_SECTIONS, configured.buildRootPrompt(" \n "));
 
         BusinessSystemPromptBuilder empty = new BusinessSystemPromptBuilder(null);
-        assertEquals(RenderSyntaxPrompt.SECTION + "\n\n角色提示", empty.buildRootPrompt(" 角色提示 "));
-        assertEquals(RenderSyntaxPrompt.SECTION, empty.buildRootPrompt(null));
-        assertEquals(RenderSyntaxPrompt.SECTION, new BusinessSystemPromptBuilder(" \n ").buildRootPrompt(" \n "));
+        assertEquals(PRODUCT_SECTIONS + "\n\n角色提示", empty.buildRootPrompt(" 角色提示 "));
+        assertEquals(PRODUCT_SECTIONS, empty.buildRootPrompt(null));
+        assertEquals(PRODUCT_SECTIONS, new BusinessSystemPromptBuilder(" \n ").buildRootPrompt(" \n "));
     }
 
     @Test
@@ -104,9 +109,10 @@ class BusinessSystemPromptBuilderTest {
                     new MapPropertySource("提示词测试", Map.of("lingxi.system-prompt", "配置规则")));
             context.register(BusinessSystemPromptBuilder.class);
             context.register(RenderSyntaxPrompt.class);
+            context.register(ProductDocsPrompt.class);
             context.registerBean(ProjectMemoryPrompt.class, () -> workspace -> "");
             context.refresh();
-            assertEquals("配置规则\n\n" + RenderSyntaxPrompt.SECTION + "\n\n角色提示",
+            assertEquals("配置规则\n\n" + PRODUCT_SECTIONS + "\n\n角色提示",
                     context.getBean(BusinessSystemPromptBuilder.class).buildRootPrompt("角色提示"));
         }
     }
