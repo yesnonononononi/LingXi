@@ -23,6 +23,7 @@ import {
   type DesignStarterTemplate,
   type DesignTweakVar,
   extractDesignSystemTokens,
+  extractElementStyleSummary,
   parseDesignTweakVars,
   resolveAnimationCssValue,
   resolveElementBreadcrumb,
@@ -47,7 +48,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'sendToChat', payload: { prompt: string }): void;
+  (e: 'sendToChat', payload: { prompt: string; files?: File[] }): void;
 }>();
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
@@ -78,6 +79,7 @@ const showPasteModal = ref(false);
 const pasteHtmlDraft = ref('');
 const showInsertMenu = ref(false);
 const aiInstruction = ref('');
+const attachCanvasSnapshot = ref(true);
 const copyFeedback = ref(false);
 
 // 撤销 / 重做快照栈
@@ -1124,6 +1126,44 @@ const exportPng = async (): Promise<void> => {
   }
 };
 
+/** 将当前画布导出为 PNG File，供发给 AI 时一并附带视觉上下文；受限资源失败时静默返回 null。 */
+const renderCanvasSnapshotFile = async (): Promise<File | null> => {
+  const iframe = iframeRef.value;
+  const doc = iframe?.contentDocument;
+  if (!iframe || !doc?.documentElement || isCodeView.value) return null;
+
+  const width = Math.max(390, Math.min(1440, Math.round(iframe.clientWidth || 1200)));
+  const height = Math.max(480, Math.min(2000, Math.round(doc.documentElement.scrollHeight || iframe.clientHeight || 800)));
+  const cloned = doc.documentElement.cloneNode(true) as HTMLElement;
+  cloned.querySelectorAll('.moveable-control-box, [data-lx-hover-box]').forEach(el => el.remove());
+  const xhtml = new XMLSerializer().serializeToString(cloned);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${xhtml}</foreignObject></svg>`;
+  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('画布截图渲染失败'));
+      img.src = svgUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return null;
+    const baseName = (loadedFileName.value ? loadedFileName.value.replace(/\.html?$/i, '') : 'design-prototype');
+    return new File([blob], `${baseName}-snapshot.png`, { type: 'image/png' });
+  } catch {
+    return null;
+  }
+};
+
 const submitAllCommentsToAi = async (): Promise<void> => {
   const pending = commentMgr.unresolvedComments.value;
   if (pending.length === 0) return;
@@ -1141,7 +1181,8 @@ const submitAllCommentsToAi = async (): Promise<void> => {
     })),
     designTokens: activeDesignTokens.value || undefined,
   });
-  emit('sendToChat', { prompt });
+  const snapshot = attachCanvasSnapshot.value ? await renderCanvasSnapshotFile() : null;
+  emit('sendToChat', { prompt, files: snapshot ? [snapshot] : undefined });
 };
 
 const sendDesignPrompt = async (presetText?: string) => {
@@ -1153,16 +1194,22 @@ const sendDesignPrompt = async (presetText?: string) => {
   if (!filePath) return;
 
   const selected = selectedElement.value;
+  const iframeWin = iframeRef.value?.contentDocument?.defaultView || window;
+  const styleSummary = selected
+    ? extractElementStyleSummary(selected.getBoundingClientRect(), iframeWin.getComputedStyle(selected))
+    : undefined;
   const prompt = buildDesignAiPrompt({
     instruction: text,
     fileName: loadedFileName.value,
     filePath,
     selector: selected ? resolveElementSelector(selected) : undefined,
     elementHtml: selected ? selected.outerHTML : undefined,
+    styleSummary,
     designTokens: activeDesignTokens.value || undefined,
   });
 
-  emit('sendToChat', { prompt });
+  const snapshot = attachCanvasSnapshot.value ? await renderCanvasSnapshotFile() : null;
+  emit('sendToChat', { prompt, files: snapshot ? [snapshot] : undefined });
   if (!presetText) {
     aiInstruction.value = '';
   }
@@ -1744,6 +1791,10 @@ onBeforeUnmount(() => {
           :placeholder="t('designPreview.aiPromptPlaceholder') || '向 AI 描述设计修改...'"
           @keydown.enter.prevent="sendDesignPrompt()"
         />
+        <label class="ai-snapshot-toggle" :title="'发送指令时自动附带当前画布截图给 AI'">
+          <input v-model="attachCanvasSnapshot" type="checkbox" />
+          <span>附图</span>
+        </label>
         <button
           type="button"
           class="btn-primary-action"
@@ -2423,6 +2474,22 @@ onBeforeUnmount(() => {
 
 .ai-prompt-input:focus-visible {
   border-color: var(--file-focus, #a1a1aa);
+}
+
+.ai-snapshot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--file-muted, #71717a);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.ai-snapshot-toggle input {
+  margin: 0;
+  cursor: pointer;
 }
 
 .ai-suggestion-row {

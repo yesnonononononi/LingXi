@@ -66,7 +66,7 @@ const emit = defineEmits<{
   (e: 'refresh', tab: FilePreviewTab): void;
   (e: 'open'): void;
   (e: 'reveal'): void;
-  (e: 'sendToChat', payload: { prompt: string }): void;
+  (e: 'sendToChat', payload: { prompt: string; files?: File[] }): void;
 }>();
 
 const effectiveTabs = computed<UnifiedPreviewTab[]>(() => {

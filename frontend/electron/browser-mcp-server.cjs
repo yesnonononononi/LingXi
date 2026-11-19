@@ -29,10 +29,11 @@ const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'browser_click',
-    description: 'Click (or hover over) an element in the built-in browser page by CSS selector (supports .className, #id) and/or visible text.',
+    description: 'Click (or hover over) an element in the built-in browser page by ref (from browser_query), CSS selector (supports .className, #id), and/or visible text.',
     inputSchema: {
       type: 'object',
       properties: {
+        ref: {type: 'string', description: 'Optional element ref returned by the latest browser_query snapshot (e.g. "e3"). Preferred for reliable targeting.'},
         selector: {type: 'string', description: 'Optional CSS selector (e.g. ".submit-btn", "#login", "button").'},
         text: {type: 'string', description: 'Optional visible text substring to match clickable elements (useful when classes are obfuscated or Tailwind-based).'},
         index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
@@ -43,23 +44,24 @@ const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: 'browser_fill',
-    description: 'Fill text into an input, textarea, contenteditable, or select an option in a <select> by value or visible label.',
+    description: 'Fill text into an input, textarea, contenteditable, or select an option in a <select> by ref (from browser_query) or CSS selector.',
     inputSchema: {
       type: 'object',
       properties: {
-        selector: {type: 'string', description: 'CSS selector matching the input/select element.'},
+        ref: {type: 'string', description: 'Optional element ref returned by the latest browser_query snapshot (e.g. "e2").'},
+        selector: {type: 'string', description: 'Optional CSS selector matching the input/select element (required if ref is omitted).'},
         value: {type: 'string', description: 'Text value to fill (or option value/label for <select>).'},
         index: {type: 'integer', description: 'Zero-based index when multiple visible elements match. Defaults to 0.'},
         clear: {type: 'boolean', description: 'Clear existing content before filling. Defaults to true.'},
         submit: {type: 'boolean', description: 'Dispatch Enter key and submit enclosing form after filling. Defaults to false.'},
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
       },
-      required: ['selector', 'value'],
+      required: ['value'],
     },
   },
   {
     name: 'browser_query',
-    description: 'Inspect visible interactive elements (roles, states, values, labels, viewport visibility, selector hints, text) and page text excerpt.',
+    description: 'Inspect visible interactive elements (including stable snapshot ref IDs like "e1", roles, states, values, labels, viewport visibility, selector hints, text) and page text excerpt.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -120,6 +122,60 @@ const TOOL_DEFINITIONS = Object.freeze([
         selector: {type: 'string', description: 'Optional CSS selector of a target container or element to scroll.'},
         tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
       },
+    },
+  },
+  {
+    name: 'browser_console',
+    description: 'Read captured browser console logs (errors, warnings, info) from the built-in browser tab for debugging.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        level: {type: 'string', enum: ['all', 'error', 'warning', 'info', 'verbose'], description: 'Optional log level filter. Defaults to all.'},
+        limit: {type: 'integer', description: 'Maximum entries to return (1-200). Defaults to 50.'},
+        clear: {type: 'boolean', description: 'Clear buffered logs after reading. Defaults to false.'},
+        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
+      },
+    },
+  },
+  {
+    name: 'browser_network',
+    description: 'Read captured HTTP/XHR/Fetch network requests and failures from the built-in browser tab.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        onlyErrors: {type: 'boolean', description: 'Return only failed requests (HTTP >= 400 or network error). Defaults to false.'},
+        urlContains: {type: 'string', description: 'Optional case-insensitive URL substring filter.'},
+        limit: {type: 'integer', description: 'Maximum entries to return (1-200). Defaults to 50.'},
+        clear: {type: 'boolean', description: 'Clear buffered network entries after reading. Defaults to false.'},
+        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
+      },
+    },
+  },
+  {
+    name: 'browser_evaluate',
+    description: 'Evaluate a JavaScript expression in the built-in browser page and return its JSON-serialized result (useful for inspecting computed styles, DOM state, or app store).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        expression: {type: 'string', description: 'JavaScript expression or function body to evaluate in the page context.'},
+        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
+      },
+      required: ['expression'],
+    },
+  },
+  {
+    name: 'browser_press_key',
+    description: 'Press a keyboard key (with optional modifiers like control, shift, alt, meta) in the built-in browser page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: {type: 'string', description: 'Key name (e.g. "Enter", "Escape", "Tab", "Backspace", "ArrowDown", "a").'},
+        modifiers: {type: 'array', items: {type: 'string'}, description: 'Optional modifier keys (e.g. ["control"], ["shift"]).'},
+        ref: {type: 'string', description: 'Optional element ref to focus before pressing the key.'},
+        selector: {type: 'string', description: 'Optional CSS selector to focus before pressing the key.'},
+        tabId: {type: 'string', description: 'Optional tab ID. Defaults to the active tab.'},
+      },
+      required: ['key'],
     },
   },
 ]);
@@ -223,6 +279,22 @@ function createBrowserMcpServer({automation}) {
       }
       case 'browser_scroll': {
         const data = await automation.scroll(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'browser_console': {
+        const data = await automation.console(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'browser_network': {
+        const data = await automation.network(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'browser_evaluate': {
+        const data = await automation.evaluate(args);
+        return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
+      }
+      case 'browser_press_key': {
+        const data = await automation.pressKey(args);
         return {content: [{type: 'text', text: JSON.stringify(data)}], isError: false};
       }
       default:

@@ -694,9 +694,12 @@ const handleDismissContextFact = (id: string): void => {
   contextFacts.dismiss(id);
 };
 
-/** 将设计原型画布或实现计划生成的文本填入聊天输入区并聚焦。 */
-const handleDesignSendToChat = (payload: { prompt: string }): void => {
+/** 将设计原型画布或实现计划生成的文本与可选截图填入聊天输入区并聚焦。 */
+const handleDesignSendToChat = (payload: { prompt: string; files?: File[] }): void => {
   if (!payload.prompt?.trim()) return;
+  if (payload.files && payload.files.length > 0) {
+    inputAreaRef.value?.setAttachedImages(payload.files);
+  }
   inputAreaRef.value?.setInputText(payload.prompt);
   inputAreaRef.value?.focusInput?.();
 };

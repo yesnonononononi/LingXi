@@ -64,6 +64,22 @@ function createMockAutomation() {
         filePath: '/tmp/shot.png',
       };
     },
+    console: async (args: unknown) => {
+      calls.push({method: 'console', args});
+      return {tabId: 'tab-1', totalCount: 1, entries: [{level: 'error', message: 'Uncaught ReferenceError'}]};
+    },
+    network: async (args: unknown) => {
+      calls.push({method: 'network', args});
+      return {tabId: 'tab-1', totalCount: 1, entries: [{method: 'GET', url: 'https://example.com/api', statusCode: 500, ok: false}]};
+    },
+    evaluate: async (args: unknown) => {
+      calls.push({method: 'evaluate', args});
+      return {ok: true, type: 'string', result: '"ok"', truncated: false};
+    },
+    pressKey: async (args: unknown) => {
+      calls.push({method: 'pressKey', args});
+      return {ok: true, key: 'Escape', modifiers: []};
+    },
   };
 }
 
@@ -138,6 +154,10 @@ test('Browser MCP Server：鉴权、握手、工具清单与调用分派', async
         'browser_tabs',
         'browser_wait',
         'browser_scroll',
+        'browser_console',
+        'browser_network',
+        'browser_evaluate',
+        'browser_press_key',
       ],
     );
 
@@ -275,4 +295,50 @@ test('Browser MCP 配置构建：遵循 streamable-http 与关闭自动健康检
     {id: 2, name: BROWSER_MCP_SERVER_NAME, status: 1},
   ]);
   assert.equal(found?.id, 2);
+});
+
+test('Browser MCP 新增调试原语（console/network/evaluate/press_key）与 ref 参数分派', async () => {
+  const automation = createMockAutomation();
+  const mcpServer = createBrowserMcpServer({automation});
+  const status = await mcpServer.start();
+  const postTool = async (id: number, name: string, args: Record<string, unknown>) => {
+    const res = await fetch(status.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${status.token}`,
+      },
+      body: JSON.stringify({jsonrpc: '2.0', id, method: 'tools/call', params: {name, arguments: args}}),
+    });
+    return res.json() as Promise<{result: {isError: boolean; content: Array<{type: string; text?: string}>}}>;
+  };
+  try {
+    const refClick = await postTool(10, 'browser_click', {ref: 'e3'});
+    assert.equal(refClick.result.isError, false);
+    assert.deepEqual(automation.calls.at(-1), {method: 'click', args: {ref: 'e3'}});
+
+    const refFill = await postTool(11, 'browser_fill', {ref: 'e2', value: 'hello'});
+    assert.equal(refFill.result.isError, false);
+    assert.deepEqual(automation.calls.at(-1), {method: 'fill', args: {ref: 'e2', value: 'hello'}});
+
+    const consoleRes = await postTool(12, 'browser_console', {level: 'error', limit: 20});
+    assert.equal(consoleRes.result.isError, false);
+    assert.equal(automation.calls.at(-1)?.method, 'console');
+    assert.match(consoleRes.result.content[0]?.text || '', /ReferenceError/);
+
+    const networkRes = await postTool(13, 'browser_network', {onlyErrors: true});
+    assert.equal(networkRes.result.isError, false);
+    assert.equal(automation.calls.at(-1)?.method, 'network');
+    assert.match(networkRes.result.content[0]?.text || '', /500/);
+
+    const evalRes = await postTool(14, 'browser_evaluate', {expression: 'document.title'});
+    assert.equal(evalRes.result.isError, false);
+    assert.equal(automation.calls.at(-1)?.method, 'evaluate');
+
+    const keyRes = await postTool(15, 'browser_press_key', {key: 'Escape', modifiers: ['shift']});
+    assert.equal(keyRes.result.isError, false);
+    assert.deepEqual(automation.calls.at(-1), {method: 'pressKey', args: {key: 'Escape', modifiers: ['shift']}});
+  } finally {
+    await mcpServer.stop();
+  }
 });

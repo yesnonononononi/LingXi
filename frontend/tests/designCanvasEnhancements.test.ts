@@ -15,6 +15,8 @@ import {
   DESIGN_STARTER_TEMPLATES,
   type ElementLike,
   extractDesignSystemTokens,
+  extractElementStyleSummary,
+  formatStyleSummary,
   parseDesignTweakVars,
   resolveAnimationCssValue,
   resolveElementBreadcrumb,
@@ -287,4 +289,49 @@ test('第三期：实时调参解析、设计令牌注入、多方案路径与�
   assert.match(designCode, /exportPng/);
   assert.match(designCode, /exportPdf/);
   assert.match(designCode, /handoffToCode/);
+});
+
+test('Design 发给 AI 附带计算布局/样式摘要与画布截图接线', () => {
+  const summary = extractElementStyleSummary(
+    { width: 320.4, height: 48.2 },
+    {
+      display: 'flex',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '12px',
+      fontSize: '14px',
+      fontWeight: '600',
+      color: 'rgb(24, 24, 27)',
+      backgroundColor: 'rgb(255, 255, 255)',
+      borderRadius: '10px',
+      padding: '8px 16px',
+    },
+  );
+  assert.equal(summary.width, 320);
+  assert.equal(summary.height, 48);
+  assert.equal(summary.display, 'flex');
+  assert.equal(summary.gap, '12px');
+
+  const formatted = formatStyleSummary(summary);
+  assert.match(formatted, /size=320x48px/);
+  assert.match(formatted, /display=flex/);
+  assert.match(formatted, /justify=space-between/);
+
+  const prompt = buildDesignAiPrompt({
+    instruction: '增大按钮间距',
+    fileName: 'landing.html',
+    filePath: '.lingxi/design/landing.html',
+    selector: 'body > header.nav',
+    styleSummary: summary,
+  });
+  assert.match(prompt, /当前计算布局与样式：size=320x48px/);
+
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const read = (rel: string) => fs.readFileSync(path.resolve(currentDir, '..', rel), 'utf8');
+  const designCode = read('src/components/chat/DesignCanvasPreview.vue');
+  const chatCode = read('src/views/chat/ChatView.vue');
+  assert.match(designCode, /renderCanvasSnapshotFile/);
+  assert.match(designCode, /extractElementStyleSummary/);
+  assert.match(chatCode, /payload\.files && payload\.files\.length > 0/);
 });

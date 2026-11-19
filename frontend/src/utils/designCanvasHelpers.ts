@@ -44,6 +44,24 @@ export interface ElementLike {
   parentElement?: ElementLike | null;
 }
 
+export interface DesignComputedStyleSummary {
+  width: number;
+  height: number;
+  display: string;
+  position?: string;
+  flexDirection?: string;
+  justifyContent?: string;
+  alignItems?: string;
+  gap?: string;
+  gridTemplateColumns?: string;
+  fontSize?: string;
+  fontWeight?: string;
+  color?: string;
+  backgroundColor?: string;
+  borderRadius?: string;
+  padding?: string;
+}
+
 export interface DesignAiPromptInput {
   instruction: string;
   fileName?: string;
@@ -52,6 +70,8 @@ export interface DesignAiPromptInput {
   selector?: string;
   elementHtml?: string;
   fullHtml?: string;
+  /** 可选：选中元素的计算样式与布局摘要，避免 Agent 只看 HTML 猜不出真实排版。 */
+  styleSummary?: DesignComputedStyleSummary;
   /** 可选：注入的设计系统令牌或品牌规范摘要。 */
   designTokens?: string;
 }
@@ -439,6 +459,54 @@ const truncateHtmlSnippet = (raw: string, maxChars: number): string => {
   return `${trimmed.slice(0, maxChars)}\n<!-- ... truncated (${trimmed.length} chars total) ... -->`;
 };
 
+/** 从 DOM 元素及其计算样式提取紧凑布局与外观摘要。 */
+export const extractElementStyleSummary = (
+  rect: { width: number; height: number },
+  computed: Partial<CSSStyleDeclaration>,
+): DesignComputedStyleSummary => {
+  const display = computed.display || 'block';
+  const summary: DesignComputedStyleSummary = {
+    width: Math.round(rect.width || 0),
+    height: Math.round(rect.height || 0),
+    display,
+  };
+  if (computed.position && computed.position !== 'static') summary.position = computed.position;
+  if (display.includes('flex')) {
+    if (computed.flexDirection) summary.flexDirection = computed.flexDirection;
+    if (computed.justifyContent && computed.justifyContent !== 'normal') summary.justifyContent = computed.justifyContent;
+    if (computed.alignItems && computed.alignItems !== 'normal') summary.alignItems = computed.alignItems;
+  }
+  if (display.includes('grid') && computed.gridTemplateColumns && computed.gridTemplateColumns !== 'none') {
+    summary.gridTemplateColumns = computed.gridTemplateColumns;
+  }
+  if (computed.gap && computed.gap !== 'normal' && computed.gap !== '0px') summary.gap = computed.gap;
+  if (computed.fontSize) summary.fontSize = computed.fontSize;
+  if (computed.fontWeight) summary.fontWeight = computed.fontWeight;
+  if (computed.color) summary.color = computed.color;
+  if (computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && computed.backgroundColor !== 'transparent') {
+    summary.backgroundColor = computed.backgroundColor;
+  }
+  if (computed.borderRadius && computed.borderRadius !== '0px') summary.borderRadius = computed.borderRadius;
+  if (computed.padding && computed.padding !== '0px') summary.padding = computed.padding;
+  return summary;
+};
+
+export const formatStyleSummary = (summary: DesignComputedStyleSummary): string => {
+  const tokens: string[] = [`size=${summary.width}x${summary.height}px`, `display=${summary.display}`];
+  if (summary.position) tokens.push(`position=${summary.position}`);
+  if (summary.flexDirection) tokens.push(`flex-direction=${summary.flexDirection}`);
+  if (summary.justifyContent) tokens.push(`justify=${summary.justifyContent}`);
+  if (summary.alignItems) tokens.push(`align=${summary.alignItems}`);
+  if (summary.gridTemplateColumns) tokens.push(`grid-cols=${summary.gridTemplateColumns}`);
+  if (summary.gap) tokens.push(`gap=${summary.gap}`);
+  if (summary.fontSize) tokens.push(`font=${summary.fontSize}/${summary.fontWeight || '400'}`);
+  if (summary.color) tokens.push(`color=${summary.color}`);
+  if (summary.backgroundColor) tokens.push(`bg=${summary.backgroundColor}`);
+  if (summary.borderRadius) tokens.push(`radius=${summary.borderRadius}`);
+  if (summary.padding) tokens.push(`padding=${summary.padding}`);
+  return tokens.join(', ');
+};
+
 export const buildDesignAiPrompt = (input: DesignAiPromptInput): string => {
   const instruction = input.instruction.trim();
   const targetName = input.fileName?.trim() || '当前设计原型';
@@ -457,6 +525,9 @@ export const buildDesignAiPrompt = (input: DesignAiPromptInput): string => {
   }
   if (input.selector) {
     lines.push(`- 目标组件选择器：\`${input.selector}\``);
+  }
+  if (input.styleSummary) {
+    lines.push(`- 当前计算布局与样式：${formatStyleSummary(input.styleSummary)}`);
   }
   lines.push(`- 修改要求：${instruction}`);
 

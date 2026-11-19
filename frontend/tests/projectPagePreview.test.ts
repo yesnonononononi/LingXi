@@ -897,3 +897,61 @@ test('Agent browser_screenshot 默认通过 CDP 覆写标准桌面视口截图�
   assert.equal(capturePageCalls, 2);
   assert.equal(fallbackShot.width, 420);
 });
+
+test('Agent 调试原语：console 日志捕获与过滤、ref 定位、evaluate 求值与 pressKey 按键', async t => {
+  const h = createHarness(15000, true); t.after(() => h.registration.close());
+  h.invoke('sync');
+  h.layout({visible: true, bounds: {x: 0, y: 0, width: 800, height: 600}});
+  h.invoke('navigate', {url: 'http://localhost:5173/app'});
+
+  const view = h.views[0]! as unknown as {
+    webContents: {
+      emit: (event: string, ...args: unknown[]) => boolean;
+      executeJavaScript: (code: string) => Promise<unknown>;
+      sendInputEvent?: (ev: Record<string, unknown>) => void;
+    };
+  };
+  // 1. console-message 事件（兼容 Electron 新对象签名与旧参数签名）
+  view.webContents.emit('console-message', {level: 3, message: 'TypeError: boom', lineNumber: 42, sourceId: 'app.js'});
+  view.webContents.emit('console-message', {}, 1, 'boot ok', 10, 'main.js');
+
+  const errLogs = await h.registration.automation.console({level: 'error'});
+  assert.equal(errLogs.totalCount, 1);
+  assert.equal(errLogs.entries[0].message, 'TypeError: boom');
+  assert.equal(errLogs.entries[0].line, 42);
+
+  const allLogs = await h.registration.automation.console({clear: true});
+  assert.equal(allLogs.totalCount, 2);
+  const afterClear = await h.registration.automation.console({});
+  assert.equal(afterClear.totalCount, 0);
+
+  // 2. buildQueryScript 注入 data-lx-ref 并返回 ref 字段
+  const queryScript = buildQueryScript({maxItems: 10});
+  assert.match(queryScript, /data-lx-ref/);
+  assert.match(queryScript, /ref:\s*refId/);
+
+  // 3. click/fill 使用 ref 时按 [data-lx-ref="..."] 定位；evaluate 与 pressKey 正常执行
+  const executedScripts: string[] = [];
+  const inputEvents: Array<Record<string, unknown>> = [];
+  view.webContents.executeJavaScript = async (code: string) => {
+    executedScripts.push(code);
+    if (code.includes('new Function')) {
+      return {ok: true, type: 'number', result: '42', truncated: false, url: 'http://localhost:5173/app', title: 'App'};
+    }
+    return {ok: true, tag: 'button', id: 'btn', className: '', text: 'Go', centerX: 10, centerY: 10, matchedCount: 1, visibleCount: 1, currentUrl: 'http://localhost:5173/app', currentTitle: 'App'};
+  };
+  view.webContents.sendInputEvent = (ev: Record<string, unknown>) => {
+    inputEvents.push(ev);
+  };
+
+  await h.registration.automation.click({ref: 'e3'});
+  assert.ok(executedScripts.some(s => s.includes('data-lx-ref') && s.includes('"e3"')));
+
+  const evalRes = await h.registration.automation.evaluate({expression: '21 * 2'});
+  assert.equal(evalRes.ok, true);
+  assert.equal(evalRes.result, '42');
+
+  const keyRes = await h.registration.automation.pressKey({key: 'Enter', modifiers: ['control']});
+  assert.equal(keyRes.ok, true);
+  assert.ok(inputEvents.some(ev => ev.type === 'keyDown' && ev.keyCode === 'Return'));
+});

@@ -175,15 +175,23 @@ function buildQueryScript({customSelector = '', maxItems = 40} = {}) {
       else outViewNodes.push({el, inViewport});
     }
     const ordered = customSelector ? inViewNodes : inViewNodes.concat(outViewNodes);
+    try {
+      document.querySelectorAll('[data-lx-ref]').forEach(node => node.removeAttribute('data-lx-ref'));
+    } catch {
+      // 忽略清理旧 ref 属性时的异常
+    }
     const items = [];
     for (let i = 0; i < ordered.length && items.length < maxItems; i++) {
       const {el, inViewport} = ordered[i];
+      const refId = 'e' + (items.length + 1);
+      try { el.setAttribute('data-lx-ref', refId); } catch {}
       const tag = el.tagName.toLowerCase();
       const type = el.getAttribute('type') || '';
       const ariaChecked = el.getAttribute('aria-checked');
       const ariaSelected = el.getAttribute('aria-selected');
       const ariaExpanded = el.getAttribute('aria-expanded');
       const item = {
+        ref: refId,
         index: items.length,
         tag,
         role: el.getAttribute('role') || '',
@@ -224,6 +232,29 @@ function buildQueryScript({customSelector = '', maxItems = 40} = {}) {
       textExcerpt: bodyText,
     };
   })()`;
+}
+
+const MAX_LOG_ENTRIES = 200;
+const CONSOLE_LEVEL_NAMES = Object.freeze(['verbose', 'info', 'warning', 'error']);
+
+function normalizeConsoleLevel(level) {
+  if (typeof level === 'string') {
+    const lower = level.trim().toLowerCase();
+    if (lower === 'warn') return 'warning';
+    if (lower === 'log' || lower === 'debug') return 'info';
+    if (['verbose', 'info', 'warning', 'error'].includes(lower)) return lower;
+  }
+  if (typeof level === 'number' && level >= 0 && level < CONSOLE_LEVEL_NAMES.length) {
+    return CONSOLE_LEVEL_NAMES[level];
+  }
+  return 'info';
+}
+
+function appendRingBuffer(list, item, max = MAX_LOG_ENTRIES) {
+  list.push(item);
+  if (list.length > max) {
+    list.splice(0, list.length - max);
+  }
 }
 
 function normalizeMenuLabels(request) {
@@ -291,6 +322,8 @@ async function withDebugger(contents, fn) {
 
 function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, session, Menu, nativeTheme, nativeImage, timeoutMs = PROJECT_PAGE_LOAD_TIMEOUT_MS}) {
   const states = new Map();
+  const tabsByContentsId = new Map();
+  const pendingRequests = new Map();
   let previewSession;
   // 菜单文案由渲染层按当前语言推送，主进程不做翻译。
   let menuLabels = DEFAULT_MENU_LABELS;
@@ -428,6 +461,9 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
 
   const destroyTab = (state, tab) => {
     state.tabs.delete(tab.id);
+    if (tab.contents && tab.contents.id !== undefined) {
+      tabsByContentsId.delete(tab.contents.id);
+    }
     clearTimer(tab);
     clearAgentOverlayTimer(tab);
     if (!state.window.isDestroyed()) state.window.contentView.removeChildView(tab.view);
@@ -540,6 +576,56 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       previewSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
       previewSession.setPermissionCheckHandler(() => false);
       previewSession.on('will-download', event => event.preventDefault());
+      if (previewSession.webRequest && typeof previewSession.webRequest.onBeforeRequest === 'function') {
+        previewSession.webRequest.onBeforeRequest((details, callback) => {
+          if (details && details.webContentsId !== undefined && tabsByContentsId.has(details.webContentsId)) {
+            pendingRequests.set(details.id, {
+              method: details.method || 'GET',
+              url: details.url || '',
+              resourceType: details.resourceType || '',
+              startedAt: Date.now(),
+              webContentsId: details.webContentsId,
+            });
+          }
+          callback({});
+        });
+        if (typeof previewSession.webRequest.onCompleted === 'function') {
+          previewSession.webRequest.onCompleted(details => {
+            const pending = pendingRequests.get(details.id);
+            pendingRequests.delete(details.id);
+            const targetTab = tabsByContentsId.get(details.webContentsId);
+            if (!targetTab) return;
+            appendRingBuffer(targetTab.networkLogs, {
+              method: details.method || pending?.method || 'GET',
+              url: details.url || pending?.url || '',
+              resourceType: details.resourceType || pending?.resourceType || '',
+              statusCode: Number.isFinite(details.statusCode) ? details.statusCode : 0,
+              ok: Number.isFinite(details.statusCode) ? details.statusCode >= 200 && details.statusCode < 400 : true,
+              durationMs: pending ? Math.max(0, Date.now() - pending.startedAt) : 0,
+              error: '',
+              timestamp: Date.now(),
+            });
+          });
+        }
+        if (typeof previewSession.webRequest.onErrorOccurred === 'function') {
+          previewSession.webRequest.onErrorOccurred(details => {
+            const pending = pendingRequests.get(details.id);
+            pendingRequests.delete(details.id);
+            const targetTab = tabsByContentsId.get(details.webContentsId);
+            if (!targetTab) return;
+            appendRingBuffer(targetTab.networkLogs, {
+              method: details.method || pending?.method || 'GET',
+              url: details.url || pending?.url || '',
+              resourceType: details.resourceType || pending?.resourceType || '',
+              statusCode: 0,
+              ok: false,
+              durationMs: pending ? Math.max(0, Date.now() - pending.startedAt) : 0,
+              error: details.error || 'net::ERR_FAILED',
+              timestamp: Date.now(),
+            });
+          });
+        }
+      }
     }
     const view = new WebContentsView({webPreferences: {
       session: previewSession, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
@@ -547,8 +633,12 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
     applyViewTheme(view);
     const tab = {id: randomUUID(), view, contents: view.webContents, url: '', title: '', favicon: '', loadState: 'idle',
       isLoading: false, committedNavigation: false, errorCode: 0, errorDescription: '', timer: undefined,
-      openedByAgent: false, agentGlowDismissed: false, agentBusy: false, agentOverlayTimer: undefined};
+      openedByAgent: false, agentGlowDismissed: false, agentBusy: false, agentOverlayTimer: undefined,
+      consoleLogs: [], networkLogs: []};
     state.tabs.set(tab.id, tab);
+    if (tab.contents && tab.contents.id !== undefined) {
+      tabsByContentsId.set(tab.contents.id, tab);
+    }
     if (!background || !state.activeTabId) state.activeTabId = tab.id;
     view.setVisible(false);
     state.window.contentView.addChildView(view);
@@ -607,6 +697,17 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       ];
       const menu = menuClass.buildFromTemplate(template);
       menu.popup({ window: state.window });
+    });
+    contents.on('console-message', (event, legacyLevel, legacyMessage, legacyLine, legacySourceId) => {
+      if (!current()) return;
+      const isObjEvent = event && typeof event === 'object' && 'message' in event && legacyMessage === undefined;
+      const level = normalizeConsoleLevel(isObjEvent ? event.level : legacyLevel);
+      const message = String(isObjEvent ? event.message : (legacyMessage ?? '')).slice(0, 1000);
+      const line = Number.isFinite(isObjEvent ? event.lineNumber : legacyLine)
+        ? Number(isObjEvent ? event.lineNumber : legacyLine)
+        : 0;
+      const sourceId = String(isObjEvent ? (event.sourceId || '') : (legacySourceId || '')).slice(0, 300);
+      appendRingBuffer(tab.consoleLogs, {level, message, line, sourceId, timestamp: Date.now()});
     });
     contents.on('will-navigate', guardNavigation);
     contents.on('will-redirect', guardNavigation);
@@ -938,37 +1039,50 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       applyLayout(state);
       return publish(state);
     },
-    click: async ({selector, text, index = 0, hoverOnly = false, tabId} = {}) => {
+    click: async ({ref, selector, text, index = 0, hoverOnly = false, tabId} = {}) => {
+      const rawRef = typeof ref === 'string' ? ref.trim() : '';
       const rawSelector = typeof selector === 'string' ? selector.trim() : '';
       const rawText = typeof text === 'string' ? text.trim() : '';
-      if (!rawSelector && !rawText) throw new Error('selector 与 text 不能同时为空');
+      if (!rawRef && !rawSelector && !rawText) throw new Error('ref、selector 与 text 不能同时为空');
       const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
       const shouldHoverOnly = Boolean(hoverOnly);
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
       const script = `(() => {
+        const rawRef = ${JSON.stringify(rawRef)};
         const rawSelector = ${JSON.stringify(rawSelector)};
         const rawText = ${JSON.stringify(rawText)};
         const targetIndex = ${targetIndex};
         const shouldHoverOnly = ${shouldHoverOnly};
-        const baseSelector = rawSelector || ${JSON.stringify(DEFAULT_CLICK_SELECTOR)};
-        let nodes = Array.from(document.querySelectorAll(baseSelector));
-        if (rawText) {
-          const needle = rawText.toLowerCase();
-          nodes = nodes.filter(el => {
-            const label = (el.innerText || el.textContent || el.getAttribute('aria-label') || el.value || '').trim().replace(/\\s+/g, ' ').toLowerCase();
-            return label.includes(needle);
+        let nodes = [];
+        let el = null;
+        let visible = [];
+        if (rawRef) {
+          const escapedRef = rawRef.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
+          el = document.querySelector('[data-lx-ref="' + escapedRef + '"]');
+          if (!el) return { ok: false, error: '未找到 ref 对应元素（可能页面已刷新，请重新 browser_query）: ' + rawRef, matchedCount: 0, visibleCount: 0 };
+          nodes = [el];
+          visible = [el];
+        } else {
+          const baseSelector = rawSelector || ${JSON.stringify(DEFAULT_CLICK_SELECTOR)};
+          nodes = Array.from(document.querySelectorAll(baseSelector));
+          if (rawText) {
+            const needle = rawText.toLowerCase();
+            nodes = nodes.filter(node => {
+              const label = (node.innerText || node.textContent || node.getAttribute('aria-label') || node.value || '').trim().replace(/\\s+/g, ' ').toLowerCase();
+              return label.includes(needle);
+            });
+          }
+          visible = nodes.filter(node => {
+            const style = window.getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
           });
+          const candidates = visible.length > 0 ? visible : nodes;
+          el = candidates[targetIndex];
+          if (!el) return { ok: false, error: '未找到匹配元素: ' + (rawSelector || rawText), matchedCount: nodes.length, visibleCount: visible.length };
         }
-        const visible = nodes.filter(el => {
-          const style = window.getComputedStyle(el);
-          if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-          const rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        });
-        const candidates = visible.length > 0 ? visible : nodes;
-        const el = candidates[targetIndex];
-        if (!el) return { ok: false, error: '未找到匹配元素: ' + (rawSelector || rawText), matchedCount: nodes.length, visibleCount: visible.length };
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         const rect = el.getBoundingClientRect();
         const centerX = Math.round(rect.left + rect.width / 2);
@@ -1006,28 +1120,39 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
       if (!result?.ok) throw new Error(result?.error || '点击元素失败');
       return {...result, tabId: tab.id, url: result.currentUrl || tab.url, title: result.currentTitle || tab.title};
     },
-    fill: async ({selector, value = '', index = 0, clear = true, submit = false, tabId} = {}) => {
-      if (typeof selector !== 'string' || !selector.trim()) throw new Error('selector 不能为空');
+    fill: async ({ref, selector, value = '', index = 0, clear = true, submit = false, tabId} = {}) => {
+      const rawRef = typeof ref === 'string' ? ref.trim() : '';
+      const normalizedSelector = typeof selector === 'string' ? selector.trim() : '';
+      if (!rawRef && !normalizedSelector) throw new Error('ref 与 selector 不能同时为空');
       const targetIndex = Number.isInteger(index) && index >= 0 ? index : 0;
       const textValue = value === undefined || value === null ? '' : String(value);
       const shouldClear = Boolean(clear);
       const shouldSubmit = Boolean(submit);
-      const normalizedSelector = selector.trim();
       const state = await ensureAutomationState();
       const tab = resolveAutomationTab(state, tabId);
       const resolveTargetSnippet = `
+        const rawRef = ${JSON.stringify(rawRef)};
         const selector = ${JSON.stringify(normalizedSelector)};
         const targetIndex = ${targetIndex};
-        const nodes = Array.from(document.querySelectorAll(selector));
-        const visible = nodes.filter(el => {
-          const style = window.getComputedStyle(el);
-          if (style.display === 'none' || style.visibility === 'hidden') return false;
-          const rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        });
-        const candidates = visible.length > 0 ? visible : nodes;
-        const el = candidates[targetIndex];
-        if (!el) return { ok: false, error: '未找到匹配输入元素: ' + selector, matchedCount: nodes.length };
+        let el = null;
+        let nodes = [];
+        if (rawRef) {
+          const escapedRef = rawRef.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
+          el = document.querySelector('[data-lx-ref="' + escapedRef + '"]');
+          if (!el) return { ok: false, error: '未找到 ref 对应输入元素（可能页面已刷新，请重新 browser_query）: ' + rawRef, matchedCount: 0 };
+          nodes = [el];
+        } else {
+          nodes = Array.from(document.querySelectorAll(selector));
+          const visible = nodes.filter(node => {
+            const style = window.getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          const candidates = visible.length > 0 ? visible : nodes;
+          el = candidates[targetIndex];
+          if (!el) return { ok: false, error: '未找到匹配输入元素: ' + selector, matchedCount: nodes.length };
+        }
       `;
 
       // 优先走 Electron 原生输入通道（isTrusted: true），避免 React 受控组件忽略合成 Event 导致输入回退为空。
@@ -1390,6 +1515,163 @@ function registerProjectPagePreview({ipcMain, getWindow, WebContentsView, sessio
           base64: pngBuffer.toString('base64'),
           filePath,
         };
+      });
+    },
+    console: async ({level, limit = 50, clear = false, tabId} = {}) => {
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_LOG_ENTRIES) : 50;
+      const filterLevel = typeof level === 'string' && level.trim() && level.trim().toLowerCase() !== 'all'
+        ? normalizeConsoleLevel(level)
+        : '';
+      const source = Array.isArray(tab.consoleLogs) ? tab.consoleLogs : [];
+      const filtered = filterLevel ? source.filter(entry => entry.level === filterLevel) : source;
+      const entries = filtered.slice(-maxItems);
+      if (clear) {
+        tab.consoleLogs = [];
+      }
+      return {
+        tabId: tab.id,
+        url: tab.url,
+        title: tab.title,
+        totalCount: filtered.length,
+        entries,
+      };
+    },
+    network: async ({onlyErrors = false, urlContains = '', limit = 50, clear = false, tabId} = {}) => {
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const maxItems = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_LOG_ENTRIES) : 50;
+      const needle = typeof urlContains === 'string' ? urlContains.trim().toLowerCase() : '';
+      const source = Array.isArray(tab.networkLogs) ? tab.networkLogs : [];
+      let filtered = source;
+      if (onlyErrors) {
+        filtered = filtered.filter(entry => !entry.ok || entry.statusCode >= 400 || Boolean(entry.error));
+      }
+      if (needle) {
+        filtered = filtered.filter(entry => String(entry.url || '').toLowerCase().includes(needle));
+      }
+      const entries = filtered.slice(-maxItems);
+      if (clear) {
+        tab.networkLogs = [];
+      }
+      return {
+        tabId: tab.id,
+        url: tab.url,
+        title: tab.title,
+        totalCount: filtered.length,
+        entries,
+      };
+    },
+    evaluate: async ({expression, tabId} = {}) => {
+      if (typeof expression !== 'string' || !expression.trim()) {
+        throw new Error('expression 不能为空');
+      }
+      const code = expression.trim();
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      const script = `(async () => {
+        try {
+          const fn = new Function('return (' + ${JSON.stringify(code)} + ')');
+          let value;
+          try {
+            value = await fn();
+          } catch (syntaxErr) {
+            if (syntaxErr instanceof SyntaxError) {
+              const blockFn = new Function(${JSON.stringify(code)});
+              value = await blockFn();
+            } else {
+              throw syntaxErr;
+            }
+          }
+          let serialized;
+          try {
+            serialized = JSON.stringify(value);
+          } catch {
+            serialized = JSON.stringify(String(value));
+          }
+          if (serialized === undefined) serialized = 'undefined';
+          const truncated = serialized.length > 16000;
+          return {
+            ok: true,
+            type: value === null ? 'null' : typeof value,
+            result: truncated ? serialized.slice(0, 16000) + '...(truncated)' : serialized,
+            truncated,
+            url: window.location.href,
+            title: document.title,
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            error: err && err.message ? err.message : String(err),
+            url: window.location.href,
+            title: document.title,
+          };
+        }
+      })()`;
+      const result = await withAgentControl(tab, () => runTabScript(tab, script));
+      if (!result?.ok) throw new Error(result?.error || '脚本求值失败');
+      return {...result, tabId: tab.id};
+    },
+    pressKey: async ({key, modifiers = [], ref, selector, tabId} = {}) => {
+      if (typeof key !== 'string' || !key.trim()) {
+        throw new Error('key 不能为空');
+      }
+      const normalizedKey = key.trim();
+      const normalizedModifiers = Array.isArray(modifiers)
+        ? modifiers.map(m => String(m || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+      const rawRef = typeof ref === 'string' ? ref.trim() : '';
+      const rawSelector = typeof selector === 'string' ? selector.trim() : '';
+      const state = await ensureAutomationState();
+      const tab = resolveAutomationTab(state, tabId);
+      return withAgentControl(tab, async () => {
+        if (rawRef || rawSelector) {
+          const focusScript = `(() => {
+            const rawRef = ${JSON.stringify(rawRef)};
+            const rawSelector = ${JSON.stringify(rawSelector)};
+            let el = null;
+            if (rawRef) {
+              const escapedRef = rawRef.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
+              el = document.querySelector('[data-lx-ref="' + escapedRef + '"]');
+            } else if (rawSelector) {
+              el = document.querySelector(rawSelector);
+            }
+            if (!el) return { ok: false, error: '未找到要聚焦的目标元素: ' + (rawRef || rawSelector) };
+            el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            el.focus?.();
+            return { ok: true };
+          })()`;
+          const focusRes = await runTabScript(tab, focusScript);
+          if (!focusRes?.ok) throw new Error(focusRes?.error || '聚焦元素失败');
+        }
+        const keyCode = normalizedKey === 'Enter' ? 'Return' : normalizedKey;
+        if (typeof tab.contents?.sendInputEvent === 'function') {
+          if (typeof tab.contents.focus === 'function') tab.contents.focus();
+          tab.contents.sendInputEvent({type: 'keyDown', keyCode, modifiers: normalizedModifiers});
+          if (keyCode.length === 1 || keyCode === 'Return') {
+            tab.contents.sendInputEvent({type: 'char', keyCode, modifiers: normalizedModifiers});
+          }
+          tab.contents.sendInputEvent({type: 'keyUp', keyCode, modifiers: normalizedModifiers});
+          return {ok: true, key: normalizedKey, modifiers: normalizedModifiers, tabId: tab.id, url: tab.url, title: tab.title};
+        }
+        const fallbackScript = `(() => {
+          const target = document.activeElement || document.body || document.documentElement;
+          const init = {
+            key: ${JSON.stringify(normalizedKey)},
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: ${normalizedModifiers.includes('control') || normalizedModifiers.includes('ctrl')},
+            shiftKey: ${normalizedModifiers.includes('shift')},
+            altKey: ${normalizedModifiers.includes('alt')},
+            metaKey: ${normalizedModifiers.includes('meta') || normalizedModifiers.includes('command')},
+          };
+          target.dispatchEvent(new KeyboardEvent('keydown', init));
+          target.dispatchEvent(new KeyboardEvent('keyup', init));
+          return { ok: true, url: window.location.href, title: document.title };
+        })()`;
+        const res = await runTabScript(tab, fallbackScript);
+        return {...res, key: normalizedKey, modifiers: normalizedModifiers, tabId: tab.id};
       });
     },
   };
