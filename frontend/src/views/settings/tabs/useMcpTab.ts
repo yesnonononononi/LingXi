@@ -164,7 +164,7 @@ export function useMcpTab() {
         mcpList.value = res.data?.records ?? [];
         mcpRowConnections.value = {};
         void loadMcpStates();
-            } else {
+      } else {
         mcpErrorMsg.value = res.errMsg || t('settings.mcp.errLoadList');
       }
     } catch {
@@ -195,21 +195,22 @@ export function useMcpTab() {
     }
   };
 
+  // 内置浏览器 MCP 每次重启都会分配新端口与一次性 Token，动作前先拉起并同步最新配置。
+  // 同步失败直接抛错交给调用方的错误分支：静默沿用旧端口只会得到一句「连不上」。
+  const resolveMcpTarget = async (item: McpVO): Promise<McpVO> => {
+    if (item.name !== BROWSER_MCP_SERVER_NAME) return item;
+    const synced = await syncBrowserMcpRecord(item);
+    const index = mcpList.value.findIndex(entry => entry.id === item.id);
+    if (index >= 0) mcpList.value[index] = synced;
+    return synced;
+  };
+
   const handleReconnectMcp = async (item: McpVO) => {
     const key = String(item.id);
     if (mcpReconnecting.value[key]) return;
     mcpReconnecting.value[key] = true;
     try {
-      let targetItem = item;
-      // 内置浏览器 MCP 每次重启都会分配新端口与一次性 Token，重连前先拉起并同步最新配置。
-      if (item.name === BROWSER_MCP_SERVER_NAME) {
-        const synced = await syncBrowserMcpRecord(item);
-        if (synced) {
-          targetItem = synced;
-          const idx = mcpList.value.findIndex(entry => entry.id === item.id);
-          if (idx >= 0) mcpList.value[idx] = synced;
-        }
-      }
+      const targetItem = await resolveMcpTarget(item);
       const res = await McpAPI.reconnect(targetItem);
       if (isOk(res.code) && res.data) {
         mcpStates.value[key] = res.data;
@@ -599,15 +600,7 @@ export function useMcpTab() {
     mcpRowConnections.value[key] = { loading: true, success: false, error: '' };
     const state = mcpRowConnections.value[key]!;
     try {
-      let targetItem = item;
-      if (item.name === BROWSER_MCP_SERVER_NAME) {
-        const synced = await syncBrowserMcpRecord(item);
-        if (synced) {
-          targetItem = synced;
-          const idx = mcpList.value.findIndex(entry => entry.id === item.id);
-          if (idx >= 0) mcpList.value[idx] = synced;
-        }
-      }
+      const targetItem = await resolveMcpTarget(item);
       // 凭据由后端按真实 ID 读取，不能把列表中的脱敏值当作令牌发送。
       const res = await McpAPI.connect({
         id: targetItem.id, name: targetItem.name, transport: targetItem.transport,
@@ -623,7 +616,7 @@ export function useMcpTab() {
       });
       if (mcpRowConnections.value[key] !== state) return;
       state.success = isOk(res.code) && !!res.data;
-            if (!state.success) state.error = res.errMsg || t('settings.mcp.errConnectFailed');
+      if (!state.success) state.error = res.errMsg || t('settings.mcp.errConnectFailed');
     } catch (error: unknown) {
       if (mcpRowConnections.value[key] !== state) return;
       state.error = error instanceof ApiError && error.kind === 'network'
@@ -643,7 +636,7 @@ export function useMcpTab() {
     try {
       if (editingMcpId.value) {
         const res = await McpAPI.update({ id: editingMcpId.value, ...payload });
-                if (isOk(res.code)) {
+        if (isOk(res.code)) {
           showMcpToast(t('settings.mcp.toastUpdated'));
           isEditingOrAddingMcp.value = false;
           await loadMcp();
@@ -652,7 +645,7 @@ export function useMcpTab() {
         }
       } else {
         const res = await McpAPI.add(payload);
-                if (isOk(res.code)) {
+        if (isOk(res.code)) {
           showMcpToast(t('settings.mcp.toastCreated'));
           isEditingOrAddingMcp.value = false;
           await loadMcp();
