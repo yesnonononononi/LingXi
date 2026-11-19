@@ -5,6 +5,7 @@ import type {McpConnectionStateVO, McpConnectionVO, McpRequest, McpVO} from '../
 import {MCP_PROTOCOL_VERSION_MAX_LENGTH, MCP_PROTOCOL_VERSION_PATTERN,} from '../../../types/chat';
 import {isOk} from '../../../utils/api';
 import {isMcpAuthorizationRequired, nextMcpStatus} from '../../../utils/mcpStatus';
+import {BROWSER_MCP_SERVER_NAME, syncBrowserMcpRecord} from '../../../composables/useBrowserMcp';
 import {useConfirm} from '../../../composables/useConfirm';
 import {useI18n} from '../../../i18n';
 
@@ -199,7 +200,17 @@ export function useMcpTab() {
     if (mcpReconnecting.value[key]) return;
     mcpReconnecting.value[key] = true;
     try {
-      const res = await McpAPI.reconnect(item);
+      let targetItem = item;
+      // 内置浏览器 MCP 每次重启都会分配新端口与一次性 Token，重连前先拉起并同步最新配置。
+      if (item.name === BROWSER_MCP_SERVER_NAME) {
+        const synced = await syncBrowserMcpRecord(item);
+        if (synced) {
+          targetItem = synced;
+          const idx = mcpList.value.findIndex(entry => entry.id === item.id);
+          if (idx >= 0) mcpList.value[idx] = synced;
+        }
+      }
+      const res = await McpAPI.reconnect(targetItem);
       if (isOk(res.code) && res.data) {
         mcpStates.value[key] = res.data;
         // 未授权的 oauth 服务不会真的去握手：这时报「已重新连接」是假话，指向「去授权」才对。
@@ -588,18 +599,27 @@ export function useMcpTab() {
     mcpRowConnections.value[key] = { loading: true, success: false, error: '' };
     const state = mcpRowConnections.value[key]!;
     try {
+      let targetItem = item;
+      if (item.name === BROWSER_MCP_SERVER_NAME) {
+        const synced = await syncBrowserMcpRecord(item);
+        if (synced) {
+          targetItem = synced;
+          const idx = mcpList.value.findIndex(entry => entry.id === item.id);
+          if (idx >= 0) mcpList.value[idx] = synced;
+        }
+      }
       // 凭据由后端按真实 ID 读取，不能把列表中的脱敏值当作令牌发送。
       const res = await McpAPI.connect({
-        id: item.id, name: item.name, transport: item.transport,
+        id: targetItem.id, name: targetItem.name, transport: targetItem.transport,
         // 非当前传输的空字段也会触发后端校验，因此只提交实际使用的连接参数。
-        ...(item.transport === 'stdio' ? { command: item.command } : { url: item.url }),
-        initializationTimeout: item.initializationTimeout,
-        executionTimeout: item.executionTimeout, maxOutput: item.maxOutput, status: item.status,
+        ...(targetItem.transport === 'stdio' ? { command: targetItem.command } : { url: targetItem.url }),
+        initializationTimeout: targetItem.initializationTimeout,
+        executionTimeout: targetItem.executionTimeout, maxOutput: targetItem.maxOutput, status: targetItem.status,
         // 容错参数跟随已保存配置，测试连接才与真实运行时的行为一致。
-        protocolVersion: item.protocolVersion ?? null,
-        autoHealthCheck: item.autoHealthCheck ?? null,
-        healthCheckInterval: item.healthCheckInterval ?? null,
-        reconnectInterval: item.reconnectInterval ?? null,
+        protocolVersion: targetItem.protocolVersion ?? null,
+        autoHealthCheck: targetItem.autoHealthCheck ?? null,
+        healthCheckInterval: targetItem.healthCheckInterval ?? null,
+        reconnectInterval: targetItem.reconnectInterval ?? null,
       });
       if (mcpRowConnections.value[key] !== state) return;
       state.success = isOk(res.code) && !!res.data;

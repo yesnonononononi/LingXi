@@ -37,28 +37,53 @@ export function buildBrowserMcpRequest(
 }
 
 /**
- * 桌面端启动时若用户已安装并启用内置浏览器 MCP，则拉起本地服务并同步新端口与 Token。
- * 未安装或已停用时保持静默，不占用本地端口。
+ * 确保本地内置浏览器 MCP 服务已启动，并把最新端口、Token 与描述同步到后端记录。
+ * 供启动同步、以及设置页对 `lingxi-browser` 执行「重新连接 / 测试连接」前调用，
+ * 避免后端继续连向旧进程遗留的失效端口导致 ClosedChannelException。
  */
-export async function syncBrowserMcpOnStartup(): Promise<void> {
+export async function syncBrowserMcpRecord(existing: McpVO): Promise<McpVO | null> {
+  if (!isElectron() || !window.electronAPI?.browserMcp) return null;
+  const startRes = await window.electronAPI.browserMcp.start();
+  if (!startRes.ok || !startRes.data?.url || !startRes.data?.token) return null;
+
+  const payload = buildBrowserMcpRequest(startRes.data.url, startRes.data.token, existing);
+  const updateRes = await McpAPI.update(payload);
+  if (!isOk(updateRes.code)) return null;
+  return {
+    ...existing,
+    url: startRes.data.url,
+    description: BROWSER_MCP_DESCRIPTION,
+    status: 1,
+  };
+}
+
+/**
+ * 桌面端启动时若用户已安装并启用内置浏览器 MCP，则拉起本地服务并同步新端口与 Token。
+ * 后端启动通常晚于渲染层挂载，因此遇到网络/启动期异常时按退避重试，避免永久保留旧端口。
+ */
+export async function syncBrowserMcpOnStartup(
+  retryDelaysMs: number[] = [0, 1500, 3000, 5000, 8000],
+): Promise<void> {
   if (!isElectron() || !window.electronAPI?.browserMcp) return;
-  try {
-    const listRes = await McpAPI.list(1, 100);
-    if (!isOk(listRes.code) || !listRes.data?.records) return;
-    const existing = findBrowserMcpRecord(listRes.data.records);
-    if (!existing || existing.status !== 1) return;
-
-    const startRes = await window.electronAPI.browserMcp.start();
-    if (!startRes.ok || !startRes.data?.url || !startRes.data?.token) return;
-
-    const updateRes = await McpAPI.update(
-      buildBrowserMcpRequest(startRes.data.url, startRes.data.token, existing),
-    );
-    if (isOk(updateRes.code)) {
-      await McpAPI.reconnect({...existing, url: startRes.data.url}).catch(() => undefined);
+  for (let i = 0; i < retryDelaysMs.length; i++) {
+    const delay = retryDelaysMs[i] ?? 0;
+    if (delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  } catch {
-    // 启动同步静默兜底，避免影响主应用启动。
+    try {
+      const listRes = await McpAPI.list(1, 100);
+      if (!isOk(listRes.code) || !listRes.data?.records) continue;
+      const existing = findBrowserMcpRecord(listRes.data.records);
+      if (!existing || existing.status !== 1) return;
+
+      const synced = await syncBrowserMcpRecord(existing);
+      if (synced) {
+        await McpAPI.reconnect(synced).catch(() => undefined);
+      }
+      return;
+    } catch {
+      // 后端尚未就绪时继续下一次退避重试
+    }
   }
 }
 

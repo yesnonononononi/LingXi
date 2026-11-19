@@ -517,6 +517,11 @@ function createBrowserMcpServer({automation, designBridge = null}) {
     server = http.createServer((req, res) => {
       void handleRequest(req, res);
     });
+    // 放宽 keep-alive 与请求超时：避免 Java HTTP 连接池复用超过默认 5s 的长连接时触发 ClosedChannelException，
+    // 也防止人工接管或长耗时 browser_wait/design_capture 被 Node 提前断开。
+    server.keepAliveTimeout = 65_000;
+    server.headersTimeout = 66_000;
+    server.requestTimeout = 0;
     await new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', () => {

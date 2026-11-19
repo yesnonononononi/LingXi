@@ -445,3 +445,18 @@ test('Design × MCP 联动闭环：design_get_state、design_capture 多视口�
     await mcpServer.stop();
   }
 });
+
+test('内置浏览器 MCP 断线防护：keepAliveTimeout 放宽且重连/测试前自动同步最新端口与 Token', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const {fileURLToPath} = await import('node:url');
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const serverCode = fs.readFileSync(path.resolve(dir, '../electron/browser-mcp-server.cjs'), 'utf8');
+  const tabCode = fs.readFileSync(path.resolve(dir, '../src/views/settings/tabs/useMcpTab.ts'), 'utf8');
+  const hookCode = fs.readFileSync(path.resolve(dir, '../src/composables/useBrowserMcp.ts'), 'utf8');
+
+  assert.match(serverCode, /keepAliveTimeout\s*=\s*65_000/);
+  assert.match(hookCode, /export async function syncBrowserMcpRecord/);
+  assert.match(hookCode, /retryDelaysMs/);
+  assert.match(tabCode, /syncBrowserMcpRecord\(item\)/);
+});
