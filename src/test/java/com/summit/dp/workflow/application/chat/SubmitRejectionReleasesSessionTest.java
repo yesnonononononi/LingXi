@@ -124,7 +124,7 @@ class SubmitRejectionReleasesSessionTest {
     private static RuntimeContext context(String executionId) {
         ExecutionContext executionContext = ExecutionContext.root(ROOT_SESSION_ID, executionId, null, 7L,
                 AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null,
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null,
                 SessionVO.builder().id(ROOT_SESSION_ID).historyRevision(3L).build(),
                 List.of(), null, null, AgentPermissionMode.FULL_ACCESS,
                 false, UserMessageEntity.from("你好")).withTurnId(TURN_ID);

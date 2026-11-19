@@ -12,6 +12,7 @@ import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.workflow.application.chat.RuntimeContextTestSupport;
 import com.summit.dp.workflow.application.pending.PendingTaskAdmission;
 import com.summit.dp.workflow.application.pending.PendingTaskBootSweeper;
 import com.summit.dp.workflow.application.pending.PendingTaskDispatcher;
@@ -75,7 +76,7 @@ class PendingTaskDispatcherTest {
     private static RuntimeContext context(String executionId) {
         ExecutionContext executionContext = ExecutionContext.root(SESSION, executionId,
                 null, 7L, AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null,
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null,
                 SessionVO.builder().id(SESSION).build(), List.of(), null, null,
                 AgentPermissionMode.FULL_ACCESS, false, null);
     }

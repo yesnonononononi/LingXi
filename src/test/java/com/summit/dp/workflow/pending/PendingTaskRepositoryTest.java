@@ -10,6 +10,7 @@ import com.summit.dp.user_configs.application.policy.AgentPermissionMode;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.workflow.application.chat.RuntimeContextTestSupport;
 import com.summit.dp.workflow.application.pending.PendingTaskAdmission;
 import com.summit.dp.workflow.domain.pending.model.PendingAttachment;
 import com.summit.dp.workflow.domain.pending.model.PendingTask;
@@ -83,7 +84,7 @@ class PendingTaskRepositoryTest {
     private static RuntimeContext context() {
         ExecutionContext executionContext = ExecutionContext.root(SESSION, EXECUTION_ID,
                 null, 7L, AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null,
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null,
                 SessionVO.builder().id(SESSION).build(), List.of(), null, null,
                 AgentPermissionMode.FULL_ACCESS, false, null);
     }

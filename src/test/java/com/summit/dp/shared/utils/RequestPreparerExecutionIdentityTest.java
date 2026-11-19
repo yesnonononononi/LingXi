@@ -228,7 +228,7 @@ class RequestPreparerExecutionIdentityTest {
     void buildRequestRejectsMissingExecutionId() {
         ExecutionContext identity = ExecutionContext.root(SESSION_ID, null, null, MODEL_ID,
                 AgentPermissionMode.FULL_ACCESS);
-        RuntimeContext context = new RuntimeContext(identity, null, null,
+        RuntimeContext context = RuntimeContextTestSupport.beforeAdmission(identity, null, null,
                 SessionVO.builder().id(SESSION_ID).build(), List.of(), null, null,
                 AgentPermissionMode.FULL_ACCESS, false, null);
 
@@ -239,7 +239,7 @@ class RequestPreparerExecutionIdentityTest {
     @DisplayName("没有待落库消息时 commitUserMessage 是空操作（不产生半条记录）")
     void commitIsNoopWithoutPendingMessage() {
         RuntimeContext context = preparer.prepare(command());
-        RuntimeContext withoutPending = new RuntimeContext(context.executionContext(), context.agentId(),
+        RuntimeContext withoutPending = RuntimeContextTestSupport.beforeAdmission(context.executionContext(), context.agentId(),
                 context.teamId(), context.session(), context.messageList(), context.workspace(),
                 context.modelConfig(), context.permissionMode(),
                 context.requirePlan(), null);

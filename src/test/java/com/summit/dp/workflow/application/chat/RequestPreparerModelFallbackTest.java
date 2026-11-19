@@ -114,7 +114,7 @@ class RequestPreparerModelFallbackTest {
 
     @Test
     void aCustomRootAgentWithAProjectReceivesBothWikiTools() {
-        RuntimeContext context = new RuntimeContext(ExecutionContext.root(SESSION_ID, "1001", 99L, SETTINGS_MODEL_ID,
+        RuntimeContext context = RuntimeContextTestSupport.beforeAdmission(ExecutionContext.root(SESSION_ID, "1001", 99L, SETTINGS_MODEL_ID,
                 AgentPermissionMode.FULL_ACCESS), AGENT_ID, null,
                 SessionVO.builder().id(SESSION_ID).build(), List.of(),
                 new LingXiWorkspaceSpec("local", System.getProperty("user.dir"), Map.of()), modelConfig(SETTINGS_MODEL_ID),

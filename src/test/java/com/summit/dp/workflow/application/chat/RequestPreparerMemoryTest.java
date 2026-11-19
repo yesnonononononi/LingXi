@@ -101,7 +101,7 @@ class RequestPreparerMemoryTest {
     private RuntimeContext context(WorkspaceSpec workspace) {
         ExecutionContext executionContext = ExecutionContext.root(SESSION_ID, EXECUTION_ID, null, null,
                 AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null, SessionVO.builder().id(SESSION_ID).build(),
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null, SessionVO.builder().id(SESSION_ID).build(),
                 List.of(), workspace,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName("m").build(),
                 AgentPermissionMode.FULL_ACCESS, false, null, false);

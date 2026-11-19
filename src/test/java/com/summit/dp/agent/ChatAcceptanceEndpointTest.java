@@ -93,7 +93,7 @@ class ChatAcceptanceEndpointTest {
     private static RuntimeContext context(String executionId) {
         ExecutionContext executionContext = ExecutionContext.root(ROOT_SESSION_ID, executionId,
                 null, 7L, AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null,
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null,
                 SessionVO.builder().id(ROOT_SESSION_ID).build(), List.of(), null, null,
                 AgentPermissionMode.FULL_ACCESS, false, null);
     }

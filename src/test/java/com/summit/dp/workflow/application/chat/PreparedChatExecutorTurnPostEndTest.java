@@ -40,7 +40,7 @@ class PreparedChatExecutorTurnPostEndTest {
     private static RuntimeContext context() {
         ExecutionContext executionContext = ExecutionContext.root(SESSION, EXECUTION_ID,
                 null, 7L, AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null,
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null,
                 SessionVO.builder().id(SESSION).build(), List.of(), null, null,
                 AgentPermissionMode.FULL_ACCESS, false, null);
     }

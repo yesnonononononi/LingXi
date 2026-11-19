@@ -48,7 +48,7 @@ class ExecutionLaunchEntryTest {
                 mock(ModelContextService.class), registry, mock(ExecutionControl.class),
                 new StartupFailureCloser(mock(ExecutionControl.class)), gateway);
 
-        executor.submitAsync(new RuntimeContext(executionContext, null, null, null, null, null, null, null,
+        executor.submitAsync(RuntimeContextTestSupport.beforeAdmission(executionContext, null, null, null, null, null, null, null,
                 false, null).withExecution(Execution.builder().id(EXECUTION_ID_TEXT).agentId("chatAgent")
                 .executionState(ExecutionState.RUNNING)
                 .agentRequest(AgentRequest.builder().executionId(EXECUTION_ID_TEXT).build())

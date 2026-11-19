@@ -139,7 +139,7 @@ class AgentWorkflowOrchestratorPromptTest {
         UserMessageEntity current = UserMessageEntity.from(input);
         List<Message> messages = List.of(UserMessageEntity.from("上一轮提问"),
                 AiMessageEntity.builder().text("上一轮回复").build(), current);
-        return new RuntimeContext(identity, agentId, teamId, SessionVO.builder().id(500L).build(),
+        return RuntimeContextTestSupport.beforeAdmission(identity, agentId, teamId, SessionVO.builder().id(500L).build(),
                 messages, null, null, AgentPermissionMode.APPROVAL_REQUIRED, false, current);
     }
 }

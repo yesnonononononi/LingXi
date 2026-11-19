@@ -146,7 +146,7 @@ class ChatAdmissionTransactionTest {
     private static RuntimeContext context() {
         ExecutionContext executionContext = ExecutionContext.root(SESSION_ID, EXECUTION_ID,
                 null, MODEL_ID, AgentPermissionMode.FULL_ACCESS);
-        return new RuntimeContext(executionContext, null, null,
+        return RuntimeContextTestSupport.beforeAdmission(executionContext, null, null,
                 SessionVO.builder().id(SESSION_ID).build(), List.of(UserMessageEntity.from("你好")),
                 null, null, AgentPermissionMode.FULL_ACCESS, false,
                 UserMessageEntity.from("你好"));

@@ -42,6 +42,7 @@ import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RequestPreparerTestSupport;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.workflow.application.chat.RuntimeContextTestSupport;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.RuntimeConfigurationProviders;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
@@ -239,7 +240,7 @@ class RuntimeConfigurationIntegrationTest {
                 .mcpService(mcpService)
                 .runtimeConfigurations(configurations)
                 .build();
-        RuntimeContext context = new RuntimeContext(ExecutionContext.root(201L, "101", null, 31L,
+        RuntimeContext context = RuntimeContextTestSupport.beforeAdmission(ExecutionContext.root(201L, "101", null, 31L,
                 AgentPermissionMode.APPROVAL_REQUIRED), null, null,
                 SessionVO.builder().id(201L).build(), List.of(), null, model, AgentPermissionMode.APPROVAL_REQUIRED,
                 false, null);

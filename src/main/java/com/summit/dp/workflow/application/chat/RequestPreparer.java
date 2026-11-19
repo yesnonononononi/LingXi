@@ -230,21 +230,16 @@ public class RequestPreparer {
         RuntimeModel runtimeModel = rootModel(effective.modelId(), settings);
         return new RuntimeContext(
                 executionContext,
-                effective.agentId(),
                 // （子代理委派赖以解析的 lingxi.team_id 因此在新执行快照中不缺）；
                 // 新会话此刻尚未绑定，本轮先按单 Agent / 裸模型跑。
-                effectiveTeamId,
-                session,
-                messageList,
-                spec,
+                new RuntimeContext.AgentSelection(effective.agentId(), effectiveTeamId),
+                RuntimeContext.SessionBinding.beforeAdmission(session, spec),
                 // 模型连接与识图声明来自同一份配置快照。
-                runtimeModel.config(),
-                permissionMode,
-                effective.requirePlan(),
+                new RuntimeContext.RunProfile(runtimeModel.config(), runtimeModel.vision(),
+                        permissionMode, effective.requirePlan()),
                 // 用户消息此刻**还没有落库**：调用方先取运行资格，再调 commitUserMessage。
-                userMessageEntity,
-                runtimeModel.vision()
-        ).withResendSnapshot(resendSnapshot);
+                new RuntimeContext.ContextPayload(messageList, userMessageEntity, resendSnapshot)
+        );
     }
 
     /**

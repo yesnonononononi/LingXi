@@ -15,6 +15,7 @@ import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RequestPreparerTestSupport;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.workflow.application.chat.RuntimeContextTestSupport;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -307,7 +308,7 @@ class CollaborationToolExposureTest {
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
         ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,
                 mode);
-        RuntimeContext context = new RuntimeContext(executionContext, agentId, teamId,
+        RuntimeContext context = RuntimeContextTestSupport.beforeAdmission(executionContext, agentId, teamId,
                 SessionVO.builder().id(500L).build(), List.of(), null,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName(modelName).build(),
                 mode, false, null, vision);
