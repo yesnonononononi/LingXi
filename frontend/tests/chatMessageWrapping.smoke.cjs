@@ -48,12 +48,14 @@ window.ready = true;`);
   await window.loadFile(path.join(output, 'dist/index.html'));
   const evaluate = source => window.webContents.executeJavaScript(source);
   assert.equal(await evaluate('window.ready'), true);
+  // 都要压在 500 字符以下：达到大文本阈值的内容会变成「粘贴文档」卡片（pastedDocument.isLargePastedText），
+  // 那时气泡里渲染的是卡片而不是可换行的正文，本用例量的换行就无从谈起。
   const cases = [
-    ['url', '这是一个很长的链接：https://example.test/work?' + 'courseId=1234567890&enc=' + 'a1b2c3d4'.repeat(120)],
-    ['token', 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(100)],
-    ['chinese', '长消息应当在聊天气泡内换行，不应撑开页面。'.repeat(70)],
-    ['whitespace', '# 原样文本\n\n  缩进保留 **Markdown** <div>HTML</div>\n' + 'x'.repeat(500)],
-    ['image', '图片下面的长链接：https://example.test/?token=' + 'a1b2c3'.repeat(140)],
+    ['url', '这是一个很长的链接：https://example.test/work?' + 'courseId=1234567890&enc=' + 'a1b2c3d4'.repeat(50)],
+    ['token', 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(13)],
+    ['chinese', '长消息应当在聊天气泡内换行，不应撑开页面。'.repeat(18)],
+    ['whitespace', '# 原样文本\n\n  缩进保留 **Markdown** <div>HTML</div>\n' + 'x'.repeat(300)],
+    ['image', '图片下面的长链接：https://example.test/?token=' + 'a1b2c3'.repeat(60)],
   ];
   const measurements = [];
   for (const [label, width, options] of [
