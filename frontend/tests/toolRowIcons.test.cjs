@@ -66,6 +66,7 @@ const SAMPLES = [
   ['compact_context', ICON.COMPACT],
   ['execute_command', ICON.COMMAND],
   ['manage_command', ICON.MANAGE_COMMAND],
+  ['call_mcp_tool', ICON.MCP_CALL],
   ['mcp_github_create_issue', ICON.DEFAULT],
 ];
 

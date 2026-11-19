@@ -107,6 +107,12 @@ const iconClass = computed(() => [
       <rect x="3" y="4" width="18" height="16" rx="3" />
       <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
     </svg>
+    <!-- 调用 MCP 工具：插头，表示接上外部服务执行（与「MCP 工具清单」的清单图标区分） -->
+    <svg v-else-if="kind === TOOL_ROW_ICON.MCP_CALL" :class="iconClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+      <path stroke-linecap="round" d="M9 3v4M15 3v4" />
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6.5 7h11v4.5a5.5 5.5 0 0 1-11 0V7z" />
+      <path stroke-linecap="round" d="M12 17v4" />
+    </svg>
     <!-- 思考 -->
     <svg v-else-if="kind === TOOL_ROW_ICON.THINK" :class="iconClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
       <circle cx="9" cy="9" r="3.5" />

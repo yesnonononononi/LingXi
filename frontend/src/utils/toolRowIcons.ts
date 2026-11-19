@@ -31,6 +31,8 @@ export const TOOL_ROW_ICON = {
   MAIL: 'MAIL',
   /** 清单：执行清单六件套 + MCP 工具清单 */
   CHECKLIST: 'CHECKLIST',
+  /** 插头：调用外部 MCP 工具（区别于「MCP 工具清单」的清单图标） */
+  MCP_CALL: 'MCP_CALL',
   /** 计划书：日历 + 勾 */
   PLAN: 'PLAN',
   /** 人工选择：问号圈 */
@@ -83,6 +85,7 @@ const TOOL_ICON_BY_CATEGORY: Record<string, string> = {
   [TOOL_CATEGORY.CHECKLIST]: TOOL_ROW_ICON.CHECKLIST,
   // MCP 工具清单也是一串条目，与执行清单同图（用户指定）
   [TOOL_CATEGORY.MCP_LIST]: TOOL_ROW_ICON.CHECKLIST,
+  [TOOL_CATEGORY.MCP_CALL]: TOOL_ROW_ICON.MCP_CALL,
   [TOOL_CATEGORY.MAIL]: TOOL_ROW_ICON.MAIL,
   [TOOL_CATEGORY.PLAN]: TOOL_ROW_ICON.PLAN,
   [TOOL_CATEGORY.CHOICE]: TOOL_ROW_ICON.CHOICE,

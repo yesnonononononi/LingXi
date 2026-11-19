@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {nextTick} from 'vue';
 import {AgentToolName} from '../src/utils/toolNames';
 import {
+    resolveMcpToolParts,
     resolveToolDisplayName,
     resolveToolFullName,
     resolveToolRenderName,
@@ -118,12 +119,21 @@ test('同一映射实体跟随语言变化，未知与空标识不裸显机器�
 
 test('MCP 动态工具渲染成「服务名 原生名」（去 mcp_ 前缀），旧格式退化为原名', () => {
   // 新线上名格式 mcp_<服务名>_<原生名>
-  assert.equal(resolveToolRenderName('mcp_context7_resolve-library-id'), 'context7 resolve-library-id');
+  assert.equal(resolveToolRenderName('mcp_context7_resolve-library-id'), 'resolve-library-id');
+  assert.deepEqual(resolveMcpToolParts('mcp_lingxi-browser_browser_navigate'), {
+    serverName: 'lingxi-browser',
+    rawToolName: 'browser_navigate',
+  });
   assert.equal(resolveToolFullName('mcp_context7_resolve-library-id'), 'context7 resolve-library-id');
   // 服务名含历史下划线时按第一个下划线切分（简单口径，接受近似）
-  assert.equal(resolveToolRenderName('mcp_remote_tool'), 'remote tool');
+  assert.equal(resolveToolRenderName('mcp_remote_tool'), 'tool');
+  assert.deepEqual(resolveMcpToolParts('mcp_remote_tool'), {
+    serverName: 'remote',
+    rawToolName: 'tool',
+  });
   // 旧格式（mcp_<原生名>，前缀后无服务名段）退化为原生名，不显示「工具」
   assert.equal(resolveToolRenderName('mcp_resolve-library-id'), 'resolve-library-id');
+  assert.equal(resolveMcpToolParts('mcp_resolve-library-id'), null);
   // 未登记的非 MCP 工具仍走「工具」兜底
   assert.equal(resolveToolFullName('future_tool'), '工具');
   assert.equal(resolveToolRenderName('constructor'), '工具');

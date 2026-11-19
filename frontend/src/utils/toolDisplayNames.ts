@@ -69,22 +69,44 @@ const emptyToolName: ToolDisplayName = { fullName: '', renderName: '' };
 /** MCP 工具名前缀（框架转换器拼接，业务侧服务名接在其后） */
 const MCP_TOOL_PREFIX = 'mcp_';
 
+export interface McpToolNameParts {
+  serverName: string;
+  rawToolName: string;
+}
+
 /**
- * MCP 动态工具名解析：线上名为 {@code mcp_<服务名>_<原生名>}，渲染成「服务名 原生名」。
+ * 拆解 MCP 工具名 {@code mcp_<服务名>_<原生名>} 为服务名与原生工具名。
  *
- * <p>不裸显机器名，但也不能全部压成「工具」——服务名段就是区分度。旧格式
- * （{@code mcp_<原生名>}，前缀后无服务名段）与解析不出服务名段的，退化为显示原生名。
- * 服务名与原生名本身是数据，不走 i18n。</p>
+ * <p>无法切出服务名段（如旧格式 {@code mcp_<原生名>}）时返回 {@code null}，
+ * 展示层据此决定是否呈现服务名提示。</p>
+ */
+export function resolveMcpToolParts(toolName?: string | null): McpToolNameParts | null {
+  if (!toolName || !toolName.startsWith(MCP_TOOL_PREFIX)) return null;
+  const rest = toolName.slice(MCP_TOOL_PREFIX.length);
+  const separator = rest.indexOf('_');
+  if (separator <= 0) return null;
+  const serverName = rest.slice(0, separator);
+  const rawToolName = rest.slice(separator + 1);
+  if (!rawToolName) return null;
+  return { serverName, rawToolName };
+}
+
+/**
+ * MCP 动态工具名解析：线上名为 {@code mcp_<服务名>_<原生名>}，渲染名仅保留原生工具名，
+ * 完整名保留「服务名 原生名」供无障碍或汇总上下文使用。
  */
 export function resolveMcpToolDisplayName(toolName: string): ToolDisplayName | null {
   if (!toolName.startsWith(MCP_TOOL_PREFIX)) return null;
+  const parts = resolveMcpToolParts(toolName);
+  if (parts) {
+    return {
+      fullName: `${parts.serverName} ${parts.rawToolName}`,
+      renderName: parts.rawToolName,
+    };
+  }
   const rest = toolName.slice(MCP_TOOL_PREFIX.length);
-  const separator = rest.indexOf('_');
-  if (separator <= 0) return { fullName: rest, renderName: rest };
-  const server = rest.slice(0, separator);
-  const raw = rest.slice(separator + 1);
-  if (!raw) return { fullName: server, renderName: server };
-  return { fullName: `${server} ${raw}`, renderName: `${server} ${raw}` };
+  const normalized = rest.endsWith('_') ? rest.slice(0, -1) : rest;
+  return { fullName: normalized, renderName: normalized };
 }
 
 export function resolveToolDisplayName(toolName?: string | null): ToolDisplayName {
