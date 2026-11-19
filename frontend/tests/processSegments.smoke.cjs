@@ -153,7 +153,9 @@ watch(detailsBox, box => { if (box) box.scrollTop = box.scrollHeight; }, {flush:
     assert.equal(geometry.summarySweep, false, 'summary 模式不挂扫光');
     assert.ok(geometry.headers.every(header => header.expanded === 'false' && header.height <= 28));
     assert.ok(geometry.width <= geometry.viewport + 1, '摘要不能撑宽页面');
-    assert.match(geometry.body, /写入、执行命令/);
+    // 过程摘要用工具短名拼分类短语；edit_file 的短名是「编辑文件」（write_file 才是「写入文件」），
+    // 所以这里断言的是编辑 + 命令两类动作，别退回旧的「写入」措辞。
+    assert.match(geometry.body, /编辑文件、执行命令/);
     // 展开 live 段后，思考框才进入布局，量它的高度。
     await evaluate('document.querySelector("[data-process-mode=live] [data-testid=process-segment-toggle]").click(); window.flush()');
     const liveGeometry = await evaluate(`(() => {
