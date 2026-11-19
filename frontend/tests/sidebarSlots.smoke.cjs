@@ -39,13 +39,25 @@ function specifierFor(absolutePath) {
   return relative.startsWith('.') ? relative : './' + relative;
 }
 
-/** 从 `ChatView.vue` 源码里提取 provide 的对象字面量表达式。提取不到即视为生产注册被移除。 */
+/**
+ * 从 `ChatView.vue` 源码里提取 provide 的对象字面量表达式。
+ *
+ * <p>宿主既可能内联字面量，也可能先把字段聚到 `sidebarSlots` 再 provide 这个标识符；
+ * 两种写法都要认，认不出来即视为生产注册被移除。</p>
+ */
 function extractProviderExpression(source) {
-  const match = /provide\(\s*SIDEBAR_SLOTS_KEY\s*,\s*(\{[\s\S]*?\})\s*\)/.exec(source);
-  if (!match) {
-    throw new Error('ChatView.vue 中未找到 `provide(SIDEBAR_SLOTS_KEY, {...})`：生产注册已被移除');
+  const direct = /provide\(\s*SIDEBAR_SLOTS_KEY\s*,\s*(\{[\s\S]*?\})\s*\)/.exec(source);
+  if (direct) return direct[1];
+  const byName = /provide\(\s*SIDEBAR_SLOTS_KEY\s*,\s*([A-Za-z_$][\w$]*)\s*\)/.exec(source);
+  if (!byName) {
+    throw new Error('ChatView.vue 中未找到 `provide(SIDEBAR_SLOTS_KEY, ...)`：生产注册已被移除');
   }
-  return match[1];
+  const name = byName[1];
+  const declaration = new RegExp('const\\s+' + name + '\\s*=\\s*[A-Za-z_$][\\w$]*\\(\\s*(\\{[\\s\\S]*?\\})\\s*\\)\\s*;').exec(source);
+  if (!declaration) {
+    throw new Error(`ChatView.vue 里找不到 \`const ${name} = someReactive({...})\` 的对象字面量`);
+  }
+  return declaration[1];
 }
 
 /**
@@ -67,11 +79,18 @@ function resolveIdentifier(source, identifier, depth = 0) {
   throw new Error(`ChatView.vue 中无法解析 \`${identifier}\`（既不是导入名，也不是一跳别名）`);
 }
 
-/** 提取表达式里 `field: X` 的标识符。 */
+/**
+ * 取某个字段值里最靠右的标识符。
+ *
+ * <p>值可能是 `packSlots.sidebar.workspaceTree ?? defaultWorkspaceTree`：右边的是默认实现，
+ * 左边的 `packSlots` 是宿主局部对象；取最右的标识符再交给 `resolveIdentifier` 解析。</p>
+ */
 function extractFieldIdentifier(expression, field) {
-  const match = new RegExp(field + '\\s*:\\s*([A-Za-z_$][\\w$]*)').exec(expression);
+  const match = new RegExp('(?:^|[\\s{,])' + field + '\\s*:\\s*([^,]+)').exec(expression);
   if (!match) throw new Error(`ChatView 的 provide 表达式里缺 \`${field}\` 字段：${expression}`);
-  return match[1];
+  const identifiers = match[1].match(/[A-Za-z_$][\w$]*/g) ?? [];
+  if (identifiers.length === 0) throw new Error(`ChatView 的 \`${field}\` 字段里没有标识符：${match[1]}`);
+  return identifiers[identifiers.length - 1];
 }
 
 const SLOT_FIELDS = ['workspaceTree', 'sidebarFooter'];
@@ -83,21 +102,16 @@ async function writeHarness() {
   let production = null;
   let productionError = null;
   try {
-    let providerExpression = extractProviderExpression(chatViewSource);
+    const providerExpression = extractProviderExpression(chatViewSource);
     const fields = {};
     for (const field of SLOT_FIELDS) {
-      const raw = extractFieldIdentifier(providerExpression, field);
-      fields[field] = { raw, ...resolveIdentifier(chatViewSource, raw) };
+      fields[field] = resolveIdentifier(chatViewSource, extractFieldIdentifier(providerExpression, field));
     }
-    // 把 ChatView 里的别名声（如 defaultWorkspaceTree）改写成真实实现名：宿主导入的是真实实现，
-    // 表达式本身（字段名与结构）保持逐字不变。
-    for (const field of SLOT_FIELDS) {
-      const { raw, identifier } = fields[field];
-      if (raw !== identifier) {
-        providerExpression = providerExpression.replace(new RegExp('\\b' + raw + '\\b', 'g'), identifier);
-      }
-    }
-    production = { providerExpression, fields };
+    // 把字段值钉成真实实现标识符：原始值可能是
+    // `packSlots.sidebar.workspaceTree ?? defaultWorkspaceTree`，那引用了宿主局部对象，
+    // 搬进测试宿主跑不起来，所以按字段重建等价字面量（字段名不变，别名已解析到真实导入）。
+    const rebuiltExpression = `{ ${SLOT_FIELDS.map(field => `${field}: ${fields[field].identifier}`).join(', ')} }`;
+    production = { providerExpression: rebuiltExpression, fields };
   } catch (error) {
     productionError = String((error && error.message) || error);
   }
