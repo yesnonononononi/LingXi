@@ -45,13 +45,31 @@ class MemoryWikiIndexLoaderTest {
 
         assertEquals(1, memory.size());
         String body = memory.get(0);
-        assertTrue(body.contains("\"total\":40"), body);
-        assertTrue(body.contains("\"returned\":30"), body);
+        assertFalse(body.contains("\"total\""), "条数不进记忆段: " + body);
+        assertFalse(body.contains("\"returned\""), "条数不进记忆段: " + body);
         assertTrue(body.contains("module-29.md"), body);
         assertFalse(body.contains("module-30.md"), "目录只展示 30 条");
         assertFalse(body.contains("不应进入初始上下文的正文"), "正文必须按需读取");
         assertTrue(body.contains("search_wiki"), body);
         assertTrue(body.contains("load_memory"), body);
+    }
+
+    @Test
+    @DisplayName("增删一个模块不改写这段记忆：目录条数一旦进正文，每加一个模块前缀缓存就作废")
+    void addingAModuleDoesNotRewriteTheMemoryBody() throws Exception {
+        Path directory = Files.createDirectories(project.resolve("wiki"));
+        for (int index = 0; index < 40; index++) {
+            Files.writeString(directory.resolve("module-%02d.md".formatted(index)), "正文");
+        }
+        // 同一个 loader 复用：每次现取管理器与缓存，两次读之间能看到文件的增删。
+        MemoryWikiIndexLoader loader = loader();
+        String before = loader.load(spec(project)).get(0);
+
+        // 目录已满 30 条：再加一个模块，展示范围不变，记忆段必须逐字相同。
+        Files.writeString(directory.resolve("module-40.md"), "正文");
+        String after = loader.load(spec(project)).get(0);
+
+        assertEquals(before, after);
     }
 
     @Test

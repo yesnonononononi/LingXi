@@ -46,7 +46,10 @@ class ResendConfigurationReferenceTest {
         List<Message> history = List.of(SystemMessageEntity.builder().text("压缩后的历史").build(),
                 UserMessageEntity.from("目标提问"));
         Execution execution = Execution.builder().id("100").executionState(ExecutionState.SUSPENDED)
-                .agentRequest(AgentRequest.builder().contextSpec(ContextSpec.builder().context(history).build()).build())
+                .agentRequest(AgentRequest.builder().contextSpec(ContextSpec.builder()
+                        .systemPrompt("当时的系统提示词")
+                        .memory(List.of("当时的记忆段"))
+                        .context(history).build()).build())
                 .messages(history).build();
 
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
@@ -58,6 +61,9 @@ class ResendConfigurationReferenceTest {
 
         assertEquals(1, target.baseline().size());
         assertEquals("压缩后的历史", target.baseline().getFirst().text());
+        // 系统提示词与记忆段必须逐字取回：重发靠它们保住前缀缓存，重建就等于缓存作废。
+        assertEquals("当时的系统提示词", target.resendSnapshot().systemPrompt());
+        assertEquals(List.of("当时的记忆段"), target.resendSnapshot().memory());
     }
 
     @Test

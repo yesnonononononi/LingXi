@@ -40,7 +40,9 @@ public class MemoryWikiIndexLoader implements MemoryLoader {
             // 单例执行器必须按调用获取原型，构造器直接注入会把原型固定成共享实例。
             MemoryWikiManager manager = managers.getObject();
             manager.loadWikis(workspaces.resolve(workspace));
-            return List.of("### 项目 wiki 索引\n目录 JSON：" + objectMapper.writeValueAsString(manager.catalog())
+            // 只发名称列表：total / returned 随模块文件增删而变，写进记忆段等于让每个新模块
+            // 都把前缀缓存整段作废。裁剪与否由下面的固定尾句交代替换方案（search_wiki）。
+            return List.of("### 项目 wiki 索引\n目录 JSON：" + objectMapper.writeValueAsString(manager.catalog().wikis())
                     + "\n目录最多展示 30 条，不含正文；目录不完整时用 search_wiki 按关键词检索全部模块，"
                     + "再用 load_memory 按 wikiName 读取正文。");
         } catch (Exception error) {

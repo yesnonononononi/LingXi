@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.core.agent.ContextSpec;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -54,11 +55,11 @@ public class ResendTargetResolver {
         throwIf(turn.getParentTurnId() != null, "子代理轮次不支持重发");
         throwIf(turn.getExecutionId() == null, "该轮次没有关联执行，无法重发");
 
-        return new ResendTarget(turn.getId(), resolveBaseline(turn.getExecutionId()));
+        return resolveTarget(turn);
     }
 
     /**
-     * 截出「这条提问之前」的上下文。
+     * 取目标轮次的执行快照，截出「这条提问之前」的上下文，并带上当时的上下文规格。
      *
      * <p>截断点是快照里的最后一条用户消息：执行创建时的消息就是「当时的历史 + 本轮提问」，
      * 且同一执行内不会再追加用户消息，所以它必然是目标轮次自己的提问。</p>
@@ -66,19 +67,26 @@ public class ResendTargetResolver {
      * <p><b>历史基线来自目标轮次自己的检查点</b>：每个 execution 都保留自己的正文文件，
      * 这里按目标轮次的 executionId 走仓储流式恢复，绝不回退到「会话最新一轮」。
      * 拿到的 {@code Execution} 是独立可变副本，改它不会影响已提交内容。</p>
+     *
+     * <p>同一份快照里的系统提示词与记忆段一并取出：重发若不照搬这两段，就会按「现在」
+     * 重建记忆段，旧历史里的动态上下文块被判定为已改写，前缀缓存整段作废。</p>
      */
-    private List<Message> resolveBaseline(Long executionId) {
-        Execution execution = executionRepository.findById(String.valueOf(executionId)).orElse(null);
+    private ResendTarget resolveTarget(ChatTurn turn) {
+        Execution execution = executionRepository.findById(String.valueOf(turn.getExecutionId())).orElse(null);
         throwIf(execution == null, "执行快照不存在，无法重发");
-        List<Message> messages = execution.getAgentRequest() == null
-                || execution.getAgentRequest().getContextSpec() == null
+        ContextSpec spec = execution.getAgentRequest() == null
                 ? null
-                : execution.getAgentRequest().getContextSpec().getContext();
+                : execution.getAgentRequest().getContextSpec();
+        throwIf(spec == null, "执行快照缺少上下文规格，无法重发");
+        return new ResendTarget(turn.getId(), baselineBeforeQuestion(spec.getContext()),
+                new ResendSnapshot(spec.getSystemPrompt(), spec.getMemory()));
+    }
 
+    /** 截到目标轮次自己的提问之前；切片必须复制，否则会一直持有整段快照。 */
+    private List<Message> baselineBeforeQuestion(List<Message> messages) {
         throwIf(messages == null || messages.isEmpty(), "执行快照缺少历史上下文，无法重发");
         for (int i = messages.size() - 1; i >= 0; i--) {
             if (messages.get(i) instanceof UserMessageEntity) {
-                // subList 到 i（不含）即「该提问之前」；必须复制，否则切片会一直持有整段快照。
                 return new ArrayList<>(messages.subList(0, i));
             }
         }
@@ -89,7 +97,13 @@ public class ResendTargetResolver {
         if (condition) throw new ClientException(err);
     }
 
-    /** 重发目标：要作废并重跑的那一轮，以及它之前的上下文。 */
-    public record ResendTarget(Long turnId, List<Message> baseline) {
+    /**
+     * 重发目标：要作废并重跑的那一轮、它之前的上下文，以及当时的上下文规格。
+     *
+     * @param turnId         目标轮次
+     * @param baseline       目标轮次提问之前的消息，新提问接在它之后
+     * @param resendSnapshot 目标轮次当时的系统提示词与记忆段
+     */
+    public record ResendTarget(Long turnId, List<Message> baseline, ResendSnapshot resendSnapshot) {
     }
 }

@@ -105,6 +105,21 @@ class AgentsMdLoaderTest {
         assertFalse(memory.contains("【已截断】"), memory);
     }
 
+    @Test
+    @DisplayName("截断提示不带随正文变化的总量与已用量：公约改一行不会改变这段记忆")
+    void truncationNoticeCarriesNoContentCounters(@TempDir Path project) throws IOException {
+        // 上限 10 只装得下第一行；第二行起都在正文之外。
+        Files.writeString(project.resolve("AGENTS.md"), "甲乙丙丁戊\n子丑寅卯辰\n", StandardCharsets.UTF_8);
+        String before = loader(10).load(spec(project)).get(0);
+
+        // 只改被截掉的部分：总量与已用量都会变，保留部分一字不差。
+        Files.writeString(project.resolve("AGENTS.md"), "甲乙丙丁戊\n子丑寅卯辰\n庚辛壬癸子\n长长的一行\n",
+                StandardCharsets.UTF_8);
+        String after = loader(10).load(spec(project)).get(0);
+
+        assertEquals(before, after, "公约改动不该让整段记忆段重写，否则前缀缓存从该点作废");
+    }
+
     private WorkspaceSpec spec(Path project) {
         return new WindowsWorkspaceSpec(project.toString());
     }

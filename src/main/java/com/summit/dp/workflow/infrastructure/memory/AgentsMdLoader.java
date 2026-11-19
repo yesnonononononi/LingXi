@@ -80,8 +80,10 @@ public class AgentsMdLoader implements MemoryLoader {
             used += cost;
         }
         log.debug("项目公约已截断: path={}, totalTokens={}, keptTokens={}", file, total, used);
-        return kept + "\n【已截断】项目公约原文约 " + total + " token，超过 " + maxTokens
-                + " token 上限，此处只保留前 " + used + " token。剩余内容请用 read_file 打开 "
-                + file.toAbsolutePath() + " 自行选择性阅读，不要臆测被省略的部分。";
+        // 提示里不写原文总量与已用量：这段文本逐字进记忆段，公约改一行这两个数字就变，
+        // 框架据此判定动态段被改写、前缀缓存整段作废。上限来自配置，恒定，可以留。
+        return kept + "\n【已截断】项目公约超过 " + maxTokens + " token 上限，此处只保留前面几节。"
+                + "剩余内容请用 read_file 打开 " + file.toAbsolutePath()
+                + " 自行选择性阅读，不要臆测被省略的部分。";
     }
 }

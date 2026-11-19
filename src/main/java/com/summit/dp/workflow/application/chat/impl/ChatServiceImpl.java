@@ -174,8 +174,8 @@ public class ChatServiceImpl implements ChatService {
     public Result<ChatAcceptanceVO> resend(ChatCommand command) {
         ResendTarget target = resendTargetResolver.resolve(command);
 
-        // 上下文取目标轮次的历史基线
-        RuntimeContext context = requestPreparer.prepareForResend(command, target.baseline());
+        // 上下文取目标轮次的历史基线与当时的上下文规格
+        RuntimeContext context = requestPreparer.prepareForResend(command, target.baseline(), target.resendSnapshot());
 
         long rootSessionId = context.executionContext().rootSessionId();
 

@@ -141,7 +141,7 @@ public class RequestPreparer {
      * @param images 已加载的模型图片；null 表示按命令里的文件 / 地址解析
      */
     public RuntimeContext prepare(ChatCommand command, List<Image> images) {
-        return resolve(command, null, images);
+        return resolve(command, null, images, null);
     }
 
     /**
@@ -150,14 +150,21 @@ public class RequestPreparer {
      * <p>重发要复现「目标轮次当时看到的上下文」，而会话当前上下文里还带着即将被回滚掉的尾部。
      * 会话必须已存在 —— 重发是对一条历史提问的重做，不建会话。</p>
      *
+     * <p><b>系统提示词与记忆段也来自那一刻的快照</b>：这两段逐字进前缀缓存，若按「现在」重建，
+     * 旧历史里的动态上下文块与新的记忆段对不上，缓存从该点整段作废 —— 那正是「重发一次、
+     * 上下文全价重算」的来源。代价是重发期间改过的 Agent 人设不生效，这与「复现当时」一致。</p>
+     *
      * @param baseline 目标轮次之前的历史上下文（由执行快照截断得到），新提问接在它之后
+     * @param snapshot 目标轮次当时的系统提示词与记忆段
      */
-    public RuntimeContext prepareForResend(ChatCommand command, List<Message> baseline) {
+    public RuntimeContext prepareForResend(ChatCommand command, List<Message> baseline, ResendSnapshot snapshot) {
         throwIf(command == null || command.sessionId() == null, "重发必须指定会话");
-        return resolve(command, baseline, null);
+        throwIf(snapshot == null, "重发缺少目标轮次的上下文快照");
+        return resolve(command, baseline, null, snapshot);
     }
 
-    private RuntimeContext resolve(ChatCommand command, List<Message> baseline, List<Image> images) {
+    private RuntimeContext resolve(ChatCommand command, List<Message> baseline, List<Image> images,
+                                   ResendSnapshot resendSnapshot) {
         throwIf(command == null || command.input() == null || command.input().isBlank(), "聊天内容不能为空");
         throwIf(command.input().length() > SessionMessage.MAX_INPUT_LENGTH, "聊天内容最多支持 " + SessionMessage.MAX_INPUT_LENGTH + " 个字符");
         UserMessageEntity userMessageEntity = buildUserMessage(command, images);
@@ -237,7 +244,7 @@ public class RequestPreparer {
                 // 用户消息此刻**还没有落库**：调用方先取运行资格，再调 commitUserMessage。
                 userMessageEntity,
                 runtimeModel.vision()
-        );
+        ).withResendSnapshot(resendSnapshot);
     }
 
     /**
@@ -417,19 +424,31 @@ public class RequestPreparer {
         // 框架据此跳过 Skill 提示词段，read_skill 也不再下发。
         Path skillRoot = skillRootResolver.root();
 
-        // 每轮读最新偏好；未设置时不创建配置，也不向提示词插入空段。
-        PersonalizationVO personalization = personalizationRepository.findById(LocalInstance.SETTINGS_ROW_ID)
-                .map(PersonalizationConvert::toVO).orElse(null);
+        // 重发：系统提示词与记忆段一律取目标轮次快照（见 prepareForResend），不再读现时偏好与记忆 ——
+        // 这两段是前缀缓存的锚点，按「现在」重建会让旧历史里的动态上下文块判定为已改写。
+        ResendSnapshot snapshot = context.resendSnapshot();
+        String systemPrompt;
+        List<String> memory;
+        if (snapshot != null) {
+            systemPrompt = snapshot.systemPrompt();
+            memory = snapshot.memory();
+        } else {
+            // 每轮读最新偏好；未设置时不创建配置，也不向提示词插入空段。
+            PersonalizationVO personalization = personalizationRepository.findById(LocalInstance.SETTINGS_ROW_ID)
+                    .map(PersonalizationConvert::toVO).orElse(null);
+            systemPrompt = systemPromptBuilder.buildRootPrompt(agentPrompt, personalization, context.workspace());
+            memory = MemoryLoader.collect(memoryLoaders, context.workspace());
+        }
 
         return AgentRequest
                 .builder()
                 .executionId(executionId)
                 .contextSpec(ContextSpec.builder()
                         .context(context.messageList())
-                        .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization, context.workspace()))
+                        .systemPrompt(systemPrompt)
                         // 记忆正文不进系统提示词：框架把记忆渲染成每轮的动态上下文（user 消息），
                         // 系统提示词必须逐字稳定，否则整段前缀缓存与 thinking 签名一起作废。
-                        .memory(MemoryLoader.collect(memoryLoaders, context.workspace()))
+                        .memory(memory)
                         .build())
                 .workspaceSpec(context.workspace())
                 .workspaceOptions(context.workspace() == null ? null : WorkspaceOptions.builder()
