@@ -139,4 +139,13 @@ test('正文流式契约：MarkdownRenderer 与 MessageBodyDefault 声明并接�
     /:streaming="!!msg\.isThinking && !msg\.isComplete && !msg\.isSuspended"\s+:smooth-streaming="true"\s+:reveal-initial="!!msg\.isThinking && !msg\.isComplete && !msg\.isSuspended"/,
     '子会话正文渲染器必须对齐开启 smooth-streaming 与首包渐显标记'
   );
+
+  // 流式阶段后端尚未将 isBody 置为 true，文本先落在过程区 process-text 渲染，同样必须开启平滑流式调度。
+  const messageItemPath = new URL('../src/components/chat/ChatMessageItem.vue', import.meta.url);
+  const messageItemContent = fs.readFileSync(messageItemPath, 'utf8');
+  assert.match(
+    messageItemContent,
+    /data-testid="process-text"[\s\S]*?<MarkdownRenderer[\s\S]*?:process-text="true"[\s\S]*?:smooth-streaming="true"/,
+    '过程区流式文本渲染器必须开启 smooth-streaming'
+  );
 });

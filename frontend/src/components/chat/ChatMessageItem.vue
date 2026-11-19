@@ -137,6 +137,7 @@
               :key="part.kind === 'text' ? part.part.id : part.segment.id">
               <div v-if="part.kind === 'text'" class="w-full select-text" data-testid="process-text">
                 <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.part.message.text" :is-dark="isDark" :process-text="true"
+                  :smooth-streaming="true"
                   :reveal-initial="props.message.turnState?.texts[part.part.id]?.complete === false"
                   :streaming="!!props.message.isThinking && !props.message.isSuspended && !props.message.isComplete" />
               </div>
