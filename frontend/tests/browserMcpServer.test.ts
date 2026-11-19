@@ -292,6 +292,10 @@ test('Browser MCP 配置构建：遵循 streamable-http 与关闭自动健康检
   assert.equal(req.autoHealthCheck, false);
   assert.equal(req.protocolVersion, '2025-11-25');
   assert.equal(req.headers?.Authorization, 'Bearer secret-token');
+  assert.ok(
+    (req.description?.length ?? 0) <= 200,
+    `BROWSER_MCP_DESCRIPTION 长度 ${req.description?.length} 超过后端 Mcp.DESCRIPTION_MAX_LENGTH(200)`,
+  );
 
   const found = findBrowserMcpRecord([
     {id: 1, name: 'other'},

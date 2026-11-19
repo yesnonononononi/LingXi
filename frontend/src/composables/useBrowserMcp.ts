@@ -6,8 +6,9 @@ import {isOk} from '../utils/api';
 import {isElectron, type BrowserMcpServerStatus} from '../utils/platform';
 
 export const BROWSER_MCP_SERVER_NAME = 'lingxi-browser';
+/** 后端 Mcp.DESCRIPTION_MAX_LENGTH 上限为 200 字符，描述必须严格低于该阈值。 */
 export const BROWSER_MCP_DESCRIPTION =
-  'Built-in desktop browser & Design Canvas automation: navigate URLs, click/fill by ref or CSS selector, inspect elements/console/network/JS, capture screenshots, and inspect/capture/resolve comments in the active Design Canvas.';
+  'Built-in browser & Design Canvas MCP: navigate, click/fill by ref, inspect DOM/console/network/JS, capture screenshots, and sync Design Canvas.';
 
 export function findBrowserMcpRecord(list: McpVO[]): McpVO | undefined {
   return list.find(item => item.name === BROWSER_MCP_SERVER_NAME);
@@ -48,7 +49,9 @@ export async function syncBrowserMcpRecord(existing: McpVO): Promise<McpVO | nul
 
   const payload = buildBrowserMcpRequest(startRes.data.url, startRes.data.token, existing);
   const updateRes = await McpAPI.update(payload);
-  if (!isOk(updateRes.code)) return null;
+  if (!isOk(updateRes.code)) {
+    throw new Error(updateRes.errMsg || '同步内置浏览器 MCP 配置失败');
+  }
   return {
     ...existing,
     url: startRes.data.url,
