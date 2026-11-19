@@ -3,7 +3,7 @@ import {computed, onMounted, ref} from 'vue';
 import {useI18n} from '../../../i18n';
 import {usePackHost} from '../../../packs/packHost';
 import {listOfficialPacksByCategory} from '../../../packs/packRegistry';
-import type {InteractionCardTab, OfficialPackCategory, OfficialPackMeta, TaskProgressTab} from '../../../packs/types';
+import type {ChatMessageTab, InteractionCardTab, OfficialPackCategory, OfficialPackMeta, TaskProgressTab} from '../../../packs/types';
 import {isElectron, type RemotePackManifest} from '../../../utils/platform';
 
 const { t, locale } = useI18n();
@@ -11,6 +11,7 @@ const {
   activePackIds,
   activeInteractionPackIds,
   activeTaskProgressPackIds,
+  activeChatMessagePackIds,
   activePackCount,
   loadingCategory,
   activePackError,
@@ -40,6 +41,7 @@ const isZh = computed(() => locale.value === 'zh-CN');
 const selectedCategory = ref<OfficialPackCategory | null>(null);
 const activeInteractionTab = ref<InteractionCardTab>('approval');
 const activeTaskProgressTab = ref<TaskProgressTab>('background');
+const activeChatMessageTab = ref<ChatMessageTab>('userMessage');
 const interactionTabs = computed<readonly { key: InteractionCardTab; label: string }[]>(() => [
   { key: 'approval', label: isZh.value ? '审批卡片' : 'Approval' },
   { key: 'plan', label: isZh.value ? '计划卡片' : 'Plan' },
@@ -49,6 +51,13 @@ const taskProgressTabs = computed<readonly { key: TaskProgressTab; label: string
   { key: 'background', label: isZh.value ? '后台任务' : 'Background' },
   { key: 'checklist', label: isZh.value ? '任务清单' : 'Checklist' },
   { key: 'pendingQueue', label: isZh.value ? '待发送队列' : 'Pending Queue' },
+]);
+const chatMessageTabs = computed<readonly { key: ChatMessageTab; label: string }[]>(() => [
+  { key: 'userMessage', label: isZh.value ? '用户气泡' : 'User Bubble' },
+  { key: 'messageItem', label: isZh.value ? '消息流' : 'Message Stream' },
+  { key: 'processThought', label: isZh.value ? '思考过程' : 'Thought' },
+  { key: 'processTool', label: isZh.value ? '工具调用' : 'Tool Call' },
+  { key: 'processSubAgent', label: isZh.value ? '子代理' : 'Sub-Agent' },
 ]);
 const transitionName = ref<'pack-slide-forward' | 'pack-slide-back'>('pack-slide-forward');
 const customDirInput = ref('');
@@ -100,6 +109,11 @@ const categories = computed<readonly CategoryDescriptor[]>(() => [
     label: isZh.value ? '互动卡片' : 'Interaction Cards',
     desc: isZh.value ? '自定义审批卡片、计划卡片与选择卡片的视觉风格' : 'Approval, plan, and choice card styles',
   },
+  {
+    key: 'chatMessage',
+    label: isZh.value ? '消息与过程流' : 'Message & Process',
+    desc: isZh.value ? '定制用户气泡、流式正文以及思考/工具/子代理过程区渲染样式' : 'User bubble, message stream, and process renderers',
+  },
 ]);
 
 const activeCategoryDescriptor = computed(() =>
@@ -131,6 +145,9 @@ const displayedCategoryCards = computed(() => {
   }
   if (selectedCategory.value === 'taskProgress') {
     return all.filter(item => !item.meta.taskProgressTab || item.meta.taskProgressTab === activeTaskProgressTab.value);
+  }
+  if (selectedCategory.value === 'chatMessage') {
+    return all.filter(item => !item.meta.chatMessageTab || item.meta.chatMessageTab === activeChatMessageTab.value);
   }
   return all;
 });
@@ -177,6 +194,7 @@ const resolveMultiTabActiveName = (
 const resolveActivePackName = (category: OfficialPackCategory): string | null => {
   if (category === 'interactionCard') return resolveMultiTabActiveName('interactionCard', activeInteractionPackIds.value);
   if (category === 'taskProgress') return resolveMultiTabActiveName('taskProgress', activeTaskProgressPackIds.value);
+  if (category === 'chatMessage') return resolveMultiTabActiveName('chatMessage', activeChatMessagePackIds.value);
   const activeId = activePackIds.value[category];
   if (!activeId) return null;
   const found = listCategoryCards(category).find(item => item.meta.id === activeId);
@@ -186,12 +204,14 @@ const resolveActivePackName = (category: OfficialPackCategory): string | null =>
 const hasActiveCategoryPack = (category: OfficialPackCategory): boolean => {
   if (category === 'interactionCard') return Object.values(activeInteractionPackIds.value).some(Boolean);
   if (category === 'taskProgress') return Object.values(activeTaskProgressPackIds.value).some(Boolean);
+  if (category === 'chatMessage') return Object.values(activeChatMessagePackIds.value).some(Boolean);
   return Boolean(activePackIds.value[category]);
 };
 
-const currentDetailSubTab = computed<InteractionCardTab | TaskProgressTab | undefined>(() => {
+const currentDetailSubTab = computed<InteractionCardTab | TaskProgressTab | ChatMessageTab | undefined>(() => {
   if (selectedCategory.value === 'interactionCard') return activeInteractionTab.value;
   if (selectedCategory.value === 'taskProgress') return activeTaskProgressTab.value;
+  if (selectedCategory.value === 'chatMessage') return activeChatMessageTab.value;
   return undefined;
 });
 
@@ -200,7 +220,9 @@ const isPackSelectedInDetail = (category: OfficialPackCategory, packId: string |
     ? activeInteractionPackIds.value[activeInteractionTab.value]
     : category === 'taskProgress'
       ? activeTaskProgressPackIds.value[activeTaskProgressTab.value]
-      : activePackIds.value[category];
+      : category === 'chatMessage'
+        ? activeChatMessagePackIds.value[activeChatMessageTab.value]
+        : activePackIds.value[category];
   return packId === null ? !current : current === packId;
 };
 
@@ -232,7 +254,7 @@ const backToCategories = (): void => {
 const handleSelect = async (
   category: OfficialPackCategory,
   packId: string | null,
-  subTab?: InteractionCardTab | TaskProgressTab,
+  subTab?: InteractionCardTab | TaskProgressTab | ChatMessageTab,
 ): Promise<void> => {
   await selectCategoryPack(category, packId, subTab);
 };
@@ -519,6 +541,36 @@ onMounted(() => {
                 <span>{{ tab.label }}</span>
                 <span
                   v-if="activeTaskProgressPackIds[tab.key]"
+                  class="h-1.5 w-1.5 rounded-full bg-lx-accent"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+
+            <div
+              v-else-if="selectedCategory === 'chatMessage'"
+              role="tablist"
+              class="inline-flex flex-wrap items-center gap-1 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken p-0.5"
+              data-testid="chat-message-subtabs"
+            >
+              <button
+                v-for="tab in chatMessageTabs"
+                :key="tab.key"
+                type="button"
+                role="tab"
+                :aria-selected="activeChatMessageTab === tab.key"
+                :data-testid="`chat-message-tab-${tab.key}`"
+                @click="activeChatMessageTab = tab.key"
+                :class="[
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-lx-fs-xs font-medium transition cursor-pointer',
+                  activeChatMessageTab === tab.key
+                    ? 'bg-lx-surface text-lx-primary shadow-2xs'
+                    : 'text-lx-muted hover:text-lx-primary'
+                ]"
+              >
+                <span>{{ tab.label }}</span>
+                <span
+                  v-if="activeChatMessagePackIds[tab.key]"
                   class="h-1.5 w-1.5 rounded-full bg-lx-accent"
                   aria-hidden="true"
                 />

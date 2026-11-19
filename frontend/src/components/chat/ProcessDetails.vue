@@ -9,8 +9,9 @@
  * <p>拆分契约：renderer 的根元素就是原来那一层元素、class 逐字复制，故 `data-testid` 与 DOM
  * 嵌套层级与拆分前等价（由 `tests/processDetailsSplit.test.cjs` 断言）。</p>
  */
-import {computed} from 'vue';
+import {type Component, computed, inject} from 'vue';
 import type {ChatMessage, SubSessionVO} from '../../types/chat';
+import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import type {ImageProcessItem} from '../../utils/readImageTools';
 import {useStreamStickyScroll} from '../../composables/useStreamStickyScroll';
 import type {ProcessRendererSpec, RendererContext, ThinkingScrollApi} from './process/processRenderers';
@@ -66,10 +67,20 @@ const context = computed<RendererContext>(() => ({
   visible: true,
 }));
 
+const slotOverrides = inject(CHAT_MESSAGE_SLOTS_KEY, undefined);
+
+const resolveSlotComponent = (spec: ProcessRendererSpec): Component => {
+  if (spec.name === 'thought' && slotOverrides?.processThought) return slotOverrides.processThought;
+  if (spec.name === 'tool' && slotOverrides?.processTool) return slotOverrides.processTool;
+  if (spec.name === 'sub_agent' && slotOverrides?.processSubAgent) return slotOverrides.processSubAgent;
+  return spec.component;
+};
+
 /** 一行的渲染描述：renderer 组件 + 该 renderer 真正读取的窄 props（显式白名单）。 */
 interface ProcessRow {
   key: string;
   spec: ProcessRendererSpec;
+  component: Component;
   props: Record<string, unknown>;
 }
 
@@ -108,12 +119,12 @@ function buildRowProps(spec: ProcessRendererSpec, item: ImageProcessItem): Recor
 
 const rows = computed<ProcessRow[]>(() => props.items.map(item => {
   const spec = resolveRenderer(item, context.value);
-  return { key: item.id, spec, props: buildRowProps(spec, item) };
+  return { key: item.id, spec, component: resolveSlotComponent(spec), props: buildRowProps(spec, item) };
 }));
 </script>
 
 <template>
 <div class="space-y-2.5">
-  <component v-for="row in rows" :key="row.key" :is="row.spec.component" v-bind="row.props" />
+  <component v-for="row in rows" :key="row.key" :is="row.component" v-bind="row.props" />
 </div>
 </template>

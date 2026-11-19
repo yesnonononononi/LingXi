@@ -9,6 +9,7 @@ import {OFFICIAL_PACKS, findOfficialPack} from './packRegistry';
 import type {CustomScannedPackManifest, ElectronPacksAPI, RemotePackManifest} from '../utils/platform';
 import {
   PACK_CATEGORY_ORDER,
+  type ChatMessageTab,
   type InteractionCardTab,
   type OfficialPackCategory,
   type OfficialPackDefinition,
@@ -37,14 +38,28 @@ export interface ActivePackSlotsState {
 
 const INTERACTION_CARD_TABS: readonly InteractionCardTab[] = ['approval', 'plan', 'choice'];
 const TASK_PROGRESS_TABS: readonly TaskProgressTab[] = ['background', 'checklist', 'pendingQueue'];
+const CHAT_MESSAGE_TABS: readonly ChatMessageTab[] = ['userMessage', 'messageItem', 'processThought', 'processTool', 'processSubAgent'];
+
+/**
+ * 「按子 Tab 独立叠加」的类目清单。
+ *
+ * <p>这些类目的选择状态既不在 `activePackIds` 里，也不该走单值选择分支；
+ * 新增一个子 Tab 类目时只改这里，别再往各处散落的 `category === 'x' || ...` 上加一项。</p>
+ */
+const SUB_TAB_CATEGORIES: readonly OfficialPackCategory[] = ['interactionCard', 'taskProgress', 'chatMessage'];
+
+/** 该类目是否按子 Tab 独立叠加（每 Tab 各选一个包）。 */
+const isSubTabCategory = (category: OfficialPackCategory): boolean => SUB_TAB_CATEGORIES.includes(category);
 const activePackIds = ref<ActivePackSelectionMap>({});
 const activeInteractionPackIds = ref<Partial<Record<InteractionCardTab, string>>>({});
 const activeTaskProgressPackIds = ref<Partial<Record<TaskProgressTab, string>>>({});
+const activeChatMessagePackIds = ref<Partial<Record<ChatMessageTab, string>>>({});
 const loadingCategory = ref<OfficialPackCategory | null>(null);
 const activePackError = ref<string | null>(null);
 const loadedDefinitions = new Map<OfficialPackCategory, OfficialPackDefinition>();
 const loadedInteractionDefinitions = new Map<InteractionCardTab, OfficialPackDefinition>();
 const loadedTaskProgressDefinitions = new Map<TaskProgressTab, OfficialPackDefinition>();
+const loadedChatMessageDefinitions = new Map<ChatMessageTab, OfficialPackDefinition>();
 
 const installedRemotePacks = ref<OfficialPackMeta[]>([]);
 const remoteRegistryByCategory = ref<Partial<Record<OfficialPackCategory, RemotePackManifest[]>>>({});
@@ -138,11 +153,12 @@ const packSlots: ActivePackSlotsState = {
 
 const activePackCount = computed(() => {
   const baseCount = Object.entries(activePackIds.value)
-    .filter(([cat, val]) => cat !== 'interactionCard' && cat !== 'taskProgress' && Boolean(val))
+    .filter(([cat, val]) => cat !== 'interactionCard' && cat !== 'taskProgress' && cat !== 'chatMessage' && Boolean(val))
     .length;
   const interactionCount = Object.values(activeInteractionPackIds.value).filter(Boolean).length;
   const taskProgressCount = Object.values(activeTaskProgressPackIds.value).filter(Boolean).length;
-  return baseCount + interactionCount + taskProgressCount;
+  const chatMessageCount = Object.values(activeChatMessagePackIds.value).filter(Boolean).length;
+  return baseCount + interactionCount + taskProgressCount + chatMessageCount;
 });
 
 /** 序列化单个字体声明为 @font-face 规则。 */
@@ -200,7 +216,7 @@ function rebuildMergedPackSlots(): void {
   clearReactiveRecord(packSlots.taskProgress as Record<string, unknown>);
 
   for (const category of PACK_CATEGORY_ORDER) {
-    if (category === 'interactionCard' || category === 'taskProgress') continue;
+    if (isSubTabCategory(category)) continue;
     const def = loadedDefinitions.get(category);
     if (!def?.slots) continue;
     if (def.slots.background) Object.assign(packSlots.background, def.slots.background);
@@ -221,6 +237,12 @@ function rebuildMergedPackSlots(): void {
     const def = loadedTaskProgressDefinitions.get(tab);
     if (!def?.slots?.taskProgress) continue;
     Object.assign(packSlots.taskProgress, def.slots.taskProgress);
+  }
+
+  for (const tab of CHAT_MESSAGE_TABS) {
+    const def = loadedChatMessageDefinitions.get(tab);
+    if (!def?.slots?.chatMessage) continue;
+    Object.assign(packSlots.chatMessage, def.slots.chatMessage);
   }
 }
 
@@ -253,18 +275,20 @@ function mountCategoryStyle(
 
 const INTERACTION_TABS_STORAGE_KEY = 'interactionCardTabs';
 const TASK_PROGRESS_TABS_STORAGE_KEY = 'taskProgressTabs';
+const CHAT_MESSAGE_TABS_STORAGE_KEY = 'chatMessageTabs';
 
 function persistSelectionMap(
   storage: Storage | undefined,
   map: ActivePackSelectionMap,
   interactionMap: Partial<Record<InteractionCardTab, string>> = activeInteractionPackIds.value,
   taskProgressMap: Partial<Record<TaskProgressTab, string>> = activeTaskProgressPackIds.value,
+  chatMessageMap: Partial<Record<ChatMessageTab, string>> = activeChatMessagePackIds.value,
 ): void {
   if (!storage) return;
   try {
     const payload: Record<string, unknown> = {};
     for (const category of PACK_CATEGORY_ORDER) {
-      if (category === 'interactionCard' || category === 'taskProgress') continue;
+      if (isSubTabCategory(category)) continue;
       const id = map[category];
       if (id) payload[category] = id;
     }
@@ -284,6 +308,14 @@ function persistSelectionMap(
     if (Object.keys(cleanedTaskTabs).length > 0) {
       payload[TASK_PROGRESS_TABS_STORAGE_KEY] = cleanedTaskTabs;
     }
+    const cleanedChatMessageTabs: Partial<Record<ChatMessageTab, string>> = {};
+    for (const tab of CHAT_MESSAGE_TABS) {
+      const id = chatMessageMap[tab];
+      if (id) cleanedChatMessageTabs[tab] = id;
+    }
+    if (Object.keys(cleanedChatMessageTabs).length > 0) {
+      payload[CHAT_MESSAGE_TABS_STORAGE_KEY] = cleanedChatMessageTabs;
+    }
     if (Object.keys(payload).length > 0) {
       storage.setItem(PACK_STORAGE_KEY, JSON.stringify(payload));
     } else {
@@ -299,10 +331,11 @@ interface PersistedSelection {
   readonly categories: ActivePackSelectionMap;
   readonly interactionTabs: Partial<Record<InteractionCardTab, string>>;
   readonly taskProgressTabs: Partial<Record<TaskProgressTab, string>>;
+  readonly chatMessageTabs: Partial<Record<ChatMessageTab, string>>;
 }
 
 function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelection {
-  if (!storage) return { categories: {}, interactionTabs: {}, taskProgressTabs: {} };
+  if (!storage) return { categories: {}, interactionTabs: {}, taskProgressTabs: {}, chatMessageTabs: {} };
   try {
     const raw = storage.getItem(PACK_STORAGE_KEY);
     if (raw) {
@@ -310,8 +343,9 @@ function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelec
       const categories: ActivePackSelectionMap = {};
       const interactionTabs: Partial<Record<InteractionCardTab, string>> = {};
       const taskProgressTabs: Partial<Record<TaskProgressTab, string>> = {};
+      const chatMessageTabs: Partial<Record<ChatMessageTab, string>> = {};
       for (const category of PACK_CATEGORY_ORDER) {
-        if (category === 'interactionCard' || category === 'taskProgress') continue;
+        if (isSubTabCategory(category)) continue;
         const val = parsed[category];
         if (typeof val === 'string' && val.trim().length > 0) {
           categories[category] = val.trim();
@@ -335,6 +369,15 @@ function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelec
           }
         }
       }
+      const chatMessageTabsRaw = parsed[CHAT_MESSAGE_TABS_STORAGE_KEY];
+      if (chatMessageTabsRaw && typeof chatMessageTabsRaw === 'object') {
+        for (const tab of CHAT_MESSAGE_TABS) {
+          const val = (chatMessageTabsRaw as Record<string, unknown>)[tab];
+          if (typeof val === 'string' && val.trim().length > 0) {
+            chatMessageTabs[tab] = val.trim();
+          }
+        }
+      }
       // 兼容旧版单包 interactionCard 字符串
       const legacyInteraction = parsed.interactionCard;
       if (typeof legacyInteraction === 'string' && legacyInteraction.trim().length > 0) {
@@ -342,29 +385,32 @@ function readPersistedSelectionMap(storage: Storage | undefined): PersistedSelec
         const tab = entry?.meta.interactionTab ?? 'approval';
         if (!interactionTabs[tab]) interactionTabs[tab] = legacyInteraction.trim();
       }
-      return { categories, interactionTabs, taskProgressTabs };
+      return { categories, interactionTabs, taskProgressTabs, chatMessageTabs };
     }
     const legacyId = storage.getItem(LEGACY_PACK_STORAGE_KEY);
     if (legacyId && legacyId.trim().length > 0) {
       const entry = findOfficialPack(legacyId.trim());
       if (entry) {
         if (entry.meta.category === 'interactionCard') {
-          return { categories: {}, interactionTabs: { [entry.meta.interactionTab ?? 'approval']: entry.meta.id }, taskProgressTabs: {} };
+          return { categories: {}, interactionTabs: { [entry.meta.interactionTab ?? 'approval']: entry.meta.id }, taskProgressTabs: {}, chatMessageTabs: {} };
         }
         if (entry.meta.category === 'taskProgress') {
-          return { categories: {}, interactionTabs: {}, taskProgressTabs: { [entry.meta.taskProgressTab ?? 'background']: entry.meta.id } };
+          return { categories: {}, interactionTabs: {}, taskProgressTabs: { [entry.meta.taskProgressTab ?? 'background']: entry.meta.id }, chatMessageTabs: {} };
         }
-        return { categories: { [entry.meta.category]: entry.meta.id }, interactionTabs: {}, taskProgressTabs: {} };
+        if (entry.meta.category === 'chatMessage') {
+          return { categories: {}, interactionTabs: {}, taskProgressTabs: {}, chatMessageTabs: { [entry.meta.chatMessageTab ?? 'userMessage']: entry.meta.id } };
+        }
+        return { categories: { [entry.meta.category]: entry.meta.id }, interactionTabs: {}, taskProgressTabs: {}, chatMessageTabs: {} };
       }
     }
-    return { categories: {}, interactionTabs: {}, taskProgressTabs: {} };
+    return { categories: {}, interactionTabs: {}, taskProgressTabs: {}, chatMessageTabs: {} };
   } catch {
-    return { categories: {}, interactionTabs: {}, taskProgressTabs: {} };
+    return { categories: {}, interactionTabs: {}, taskProgressTabs: {}, chatMessageTabs: {} };
   }
 }
 
 async function selectSubTabPack<TTab extends string>(options: {
-  category: 'interactionCard' | 'taskProgress';
+  category: 'interactionCard' | 'taskProgress' | 'chatMessage';
   packId: string | null;
   subTab: TTab | undefined;
   allTabs: readonly TTab[];
@@ -440,6 +486,7 @@ export async function selectPackWithEnv(
     lookup?: (id: string) => OfficialPackEntry | undefined;
     interactionTab?: InteractionCardTab;
     taskProgressTab?: TaskProgressTab;
+    chatMessageTab?: ChatMessageTab;
   } = {},
 ): Promise<boolean> {
   const doc = env.doc ?? (typeof document !== 'undefined' ? document : undefined);
@@ -474,6 +521,22 @@ export async function selectPackWithEnv(
       resolveEntryTab: entry => entry?.meta.taskProgressTab,
       stateRef: activeTaskProgressPackIds,
       loadedMap: loadedTaskProgressDefinitions,
+      doc,
+      storage,
+      lookup,
+    });
+  }
+
+  if (category === 'chatMessage') {
+    return selectSubTabPack({
+      category: 'chatMessage',
+      packId,
+      subTab: env.chatMessageTab,
+      allTabs: CHAT_MESSAGE_TABS,
+      defaultTab: 'userMessage',
+      resolveEntryTab: entry => entry?.meta.chatMessageTab,
+      stateRef: activeChatMessagePackIds,
+      loadedMap: loadedChatMessageDefinitions,
       doc,
       storage,
       lookup,
@@ -541,22 +604,28 @@ export function resetAllPacksWithEnv(
   loadedDefinitions.clear();
   loadedInteractionDefinitions.clear();
   loadedTaskProgressDefinitions.clear();
+  loadedChatMessageDefinitions.clear();
   rebuildMergedPackSlots();
   activePackIds.value = {};
   activeInteractionPackIds.value = {};
   activeTaskProgressPackIds.value = {};
+  activeChatMessagePackIds.value = {};
   activePackError.value = null;
-  persistSelectionMap(storage, {}, {}, {});
+  persistSelectionMap(storage, {}, {}, {}, {});
 }
 
 export async function selectCategoryPack(
   category: OfficialPackCategory,
   packId: string | null,
-  subTab?: InteractionCardTab | TaskProgressTab,
+  subTab?: InteractionCardTab | TaskProgressTab | ChatMessageTab,
 ): Promise<boolean> {
-  return selectPackWithEnv(category, packId, category === 'taskProgress'
-    ? { taskProgressTab: subTab as TaskProgressTab | undefined }
-    : { interactionTab: subTab as InteractionCardTab | undefined });
+  if (category === 'taskProgress') {
+    return selectPackWithEnv(category, packId, { taskProgressTab: subTab as TaskProgressTab | undefined });
+  }
+  if (category === 'chatMessage') {
+    return selectPackWithEnv(category, packId, { chatMessageTab: subTab as ChatMessageTab | undefined });
+  }
+  return selectPackWithEnv(category, packId, { interactionTab: subTab as InteractionCardTab | undefined });
 }
 
 export function resetAllPacks(): void {
@@ -776,6 +845,15 @@ export async function removeCustomPackDir(dirPath: string): Promise<void> {
         }
         continue;
       }
+      if (category === 'chatMessage') {
+        for (const tab of CHAT_MESSAGE_TABS) {
+          const activeId = activeChatMessagePackIds.value[tab];
+          if (activeId && packIds.has(activeId)) {
+            await selectCategoryPack('chatMessage', null, tab);
+          }
+        }
+        continue;
+      }
       const activeId = activePackIds.value[category];
       if (activeId && packIds.has(activeId)) {
         await selectCategoryPack(category, null);
@@ -793,7 +871,7 @@ export async function initPackHost(): Promise<void> {
   const storage = typeof localStorage !== 'undefined' ? localStorage : undefined;
   const saved = readPersistedSelectionMap(storage);
   for (const category of PACK_CATEGORY_ORDER) {
-    if (category === 'interactionCard' || category === 'taskProgress') continue;
+    if (isSubTabCategory(category)) continue;
     const id = saved.categories[category];
     if (id) {
       await selectPackWithEnv(category, id);
@@ -811,6 +889,12 @@ export async function initPackHost(): Promise<void> {
       await selectPackWithEnv('taskProgress', id, { taskProgressTab: tab });
     }
   }
+  for (const tab of CHAT_MESSAGE_TABS) {
+    const id = saved.chatMessageTabs[tab];
+    if (id) {
+      await selectPackWithEnv('chatMessage', id, { chatMessageTab: tab });
+    }
+  }
 }
 
 /** 供宿主（ChatView）与设置页消费的扩展包状态接口。 */
@@ -819,6 +903,7 @@ export function usePackHost() {
     activePackIds,
     activeInteractionPackIds,
     activeTaskProgressPackIds,
+    activeChatMessagePackIds,
     activePackCount,
     loadingCategory,
     activePackError,

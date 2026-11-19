@@ -55,6 +55,7 @@ const openMember = (tool: ToolCallTrace): void => {
   <!-- 3. SubAgent 子代理多会话协同指示条 -->
   <div
     v-if="members.length"
+    data-slot="process-sub-agent"
     :class="[
       'w-full min-w-0 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors overflow-hidden',
       isDark ? 'bg-[#141b29]/70 border-[#222d42] text-zinc-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'

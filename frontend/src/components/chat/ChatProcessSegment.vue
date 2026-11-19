@@ -74,7 +74,7 @@ const isRunningTurn = computed(() => props.turn
 </script>
 
 <template>
-  <div class="w-full min-w-0" data-testid="process-segment" :data-segment-id="segment.id"
+  <div class="w-full min-w-0" data-testid="process-segment" data-slot="process-segment" :data-segment-id="segment.id"
     :data-process-mode="mode">
     <!-- 按钮名称描述展开对象，避免摘要让位后仍通过无障碍名称残留旧内容。 -->
     <button type="button" data-testid="process-segment-toggle" :aria-expanded="expanded"

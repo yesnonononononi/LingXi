@@ -6,7 +6,7 @@ import type {SidebarSlotOverrides} from '../types/sidebarSlots';
 import type {TaskProgressSlotOverrides} from '../types/taskProgressSlots';
 
 /** 扩展包分类：不同分类可同时叠加激活，同分类内互斥单选。 */
-export type OfficialPackCategory = 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'motion' | 'taskProgress' | 'interactionCard';
+export type OfficialPackCategory = 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'motion' | 'taskProgress' | 'interactionCard' | 'chatMessage';
 
 /** 扩展包分类叠加优先级（靠后者在同槽位冲突时覆盖前者）。 */
 export const PACK_CATEGORY_ORDER: readonly OfficialPackCategory[] = Object.freeze([
@@ -18,6 +18,7 @@ export const PACK_CATEGORY_ORDER: readonly OfficialPackCategory[] = Object.freez
   'motion',
   'taskProgress',
   'interactionCard',
+  'chatMessage',
 ]);
 
 /** 官方扩展包预览色板：用于主题/背景类卡片缩略展示。 */
@@ -34,12 +35,16 @@ export type InteractionCardTab = 'approval' | 'plan' | 'choice';
 /** 任务进度子 Tab 归类（仅 taskProgress 类目用于分 Tab 展示与独立叠加）。 */
 export type TaskProgressTab = 'background' | 'checklist' | 'pendingQueue';
 
+/** 消息与过程流子 Tab 归类（仅 chatMessage 类目用于分 Tab 展示与独立叠加）。 */
+export type ChatMessageTab = 'userMessage' | 'messageItem' | 'processThought' | 'processTool' | 'processSubAgent';
+
 /** 扩展包元信息（未加载包体前即可用于分类列表展示）。 */
 export interface OfficialPackMeta {
   readonly id: string;
   readonly category: OfficialPackCategory;
   readonly interactionTab?: InteractionCardTab;
   readonly taskProgressTab?: TaskProgressTab;
+  readonly chatMessageTab?: ChatMessageTab;
   readonly name: string;
   readonly description: string;
   readonly version: string;

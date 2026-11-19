@@ -33,6 +33,14 @@ const CONTRACT_ANCHORS = {
   'tree-menu': 'src/components/common/BranchedMenu.vue',
   'tree-section': 'src/components/common/BranchedMenu.vue',
   'tree-row': 'src/components/common/BranchedMenu.vue',
+  'message-item': 'src/components/chat/ChatMessageItem.vue',
+  'user-message-bubble': 'src/components/chat/ChatMessageItem.vue',
+  'assistant-body': 'src/components/chat/ChatMessageItem.vue',
+  'process-panel': 'src/components/chat/ChatMessageItem.vue',
+  'process-segment': 'src/components/chat/ChatProcessSegment.vue',
+  'process-thought': 'src/components/chat/process/ThoughtStepRenderer.vue',
+  'process-tool': 'src/components/chat/process/ToolCallRenderer.vue',
+  'process-sub-agent': 'src/components/chat/process/SubAgentMembersRenderer.vue',
 };
 
 function readText(relPath) {

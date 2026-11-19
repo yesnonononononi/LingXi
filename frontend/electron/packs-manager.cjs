@@ -44,6 +44,7 @@ const PACK_CATEGORIES = [
   'motion',
   'taskProgress',
   'interactionCard',
+  'chatMessage',
 ];
 const LEGACY_PACK_CATEGORIES = ['component'];
 const ALLOWED_CATEGORIES = new Set([...PACK_CATEGORIES, ...LEGACY_PACK_CATEGORIES]);

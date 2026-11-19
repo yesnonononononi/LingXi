@@ -335,3 +335,95 @@ test('taskProgress 与 interactionCard 两个收敛类目支持独立激活与�
   assert.equal(host.packSlots.interactionCard.choiceGroup, undefined);
   assert.equal(host.activePackCount.value, 0);
 });
+
+test('chatMessage 五个子 Tab 支持内置 Slot 与纯 CSS 极限包独立叠加与停用', async () => {
+  const { doc } = createFakeDom();
+  const { storage } = createFakeStorage();
+  const host = usePackHost();
+  resetAllPacksWithEnv({ doc, storage });
+
+  const chatMessagePacks = listOfficialPacksByCategory('chatMessage');
+  assert.deepEqual(
+    chatMessagePacks.filter(item => item.meta.chatMessageTab === 'userMessage').map(item => item.meta.id),
+    ['terminal-tui-user-message', 'cyber-wireframe-user-message'],
+  );
+  assert.deepEqual(
+    chatMessagePacks.filter(item => item.meta.chatMessageTab === 'messageItem').map(item => item.meta.id),
+    ['terminal-tui-message-stream', 'cyber-wireframe-message-stream'],
+  );
+  assert.deepEqual(
+    chatMessagePacks.filter(item => item.meta.chatMessageTab === 'processThought').map(item => item.meta.id),
+    ['terminal-tui-thought', 'cyber-wireframe-thought'],
+  );
+  assert.deepEqual(
+    chatMessagePacks.filter(item => item.meta.chatMessageTab === 'processTool').map(item => item.meta.id),
+    ['terminal-tui-tool', 'cyber-wireframe-tool'],
+  );
+  assert.deepEqual(
+    chatMessagePacks.filter(item => item.meta.chatMessageTab === 'processSubAgent').map(item => item.meta.id),
+    ['terminal-tui-sub-agent', 'cyber-wireframe-sub-agent'],
+  );
+
+  const stubUserBody = { name: 'StubUserBody' };
+  const stubBody = { name: 'StubBody' };
+  const stubActions = { name: 'StubActions' };
+  const stubThought = { name: 'StubThought' };
+  const stubTool = { name: 'StubTool' };
+  const stubSubAgent = { name: 'StubSubAgent' };
+
+  const lookup = (packId: string): OfficialPackEntry | undefined => {
+    const entry = chatMessagePacks.find(item => item.meta.id === packId);
+    if (!entry) return undefined;
+    return {
+      meta: entry.meta,
+      load: async () => {
+        if (entry.meta.id === 'terminal-tui-user-message') {
+          return { id: entry.meta.id, slots: { chatMessage: { userBody: stubUserBody } } };
+        }
+        if (entry.meta.id === 'terminal-tui-message-stream') {
+          return { id: entry.meta.id, slots: { chatMessage: { body: stubBody, actions: stubActions } } };
+        }
+        if (entry.meta.id === 'terminal-tui-thought') {
+          return { id: entry.meta.id, slots: { chatMessage: { processThought: stubThought } } };
+        }
+        if (entry.meta.id === 'terminal-tui-tool') {
+          return { id: entry.meta.id, slots: { chatMessage: { processTool: stubTool } } };
+        }
+        if (entry.meta.id === 'terminal-tui-sub-agent') {
+          return { id: entry.meta.id, slots: { chatMessage: { processSubAgent: stubSubAgent } } };
+        }
+        return { id: entry.meta.id, cssText: `[data-slot="test-${entry.meta.id}"] { color: red; }` };
+      },
+    };
+  };
+
+  assert.equal(await selectPackWithEnv('chatMessage', 'terminal-tui-user-message', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('chatMessage', 'terminal-tui-message-stream', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('chatMessage', 'terminal-tui-thought', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('chatMessage', 'terminal-tui-tool', { doc, storage, lookup }), true);
+  assert.equal(await selectPackWithEnv('chatMessage', 'terminal-tui-sub-agent', { doc, storage, lookup }), true);
+
+  assert.equal(host.packSlots.chatMessage.userBody, stubUserBody);
+  assert.equal(host.packSlots.chatMessage.body, stubBody);
+  assert.equal(host.packSlots.chatMessage.actions, stubActions);
+  assert.equal(host.packSlots.chatMessage.processThought, stubThought);
+  assert.equal(host.packSlots.chatMessage.processTool, stubTool);
+  assert.equal(host.packSlots.chatMessage.processSubAgent, stubSubAgent);
+  assert.equal(host.activePackCount.value, 5);
+
+  // 将 processTool 切换为纯 CSS 极限包，其它 4 个子 Tab 的 Slot 保持不变
+  assert.equal(await selectPackWithEnv('chatMessage', 'cyber-wireframe-tool', { doc, storage, lookup }), true);
+  assert.equal(host.packSlots.chatMessage.processTool, undefined);
+  assert.equal(host.packSlots.chatMessage.userBody, stubUserBody);
+  assert.equal(host.packSlots.chatMessage.processThought, stubThought);
+  assert.equal(host.activePackCount.value, 5);
+
+  resetAllPacksWithEnv({ doc, storage });
+  assert.equal(host.packSlots.chatMessage.userBody, undefined);
+  assert.equal(host.packSlots.chatMessage.body, undefined);
+  assert.equal(host.packSlots.chatMessage.actions, undefined);
+  assert.equal(host.packSlots.chatMessage.processThought, undefined);
+  assert.equal(host.packSlots.chatMessage.processTool, undefined);
+  assert.equal(host.packSlots.chatMessage.processSubAgent, undefined);
+  assert.equal(host.activePackCount.value, 0);
+});

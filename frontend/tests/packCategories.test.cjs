@@ -32,6 +32,7 @@ const EXPECTED_CATEGORIES = [
   'motion',
   'taskProgress',
   'interactionCard',
+  'chatMessage',
 ];
 
 /** 在 root 下按 category 造一个最小合法扩展包，返回目录名。 */

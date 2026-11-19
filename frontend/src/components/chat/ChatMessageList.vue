@@ -60,24 +60,43 @@
 
       <!-- 消息列表渲染 -->
       <template v-else>
-        <ChatMessageItem
-          v-for="(msg, idx) in messages"
-          :key="msg.id"
-          :message="msg"
-          :taskRecipientName="taskRecipientName"
-          :subSessions="subSessions"
-          :sessionId="sessionId"
-          :isDark="isDark"
-          :turn="turnMap?.get(msg)?.turn ?? null"
-          :isGroupTail="turnMap ? (turnMap.get(msg)?.isGroupTail ?? false) : undefined"
-          :isLastAssistant="idx === computedLastAssistantIndex"
-          :isSending="isSending"
-          :canResend="allowResend && !isSending"
-          :dockPendingInteractionCards="dockPendingInteractionCards"
-          @selectSubSession="(id) => emit('selectSubSession', id)"
-          @resendUnsent="(id) => emit('resendUnsent', id)"
-          @editResend="message => emit('editResend', message)"
-        />
+        <template v-for="(msg, idx) in messages" :key="msg.id">
+          <component
+            :is="injectedMessageItem"
+            v-if="injectedMessageItem"
+            :message="msg"
+            :taskRecipientName="taskRecipientName"
+            :subSessions="subSessions"
+            :sessionId="sessionId"
+            :isDark="isDark"
+            :turn="turnMap?.get(msg)?.turn ?? null"
+            :isGroupTail="turnMap ? (turnMap.get(msg)?.isGroupTail ?? false) : undefined"
+            :isLastAssistant="idx === computedLastAssistantIndex"
+            :isSending="isSending"
+            :canResend="allowResend && !isSending"
+            :dockPendingInteractionCards="dockPendingInteractionCards"
+            :onSelectSubSession="(id: string | number) => emit('selectSubSession', id)"
+            :onResendUnsent="(id: string) => emit('resendUnsent', id)"
+            :onEditResend="(message: ChatMessage) => emit('editResend', message)"
+          />
+          <ChatMessageItem
+            v-else
+            :message="msg"
+            :taskRecipientName="taskRecipientName"
+            :subSessions="subSessions"
+            :sessionId="sessionId"
+            :isDark="isDark"
+            :turn="turnMap?.get(msg)?.turn ?? null"
+            :isGroupTail="turnMap ? (turnMap.get(msg)?.isGroupTail ?? false) : undefined"
+            :isLastAssistant="idx === computedLastAssistantIndex"
+            :isSending="isSending"
+            :canResend="allowResend && !isSending"
+            :dockPendingInteractionCards="dockPendingInteractionCards"
+            @selectSubSession="(id) => emit('selectSubSession', id)"
+            @resendUnsent="(id) => emit('resendUnsent', id)"
+            @editResend="message => emit('editResend', message)"
+          />
+        </template>
       </template>
     </div>
   </ScrollCursorLoader>
@@ -85,11 +104,15 @@
 
 
 <script setup lang="ts">
-import {computed, ref} from 'vue';
+import {computed, inject, ref} from 'vue';
 import {t} from '../../i18n';
 import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
+import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import ScrollCursorLoader from '../common/ScrollCursorLoader.vue';
 import ChatMessageItem from './ChatMessageItem.vue';
+
+const slotOverrides = inject(CHAT_MESSAGE_SLOTS_KEY, undefined);
+const injectedMessageItem = computed(() => slotOverrides?.messageItem);
 
 const props = defineProps<{
   messages: ChatMessage[];

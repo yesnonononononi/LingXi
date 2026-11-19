@@ -1039,12 +1039,30 @@ const { packSlots } = usePackHost();
 const messageSlots = shallowReactive({
   body: packSlots.chatMessage.body ?? MessageBodyDefault,
   actions: packSlots.chatMessage.actions ?? MessageActionsBar,
+  userBody: packSlots.chatMessage.userBody,
+  messageItem: packSlots.chatMessage.messageItem,
+  processThought: packSlots.chatMessage.processThought,
+  processTool: packSlots.chatMessage.processTool,
+  processSubAgent: packSlots.chatMessage.processSubAgent,
 });
 watch(
-  () => [packSlots.chatMessage.body, packSlots.chatMessage.actions] as const,
-  ([body, actions]) => {
+  () => [
+    packSlots.chatMessage.body,
+    packSlots.chatMessage.actions,
+    packSlots.chatMessage.userBody,
+    packSlots.chatMessage.messageItem,
+    packSlots.chatMessage.processThought,
+    packSlots.chatMessage.processTool,
+    packSlots.chatMessage.processSubAgent,
+  ] as const,
+  ([body, actions, userBody, messageItem, processThought, processTool, processSubAgent]) => {
     messageSlots.body = body ?? MessageBodyDefault;
     messageSlots.actions = actions ?? MessageActionsBar;
+    messageSlots.userBody = userBody;
+    messageSlots.messageItem = messageItem;
+    messageSlots.processThought = processThought;
+    messageSlots.processTool = processTool;
+    messageSlots.processSubAgent = processSubAgent;
   },
 );
 provide(CHAT_MESSAGE_SLOTS_KEY, messageSlots);

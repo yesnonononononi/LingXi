@@ -1,6 +1,9 @@
 import type {Component, InjectionKey} from 'vue';
-import type {ChatMessage, ChatTurn} from './chat';
+import type {ChatMessage, ChatTurn, SubSessionVO} from './chat';
 import type {TokenInfo} from './Event';
+import type {PastedDocument} from '../utils/pastedDocument';
+import type {ImageProcessItem} from '../utils/readImageTools';
+import type {ThinkingScrollApi} from '../components/chat/process/processRenderers';
 
 /** 执行状态摘要（`execStatusMeta` 的对外投影，行 1295–1306）。null = 无轮次摘要。 */
 export interface ChatMessageExecStatusMeta {
@@ -48,10 +51,77 @@ export interface ChatMessageActionsSlotProps {
   readonly copyText: (text: string) => void;
 }
 
+/** 用户消息气泡插槽 props。 */
+export interface ChatMessageUserBodySlotProps {
+  readonly message: ChatMessage;
+  readonly isDark: boolean;
+  readonly parsedText: string;
+  readonly documents: readonly PastedDocument[];
+  readonly imageUrls: readonly string[];
+  readonly displayTime: string;
+  readonly copied: boolean;
+  readonly canResend: boolean;
+  readonly resendTitle: string;
+  readonly copyContent: () => void;
+  readonly onResendUnsent: () => void;
+  readonly onEditResend: () => void;
+  readonly onPreviewImage: (url: string, index: number) => void;
+  readonly onPreviewDocument: (doc: PastedDocument) => void;
+}
+
+/** 消息列表项整行插槽 props（在 ChatMessageList 中替换整行 ChatMessageItem）。 */
+export interface ChatMessageItemSlotProps {
+  readonly message: ChatMessage;
+  readonly taskRecipientName?: string;
+  readonly subSessions?: SubSessionVO[];
+  readonly sessionId?: string | number;
+  readonly isDark?: boolean;
+  readonly turn?: ChatTurn | null;
+  readonly isGroupTail?: boolean;
+  readonly isLastAssistant?: boolean;
+  readonly isSending?: boolean;
+  readonly canResend?: boolean;
+  readonly dockPendingInteractionCards?: boolean;
+  readonly onSelectSubSession: (id: string | number) => void;
+  readonly onResendUnsent: (messageId: string) => void;
+  readonly onEditResend: (message: ChatMessage) => void;
+}
+
+/** 过程区思考步骤插槽 props。 */
+export interface ProcessThoughtSlotProps {
+  readonly item: ImageProcessItem;
+  readonly isDark: boolean;
+  readonly isRunningTurn: boolean;
+  readonly isMessageComplete?: boolean;
+  readonly messageIsSuspended: boolean;
+  readonly scroll: ThinkingScrollApi;
+}
+
+/** 过程区工具调用插槽 props。 */
+export interface ProcessToolSlotProps {
+  readonly item: ImageProcessItem;
+  readonly isDark: boolean;
+  readonly sessionId?: string | number;
+  readonly fileEdits?: ChatMessage['fileEdits'];
+}
+
+/** 过程区子代理协同插槽 props。 */
+export interface ProcessSubAgentSlotProps {
+  readonly item: ImageProcessItem;
+  readonly isDark: boolean;
+  readonly subSessions?: SubSessionVO[];
+  readonly onSelectSubSession: (id: string | number) => void;
+}
+
 /** 宿主可注册的渲染器集合。缺省（undefined / 字段缺省）= 使用内置默认实现。 */
 export interface ChatMessageSlotOverrides {
   readonly body?: Component<ChatMessageBodySlotProps>;
   readonly actions?: Component<ChatMessageActionsSlotProps>;
+  readonly userBody?: Component<ChatMessageUserBodySlotProps>;
+  readonly messageItem?: Component<ChatMessageItemSlotProps>;
+  readonly processThought?: Component<ProcessThoughtSlotProps>;
+  readonly processTool?: Component<ProcessToolSlotProps>;
+  readonly processSubAgent?: Component<ProcessSubAgentSlotProps>;
 }
 
 /** 能力注入键：由宿主（ChatView）provide，Item inject。沿用 FILE_PREVIEW_KEY 的既有范式（types/filePreview.ts:30）。 */

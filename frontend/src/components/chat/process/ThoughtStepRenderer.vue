@@ -55,7 +55,7 @@ const toggle = (): void => {
 </script>
 
 <template>
-  <div v-if="step" class="text-lx-fs-lg space-y-1">
+  <div v-if="step" data-slot="process-thought" class="text-lx-fs-lg space-y-1">
     <button
       type="button"
       @click="toggle"

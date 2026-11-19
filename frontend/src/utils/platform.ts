@@ -182,7 +182,7 @@ export interface ElectronPacksAPI {
 
 export interface RemotePackManifest {
   readonly id: string;
-  readonly category: 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'motion' | 'taskProgress' | 'interactionCard';
+  readonly category: 'theme' | 'font' | 'background' | 'sidebar' | 'input' | 'motion' | 'taskProgress' | 'interactionCard' | 'chatMessage';
   readonly name: string;
   readonly description: string;
   readonly version: string;
