@@ -84,15 +84,19 @@ await window.flush(); window.ready = true;`);
   assert.equal(await evaluate('document.querySelector("textarea").value'), rawText);
   assert.equal(await evaluate('document.querySelector("textarea").placeholder.length > 0'), true);
   await evaluate('window.setText(""); window.flush(); document.querySelector("textarea").focus()');
-  const previousClipboard = await Promise.all((await clipboard.read()).map(async item =>
-    new ClipboardItem(Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)]))))));
+  // 系统剪贴板里可能躺着无法重建的条目（例如没有任何 MIME 类型的历史内容），
+  // 那种条目构造 ClipboardItem 会直接抛错；备份只保可还原的部分，不能因此让用例变红。
+  const previousClipboard = await Promise.all((await clipboard.read())
+    .filter(item => item.types.length > 0)
+    .map(async item => new ClipboardItem(Object.fromEntries(
+      await Promise.all(item.types.map(async type => [type, await item.getType(type)]))))));
   try {
     await clipboard.write([new ClipboardItem({ 'text/plain': rawText, 'text/html': '<h1>标题</h1><p><strong>粗体</strong></p>' })]);
     window.webContents.paste();
     await evaluate('window.flush()');
     assert.equal(await evaluate('document.querySelector("textarea").value'), rawText);
   } finally {
-    await clipboard.write(previousClipboard);
+    if (previousClipboard.length > 0) await clipboard.write(previousClipboard);
   }
   await evaluate('window.setText(Array(30).fill("长文本").join("\\n")); window.flush()');
   assert.equal(await evaluate('document.querySelector("textarea").style.height'), '120px');

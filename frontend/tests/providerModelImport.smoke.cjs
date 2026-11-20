@@ -30,6 +30,7 @@ window.showModal=()=>modal.value=true;
 <div style="font-size:11px;color:#71717a;margin-bottom:20px;letter-spacing:.3px">设置 / 模型 · 界面预览（示例数据）</div>
 <ModelsTab :is-dark="dark"/></main></template>`);
   await fs.writeFile(path.join(fixture, 'entry.js'), `import {createApp,nextTick} from 'vue';
+import {createPinia} from 'pinia';
 import {createRouter,createMemoryHistory} from 'vue-router';
 import ModelFormView from '../../../src/views/model/ModelFormView.vue';
 import http from '../../../src/services/interceptor';
@@ -63,7 +64,7 @@ http.defaults.adapter=async config=>{
 };
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/models',component:{template:'<div>models</div>'}},{path:'/models/add',component:ModelFormView},{path:'/models/:id',component:ModelFormView}]});
 await router.push('/models');window.go=async route=>{window.showStandalone();await router.push(route);};
-const {default:App}=await import('./App.vue');createApp(App).use(router).mount('#app');
+const {default:App}=await import('./App.vue');createApp(App).use(createPinia()).use(router).mount('#app');
 window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,100));};
 window.clickText=label=>{const button=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label);if(!button)throw new Error('button missing: '+label);if(button.disabled)throw new Error('button disabled: '+label);button.click();};
 window.fill=(selector,value)=>{const input=document.querySelector(selector);if(!input)throw new Error('input missing: '+selector);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};

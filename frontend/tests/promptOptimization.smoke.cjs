@@ -18,7 +18,7 @@ import ConfirmModal from '../../../src/components/common/ConfirmModal.vue';
 import '../../../src/style.css';
 const input = ref(null);
 const mounted = ref(true);
-window.setText = text => input.value.setInputText(text);
+window.setText = text => { window.draft = text; input.value.setInputText(text); };
 window.unmountInput = () => { mounted.value = false; };
 window.sent = [];
 window.events = [];
@@ -50,8 +50,13 @@ const {default:App}=await import('./App.vue');
 createApp(App).mount('#app');
 window.flush=async () => { await nextTick(); await new Promise(resolve => setTimeout(resolve,40)); };
 window.chooseOptimize=async () => {
-  document.querySelector('button[aria-label="快捷指令 (/)"]').click(); await window.flush();
-  [...document.querySelectorAll('button')].find(button => button.textContent.includes('optimize-prompt')).click(); await window.flush();
+  // 快捷指令只能由「真在打字」的 / 触发，且菜单项本身不带正文：
+  // 优化既有草稿的入口就是 submit 解析的 /optimize-prompt <正文>（见 ChatInputArea.handleSend）。
+  // 草稿用记录值而不是读 DOM：setText 之后 textarea.value 要到下一帧才更新。
+  window.setText('/optimize-prompt '+window.draft);
+  await window.flush();
+  window.enter();
+  await window.flush();
 };
 window.enter=() => document.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
 await window.flush(); window.ready=true;`);
@@ -92,7 +97,7 @@ await window.flush(); window.ready=true;`);
   assert.equal(await evaluate('document.querySelector("textarea").value'), await evaluate('window.reply'));
   assert.deepEqual(await evaluate('window.sent'), []);
 
-  await evaluate('window.reply="/plan 这是一段字面量，不触发计划模式"; window.chooseOptimize()');
+  await evaluate('window.setText("让优化器返回一段字面量"); window.flush(); window.reply="/plan 这是一段字面量，不触发计划模式"; window.chooseOptimize()');
   await evaluate('[...document.querySelectorAll("[role=dialog] button")].find(button=>button.textContent.includes("替换输入")).click(); window.flush()');
   assert.equal(await evaluate('document.querySelector("textarea").value'), '/plan 这是一段字面量，不触发计划模式');
   assert.deepEqual(await evaluate('window.events'), []);
@@ -100,7 +105,8 @@ await window.flush(); window.ready=true;`);
   await evaluate('window.fail=true; window.setText("失败时保留这段话"); window.flush(); window.chooseOptimize()');
   assert.equal(await evaluate('document.querySelector("textarea").value'), '失败时保留这段话');
   assert.match(await evaluate('document.querySelector("[role=alert]")?.textContent'), /优化失败/);
-  assert.equal(await evaluate('document.querySelector("[role=dialog]")'), null);
+  const dialogAfterFail = await evaluate('document.querySelector("[role=dialog]")?.textContent?.trim() ?? null');
+  assert.equal(dialogAfterFail, null, '失败后不应残留弹窗: ' + dialogAfterFail);
 
   await evaluate('window.fail=false; window.hold=true; window.setText("等待期间原文"); window.flush(); window.chooseOptimize()');
   await evaluate('window.setText("等待期间的新草稿"); window.flush(); window.release(); window.flush()');
@@ -108,24 +114,30 @@ await window.flush(); window.ready=true;`);
   assert.equal(await evaluate('document.querySelector("[role=dialog]")'), null);
   assert.match(await evaluate('document.querySelector("[role=alert]")?.textContent'), /草稿已发生变化/);
 
-  await evaluate('window.hold=false; window.setText("/plan 计划模式回归"); window.flush()');
-  assert.equal(await evaluate('document.querySelector("textarea").value'), '计划模式回归');
+  // /plan 只在 submit 时解析：写入文本本身不产生任何副作用，回车才切模式并照常发送
+  await evaluate('window.hold=false; window.setText("/plan 计划模式回归"); window.flush(); window.enter(); window.flush()');
   assert.deepEqual(await evaluate('window.events'), ['plan']);
+  assert.equal(await evaluate('window.sent.length'), 1);
+  assert.equal(await evaluate('window.sent[0][0]'), '计划模式回归');
+  assert.equal(await evaluate('window.sent[0][1]'), true);
   await evaluate('window.setText("正常发送回归"); window.flush()');
   await evaluate('window.enter(); window.flush()');
-  assert.equal(await evaluate('window.sent.length'), 1);
-  assert.equal(await evaluate('window.sent[0][0]'), '正常发送回归');
-  assert.equal(await evaluate('window.sent[0][1]'), true);
+  assert.equal(await evaluate('window.sent.length'), 2);
+  assert.equal(await evaluate('window.sent[1][0]'), '正常发送回归');
+  assert.equal(await evaluate('window.sent[1][1]'), true);
 
   await evaluate('window.setText("/optimize-prompt"); window.flush()');
   await evaluate('window.enter(); window.flush()');
   assert.match(await evaluate('document.querySelector("[role=alert]")?.textContent'), /请先输入/);
-  assert.equal(await evaluate('window.sent.length'), 1);
+  assert.equal(await evaluate('window.sent.length'), 2);
   const requestsBeforePartialCommand = await evaluate('window.requests.length');
+  const sentBeforePartialCommand = await evaluate('window.sent.length');
   await evaluate('window.setText("/op"); window.flush()');
   await evaluate('window.enter(); window.flush()');
+  // 半个命令名不是命令：不发优化请求，按普通文本照常发送
   assert.equal(await evaluate('window.requests.length'), requestsBeforePartialCommand);
-  assert.match(await evaluate('document.querySelector("[role=alert]")?.textContent'), /请先输入/);
+  assert.equal(await evaluate('window.sent.length'), sentBeforePartialCommand + 1);
+  assert.equal(await evaluate('window.sent.at(-1)[0]'), '/op');
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
   console.log('实际组件验证通过：菜单/斜杠命令、纯文本预览、取消/替换、失败/过期保护、计划模式与正常发送。');
   console.log('预览截图: ' + path.join(output, 'confirm.png'));

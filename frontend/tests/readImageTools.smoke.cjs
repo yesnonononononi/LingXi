@@ -64,6 +64,8 @@ const {default:App}=await import('./App.vue'); createApp(App).mount('#app');wind
   await window.loadFile(path.join(output, 'dist/index.html'));
   for(let attempt=0;attempt<100;attempt++) { if(await evaluate('window.ready===true')) break; await new Promise(resolve=>setTimeout(resolve,50)); }
   await evaluate('window.flush()');
+  // 过程段默认折叠（ChatProcessSegment 的 expanded 初值 false），展开后读图分组才挂载。
+  await evaluate('[...document.querySelectorAll("[data-testid=process-segment-toggle]")].forEach(toggle=>toggle.click());window.flush()');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=read-image-group]").length'), 1);
   assert.equal(await evaluate('document.querySelector("[data-testid=read-image-toggle]").textContent.trim()'), '已查看 2 张图像');
   assert.equal(await evaluate('[...document.querySelectorAll("[data-testid=read-image-thumbnails] img")].filter(img=>img.complete&&img.naturalWidth===320).length'), 2);

@@ -26,24 +26,53 @@ class WindowStub {
   loadFile() {}
   loadURL() {}
 }
+/**
+ * main.cjs 启动期真正会碰到的 Electron API 才列在这里。
+ *
+ * <p>桩不追求全覆盖：`whenReady` 返回空 thenable，所以启动回调体不会执行，
+ * 桩只需要撑住模块顶层那几十行（身份设定、userData 目录、单实例锁）与随后的 createWindow()。</p>
+ */
+const appStub = {
+  isPackaged: true,
+  setAppUserModelId() {},
+  setName() {},
+  setPath() {},
+  getPath: () => outputDir,
+  getAppPath: () => frontendRoot,
+  getVersion: () => '0.0.0-smoke',
+  requestSingleInstanceLock: () => true,
+  whenReady: () => ({ then() {} }),
+  on() {},
+  once() {},
+  quit() {},
+  exit() {},
+  relaunch() {},
+};
 const context = vm.createContext({
   require(name) {
     if (name === 'electron') return {
       ...electron,
       BrowserWindow: WindowStub,
       ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
-      app: {
-        isPackaged: true,
-        setAppUserModelId() {}, requestSingleInstanceLock: () => true,
-        getPath: () => outputDir, whenReady: () => ({ then() {} }), on() {}, quit() {},
-      },
+      app: appStub,
     };
     if (name === './backend.cjs') return {};
     if (name === './file-preview.cjs') return require('../electron/file-preview.cjs');
     return requireMain(name);
   },
   __dirname: path.join(frontendRoot, 'electron'),
-  process: { platform: process.platform, argv: [], env: {} },
+  process: {
+    platform: process.platform,
+    argv: [],
+    env: {},
+    execPath: process.execPath,
+    cwd: () => frontendRoot,
+    on() {},
+    once() {},
+    off() {},
+    emit() {},
+    exit() {},
+  },
   console,
 });
 vm.runInContext(fs.readFileSync(path.join(frontendRoot, 'electron/main.cjs'), 'utf8'), context);
