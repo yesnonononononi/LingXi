@@ -313,9 +313,11 @@ const panelClass = computed(() =>
       <!-- Right Content Area -->
       <!-- scrollbar-gutter: 恒定预留滚动条槽位，使各 tab 的盒子宽度一致（不因是否出现滚动条而变窄） -->
       <!-- 为按钮外发光预留空间，避免装饰画布撑出横向滚动条。 -->
+      <!-- 底部**不留** padding：滚动容器的 padding-bottom 会成为 sticky 底栏（安全中心保存条）的
+           包含块边界，底栏只能粘在它上方，滚动内容从下面 24px 的缝隙里穿过去；留白由面板 p-6 提供。 -->
       <div
         ref="content"
-        class="flex-1 min-w-0 pr-6 pb-6 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
+        class="flex-1 min-w-0 pr-6 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
       >
         <Transition name="settings-tab" mode="out-in">
         <div :key="activeTab" class="settings-tab-content" :data-settings-content="activeTab">

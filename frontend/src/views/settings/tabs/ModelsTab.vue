@@ -254,7 +254,7 @@ const addRowClass =
                 {{ item.modelName || t('settings.models.unnamed') }}
               </span>
               <div class="flex items-center gap-1 shrink-0">
-                <button type="button" class="text-lx-fs-sm px-2.5 py-1 rounded-lg transition cursor-pointer text-lx-muted hover:text-lx-primary hover:bg-lx-surface-selected" @click="startEditModel(item)">
+                <button type="button" :data-testid="`model-edit-${item.id}`" class="text-lx-fs-sm px-2.5 py-1 rounded-lg transition cursor-pointer text-lx-muted hover:text-lx-primary hover:bg-lx-surface-selected" @click="startEditModel(item)">
                   {{ t('common.edit') }}
                 </button>
                 <button type="button" class="text-lx-fs-sm px-2.5 py-1 rounded-lg transition cursor-pointer text-lx-danger hover:bg-lx-danger-soft" @click="handleDeleteModel(item)">
